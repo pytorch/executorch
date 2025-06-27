@@ -135,7 +135,27 @@ if [ "$build_with_etdump" = true ] ; then
 fi
 
 echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${extra_build_flags}"
+echo "toolchain_cmake set to ${toolchain_cmake}"
+echo "$(pwd)"
 
+echo "
+cmake \
+    -DCMAKE_BUILD_TYPE=${build_type}            \
+    -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}   \
+    -DTARGET_CPU=${target_cpu}                  \
+    -DET_DIR_PATH:PATH=${et_root_dir}           \
+    -DET_BUILD_DIR_PATH:PATH=${et_build_dir}    \
+    -DET_PTE_FILE_PATH:PATH="${pte_file}"       \
+    -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}   \
+    -DETHOSU_TARGET_NPU_CONFIG=${target}        \
+    ${build_bundleio_flags}                     \
+    ${build_with_etdump_flags}                  \
+    -DPYTHON_EXECUTABLE=$(which python3)        \
+    -DSYSTEM_CONFIG=${system_config}            \
+    -DMEMORY_MODE=${memory_mode}                \
+    ${extra_build_flags}                        \
+    -B ${output_folder}/cmake-out
+"
 cmake \
     -DCMAKE_BUILD_TYPE=${build_type}            \
     -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}   \

@@ -17,8 +17,6 @@ et_dir=$(realpath $script_dir/../..)
 ARCH="$(uname -m)"
 OS="$(uname -s)"
 root_dir="${script_dir}/ethos-u-scratch"
-user_toolchain_url=""
-user_toolchain_dir=""
 eula_acceptance=0
 skip_toolchain_setup=0
 target_toolchain=""
@@ -80,30 +78,6 @@ function check_options() {
                 # Only change default root dir if the script is being executed and not sourced.
                 if [[ $is_script_sourced -eq 0 ]]; then
                     root_dir=${2:-"${root_dir}"}
-                fi
-
-                if [[ $# -ge 2 ]]; then
-                    shift 2
-                else
-                    print_usage "$@"
-                    exit 1
-                fi
-                ;;
-            --user-toolchain-url)
-                if [[ $is_script_sourced -eq 0 ]]; then
-                    user_toolchain_url=${2:-"${user_toolchain_url}"}
-                fi
-
-                if [[ $# -ge 2 ]]; then
-                    shift 2
-                else
-                    print_usage "$@"
-                    exit 1
-                fi
-                ;;
-            --user-toolchain-dir)
-                if [[ $is_script_sourced -eq 0 ]]; then
-                    user_toolchain_dir=${2:-"${user_toolchain_dir}"}
                 fi
 
                 if [[ $# -ge 2 ]]; then
@@ -310,12 +284,8 @@ function create_setup_path(){
         echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}
     fi
 
-    local selected_toolchain_dir="${toolchain_dir}"
-    if [[ -n "${user_toolchain_url}" && -n "${user_toolchain_dir}" ]]; then
-        selected_toolchain_dir="${user_toolchain_dir}"
-    fi
     if [[ "${skip_toolchain_setup}" -eq 0 ]]; then
-        toolchain_bin_path="$(cd ${selected_toolchain_dir}/bin && pwd)"
+        toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
         echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
     fi
 }
@@ -348,8 +318,6 @@ if [[ $is_script_sourced -eq 0 ]]; then
     setup_root_dir
     cd "${root_dir}"
     echo "[main] Using root dir ${root_dir} and options:"
-    echo "user_toolchain_url=${user_toolchain_url}"
-    echo "user_toolchain_dir=${user_toolchain_dir}"
     echo "skip-fvp-setup=${skip_fvp_setup}"
     echo "target-toolchain=${target_toolchain}"
     echo "skip-toolchain-setup=${skip_toolchain_setup}"
