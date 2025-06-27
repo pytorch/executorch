@@ -173,6 +173,23 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                 .run_method_and_compare_outputs()
             )
 
+    class LinearConvDimSwap(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 3, 3)
+            self.linear1 = torch.nn.Linear(4, 3)
+
+        def forward(self, x):
+            y = self.linear1(x)
+            y = y.to(memory_format=torch.channels_last)
+            y = y.to(memory_format=torch.contiguous_format)
+            return self.conv1(y)
+
+    LinearConvDimSwapModule = LinearConvDimSwap()
+
+    def test_conv_linear_dim_order_swap_partitioner(self):
+        self.run_tester(self.LinearConvDimSwapModule, (torch.randn(1, 3, 6, 4),))
+
     def test_qs8_channels_last_tagged_reshape_pass(self):
         for module, num_reshape in self.modules.items():
             (
