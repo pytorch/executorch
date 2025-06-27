@@ -6,22 +6,21 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "LLaMARunner.h"
+#import "LLaVARunner.h"
 
 #import <ExecuTorch/ExecuTorchLog.h>
-#import <executorch/examples/models/llama/runner/runner.h>
+#import <executorch/examples/models/llava/runner/llava_runner.h>
 
-using executorch::extension::llm::GenerationConfig;
-using executorch::extension::llm::TextLLMRunner;
+using executorch::extension::llm::Image;
 using executorch::runtime::Error;
 
-NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
+NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 
-@interface LLaMARunner ()<ExecuTorchLogSink>
+@interface LLaVARunner ()<ExecuTorchLogSink>
 @end
 
-@implementation LLaMARunner {
-  std::unique_ptr<TextLLMRunner> _runner;
+@implementation LLaVARunner {
+  std::unique_ptr<example::LlavaRunner> _runner;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
@@ -29,7 +28,7 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = example::create_llama_runner(
+    _runner = std::make_unique<example::LlavaRunner>(
         modelPath.UTF8String, tokenizerPath.UTF8String);
   }
   return self;
@@ -47,7 +46,7 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
   const auto status = _runner->load();
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
+      *error = [NSError errorWithDomain:LLaVARunnerErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
     }
@@ -56,20 +55,27 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
   return YES;
 }
 
-- (BOOL)generate:(NSString*)prompt
+- (BOOL)generate:(void*)imageBuffer
+                width:(CGFloat)width
+               height:(CGFloat)height
+               prompt:(NSString*)prompt
        sequenceLength:(NSInteger)seq_len
     withTokenCallback:(nullable void (^)(NSString*))callback
                 error:(NSError**)error {
-  const GenerationConfig config{
-    .seq_len = static_cast<int32_t>(seq_len)
-  };
+  const auto* data = static_cast<uint8_t*>(imageBuffer);
   const auto status = _runner->generate(
-      prompt.UTF8String, config, [callback](const std::string& token) {
-        callback(@(token.c_str()));
-      });
+      {Image{
+          std::vector<uint8_t>(
+              data, data + (int32_t)width * (int32_t)height * 3),
+          (int32_t)width,
+          (int32_t)height,
+          3}},
+      prompt.UTF8String,
+      seq_len,
+      [callback](const std::string& token) { callback(@(token.c_str())); });
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
+      *error = [NSError errorWithDomain:LLaVARunnerErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
       return NO;
