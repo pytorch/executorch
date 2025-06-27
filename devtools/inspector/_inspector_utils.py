@@ -73,6 +73,8 @@ TIME_SCALE_DICT = {
     TimeScale.CYCLES: 1,
 }
 
+DebugHandle: TypeAlias = Tuple[int, ...]
+
 
 class NodeSource(Enum):
     AOT = 1
@@ -91,6 +93,28 @@ class NodeData:
     source: NodeSource
     debug_handle: tuple[int]
     output: Any
+
+
+class NodeFilter:
+    """
+    A class used to filter nodes based on extensible criteria.
+    Attributes:
+        metadata_key (str): The key to look for in the node's metadata.
+        op_type (str): The operation code to match.
+        exclude_ops (List[str]): A list of operations to exclude from the filter.
+    """
+
+    def __init__(self, metadata_key: str, op_type: str, exclude_ops: List[str] = None):
+        self.metadata_key = metadata_key
+        self.op_type = op_type
+        self.exclude_ops = exclude_ops
+
+    def matches(self, node: torch.fx.Node) -> bool:
+        return (
+            node.meta.get(self.metadata_key) is not None
+            and node.op == self.op_type
+            and all(exclude_name not in node.name for exclude_name in self.exclude_ops)
+        )
 
 
 def calculate_time_scale_factor(
@@ -506,7 +530,7 @@ def compare_results(
     return results
 
 
-def merge_overlapping_debug_handles(intermediate_outputs: Dict[Tuple[int, ...], Any]):
+def merge_overlapping_debug_handles(intermediate_outputs: Dict[DebugHandle, Any]):
     """
     Merge overlapping debug handles int a single key
     """
@@ -536,7 +560,7 @@ def merge_overlapping_debug_handles(intermediate_outputs: Dict[Tuple[int, ...], 
 
 
 def _debug_handles_have_overlap(
-    aot_debug_hanlde: Tuple[int, ...], runtime_debug_handle: Tuple[int, ...]
+    aot_debug_hanlde: DebugHandle, runtime_debug_handle: DebugHandle
 ) -> bool:
     """
     Check if the AOT debug handle and the runtime debug handle have any overlap.
@@ -546,7 +570,7 @@ def _debug_handles_have_overlap(
     return len(aot_set.intersection(runtime_set)) > 0
 
 
-def _combine_debug_hanldes(debug_handles: List[Tuple[int, ...]]) -> Tuple[int, ...]:
+def _combine_debug_hanldes(debug_handles: List[DebugHandle]) -> DebugHandle:
     """Combine multiple debug handles into one debug handle"""
     combined_debug_handles_set = set()
     for debug_handle in debug_handles:
@@ -555,8 +579,8 @@ def _combine_debug_hanldes(debug_handles: List[Tuple[int, ...]]) -> Tuple[int, .
 
 
 def _combine_overlapped_intermediate_outputs(
-    nodes: List[Tuple[Tuple[int, ...], Any]]
-) -> Tuple[Tuple[int, ...], Any]:
+    nodes: List[Tuple[DebugHandle, Any]]
+) -> Tuple[DebugHandle, Any]:
     """Combine multiple overlapped intermediate outputs into one with combined debug_handles and last output"""
     debug_handles = [debug_handle for debug_handle, _ in nodes]
     outputs = [output for _, output in nodes]
@@ -566,8 +590,8 @@ def _combine_overlapped_intermediate_outputs(
 
 
 def _create_debug_handle_overlap_graph(
-    aot_intermediate_outputs: Dict[Tuple[int, ...], Any],
-    runtime_intermediate_outputs: Dict[Tuple[int, ...], Any],
+    aot_intermediate_outputs: Dict[DebugHandle, Any],
+    runtime_intermediate_outputs: Dict[DebugHandle, Any],
 ) -> Tuple[List[NodeData], Dict[int, List[int]]]:
     """
     Create a graph representing overlapping debug handles between AOT and runtime outputs.
@@ -637,15 +661,15 @@ def _find_connected_components(
 
 
 def map_runtime_aot_intermediate_outputs(
-    aot_intermediate_outputs: Dict[Tuple[int, ...], Any],
-    runtime_intermediate_outputs: Dict[Tuple[int, ...], Any],
-) -> Dict[Tuple[Tuple[int, ...], Any], Tuple[Tuple[int, ...], Any]]:
+    aot_intermediate_outputs: Dict[DebugHandle, Any],
+    runtime_intermediate_outputs: Dict[DebugHandle, Any],
+) -> Dict[Tuple[DebugHandle, Any], Tuple[DebugHandle, Any]]:
     """
     Map the runtime intermediate outputs to the AOT intermediate outputs
     by finding overlapping debug handles and combining them into a single debug_handle
 
     Returns:
-        Dict[Tuple[Tuple[int, ...], Any], Tuple[Tuple[int, ...], Any]] - Mapping
+        Dict[Tuple[DebugHandle, Any], Tuple[DebugHandle, Any]] - Mapping
         from runtime intermediate output to AOT intermediate output
     """
     # Merge overlapping debug handles
@@ -734,3 +758,51 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
     if torch.isnan(input_tensor).any():
         input_tensor = torch.nan_to_num(input_tensor)
     return input_tensor
+
+
+def get_aot_debug_handle_to_op_name_mapping(
+    graph_module: torch.fx.GraphModule,
+) -> Dict[DebugHandle, str]:
+    """
+    Get a mapping from debug handle to operator name from the ETRecord edge_dialect_program's graph module.
+    Parameters:
+    graph_module (torch.fx.GraphModule): The graph module to get the mapping from.
+    Returns:
+    Dict[DebugHandle, str]: A dictionary mapping debug handles to operator names.
+    """
+    node_filters = [
+        NodeFilter("debug_handle", "call_function", exclude_ops=["getitem"])
+    ]
+
+    debug_handle_to_op_name = {}
+    for node in graph_module.graph.nodes:
+        if all(filter.matches(node) for filter in node_filters):
+            debug_handle = node.meta["debug_handle"]
+            # Convert the debug handle to a tuple to use as a dictionary key
+            key = (
+                (debug_handle,)
+                if isinstance(debug_handle, int)
+                else tuple(debug_handle)
+            )
+            debug_handle_to_op_name[key] = node.name
+    return debug_handle_to_op_name
+
+
+def find_op_names(
+    target_debug_handle: DebugHandle,
+    debug_handle_to_op_name: Dict[DebugHandle, str],
+) -> List[str]:
+    """
+    Record the operator names only if their debug handles are part of the target debug handle.
+    The debug handles in `debug_handle_to_op_name` have undergone merging and remain unchanged,
+    and this function identifies operations corresponding to these transformed handles.
+    """
+    dh_set = set(target_debug_handle)
+    result = []
+
+    for key_tuple, op_name in debug_handle_to_op_name.items():
+        # Check if key is a subset of the target_debug_handle
+        if set(key_tuple).issubset(dh_set):
+            result.append(op_name)
+
+    return result

@@ -8,7 +8,7 @@ Qwen 2.5 uses the same example code as Llama, while the checkpoint, model params
 All commands for exporting and running Llama on various backends should also be applicable to Qwen 2.5, by swapping the following args:
 ```
 base.model_class="qwen2_5"
-base.params="examples/models/qwen2_5/1_5b_config.json"
+base.params="examples/models/qwen2_5/config/1_5b_config.json"
 base.checkpoint=<path-to-meta-checkpoint>
 ```
 
@@ -33,16 +33,11 @@ Export to XNNPack, no quantization:
 QWEN_CHECKPOINT=path/to/checkpoint.pth
 
 python -m extension.llm.export.export_llm \
-  base.model_class="qwen2_5" \
-  base.checkpoint="${QWEN_CHECKPOINT:?}" \
-  base.params="examples/models/qwen2_5/1_5b_config.json" \
-  model.use_kv_cache=True \
-  model.use_sdpa_with_kv_cache=True \
-  model.dtype_override="fp32" \
-  backend.xnnpack.enabled=True \
-  base.metadata='"{\"get_bos_id\":151643, \"get_eos_ids\":[151643]}"' \
-  export.output_name="qwen2_5-1_5b.pte" \
-  debug.verbose=True
+  --config examples/models/qwen2_5/config/qwen2_5_xnnpack_q8da4w.yaml
+  +base.model_class="qwen2_5" \
+  +base.checkpoint="${QWEN_CHECKPOINT:?}" \
+  +base.params="examples/models/qwen2_5/1_5b_config.json" \
+  +export.output_name="qwen2_5-1_5b.pte" \
 ```
 
 Run using the executor runner:

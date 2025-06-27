@@ -340,6 +340,11 @@ class _ExportPassBase(PassBase):
             elif target == torch.ops.higher_order.cond:
                 pred, true_fn, false_fn, inputs = args
                 return self.callback.call_cond(pred, true_fn, false_fn, inputs, meta)
+            elif target == torch.ops.higher_order.while_loop:
+                cond, body, carried_inputs, additional_inputs = args
+                return self.callback.call_while(
+                    cond, body, carried_inputs, additional_inputs, meta
+                )
             elif target == torch.ops.higher_order.map_impl:
                 f, mapped_args, operands = args  # type: ignore[assignment]
                 return self.callback.call_map(f, mapped_args, operands, meta)
@@ -493,6 +498,31 @@ class _ExportPassBase(PassBase):
             "call_function",
             torch.ops.higher_order.cond,
             (pred, true_branch.graph_module, false_branch.graph_module, list(inputs)),
+            {},
+            meta,
+        )
+
+    def call_while(
+        self,
+        cond_fn: torch.fx.GraphModule,
+        body_fn: torch.fx.GraphModule,
+        carried_inputs: List[Argument],
+        additional_inputs: List[Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        cond_fn = self.call_submodule(cond_fn, (*carried_inputs, *additional_inputs))
+        body_fn = self.call_submodule(body_fn, (*carried_inputs, *additional_inputs))
+        assert cond_fn is not None
+        assert body_fn is not None
+        return self._fx(
+            "call_function",
+            torch.ops.higher_order.while_loop,
+            (
+                cond_fn.graph_module,
+                body_fn.graph_module,
+                carried_inputs,
+                additional_inputs,
+            ),
             {},
             meta,
         )

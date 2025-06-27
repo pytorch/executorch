@@ -397,6 +397,35 @@ class TanhConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
+class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
+    target_name = "_to_dim_order_copy.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Only support dim order conversion partitioning, not DType conversions
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # Get input node and compare dtypes
+        input_node = get_input_node(node, 0)
+        input_dtype = input_node.meta["val"].dtype
+        output_dtype = node.meta["val"].dtype
+
+        # Return False if doing dtype conversion
+        if input_dtype != output_dtype:
+            why(
+                node,
+                reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+            )
+            return False
+
+        return True
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
 
@@ -561,36 +590,6 @@ class BMMConfig(GenericNodePartitionerConfig):
     """
 
     target_name = "bmm.default"
-
-    def supported_precision_types(self) -> List[ConfigPrecisionType]:
-        return [ConfigPrecisionType.FP32]
-
-
-class SDPAConfig(GenericNodePartitionerConfig):
-    target_name = "scaled_dot_product_attention.default"
-
-    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
-        """
-        Requires Mask to have Rank 2
-        """
-        if not self.check_common_constraints(node, ep):
-            return False
-
-        if len(node.all_input_nodes) < 4:
-            return False
-        mask_node = node.all_input_nodes[3]
-        mask_rank = mask_node.meta["val"].dim()
-        if mask_rank != 2:
-            why(
-                node,
-                reason=f"mask must have rank 2, got mask of rank {mask_rank}",
-            )
-            return False
-
-        return True
-
-    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
-        return torch.ops.aten.scaled_dot_product_attention.default
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
