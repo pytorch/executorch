@@ -10,6 +10,7 @@
 
 #include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/kernels/portable/cpu/selective_build.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
@@ -318,20 +319,22 @@ inline void apply_elementwise_fn(
   }
 
   constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMPUTE>::value;
-  const bool all_inputs_compute_dtype =
-      ((inputs.first->scalar_type() == compute_type) && ...);
+  if constexpr (should_include_kernel_dtype(op_name, compute_type)) {
+    const bool all_inputs_compute_dtype =
+        ((inputs.first->scalar_type() == compute_type) && ...);
 
-  constexpr ScalarType out_specialized_scalar_type =
-      specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
-  if (all_inputs_compute_dtype &&
-      out.scalar_type() == out_specialized_scalar_type) {
-    using CTYPE_OUT =
-        typename ScalarTypeToCppType<out_specialized_scalar_type>::type;
-    dtype_specialized_elementwise_fn_impl<
-        CTYPE_COMPUTE,
-        CTYPE_OUT,
-        support_noncontiguous_tensors>(compute_fun, ctx, out, inputs...);
-    return;
+    constexpr ScalarType out_specialized_scalar_type =
+        specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
+    if (all_inputs_compute_dtype &&
+        out.scalar_type() == out_specialized_scalar_type) {
+      using CTYPE_OUT =
+          typename ScalarTypeToCppType<out_specialized_scalar_type>::type;
+      dtype_specialized_elementwise_fn_impl<
+          CTYPE_COMPUTE,
+          CTYPE_OUT,
+          support_noncontiguous_tensors>(compute_fun, ctx, out, inputs...);
+      return;
+    }
   }
 
   apply_elementwise_fn_generic_impl<

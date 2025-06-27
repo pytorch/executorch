@@ -9,14 +9,14 @@ import json
 from typing import Optional, Type
 
 import torch
-
-from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,
 )
 from executorch.examples.models.llama.runner.generation import LlamaRunner
 from executorch.extension.llm.export.builder import LLMEdgeManager
+
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 
 
 class EagerLlamaRunner(LlamaRunner):
