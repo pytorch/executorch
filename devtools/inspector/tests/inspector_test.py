@@ -44,6 +44,7 @@ from executorch.devtools.inspector._inspector import (
     TimeScale,
 )
 from executorch.devtools.inspector.tests.inspector_test_utils import (
+    check_if_debug_handle_to_op_name_match,
     check_if_final_outputs_match,
     model_registry,
 )
@@ -468,25 +469,7 @@ class TestInspector(unittest.TestCase):
                 events=events,
             )
 
-    def test_no_capture_when_representative_inputs_are_none(self):
-        # Create a context manager to patch functions called by Inspector.__init__
-        with patch.object(
-            _inspector, "parse_etrecord", return_value=None
-        ), patch.object(
-            _inspector, "gen_etdump_object", return_value=None
-        ), patch.object(
-            EventBlock, "_gen_from_etdump"
-        ), patch.object(
-            _inspector, "gen_graphs_from_etrecord"
-        ):
-            # Call the constructor of Inspector
-            inspector_instance = Inspector(
-                etdump_path=ETDUMP_PATH,
-                etrecord=ETRECORD_PATH,
-            )
-            self.assertIsNone(inspector_instance._aot_intermediate_outputs)
-
-    def test_consume_etrecord_populates_correct_aot_intermediate_outputs(self):
+    def test_etrecord_populates_correct_aot_intermediate_outputs(self):
         with tempfile.NamedTemporaryFile(suffix=".bin") as tmp_file:
             etrecord_path = tmp_file.name
             mod = model_registry["ConvLinearModel"]()
@@ -505,7 +488,6 @@ class TestInspector(unittest.TestCase):
             generate_etrecord(
                 etrecord_path, edge_program_manager_copy, et_program_manager
             )
-            original_consume_etrecord = Inspector._consume_etrecord
             with patch.object(
                 Inspector, "_consume_etrecord", return_value=None
             ), patch.object(
@@ -529,15 +511,21 @@ class TestInspector(unittest.TestCase):
                     _representative_inputs=aten_model.example_inputs[0],
                 )
                 inspector_instance._etrecord = etrecord
-                Inspector._consume_etrecord = original_consume_etrecord
-                inspector_instance._consume_etrecord()
+                aot_intermediate_outputs, aot_debug_handle_to_op_name = (
+                    inspector_instance._get_aot_intermediate_outputs_and_op_names()
+                )
                 self.assertTrue(
                     check_if_final_outputs_match(
-                        "ConvLinearModel", inspector_instance._aot_intermediate_outputs
+                        "ConvLinearModel", aot_intermediate_outputs
+                    )
+                )
+                self.assertTrue(
+                    check_if_debug_handle_to_op_name_match(
+                        "ConvLinearModel", aot_debug_handle_to_op_name
                     )
                 )
 
-    def test_get_runtime_intermediate_outputs(self):
+    def test_get_runtime_intermediate_outputs_and_op_names(self):
         # Create a context manager to patch functions called by Inspector.__init__
         with patch.object(
             _inspector, "parse_etrecord", return_value=None
@@ -560,25 +548,39 @@ class TestInspector(unittest.TestCase):
                 EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_random_events())
             ]
 
-            runtime_outputs = inspector_instance._get_runtime_intermediate_outputs()
-            # This output should be a dictionary with 5 keys
+            runtime_outputs, op_names = (
+                inspector_instance._get_runtime_intermediate_outputs_and_op_names()
+            )
+            # These outputs and op_names dictionaries should all have 5 keys
             self.assertEqual(
                 len(runtime_outputs),
                 5,
             )
-            # Check that keys (0,) and (1,) are not in the dictionary(skip OPERATOR_CALL and op_types are empty)
+            self.assertEqual(
+                len(op_names),
+                5,
+            )
+
+            # Check that keys (0,) and (1,) are not in these two dictionaries(skip OPERATOR_CALL and op_types are empty)
             self.assertNotIn((0,), runtime_outputs)
             self.assertNotIn((1,), runtime_outputs)
+            self.assertNotIn((0,), op_names)
+            self.assertNotIn((1,), op_names)
 
             # Same debug_handle but different instruction_id, should record the last one
             self.assertIn((4,), runtime_outputs)
+            self.assertIn((4,), op_names)
             self.assertTrue(
                 torch.equal(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
             )
+            self.assertEqual(op_names[(4,)], "op_3")
+
             # Check that keys (5,) to (8,) are in the dictionary and have values of the correct size
             for key in range(5, 9):
                 self.assertIn((key,), runtime_outputs)
+                self.assertIn((key,), op_names)
                 self.assertEqual(len(runtime_outputs[(key,)]), RAW_DATA_SIZE)
+                self.assertEqual(op_names[(key,)], f"op_{key-1}")
 
     def test_calculate_numeric_gap(self):
         # Create a context manager to patch functions called by Inspector.__init__
@@ -591,6 +593,7 @@ class TestInspector(unittest.TestCase):
         ), patch.object(
             _inspector, "gen_graphs_from_etrecord"
         ):
+
             # Call the constructor of Inspector
             inspector_instance = Inspector(
                 etdump_path=ETDUMP_PATH,
@@ -607,9 +610,15 @@ class TestInspector(unittest.TestCase):
                 (1,): torch.tensor([3.0, 6.0, 5.0]),
             }
 
-            inspector_instance._aot_intermediate_outputs = aot_intermediate_outputs
-            inspector_instance._get_runtime_intermediate_outputs = (
-                lambda: runtime_intermediate_outputs
+            aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+            runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
+
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda: (
+                aot_intermediate_outputs,
+                aot_debug_handle_to_op_name,
+            )
+            inspector_instance._get_runtime_intermediate_outputs_and_op_names = (
+                lambda: (runtime_intermediate_outputs, runtime_debug_handle_to_op_name)
             )
 
             df = inspector_instance.calculate_numeric_gap(distance="L1")
@@ -617,33 +626,28 @@ class TestInspector(unittest.TestCase):
             self.assertEqual(len(df), 2)
             cols = set(df.columns)
             expected_cols = {
-                "aot_debug_handle",
+                "aot_ops",
                 "aot_intermediate_output",
-                "runtime_debug_handle",
+                "runtime_ops",
                 "runtime_intermediate_output",
                 "gap",
             }
             self.assertEqual(cols, expected_cols)
-            founded_aot_debug_handle = set(df["aot_debug_handle"])
-            self.assertEqual(
-                founded_aot_debug_handle, set(aot_intermediate_outputs.keys())
-            )
-            for _, row in df.iterrows():
-                aot_debuh_handle = row["aot_debug_handle"]
+            for i, row in df.iterrows():
+                # Dummpy key to get the expected aot/runtime internmediate outputs
+                key = (i,)
                 # aot_intermediate_output should equal aot_intermediate_outputs[h]
                 self.assertTrue(
                     torch.allclose(
                         row["aot_intermediate_output"],
-                        aot_intermediate_outputs[aot_debuh_handle],
+                        aot_intermediate_outputs[key],
                     )
                 )
-                # runtime_debug_hanlde equals aot_debug_handle at this case
-                self.assertEqual(row["runtime_debug_handle"], aot_debuh_handle)
                 # runtime_intermediate_output should equal runtime_intermediate_outputs[h]
                 self.assertTrue(
                     torch.allclose(
                         row["runtime_intermediate_output"],
-                        runtime_intermediate_outputs[aot_debuh_handle],
+                        runtime_intermediate_outputs[key],
                     )
                 )
                 # gap should equal 3.0
