@@ -547,6 +547,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.inspector._inspector_utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">calculate_time_scale_factor</span><span class="p">,</span>
     <span class="n">create_debug_handle_to_op_node_mapping</span><span class="p">,</span>
+    <span class="n">DebugHandle</span><span class="p">,</span>
     <span class="n">display_or_print_df</span><span class="p">,</span>
     <span class="n">EDGE_DIALECT_GRAPH_KEY</span><span class="p">,</span>
     <span class="n">EXCLUDED_COLUMNS_WHEN_PRINTING</span><span class="p">,</span>
@@ -766,7 +767,7 @@
 
 <span class="c1"># Typing for mapping Event.delegate_debug_identifiers to debug_handle(s)</span>
 <span class="n">DelegateIdentifierDebugHandleMap</span><span class="p">:</span> <span class="n">TypeAlias</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span>
-    <span class="n">Mapping</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]],</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span>
+    <span class="n">Mapping</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">DebugHandle</span><span class="p">],</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">DebugHandle</span><span class="p">]</span>
 <span class="p">]</span>
 
 <span class="c1"># Typing for Dict containig delegate metadata</span>
@@ -1653,7 +1654,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_aot_intermediate_outputs_and_op_names</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">str</span><span class="p">]]:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Capture intermediate outputs only if _representative_inputs are provided</span>
 <span class="sd">        when using bundled program to create the etrecord</span>
@@ -1674,7 +1675,7 @@
     <span class="c1"># TODO: Make it more extensible to further merge overlapping debug handles</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_runtime_intermediate_outputs_and_op_names</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="nb">str</span><span class="p">]]:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieve the runtime intermediate outputs(debug handles and intermediate values mappings)</span>
 <span class="sd">        from the event blocks, along with the corresponding debug handles and op names mapping.</span>
