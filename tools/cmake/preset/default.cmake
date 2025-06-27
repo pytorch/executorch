@@ -90,7 +90,7 @@ define_overridable_option(
   BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_EXTENSION_LLM
+  EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
   "Build the LLM extension"
   BOOL OFF
 )

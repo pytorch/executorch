@@ -8,8 +8,10 @@
 # saving a few kB is less important than showing useful error information to
 # users.
 # keep sorted
+set_overridable_option(BUILD_TESTING OFF)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
