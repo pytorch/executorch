@@ -25,6 +25,9 @@ from torchao.utils import unwrap_tensor_subclass
 
 from .recipe import ExportRecipe
 
+from torch._export.pass_base import PassType
+from executorch.exir.program._program import _transform
+
 
 class Stage(ABC):
     """
@@ -95,9 +98,7 @@ class ExportStage(Stage):
 
     def __init__(
         self,
-        pre_edge_transform_passes: Optional[
-            Callable[[ExportedProgram], ExportedProgram]
-        ] = None,
+        pre_edge_transform_passes: Optional[List[PassType]] = None,
     ) -> None:
         self._exported_program: Dict[str, ExportedProgram] = {}
         self._pre_edge_transform_passes = pre_edge_transform_passes
@@ -153,10 +154,10 @@ class ExportStage(Stage):
                 )
 
                 # Apply pre-edge transform passes if available
-                if self._pre_edge_transform_passes is not None:
-                    for pre_edge_transform_pass in self._pre_edge_transform_passes:
-                        self._exported_program[method_name] = pre_edge_transform_pass(
-                            self._exported_program[method_name]
+                if pre_edge_transform_passes:= self._pre_edge_transform_passes or []:
+                    for pass_ in pre_edge_transform_passes:
+                        self._exported_program[method_name] = _transform(
+                            self._exported_program[method_name], pass_
                         )
 
     def get_artifacts(self) -> Dict[str, ExportedProgram]:
