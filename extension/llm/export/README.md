@@ -23,9 +23,9 @@ The LLM export process transforms a model from its original format to an optimiz
 
 ## Usage
 
-The export API supports two configuration approaches:
+The export API supports a Hydra-style CLI where you can you configure using yaml and also CLI args.
 
-### Option 1: Hydra CLI Arguments
+### Hydra CLI Arguments
 
 Use structured configuration arguments directly on the command line:
 
@@ -41,7 +41,7 @@ python -m extension.llm.export.export_llm \
     quantization.qmode=8da4w
 ```
 
-### Option 2: Configuration File
+### Configuration File
 
 Create a YAML configuration file and reference it:
 
@@ -78,57 +78,25 @@ debug:
   verbose: true
 ```
 
-**Important**: You cannot mix both approaches. Use either CLI arguments OR a config file, not both.
+You can you also still provide additional overrides using the CLI args as well:
+
+```bash
+python -m extension.llm.export.export_llm
+  --config my_config.yaml
+  base.model_class="llama2"
+  +export.max_context_length=1024
+```
+
+Note that if a config file is specified and you want to specify a CLI arg that is not in the config, you need to prepend with a `+`. You can read more about this in the Hydra [docs](https://hydra.cc/docs/advanced/override_grammar/basic/).
+
 
 ## Example Commands
 
-### Export Qwen3 0.6B with XNNPACK backend and quantization
-```bash
-python -m extension.llm.export.export_llm \
-    base.model_class=qwen3_0_6b \
-    base.params=examples/models/qwen3/0_6b_config.json \
-    base.metadata='{"get_bos_id": 151644, "get_eos_ids":[151645]}' \
-    model.use_kv_cache=true \
-    model.use_sdpa_with_kv_cache=true \
-    model.dtype_override=FP32 \
-    export.max_seq_length=512 \
-    export.output_name=qwen3_0_6b.pte \
-    quantization.qmode=8da4w \
-    backend.xnnpack.enabled=true \
-    backend.xnnpack.extended_ops=true \
-    debug.verbose=true
-```
-
-### Export Phi-4-Mini with custom checkpoint
-```bash
-python -m extension.llm.export.export_llm \
-    base.model_class=phi_4_mini \
-    base.checkpoint=/path/to/phi4_checkpoint.pth \
-    base.params=examples/models/phi-4-mini/config.json \
-    base.metadata='{"get_bos_id":151643, "get_eos_ids":[151643]}' \
-    model.use_kv_cache=true \
-    model.use_sdpa_with_kv_cache=true \
-    export.max_seq_length=256 \
-    export.output_name=phi4_mini.pte \
-    backend.xnnpack.enabled=true \
-    debug.verbose=true
-```
-
-### Export with CoreML backend (iOS optimization)
-```bash
-python -m extension.llm.export.export_llm \
-    base.model_class=llama3 \
-    model.use_kv_cache=true \
-    export.max_seq_length=128 \
-    backend.coreml.enabled=true \
-    backend.coreml.compute_units=ALL \
-    quantization.pt2e_quantize=coreml_c4w \
-    debug.verbose=true
-```
+Please refer to the docs for some of our example suported models ([Llama](https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md), [Qwen3](https://github.com/pytorch/executorch/tree/main/examples/models/qwen3/README.md), [Phi-4-mini](https://github.com/pytorch/executorch/tree/main/examples/models/phi_4_mini/README.md)).
 
 ## Configuration Options
 
-For a complete reference of all available configuration options, see the [LlmConfig class definition](../../../examples/models/llama/config/llm_config.py) which documents all supported parameters for base, model, export, quantization, backend, and debug configurations.
+For a complete reference of all available configuration options, see the [LlmConfig class definition](config/llm_config.py) which documents all supported parameters for base, model, export, quantization, backend, and debug configurations.
 
 ## Further Reading
 
