@@ -10,6 +10,7 @@
 
 #import <ExecuTorch/ExecuTorchLog.h>
 #import <executorch/examples/models/llama/runner/runner.h>
+#import <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #import <executorch/examples/models/llava/runner/llava_runner.h>
 
 using executorch::extension::llm::GenerationConfig;
@@ -32,8 +33,17 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = example::create_llama_runner(
-        modelPath.UTF8String, tokenizerPath.UTF8String);
+    // Create and load tokenizer
+    auto special_tokens = example::get_special_tokens(example::Version::Default);
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer =
+        executorch::extension::llm::load_tokenizer(tokenizerPath.UTF8String, std::move(special_tokens));
+
+    if (tokenizer == nullptr) {
+      _runner = nullptr;
+    } else {
+      _runner = executorch::extension::llm::create_text_llm_runner(
+          modelPath.UTF8String, std::move(tokenizer), std::nullopt);
+    }
   }
   return self;
 }
