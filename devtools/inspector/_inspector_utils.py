@@ -784,3 +784,23 @@ def get_aot_debug_handle_to_op_name_mapping(
             )
             debug_handle_to_op_name[key] = node.name
     return debug_handle_to_op_name
+
+
+def find_op_names(
+    target_debug_handle: Tuple[int, ...],
+    debug_handle_to_op_name: Dict[Tuple[int, ...], str],
+) -> List[str]:
+    """
+    Record the operator names only if their debug handles are part of the target debug handle.
+    The debug handles in `debug_handle_to_op_name` have undergone merging and remain unchanged,
+    and this function identifies operations corresponding to these transformed handles.
+    """
+    dh_set = set(target_debug_handle)
+    result = []
+
+    for key_tuple, op_name in debug_handle_to_op_name.items():
+        # Check if key is a subset of the target_debug_handle
+        if set(key_tuple).issubset(dh_set):
+            result.append(op_name)
+
+    return result

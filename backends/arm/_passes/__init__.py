@@ -22,6 +22,7 @@ from .convert_minmax_pass import ConvertMinMaxPass  # noqa
 from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
 from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp import ConvertToClampPass  # noqa
+from .decompose_atan_pass import DecomposeAtanPass  # noqa
 from .decompose_avg_pool2d import DecomposeAvgPool2d  # noqa
 from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
