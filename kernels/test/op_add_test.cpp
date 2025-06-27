@@ -243,7 +243,7 @@ class OpAddOutKernelTest : public OperatorTest {
 
   // The GENERATE_SCALAR_OVERFLOW_TESTS macro used to generate scalar overflow
   // test cases requires a method called expect_bad_scalar_value_dies. However,
-  // for add/sub operations, these checks only apply to the alpha argument.
+  // for add operation, these checks only apply to the alpha argument.
   // We are being explicit about this by naming the above function
   // expect_bad_alpha_value_dies, and creating this wrapper in order to use the
   // macro.
