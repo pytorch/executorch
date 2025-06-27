@@ -46,6 +46,8 @@
 		03D03DA82C7823620088D6A7 /* text_prefiller.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D03DA62C7823620088D6A7 /* text_prefiller.h */; };
 		03D03DAB2C7823830088D6A7 /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */; };
 		03D03DAC2C7823830088D6A7 /* text_decoder_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */; };
+		03D151B82E0E0908007A38BE /* LLaVARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03D151B72E0E0908007A38BE /* LLaVARunner.mm */; };
+		03D151B92E0E0908007A38BE /* LLaVARunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D151B62E0E0908007A38BE /* LLaVARunner.h */; };
 		26A6A4282C8A3769005A761E /* ImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26A6A4272C8A3769005A761E /* ImagePicker.swift */; };
 		306A713D2DC1DC0F00936B1F /* token_decoder.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A713C2DC1DC0F00936B1F /* token_decoder.h */; };
 		306A713E2DC1DC0F00936B1F /* regex.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A71392DC1DC0F00936B1F /* regex.h */; };
@@ -132,6 +134,8 @@
 		03D03DA62C7823620088D6A7 /* text_prefiller.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_prefiller.h; sourceTree = "<group>"; };
 		03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
 		03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_decoder_runner.h; sourceTree = "<group>"; };
+		03D151B62E0E0908007A38BE /* LLaVARunner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LLaVARunner.h; sourceTree = "<group>"; };
+		03D151B72E0E0908007A38BE /* LLaVARunner.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaVARunner.mm; sourceTree = "<group>"; };
 		26A6A4272C8A3769005A761E /* ImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePicker.swift; sourceTree = "<group>"; };
 		306A71352DC1DC0F00936B1F /* hf_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = hf_tokenizer.h; sourceTree = "<group>"; };
 		306A71362DC1DC0F00936B1F /* pcre2_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pcre2_regex.h; sourceTree = "<group>"; };
@@ -245,6 +249,8 @@
 		0324D69B2BAACB7C00DEF36F /* Exported */ = {
 			isa = PBXGroup;
 			children = (
+				03D151B62E0E0908007A38BE /* LLaVARunner.h */,
+				03D151B72E0E0908007A38BE /* LLaVARunner.mm */,
 				0324D6992BAACB7C00DEF36F /* LLaMARunner.h */,
 				0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */,
 			);
@@ -403,6 +409,7 @@
 				306A71422DC1DC0F00936B1F /* pre_tokenizer.h in Headers */,
 				306A71432DC1DC0F00936B1F /* pcre2_regex.h in Headers */,
 				306A71442DC1DC0F00936B1F /* std_regex.h in Headers */,
+				03D151B92E0E0908007A38BE /* LLaVARunner.h in Headers */,
 				03729F122BB2042B00152F2E /* sampler.h in Headers */,
 				03729F0C2BB203B300152F2E /* util.h in Headers */,
 				F292B1012D88B20C00BE6839 /* llama_tiktoken.h in Headers */,
@@ -574,6 +581,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				03D151B82E0E0908007A38BE /* LLaVARunner.mm in Sources */,
 				03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */,
 				0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */,
 				F292B1022D88B20C00BE6839 /* llama_tiktoken.cpp in Sources */,
