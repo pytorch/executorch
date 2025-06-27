@@ -9,33 +9,29 @@
 #import "LLaMARunner.h"
 
 #import <ExecuTorch/ExecuTorchLog.h>
-#import <executorch/extension/llm/runner/text_llm_runner.h>
+#import <ExecuTorchLLM/ExecuTorchLLM.h>
 #import <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
-
-using namespace executorch::extension;
-using namespace executorch::runtime;
-
-NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
 
 @interface LLaMARunner ()<ExecuTorchLogSink>
 @end
 
 @implementation LLaMARunner {
-  std::unique_ptr<llm::TextLLMRunner> _runner;
+  ExecuTorchTextLLMRunner *_runner;
 }
 
-- (instancetype)initWithModelPath:(NSString*)modelPath
-                    tokenizerPath:(NSString*)tokenizerPath {
+- (instancetype)initWithModelPath:(NSString *)modelPath
+                    tokenizerPath:(NSString *)tokenizerPath {
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = llm::create_text_llm_runner(
-      modelPath.UTF8String,
-      llm::load_tokenizer(
-        tokenizerPath.UTF8String,
-        example::get_special_tokens(example::Version::Default)
-      )
-    );
+    auto tokens = example::get_special_tokens(example::Version::Default);
+    NSMutableArray<NSString*> *specialTokens = [[NSMutableArray alloc] initWithCapacity:tokens->size()];
+    for (const auto &token : *tokens) {
+      [specialTokens addObject:(NSString *)@(token.c_str())];
+    }
+    _runner = [[ExecuTorchTextLLMRunner alloc] initWithModelPath:modelPath
+                                                   tokenizerPath:tokenizerPath
+                                                   specialTokens:specialTokens];
   }
   return self;
 }
@@ -45,45 +41,25 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
 }
 
 - (BOOL)isLoaded {
-  return _runner->is_loaded();
+  return [_runner isLoaded];
 }
 
 - (BOOL)loadWithError:(NSError**)error {
-  const auto status = _runner->load();
-  if (status != Error::Ok) {
-    if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
-                                   code:(NSInteger)status
-                               userInfo:nil];
-    }
-    return NO;
-  }
-  return YES;
+  return [_runner loadWithError:error];
 }
 
-- (BOOL)generate:(NSString*)prompt
-       sequenceLength:(NSInteger)seq_len
-    withTokenCallback:(nullable void (^)(NSString*))callback
-                error:(NSError**)error {
-  const auto status = _runner->generate(
-      prompt.UTF8String,
-      llm::GenerationConfig{.seq_len = static_cast<int32_t>(seq_len)},
-      [callback](const std::string& token) {
-        callback(@(token.c_str()));
-      });
-  if (status != Error::Ok) {
-    if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
-                                   code:(NSInteger)status
-                               userInfo:nil];
-    }
-    return NO;
-  }
-  return YES;
+- (BOOL)generate:(NSString *)prompt
+    sequenceLength:(NSInteger)seq_len
+ withTokenCallback:(nullable void (^)(NSString *))callback
+             error:(NSError **)error {
+  return [_runner generate:prompt
+            sequenceLength:seq_len
+         withTokenCallback:callback
+                     error:error];
 }
 
 - (void)stop {
-  _runner->stop();
+  [_runner stop];
 }
 
 #pragma mark - ExecuTorchLogSink
