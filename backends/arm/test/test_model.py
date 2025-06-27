@@ -64,7 +64,7 @@ def get_args():
     parser.add_argument(
         "--timeout",
         required=False,
-        default=60 * 10,
+        default=60 * 20,
         help="Timeout in seconds used when running the model",
     )
     args = parser.parse_args()
@@ -165,11 +165,6 @@ def build_ethosu_runtime(
     extra_flags: str,
     elf_build_path: str,
 ):
-
-    extra_build_flag = ""
-    if extra_flags:
-        extra_build_flag = f"--extra_build_flags={extra_flags}"
-
     run_external_cmd(
         [
             "bash",
@@ -182,7 +177,7 @@ def build_ethosu_runtime(
             "--build_type=Release",
             f"--system_config={system_config}",
             f"--memory_mode={memory_mode}",
-            extra_build_flag,
+            f"--extra_build_flags=-DET_DUMP_OUTPUT=OFF {extra_flags}",
             f"--output={elf_build_path}",
         ]
     )
