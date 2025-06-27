@@ -1,0 +1,22 @@
+base:
+  preq_mode: preq_8da4w_out_8da8w
+  preq_group_size: 32
+  preq_embedding_quantize: 8,0
+  metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+
+model:
+  use_sdpa_with_kv_cache: True
+  use_kv_cache: True
+  dtype_override: fp32
+
+export:
+  max_seq_length: 2048
+  max_context_length: 2048
+
+quantization:
+  use_spin_quant: native
+
+backend:
+  xnnpack:
+    enabled: True
+    extended_ops: True
