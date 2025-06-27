@@ -73,6 +73,8 @@ TIME_SCALE_DICT = {
     TimeScale.CYCLES: 1,
 }
 
+DebugHandle: TypeAlias = Tuple[int, ...]
+
 
 class NodeSource(Enum):
     AOT = 1
@@ -528,7 +530,7 @@ def compare_results(
     return results
 
 
-def merge_overlapping_debug_handles(intermediate_outputs: Dict[Tuple[int, ...], Any]):
+def merge_overlapping_debug_handles(intermediate_outputs: Dict[DebugHandle, Any]):
     """
     Merge overlapping debug handles int a single key
     """
@@ -558,7 +560,7 @@ def merge_overlapping_debug_handles(intermediate_outputs: Dict[Tuple[int, ...], 
 
 
 def _debug_handles_have_overlap(
-    aot_debug_hanlde: Tuple[int, ...], runtime_debug_handle: Tuple[int, ...]
+    aot_debug_hanlde: DebugHandle, runtime_debug_handle: DebugHandle
 ) -> bool:
     """
     Check if the AOT debug handle and the runtime debug handle have any overlap.
@@ -568,7 +570,7 @@ def _debug_handles_have_overlap(
     return len(aot_set.intersection(runtime_set)) > 0
 
 
-def _combine_debug_hanldes(debug_handles: List[Tuple[int, ...]]) -> Tuple[int, ...]:
+def _combine_debug_hanldes(debug_handles: List[DebugHandle]) -> DebugHandle:
     """Combine multiple debug handles into one debug handle"""
     combined_debug_handles_set = set()
     for debug_handle in debug_handles:
@@ -577,8 +579,8 @@ def _combine_debug_hanldes(debug_handles: List[Tuple[int, ...]]) -> Tuple[int, .
 
 
 def _combine_overlapped_intermediate_outputs(
-    nodes: List[Tuple[Tuple[int, ...], Any]]
-) -> Tuple[Tuple[int, ...], Any]:
+    nodes: List[Tuple[DebugHandle, Any]]
+) -> Tuple[DebugHandle, Any]:
     """Combine multiple overlapped intermediate outputs into one with combined debug_handles and last output"""
     debug_handles = [debug_handle for debug_handle, _ in nodes]
     outputs = [output for _, output in nodes]
@@ -588,8 +590,8 @@ def _combine_overlapped_intermediate_outputs(
 
 
 def _create_debug_handle_overlap_graph(
-    aot_intermediate_outputs: Dict[Tuple[int, ...], Any],
-    runtime_intermediate_outputs: Dict[Tuple[int, ...], Any],
+    aot_intermediate_outputs: Dict[DebugHandle, Any],
+    runtime_intermediate_outputs: Dict[DebugHandle, Any],
 ) -> Tuple[List[NodeData], Dict[int, List[int]]]:
     """
     Create a graph representing overlapping debug handles between AOT and runtime outputs.
@@ -659,15 +661,15 @@ def _find_connected_components(
 
 
 def map_runtime_aot_intermediate_outputs(
-    aot_intermediate_outputs: Dict[Tuple[int, ...], Any],
-    runtime_intermediate_outputs: Dict[Tuple[int, ...], Any],
-) -> Dict[Tuple[Tuple[int, ...], Any], Tuple[Tuple[int, ...], Any]]:
+    aot_intermediate_outputs: Dict[DebugHandle, Any],
+    runtime_intermediate_outputs: Dict[DebugHandle, Any],
+) -> Dict[Tuple[DebugHandle, Any], Tuple[DebugHandle, Any]]:
     """
     Map the runtime intermediate outputs to the AOT intermediate outputs
     by finding overlapping debug handles and combining them into a single debug_handle
 
     Returns:
-        Dict[Tuple[Tuple[int, ...], Any], Tuple[Tuple[int, ...], Any]] - Mapping
+        Dict[Tuple[DebugHandle, Any], Tuple[DebugHandle, Any]] - Mapping
         from runtime intermediate output to AOT intermediate output
     """
     # Merge overlapping debug handles
@@ -760,13 +762,13 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
 
 def get_aot_debug_handle_to_op_name_mapping(
     graph_module: torch.fx.GraphModule,
-) -> Dict[Tuple[int, ...], str]:
+) -> Dict[DebugHandle, str]:
     """
     Get a mapping from debug handle to operator name from the ETRecord edge_dialect_program's graph module.
     Parameters:
     graph_module (torch.fx.GraphModule): The graph module to get the mapping from.
     Returns:
-    Dict[Tuple[int, ...], str]: A dictionary mapping debug handles to operator names.
+    Dict[DebugHandle, str]: A dictionary mapping debug handles to operator names.
     """
     node_filters = [
         NodeFilter("debug_handle", "call_function", exclude_ops=["getitem"])
@@ -787,8 +789,8 @@ def get_aot_debug_handle_to_op_name_mapping(
 
 
 def find_op_names(
-    target_debug_handle: Tuple[int, ...],
-    debug_handle_to_op_name: Dict[Tuple[int, ...], str],
+    target_debug_handle: DebugHandle,
+    debug_handle_to_op_name: Dict[DebugHandle, str],
 ) -> List[str]:
     """
     Record the operator names only if their debug handles are part of the target debug handle.
