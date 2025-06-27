@@ -209,7 +209,7 @@ if(ANDROID)
 endif()
 
 add_executable(llama_main ${_srcs})
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   if(APPLE)
     target_link_options(llama_main PRIVATE "LINKER:-dead_strip")
   else()
