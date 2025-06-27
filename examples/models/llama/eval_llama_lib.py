@@ -175,7 +175,7 @@ def gen_eval_wrapper(
     """
     # If llm_config is not provided, convert args to llm_config
     if llm_config is None:
-        from executorch.examples.models.llama.config.llm_config import LlmConfig
+        from executorch.extension.llm.export.config.llm_config import LlmConfig
 
         llm_config = LlmConfig.from_args(args)
 
@@ -306,7 +306,7 @@ def eval_llama(
     args: argparse.ArgumentParser,
 ) -> None:
     # Convert args to LlmConfig
-    from executorch.examples.models.llama.config.llm_config import LlmConfig
+    from executorch.extension.llm.export.config.llm_config import LlmConfig
 
     llm_config = LlmConfig.from_args(args)
 
@@ -340,7 +340,7 @@ def eval_llama_with_attention_sink(model_name: str, args: argparse.ArgumentParse
     This is mostly copied from https://github.com/mit-han-lab/streaming-llm/blob/main/examples/eval_long_ppl.py
     """
     # Convert args to LlmConfig
-    from executorch.examples.models.llama.config.llm_config import LlmConfig
+    from executorch.extension.llm.export.config.llm_config import LlmConfig
 
     llm_config = LlmConfig.from_args(args)
 

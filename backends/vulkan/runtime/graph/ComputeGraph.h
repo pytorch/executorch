@@ -658,6 +658,8 @@ class ComputeGraph final {
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
+  ValueRef set_output_value(const ValueRef idx);
+
   template <typename Block>
   vkapi::BufferBindInfo create_params_buffer(const Block& data) {
     param_ubos_.emplace_back(api::ParamsBuffer(context_.get(), data));

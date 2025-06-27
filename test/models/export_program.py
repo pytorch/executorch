@@ -213,6 +213,55 @@ class ModuleStateful(torch.nn.Module):
         return True
 
 
+# Mimicking LLM with forward taking tokens and input_pos
+class ModuleKVCacheInputPos(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x, input_pos):
+        return (self.linear(x.to(torch.float)).to(torch.long) + input_pos).to(
+            torch.float
+        )
+
+    def get_random_inputs(self):
+        return (
+            torch.randint(100, [1, 3], dtype=torch.long),
+            torch.tensor([0], dtype=torch.long),
+        )
+
+
+# Mimicking LLM with forward taking tokens and cache_positions
+class ModuleKVCacheCachePos(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x, cache_positions):
+        return (self.linear(x.to(torch.float)).to(torch.long) + cache_positions).to(
+            torch.float
+        )
+
+    def get_random_inputs(self):
+        return (
+            torch.randint(100, [1, 3], dtype=torch.long),
+            torch.arange(3, dtype=torch.long),
+        )
+
+
+# Mimicking LLM with forward taking only tokens
+class ModuleNoKVCache(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x):
+        return self.linear(x.to(torch.float))
+
+    def get_random_inputs(self):
+        return (torch.randint(100, [1, 3], dtype=torch.long),)
+
+
 #
 # Main logic.
 #

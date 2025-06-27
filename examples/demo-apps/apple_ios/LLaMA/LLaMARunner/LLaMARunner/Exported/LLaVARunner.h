@@ -10,15 +10,18 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-FOUNDATION_EXPORT NSErrorDomain const LLaMARunnerErrorDomain;
+FOUNDATION_EXPORT NSErrorDomain const LLaVARunnerErrorDomain;
 
-@interface LLaMARunner : NSObject
+@interface LLaVARunner : NSObject
 
 - (instancetype)initWithModelPath:(NSString*)filePath
                     tokenizerPath:(NSString*)tokenizerPath;
 - (BOOL)isLoaded;
 - (BOOL)loadWithError:(NSError**)error;
-- (BOOL)generate:(NSString*)prompt
+- (BOOL)generate:(void*)imageBuffer
+                width:(CGFloat)width
+               height:(CGFloat)height
+               prompt:(NSString*)prompt
        sequenceLength:(NSInteger)seq_len
     withTokenCallback:(nullable void (^)(NSString*))callback
                 error:(NSError**)error;

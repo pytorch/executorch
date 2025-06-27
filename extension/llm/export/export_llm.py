@@ -35,9 +35,9 @@ import sys
 from typing import Any, List, Tuple
 
 import hydra
-
-from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import export_llama
+
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
 

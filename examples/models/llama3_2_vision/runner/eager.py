@@ -8,7 +8,6 @@ import json
 from typing import Optional
 
 import torch
-from executorch.examples.models.llama.config.llm_config import LlmConfig
 
 from executorch.examples.models.llama.export_llama_lib import _prepare_for_llama_export
 from executorch.examples.models.llama.runner.eager import execute_runner
@@ -16,6 +15,7 @@ from executorch.examples.models.llama3_2_vision.runner.generation import (
     TorchTuneLlamaRunner,
 )
 from executorch.extension.llm.export import LLMEdgeManager
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 
 
 class EagerLlamaRunner(TorchTuneLlamaRunner):

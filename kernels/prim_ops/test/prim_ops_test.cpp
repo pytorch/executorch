@@ -308,7 +308,7 @@ TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
   EXPECT_EQ(stack[1]->toInt(), -5l);
 }
 
-TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorDies) {
+TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorFails) {
   testing::TensorFactory<ScalarType::Int> tf;
 
   EValue values[2];
@@ -325,7 +325,8 @@ TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorDies) {
   }
 
   // Try to negate a tensor, which should cause a runtime error.
-  ET_EXPECT_DEATH(getOpsFn("executorch_prim::neg.Scalar")(context_, stack), "");
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, getOpsFn("executorch_prim::neg.Scalar")(context_, stack));
 }
 
 TEST_F(RegisterPrimOpsTest, TestETView) {

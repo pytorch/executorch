@@ -641,7 +641,7 @@ int main(int argc, const char* argv[]) {
           prepared_inputs.error());
     }
   }
-#ifdef DUMP_INPUT
+#if defined(ET_DUMP_INPUT)
   {
     std::vector<EValue> inputs(method->inputs_size());
     ET_LOG(Info, "%zu inputs: ", inputs.size());
@@ -756,7 +756,7 @@ int main(int argc, const char* argv[]) {
   for (int i = 0; i < outputs.size(); ++i) {
     Tensor t = outputs[i].toTensor();
 #if !defined(SEMIHOSTING)
-#if !defined(ET_BUNDLE_IO)
+#if defined(ET_DUMP_OUTPUT)
     // The output might be collected and parsed so printf() is used instead
     // of ET_LOG() here
     for (int j = 0; j < outputs[i].toTensor().numel(); ++j) {

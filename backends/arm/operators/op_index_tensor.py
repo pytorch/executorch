@@ -189,11 +189,16 @@ class IndexTensorVisitor_080(CommonIndexTensorVisitor):
             if i == 0:
                 gather_index_name = reshaped_idxs.name
             else:
+                add_idxs = tosa_graph.addIntermediate(
+                    reshaped_idxs.shape,
+                    reshaped_idxs.dtype,
+                )
                 tosa_graph.addOperator(
                     ts.TosaOp.Op().ADD,
                     [gather_index_name, reshaped_idxs.name],
-                    [gather_index_name],
+                    [add_idxs.name],
                 )
+                gather_index_name = add_idxs.name
 
         gather_vals_shape = [N, K, C]
         reshaped_input = tosa_graph.addIntermediate(gather_vals_shape, values.dtype)
@@ -314,11 +319,16 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
             if i == 0:
                 gather_index_name = reshaped_idxs.name
             else:
+                add_idxs = tosa_graph.addIntermediate(
+                    reshaped_idxs.shape,
+                    reshaped_idxs.dtype,
+                )
                 tosa_graph.addOperator(
                     ts.TosaOp.Op().ADD,
                     [gather_index_name, reshaped_idxs.name],
-                    [gather_index_name],
+                    [add_idxs.name],
                 )
+                gather_index_name = add_idxs.name
 
         gather_vals_shape = [N, K, C]
         reshaped_input = tosa_graph.addIntermediate(gather_vals_shape, values.dtype)

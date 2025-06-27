@@ -24,11 +24,11 @@ using executorch::runtime::testing::TensorFactory;
 // Mock class for TextDecoderRunner
 class MockTextDecoderRunner : public TextDecoderRunner {
  public:
-  MockTextDecoderRunner() : TextDecoderRunner(nullptr, false) {}
+  MockTextDecoderRunner() : TextDecoderRunner(nullptr) {}
   MOCK_METHOD(
       Result<executorch::aten::Tensor>,
       step,
-      (executorch::extension::TensorPtr&, executorch::extension::TensorPtr&),
+      (executorch::extension::TensorPtr&, int64_t),
       ());
   MOCK_METHOD(bool, is_method_loaded, (), ());
   MOCK_METHOD(Result<uint64_t>, prefill, (std::vector<uint64_t>&, int64_t), ());
@@ -44,8 +44,7 @@ class TextPrefillerTest : public Test {
     ON_CALL(text_decoder_runner_, is_method_loaded())
         .WillByDefault(Return(true));
     ON_CALL(text_decoder_runner_, step)
-        .WillByDefault([&](executorch::extension::TensorPtr&,
-                           executorch::extension::TensorPtr&) {
+        .WillByDefault([&](executorch::extension::TensorPtr&, int64_t) {
           return Result<executorch::aten::Tensor>(tensor);
         });
   }

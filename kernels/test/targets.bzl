@@ -50,6 +50,7 @@ def define_common_targets():
             ],
             exported_headers = [
                 "BinaryLogicalOpTest.h",
+                "ScalarOverflowTestMacros.h",
                 "UnaryUfuncRealHBBF16ToFloatHBF16Test.h",
             ],
             visibility = [

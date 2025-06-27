@@ -183,17 +183,10 @@ Tensor& constant_pad_nd_out(
       "Failed to resize output tensor.");
 
   ScalarType in_type = in.scalar_type();
-  ScalarType value_type = utils::get_scalar_dtype(value);
 
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "constant_pad_nd.out", CTYPE, [&]() {
-    CTYPE value_v;
-    ET_SWITCH_SCALAR_OBJ_TYPES(
-        value_type, ctx, "constant_pad_nd.out", CTYPE_VALUE, [&]() {
-          CTYPE_VALUE val = 0;
-          utils::extract_scalar(value, &val);
-          value_v = static_cast<CTYPE>(val);
-        });
-    constant_pad_nd_out_impl<CTYPE>(in, pad, value_v, out);
+    const CTYPE value_casted = utils::scalar_to<CTYPE>(value);
+    constant_pad_nd_out_impl<CTYPE>(in, pad, value_casted, out);
   });
 
   return out;

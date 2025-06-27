@@ -11,7 +11,7 @@ import math
 import typing
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import cast, DefaultDict, Iterable, Optional, Sequence
+from typing import Callable, cast, DefaultDict, Iterable, Optional, Sequence, TypeAlias
 
 import torch
 import torch.fx
@@ -573,23 +573,34 @@ class GenerateSliceAndSelectNopConstraints(PassBase):
         graph_module.recompile()
 
 
+ConstraintsGenPass: TypeAlias = Callable[
+    [MemConstraints],
+    Callable[[torch.fx.GraphModule], Optional[PassResult]],
+]
+
+
 # The class to generate all the constraints that will be passed on to the memory
 # planning algorithm.
 class GenerateMemConstraints:
     def __init__(
         self,
         mem_constraints: MemConstraints,
-        additional_constraint_gen_passes: list | None = None,
+        additional_constraint_gen_passes: Sequence[ConstraintsGenPass] | None = None,
     ) -> None:
-        self.mem_constraints = mem_constraints
-        self.additional_constraint_gen_passes = additional_constraint_gen_passes or []
+        self.mem_constraints: MemConstraints = mem_constraints
+        self.additional_constraint_gen_passes: Sequence[ConstraintsGenPass] = (
+            additional_constraint_gen_passes or []
+        )
 
     def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        constraint_gen_passes: list = [
-            GenerateMemoryViewConstraints,
-            GenerateSliceAndSelectNopConstraints,
-            GenerateCatNopConstraints,
-        ] + self.additional_constraint_gen_passes
+        constraint_gen_passes: Sequence[ConstraintsGenPass] = cast(
+            list[ConstraintsGenPass],
+            [
+                GenerateMemoryViewConstraints,
+                GenerateSliceAndSelectNopConstraints,
+                GenerateCatNopConstraints,
+            ],
+        ) + list(self.additional_constraint_gen_passes)
         # Create a filter using the opt level in mem_constraints, and filter
         # the relevant passes.
         pass_filter = create_cadence_pass_filter(self.mem_constraints.opt_level)
@@ -602,6 +613,7 @@ class GenerateMemConstraints:
                         typing.Callable[[torch.fx.GraphModule], Optional[PassResult]],
                     ]
                 ],
+                # pyre-ignore[6]: Incompatible parameter type.
                 list(filter(pass_filter, constraint_gen_passes)),
             )
         ]

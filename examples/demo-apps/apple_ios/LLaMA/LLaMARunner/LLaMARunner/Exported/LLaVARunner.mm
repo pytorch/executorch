@@ -6,22 +6,21 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "LLaMARunner.h"
+#import "LLaVARunner.h"
 
 #import <ExecuTorch/ExecuTorchLog.h>
-#import <executorch/extension/llm/runner/text_llm_runner.h>
-#import <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
+#import <executorch/examples/models/llava/runner/llava_runner.h>
 
-using namespace executorch::extension;
-using namespace executorch::runtime;
+using executorch::extension::llm::Image;
+using executorch::runtime::Error;
 
-NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
+NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 
-@interface LLaMARunner ()<ExecuTorchLogSink>
+@interface LLaVARunner ()<ExecuTorchLogSink>
 @end
 
-@implementation LLaMARunner {
-  std::unique_ptr<llm::TextLLMRunner> _runner;
+@implementation LLaVARunner {
+  std::unique_ptr<example::LlavaRunner> _runner;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
@@ -29,13 +28,8 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = llm::create_text_llm_runner(
-      modelPath.UTF8String,
-      llm::load_tokenizer(
-        tokenizerPath.UTF8String,
-        example::get_special_tokens(example::Version::Default)
-      )
-    );
+    _runner = std::make_unique<example::LlavaRunner>(
+        modelPath.UTF8String, tokenizerPath.UTF8String);
   }
   return self;
 }
@@ -52,7 +46,7 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
   const auto status = _runner->load();
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
+      *error = [NSError errorWithDomain:LLaVARunnerErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
     }
@@ -61,23 +55,31 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
   return YES;
 }
 
-- (BOOL)generate:(NSString*)prompt
+- (BOOL)generate:(void*)imageBuffer
+                width:(CGFloat)width
+               height:(CGFloat)height
+               prompt:(NSString*)prompt
        sequenceLength:(NSInteger)seq_len
     withTokenCallback:(nullable void (^)(NSString*))callback
                 error:(NSError**)error {
+  const auto* data = static_cast<uint8_t*>(imageBuffer);
   const auto status = _runner->generate(
+      {Image{
+          std::vector<uint8_t>(
+              data, data + (int32_t)width * (int32_t)height * 3),
+          (int32_t)width,
+          (int32_t)height,
+          3}},
       prompt.UTF8String,
-      llm::GenerationConfig{.seq_len = static_cast<int32_t>(seq_len)},
-      [callback](const std::string& token) {
-        callback(@(token.c_str()));
-      });
+      seq_len,
+      [callback](const std::string& token) { callback(@(token.c_str())); });
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
+      *error = [NSError errorWithDomain:LLaVARunnerErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
+      return NO;
     }
-    return NO;
   }
   return YES;
 }
@@ -99,16 +101,15 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
   NSUInteger seconds = totalSeconds % 60;
   NSUInteger microseconds = (timestamp - totalSeconds) * 1000000;
   NSLog(
-    @"%c %02lu:%02lu:%02lu.%06lu executorch:%s:%zu] %s",
-    (char)level,
-    hours,
-    minutes,
-    seconds,
-    microseconds,
-    filename.UTF8String,
-    line,
-    message.UTF8String
-  );
+      @"%c %02lu:%02lu:%02lu.%06lu executorch:%s:%zu] %s",
+      (char)level,
+      hours,
+      minutes,
+      seconds,
+      microseconds,
+      filename.UTF8String,
+      line,
+      message.UTF8String);
 }
 
 @end

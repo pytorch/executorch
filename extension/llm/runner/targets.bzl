@@ -34,6 +34,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 ":stats",
+                "//executorch/kernels/portable/cpu/util:arange_util" + aten_suffix,
                 "//executorch/extension/llm/sampler:sampler" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/extension/tensor:tensor" + aten_suffix,

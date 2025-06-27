@@ -393,8 +393,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 
   // Create text_decoder_runner. Use a shared_ptr so that it can be shared with
   // TextPrefiller and TextTokenGenerator
-  auto text_decoder_runner = std::make_unique<TextDecoderRunner>(
-      module.get(), metadata.at(kUseKVCache));
+  auto text_decoder_runner = std::make_unique<TextDecoderRunner>(module.get());
 
   // Create text_prefiller
   auto text_prefiller = std::make_unique<TextPrefiller>(
