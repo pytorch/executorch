@@ -244,6 +244,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.gelu.default,
             exir_ops.edge.aten.alias_copy.default,
             exir_ops.edge.aten.sinh.default,
+            exir_ops.edge.aten.atan.default,
         ]
 
         return supported
