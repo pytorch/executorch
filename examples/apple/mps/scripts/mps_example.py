@@ -19,8 +19,6 @@ from executorch.devtools.bundled_program.config import MethodTestCase, MethodTes
 from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-
-from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -30,6 +28,8 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 
 from ....models import MODEL_NAME_TO_MODEL
 from ....models.model_factory import EagerModelFactory
