@@ -341,10 +341,11 @@ jobs:
               echo "tokenizer.json is downloaded to $DOWNLOADED_PATH"
 
               # Install optimum-executorch
+              OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
               git clone https://github.com/huggingface/optimum-executorch
               pushd optimum-executorch
               # There is no release yet, for CI stability, always test from the same commit on main
-              git checkout 4c3b18f6cca68c5ccff809131d570062723d7188
+              git checkout $OPTIMUM_ET_COMMIT
               python install_dev.py --skip_override_torch
               pip list
 
@@ -353,20 +354,11 @@ jobs:
                 "--task" "text-generation"
                 "--recipe" "xnnpack"
                 "--use_custom_sdpa"
+                "--use_custom_kv_cache"
                 "--qlinear"
                 "--qembedding"
                 "--output_dir" ".."
               )
-
-              # Add conditional arguments based on model
-              case "${HF_MODEL_REPO}" in
-                *"google/gemma-3-1b-it"*)
-                  echo "--use_custom_kv_cache can not be used for HybridCache"
-                  ;;
-                *)
-                  ARGS+=("--use_custom_kv_cache")
-                  ;;
-              esac
 
               optimum-cli export executorch "${ARGS[@]}"
               popd
