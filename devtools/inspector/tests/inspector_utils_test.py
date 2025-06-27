@@ -32,6 +32,7 @@ from executorch.devtools.inspector._inspector_utils import (
     convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
+    find_op_names,
     find_populated_event,
     gen_graphs_from_etrecord,
     get_aot_debug_handle_to_op_name_mapping,
@@ -471,6 +472,23 @@ class TestInspectorUtils(unittest.TestCase):
         mock_node_op_type_mismatch.meta["debug_handle"] = (1, 2)
         # Test that the filter doesn't match the mock node (op_type mismatch)
         self.assertFalse(node_filter.matches(mock_node_op_type_mismatch))
+
+    def test_find_op_names_empty_debug_handle(self):
+        debug_handle = ()
+        debug_handle_to_op_name = {(1, 2): "op1", (3, 4): "op2"}
+        self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
+
+    def test_find_op_names_no_matching_handles(self):
+        debug_handle = (1, 2)
+        debug_handle_to_op_name = {(3, 4): "op1", (5, 6): "op2"}
+        self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
+
+    def test_find_op_names_matching_handles(self):
+        debug_handle = (1, 2, 3)
+        debug_handle_to_op_name = {(1, 2): "op1", (2, 3): "op2", (4, 5, 6): "op3"}
+        self.assertEqual(
+            find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2"]
+        )
 
 
 def gen_mock_operator_graph_with_expected_map() -> (
