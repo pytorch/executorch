@@ -155,7 +155,7 @@ endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
+  set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   if(TARGET kleidiai)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
@@ -220,7 +220,6 @@ endif()
 target_include_directories(
   llama_main
   PUBLIC ${_common_include_directories}
-         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})

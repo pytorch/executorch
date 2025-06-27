@@ -60,7 +60,7 @@ using namespace ::executorch::runtime;
 + (NSDictionary<NSString *, BOOL (^)(NSString *)> *)predicates {
   return @{
     @"model" : ^BOOL(NSString *filename){
-      return [filename hasSuffix:@".pte"] && [filename.lowercaseString containsString:@"llama"];
+      return [filename hasSuffix:@".pte"] && [filename.lowercaseString containsString:@"llm"];
     },
     @"tokenizer" : ^BOOL(NSString *filename) {
       return [filename isEqual:@"tokenizer.bin"] || [filename isEqual:@"tokenizer.model"] || [filename isEqual:@"tokenizer.json"];
@@ -74,7 +74,7 @@ using namespace ::executorch::runtime;
   NSString *tokenizerPath = resources[@"tokenizer"];
   return @{
     @"generate" : ^(XCTestCase *testCase){
-      auto __block runner = example::Runner::create(
+      auto __block runner = example::create_llama_runner(
           modelPath.UTF8String, tokenizerPath.UTF8String);
       if (!runner) {
         XCTFail("Failed to create runner");

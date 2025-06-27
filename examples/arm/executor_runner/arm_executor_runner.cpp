@@ -145,23 +145,15 @@ const size_t temp_allocation_pool_size =
 unsigned char __attribute__((
     section(".bss.tensor_arena"),
     aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
-
-namespace executorch {
-namespace backends {
-namespace arm {
 #if defined(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+extern "C" {
 size_t ethosu_fast_scratch_size =
     ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((section(".bss.ethosu_scratch"), aligned(16)))
 dedicated_sram[ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE];
 unsigned char* ethosu_fast_scratch = dedicated_sram;
-#else
-size_t ethosu_fast_scratch_size = 0;
-unsigned char* ethosu_fast_scratch = nullptr;
+}
 #endif
-} // namespace arm
-} // namespace backends
-} // namespace executorch
 
 void et_pal_init(void) {
   // Enable ARM PMU Clock
@@ -209,7 +201,13 @@ void et_pal_emit_log_message(
     const char* message,
     ET_UNUSED size_t length) {
   fprintf(
-      stderr, "%c [executorch:%s:%zu] %s\n", level, filename, line, message);
+      stderr,
+      "%c [executorch:%s:%zu %s()] %s\n",
+      level,
+      filename,
+      line,
+      function,
+      message);
 }
 
 /**
@@ -651,29 +649,41 @@ int main(int argc, const char* argv[]) {
     ET_CHECK(status == Error::Ok);
 
     for (int i = 0; i < inputs.size(); ++i) {
-      Tensor t = inputs[i].toTensor();
-      // The output might be collected and parsed so printf() is used instead
-      // of ET_LOG() here
-      for (int j = 0; j < inputs[i].toTensor().numel(); ++j) {
-        if (t.scalar_type() == ScalarType::Int) {
-          printf(
-              "Input[%d][%d]: (int) %d\n",
-              i,
-              j,
-              inputs[i].toTensor().const_data_ptr<int>()[j]);
-        } else if (t.scalar_type() == ScalarType::Float) {
-          printf(
-              "Input[%d][%d]: (float) %f\n",
-              i,
-              j,
-              inputs[i].toTensor().const_data_ptr<float>()[j]);
-        } else if (t.scalar_type() == ScalarType::Char) {
-          printf(
-              "Input[%d][%d]: (char) %d\n",
-              i,
-              j,
-              inputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+      if (inputs[i].isTensor()) {
+        Tensor t = inputs[i].toTensor();
+        // The output might be collected and parsed so printf() is used instead
+        // of ET_LOG() here
+        for (int j = 0; j < inputs[i].toTensor().numel(); ++j) {
+          if (t.scalar_type() == ScalarType::Int) {
+            printf(
+                "Input[%d][%d]: (int) %d\n",
+                i,
+                j,
+                inputs[i].toTensor().const_data_ptr<int>()[j]);
+          } else if (t.scalar_type() == ScalarType::Float) {
+            printf(
+                "Input[%d][%d]: (float) %f\n",
+                i,
+                j,
+                inputs[i].toTensor().const_data_ptr<float>()[j]);
+          } else if (t.scalar_type() == ScalarType::Char) {
+            printf(
+                "Input[%d][%d]: (char) %d\n",
+                i,
+                j,
+                inputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+          } else if (t.scalar_type() == ScalarType::Bool) {
+            printf(
+                "Input[%d][%d]: (bool) %s (0x%x)\n",
+                i,
+                j,
+                inputs[i].toTensor().const_data_ptr<int8_t>()[j] ? "true"
+                                                                 : "false",
+                inputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+          }
         }
+      } else {
+        printf("Input[%d]: Not Tensor\n", i);
       }
     }
   }
@@ -767,6 +777,14 @@ int main(int argc, const char* argv[]) {
             "Output[%d][%d]: (char) %d\n",
             i,
             j,
+            outputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+      } else if (t.scalar_type() == ScalarType::Bool) {
+        printf(
+            "Output[%d][%d]: (bool) %s (0x%x)\n",
+            i,
+            j,
+            outputs[i].toTensor().const_data_ptr<int8_t>()[j] ? "true "
+                                                              : "false",
             outputs[i].toTensor().const_data_ptr<int8_t>()[j]);
       }
     }

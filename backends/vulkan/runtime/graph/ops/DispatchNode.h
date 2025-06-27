@@ -40,6 +40,8 @@ class DispatchNode : public ExecuteNode {
 
   ~DispatchNode() override = default;
 
+  void prepare_pipelines(ComputeGraph* graph) override;
+
   void encode(ComputeGraph* graph) override;
 
  protected:

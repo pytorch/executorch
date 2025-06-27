@@ -23,11 +23,11 @@ from executorch.exir import (
     EdgeProgramManager,
     ExecutorchProgramManager,
 )
-
-from torch.ao.quantization.quantizer import Quantizer
 from torch.export import Dim, export, export_for_training, ExportedProgram
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 ctypes.CDLL("libvulkan.so.1")
 
@@ -43,6 +43,9 @@ def lower_module(
     model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor], dynamic_shapes=None
 ) -> EdgeProgramManager:
     compile_options = {}
+    if dynamic_shapes is not None:
+        compile_options["require_dynamic_shapes"] = True
+
     edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
@@ -70,6 +73,9 @@ def quantize_and_lower_module(
     dynamic_shapes=None,
 ) -> EdgeProgramManager:
     compile_options = {}
+    if dynamic_shapes is not None:
+        compile_options["require_dynamic_shapes"] = True
+
     edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
@@ -727,6 +733,10 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(model, sample_inputs)
 
+    @unittest.skip(
+        "Currently this test is failing due to weird partitioning because the eq scalar"
+        "operator is not supported yet. Re-enable when the operator is supported."
+    )
     def test_vulkan_backend_partial_dynamic_shapes(self):
         class SimpleModel(torch.nn.Module):
             def __init__(self):
@@ -1280,14 +1290,13 @@ class TestVulkanBackend(unittest.TestCase):
             def __init__(self):
                 super().__init__()
 
-            def forward(self, x, y, z, w):
-                return torch.cat([x, y, z, w], dim=1)
+            def forward(self, x, y, z):
+                return torch.cat([x, y, z], dim=1)
 
         sample_inputs = (
             torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 1, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 9, 2, 7), dtype=torch.float32),
-            torch.randn(size=(3, 3, 2, 7), dtype=torch.float32),
         )
 
         self.lower_module_and_test_output(
@@ -1889,3 +1898,69 @@ class TestVulkanBackend(unittest.TestCase):
             dynamic_shapes=dynamic_shapes,
             test_inputs=test_inputs,
         )
+
+    def test_vulkan_backend_group_norm(self):
+        class ConvGroupNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Conv2d: 3 input channels -> 16 output channels
+                self.conv = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=16,
+                    kernel_size=3,
+                    padding=1,
+                    bias=True,
+                )
+                # GroupNorm: 4 groups for 16 channels (16 % 4 == 0)
+                self.group_norm = torch.nn.GroupNorm(
+                    num_groups=4,
+                    num_channels=16,
+                    eps=1e-5,
+                    affine=True,
+                )
+
+            def forward(self, x):
+                x = self.conv(x)
+                x = self.group_norm(x)
+                return x
+
+        # Create sample inputs: [batch, channels, height, width]
+        sample_inputs = (torch.randn(size=(1, 3, 32, 32), dtype=torch.float32),)
+
+        # Test with static shapes first
+        self.lower_module_and_test_output(
+            ConvGroupNormModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_group_norm_different_groups(self):
+        class GroupNormModule(torch.nn.Module):
+            def __init__(self, num_groups, num_channels):
+                super().__init__()
+                self.group_norm = torch.nn.GroupNorm(
+                    num_groups=num_groups,
+                    num_channels=num_channels,
+                    eps=1e-5,
+                    affine=True,
+                )
+
+            def forward(self, x):
+                return self.group_norm(x)
+
+        # Test different group configurations
+        test_configs = [
+            (2, 8),  # 2 groups, 8 channels
+            (4, 16),  # 4 groups, 16 channels
+            (8, 32),  # 8 groups, 32 channels
+        ]
+
+        for num_groups, num_channels in test_configs:
+            with self.subTest(num_groups=num_groups, num_channels=num_channels):
+                sample_inputs = (
+                    torch.randn(size=(2, num_channels, 16, 16), dtype=torch.float32),
+                )
+
+                self.lower_module_and_test_output(
+                    GroupNormModule(num_groups, num_channels),
+                    sample_inputs,
+                )

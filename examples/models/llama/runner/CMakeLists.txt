@@ -52,23 +52,20 @@ else()
   add_library(llama_runner SHARED ${_llama_runner__srcs})
 endif()
 
+# For extension_llm_runner
+if(NOT TARGET extension_llm_runner)
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/extension/llm/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/../../../../extension/llm/runner
+  )
+endif()
+
 set(llama_runner_deps executorch_core extension_data_loader extension_module
-                      extension_tensor extension_flat_tensor
+                      extension_tensor extension_flat_tensor extension_llm_runner
 )
 
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
 
-target_include_directories(
-  llama_runner
-  INTERFACE ${_common_include_directories}
-)
-
-# Include tokenizers dependency
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-add_subdirectory(
-  ${EXECUTORCH_ROOT}/extension/llm/tokenizers
-  ${CMAKE_CURRENT_BINARY_DIR}/tokenizers
-)
 target_link_libraries(
   llama_runner PUBLIC tokenizers
 )

@@ -75,12 +75,27 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 announce_configured_options(PYTHON_EXECUTABLE)
 
+if(NOT BUCK2)
+  resolve_buck2()
+endif()
+announce_configured_options(BUCK2)
+
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
-announce_configured_options(BUCK2)
 
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
+
+# Enable ccache if available
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  message(STATUS "ccache found and enabled for faster builds")
+else()
+  message(STATUS "ccache not found, builds will not be cached")
+endif()
+announce_configured_options(CCACHE_PROGRAM)
 
 # Print all the configs that were called with announce_configured_options.
 print_configured_options()
@@ -148,36 +163,10 @@ else()
 endif()
 
 if(EXECUTORCH_BUILD_TESTS)
-  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
   include(CTest)
 endif()
 
 add_subdirectory(third-party)
-
-if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
-  set(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
-  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_MODULE)
-  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
-endif()
-
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
-  set(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
-  set(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
-endif()
-
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  set(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
-endif()
 
 if(NOT DEFINED FXDIV_SOURCE_DIR)
   set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
@@ -290,9 +279,6 @@ set(_common_include_directories
 #
 
 if(NOT EXECUTORCH_SRCS_FILE)
-  # Find or download buck2 binary.
-  resolve_buck2()
-
   # A file wasn't provided. Run a script to extract the source lists from the
   # buck2 build system and write them to a file we can include.
   #
@@ -335,7 +321,7 @@ if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
            " -fprofile-instr-generate -fcoverage-mapping"
     )
   else()
-    message(ERROR
+    message(FATAL_ERROR
             "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
     )
   endif()
@@ -455,14 +441,6 @@ endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 
-#
-# gflags: Commandline flag host library.
-#
-
-if(EXECUTORCH_BUILD_GFLAGS)
-  add_subdirectory(third-party/gflags)
-endif()
-
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(
@@ -547,17 +525,6 @@ if(EXECUTORCH_BUILD_CORTEX_M)
 endif()
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
-  if(NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
-    set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
-        ON
-        CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
-    )
-  else()
-    set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
-        OFF
-        CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
-    )
-  endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
 endif()
 
@@ -598,6 +565,10 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
+
+  # Add codegen tools subdirectory for selective_build pybind module
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
+
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
@@ -646,9 +617,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK and microkernels-prod here otherwise
+    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here otherwise
     # uses XNNPACK and microkernel-prod symbols from libtorch_cpu
-    list(APPEND _dep_libs xnnpack_backend XNNPACK microkernels-prod)
+    list(APPEND _dep_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   endif()
 
   # compile options for pybind

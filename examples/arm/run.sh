@@ -33,6 +33,7 @@ build_type="Release"
 extra_build_flags=""
 build_only=false
 system_config=""
+config=""
 memory_mode=""
 et_build_root="${et_root_dir}/arm_test"
 ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
@@ -57,6 +58,7 @@ function help() {
     echo "  --build_only                           Only build, don't run FVP"
     echo "  --system_config=<CONFIG>               System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                            NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
+    echo "  --config=<FILEPATH>                    System configuration file that specifies system configurations (vela.ini)"
     echo "  --memory_mode=<MODE>                   Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
@@ -80,6 +82,7 @@ for arg in "$@"; do
       --extra_build_flags=*) extra_build_flags="${arg#*=}";;
       --build_only) build_only=true ;;
       --system_config=*) system_config="${arg#*=}";;
+      --config=*) config="${arg#*=}";;
       --memory_mode=*) memory_mode="${arg#*=}";;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
@@ -110,8 +113,13 @@ then
     memory_mode="Shared_Sram"
     if [[ ${target} =~ "ethos-u85" ]]
     then
-        memory_mode="Sram_Only"
+        memory_mode="Dedicated_Sram_384KB"
     fi
+fi
+
+if [[ ${config} == "" ]]
+then
+    config="Arm/vela.ini"
 fi
 
 function check_setup () {
@@ -242,7 +250,7 @@ for i in "${!test_model[@]}"; do
         model_compiler_flags="${model_compiler_flags} --model_input=${model_input}"
     fi
 
-    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag"
+    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag --config=${config}"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 

@@ -66,8 +66,8 @@ def get_passes_dependency_for_capture_program():
         AnnotateUnbind,
         ConvertBmmToMatmul,
         ConvertConv1dToConv2d,
-        ConvertUpsampleBicubicWithBilinear,
         DecomposeAny,
+        DecomposeColIm,
         DecomposeLinalgVectorNorm,
         ExpandBroadcastTensorShape,
         FixedLinearKeepDim,
@@ -77,28 +77,26 @@ def get_passes_dependency_for_capture_program():
         RecomposePixelUnshuffle,
         RecomposeRmsNorm,
         RemoveRedundancy,
-        ReplaceIndexPutInput,
         TagQuantIO,
     )
 
     return {
         AnnotateAdaptiveAvgPool1D: [RemoveRedundancy],
         AnnotateQuantAttrs: [
-            RecomposePixelUnshuffle,
             ConvertBmmToMatmul,
-            ConvertUpsampleBicubicWithBilinear,
+            RecomposePixelUnshuffle,
             RemoveRedundancy,
         ],
         AnnotateStack: [RemoveRedundancy],
         AnnotateUnbind: [RemoveRedundancy],
         ConvertBmmToMatmul: [RecomposePixelUnshuffle],
-        ConvertUpsampleBicubicWithBilinear: [RemoveRedundancy],
         DecomposeAny: [RemoveRedundancy],
+        DecomposeColIm: [FoldQDQ],
         DecomposeLinalgVectorNorm: [RemoveRedundancy],
         ExpandBroadcastTensorShape: [FoldQDQ],
         FixedLinearKeepDim: [FoldQDQ],
         FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
-        I64toI32: [ConvertUpsampleBicubicWithBilinear, RemoveRedundancy],
+        I64toI32: [RemoveRedundancy],
         LayoutTransform: [
             AnnotateQuantAttrs,
             ConvertConv1dToConv2d,
@@ -107,8 +105,7 @@ def get_passes_dependency_for_capture_program():
         ],
         RecomposePixelUnshuffle: [RemoveRedundancy],
         RecomposeRmsNorm: [RemoveRedundancy],
-        ReplaceIndexPutInput: [LayoutTransform],
-        TagQuantIO: [ReplaceIndexPutInput],
+        TagQuantIO: [LayoutTransform],
     }
 
 

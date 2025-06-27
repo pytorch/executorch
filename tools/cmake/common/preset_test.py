@@ -319,3 +319,185 @@ class TestPreset(CMakeTestCase):
         )
         self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='from the cli'"])
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "from the cli", "STRING")
+
+    def test_check_required_options_on_if_on_off(self):
+        """Test that when IF_ON is OFF, no checks are performed."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            
+            set(FEATURE_FLAG OFF)
+            set(REQUIRED_OPTION1 OFF)
+            set(REQUIRED_OPTION2 OFF)
+            
+            check_required_options_on(
+                IF_ON 
+                    FEATURE_FLAG
+                REQUIRES 
+                    REQUIRED_OPTION1 
+                    REQUIRED_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()  # Should succeed
+
+    def test_check_required_options_on_all_required_on(self):
+        """Test that when IF_ON is ON and all required options are ON, no error occurs."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            
+            set(FEATURE_FLAG ON)
+            set(REQUIRED_OPTION1 ON)
+            set(REQUIRED_OPTION2 ON)
+            
+            check_required_options_on(
+                IF_ON 
+                    FEATURE_FLAG
+                REQUIRES 
+                    REQUIRED_OPTION1 
+                    REQUIRED_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()
+
+    def test_check_required_options_on_one_required_off(self):
+        """Test that when IF_ON is ON but one required option is OFF, a fatal error occurs."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            
+            set(FEATURE_FLAG ON)
+            set(REQUIRED_OPTION1 ON)
+            set(REQUIRED_OPTION2 OFF)
+            
+            check_required_options_on(
+                IF_ON 
+                    FEATURE_FLAG
+                REQUIRES 
+                    REQUIRED_OPTION1 
+                    REQUIRED_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake(
+            error_contains="Use of 'FEATURE_FLAG' requires 'REQUIRED_OPTION2'"
+        )
+
+    def test_check_required_options_on_multiple_required_off(self):
+        """Test that when IF_ON is ON but multiple required options are OFF, a fatal error occurs for the first one."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            
+            set(FEATURE_FLAG ON)
+            set(REQUIRED_OPTION1 OFF)
+            set(REQUIRED_OPTION2 OFF)
+            
+            # This should cause a fatal error
+            check_required_options_on(
+                IF_ON 
+                    FEATURE_FLAG
+                REQUIRES 
+                    REQUIRED_OPTION1 
+                    REQUIRED_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake(
+            error_contains="Use of 'FEATURE_FLAG' requires 'REQUIRED_OPTION1'"
+        )
+
+    def test_check_conflicting_options_on_if_on_off(self):
+        """Test that when IF_ON is OFF, no conflict checks are performed."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set(FEATURE_FLAG OFF)
+            set(CONFLICTING_OPTION1 ON)
+            set(CONFLICTING_OPTION2 ON)
+            check_conflicting_options_on(
+                IF_ON
+                    FEATURE_FLAG
+                CONFLICTS_WITH
+                    CONFLICTING_OPTION1
+                    CONFLICTING_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()
+
+    def test_check_conflicting_options_on_no_conflicts(self):
+        """Test that when IF_ON is ON but no conflicting options are ON, no error occurs."""
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set(FEATURE_FLAG ON)
+            set(CONFLICTING_OPTION1 OFF)
+            set(CONFLICTING_OPTION2 OFF)
+            check_conflicting_options_on(
+                IF_ON
+                    FEATURE_FLAG
+                CONFLICTS_WITH
+                    CONFLICTING_OPTION1
+                    CONFLICTING_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()
+
+    def test_check_conflicting_options_on_one_conflict(self):
+        """Test that when IF_ON is ON and one conflicting option is also ON, a fatal error occurs."""
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set(FEATURE_FLAG ON)
+            set(CONFLICTING_OPTION1 ON)
+            set(CONFLICTING_OPTION2 OFF)
+            check_conflicting_options_on(
+                IF_ON
+                    FEATURE_FLAG
+                CONFLICTS_WITH
+                    CONFLICTING_OPTION1
+                    CONFLICTING_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake(
+            error_contains="Both 'FEATURE_FLAG' and 'CONFLICTING_OPTION1' can't be ON"
+        )
+
+    def test_check_conflicting_options_on_multiple_conflicts(self):
+        """Test that when IF_ON is ON and multiple conflicting options are ON, a fatal error occurs for the first conflict."""
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set(FEATURE_FLAG ON)
+            set(CONFLICTING_OPTION1 ON)
+            set(CONFLICTING_OPTION2 ON)
+            check_conflicting_options_on(
+                IF_ON
+                    FEATURE_FLAG
+                CONFLICTS_WITH
+                    CONFLICTING_OPTION1
+                    CONFLICTING_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake(
+            error_contains="Both 'FEATURE_FLAG' and 'CONFLICTING_OPTION1' can't be ON"
+        )

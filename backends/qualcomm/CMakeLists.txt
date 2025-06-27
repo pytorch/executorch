@@ -130,6 +130,7 @@ add_library(qnn_implementation STATIC)
 add_library(qnn_logger STATIC)
 add_library(qnn_manager STATIC)
 add_library(qnn_mem_manager STATIC)
+add_library(qnn_op_package_manager STATIC)
 add_library(qnn_profiler STATIC)
 add_library(qnn_schema INTERFACE ${_qnn_schema__outputs})
 add_library(qnn_sys_function_interface INTERFACE)
@@ -152,7 +153,7 @@ target_link_libraries(
 target_link_libraries(qnn_executorch_logging PRIVATE qnn_schema)
 target_link_libraries(qnn_profiler PRIVATE qnn_executorch_logging)
 target_link_libraries(qnn_logger PRIVATE qnn_implementation ${android_log})
-target_link_libraries(qnn_backend PRIVATE qnn_implementation qnn_logger)
+target_link_libraries(qnn_backend PRIVATE qnn_implementation qnn_logger qnn_op_package_manager)
 target_link_libraries(qnn_custom_protocol PRIVATE qnn_logger)
 target_link_libraries(
   qnn_device PRIVATE qnn_executorch_logging qnn_implementation qnn_logger
@@ -252,7 +253,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
 
   pybind11_extension(PyQnnManagerAdaptor)
   pybind11_extension(PyQnnWrapperAdaptor)
-  if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES Debug|RelWithDebInfo)
+  if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES RelWithDebInfo)
     # Strip unnecessary sections of the binary
     pybind11_strip(PyQnnManagerAdaptor)
     pybind11_strip(PyQnnWrapperAdaptor)

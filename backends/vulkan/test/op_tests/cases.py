@@ -52,13 +52,17 @@ def get_binary_elementwise_inputs():
             ((S, S1, S2), (S, S1, 1), 2.0),
             ((S, S1, S2), (S, 1, S2), 2.0),
             ((XS, S, S1, S2), (XS, S, 1, 1), 2.0),
+            ((3, 64, 1), (1, 64, 1)),
         ]
     )
     test_suite.layouts = [
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
-    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
     return test_suite
 
 
@@ -255,7 +259,7 @@ def get_conv_inputs():
         [9, 0],
         1,
     )
-    test_cases = []
+
     test_cases = [
         Test(
             self=(1, 6, 40, 50),
@@ -277,28 +281,6 @@ def get_conv_inputs():
             dilation=[1, 1],
             transposed=True,
             output_padding=[0, 1],
-            groups=1,
-        ),
-        Test(
-            self=(1, 8, 72, 96),
-            weight=(8, 1, 3, 3),
-            bias=(8,),
-            stride=[1, 1],
-            padding=[1, 1],
-            dilation=[1, 1],
-            transposed=False,
-            output_padding=[0, 0],
-            groups=8,
-        ),
-        Test(
-            self=(1, 8, 72, 96),
-            weight=(8, 8, 1, 1),
-            bias=(8,),
-            stride=[1, 1],
-            padding=[1, 1],
-            dilation=[1, 1],
-            transposed=False,
-            output_padding=[0, 0],
             groups=1,
         ),
         Test(
@@ -357,6 +339,141 @@ def get_conv_inputs():
             groups=5,
         ),
         Test(
+            self=(1, 8, 90, 77),
+            weight=(1, 8, 3, 3),
+            bias=(1,),
+            stride=[1, 1],
+            padding=[2, 2],
+            dilation=[2, 2],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+    ]
+
+    test_cases_pw = [
+        Test(
+            self=(1, 16, 3, 5),
+            weight=(4, 16, 1, 1),
+            bias=(4,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 5, 3, 5),
+            weight=(4, 5, 1, 1),
+            bias=(4,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 5, 3, 5),
+            weight=(3, 5, 1, 1),
+            bias=(3,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 5, 3, 5),
+            weight=(3, 5, 1, 1),
+            bias=(3,),
+            stride=[1, 1],
+            padding=[1, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 5, 3, 5),
+            weight=(3, 5, 1, 1),
+            bias=(3,),
+            stride=[1, 1],
+            padding=[0, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 5, 3, 5),
+            weight=(3, 5, 1, 1),
+            bias=(3,),
+            stride=[2, 1],
+            padding=[1, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 8, 72, 96),
+            weight=(8, 8, 1, 1),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 16, 240, 320),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[1, 1],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 16, 240, 320),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[2, 2],
+            padding=[0, 0],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 16, 240, 320),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[4, 4],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
+            self=(1, 16, 240, 320),
+            weight=(64, 16, 1, 1),
+            bias=(64,),
+            stride=[1, 1],
+            padding=[4, 4],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=1,
+        ),
+        Test(
             self=(1, 16, 672, 512),
             weight=(64, 16, 1, 1),
             bias=(64,),
@@ -366,6 +483,97 @@ def get_conv_inputs():
             transposed=False,
             output_padding=[0, 0],
             groups=1,
+        ),
+    ]
+
+    test_cases_dw = [
+        Test(
+            self=(1, XS, S, S1),
+            weight=(XS, 1, 3, 3),
+            bias=(XS,),
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=XS,
+        ),
+        Test(
+            self=(1, XS, S, S1),
+            weight=(XS, 1, 5, 5),
+            bias=(XS,),
+            stride=[1, 1],
+            padding=[2, 2],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=XS,
+        ),
+        Test(
+            self=(1, XS, S, S1),
+            weight=(XS, 1, 3, 3),
+            bias=(XS,),
+            stride=[2, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=XS,
+        ),
+        Test(
+            self=(1, XS, S, S1),
+            weight=(XS, 1, 5, 5),
+            bias=(XS,),
+            stride=[1, 2],
+            padding=[2, 2],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=XS,
+        ),
+        Test(
+            self=(1, S2, S, S1),
+            weight=(S2, 1, 3, 3),
+            bias=(S2,),
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=S2,
+        ),
+        Test(
+            self=(1, S2, S, S1),
+            weight=(S2, 1, 5, 5),
+            bias=(S2,),
+            stride=[1, 1],
+            padding=[2, 2],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=S2,
+        ),
+        Test(
+            self=(1, 8, 72, 96),
+            weight=(8, 1, 3, 3),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
+        ),
+        Test(
+            self=(1, 8, 72, 96),
+            weight=(8, 1, 5, 5),
+            bias=(8,),
+            stride=[1, 1],
+            padding=[2, 2],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=8,
         ),
         Test(
             self=(1, 4, 234, 234),
@@ -400,21 +608,25 @@ def get_conv_inputs():
             output_padding=[0, 0],
             groups=4,
         ),
-        Test(
-            self=(1, 8, 90, 77),
-            weight=(1, 8, 3, 3),
-            bias=(1,),
-            stride=[1, 1],
-            padding=[2, 2],
-            dilation=[2, 2],
-            transposed=False,
-            output_padding=[0, 0],
-            groups=1,
-        ),
     ]
 
     test_suite = VkTestSuite(test_cases)
-    return test_suite
+    test_suite.layouts = [
+        "utils::kChannelsPacked",
+    ]
+
+    test_suite_pw = VkTestSuite(test_cases_pw)
+    test_suite_pw.layouts = [
+        "utils::kChannelsPacked",
+    ]
+    test_suite_pw.test_name_suffix = "pw"
+
+    test_suite_dw = VkTestSuite(test_cases_dw)
+    test_suite_dw.layouts = [
+        "utils::kChannelsPacked",
+    ]
+    test_suite_dw.test_name_suffix = "dw"
+    return [test_suite, test_suite_pw, test_suite_dw]
 
 
 @register_test_suite("aten.native_layer_norm.default")
@@ -431,6 +643,45 @@ def get_native_layer_norm_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
+    return test_suite
+
+
+@register_test_suite("aten.native_group_norm.default")
+def get_native_group_norm_inputs():
+    test_suite = VkTestSuite(
+        [
+            # (input_shape, weight_shape, bias_shape, N, C, HxW, group, eps)
+            # General test cases
+            ((1, 8, 4, 4), (8), (8), 1, 8, 16, 2, 0.001),
+            ((2, 8, 3, 3), (8), (8), 2, 8, 9, 4, 0.001),
+            ((1, 12, 2, 2), (12), (12), 1, 12, 4, 3, 0.001),
+            ((3, 16, 5, 5), (16), (16), 3, 16, 25, 8, 0.001),
+            ((3, 16, 13, 17), (16), (16), 3, 16, 13 * 17, 4, 0.001),
+            ((1, 4, 7, 7), (4), (4), 1, 4, 49, 2, 0.001),
+            ((2, 6, 1, 8), (6), (6), 2, 6, 8, 3, 0.001),
+            # Single group and prime number sizes
+            ((3, 7, 13, 11), (7), (7), 3, 7, 13 * 11, 1, 0.001),
+            # Each channel is it's own group and prime number sizes
+            ((1, 7, 13, 11), (7), (7), 1, 7, 13 * 11, 7, 0.001),
+        ]
+    )
+    test_suite.layouts = [
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+    ]
+    test_suite.dtypes = [
+        "at::kFloat",
+        "at::kHalf",
+    ]
+    test_suite.arg_storage_types = {
+        "out": [None, "utils::kBuffer", "utils::kBuffer"],
+    }
+
+    test_suite.prepacked_args = ["weight", "bias"]
+    test_suite.requires_prepack = True
+
     return test_suite
 
 
@@ -539,6 +790,13 @@ def get_permute_inputs():
         "utils::kWidthPacked",
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.dtypes = [
+        "at::kFloat",
     ]
     return test_suite
 
@@ -778,9 +1036,11 @@ def get_unsqueeze_inputs():
             ((9, 9), 2),
             ((9,), 0),
             ((9,), 1),
+            ((1, 10), -1),
         ]
     )
     test_suite.layouts = [
+        "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
@@ -984,8 +1244,11 @@ def get_cat_inputs():
     )
     test_suite.layouts = [
         "utils::kWidthPacked",
-        "utils::kHeightPacked",
         "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+        "utils::kBuffer",
     ]
     test_suite.data_gen = "make_seq_tensor"
     test_suite.dtypes = ["at::kFloat"]
@@ -1138,6 +1401,64 @@ def get_reduce_op_inputs():
         "utils::kWidthPacked",
     ]
     return test_suite
+
+
+@register_test_suite(["aten.var.dim"])
+def get_var_inputs():
+    test_cases = []
+    shapes_and_dims = [
+        ((L), 0),
+        ((L), -1),
+        ((M, L), 0),
+        ((M, L), 1),
+        ((L, M), -1),
+        ((M, L), -2),
+        ((S, S1, S2), 0),
+        ((S, S1, S2), 1),
+        ((S, S1, S2), 2),
+        ((S, S1, S2), -1),
+        ((S, S1, S2), -2),
+        ((S, S1, S2), -3),
+        ((1, S, S1, S2), 1),
+        ((1, S, S1, S2), 2),
+        ((1, S, S1, S2), 3),
+        ((1, S, S1, S2), -1),
+        ((1, S, S1, S2), -2),
+        ((1, S, S1, S2), -3),
+        # Test batches > 1 where the reduction dim is not the concat dim
+        ((S, L, S1, L), -1),
+        ((S, S2, S1, S), -2),
+        ((S, S2, M, M), 2),
+        ((S, M, S1, L), 3),
+    ]
+
+    for i, (shape, dim) in enumerate(shapes_and_dims):
+        unbiased = (i % 2) == 0
+        test_cases.append((shape, dim, unbiased, True))
+
+    # Texture-based tests
+    texture_test_suite = VkTestSuite(test_cases)
+    texture_test_suite.layouts = [
+        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
+    ]
+    texture_test_suite.storage_types = ["utils::kTexture3D"]
+    texture_test_suite.atol = "1e-4"
+    texture_test_suite.rtol = "1e-4"
+    texture_test_suite.test_name_suffix = "texture"
+
+    # Buffer-based tests
+    buffer_test_suite = VkTestSuite(test_cases)
+    buffer_test_suite.layouts = [
+        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
+    ]
+    buffer_test_suite.storage_types = ["utils::kBuffer"]
+    buffer_test_suite.atol = "1e-4"
+    buffer_test_suite.rtol = "1e-4"
+    buffer_test_suite.test_name_suffix = "buffer"
+
+    return [texture_test_suite, buffer_test_suite]
 
 
 @register_test_suite(

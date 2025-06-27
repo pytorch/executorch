@@ -17,17 +17,12 @@ namespace vkapi {
 
 namespace {
 
-VkDevice create_logical_device(
+void find_compute_queues(
     const PhysicalDevice& physical_device,
     const uint32_t num_queues_to_create,
-    std::vector<Adapter::Queue>& queues,
-    std::vector<uint32_t>& queue_usage) {
-  // Find compute queues up to the requested number of queues
-
-  std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+    std::vector<VkDeviceQueueCreateInfo>& queue_create_infos,
+    std::vector<std::pair<uint32_t, uint32_t>>& queues_to_get) {
   queue_create_infos.reserve(num_queues_to_create);
-
-  std::vector<std::pair<uint32_t, uint32_t>> queues_to_get;
   queues_to_get.reserve(num_queues_to_create);
 
   uint32_t remaining_queues = num_queues_to_create;
@@ -60,12 +55,44 @@ VkDevice create_logical_device(
       break;
     }
   }
+}
 
+void populate_queue_info(
+    const PhysicalDevice& physical_device,
+    VkDevice logical_device,
+    const std::vector<std::pair<uint32_t, uint32_t>>& queues_to_get,
+    std::vector<Adapter::Queue>& queues,
+    std::vector<uint32_t>& queue_usage) {
   queues.reserve(queues_to_get.size());
   queue_usage.reserve(queues_to_get.size());
 
-  // Create the VkDevice
+  // Obtain handles for the created queues and initialize queue usage heuristic
 
+  for (const std::pair<uint32_t, uint32_t>& queue_idx : queues_to_get) {
+    VkQueue queue_handle = VK_NULL_HANDLE;
+    VkQueueFlags flags =
+        physical_device.queue_families.at(queue_idx.first).queueFlags;
+    vkGetDeviceQueue(
+        logical_device, queue_idx.first, queue_idx.second, &queue_handle);
+    queues.push_back({queue_idx.first, queue_idx.second, flags, queue_handle});
+    // Initial usage value
+    queue_usage.push_back(0);
+  }
+}
+
+VkDevice create_logical_device(
+    const PhysicalDevice& physical_device,
+    const uint32_t num_queues_to_create,
+    std::vector<Adapter::Queue>& queues,
+    std::vector<uint32_t>& queue_usage) {
+  // Find compute queues up to the requested number of queues
+
+  std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+  std::vector<std::pair<uint32_t, uint32_t>> queues_to_get;
+  find_compute_queues(
+      physical_device, num_queues_to_create, queue_create_infos, queues_to_get);
+
+  // Create the VkDevice
   std::vector<const char*> requested_device_extensions{
 #ifdef VK_KHR_portability_subset
       VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
@@ -143,19 +170,42 @@ VkDevice create_logical_device(
   volkLoadDevice(handle);
 #endif /* USE_VULKAN_VOLK */
 
-  // Obtain handles for the created queues and initialize queue usage heuristic
-
-  for (const std::pair<uint32_t, uint32_t>& queue_idx : queues_to_get) {
-    VkQueue queue_handle = VK_NULL_HANDLE;
-    VkQueueFlags flags =
-        physical_device.queue_families.at(queue_idx.first).queueFlags;
-    vkGetDeviceQueue(handle, queue_idx.first, queue_idx.second, &queue_handle);
-    queues.push_back({queue_idx.first, queue_idx.second, flags, queue_handle});
-    // Initial usage value
-    queue_usage.push_back(0);
-  }
+  populate_queue_info(
+      physical_device, handle, queues_to_get, queues, queue_usage);
 
   return handle;
+}
+
+bool test_linear_tiling_3d_image_support(VkDevice device) {
+  // Test creating a 3D image with linear tiling to see if it is supported.
+  // According to the Vulkan spec, linear tiling may not be supported for 3D
+  // images.
+  VkExtent3D image_extents{1u, 1u, 1u};
+  const VkImageCreateInfo image_create_info{
+      VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, // sType
+      nullptr, // pNext
+      0u, // flags
+      VK_IMAGE_TYPE_3D, // imageType
+      VK_FORMAT_R32G32B32A32_SFLOAT, // format
+      image_extents, // extents
+      1u, // mipLevels
+      1u, // arrayLayers
+      VK_SAMPLE_COUNT_1_BIT, // samples
+      VK_IMAGE_TILING_LINEAR, // tiling
+      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, // usage
+      VK_SHARING_MODE_EXCLUSIVE, // sharingMode
+      0u, // queueFamilyIndexCount
+      nullptr, // pQueueFamilyIndices
+      VK_IMAGE_LAYOUT_UNDEFINED, // initialLayout
+  };
+  VkImage image = VK_NULL_HANDLE;
+  VkResult res = vkCreateImage(device, &image_create_info, nullptr, &image);
+
+  if (res == VK_SUCCESS) {
+    vkDestroyImage(device, image, nullptr);
+  }
+
+  return res == VK_SUCCESS;
 }
 
 } // namespace
@@ -186,37 +236,44 @@ Adapter::Adapter(
       compute_pipeline_cache_(device_.handle, cache_data_path),
       sampler_cache_(device_.handle),
       vma_(instance_, physical_device_.handle, device_.handle),
-      linear_tiling_3d_enabled_{true} {
-  // Test creating a 3D image with linear tiling to see if it is supported.
-  // According to the Vulkan spec, linear tiling may not be supported for 3D
-  // images.
-  VkExtent3D image_extents{1u, 1u, 1u};
-  const VkImageCreateInfo image_create_info{
-      VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, // sType
-      nullptr, // pNext
-      0u, // flags
-      VK_IMAGE_TYPE_3D, // imageType
-      VK_FORMAT_R32G32B32A32_SFLOAT, // format
-      image_extents, // extents
-      1u, // mipLevels
-      1u, // arrayLayers
-      VK_SAMPLE_COUNT_1_BIT, // samples
-      VK_IMAGE_TILING_LINEAR, // tiling
-      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, // usage
-      VK_SHARING_MODE_EXCLUSIVE, // sharingMode
-      0u, // queueFamilyIndexCount
-      nullptr, // pQueueFamilyIndices
-      VK_IMAGE_LAYOUT_UNDEFINED, // initialLayout
-  };
-  VkImage image = VK_NULL_HANDLE;
-  VkResult res =
-      vkCreateImage(device_.handle, &image_create_info, nullptr, &image);
-  if (res != VK_SUCCESS) {
-    linear_tiling_3d_enabled_ = false;
-  } else {
-    vkDestroyImage(device_.handle, image, nullptr);
+      linear_tiling_3d_enabled_{
+          test_linear_tiling_3d_image_support(device_.handle)},
+      owns_device_{true} {}
+
+Adapter::Adapter(
+    VkInstance instance,
+    VkPhysicalDevice physical_device,
+    VkDevice logical_device,
+    const uint32_t num_queues,
+    const std::string& cache_data_path)
+    : queue_usage_mutex_{},
+      physical_device_(physical_device),
+      queues_{},
+      queue_usage_{},
+      queue_mutexes_{},
+      instance_(instance),
+      device_(logical_device),
+      shader_layout_cache_(device_.handle),
+      shader_cache_(device_.handle),
+      pipeline_layout_cache_(device_.handle),
+      compute_pipeline_cache_(device_.handle, cache_data_path),
+      sampler_cache_(device_.handle),
+      vma_(instance_, physical_device_.handle, device_.handle),
+      linear_tiling_3d_enabled_{
+          test_linear_tiling_3d_image_support(device_.handle)},
+      owns_device_{false} {
+  std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+  std::vector<std::pair<uint32_t, uint32_t>> queues_to_get;
+  find_compute_queues(
+      physical_device_, num_queues, queue_create_infos, queues_to_get);
+  populate_queue_info(
+      physical_device_, device_.handle, queues_to_get, queues_, queue_usage_);
+}
+
+Adapter::~Adapter() {
+  if (!owns_device_) {
+    device_.handle = VK_NULL_HANDLE;
   }
-  return;
 }
 
 Adapter::Queue Adapter::request_queue() {

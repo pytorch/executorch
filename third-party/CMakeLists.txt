@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 add_subdirectory(json)
+add_subdirectory(gflags)
 
 if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(pybind11)

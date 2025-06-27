@@ -16,7 +16,7 @@ Linux (x86_64)
 - Ubuntu 20.04.6 LTS+
 - RHEL 8+
 
-macOS (x86_64/M1/M2)
+macOS (x86_64/ARM64)
 - Big Sur (11.0)+
 
 Windows (x86_64)
@@ -30,6 +30,7 @@ Windows (x86_64)
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
 * `python` version 3.10-3.12
+* `ccache` (optional) - A compiler cache that speeds up recompilation
 
 Note that the cross-compilable core runtime code supports a wider range of
 toolchains, down to C++17. See the [Runtime Overview](runtime-overview.md) for
@@ -56,12 +57,26 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    conda create -yn executorch python=3.10.0 && conda activate executorch
    ```
 
-## Install ExecuTorch pip package from Source
+## Install ExecuTorch pip package from source
    ```bash
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
+   # Intel-based macOS systems require building PyTorch from source (see below)
    ./install_executorch.sh
+   ```
+
+   See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.
+
+   Use the [`--use-pt-pinned-commit` flag](../../install_executorch.py) to install ExecuTorch with an existing PyTorch build:
+
+   ```bash
+   ./install_executorch.sh --use-pt-pinned-commit
+   ```
+
+   For Intel-based macOS systems, use the [`--use-pt-pinned-commit --minimal` flags](../../install_executorch.py):
+   ```bash
+   ./install_executorch.sh --use-pt-pinned-commit --minimal
    ```
 
    Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:
@@ -76,7 +91,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 
    # Or you can directly do the following if dependencies are already installed
    # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
-   pip install -e .
+   pip install -e . --no-build-isolation
    ```
 
    If C++ files are being modified, you will still have to reinstall ExecuTorch from source.
@@ -105,6 +120,8 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 > git submodule sync
 > git submodule update --init --recursive
 > ```
+>
+> The `--clean` command removes build artifacts, pip outputs, and also clears the ccache if it's installed, ensuring a completely fresh build environment.
 
 ## Build ExecuTorch C++ runtime from source
 
@@ -157,6 +174,29 @@ To further optimize the release build for size, use both:
 -DEXECUTORCH_OPTIMIZE_SIZE=ON
 ```
 
+#### Compiler Cache (ccache)
+
+ExecuTorch automatically detects and enables [ccache](https://ccache.dev/) if it's installed on your system. This significantly speeds up recompilation by caching previously compiled objects:
+
+- If ccache is detected, you'll see: `ccache found and enabled for faster builds`
+- If ccache is not installed, you'll see: `ccache not found, builds will not be cached`
+
+To install ccache:
+```bash
+# Ubuntu/Debian
+sudo apt install ccache
+
+# macOS
+brew install ccache
+
+# CentOS/RHEL
+sudo yum install ccache
+# or
+sudo dnf install ccache
+```
+
+No additional configuration is needed - the build system will automatically use ccache when available.
+
 See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)
 
 ### Build the runtime components
@@ -175,6 +215,8 @@ cd executorch
 # "core count + 1" as the `-j` value.
 cmake --build cmake-out -j9
 ```
+
+> **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) above). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
 
 ## Use an example binary `executor_runner` to execute a .pte file
 
@@ -204,7 +246,156 @@ I 00:00:00.000764 executorch:executor_runner.cpp:180] Model executed successfull
 I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs:
 Output 0: tensor(sizes=[1], [2.])
 ```
+## Build ExecuTorch for Windows
 
+This document outlines the current known working build instructions for building and validating ExecuTorch on a Windows machine.
+
+This demo uses the
+[MobileNet v2](https://pytorch.org/vision/main/models/mobilenetv2.html) model to classify images using the [XNNPACK](https://github.com/google/XNNPACK) backend.
+
+Note that all commands should be executed on Windows powershell in administrator mode.
+
+### Pre-requisites
+
+#### 1. Install Miniconda for Windows
+Install miniconda for Windows from the [official website](https://docs.conda.io/en/latest/miniconda.html).
+
+#### 2. Install Git for Windows
+Install Git for Windows from the [official website](https://git-scm.com/download/win).
+
+#### 3. Install ClangCL for Windows
+Install ClangCL for Windows from the [official website](https://learn.microsoft.com/en-us/cpp/build/clang-support-msbuild?view=msvc-170).
+
+
+### Create the Conda Environment
+To check if conda is detected by the powershell prompt, try `conda list` or `conda --version`
+
+If conda is not detected, you could run the powershell script for conda named `conda-hook.ps1`.
+To verify that Conda is available in the in the powershell environment, run try `conda list` or `conda --version`.
+If Conda is not available, run conda-hook.ps1 as follows:
+```bash
+$miniconda_dir\\shell\\condabin\\conda-hook.ps1
+```
+where `$miniconda_dir` is the directory where you installed miniconda
+This is `“C:\Users\<username>\AppData\Local”` by default.
+
+#### Create and activate the conda environment:
+```bash
+conda create -yn et python=3.12
+conda activate et
+```
+
+### Check Symlinks
+Set the following environment variable to enable symlinks:
+```bash
+git config --global core.symlinks true
+```
+
+### Set up ExecuTorch
+Clone ExecuTorch from the [official GitHub repository](https://github.com/pytorch/executorch).
+
+```bash
+git clone --recurse -submodules https://github.com/pytorch/executorch.git
+```
+
+### Run the Setup Script
+
+Currently, there are a lot of components that are not buildable on Windows. The below instructions install a very minimal ExecuTorch which can be used as a sanity check.
+
+#### Move into the `executorch` directory
+```bash
+cd executorch
+```
+
+#### (Optional) Run a --clean script prior to running the .bat file.
+```bash
+./install_executorch.bat --clean
+```
+
+#### Run the setup script.
+You could run the .bat file or the python script.
+```bash
+./install_executorch.bat
+# OR
+# python install_executorch.py
+```
+
+### Export MobileNet V2
+
+Create the following script named export_mv2.py
+
+```bash
+from torchvision.models import mobilenet_v2
+from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
+
+mv2 = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT) # This is torch.nn.Module
+
+import torch
+from executorch.exir import to_edge
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+
+model = mv2.eval() # turn into evaluation mode
+
+example_inputs = (torch.randn((1, 3, 224, 224)),) # Necessary for exporting the model
+
+exported_graph = torch.export.export(model, example_inputs) # Core Aten graph
+
+edge = to_edge(exported_graph) # Edge Dialect
+
+edge_delegated = edge.to_backend(XnnpackPartitioner()) # Parts of the graph are delegated to XNNPACK
+
+executorch_program = edge_delegated.to_executorch() # ExecuTorch program
+
+pte_path = "mv2_xnnpack.pte"
+
+with open(pte_path, "wb") as file:
+    executorch_program.write_to_file(file) # Serializing into .pte file
+```
+
+#### Run the export script to create a `mv2_xnnpack.pte` file.
+
+```bash
+python .\\export_mv2.py
+```
+
+### Build and Install C++ Libraries + Binaries
+```bash
+del -Recurse -Force cmake-out; `
+cmake . `
+  -DCMAKE_INSTALL_PREFIX=cmake-out `
+  -DPYTHON_EXECUTABLE=$miniconda_dir\\envs\\et\\python.exe `
+  -DCMAKE_PREFIX_PATH=$miniconda_dir\\envs\\et\\Lib\\site-packages `
+  -DCMAKE_BUILD_TYPE=Release `
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON `
+  -DEXECUTORCH_BUILD_FLATC=ON `
+  -DEXECUTORCH_BUILD_PYBIND=OFF `
+  -DEXECUTORCH_BUILD_XNNPACK=ON `
+  -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON `
+  -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON `
+  -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON `
+  -DEXECUTORCH_ENABLE_LOGGING=ON `
+  -T ClangCL `
+  -Bcmake-out; `
+cmake --build cmake-out -j64 --target install --config Release
+```
+where `$miniconda_dir` is the directory where you installed miniconda
+This is `“C:\Users\<username>\AppData\Local”` by default.
+
+### Run Mobilenet V2 model with XNNPACK delegation
+
+```bash
+.\\cmake-out\\backends\\xnnpack\\Release\\xnn_executor_runner.exe --model_path=.\\mv2_xnnpack.pte
+```
+
+The expected output would print a tensor of size 1x1000, containing values of class scores.
+
+```bash
+Output 0: tensor(sizes=[1, 1000], [
+  -0.50986, 0.30064, 0.0953904, 0.147726, 0.231205, 0.338555, 0.206892, -0.0575775, … ])
+```
+
+Congratulations! You've successfully set up ExecuTorch on your Windows device and ran a MobileNet V2 model.
+Now, you can explore and enjoy the power of ExecuTorch on your own Windows device!
 
 ## Cross compilation
 

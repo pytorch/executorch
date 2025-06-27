@@ -168,7 +168,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       std::optional<const std::string> data_path_str = data_path
           ? std::optional<const std::string>{data_path->toStdString()}
           : std::nullopt;
-      runner_ = example::Runner::create(
+      // TODO(larryliu0820): Use the API in text_llm_runner.h to create the
+      // runner.
+      runner_ = example::create_llama_runner(
           model_path->toStdString(),
           tokenizer_path->toStdString(),
           data_path_str);
@@ -295,16 +297,27 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jlong start_pos,
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
-    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(Error::NotSupported);
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(multi_modal_runner_->generate_from_pos(
+          prompt->toStdString(),
+          seq_len,
+          start_pos,
+          [callback](const std::string& result) { callback->onResult(result); },
+          [callback](const llm::Stats& stats) { callback->onStats(stats); },
+          echo));
+    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      executorch::extension::llm::GenerationConfig config{
+          .echo = static_cast<bool>(echo),
+          .seq_len = seq_len,
+          .temperature = temperature_,
+      };
+      runner_->generate_from_pos(
+          prompt->toStdString(),
+          start_pos,
+          config,
+          [callback](std::string result) { callback->onResult(result); },
+          [callback](const llm::Stats& stats) { callback->onStats(stats); });
     }
-    return static_cast<jint>(multi_modal_runner_->generate_from_pos(
-        prompt->toStdString(),
-        seq_len,
-        start_pos,
-        [callback](const std::string& result) { callback->onResult(result); },
-        [callback](const llm::Stats& stats) { callback->onStats(stats); },
-        echo));
   }
 
   void stop() {

@@ -122,7 +122,8 @@ ComputeGraph::ComputeGraph(GraphConfig config)
       prepack_descriptor_counts_{},
       execute_descriptor_counts_{},
       context_{new api::Context(
-          vkapi::runtime()->default_adapter_i(),
+          config.external_adapter ? config.external_adapter
+                                  : vkapi::runtime()->get_adapter_p(),
           config_.context_config)},
       shared_objects_{},
       values_{},
@@ -271,6 +272,38 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
   VK_THROW("Could not get dtype of value with type ", val.type());
 }
 
+bool ComputeGraph::is_contiguous_buffer_tensor(const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (!is_buffer_storage(idx)) {
+    return false;
+  }
+  return is_contiguous(idx);
+}
+
+bool ComputeGraph::is_standard_channels_packed_texture_tensor(
+    const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return false;
+  }
+  return has_standard_axis_map(idx) && packed_dim_of(idx) == 2;
+}
+
+bool ComputeGraph::is_standard_width_packed_texture_tensor(
+    const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return false;
+  }
+  return has_standard_axis_map(idx) && packed_dim_of(idx) == 0;
+}
+
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
@@ -378,27 +411,16 @@ ValueRef ComputeGraph::add_tensor_view(const ValueRef vref) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
   values_.emplace_back(api::vTensor(*t));
-  for (SharedObject& sobj : shared_objects_) {
-    if (sobj.has_user(vref)) {
-      sobj.add_user(this, idx);
-    }
-  }
   return idx;
 }
 
 ValueRef ComputeGraph::add_tensor_view(
     const ValueRef vref,
     const std::vector<int64_t>& sizes,
-    const std::vector<int64_t>& strides,
-    const size_t offset_numel) {
+    const std::vector<int64_t>& strides) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
-  values_.emplace_back(api::vTensor(*t, sizes, strides, offset_numel));
-  for (SharedObject& sobj : shared_objects_) {
-    if (sobj.has_user(vref)) {
-      sobj.add_user(this, idx);
-    }
-  }
+  values_.emplace_back(api::vTensor(*t, sizes, strides));
   return idx;
 }
 
@@ -561,6 +583,42 @@ void ComputeGraph::update_descriptor_counts(
   }
 }
 
+void ComputeGraph::register_pipeline_to_create(
+    const vkapi::ShaderInfo& shader_info,
+    const utils::WorkgroupSize& local_workgroup_size,
+    const vkapi::SpecVarList& spec_vars,
+    const std::vector<PushConstantDataInfo>& push_constants) {
+  VkDescriptorSetLayout shader_layout =
+      context()->shader_layout_cache().retrieve(shader_info.kernel_layout);
+
+  uint32_t pc_offset = 0;
+  std::array<uint8_t, kMaxPushConstantSize> pc_data;
+  for (const auto& pc : push_constants) {
+    pc_offset += pc.write(pc_data.data(), pc_offset, kMaxPushConstantSize);
+  }
+
+  vkapi::SpecVarList spec_constants = {
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
+
+  spec_constants.append(spec_vars);
+
+  const vkapi::ComputePipelineCache::Key desc = {
+      context()->pipeline_layout_cache().retrieve(shader_layout, pc_offset),
+      context()->shader_cache().retrieve(shader_info),
+      spec_constants};
+
+  if (context_->pipeline_cache().contains(desc)) {
+    return;
+  }
+  auto it = pipeline_descriptors_.find(desc);
+  if (it != pipeline_descriptors_.cend()) {
+    return;
+  }
+  pipeline_descriptors_.insert(desc);
+}
+
 utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
     return {uint32_t(numel_of(idx)), 1u, 1u};
@@ -670,6 +728,20 @@ void ComputeGraph::prepare() {
   }
 }
 
+void ComputeGraph::prepare_pipelines() {
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    node->prepare_pipelines(this);
+  }
+  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+    node->prepare_pipelines(this);
+  }
+  context_->pipeline_cache().create_pipelines(pipeline_descriptors_);
+
+  pipeline_descriptors_ = std::unordered_set<
+      vkapi::ComputePipelineCache::Key,
+      vkapi::ComputePipelineCache::Hasher>();
+}
+
 void ComputeGraph::encode_prepack() {
   for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
     node->encode(this);
@@ -722,7 +794,10 @@ void ComputeGraph::propagate_resize() {
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->trigger_resize(this);
   }
-  encode_execute();
+  // Only re-encode on resize if dynamic shapes are expected
+  if (config_.expect_dynamic_shapes) {
+    encode_execute();
+  }
 }
 
 } // namespace vkcompute

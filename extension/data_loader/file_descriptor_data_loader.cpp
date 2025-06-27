@@ -123,17 +123,29 @@ FileDescriptorDataLoader::fromFileDescriptorUri(
 }
 
 namespace {
+
+inline void* et_aligned_alloc(size_t size, std::align_val_t alignment) {
+  return ::operator new(size, alignment);
+}
+
+inline void et_aligned_free(void* ptr, std::align_val_t alignment) {
+  return ::operator delete(ptr, alignment);
+}
+
 /**
  * FreeableBuffer::FreeFn-compatible callback.
  *
- * `context` is the original buffer pointer. It is allocated with
- * ET_ALIGNED_ALLOC, and must be freed with ET_ALIGNED_FREE.
+ * `data` is the original buffer pointer.
+ * `context` is the original alignment.
  *
- * `data` and `size` are unused.
+ * `size` is unused.
  */
 void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
-  ET_ALIGNED_FREE(context);
+  et_aligned_free(
+      data,
+      static_cast<std::align_val_t>(reinterpret_cast<uintptr_t>(context)));
 }
+
 } // namespace
 
 Result<FreeableBuffer> FileDescriptorDataLoader::load(
@@ -160,24 +172,31 @@ Result<FreeableBuffer> FileDescriptorDataLoader::load(
   }
 
   // Allocate memory for the FreeableBuffer.
-  void* aligned_buffer = ET_ALIGNED_ALLOC(alignment_, size);
+  void* aligned_buffer = et_aligned_alloc(size, alignment_);
   if (aligned_buffer == nullptr) {
     ET_LOG(
         Error,
-        "Reading from %s at offset %zu: ET_ALIGNED_ALLOC(%zd) failed",
+        "Reading from %s at offset %zu: et_aligned_alloc(%zu, %zu) failed",
         file_descriptor_uri_,
         offset,
-        size);
+        size,
+        static_cast<size_t>(alignment_));
     return Error::MemoryAllocationFailed;
   }
 
   auto err = load_into(offset, size, segment_info, aligned_buffer);
   if (err != Error::Ok) {
-    ET_ALIGNED_FREE(aligned_buffer);
+    et_aligned_free(aligned_buffer, alignment_);
     return err;
   }
 
-  return FreeableBuffer(aligned_buffer, size, FreeSegment, aligned_buffer);
+  // Pass the alignment as context to FreeSegment.
+  return FreeableBuffer(
+      aligned_buffer,
+      size,
+      FreeSegment,
+      // NOLINTNEXTLINE(performance-no-int-to-ptr)
+      reinterpret_cast<void*>(static_cast<uintptr_t>(alignment_)));
 }
 
 Result<size_t> FileDescriptorDataLoader::size() const {

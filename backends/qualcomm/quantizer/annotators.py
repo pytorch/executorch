@@ -399,6 +399,11 @@ def annotate_cos(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.col2im.default, torch.ops.aten.im2col.default])
+def annotate_col_im(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.sin.default])
 def annotate_sin(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -457,7 +462,7 @@ def annotate_hardtanh(node: Node, quantization_config: QuantizationConfig) -> No
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.mean.default])
+@register_annotator([torch.ops.aten.mean.default, torch.ops.aten.mean.dim])
 def annotate_mean(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
@@ -508,7 +513,13 @@ def annotate_prelu(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.view.default, torch.ops.aten._unsafe_view.default])
+@register_annotator(
+    [
+        torch.ops.aten.view_copy.default,
+        torch.ops.aten.view.default,
+        torch.ops.aten._unsafe_view.default,
+    ]
+)
 def annotate_view(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
@@ -531,6 +542,13 @@ def annotate_pixel_unshuffle_default(
 
 @register_annotator([torch.ops.aten.upsample_bilinear2d.vec])
 def annotate_upsample_bilinear2d(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.upsample_bicubic2d.vec])
+def annotate_upsample_upsample_bicubic2d(
     node: Node, quantization_config: QuantizationConfig
 ) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -583,11 +601,6 @@ def annotate_reshape(node: Node, quantization_config: QuantizationConfig) -> Non
 
 @register_annotator([torch.ops.aten.select.int])
 def annotate_select(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_single_in_single_out(node, quantization_config)
-
-
-@register_annotator([torch.ops.aten.mean.dim])
-def annotate_mean_dim(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
@@ -804,16 +817,32 @@ def annotate_index(node: Node, quantization_config: QuantizationConfig) -> None:
     [torch.ops.aten.index_put.default, torch.ops.aten.index_put_.default]
 )
 def annotate_index_put(node: Node, quantization_config: QuantizationConfig) -> None:
-    input = node.args[0]
+    # Avoid annotating the input node because mutable buffers will be folded during the convert_pt2e process.
     value = node.args[2]
 
     input_qspec_map = {}
-    input_qspec_map[input] = quantization_config.input_activation
-    input_qspec_map[value] = SharedQuantizationSpec((input, node))
+    input_qspec_map[value] = quantization_config.input_activation
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
-        output_qspec=SharedQuantizationSpec((input, node)),
+        output_qspec=SharedQuantizationSpec((value, node)),
+        _annotated=True,
+    )
+
+
+@register_annotator(
+    [torch.ops.aten.index_copy.default, torch.ops.aten.index_copy_.default]
+)
+def annotate_index_copy(node: Node, quantization_config: QuantizationConfig) -> None:
+    # Avoid annotating the input node because mutable buffers will be folded during the convert_pt2e process.
+    value = node.args[3]
+
+    input_qspec_map = {}
+    input_qspec_map[value] = quantization_config.input_activation
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=SharedQuantizationSpec((value, node)),
         _annotated=True,
     )
 
@@ -1193,7 +1222,13 @@ def annotate_unbind(node: Node, quantization_config: QuantizationConfig) -> None
         )
 
 
-@register_annotator([torch.ops.aten.split.Tensor, torch.ops.aten.chunk.default])
+@register_annotator(
+    [
+        torch.ops.aten.split_with_sizes.default,
+        torch.ops.aten.split.Tensor,
+        torch.ops.aten.chunk.default,
+    ]
+)
 def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return

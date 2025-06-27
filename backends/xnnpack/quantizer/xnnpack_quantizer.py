@@ -12,16 +12,11 @@ import torch.nn.functional as F
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     _convert_scalars_to_attrs,
     OP_TO_ANNOTATOR,
-    OperatorConfig,
-    OperatorPatternType,
     propagate_annotation,
-    QuantizationConfig,
 )
-from torch.ao.quantization.fake_quantize import (
+from torchao.quantization.pt2e import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
-)
-from torch.ao.quantization.observer import (
     HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
@@ -29,13 +24,19 @@ from torch.ao.quantization.observer import (
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.utils import _get_module_name_filter
+from torchao.quantization.pt2e.quantizer import (
+    get_module_name_filter,
+    OperatorConfig,
+    OperatorPatternType,
+    QuantizationConfig,
+    QuantizationSpec,
+    Quantizer,
+)
 
 
 if TYPE_CHECKING:
-    from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
     from torch.fx import Node
+    from torchao.quantization.pt2e import ObserverOrFakeQuantizeConstructor
 
 
 __all__ = [
@@ -140,7 +141,7 @@ def get_symmetric_quantization_config(
     weight_qscheme = (
         torch.per_channel_symmetric if is_per_channel else torch.per_tensor_symmetric
     )
-    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+    weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
         MinMaxObserver
     )
     if is_qat:
@@ -228,7 +229,7 @@ def _get_not_module_type_or_name_filter(
     tp_list: list[Callable], module_name_list: list[str]
 ) -> Callable[[Node], bool]:
     module_type_filters = [_get_module_type_filter(tp) for tp in tp_list]
-    module_name_list_filters = [_get_module_name_filter(m) for m in module_name_list]
+    module_name_list_filters = [get_module_name_filter(m) for m in module_name_list]
 
     def not_module_type_or_name_filter(n: Node) -> bool:
         return not any(f(n) for f in module_type_filters + module_name_list_filters)
@@ -250,6 +251,15 @@ CONV_TARGETS = {
     torch.ops.aten.convolution.default,
 }
 
+CONV_TRANSPOSE_TARGETS = {
+    torch.ops.aten.conv_transpose1d,
+    torch.ops.aten.conv_transpose1d.default,
+    torch.ops.aten.conv_transpose2d,
+    torch.ops.aten.conv_transpose2d.input,
+    torch.ops.aten.conv_transpose3d,
+    torch.ops.aten.conv_transpose3d.input,
+}
+
 LINEAR_TARGETS = {
     torch.ops.aten.linear.default,
 }
@@ -268,14 +278,14 @@ class XNNPACKQuantizer(Quantizer):
     SUPPORTED_PATTERNS = [
         QuantPattern("conv_bn_relu", False, True, CONV_TARGETS),
         QuantPattern("conv_bn", False, True, CONV_TARGETS),
-        QuantPattern("conv_transpose_bn_relu", False, True, CONV_TARGETS),
-        QuantPattern("conv_transpose_bn", False, True, CONV_TARGETS),
+        QuantPattern("conv_transpose_bn_relu", False, True, CONV_TRANSPOSE_TARGETS),
+        QuantPattern("conv_transpose_bn", False, True, CONV_TRANSPOSE_TARGETS),
         QuantPattern("linear_relu", False, False, LINEAR_TARGETS),
         QuantPattern("linear", True, False, LINEAR_TARGETS),
         QuantPattern("conv", True, False, CONV_TARGETS),
-        QuantPattern("conv_transpose", False, False, CONV_TARGETS),
+        QuantPattern("conv_transpose", True, False, CONV_TRANSPOSE_TARGETS),
         QuantPattern("conv_relu", False, False, CONV_TARGETS),
-        QuantPattern("conv_transpose_relu", False, False, CONV_TARGETS),
+        QuantPattern("conv_transpose_relu", False, False, CONV_TRANSPOSE_TARGETS),
         QuantPattern("adaptive_avg_pool2d", False, False, ADAPTIVE_AVG_POOL2D_TARGETS),
         QuantPattern("add_relu", False, False, ADD_TARGETS),
         QuantPattern("add", False, False, ADD_TARGETS),
@@ -421,7 +431,7 @@ class XNNPACKQuantizer(Quantizer):
         module_name_list = list(self.module_name_config.keys())
         for module_name, config in self.module_name_config.items():
             self._annotate_all_patterns(
-                model, config, _get_module_name_filter(module_name)
+                model, config, get_module_name_filter(module_name)
             )
 
         tp_list = list(self.module_type_config.keys())

@@ -38,7 +38,6 @@ from torchao.quantization.pt2e import (
     HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
-    MovingAveragePerChannelMinMaxObserver,
     ObserverOrFakeQuantizeConstructor,
     PerChannelMinMaxObserver,
     PlaceholderObserver,
@@ -95,24 +94,26 @@ def get_symmetric_quantization_config(
             **extra_args,
         ),
     )
+
+    # Setup quantization config for weights
     weight_qscheme = (
         torch.per_channel_symmetric if is_per_channel else torch.per_tensor_symmetric
     )
     weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
         MinMaxObserver
     )
+    # Determine the right observer/fake-quant constructor
     if is_qat:
-        # TODO: qat + per channel?
-        weight_observer_or_fake_quant_ctr = FusedMovingAvgObsFakeQuantize
-    elif is_per_channel:
-        weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+        # Set plain fake-quant with true min/max
+        weight_observer_or_fake_quant_ctr = FakeQuantize
+    else:
+        # PTQ: set min/max observer
+        weight_observer_or_fake_quant_ctr = (
+            PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
+        )
 
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
-    if is_qat:
-        if weight_qscheme == torch.per_tensor_symmetric:
-            extra_args["observer"] = MovingAverageMinMaxObserver
-        else:
-            extra_args["observer"] = MovingAveragePerChannelMinMaxObserver  # type: ignore[dict-item]
+    extra_args = {"eps": 2**-12}
+
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
         quant_min=weight_qmin,
@@ -247,9 +248,9 @@ class TOSAQuantizer(Quantizer):
         quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
         patterns in the submodule with this module name with the given `quantization_config`
         """
-        assert (
-            quantization_config is not None
-        ), " quantization_config == None is not supported yet"
+        # Validate that quantization_config is provided
+        if quantization_config is None:
+            raise ValueError("quantization_config == None is not supported yet")
         self.module_name_config[module_name] = quantization_config
         return self
 

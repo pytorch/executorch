@@ -143,9 +143,9 @@ void add_binary_op_buffer_node(
           PushConstantDataInfo(&alpha_val, sizeof(float)),
       }},
       // Specialization Constants
-      {graph.packed_dim_of(out),
-       graph.packed_dim_of(in1),
-       graph.packed_dim_of(in2)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(in1),
+       graph.hashed_layout_of(in2)},
       // Resize Args
       {},
       // Resizing Logic

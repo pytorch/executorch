@@ -176,7 +176,8 @@ import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 # op builder will inherit NodeVisitor and have its own implementation
 # register_node_visitor for book-keeping the dictionary of target name v.s. callback
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 # the definitions required to build operator in QNN
 from .qnn_constants import OpLayerNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 # utility to get parameter value when creating tensor in QNN

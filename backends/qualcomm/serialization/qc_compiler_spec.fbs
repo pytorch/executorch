@@ -151,6 +151,51 @@ enum QnnExecuTorchProfileLevel: int {
   kProfileOptrace,
 }
 
+/// The target of the op package library.
+enum QnnExecuTorchOpPackageTarget: int {
+  UNKNOWN = 0,
+  CPU,
+  HTP,
+}
+
+/// The platform of the op package library.
+enum QnnExecuTorchOpPackagePlatform: int {
+  UNKNOWN = 0,
+  X86_64,
+  AARCH64_ANDROID,
+}
+
+
+table QnnExecuTorchOpPackageInfo {
+  /// The name of the op package.
+  op_package_name:string;
+
+  /// The path on disk to the op package library.
+  op_package_path:string;
+
+  /// The name of a function in the op package library which satisfies the
+  /// QnnOpPackage_InterfaceProvider_t interface.
+  interface_provider:string;
+
+  /// The target which this op package library was compiled for.
+  target:QnnExecuTorchOpPackageTarget;
+
+  /// The name of torch operator.
+  custom_op_name:string;
+
+  /// The corresponding op type name defined in the op package.
+  qnn_op_type_name:string;
+
+  /// The platform which this op package library was compiled for.
+  platform:QnnExecuTorchOpPackagePlatform;
+}
+
+
+table QnnExecuTorchOpPackageOptions {
+  /// An array of QnnExecuTorchOpPackageInfo structures.
+  op_package_infos:[QnnExecuTorchOpPackageInfo];
+}
+
 /// QNN backends currently supported
 table QnnExecuTorchBackendOptions {
   /// The backend QNN library to open and execute the graph with. This is a
@@ -198,6 +243,9 @@ table QnnExecuTorchOptions {
 
   // Path to saver output folder
   saver_output_dir:string;
+
+  /// Optional structure to specify op packages loaded and used by the backend.
+  op_package_options:QnnExecuTorchOpPackageOptions;
 }
 
 root_type QnnExecuTorchOptions;

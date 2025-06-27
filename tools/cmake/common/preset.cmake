@@ -104,3 +104,43 @@ macro(load_build_preset)
   # For now, just continue if the preset file is not set. In the future, we will
   # try to determine a preset file.
 endmacro()
+
+
+# Check if the required options are set.
+function(check_required_options_on)
+  cmake_parse_arguments(
+    ARG
+    ""
+    "IF_ON"
+    "REQUIRES"
+    ${ARGN}
+  )
+
+  if(${${ARG_IF_ON}})
+    foreach(required ${ARG_REQUIRES})
+      if(NOT ${${required}})
+        message(FATAL_ERROR "Use of '${ARG_IF_ON}' requires '${required}'")
+      endif()
+    endforeach()
+  endif()
+endfunction()
+
+
+# Check if flags conflict with each other.
+function(check_conflicting_options_on)
+  cmake_parse_arguments(
+    ARG
+    ""
+    "IF_ON"
+    "CONFLICTS_WITH"
+    ${ARGN}
+  )
+
+  if(${${ARG_IF_ON}})
+    foreach(conflict ${ARG_CONFLICTS_WITH})
+      if(${${conflict}})
+        message(FATAL_ERROR "Both '${ARG_IF_ON}' and '${conflict}' can't be ON")
+      endif()
+    endforeach()
+  endif()
+endfunction()

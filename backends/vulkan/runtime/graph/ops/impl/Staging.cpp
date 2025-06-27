@@ -113,18 +113,18 @@ void add_tensor_to_staging_node(
   vkapi::ShaderInfo shader = get_tensor_to_nchw_shader(
       *graph.get_tensor(in_tensor), graph.int8_buffers_enabled());
 
-  vkapi::ParamsBindList ubos;
+  std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(in_tensor)) {
-    ubos.append(
-        {graph.sizes_ubo(in_tensor),
-         graph.strides_ubo(in_tensor),
-         graph.numel_ubo(in_tensor)});
+    pcs = {
+        graph.sizes_pc_of(in_tensor),
+        graph.strides_pc_of(in_tensor),
+        graph.numel_pc_of(in_tensor)};
   } else {
-    ubos.append({graph.sizes_ubo(in_tensor)});
+    pcs = {graph.sizes_pc_of(in_tensor)};
   }
 
   if (is_bitw8_shader(shader)) {
-    ubos.append({graph.numel_ubo(in_tensor)});
+    pcs.push_back(graph.numel_pc_of(in_tensor));
   }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -135,9 +135,9 @@ void add_tensor_to_staging_node(
       // Input and Outputs
       {{out_staging, vkapi::kWrite}, {in_tensor, vkapi::kRead}},
       // Parameter Buffers
-      ubos,
-      // Push Constants
       {},
+      // Push Constants
+      pcs,
       // Specialization Constants
       {graph.hashed_layout_of(in_tensor)},
       // Resize Args

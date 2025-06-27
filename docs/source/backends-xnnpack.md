@@ -14,7 +14,7 @@ The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs
 - ARM64 on Android, iOS, macOS, Linux, and Windows.
 - ARMv7 (with NEON) on Android.
 - ARMv6 (with VFPv2) on Linux.
-- x86 and x86-64 (up to AVX512) on Windows, Linux, macOS, Android, and iOS simulator.
+- x86 and x86-64 (up to AVX512) on Windows, Linux, Android.
 
 ## Development Requirements
 
@@ -91,11 +91,10 @@ The output of `convert_pt2e` is a PyTorch model which can be exported and lowere
 import torch
 import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import to_edge_transform_and_lower
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.xnnpack_quantizer import get_symmetric_quantization_config
 
 model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
 sample_inputs = (torch.randn(1, 3, 224, 224), )

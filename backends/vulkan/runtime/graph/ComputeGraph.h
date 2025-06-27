@@ -185,6 +185,11 @@ class ComputeGraph final {
   std::vector<IOValueRef> inputs_;
   std::vector<IOValueRef> outputs_;
 
+  std::unordered_set<
+      vkapi::ComputePipelineCache::Key,
+      vkapi::ComputePipelineCache::Hasher>
+      pipeline_descriptors_;
+
  protected:
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
@@ -226,7 +231,7 @@ class ComputeGraph final {
   inline ptr_type get_##short_name(const ValueRef idx) {                   \
     return ptr_type(this, idx);                                            \
   }                                                                        \
-  inline bool val_is_##short_name(const ValueRef idx) {                    \
+  inline bool val_is_##short_name(const ValueRef idx) const {              \
     return values_.at(idx).is##type_name();                                \
   }
 
@@ -309,6 +314,32 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().has_buffer_storage();
   }
 
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` has buffer storage
+   * 3. The buffer backed tensor at `idx` has a contiguous memory layout
+   */
+  bool is_contiguous_buffer_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` has texture storage
+   * 3. The texture backed tensor at `idx` has a standard axis mapping
+   * 4. The texture backed tensor at `idx` is channels packed
+   */
+  bool is_standard_channels_packed_texture_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` has texture storage
+   * 3. The texture backed tensor at `idx` has a standard axis mapping
+   * 4. The texture backed tensor at `idx` is width packed
+   */
+  bool is_standard_width_packed_texture_tensor(const ValueRef idx) const;
+
   inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
       const {
     return values_.at(maybe_view)
@@ -341,12 +372,20 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().strides_ubo();
   }
 
+  inline vkapi::BufferBindInfo dim_order_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().dim_order_ubo();
+  }
+
   inline vkapi::BufferBindInfo numel_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().numel_ubo();
   }
 
-  inline bool has_standard_axis_map(const ValueRef idx) {
+  inline bool has_standard_axis_map(const ValueRef idx) const {
     return values_.at(idx).toTensor().has_standard_axis_map();
+  }
+
+  inline bool is_contiguous(const ValueRef idx) const {
+    return values_.at(idx).toTensor().is_contiguous();
   }
 
   inline vkapi::BufferBindInfo logical_limits_ubo(const ValueRef idx) {
@@ -356,6 +395,12 @@ class ComputeGraph final {
   inline PushConstantDataInfo sizes_pc_of(const ValueRef idx) const {
     return PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorSizes);
+  }
+
+  inline PushConstantDataInfo dim_order_pc_of(const ValueRef idx) const {
+    return PushConstantDataInfo(
+        values_.at(idx).toConstTensor().get_uniform_data(),
+        api::kTensorDimOrder);
   }
 
   inline PushConstantDataInfo strides_pc_of(const ValueRef idx) const {
@@ -568,8 +613,7 @@ class ComputeGraph final {
   ValueRef add_tensor_view(
       const ValueRef vref,
       const std::vector<int64_t>& sizes,
-      const std::vector<int64_t>& dim_order,
-      const size_t offset_numel = 0);
+      const std::vector<int64_t>& dim_order);
 
   /*
    * Add a `TensorRef` value to the graph with the specific properties. A
@@ -711,7 +755,15 @@ class ComputeGraph final {
       const vkapi::ShaderInfo& shader_info,
       bool execute);
 
+  void register_pipeline_to_create(
+      const vkapi::ShaderInfo& shader_info,
+      const utils::WorkgroupSize& local_workgroup_size,
+      const vkapi::SpecVarList& spec_vars,
+      const std::vector<PushConstantDataInfo>& push_constants);
+
   void prepare();
+
+  void prepare_pipelines();
 
   //
   // Dispatch Utilities

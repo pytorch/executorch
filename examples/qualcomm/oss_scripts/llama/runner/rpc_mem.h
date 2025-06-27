@@ -8,6 +8,7 @@
 
 #pragma once
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
+#include <unordered_map>
 
 namespace example {
 /**

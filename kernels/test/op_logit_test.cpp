@@ -16,14 +16,15 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpLogitOutTest : public OperatorTest {
  protected:
-  Tensor& op_logit_out(const Tensor& self, optional<double> eps, Tensor& out) {
+  Tensor&
+  op_logit_out(const Tensor& self, std::optional<double> eps, Tensor& out) {
     return torch::executor::aten::logit_outf(context_, self, eps, out);
   }
 
