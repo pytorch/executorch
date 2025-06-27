@@ -51,7 +51,7 @@ libmpsdelegate.a,\
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
 libxnnpack_backend.a,\
-libmicrokernels-prod.a,\
+libxnnpack-microkernels-prod.a,\
 :"
 
 FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
