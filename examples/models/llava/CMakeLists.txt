@@ -197,7 +197,7 @@ list(APPEND _common_include_directories ${stb_SOURCE_DIR}
 )
 
 add_executable(llava_main ${_srcs})
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   if(APPLE)
     target_link_options(llava_main PRIVATE "LINKER:-dead_strip,-s")
   else()
