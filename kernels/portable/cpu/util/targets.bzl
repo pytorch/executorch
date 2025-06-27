@@ -117,6 +117,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_runtime_context",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu:scalar_utils",
         ],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
