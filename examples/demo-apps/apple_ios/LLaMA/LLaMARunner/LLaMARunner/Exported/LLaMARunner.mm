@@ -9,11 +9,11 @@
 #import "LLaMARunner.h"
 
 #import <ExecuTorch/ExecuTorchLog.h>
-#import <executorch/examples/models/llama/runner/runner.h>
+#import <executorch/extension/llm/runner/text_llm_runner.h>
+#import <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 
-using executorch::extension::llm::GenerationConfig;
-using executorch::extension::llm::TextLLMRunner;
-using executorch::runtime::Error;
+using namespace executorch::extension;
+using namespace executorch::runtime;
 
 NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
 
@@ -21,7 +21,7 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
 @end
 
 @implementation LLaMARunner {
-  std::unique_ptr<TextLLMRunner> _runner;
+  std::unique_ptr<llm::TextLLMRunner> _runner;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
@@ -29,8 +29,13 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = example::create_llama_runner(
-        modelPath.UTF8String, tokenizerPath.UTF8String);
+    _runner = llm::create_text_llm_runner(
+      modelPath.UTF8String,
+      llm::load_tokenizer(
+        tokenizerPath.UTF8String,
+        example::get_special_tokens(example::Version::Default)
+      )
+    );
   }
   return self;
 }
@@ -60,11 +65,10 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
        sequenceLength:(NSInteger)seq_len
     withTokenCallback:(nullable void (^)(NSString*))callback
                 error:(NSError**)error {
-  const GenerationConfig config{
-    .seq_len = static_cast<int32_t>(seq_len)
-  };
   const auto status = _runner->generate(
-      prompt.UTF8String, config, [callback](const std::string& token) {
+      prompt.UTF8String,
+      llm::GenerationConfig{.seq_len = static_cast<int32_t>(seq_len)},
+      [callback](const std::string& token) {
         callback(@(token.c_str()));
       });
   if (status != Error::Ok) {
@@ -72,8 +76,8 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
       *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
-      return NO;
     }
+    return NO;
   }
   return YES;
 }
@@ -95,15 +99,16 @@ NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
   NSUInteger seconds = totalSeconds % 60;
   NSUInteger microseconds = (timestamp - totalSeconds) * 1000000;
   NSLog(
-      @"%c %02lu:%02lu:%02lu.%06lu executorch:%s:%zu] %s",
-      (char)level,
-      hours,
-      minutes,
-      seconds,
-      microseconds,
-      filename.UTF8String,
-      line,
-      message.UTF8String);
+    @"%c %02lu:%02lu:%02lu.%06lu executorch:%s:%zu] %s",
+    (char)level,
+    hours,
+    minutes,
+    seconds,
+    microseconds,
+    filename.UTF8String,
+    line,
+    message.UTF8String
+  );
 }
 
 @end
