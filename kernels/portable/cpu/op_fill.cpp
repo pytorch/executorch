@@ -42,7 +42,9 @@ Tensor& fill_scalar_out(
       "Failed to resize output tensor.");
 
   ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "fill.Scalar_out", CTYPE_A, [&] {
-    const CTYPE_A b_casted = utils::scalar_to<CTYPE_A>(b);
+    auto opt_b_casted = utils::internal::check_overflow_scalar_cast<CTYPE_A>(b);
+    ET_KERNEL_CHECK(ctx, opt_b_casted.has_value(), InvalidArgument, );
+    auto b_casted = opt_b_casted.value();
 
     apply_unary_map_fn(
         [b_casted](const CTYPE_A val_a) { return b_casted; },
