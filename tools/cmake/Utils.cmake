@@ -128,7 +128,7 @@ function(resolve_buck2)
 
   set(resolve_buck2_command
       ${PYTHON_EXECUTABLE} ${executorch_root}/tools/cmake/resolve_buck.py
-      --cache_dir=buck2-bin
+      --cache_dir=${executorch_root}/buck2-bin
   )
 
   if(NOT ${BUCK2} STREQUAL "")

@@ -8,7 +8,7 @@ Qwen 3 uses the same example code as our optimized Llama model, while the checkp
 All commands for exporting and running Llama on various backends should also be applicable to Qwen 3, by swapping the following args:
 ```
 base.model_class=[qwen3_0_6b,qwen3_1_7b,qwen3_4b]
-base.params=[examples/models/qwen3/0_6b_config.json,examples/models/qwen3/1_7b_config.json,examples/models/qwen3/4b_config.json]
+base.params=[examples/models/qwen3/config/0_6b_config.json,examples/models/qwen3/config/1_7b_config.json,examples/models/config/qwen3/4b_config.json]
 ```
 
 ### Example export
@@ -17,49 +17,29 @@ Here is a basic example for exporting Qwen 3, although please refer to the Llama
 Export 0.6b to XNNPack, quantized with 8da4w:
 ```
 python -m extension.llm.export.export_llm \
-  base.model_class="qwen3_0_6b" \
-  base.params="examples/models/qwen3/0_6b_config.json" \
-  model.use_kv_cache=True \
-  model.use_sdpa_with_kv_cache=True \
-  model.dtype_override="fp32" \
-  backend.xnnpack.enabled=True \
-  backend.xnnpack.extended_ops=True \
-  quantization.qmode="8da4w" \
-  base.metadata='"{\"get_bos_id\": 151644, \"get_eos_ids\":[151645]}"' \
-  export.output_name="qwen3_0_6b.pte" \
-  debug.verbose=True
+  --config examples/models/qwen3/config/qwen3_xnnpack_q8da4w.yaml
+  +base.model_class="qwen3_0_6b" \
+  +base.params="examples/models/qwen3/config/0_6b_config.json" \
+  +export.output_name="qwen3_0_6b.pte" \
+
 ```
 
 Export 1.7b to XNNPack, quantized with 8da4w:
 ```
 python -m extension.llm.export.export_llm \
-  base.model_class="qwen3_1_7b" \
-  base.params="examples/models/qwen3/1_7b_config.json" \
-  model.use_kv_cache=True \
-  model.use_sdpa_with_kv_cache=True \
-  model.dtype_override="fp32" \
-  backend.xnnpack.enabled=True \
-  backend.xnnpack.extended_ops=True \
-  quantization.qmode="8da4w" \
-  base.metadata='"{\"get_bos_id\": 151644, \"get_eos_ids\":[151645]}"' \
-  export.output_name="qwen3_1_7b.pte" \
-  debug.verbose=True
+  --config examples/models/qwen3/config/qwen3_xnnpack_q8da4w.yaml
+  +base.model_class="qwen3_1_7b" \
+  +base.params="examples/models/qwen3/config/1_7b_config.json" \
+  +export.output_name="qwen3_1_7b.pte" \
 ```
 
 Export 4b to XNNPack, quantized with 8da4w:
 ```
 python -m extension.llm.export.export_llm \
-  base.model_class="qwen3_4b" \
-  base.params="examples/models/qwen3/4b_config.json" \
-  model.use_kv_cache=True \
-  model.use_sdpa_with_kv_cache=True \
-  model.dtype_override="fp32" \
-  backend.xnnpack.enabled=True \
-  backend.xnnpack.extended_ops=True \
-  quantization.qmode="8da4w" \
-  base.metadata='"{\"get_bos_id\": 151644, \"get_eos_ids\":[151645]}"' \
-  export.output_name="qwen3_4b.pte" \
-  debug.verbose=True
+  --config examples/models/qwen3/config/qwen3_xnnpack_q8da4w.yaml
+  +base.model_class="qwen3_4b" \
+  +base.params="examples/models/qwen3/config/4b_config.json" \
+  +export.output_name="qwen3_4b.pte" \
 ```
 
 ### Example run
