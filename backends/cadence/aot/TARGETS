@@ -518,3 +518,16 @@ python_unittest(
         "//executorch/exir/tests:models",
     ],
 )
+
+python_unittest(
+    name = "test_idma_ops",
+    srcs = [
+        "tests/test_idma_ops.py",
+    ],
+    typing = True,
+    deps = [
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//later:lib",
+    ],
+)
