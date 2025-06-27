@@ -51,11 +51,15 @@ def export(args) -> None:
             torch.tensor(
                 [[1048, 263, 931, 746]], dtype=torch.long, requires_grad=False
             ),
+            torch.tensor([[0, 1, 2, 3]], dtype=torch.long, requires_grad=False),
         )
         dynamic_shapes = {
             "input_ids": {
                 1: torch.export.Dim("sequence_length", min=1, max=args.seq_len)
-            }
+            },
+            "cache_positions": {
+                1: torch.export.Dim("sequence_length", min=1, max=args.seq_len)
+            },
         }
 
         xnnpack_quant_config = get_symmetric_quantization_config(
@@ -82,7 +86,7 @@ def export(args) -> None:
         )
 
     edge_config = get_xnnpack_edge_compile_config()
-    edge_manager = to_edge(model, compile_config=edge_config)
+    edge_manager = to_edge(model, compile_config=edge_config, constant_methods={"get_eos_ids": [32000]})
     edge_manager = edge_manager.to_backend(XnnpackPartitioner())
     et_program = edge_manager.to_executorch()
 
