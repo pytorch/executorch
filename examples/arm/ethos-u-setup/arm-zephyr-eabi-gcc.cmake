@@ -26,10 +26,10 @@ set(TARGET_CPU
 string(TOLOWER ${TARGET_CPU} CMAKE_SYSTEM_PROCESSOR)
 
 set(CMAKE_SYSTEM_NAME Generic)
-set(CMAKE_C_COMPILER "arm-none-eabi-gcc")
-set(CMAKE_CXX_COMPILER "arm-none-eabi-g++")
-set(CMAKE_ASM_COMPILER "arm-none-eabi-gcc")
-set(CMAKE_LINKER "arm-none-eabi-ld")
+set(CMAKE_C_COMPILER "arm-zephyr-eabi-gcc")
+set(CMAKE_CXX_COMPILER "arm-zephyr-eabi-g++")
+set(CMAKE_ASM_COMPILER "arm-zephyr-eabi-gcc")
+set(CMAKE_LINKER "arm-zephyr-eabi-ld")
 
 set(CMAKE_EXECUTABLE_SUFFIX ".elf")
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -97,6 +97,9 @@ add_compile_options(
   # -Wall -Wextra -Wcast-align -Wdouble-promotion -Wformat
   # -Wmissing-field-initializers -Wnull-dereference -Wredundant-decls -Wshadow
   # -Wswitch -Wswitch-default -Wunused -Wno-redundant-decls
+  -Wno-stringop-overread
+  -Wno-error=format=
+  -Wno-error=maybe-uninitialized
   -Wno-error=deprecated-declarations
   -Wno-error=shift-count-overflow
   -Wno-psabi

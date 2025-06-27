@@ -212,7 +212,6 @@ function select_toolchain() {
                 toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
                 toolchain_dir="arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi"
                 toolchain_md5_checksum="0601a9588bc5b9c99ad2b56133b7f118"
-                echo "[main] Info using bare metal toolchain for default host OS ${OS} selection"
 	    fi
         else
             echo "[main] Error: only Linux is currently supported for x86-64 architecture now!"; exit 1;
@@ -241,6 +240,7 @@ function select_toolchain() {
     else
         echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
     fi
+    echo "[main] Info selected ${toolchain_dir} for ${ARCH} - ${OS} platform"
 }
 function setup_toolchain() {
     # Download and install the arm toolchain (default is arm-none-eabi)
