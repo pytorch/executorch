@@ -29,9 +29,9 @@ from executorch.exir import (
 )
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.runtime import Runtime
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.graph_drawer import FxGraphDrawer
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from ultralytics import YOLO
 
 from ultralytics.data.utils import check_det_dataset
