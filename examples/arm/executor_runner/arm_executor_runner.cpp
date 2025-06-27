@@ -201,7 +201,13 @@ void et_pal_emit_log_message(
     const char* message,
     ET_UNUSED size_t length) {
   fprintf(
-      stderr, "%c [executorch:%s:%zu] %s\n", level, filename, line, message);
+      stderr,
+      "%c [executorch:%s:%zu %s()] %s\n",
+      level,
+      filename,
+      line,
+      function,
+      message);
 }
 
 /**
@@ -635,7 +641,7 @@ int main(int argc, const char* argv[]) {
           prepared_inputs.error());
     }
   }
-#ifdef DUMP_INPUT
+#if defined(ET_DUMP_INPUT)
   {
     std::vector<EValue> inputs(method->inputs_size());
     ET_LOG(Info, "%zu inputs: ", inputs.size());
@@ -643,29 +649,41 @@ int main(int argc, const char* argv[]) {
     ET_CHECK(status == Error::Ok);
 
     for (int i = 0; i < inputs.size(); ++i) {
-      Tensor t = inputs[i].toTensor();
-      // The output might be collected and parsed so printf() is used instead
-      // of ET_LOG() here
-      for (int j = 0; j < inputs[i].toTensor().numel(); ++j) {
-        if (t.scalar_type() == ScalarType::Int) {
-          printf(
-              "Input[%d][%d]: (int) %d\n",
-              i,
-              j,
-              inputs[i].toTensor().const_data_ptr<int>()[j]);
-        } else if (t.scalar_type() == ScalarType::Float) {
-          printf(
-              "Input[%d][%d]: (float) %f\n",
-              i,
-              j,
-              inputs[i].toTensor().const_data_ptr<float>()[j]);
-        } else if (t.scalar_type() == ScalarType::Char) {
-          printf(
-              "Input[%d][%d]: (char) %d\n",
-              i,
-              j,
-              inputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+      if (inputs[i].isTensor()) {
+        Tensor t = inputs[i].toTensor();
+        // The output might be collected and parsed so printf() is used instead
+        // of ET_LOG() here
+        for (int j = 0; j < inputs[i].toTensor().numel(); ++j) {
+          if (t.scalar_type() == ScalarType::Int) {
+            printf(
+                "Input[%d][%d]: (int) %d\n",
+                i,
+                j,
+                inputs[i].toTensor().const_data_ptr<int>()[j]);
+          } else if (t.scalar_type() == ScalarType::Float) {
+            printf(
+                "Input[%d][%d]: (float) %f\n",
+                i,
+                j,
+                inputs[i].toTensor().const_data_ptr<float>()[j]);
+          } else if (t.scalar_type() == ScalarType::Char) {
+            printf(
+                "Input[%d][%d]: (char) %d\n",
+                i,
+                j,
+                inputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+          } else if (t.scalar_type() == ScalarType::Bool) {
+            printf(
+                "Input[%d][%d]: (bool) %s (0x%x)\n",
+                i,
+                j,
+                inputs[i].toTensor().const_data_ptr<int8_t>()[j] ? "true"
+                                                                 : "false",
+                inputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+          }
         }
+      } else {
+        printf("Input[%d]: Not Tensor\n", i);
       }
     }
   }
@@ -738,7 +756,7 @@ int main(int argc, const char* argv[]) {
   for (int i = 0; i < outputs.size(); ++i) {
     Tensor t = outputs[i].toTensor();
 #if !defined(SEMIHOSTING)
-#if !defined(ET_BUNDLE_IO)
+#if defined(ET_DUMP_OUTPUT)
     // The output might be collected and parsed so printf() is used instead
     // of ET_LOG() here
     for (int j = 0; j < outputs[i].toTensor().numel(); ++j) {
@@ -759,6 +777,14 @@ int main(int argc, const char* argv[]) {
             "Output[%d][%d]: (char) %d\n",
             i,
             j,
+            outputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+      } else if (t.scalar_type() == ScalarType::Bool) {
+        printf(
+            "Output[%d][%d]: (bool) %s (0x%x)\n",
+            i,
+            j,
+            outputs[i].toTensor().const_data_ptr<int8_t>()[j] ? "true "
+                                                              : "false",
             outputs[i].toTensor().const_data_ptr<int8_t>()[j]);
       }
     }

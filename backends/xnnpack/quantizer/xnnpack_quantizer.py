@@ -251,6 +251,15 @@ CONV_TARGETS = {
     torch.ops.aten.convolution.default,
 }
 
+CONV_TRANSPOSE_TARGETS = {
+    torch.ops.aten.conv_transpose1d,
+    torch.ops.aten.conv_transpose1d.default,
+    torch.ops.aten.conv_transpose2d,
+    torch.ops.aten.conv_transpose2d.input,
+    torch.ops.aten.conv_transpose3d,
+    torch.ops.aten.conv_transpose3d.input,
+}
+
 LINEAR_TARGETS = {
     torch.ops.aten.linear.default,
 }
@@ -269,14 +278,14 @@ class XNNPACKQuantizer(Quantizer):
     SUPPORTED_PATTERNS = [
         QuantPattern("conv_bn_relu", False, True, CONV_TARGETS),
         QuantPattern("conv_bn", False, True, CONV_TARGETS),
-        QuantPattern("conv_transpose_bn_relu", False, True, CONV_TARGETS),
-        QuantPattern("conv_transpose_bn", False, True, CONV_TARGETS),
+        QuantPattern("conv_transpose_bn_relu", False, True, CONV_TRANSPOSE_TARGETS),
+        QuantPattern("conv_transpose_bn", False, True, CONV_TRANSPOSE_TARGETS),
         QuantPattern("linear_relu", False, False, LINEAR_TARGETS),
         QuantPattern("linear", True, False, LINEAR_TARGETS),
         QuantPattern("conv", True, False, CONV_TARGETS),
-        QuantPattern("conv_transpose", False, False, CONV_TARGETS),
+        QuantPattern("conv_transpose", True, False, CONV_TRANSPOSE_TARGETS),
         QuantPattern("conv_relu", False, False, CONV_TARGETS),
-        QuantPattern("conv_transpose_relu", False, False, CONV_TARGETS),
+        QuantPattern("conv_transpose_relu", False, False, CONV_TRANSPOSE_TARGETS),
         QuantPattern("adaptive_avg_pool2d", False, False, ADAPTIVE_AVG_POOL2D_TARGETS),
         QuantPattern("add_relu", False, False, ADD_TARGETS),
         QuantPattern("add", False, False, ADD_TARGETS),

@@ -231,7 +231,7 @@ class ComputeGraph final {
   inline ptr_type get_##short_name(const ValueRef idx) {                   \
     return ptr_type(this, idx);                                            \
   }                                                                        \
-  inline bool val_is_##short_name(const ValueRef idx) {                    \
+  inline bool val_is_##short_name(const ValueRef idx) const {              \
     return values_.at(idx).is##type_name();                                \
   }
 
@@ -314,6 +314,32 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().has_buffer_storage();
   }
 
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` has buffer storage
+   * 3. The buffer backed tensor at `idx` has a contiguous memory layout
+   */
+  bool is_contiguous_buffer_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` has texture storage
+   * 3. The texture backed tensor at `idx` has a standard axis mapping
+   * 4. The texture backed tensor at `idx` is channels packed
+   */
+  bool is_standard_channels_packed_texture_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` has texture storage
+   * 3. The texture backed tensor at `idx` has a standard axis mapping
+   * 4. The texture backed tensor at `idx` is width packed
+   */
+  bool is_standard_width_packed_texture_tensor(const ValueRef idx) const;
+
   inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
       const {
     return values_.at(maybe_view)
@@ -354,7 +380,7 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().numel_ubo();
   }
 
-  inline bool has_standard_axis_map(const ValueRef idx) {
+  inline bool has_standard_axis_map(const ValueRef idx) const {
     return values_.at(idx).toTensor().has_standard_axis_map();
   }
 
@@ -631,6 +657,8 @@ class ComputeGraph final {
 
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
+
+  ValueRef set_output_value(const ValueRef idx);
 
   template <typename Block>
   vkapi::BufferBindInfo create_params_buffer(const Block& data) {

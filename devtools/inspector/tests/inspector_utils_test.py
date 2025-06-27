@@ -29,13 +29,17 @@ from executorch.devtools.inspector._inspector_utils import (
     calculate_mse,
     calculate_snr,
     calculate_time_scale_factor,
+    convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
+    find_op_names,
     find_populated_event,
     gen_graphs_from_etrecord,
+    get_aot_debug_handle_to_op_name_mapping,
     is_inference_output_equal,
     map_runtime_aot_intermediate_outputs,
     merge_overlapping_debug_handles,
+    NodeFilter,
     TimeScale,
 )
 
@@ -316,6 +320,175 @@ class TestInspectorUtils(unittest.TestCase):
         )
         expected = {((1, 2, 3, 4, 5, 6), 300): ((2, 3, 4, 5, 6, 7), 350)}
         self.assertEqual(actual, expected)
+
+    def test_convert_input_to_tensor_convertible_inputs(self):
+        # Scalar -> tensor
+        actual_output1 = convert_to_float_tensor(5)
+        self.assertIsInstance(actual_output1, torch.Tensor)
+        self.assertEqual(actual_output1.dtype, torch.float64)
+        self.assertEqual(tuple(actual_output1.shape), ())
+        self.assertTrue(
+            torch.allclose(actual_output1, torch.tensor([5.0], dtype=torch.float64))
+        )
+        self.assertEqual(actual_output1.device.type, "cpu")
+
+        # Tensor of ints -> float32 CPU
+        t_int = torch.tensor([4, 5, 6], dtype=torch.int32)
+        actual_output2 = convert_to_float_tensor(t_int)
+        self.assertIsInstance(actual_output2, torch.Tensor)
+        self.assertEqual(actual_output2.dtype, torch.float64)
+        self.assertTrue(
+            torch.allclose(
+                actual_output2, torch.tensor([4.0, 5.0, 6.0], dtype=torch.float64)
+            )
+        )
+        self.assertEqual(actual_output2.device.type, "cpu")
+
+        # List of tensors -> stacked tensor float32 CPU
+        t_list = [torch.tensor([1, 2]), torch.tensor([2, 3]), torch.tensor([3, 4])]
+        actual_output3 = convert_to_float_tensor(t_list)
+        self.assertIsInstance(actual_output3, torch.Tensor)
+        self.assertEqual(actual_output3.dtype, torch.float64)
+        self.assertEqual(tuple(actual_output3.shape), (3, 2))
+        self.assertTrue(
+            torch.allclose(
+                actual_output3,
+                torch.tensor([[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]], dtype=torch.float64),
+            )
+        )
+        self.assertEqual(actual_output3.device.type, "cpu")
+
+    def test_convert_input_to_tensor_non_convertible_raises(self):
+        class X:
+            pass
+
+        with self.assertRaises(ValueError) as cm:
+            convert_to_float_tensor(X())
+        msg = str(cm.exception)
+        self.assertIn("Cannot convert value of type", msg)
+
+    def test_get_aot_debug_handle_to_op_name_mapping_single_debug_handle(self):
+        # Create a simple graph module with one node
+        graph_module = torch.fx.GraphModule({}, torch.fx.Graph())
+        node = graph_module.graph.create_node(
+            "call_function", target=torch.mul, args=(), kwargs={}, name="op1"
+        )
+        node.meta["debug_handle"] = 1
+        debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(graph_module)
+        expected_result = {(1,): "op1"}
+        self.assertEqual(debug_handle_to_op_name, expected_result)
+
+    def test_get_aot_debug_handle_to_op_name_mapping_multiple_debug_handles(self):
+        # Create a simple graph module with two nodes
+        graph_module = torch.fx.GraphModule({}, torch.fx.Graph())
+        node1 = graph_module.graph.create_node(
+            "call_function", target=torch.mul, args=(), kwargs={}, name="op1"
+        )
+        node1.meta["debug_handle"] = (1, 2)
+        node2 = graph_module.graph.create_node(
+            "call_function", target=torch.mul, args=(), kwargs={}, name="op2"
+        )
+        node2.meta["debug_handle"] = 3
+        debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(graph_module)
+        expected_result = {
+            (
+                1,
+                2,
+            ): "op1",
+            (3,): "op2",
+        }
+        self.assertEqual(debug_handle_to_op_name, expected_result)
+
+    def test_get_aot_debug_handle_to_op_name_mapping_no_debug_handles(self):
+        # Create a simple graph module with no nodes
+        graph_module = torch.fx.GraphModule({}, torch.fx.Graph())
+        debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(graph_module)
+        expected_result = {}
+        self.assertEqual(debug_handle_to_op_name, expected_result)
+
+    def test_node_filter_match(self):
+        node_filter = NodeFilter(
+            "debug_handle", "call_function", exclude_ops=["getitem"]
+        )
+
+        # Create a mock node that matches the filter criteria
+        mock_node = torch.fx.Node(
+            graph=torch.fx.Graph(),
+            name="mock_node",
+            op="call_function",
+            target=torch.nn.functional.relu,
+            args=(),
+            kwargs={},
+        )
+        mock_node.meta["debug_handle"] = (1, 2)
+        # Test that the filter matches the mock node
+        self.assertTrue(node_filter.matches(mock_node))
+
+    def test_node_filter_key_mismatch(self):
+        node_filter = NodeFilter(
+            "debug_handle", "call_function", exclude_ops=["getitem"]
+        )
+        mock_node_metadata_key_mismatch = torch.fx.Node(
+            graph=torch.fx.Graph(),
+            name="mock_node_metadata_key_mismatch",
+            op="call_function",
+            target=torch.nn.functional.relu,
+            args=(),
+            kwargs={},
+        )
+        # Test that the filter doesn't match the mock node (meta doesn't have debug_handle key)
+        self.assertFalse(node_filter.matches(mock_node_metadata_key_mismatch))
+
+    def test_node_filter_ops_mismatch(self):
+        node_filter = NodeFilter(
+            "debug_handle", "call_function", exclude_ops=["getitem"]
+        )
+
+        mock_node_exclude_ops_mismatch = torch.fx.Node(
+            graph=torch.fx.Graph(),
+            name="getitem",
+            op="call_function",
+            target=torch.nn.functional.relu,
+            args=(),
+            kwargs={},
+        )
+        mock_node_exclude_ops_mismatch.meta["debug_handle"] = (1, 2)
+        # Test that the filter doesn't match the mock node (exclude_ops mismatch)
+        self.assertFalse(node_filter.matches(mock_node_exclude_ops_mismatch))
+
+    def test_node_op_type_mismatch(self):
+        node_filter = NodeFilter(
+            "debug_handle", "call_function", exclude_ops=["getitem"]
+        )
+
+        mock_node_op_type_mismatch = torch.fx.Node(
+            graph=torch.fx.Graph(),
+            name="mock_node_op_type_mismatch",
+            op="get_attr",
+            target="torch.nn.functional.relu",
+            args=(),
+            kwargs={},
+        )
+        mock_node_op_type_mismatch.meta["debug_handle"] = (1, 2)
+        # Test that the filter doesn't match the mock node (op_type mismatch)
+        self.assertFalse(node_filter.matches(mock_node_op_type_mismatch))
+
+    def test_find_op_names_empty_debug_handle(self):
+        debug_handle = ()
+        debug_handle_to_op_name = {(1, 2): "op1", (3, 4): "op2"}
+        self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
+
+    def test_find_op_names_no_matching_handles(self):
+        debug_handle = (1, 2)
+        debug_handle_to_op_name = {(3, 4): "op1", (5, 6): "op2"}
+        self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
+
+    def test_find_op_names_matching_handles(self):
+        debug_handle = (1, 2, 3)
+        debug_handle_to_op_name = {(1, 2): "op1", (2, 3): "op2", (4, 5, 6): "op3"}
+        self.assertEqual(
+            find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2"]
+        )
 
 
 def gen_mock_operator_graph_with_expected_map() -> (

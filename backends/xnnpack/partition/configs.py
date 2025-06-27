@@ -66,6 +66,8 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.rsqrt.default,
     exir_ops.edge.aten.log.default,
     exir_ops.edge.aten.gelu.default,
+    exir_ops.edge.aten.tanh.default,
+    exir_ops.edge.aten.exp.default,
 ]
 
 SUPPORTED_MODULES = [

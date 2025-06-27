@@ -86,8 +86,8 @@ test_model() {
   if [[ "${MODEL_NAME}" == "llama2" ]]; then
     # Install requirements for export_llama
     bash examples/models/llama/install_requirements.sh
-    # Test export_llama script: python3 -m examples.models.llama.export_llama
-    "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/llama/params/demo_config.json
+    # Test export_llm script: python3 -m extension.llm.export.export_llm
+    "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.checkpoint=examples/models/llama/params/demo_rand_params.pth base.params=examples/models/llama/params/demo_config.json
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi
@@ -100,17 +100,17 @@ test_model() {
   if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
-      # Test export_llama script: python3 -m examples.models.llama.export_llama.
+      # Test export_llm script: python3 -m extension.llm.export.export_llm.
       # Use Llama random checkpoint with Qwen 2.5 1.5b model configuration.
-      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -p examples/models/qwen2_5/1_5b_config.json
+      "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.params=examples/models/qwen2_5/config/1_5b_config.json
       rm "./${MODEL_NAME}.pte"
       return  # Skip running with portable executor runnner since portable doesn't support Qwen's biased linears.
   fi
   if [[ "${MODEL_NAME}" == "phi_4_mini" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
-      # Test export_llama script: python3 -m examples.models.llama.export_llama.
-      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -p examples/models/phi_4_mini/config.json
+      # Test export_llm script: python3 -m extension.llm.export.export_llm.
+      "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.params=examples/models/phi_4_mini/config/config.json
       run_portable_executor_runner
       rm "./${MODEL_NAME}.pte"
       return
@@ -188,6 +188,14 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  elif [[ "${MODEL_NAME}" == "albert" ]]; then
+    EXPORT_SCRIPT=albert
+  elif [[ "${MODEL_NAME}" == "bert" ]]; then
+    EXPORT_SCRIPT=bert
+  elif [[ "${MODEL_NAME}" == "distilbert" ]]; then
+    EXPORT_SCRIPT=distilbert
+  elif [[ "${MODEL_NAME}" == "eurobert" ]]; then
+    EXPORT_SCRIPT=eurobert
   else
     echo "Unsupported model $MODEL_NAME"
     exit 1
@@ -197,7 +205,25 @@ test_model_with_qnn() {
   # TODO(guangyang): Make QNN chipset matches the target device
   QNN_CHIPSET=SM8450
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
+  SCRIPT_FOLDER=""
+  case "${MODEL_NAME}" in
+    "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
+        SCRIPT_FOLDER=scripts
+        ;;
+    "albert"|"bert"|"distilbert")
+        pip install evaluate
+        SCRIPT_FOLDER=oss_scripts
+        # Bert models running in 16bit will encounter op validation fail on some operations,
+        # which requires CHIPSET >= SM8550.
+        QNN_CHIPSET=SM8550
+        ;;
+    *)
+        echo "Unsupported model $MODEL_NAME"
+        exit 1
+        ;;
+  esac
+
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.${SCRIPT_FOLDER}.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 

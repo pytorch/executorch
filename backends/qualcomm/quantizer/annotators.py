@@ -462,7 +462,7 @@ def annotate_hardtanh(node: Node, quantization_config: QuantizationConfig) -> No
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.mean.default])
+@register_annotator([torch.ops.aten.mean.default, torch.ops.aten.mean.dim])
 def annotate_mean(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
@@ -601,11 +601,6 @@ def annotate_reshape(node: Node, quantization_config: QuantizationConfig) -> Non
 
 @register_annotator([torch.ops.aten.select.int])
 def annotate_select(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_single_in_single_out(node, quantization_config)
-
-
-@register_annotator([torch.ops.aten.mean.dim])
-def annotate_mean_dim(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
@@ -822,16 +817,32 @@ def annotate_index(node: Node, quantization_config: QuantizationConfig) -> None:
     [torch.ops.aten.index_put.default, torch.ops.aten.index_put_.default]
 )
 def annotate_index_put(node: Node, quantization_config: QuantizationConfig) -> None:
-    input = node.args[0]
+    # Avoid annotating the input node because mutable buffers will be folded during the convert_pt2e process.
     value = node.args[2]
 
     input_qspec_map = {}
-    input_qspec_map[input] = quantization_config.input_activation
-    input_qspec_map[value] = SharedQuantizationSpec((input, node))
+    input_qspec_map[value] = quantization_config.input_activation
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
-        output_qspec=SharedQuantizationSpec((input, node)),
+        output_qspec=SharedQuantizationSpec((value, node)),
+        _annotated=True,
+    )
+
+
+@register_annotator(
+    [torch.ops.aten.index_copy.default, torch.ops.aten.index_copy_.default]
+)
+def annotate_index_copy(node: Node, quantization_config: QuantizationConfig) -> None:
+    # Avoid annotating the input node because mutable buffers will be folded during the convert_pt2e process.
+    value = node.args[3]
+
+    input_qspec_map = {}
+    input_qspec_map[value] = quantization_config.input_activation
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=SharedQuantizationSpec((value, node)),
         _annotated=True,
     )
 
