@@ -18,7 +18,6 @@ import torch
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     draw_graph,
-    ExecutorchBackendConfig,
     from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -26,6 +25,7 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
 from executorch.examples.qualcomm.utils import make_output_dir, SimpleADB
+from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 
 
