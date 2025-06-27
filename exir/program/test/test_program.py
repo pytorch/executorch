@@ -294,6 +294,27 @@ class TestProgramManagers(unittest.TestCase):
         for node in ep.graph.nodes:
             self.assertNotEqual(node.op, "get_attr")
 
+    def test_while(self):
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 2)
+                self.dec = torch.nn.Buffer(torch.tensor(1))
+
+            def forward(self, iter, x):
+                def cond_fn(it, x):
+                    return it - self.dec > 0
+
+                def body_fn(it, x):
+                    return it - 1, self.linear(x)
+
+                return torch._higher_order_ops.while_loop(cond_fn, body_fn, (iter, x))
+
+        # Instantiate and export
+        inp = (torch.tensor(3), torch.randn(2, 2))
+        exported = export(M(), inp)
+        to_edge(exported)
+
     def test_constraint_present_after_dce(self):
         import executorch.exir as exir
 

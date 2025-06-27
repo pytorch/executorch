@@ -115,6 +115,7 @@ def define_common_targets():
             ":vectorized_math",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/runtime/kernel:kernel_runtime_context",
+            "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu:scalar_utils",
         ],
