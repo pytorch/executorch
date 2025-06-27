@@ -21,7 +21,7 @@ namespace llm {
 
 class ET_EXPERIMENTAL TextDecoderRunner {
  public:
-  TextDecoderRunner(Module* module, bool use_kv_cache);
+  explicit TextDecoderRunner(Module* module);
 
   virtual ~TextDecoderRunner() = default;
 
@@ -34,7 +34,7 @@ class ET_EXPERIMENTAL TextDecoderRunner {
    */
   virtual ::executorch::runtime::Result<executorch::aten::Tensor> step(
       TensorPtr& input,
-      TensorPtr& start_pos);
+      int64_t start_pos);
 
   /**
    * Load the Module for text decode purpose.
@@ -101,7 +101,6 @@ class ET_EXPERIMENTAL TextDecoderRunner {
    * Module remains valid for the duration of TextDecoderRunner's usage.
    */
   Module* module_;
-  bool use_kv_cache_;
   bool should_stop_{false};
 };
 
