@@ -61,6 +61,8 @@ class AnnotateChannelsLastDimOrder(ExportPass):
         """
         if node.op == "placeholder":
             # node is an input, weight or bias node
+            if not node.users:
+                return False
             consumer_node = list(node.users)[0]
             if self.is_weight_node_for_depthwise_conv2d(consumer_node):
                 return True

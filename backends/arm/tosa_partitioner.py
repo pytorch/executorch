@@ -118,6 +118,13 @@ class TOSAPartitioner(Partitioner):
 
                 if is_partitioned(node):
                     for input in node.all_input_nodes:
+                        if input.target in (
+                            exir_ops.edge.aten.full.default,
+                            exir_ops.edge.aten.full_like.default,
+                        ):
+                            continue
+                        if is_dequant_node(input):
+                            continue
                         if is_partitioned(input):
                             continue
                         if get_first_fake_tensor(input).dtype.is_floating_point:
