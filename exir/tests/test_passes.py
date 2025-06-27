@@ -859,11 +859,16 @@ class TestPasses(unittest.TestCase):
             .exported_program()
             .graph_module
         )
+
+        # Every node except input and output should have debug handle
         for node in graph_module.graph.nodes:
-            self.assertIn("debug_handle", node.meta)
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
         ScalarToTensorPass()(graph_module)
+
         for node in graph_module.graph.nodes:
-            self.assertIn("debug_handle", node.meta)
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
 
     def test_generate_missing_debug_handles(self) -> None:
         eager_model = MLP(2, output_size=4)
@@ -871,10 +876,15 @@ class TestPasses(unittest.TestCase):
 
         ep = to_edge(export(eager_model, inputs, strict=True)).exported_program()
 
-        list(ep.graph.nodes)[0].meta.pop("debug_handle")
-        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is None)
+        # get the first non-placeholder node
+        first_non_placeholder_node = [
+            n for n in ep.graph.nodes if n.op != "placeholder"
+        ][0]
+
+        first_non_placeholder_node.meta.pop("debug_handle")
+        self.assertTrue(first_non_placeholder_node.meta.get("debug_handle") is None)
         generate_missing_debug_handles(ep)
-        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is not None)
+        self.assertTrue(first_non_placeholder_node.meta.get("debug_handle") is not None)
 
     def test_debug_handle_generator_pass_with_control_flow(self) -> None:
         def true_nested(y: torch.Tensor) -> torch.Tensor:
@@ -928,7 +938,8 @@ class TestPasses(unittest.TestCase):
             while queue:
                 current_graph_module = queue.pop(0)
                 for node in current_graph_module.graph.nodes:
-                    self.assertIn("debug_handle", node.meta)
+                    if node.op != "placeholder" and node.op != "output":
+                        self.assertIn("debug_handle", node.meta)
                 control_flow_submodules = [
                     submodule
                     for _, submodule, _ in get_control_flow_submodules(
@@ -939,7 +950,6 @@ class TestPasses(unittest.TestCase):
 
         DebugHandleGeneratorPass()(graph_module)
         check_debug_handle_metadata(graph_module)
-        generate_missing_debug_handles(ep)
 
         # Check debug handle still preserved after ScalarToTensorPass
         ScalarToTensorPass()(graph_module)
