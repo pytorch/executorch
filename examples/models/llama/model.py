@@ -15,11 +15,11 @@ from executorch.examples.models.checkpoint import (
     get_checkpoint_dtype,
     get_default_model_resource_dir,
 )
-
-from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
+
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 from torchao.utils import TorchAOBaseTensor
 
 try:
@@ -157,7 +157,7 @@ the checkpoint format to avoid generating faulty models.
 
         if model_args.use_scaled_rope:
             # Older models don't have use_scaled_rope configuration
-            model_name = str(self.llm_config.base.model_class)
+            model_name = self.llm_config.base.model_class.value
             assert model_name not in ["llama2", "stories110m"]
 
             # Llama3_2 and newer models in ExecuTorch repo should set larger scale factor
@@ -328,10 +328,10 @@ the checkpoint format to avoid generating faulty models.
 
     def _transform_for_pre_quantization(self, checkpoint, model_args):
         assert self.llm_config.base.preq_mode, "preq_mode must be specified"
-        assert self.llm_config.base.preq_mode in [
+        assert self.llm_config.base.preq_mode.value in [
             "8da4w",
             "8da4w_output_8da8w",
-        ], f"Quantization mode {self.llm_config.base.preq_mode} is not compatible with SpinQuant."
+        ], f"Quantization mode {self.llm_config.base.preq_mode.value} is not compatible with SpinQuant."
         assert self.llm_config.base.preq_group_size, "preq_group_size must be specified"
         assert self.llm_config.model.dtype_override, "dtype_override must be specified"
 
@@ -351,7 +351,7 @@ the checkpoint format to avoid generating faulty models.
         }
 
         # Transform the output layer first if needed.
-        if self.llm_config.base.preq_mode == "8da4w_output_8da8w":
+        if self.llm_config.base.preq_mode.value == "8da4w_output_8da8w":
             from .source_transformation.pre_quantization import (
                 transform_output_linear_for_pre_quantization,
             )
@@ -359,14 +359,14 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = transform_output_linear_for_pre_quantization(
                 module=self.model_,
                 checkpoint=checkpoint,
-                dtype=mapping[self.llm_config.model.dtype_override],
+                dtype=mapping[self.llm_config.model.dtype_override.value],
             )
 
         self.model_ = transform_linear_for_pre_quantization(
             self.model_,
             checkpoint,
             self.llm_config.base.preq_group_size,
-            mapping[self.llm_config.model.dtype_override],
+            mapping[self.llm_config.model.dtype_override.value],
         )
 
         embedding_bit_width, embedding_group_size = None, None
@@ -390,7 +390,7 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = transform_embedding_for_pre_quantization(
                 self.model_,
                 checkpoint,
-                mapping[self.llm_config.model.dtype_override],
+                mapping[self.llm_config.model.dtype_override.value],
                 int(embedding_bit_width),
                 embedding_group_size,
             )

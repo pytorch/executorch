@@ -93,6 +93,28 @@ class NodeData:
     output: Any
 
 
+class NodeFilter:
+    """
+    A class used to filter nodes based on extensible criteria.
+    Attributes:
+        metadata_key (str): The key to look for in the node's metadata.
+        op_type (str): The operation code to match.
+        exclude_ops (List[str]): A list of operations to exclude from the filter.
+    """
+
+    def __init__(self, metadata_key: str, op_type: str, exclude_ops: List[str] = None):
+        self.metadata_key = metadata_key
+        self.op_type = op_type
+        self.exclude_ops = exclude_ops
+
+    def matches(self, node: torch.fx.Node) -> bool:
+        return (
+            node.meta.get(self.metadata_key) is not None
+            and node.op == self.op_type
+            and all(exclude_name not in node.name for exclude_name in self.exclude_ops)
+        )
+
+
 def calculate_time_scale_factor(
     source_time_scale: TimeScale, target_time_scale: TimeScale
 ) -> float:
@@ -729,4 +751,56 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
             f"Cannot convert value of type {type(input_data)} to a tensor: {e}"
         )
     input_tensor = input_tensor.detach().cpu().double()
+
+    # Convert NaN to 0.0
+    if torch.isnan(input_tensor).any():
+        input_tensor = torch.nan_to_num(input_tensor)
     return input_tensor
+
+
+def get_aot_debug_handle_to_op_name_mapping(
+    graph_module: torch.fx.GraphModule,
+) -> Dict[Tuple[int, ...], str]:
+    """
+    Get a mapping from debug handle to operator name from the ETRecord edge_dialect_program's graph module.
+    Parameters:
+    graph_module (torch.fx.GraphModule): The graph module to get the mapping from.
+    Returns:
+    Dict[Tuple[int, ...], str]: A dictionary mapping debug handles to operator names.
+    """
+    node_filters = [
+        NodeFilter("debug_handle", "call_function", exclude_ops=["getitem"])
+    ]
+
+    debug_handle_to_op_name = {}
+    for node in graph_module.graph.nodes:
+        if all(filter.matches(node) for filter in node_filters):
+            debug_handle = node.meta["debug_handle"]
+            # Convert the debug handle to a tuple to use as a dictionary key
+            key = (
+                (debug_handle,)
+                if isinstance(debug_handle, int)
+                else tuple(debug_handle)
+            )
+            debug_handle_to_op_name[key] = node.name
+    return debug_handle_to_op_name
+
+
+def find_op_names(
+    target_debug_handle: Tuple[int, ...],
+    debug_handle_to_op_name: Dict[Tuple[int, ...], str],
+) -> List[str]:
+    """
+    Record the operator names only if their debug handles are part of the target debug handle.
+    The debug handles in `debug_handle_to_op_name` have undergone merging and remain unchanged,
+    and this function identifies operations corresponding to these transformed handles.
+    """
+    dh_set = set(target_debug_handle)
+    result = []
+
+    for key_tuple, op_name in debug_handle_to_op_name.items():
+        # Check if key is a subset of the target_debug_handle
+        if set(key_tuple).issubset(dh_set):
+            result.append(op_name)
+
+    return result

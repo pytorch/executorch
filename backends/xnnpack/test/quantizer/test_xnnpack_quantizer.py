@@ -120,6 +120,116 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             node_list,
         )
 
+    def test_q_tconv_and_conv2d(self):
+        class TConv2dConv2d(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.first = torch.nn.ConvTranspose2d(
+                    in_channels=1,
+                    out_channels=3,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+                self.second = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=2,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                y = self.first(x)
+                return self.second(y)
+
+            def example_inputs(self):
+                return (torch.randn(1, 1, 3, 3),)
+
+        quantizer = XNNPACKQuantizer()
+        quantization_config = get_symmetric_quantization_config(is_per_channel=True)
+        quantizer.set_operator_type(
+            torch.ops.aten.conv_transpose2d.input, quantization_config
+        )
+        node_occurrence = {
+            # input and output are using quantize_per_tensor and weight is using quantize_per_channel
+            torch.ops.quantized_decomposed.quantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.quantize_per_channel.default: 0,
+            torch.ops.quantized_decomposed.dequantize_per_channel.default: 1,
+        }
+        node_list = [
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.conv_transpose2d.input,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.conv2d.default,
+        ]
+        m = TConv2dConv2d()
+        self._test_quantizer(
+            m,
+            m.example_inputs(),
+            quantizer,
+            node_occurrence,
+            node_list,
+            is_debug_mode=True,
+        )
+
+    def test_q_conv2_and_tconv2d(self):
+        class TConv2dConv2d(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.first = torch.nn.ConvTranspose2d(
+                    in_channels=1,
+                    out_channels=3,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+                self.second = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=2,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                y = self.first(x)
+                return self.second(y)
+
+            def example_inputs(self):
+                return (torch.randn(1, 1, 3, 3),)
+
+        quantizer = XNNPACKQuantizer()
+        quantization_config = get_symmetric_quantization_config(is_per_channel=True)
+        quantizer.set_operator_type(torch.ops.aten.conv2d.default, quantization_config)
+        node_occurrence = {
+            # input and output are using quantize_per_tensor and weight is using quantize_per_channel
+            torch.ops.quantized_decomposed.quantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default: 2,
+            torch.ops.quantized_decomposed.quantize_per_channel.default: 0,
+            torch.ops.quantized_decomposed.dequantize_per_channel.default: 1,
+        }
+        node_list = [
+            torch.ops.aten.conv_transpose2d.input,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+        ]
+        m = TConv2dConv2d()
+        self._test_quantizer(
+            m,
+            m.example_inputs(),
+            quantizer,
+            node_occurrence,
+            node_list,
+            is_debug_mode=True,
+        )
+
     def test_linear(self):
         quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config(is_per_channel=True)
