@@ -220,30 +220,29 @@ inline void dtype_specialized_elementwise_fn_impl(
       });
 }
 
-template <typename CTYPE_COMPUTE, typename Op, typename... Args>
-inline bool validate_elementwise_fn_inputs(
-    const Op& compute_fun,
+bool validate_elementwise_fn_inputs(
     KernelRuntimeContext& ctx,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes,
-    Args... inputs) {
-  static_assert(
-      (std::is_same_v<Args, std::pair<const Tensor*, SupportedTensorDtypes>> &&
-       ...));
-  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMPUTE>::value;
-  const auto check_input_dtype = [](auto input, auto compute_type) {
-    return internal::check_tensor_dtype(
-        *input.first, input.second, compute_type);
-  };
-  ET_KERNEL_CHECK(
-      ctx,
-      (check_input_dtype(inputs, compute_type) && ...) &&
-          internal::check_tensor_dtype(out, out_dtypes, compute_type),
-      InvalidArgument,
-      false);
+    ScalarType compute_type,
+    std::pair<const Tensor*, SupportedTensorDtypes> input);
 
-  return true;
-}
+bool validate_elementwise_fn_inputs(
+    KernelRuntimeContext& ctx,
+    const Tensor& out,
+    SupportedTensorDtypes out_dtypes,
+    ScalarType compute_type,
+    std::pair<const Tensor*, SupportedTensorDtypes> input0,
+    std::pair<const Tensor*, SupportedTensorDtypes> input1);
+
+bool validate_elementwise_fn_inputs(
+    KernelRuntimeContext& ctx,
+    const Tensor& out,
+    SupportedTensorDtypes out_dtypes,
+    ScalarType compute_type,
+    std::pair<const Tensor*, SupportedTensorDtypes> input0,
+    std::pair<const Tensor*, SupportedTensorDtypes> input1,
+    std::pair<const Tensor*, SupportedTensorDtypes> input2);
 
 template <
     typename CTYPE_COMPUTE,
@@ -314,8 +313,9 @@ inline void apply_elementwise_fn_runtime_out_dtypes(
     const Tensor& out,
     SupportedTensorDtypes out_dtypes,
     Args... inputs) {
-  const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMPUTE>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
+  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMPUTE>::value;
+  const bool inputs_valid = validate_elementwise_fn_inputs(
+      ctx, out, out_dtypes, compute_type, inputs...);
   if (!inputs_valid) {
     return;
   }
@@ -339,13 +339,13 @@ inline void apply_elementwise_fn(
     KernelRuntimeContext& ctx,
     const Tensor& out,
     Args... inputs) {
-  const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMPUTE>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
+  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMPUTE>::value;
+  const bool inputs_valid = validate_elementwise_fn_inputs(
+      ctx, out, out_dtypes, compute_type, inputs...);
   if (!inputs_valid) {
     return;
   }
 
-  constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMPUTE>::value;
   if constexpr (should_include_kernel_dtype(op_name, compute_type)) {
     const bool all_inputs_compute_dtype =
         ((inputs.first->scalar_type() == compute_type) && ...);
