@@ -303,19 +303,6 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "arange_util",
-        srcs = ["arange_util.cpp"],
-        exported_headers = ["arange_util.h"],
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-        ],
-        visibility = [
-            "//executorch/kernels/portable/cpu/...",
-            "//executorch/extension/llm/...",
-        ],
-    )
-
-    runtime.cxx_library(
         name = "broadcast_indexes_range",
         exported_headers = ["broadcast_indexes_range.h"],
         deps = [
