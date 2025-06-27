@@ -18,7 +18,6 @@ for more information.
 """
 
 import argparse
-import ast
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -166,7 +165,6 @@ class ModelConfig:
 
     def __post_init__(self):
         self._validate_attention_sink()
-        self._validate_local_global_attention()
 
         if self.quantize_kv_cache and not self.use_kv_cache:
             raise ValueError(
@@ -185,18 +183,6 @@ class ModelConfig:
                 raise ValueError(
                     "The value of use_attention_sink must be structured like '<sink_size>,<window_size>,<batch_eviction_size>'"
                 )
-
-    def _validate_local_global_attention(self):
-        if self.local_global_attention:
-            local_global_err = "The value of local_global_attention must be a list of integers, e.g., [0, 16, 0, 16]"
-            try:
-                parsed = ast.literal_eval(self.local_global_attention)
-                if not (
-                    isinstance(parsed, list) and all(isinstance(i, int) for i in parsed)
-                ):
-                    raise ValueError(local_global_err)
-            except Exception:
-                raise ValueError(local_global_err)
 
 
 ################################################################################
