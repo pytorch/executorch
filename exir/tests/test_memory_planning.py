@@ -33,6 +33,8 @@ from executorch.exir.passes import (  # noqa
     ToOutVarPass,
 )
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from executorch.exir.tensor import TensorSpec
+from functorch.experimental.control_flow import map as torch_map
 from parameterized import parameterized
 
 from torch import nn
@@ -56,6 +58,7 @@ from torch.export.experimental import _export_forward_backward
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
 from torch.nn import functional as F
+from torch.utils import _pytree as pytree
 
 torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
 
@@ -471,13 +474,13 @@ class TestMemoryPlanning(unittest.TestCase):
             alloc_graph_output,
             alloc_mutable_buffers,
         ) in itertools.product([True, False], [True, False], [True, False]):
-            case = maketest(
+            test = maketest(
                 ModelWithDifferentTensorSizes,
                 alloc_graph_input=alloc_graph_input,
                 alloc_graph_output=alloc_graph_output,
                 alloc_mutable_buffer=alloc_mutable_buffers,
             )
-            case(self)
+            test(self)
 
 
 class TestVerifier(unittest.TestCase):
@@ -839,3 +842,97 @@ class TestMisc(unittest.TestCase):
             .val.allocation_info,  # pyright: ignore
             None,
         )
+
+
+def _get_specs(gm: torch.fx.GraphModule) -> list[TensorSpec]:
+    return list(
+        filter(
+            None,
+            pytree.tree_flatten(
+                pytree.tree_map_only(
+                    torch.fx.Node,
+                    lambda n: n.meta.get("spec", None),
+                    list(gm.graph.nodes),
+                )
+            )[0],
+        )
+    )
+
+
+class TestMap(unittest.TestCase):
+    class MapModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            # Use actual torch.map function for memory planning testing
+            def add_fn(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+                return a + b
+
+            # Use torch.map to apply function over first dimension
+            # pyre-ignore[6]: For 3rd argument expected `TypeVarTuple` but got `Tensor`.
+            map_output = torch_map(add_fn, x, y)
+
+            return map_output + y
+
+        def get_random_inputs(self) -> Tuple[torch.Tensor, ...]:
+            return (torch.randn(5, 3), torch.randn(3))
+
+    def test_map(self) -> None:
+        """Test memory planning for torch.map operations."""
+
+        eager_module = self.MapModel().eval()
+        inputs = eager_module.get_random_inputs()
+
+        # Export and convert to edge
+        graph_module = (
+            to_edge(export(eager_module, inputs, strict=True))
+            .exported_program()
+            .graph_module
+        )
+
+        # Apply memory planning.
+        mem_algo = MemoryPlanningAlgorithmSuite(algo_list=[naive, greedy])
+        graph_module = PassManager(
+            passes=[
+                SpecPropPass(),
+                ToOutVarPass(),
+            ],
+        )(graph_module).graph_module
+        mem_planning_pass = MemoryPlanningPass(
+            mem_algo,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+            alloc_mutable_buffers=True,
+        )
+        graph_module = mem_planning_pass.run(graph_module).graph_module
+
+        # Verify memory planning results
+        verifier = Verifier(
+            graph_module,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+            alloc_mutable_buffers=True,
+        )
+        verifier.verify_graph_input_output()
+        verifier.verify_storage_reuse(allow_lifetime_and_storage_overlap=False)
+
+        map_node = graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.higher_order.map_impl
+        )[0]
+        map_fn_node = map_node.args[0]
+        self.assertEqual(map_fn_node.op, "get_attr")
+        map_fn = getattr(graph_module, map_fn_node.target)
+
+        map_lifetime = map_node.meta.get("spec", None)[0].lifetime[0]
+
+        # Check that there is no storage overlap between nodes of the outer program and submodule of map.
+        for outer_spec in _get_specs(graph_module):
+            for inner_spec in _get_specs(map_fn):
+                self.assertFalse(
+                    verifier.has_overlap(
+                        outer_spec.lifetime, [map_lifetime, map_lifetime]
+                    )
+                    and (verifier.storage_overlap(outer_spec, inner_spec)),
+                    f"Outer spec {outer_spec.shape=} {outer_spec.dtype=} {outer_spec.lifetime=} and inner spec {inner_spec} have storage overlap",
+                )
