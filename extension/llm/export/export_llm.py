@@ -30,13 +30,14 @@ python -m extension.llm.export.export_llm \
 """
 
 import argparse
+import os
 import sys
 from typing import Any, List, Tuple
 
 import hydra
-
-from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import export_llama
+
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
 
@@ -45,7 +46,6 @@ cs.store(name="llm_config", node=LlmConfig)
 
 
 def parse_config_arg() -> Tuple[str, List[Any]]:
-    """First parse out the arg for whether to use Hydra or the old CLI."""
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--config", type=str, help="Path to the LlmConfig file")
     args, remaining = parser.parse_known_args()
@@ -56,6 +56,7 @@ def pop_config_arg() -> str:
     """
     Removes '--config' and its value from sys.argv.
     Assumes --config is specified and argparse has already validated the args.
+    Returns the config file path.
     """
     idx = sys.argv.index("--config")
     value = sys.argv[idx + 1]
@@ -63,30 +64,42 @@ def pop_config_arg() -> str:
     return value
 
 
-@hydra.main(version_base=None, config_name="llm_config")
+def add_hydra_config_args(config_file_path: str) -> None:
+    """
+    Breaks down the config file path into directory and filename,
+    resolves the directory to an absolute path, and adds the
+    --config_path and --config_name arguments to sys.argv.
+    """
+    config_dir = os.path.dirname(config_file_path)
+    config_name = os.path.basename(config_file_path)
+
+    # Resolve to absolute path
+    config_dir_abs = os.path.abspath(config_dir)
+
+    # Add the hydra config arguments to sys.argv
+    sys.argv.extend(["--config-path", config_dir_abs, "--config-name", config_name])
+
+
+@hydra.main(version_base=None, config_name="llm_config", config_path=None)
 def hydra_main(llm_config: LlmConfig) -> None:
-    export_llama(OmegaConf.to_object(llm_config))
+    structured = OmegaConf.structured(LlmConfig)
+    merged = OmegaConf.merge(structured, llm_config)
+    llm_config_obj = OmegaConf.to_object(merged)
+    export_llama(llm_config_obj)
 
 
 def main() -> None:
+    # First parse out the arg for whether to use Hydra or the old CLI.
     config, remaining_args = parse_config_arg()
     if config:
-        # Check if there are any remaining hydra CLI args when --config is specified
-        # This might change in the future to allow overriding config file values
-        if remaining_args:
-            raise ValueError(
-                "Cannot specify additional CLI arguments when using --config. "
-                f"Found: {remaining_args}. Use either --config file or hydra CLI args, not both."
-            )
-
+        # Pop out --config and its value so that they are not parsed by
+        # Hydra's main.
         config_file_path = pop_config_arg()
-        default_llm_config = LlmConfig()
-        llm_config_from_file = OmegaConf.load(config_file_path)
-        # Override defaults with values specified in the .yaml provided by --config.
-        merged_llm_config = OmegaConf.merge(default_llm_config, llm_config_from_file)
-        export_llama(merged_llm_config)
-    else:
-        hydra_main()
+
+        # Add hydra config_path and config_name arguments to sys.argv.
+        add_hydra_config_args(config_file_path)
+
+    hydra_main()
 
 
 if __name__ == "__main__":
