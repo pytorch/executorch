@@ -79,7 +79,7 @@ set(lib_list
     xnnpack_backend
     # Start XNNPACK Lib Deps
     XNNPACK
-    microkernels-prod
+    xnnpack-microkernels-prod
     kleidiai
     # End XNNPACK Lib Deps
     cpuinfo
