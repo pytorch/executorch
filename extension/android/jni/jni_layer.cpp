@@ -8,9 +8,11 @@
 
 #include <executorch/extension/android/jni/jni_layer_constants.h>
 #include <executorch/extension/android/jni/log.h>
+#include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/extension/training/module/training_module.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
@@ -94,6 +96,53 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
         cls, jTensorBuffer, jTensorShape, jdtype, makeCxxInstance(tensor));
   }
 
+  static TensorPtr newTensorFromJTensor(facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor) {
+    static auto cls = TensorHybrid::javaClassStatic();
+    static const auto dtypeMethod = cls->getMethod<jint()>("dtypeJniCode");
+    jint jdtype = dtypeMethod(jtensor);
+
+    static const auto shapeField = cls->getField<jlongArray>("shape");
+    auto jshape = jtensor->getFieldValue(shapeField);
+
+    static auto dataBufferMethod = cls->getMethod<
+        facebook::jni::local_ref<facebook::jni::JBuffer::javaobject>()>(
+        "getRawDataBuffer");
+    facebook::jni::local_ref<facebook::jni::JBuffer> jbuffer =
+        dataBufferMethod(jtensor);
+
+    const auto rank = jshape->size();
+
+    const auto shapeArr = jshape->getRegion(0, rank);
+    std::vector<executorch::aten::SizesType> shape_vec;
+    shape_vec.reserve(rank);
+
+    auto numel = 1;
+    for (int i = 0; i < rank; i++) {
+      shape_vec.push_back(shapeArr[i]);
+    }
+    for (int i = rank - 1; i >= 0; --i) {
+      numel *= shapeArr[i];
+    }
+    JNIEnv* jni = facebook::jni::Environment::current();
+    if (java_dtype_to_scalar_type.count(jdtype) == 0) {
+      facebook::jni::throwNewJavaException(
+          facebook::jni::gJavaLangIllegalArgumentException,
+          "Unknown Tensor jdtype %d",
+          jdtype);
+    }
+    ScalarType scalar_type = java_dtype_to_scalar_type.at(jdtype);
+    const auto dataCapacity = jni->GetDirectBufferCapacity(jbuffer.get());
+    if (dataCapacity != numel) {
+      facebook::jni::throwNewJavaException(
+          facebook::jni::gJavaLangIllegalArgumentException,
+          "Tensor dimensions(elements number:%d inconsistent with buffer capacity(%d)",
+          numel,
+          dataCapacity);
+    }
+    return from_blob(
+        jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
+  }
+
  private:
   friend HybridBase;
 };
@@ -163,51 +212,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
               ->getMethod<facebook::jni::alias_ref<TensorHybrid::javaobject>()>(
                   "toTensor");
       auto jtensor = jMethodGetTensor(JEValue);
-
-      static auto cls = TensorHybrid::javaClassStatic();
-      static const auto dtypeMethod = cls->getMethod<jint()>("dtypeJniCode");
-      jint jdtype = dtypeMethod(jtensor);
-
-      static const auto shapeField = cls->getField<jlongArray>("shape");
-      auto jshape = jtensor->getFieldValue(shapeField);
-
-      static auto dataBufferMethod = cls->getMethod<
-          facebook::jni::local_ref<facebook::jni::JBuffer::javaobject>()>(
-          "getRawDataBuffer");
-      facebook::jni::local_ref<facebook::jni::JBuffer> jbuffer =
-          dataBufferMethod(jtensor);
-
-      const auto rank = jshape->size();
-
-      const auto shapeArr = jshape->getRegion(0, rank);
-      std::vector<executorch::aten::SizesType> shape_vec;
-      shape_vec.reserve(rank);
-
-      auto numel = 1;
-      for (int i = 0; i < rank; i++) {
-        shape_vec.push_back(shapeArr[i]);
-      }
-      for (int i = rank - 1; i >= 0; --i) {
-        numel *= shapeArr[i];
-      }
-      JNIEnv* jni = facebook::jni::Environment::current();
-      if (java_dtype_to_scalar_type.count(jdtype) == 0) {
-        facebook::jni::throwNewJavaException(
-            facebook::jni::gJavaLangIllegalArgumentException,
-            "Unknown Tensor jdtype %d",
-            jdtype);
-      }
-      ScalarType scalar_type = java_dtype_to_scalar_type.at(jdtype);
-      const auto dataCapacity = jni->GetDirectBufferCapacity(jbuffer.get());
-      if (dataCapacity != numel) {
-        facebook::jni::throwNewJavaException(
-            facebook::jni::gJavaLangIllegalArgumentException,
-            "Tensor dimensions(elements number:%d inconsistent with buffer capacity(%d)",
-            numel,
-            dataCapacity);
-      }
-      return from_blob(
-          jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
+      return TensorHybrid::newTensorFromJTensor(jtensor);
     }
     facebook::jni::throwNewJavaException(
         facebook::jni::gJavaLangIllegalArgumentException,
@@ -492,10 +497,13 @@ extern void register_natives_for_llm();
 void register_natives_for_llm() {}
 #endif
 extern void register_natives_for_runtime();
+extern void register_natives_for_training();
+
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   return facebook::jni::initialize(vm, [] {
     executorch::extension::ExecuTorchJni::registerNatives();
     register_natives_for_llm();
     register_natives_for_runtime();
+    register_natives_for_training();
   });
 }

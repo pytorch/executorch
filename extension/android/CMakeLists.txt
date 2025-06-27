@@ -64,7 +64,7 @@ set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
-add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
+add_library(executorch_jni SHARED jni/jni_layer.cpp jni/jni_layer_training.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
 
 set(link_libraries)
 list(
@@ -77,6 +77,7 @@ list(
   extension_runner_util
   extension_tensor
   extension_threadpool
+  extension_training
   fbjni
 )
 
@@ -145,6 +146,9 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
     -Wl,--no-whole-archive
   )
 endif()
+
+# Define EXECUTORCH_BUILD_TRAINING_JNI preprocessor definition
+target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_TRAINING_JNI=1)
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
