@@ -36,7 +36,7 @@ except ImportError:
 from executorch.examples.models.model_base import EagerModelBase
 
 
-class Llama2Model(EagerModelBase):
+class DecoderModel(EagerModelBase):
     def __init__(self, llm_config: Optional[LlmConfig] = None):
         resource_dir = get_default_model_resource_dir(__file__)
 

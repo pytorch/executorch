@@ -45,7 +45,6 @@ runtime.python_library(
     srcs = [
         "__init__.py",
         "fairseq2.py",
-        "model.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",
@@ -63,6 +62,7 @@ runtime.python_library(
         "//executorch/examples/models/llama:llama_transformer",
         "//executorch/extension/llm/export/config:llm_config",
         "//executorch/examples/models:checkpoint",
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_model",
     ],
 )
 
@@ -129,7 +129,6 @@ runtime.python_library(
     srcs = [
         "export_llama.py",
         "export_llama_lib.py",
-        "model.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama",

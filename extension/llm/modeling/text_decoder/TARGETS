@@ -92,7 +92,7 @@ runtime.python_library(
 runtime.python_library(
     name = "text_decoder_model",
     srcs = [
-        "model.py",
+        "decoder_model.py",
     ],
     _is_external_target = True,
     base_module = "executorch.extension.llm.modeling.text_decoder",

@@ -1,5 +1,5 @@
 # Text decoder models
-from .attention import (
+from executorch.extension.llm.modeling.text_decoder.attention import (
     Attention,
     ATTENTION_REGISTRY,
     AttentionMHA,
@@ -7,7 +7,20 @@ from .attention import (
     register_attention,
     StaticAttention,
 )
-from .model import Llama2Model
-from .model_args import ModelArgs
-from .norm import RMSNorm
-from .rope import Rope
+from executorch.extension.llm.modeling.text_decoder.decoder_model import DecoderModel
+from executorch.extension.llm.modeling.text_decoder.model_args import ModelArgs
+from executorch.extension.llm.modeling.text_decoder.norm import RMSNorm
+from executorch.extension.llm.modeling.text_decoder.rope import Rope
+
+__all__ = [
+    "Attention",
+    "ATTENTION_REGISTRY",
+    "AttentionMHA",
+    "DecoderModel",
+    "ForwardOptions",
+    "ModelArgs",
+    "register_attention",
+    "RMSNorm",
+    "Rope",
+    "StaticAttention",
+]
