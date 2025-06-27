@@ -1,0 +1,17 @@
+base:
+  model_class: gemma3_1b
+  metadata: '{"get_bos_id":[2, 105], "get_eos_ids":[1, 106]}'
+
+model:
+  use_kv_cache: True
+  use_sdpa_with_kv_cache: True
+  dtype_override: fp32
+  local_global_attention: [512,512,512,512,512,0,512,512,512,512,512,0,512,512,512,512,512,0,512,512,512,512,512,0,512,512]
+
+quantization:
+  qmode: 8da4w
+
+backend:
+  xnnpack:
+    enabled: True
+    extended_ops: True

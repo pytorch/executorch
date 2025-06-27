@@ -38,6 +38,7 @@ class NativeLlamaRunner(LlamaRunner):
         super().__init__(
             tokenizer_path=args.tokenizer,
             tokenizer_config_path=args.tokenizer_config,
+            tokenizer_type=args.tokenizer_type,
             max_seq_len=args.max_len,
             max_batch_size=1,
             use_kv_cache=args.kv_cache,
@@ -99,6 +100,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Path to an accompanying tokenizer_config.json, which provides metadata for the main tokenizer.json",
+    )
+
+    parser.add_argument(
+        "--tokenizer_type",
+        type=str,
+        choices=["sentencepiece", "huggingface", "llama2c", "tiktoken"],
+        help="Type of tokenizer",
     )
 
     parser.add_argument(

@@ -7,7 +7,7 @@
 
 # Please refer to README.md in the same folder for more information.
 
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Type, Union
 
 import torch
 import torch.nn.functional as F
@@ -19,7 +19,7 @@ from executorch.examples.models.llama.attention import (
 )
 
 from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.norm import RMSNorm
+from executorch.examples.models.llama.norm import Norm, NORM_REGISTRY
 from executorch.examples.models.llama.rope import Rope
 from torch import nn
 
@@ -29,12 +29,13 @@ class FeedForward(nn.Module):
         super().__init__()
         assert args.hidden_dim is not None
         hidden_dim: int = args.hidden_dim
+        self.act_fn = args.act_fn.get_function()  # Store the actual function
         self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
         self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
         self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
 
     def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+        return self.w2(self.act_fn(self.w1(x)) * self.w3(x))
 
 
 class ConditionalFeedForward(nn.Module):
@@ -84,7 +85,7 @@ class MOEFeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, args: ModelArgs, attention: Attention):
+    def __init__(self, args: ModelArgs, attention: Attention, norm_cls: Type[Norm]):
         """
         Transformer block with support for pre-norm and post-norm.
         Args:
@@ -103,8 +104,12 @@ class TransformerBlock(nn.Module):
             self.block_sparse_moe = MOEFeedForward(args)
         else:
             self.feed_forward = FeedForward(args)
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.attention_norm = norm_cls(args.dim, eps=args.norm_eps)
+        if args.post_attention_norm:
+            self.post_attention_norm = norm_cls(args.dim, eps=args.norm_eps)
+        self.ffn_norm = norm_cls(args.dim, eps=args.norm_eps)
+        if args.post_ffn_norm:
+            self.post_ffn_norm = norm_cls(args.dim, eps=args.norm_eps)
 
     @classmethod
     def from_type(cls, layer_id, args, rope) -> "TransformerBlock":
@@ -120,20 +125,50 @@ class TransformerBlock(nn.Module):
                 f"Unknown attention type: {args.attention_type}. "
                 f"Available: {list(ATTENTION_REGISTRY.keys())}"
             )
+        if args.norm_type not in NORM_REGISTRY:
+            raise ValueError(
+                f"Unknown norm type: {args.norm_type}. "
+                f"Available: {list(NORM_REGISTRY.keys())}"
+            )
+        norm_cls = NORM_REGISTRY[args.norm_type]
+
+        # Create qk_norm instances if needed
+        q_norm_fn = None
+        k_norm_fn = None
+        if args.attention_type == "static":
+            q_norm_fn = torch.nn.Identity()
+            k_norm_fn = torch.nn.Identity()
+        if args.use_qk_norm:
+            q_norm_fn = norm_cls(args.head_dim, eps=args.norm_eps)
+            k_norm_fn = norm_cls(args.head_dim, eps=args.norm_eps)
+
         cls = ATTENTION_REGISTRY[args.attention_type]
-        attention = cls(args, layer_id, rope)
-        return TransformerBlock(args, attention)
+        attention = cls(args, layer_id, rope, q_norm_fn, k_norm_fn)
+
+        return TransformerBlock(args, attention, norm_cls)
 
     def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
-        h, attn_options_update = self.attention.forward(
-            self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
-        )
+        # Attention.
+        residual = x
+        x_norm = self.attention_norm(x)
 
-        h = x + h
+        hidden, attn_options_update = self.attention.forward(
+            x_norm, freqs_cos, freqs_sin, **attn_options
+        )
+        if self.post_attention_norm:
+            hidden = self.post_attention_norm(hidden)
+        hidden = residual + hidden
+
+        # MLP.
+        residual = hidden
         if hasattr(self, "block_sparse_moe"):
-            out = h + self.block_sparse_moe(self.ffn_norm(h))
+            hidden = self.block_sparse_moe(self.ffn_norm(hidden))
         else:
-            out = h + self.feed_forward(self.ffn_norm(h))
+            hidden = self.feed_forward(self.ffn_norm(hidden))
+        if self.post_ffn_norm:
+            hidden = self.post_ffn_norm(hidden)
+        out = residual + hidden
+
         return out, attn_options_update
 
 
@@ -152,6 +187,7 @@ class Transformer(nn.Module):
         self.vocab_size = params.vocab_size
         self.n_layers = params.n_layers
         self.apply_embedding = params.apply_embedding
+        self.embedding_scale_factor = params.embedding_scale_factor
         self.apply_output = params.apply_output
 
         self.tok_embeddings = (
@@ -161,7 +197,13 @@ class Transformer(nn.Module):
         )
         self.layers = layers
         self.rope = rope
-        self.norm = RMSNorm(params.dim, eps=params.norm_eps)
+        if params.norm_type not in NORM_REGISTRY:
+            raise ValueError(
+                f"Unknown norm type: {params.norm_type}. "
+                f"Available: {list(NORM_REGISTRY.keys())}"
+            )
+        norm_cls = NORM_REGISTRY[params.norm_type]
+        self.norm = norm_cls(params.dim, eps=params.norm_eps)
         self.output = (
             nn.Linear(params.dim, params.vocab_size, bias=False)
             if self.apply_output
@@ -180,12 +222,13 @@ class Transformer(nn.Module):
         attn_options: Optional[ForwardOptions] = None,
         h: Optional[torch.FloatTensor] = None,  # embeddings
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Optional[Any]]]:
+
         if (tokens is None) ^ (h is not None):
             raise ValueError(
                 "You cannot specify both tokens and h at the same time, and must specify either one"
             )
         if self.apply_embedding and tokens is not None and h is None:
-            h = self.tok_embeddings(tokens)
+            h = self.embedding_scale_factor * self.tok_embeddings(tokens)
 
         if attn_options is None:
             attn_options = {}
@@ -251,11 +294,29 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
             f"Unknown attention type: {model_args.attention_type}. "
             f"Available: {list(ATTENTION_REGISTRY.keys())}"
         )
+    if model_args.norm_type not in NORM_REGISTRY:
+        raise ValueError(
+            f"Unknown norm type: {model_args.norm_type}. "
+            f"Available: {list(NORM_REGISTRY.keys())}"
+        )
+    norm_cls = NORM_REGISTRY[model_args.norm_type]
+
     layers = torch.nn.ModuleList()
     cls = ATTENTION_REGISTRY[model_args.attention_type]
     for layer_id in range(model_args.n_layers):
-        attention = cls(model_args, layer_id, rope)
-        transformer_block = TransformerBlock(model_args, attention)
+        # Create qk_norm instances if needed
+        q_norm_fn = None
+        k_norm_fn = None
+        if model_args.use_qk_norm:
+            q_norm_fn = norm_cls(model_args.head_dim, eps=model_args.norm_eps)
+            k_norm_fn = norm_cls(model_args.head_dim, eps=model_args.norm_eps)
+        elif model_args.attention_type == "static":
+            # StaticAttention expects Identity functions when qk_norm is disabled
+            q_norm_fn = torch.nn.Identity()
+            k_norm_fn = torch.nn.Identity()
+
+        attention = cls(model_args, layer_id, rope, q_norm_fn, k_norm_fn)
+        transformer_block = TransformerBlock(model_args, attention, norm_cls)
         layers.append(transformer_block)
 
     return Transformer(model_args, layers, rope)
