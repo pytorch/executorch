@@ -309,7 +309,7 @@ jobs:
 
         # We will use the the bare metal default, specify to use the 
         # arm zephyr toolchain if we need to
-        toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+        toolchain_cmake=examples/arm/ethos-u-setup/${toolchain_prefix}gcc.cmake
         toolchain_cmake=$(realpath ${toolchain_cmake})
 
         # Build and test size test
@@ -318,7 +318,7 @@ jobs:
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
           CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
           cmake --build cmake-out -j9 --target install --config Release
-          CXXFLAGS=${cxx_flags}  cmake -DARM_TOOLCHAIN_NAME=zephyr -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
+          CXXFLAGS=${cxx_flags}  cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
           cmake --build cmake-out/test -j9 --config Release
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
