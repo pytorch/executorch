@@ -185,7 +185,10 @@ Tensor& constant_pad_nd_out(
   ScalarType in_type = in.scalar_type();
 
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "constant_pad_nd.out", CTYPE, [&]() {
-    const CTYPE value_casted = utils::scalar_to<CTYPE>(value);
+    auto opt_value_casted =
+        utils::internal::check_overflow_scalar_cast<CTYPE>(value);
+    ET_KERNEL_CHECK(ctx, opt_value_casted.has_value(), InvalidArgument, );
+    auto value_casted = opt_value_casted.value();
     constant_pad_nd_out_impl<CTYPE>(in, pad, value_casted, out);
   });
 
