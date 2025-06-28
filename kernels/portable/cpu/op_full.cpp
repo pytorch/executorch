@@ -37,7 +37,10 @@ Tensor& full_out(
   constexpr auto name = "full.out";
 
   ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
-    CTYPE_OUT val_casted = utils::scalar_to<CTYPE_OUT>(fill_value);
+    auto opt_val_casted =
+        utils::internal::check_overflow_scalar_cast<CTYPE_OUT>(fill_value);
+    ET_KERNEL_CHECK(ctx, opt_val_casted.has_value(), InvalidArgument, );
+    auto val_casted = opt_val_casted.value();
     auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
     for (const auto i : c10::irange(out.numel())) {
       data_out[i] = val_casted;
