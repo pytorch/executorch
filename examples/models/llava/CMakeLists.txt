@@ -198,9 +198,9 @@ list(APPEND _common_include_directories ${stb_SOURCE_DIR}
 
 add_executable(llava_main ${_srcs})
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options_gc_sections(llama_main)
+  target_link_options_gc_sections(llava_main)
   if(NOT APPLE)
-    target_link_options(llama_main PRIVATE "LINKER:-s")
+    target_link_options(llava_main PRIVATE "LINKER:-s")
   endif()
 endif()
 
