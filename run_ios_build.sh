@@ -12,4 +12,4 @@ pip install -e .
 # MPS-only requirements:
 ./backends/apple/mps/install_requirements.sh
 
-./scripts/build_apple_frameworks.sh --Release --coreml --mps --xnnpack --custom --optimized --quantized --torchao
+./scripts/build_apple_frameworks.sh --Release
