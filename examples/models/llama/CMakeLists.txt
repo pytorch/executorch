@@ -155,7 +155,7 @@ endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
+  set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   if(TARGET kleidiai)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
@@ -210,10 +210,9 @@ endif()
 
 add_executable(llama_main ${_srcs})
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  if(APPLE)
-    target_link_options(llama_main PRIVATE "LINKER:-dead_strip")
-  else()
-    target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+  target_link_options_gc_sections(llama_main)
+  if(NOT APPLE)
+    target_link_options(llama_main PRIVATE "LINKER:-s")
   endif()
 endif()
 

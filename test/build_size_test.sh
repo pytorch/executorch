@@ -15,10 +15,7 @@ EXTRA_BUILD_ARGS="${@:-}"
 # TODO(#8357): Remove -Wno-int-in-bool-context
 # TODO: Replace -ET_HAVE_PREAD=0 with a CMake option.
 #  FileDataLoader used in the size_test breaks baremetal builds with pread when missing.
-# -Werror=maybe-uninitialized causes failures with GCC 9.5, which we
-# -currently use in CI. There were known issues with this warning and
-# -std::optional: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80635
-COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -Wno-maybe-uninitialized -DET_HAVE_PREAD=0"
+COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
 
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a"
@@ -29,23 +26,23 @@ cmake_install_executorch_lib() {
   CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
           -DEXECUTORCH_OPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           ${EXTRA_BUILD_ARGS} \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config RelWithDebInfo
+  cmake --build cmake-out -j9 --target install --config Release
 }
 
 test_cmake_size_test() {
-    CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         ${EXTRA_BUILD_ARGS} \
         -Bcmake-out/test test
 
     echo "Build size test"
-    cmake --build cmake-out/test -j9 --config RelWithDebInfo
+    cmake --build cmake-out/test -j9 --config Release
 
     echo 'ExecuTorch with no ops binary size, unstripped:'
     ls -al cmake-out/test/size_test

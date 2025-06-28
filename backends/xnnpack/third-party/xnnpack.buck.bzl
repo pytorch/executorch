@@ -1078,6 +1078,7 @@ def define_xnnpack():
             "XNNPACK/src/microkernel-utils.c",
             "XNNPACK/src/reference/binary-elementwise.cc",
             "XNNPACK/src/reference/unary-elementwise.cc",
+            "XNNPACK/src/pack-lh.cc",
         ],
         headers = get_xnnpack_headers(),
         exported_headers = {
@@ -1099,6 +1100,7 @@ def define_xnnpack():
             # "-DXNN_ENABLE_DWCONV_MULTIPLASS=1",
             "-DXNN_ENABLE_ARM_I8MM=1",
             "-DXNN_ENABLE_ARM_FP16_VECTOR=1",
+            "-DXNN_ENABLE_AVX512BF16=0"
         ],
         visibility = ["PUBLIC"],
         exported_deps = COMMON_XNNPACK_DEPS + [
