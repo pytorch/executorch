@@ -705,7 +705,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
-  if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     if(APPLE)
       target_link_options(executor_runner PRIVATE "LINKER:-dead_strip")
     else()
