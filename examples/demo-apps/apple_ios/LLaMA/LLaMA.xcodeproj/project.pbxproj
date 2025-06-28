@@ -45,6 +45,10 @@
 		03D151CF2E0E9ACB007A38BE /* text_prefiller.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151CE2E0E9ACB007A38BE /* text_prefiller.cpp */; };
 		03D151D02E0E9ACB007A38BE /* text_llm_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151CD2E0E9ACB007A38BE /* text_llm_runner.cpp */; };
 		03D151D12E0E9ACB007A38BE /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151CC2E0E9ACB007A38BE /* text_decoder_runner.cpp */; };
+		03D151D92E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03D151D42E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm */; };
+		03D151DA2E0E9E43007A38BE /* BUCK in Resources */ = {isa = PBXBuildFile; fileRef = 03D151D72E0E9E43007A38BE /* BUCK */; };
+		03D151DB2E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D151D32E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h */; };
+		03D151DC2E0E9E43007A38BE /* ExecuTorchLLM.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D151D22E0E9E43007A38BE /* ExecuTorchLLM.h */; };
 		26A6A4282C8A3769005A761E /* ImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26A6A4272C8A3769005A761E /* ImagePicker.swift */; };
 		306A713D2DC1DC0F00936B1F /* token_decoder.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A713C2DC1DC0F00936B1F /* token_decoder.h */; };
 		306A713E2DC1DC0F00936B1F /* regex.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A71392DC1DC0F00936B1F /* regex.h */; };
@@ -129,6 +133,10 @@
 		03D151CC2E0E9ACB007A38BE /* text_decoder_runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
 		03D151CD2E0E9ACB007A38BE /* text_llm_runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_llm_runner.cpp; sourceTree = "<group>"; };
 		03D151CE2E0E9ACB007A38BE /* text_prefiller.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_prefiller.cpp; sourceTree = "<group>"; };
+		03D151D22E0E9E43007A38BE /* ExecuTorchLLM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExecuTorchLLM.h; sourceTree = "<group>"; };
+		03D151D32E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExecuTorchTextLLMRunner.h; sourceTree = "<group>"; };
+		03D151D42E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ExecuTorchTextLLMRunner.mm; sourceTree = "<group>"; };
+		03D151D72E0E9E43007A38BE /* BUCK */ = {isa = PBXFileReference; lastKnownFileType = text; path = BUCK; sourceTree = "<group>"; };
 		26A6A4272C8A3769005A761E /* ImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePicker.swift; sourceTree = "<group>"; };
 		306A71352DC1DC0F00936B1F /* hf_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = hf_tokenizer.h; sourceTree = "<group>"; };
 		306A71362DC1DC0F00936B1F /* pcre2_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pcre2_regex.h; sourceTree = "<group>"; };
@@ -253,6 +261,7 @@
 			isa = PBXGroup;
 			children = (
 				0324D69B2BAACB7C00DEF36F /* Exported */,
+				03D151D82E0E9E43007A38BE /* apple */,
 				03729F062BB2035900152F2E /* runner */,
 				03729F0F2BB203E100152F2E /* sampler */,
 				03729F0E2BB203D700152F2E /* tokenizers */,
@@ -332,6 +341,34 @@
 			path = ../../../../../../extension/llm/sampler;
 			sourceTree = "<group>";
 		};
+		03D151D52E0E9E43007A38BE /* Exported */ = {
+			isa = PBXGroup;
+			children = (
+				03D151D22E0E9E43007A38BE /* ExecuTorchLLM.h */,
+				03D151D32E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h */,
+				03D151D42E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm */,
+			);
+			path = Exported;
+			sourceTree = "<group>";
+		};
+		03D151D62E0E9E43007A38BE /* ExecuTorchLLM */ = {
+			isa = PBXGroup;
+			children = (
+				03D151D52E0E9E43007A38BE /* Exported */,
+			);
+			path = ExecuTorchLLM;
+			sourceTree = "<group>";
+		};
+		03D151D82E0E9E43007A38BE /* apple */ = {
+			isa = PBXGroup;
+			children = (
+				03D151D62E0E9E43007A38BE /* ExecuTorchLLM */,
+				03D151D72E0E9E43007A38BE /* BUCK */,
+			);
+			name = apple;
+			path = /Users/shoumikhin/executorch/extension/llm/apple;
+			sourceTree = "<absolute>";
+		};
 		F292B0842D88B0D200BE6839 /* tokenizers */ = {
 			isa = PBXGroup;
 			children = (
@@ -383,6 +420,8 @@
 				F292B0892D88B0D200BE6839 /* tokenizer.h in Headers */,
 				F292B08B2D88B0D200BE6839 /* result.h in Headers */,
 				F292B08D2D88B0D200BE6839 /* error.h in Headers */,
+				03D151DB2E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h in Headers */,
+				03D151DC2E0E9E43007A38BE /* ExecuTorchLLM.h in Headers */,
 				F292B08E2D88B0D200BE6839 /* bpe_tokenizer_base.h in Headers */,
 				F292B08F2D88B0D200BE6839 /* log.h in Headers */,
 				F292B0912D88B0D200BE6839 /* tiktoken.h in Headers */,
@@ -512,6 +551,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				03D151DA2E0E9E43007A38BE /* BUCK in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -566,6 +606,7 @@
 				03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */,
 				0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */,
 				03D151CA2E0E98C4007A38BE /* sentencepiece.cpp in Sources */,
+				03D151D92E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm in Sources */,
 				03D151CB2E0E98C4007A38BE /* regex_lookahead.cpp in Sources */,
 				03D151CF2E0E9ACB007A38BE /* text_prefiller.cpp in Sources */,
 				03D151D02E0E9ACB007A38BE /* text_llm_runner.cpp in Sources */,
@@ -814,6 +855,7 @@
 					"DEBUG=1",
 					"ET_USE_TIKTOKEN=1",
 					"SUPPORT_REGEX_LOOKAHEAD=ON",
+					"BUILD_WITH_XCODE=1",
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -850,7 +892,10 @@
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
 				ENABLE_MODULE_VERIFIER = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_PREPROCESSOR_DEFINITIONS = "SUPPORT_REGEX_LOOKAHEAD=ON";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"SUPPORT_REGEX_LOOKAHEAD=ON",
+					"BUILD_WITH_XCODE=1",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";

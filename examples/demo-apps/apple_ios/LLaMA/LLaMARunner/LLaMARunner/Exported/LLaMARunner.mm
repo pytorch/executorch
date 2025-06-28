@@ -9,7 +9,11 @@
 #import "LLaMARunner.h"
 
 #import <ExecuTorch/ExecuTorchLog.h>
+#if BUILD_WITH_XCODE
+#import "ExecuTorchTextLLMRunner.h"
+#else
 #import <ExecuTorchLLM/ExecuTorchLLM.h>
+#endif
 #import <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 
 @interface LLaMARunner ()<ExecuTorchLogSink>
