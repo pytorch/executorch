@@ -6,7 +6,7 @@
 # pyre-unsafe
 
 
-from typing import Dict
+from typing import Dict, Union
 
 import torch
 from executorch.backends.transforms.replace_scalar_with_tensor import (
@@ -18,7 +18,10 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 
 # Operators that are included for both TOSA profiles
-_common_ops: Dict[EdgeOpOverload, EdgeOpOverload] = {
+_common_ops: Dict[
+    Union[EdgeOpOverload, torch._ops.OpOverload],
+    Union[EdgeOpOverload, torch._ops.OpOverload],
+] = {
     exir_ops.edge.aten.add.Scalar: exir_ops.edge.aten.add.Tensor,
     exir_ops.edge.aten.sub.Scalar: exir_ops.edge.aten.sub.Tensor,
     exir_ops.edge.aten.mul.Scalar: exir_ops.edge.aten.mul.Tensor,
