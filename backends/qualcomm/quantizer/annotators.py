@@ -250,7 +250,9 @@ def annotate_masked_fill(node: Node, quantization_config: QuantizationConfig) ->
     )
 
 
-@register_annotator([torch.ops.aten.mul, torch.ops.aten.mul.Tensor])
+@register_annotator(
+    [torch.ops.aten.mul, torch.ops.aten.mul.Tensor, torch.ops.aten.mul_.Tensor]
+)
 def annotate_mul(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
@@ -606,7 +608,33 @@ def annotate_select(node: Node, quantization_config: QuantizationConfig) -> None
 
 @register_annotator([torch.ops.aten.slice.Tensor])
 def annotate_slice(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]) or not _is_float_tensor(node):
+        return
     annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.slice_scatter.default])
+def annotate_slice_scatter(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+
+    input_act_qspec = quantization_config.input_activation
+    output_act_qspec = quantization_config.output_activation
+
+    input_qspec_map = {}
+    input_act0 = node.args[0]
+    if isinstance(input_act0, Node):
+        input_qspec_map[input_act0] = input_act_qspec
+
+    input_act1 = node.args[1]
+    if isinstance(input_act1, Node):
+        input_qspec_map[input_act1] = input_act_qspec
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=output_act_qspec,
+        _annotated=True,
+    )
 
 
 @register_annotator([torch.ops.aten.sqrt.default])
@@ -801,16 +829,17 @@ def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> N
 
 @register_annotator([torch.ops.aten.index.Tensor])
 def annotate_index(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]) or not _is_float_tensor(node):
+        return
     annotate_in_out_obs_sharing_op(node, quantization_config)
-    if not _is_annotated([node]):
-        input_qspec_map = {}
-        input = node.args[0]
-        input_qspec_map[input] = quantization_config.input_activation
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
-            input_qspec_map=input_qspec_map,
-            output_qspec=SharedQuantizationSpec((input, node)),
-            _annotated=True,
-        )
+    input_qspec_map = {}
+    input = node.args[0]
+    input_qspec_map[input] = quantization_config.input_activation
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=SharedQuantizationSpec((input, node)),
+        _annotated=True,
+    )
 
 
 @register_annotator(
@@ -1270,7 +1299,7 @@ def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
     )
 
 
-@register_annotator([torch.ops.aten.zeros.default])
+@register_annotator([torch.ops.aten.zeros.default, torch.ops.aten.zeros_like.default])
 def annotate_zeros(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]) or not _is_float_tensor(node):
         return

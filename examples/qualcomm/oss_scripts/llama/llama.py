@@ -781,7 +781,7 @@ def compile(args, pte_filename, tokenizer):
     return quant_attrs
 
 
-def inference(args, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
+def inference(args, pte_filename, runtime_tokenizer_path, llama_version):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
 
     if args.model_mode == "kv":
@@ -794,8 +794,8 @@ def inference(args, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
     pte_path = (
-        f"{pre_gen_pte}/{pte_filename}.pte"
-        if pre_gen_pte
+        f"{args.pre_gen_pte}/{pte_filename}.pte"
+        if args.pre_gen_pte
         else f"{args.artifact}/{pte_filename}.pte"
     )
 
@@ -836,6 +836,7 @@ def inference(args, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
             [
                 f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
                 f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
+                f"--decoder_model_version {llama_version}",
                 f"--tokenizer_path {runtime_tokenizer_path}",
                 f"--model_path {pte_path}",
                 f"--seq_len {seq_len}",
@@ -857,6 +858,7 @@ def inference(args, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
             [
                 f"cd {workspace} &&",
                 f"./qnn_llama_runner",
+                f"--decoder_model_version {llama_version}",
                 f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
                 f"--model_path {pte_filename}.pte",
                 f"--seq_len {seq_len}",
@@ -1090,7 +1092,7 @@ def export_llama(args) -> None:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
     tokenizer = get_tokenizer(args.tokenizer_model)
-    runtime_tokenizer_path = ""
+    runtime_tokenizer_path, llama_version = "", ""
     if args.llama_model == "stories110m":
         assert isinstance(
             tokenizer, SentencePieceTokenizer
@@ -1099,11 +1101,13 @@ def export_llama(args) -> None:
             args.tokenizer_bin is not None
         ), "Please provide tokenizer_bin for stories110m."
         runtime_tokenizer_path = args.tokenizer_bin
+        llama_version = "llama2"
     elif args.llama_model == "llama3_2":
         assert isinstance(
             tokenizer, TiktokenTokenizer
         ), f"Wrong tokenizer provided for llama3_2."
         runtime_tokenizer_path = args.tokenizer_model
+        llama_version = "llama3"
     else:
         raise RuntimeError(f"Unknown llama_model: {args.llama_model}.")
 
@@ -1116,7 +1120,7 @@ def export_llama(args) -> None:
         raise RuntimeError(f"Using an unknown kv update {args.kv_updater}")
 
     if args.pre_gen_pte:
-        inference(args, pte_filename, runtime_tokenizer_path, args.pre_gen_pte)
+        inference(args, pte_filename, runtime_tokenizer_path, llama_version)
         print(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
         return
 
