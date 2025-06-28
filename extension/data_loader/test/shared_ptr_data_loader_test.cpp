@@ -171,5 +171,5 @@ TEST(SharedPtrDataLoaderTest, LoadIntoRejectsOutOfBoundsAccess) {
   // This should fail because offset + size = 4 + 3 = 7 > 5 (size of data).
   auto err = loader.load_into(4, 3, DataLoader::SegmentInfo{}, buffer);
 
-  EXPECT_EQ(err, Error::OutOfBounds);
+  EXPECT_EQ(err, Error::InvalidArgument);
 }

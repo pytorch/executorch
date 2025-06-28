@@ -53,7 +53,7 @@ class SharedPtrDataLoader final : public executorch::runtime::DataLoader {
       void* buffer) const override {
     ET_CHECK_OR_RETURN_ERROR(
         offset + size <= size_,
-        executorch::runtime::Error::OutOfBounds,
+        InvalidArgument,
         "offset %zu + size %zu exceeds buffer size %zu",
         offset,
         size,
