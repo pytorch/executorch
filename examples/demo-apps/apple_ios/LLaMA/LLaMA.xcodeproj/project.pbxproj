@@ -21,11 +21,7 @@
 		03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */; };
 		03729EE22BB1F93E00152F2E /* LLaMARunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 0324D6992BAACB7C00DEF36F /* LLaMARunner.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		03729F0A2BB203B300152F2E /* runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F072BB203B300152F2E /* runner.cpp */; };
-		03729F0B2BB203B300152F2E /* runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F082BB203B300152F2E /* runner.h */; };
-		03729F0C2BB203B300152F2E /* util.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F092BB203B300152F2E /* util.h */; };
-		03729F122BB2042B00152F2E /* sampler.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F102BB2042B00152F2E /* sampler.h */; };
 		03729F132BB2042B00152F2E /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F112BB2042B00152F2E /* sampler.cpp */; };
-		0372C3142C89418E00CD942A /* llava_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 0372C3122C89418E00CD942A /* llava_runner.h */; };
 		0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0372C3132C89418E00CD942A /* llava_runner.cpp */; };
 		03CF43962CEC5CEC00C7113B /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43952CEC5CEC00C7113B /* backend_coreml */; };
 		03CF43982CEC5CEC00C7113B /* backend_coreml_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43972CEC5CEC00C7113B /* backend_coreml_debug */; };
@@ -42,12 +38,13 @@
 		03CF43AE2CEC5CEC00C7113B /* kernels_portable_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */; };
 		03CF43B02CEC5CEC00C7113B /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AF2CEC5CEC00C7113B /* kernels_quantized */; };
 		03CF43B22CEC5CEC00C7113B /* kernels_quantized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43B12CEC5CEC00C7113B /* kernels_quantized_debug */; };
-		03D03DA72C7823620088D6A7 /* text_prefiller.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D03DA52C7823620088D6A7 /* text_prefiller.cpp */; };
-		03D03DA82C7823620088D6A7 /* text_prefiller.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D03DA62C7823620088D6A7 /* text_prefiller.h */; };
-		03D03DAB2C7823830088D6A7 /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */; };
-		03D03DAC2C7823830088D6A7 /* text_decoder_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */; };
 		03D151B82E0E0908007A38BE /* LLaVARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03D151B72E0E0908007A38BE /* LLaVARunner.mm */; };
-		03D151B92E0E0908007A38BE /* LLaVARunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D151B62E0E0908007A38BE /* LLaVARunner.h */; };
+		03D151B92E0E0908007A38BE /* LLaVARunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D151B62E0E0908007A38BE /* LLaVARunner.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		03D151CA2E0E98C4007A38BE /* sentencepiece.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151C92E0E98C4007A38BE /* sentencepiece.cpp */; };
+		03D151CB2E0E98C4007A38BE /* regex_lookahead.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151C82E0E98C4007A38BE /* regex_lookahead.cpp */; };
+		03D151CF2E0E9ACB007A38BE /* text_prefiller.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151CE2E0E9ACB007A38BE /* text_prefiller.cpp */; };
+		03D151D02E0E9ACB007A38BE /* text_llm_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151CD2E0E9ACB007A38BE /* text_llm_runner.cpp */; };
+		03D151D12E0E9ACB007A38BE /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151CC2E0E9ACB007A38BE /* text_decoder_runner.cpp */; };
 		26A6A4282C8A3769005A761E /* ImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26A6A4272C8A3769005A761E /* ImagePicker.swift */; };
 		306A713D2DC1DC0F00936B1F /* token_decoder.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A713C2DC1DC0F00936B1F /* token_decoder.h */; };
 		306A713E2DC1DC0F00936B1F /* regex.h in Headers */ = {isa = PBXBuildFile; fileRef = 306A71392DC1DC0F00936B1F /* regex.h */; };
@@ -76,7 +73,6 @@
 		F292B08F2D88B0D200BE6839 /* log.h in Headers */ = {isa = PBXBuildFile; fileRef = F292B07D2D88B0D200BE6839 /* log.h */; };
 		F292B0912D88B0D200BE6839 /* tiktoken.h in Headers */ = {isa = PBXBuildFile; fileRef = F292B0812D88B0D200BE6839 /* tiktoken.h */; };
 		F292B0922D88B0D200BE6839 /* base64.h in Headers */ = {isa = PBXBuildFile; fileRef = F292B0782D88B0D200BE6839 /* base64.h */; };
-		F292B1012D88B20C00BE6839 /* llama_tiktoken.h in Headers */ = {isa = PBXBuildFile; fileRef = F292B0FF2D88B20C00BE6839 /* llama_tiktoken.h */; };
 		F292B1022D88B20C00BE6839 /* llama_tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B1002D88B20C00BE6839 /* llama_tiktoken.cpp */; };
 /* End PBXBuildFile section */
 
@@ -122,20 +118,17 @@
 		036CAF9D2BB1444500D6C2D5 /* LLaMA.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLaMA.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LLaMARunner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		03729F072BB203B300152F2E /* runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../examples/models/llama/runner/runner.cpp; sourceTree = "<group>"; };
-		03729F082BB203B300152F2E /* runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../examples/models/llama/runner/runner.h; sourceTree = "<group>"; };
-		03729F092BB203B300152F2E /* util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
-		03729F102BB2042B00152F2E /* sampler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = sampler.h; sourceTree = "<group>"; };
 		03729F112BB2042B00152F2E /* sampler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sampler.cpp; sourceTree = "<group>"; };
-		0372C3122C89418E00CD942A /* llava_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = llava_runner.h; path = ../../../examples/models/llava/runner/llava_runner.h; sourceTree = "<group>"; };
 		0372C3132C89418E00CD942A /* llava_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = llava_runner.cpp; path = ../../../examples/models/llava/runner/llava_runner.cpp; sourceTree = "<group>"; };
 		03C5F51C2CE7D35C00D6CE3F /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		03C5F51D2CE7D37100D6CE3F /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
-		03D03DA52C7823620088D6A7 /* text_prefiller.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_prefiller.cpp; sourceTree = "<group>"; };
-		03D03DA62C7823620088D6A7 /* text_prefiller.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_prefiller.h; sourceTree = "<group>"; };
-		03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
-		03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_decoder_runner.h; sourceTree = "<group>"; };
 		03D151B62E0E0908007A38BE /* LLaVARunner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LLaVARunner.h; sourceTree = "<group>"; };
 		03D151B72E0E0908007A38BE /* LLaVARunner.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaVARunner.mm; sourceTree = "<group>"; };
+		03D151C82E0E98C4007A38BE /* regex_lookahead.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = regex_lookahead.cpp; path = src/regex_lookahead.cpp; sourceTree = "<group>"; };
+		03D151C92E0E98C4007A38BE /* sentencepiece.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = sentencepiece.cpp; path = src/sentencepiece.cpp; sourceTree = "<group>"; };
+		03D151CC2E0E9ACB007A38BE /* text_decoder_runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
+		03D151CD2E0E9ACB007A38BE /* text_llm_runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_llm_runner.cpp; sourceTree = "<group>"; };
+		03D151CE2E0E9ACB007A38BE /* text_prefiller.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = text_prefiller.cpp; sourceTree = "<group>"; };
 		26A6A4272C8A3769005A761E /* ImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePicker.swift; sourceTree = "<group>"; };
 		306A71352DC1DC0F00936B1F /* hf_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = hf_tokenizer.h; sourceTree = "<group>"; };
 		306A71362DC1DC0F00936B1F /* pcre2_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pcre2_regex.h; sourceTree = "<group>"; };
@@ -164,7 +157,6 @@
 		F292B07F2D88B0D200BE6839 /* result.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = result.h; sourceTree = "<group>"; };
 		F292B0812D88B0D200BE6839 /* tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
 		F292B0832D88B0D200BE6839 /* tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
-		F292B0FF2D88B20C00BE6839 /* llama_tiktoken.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = llama_tiktoken.h; path = ../../../examples/models/llama/tokenizer/llama_tiktoken.h; sourceTree = "<group>"; };
 		F292B1002D88B20C00BE6839 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; name = llama_tiktoken.cpp; path = ../../../examples/models/llama/tokenizer/llama_tiktoken.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -249,10 +241,10 @@
 		0324D69B2BAACB7C00DEF36F /* Exported */ = {
 			isa = PBXGroup;
 			children = (
-				03D151B62E0E0908007A38BE /* LLaVARunner.h */,
-				03D151B72E0E0908007A38BE /* LLaVARunner.mm */,
 				0324D6992BAACB7C00DEF36F /* LLaMARunner.h */,
 				0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */,
+				03D151B62E0E0908007A38BE /* LLaVARunner.h */,
+				03D151B72E0E0908007A38BE /* LLaVARunner.mm */,
 			);
 			path = Exported;
 			sourceTree = "<group>";
@@ -300,14 +292,10 @@
 			isa = PBXGroup;
 			children = (
 				0372C3132C89418E00CD942A /* llava_runner.cpp */,
-				0372C3122C89418E00CD942A /* llava_runner.h */,
 				03729F072BB203B300152F2E /* runner.cpp */,
-				03729F082BB203B300152F2E /* runner.h */,
-				03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */,
-				03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */,
-				03D03DA52C7823620088D6A7 /* text_prefiller.cpp */,
-				03D03DA62C7823620088D6A7 /* text_prefiller.h */,
-				03729F092BB203B300152F2E /* util.h */,
+				03D151CC2E0E9ACB007A38BE /* text_decoder_runner.cpp */,
+				03D151CD2E0E9ACB007A38BE /* text_llm_runner.cpp */,
+				03D151CE2E0E9ACB007A38BE /* text_prefiller.cpp */,
 			);
 			name = runner;
 			path = ../../../../../../extension/llm/runner;
@@ -316,19 +304,20 @@
 		03729F0E2BB203D700152F2E /* tokenizers */ = {
 			isa = PBXGroup;
 			children = (
+				F292B06A2D88B0C200BE6839 /* bpe_tokenizer_base.cpp */,
 				306A71452DC1DC3D00936B1F /* hf_tokenizer.cpp */,
+				F292B1002D88B20C00BE6839 /* llama_tiktoken.cpp */,
+				F292B06C2D88B0C200BE6839 /* llama2c_tokenizer.cpp */,
 				306A71462DC1DC3D00936B1F /* pcre2_regex.cpp */,
 				306A71472DC1DC3D00936B1F /* pre_tokenizer.cpp */,
 				306A71482DC1DC3D00936B1F /* re2_regex.cpp */,
+				03D151C82E0E98C4007A38BE /* regex_lookahead.cpp */,
 				306A71492DC1DC3D00936B1F /* regex.cpp */,
+				03D151C92E0E98C4007A38BE /* sentencepiece.cpp */,
 				306A714A2DC1DC3D00936B1F /* std_regex.cpp */,
-				306A714B2DC1DC3D00936B1F /* token_decoder.cpp */,
-				F292B0FF2D88B20C00BE6839 /* llama_tiktoken.h */,
-				F292B1002D88B20C00BE6839 /* llama_tiktoken.cpp */,
-				F292B0862D88B0D200BE6839 /* include */,
-				F292B06A2D88B0C200BE6839 /* bpe_tokenizer_base.cpp */,
-				F292B06C2D88B0C200BE6839 /* llama2c_tokenizer.cpp */,
 				F292B06F2D88B0C200BE6839 /* tiktoken.cpp */,
+				306A714B2DC1DC3D00936B1F /* token_decoder.cpp */,
+				F292B0862D88B0D200BE6839 /* include */,
 			);
 			name = tokenizers;
 			path = ../../../../../../extension/llm/tokenizers;
@@ -338,7 +327,6 @@
 			isa = PBXGroup;
 			children = (
 				03729F112BB2042B00152F2E /* sampler.cpp */,
-				03729F102BB2042B00152F2E /* sampler.h */,
 			);
 			name = sampler;
 			path = ../../../../../../extension/llm/sampler;
@@ -347,21 +335,21 @@
 		F292B0842D88B0D200BE6839 /* tokenizers */ = {
 			isa = PBXGroup;
 			children = (
+				F292B0782D88B0D200BE6839 /* base64.h */,
+				F292B0792D88B0D200BE6839 /* bpe_tokenizer_base.h */,
+				F292B07A2D88B0D200BE6839 /* error.h */,
 				306A71352DC1DC0F00936B1F /* hf_tokenizer.h */,
+				F292B07C2D88B0D200BE6839 /* llama2c_tokenizer.h */,
+				F292B07D2D88B0D200BE6839 /* log.h */,
 				306A71362DC1DC0F00936B1F /* pcre2_regex.h */,
 				306A71372DC1DC0F00936B1F /* pre_tokenizer.h */,
 				306A71382DC1DC0F00936B1F /* re2_regex.h */,
 				306A71392DC1DC0F00936B1F /* regex.h */,
+				F292B07F2D88B0D200BE6839 /* result.h */,
 				306A713A2DC1DC0F00936B1F /* std_regex.h */,
 				306A713B2DC1DC0F00936B1F /* string_integer_map.h */,
-				306A713C2DC1DC0F00936B1F /* token_decoder.h */,
-				F292B0782D88B0D200BE6839 /* base64.h */,
-				F292B0792D88B0D200BE6839 /* bpe_tokenizer_base.h */,
-				F292B07A2D88B0D200BE6839 /* error.h */,
-				F292B07C2D88B0D200BE6839 /* llama2c_tokenizer.h */,
-				F292B07D2D88B0D200BE6839 /* log.h */,
-				F292B07F2D88B0D200BE6839 /* result.h */,
 				F292B0812D88B0D200BE6839 /* tiktoken.h */,
+				306A713C2DC1DC0F00936B1F /* token_decoder.h */,
 				F292B0832D88B0D200BE6839 /* tokenizer.h */,
 			);
 			path = tokenizers;
@@ -391,7 +379,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				03729EE22BB1F93E00152F2E /* LLaMARunner.h in Headers */,
-				03D03DA82C7823620088D6A7 /* text_prefiller.h in Headers */,
 				F292B0882D88B0D200BE6839 /* llama2c_tokenizer.h in Headers */,
 				F292B0892D88B0D200BE6839 /* tokenizer.h in Headers */,
 				F292B08B2D88B0D200BE6839 /* result.h in Headers */,
@@ -400,7 +387,6 @@
 				F292B08F2D88B0D200BE6839 /* log.h in Headers */,
 				F292B0912D88B0D200BE6839 /* tiktoken.h in Headers */,
 				F292B0922D88B0D200BE6839 /* base64.h in Headers */,
-				03D03DAC2C7823830088D6A7 /* text_decoder_runner.h in Headers */,
 				306A713D2DC1DC0F00936B1F /* token_decoder.h in Headers */,
 				306A713E2DC1DC0F00936B1F /* regex.h in Headers */,
 				306A713F2DC1DC0F00936B1F /* string_integer_map.h in Headers */,
@@ -410,11 +396,6 @@
 				306A71432DC1DC0F00936B1F /* pcre2_regex.h in Headers */,
 				306A71442DC1DC0F00936B1F /* std_regex.h in Headers */,
 				03D151B92E0E0908007A38BE /* LLaVARunner.h in Headers */,
-				03729F122BB2042B00152F2E /* sampler.h in Headers */,
-				03729F0C2BB203B300152F2E /* util.h in Headers */,
-				F292B1012D88B20C00BE6839 /* llama_tiktoken.h in Headers */,
-				03729F0B2BB203B300152F2E /* runner.h in Headers */,
-				0372C3142C89418E00CD942A /* llava_runner.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -554,7 +535,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"Cmake not found, please install Cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run `sudo /Applications/CMake.app/Contents/bin/cmake-gui --install` to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"12.0\"\nfi\n\ncmake_build() {\n    local src_dir target do_install=0\n    local extra_args=()\n    local build_dir\n    # Parse arguments\n    src_dir=\"$1\"\n    shift\n    target=\"$1\"\n    if [[ \"$target\" == \"install\" ]]; then\n        # Usage: cmake_build <src_dir> install [extra_args...]\n        do_install=1\n        shift\n    else\n        # Usage: cmake_build <src_dir> <target> [install] [extra_args...]\n        shift\n        if [[ \"$1\" == \"install\" ]]; then\n            do_install=1\n            shift\n        fi\n    fi\n    # Collect any remaining arguments as extra_args\n    extra_args=(\"$@\")\n    build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n    mkdir -p \"$build_dir\" || { echo \"Failed to create build dir\"; return 1; }\n    pushd \"$build_dir\" > /dev/null || { echo \"Failed to enter build dir\"; return 1; }\n    # Platform-specific CMake args\n    if [[ \"$PLATFORM\" == \"MAC_ARM64\" ]]; then\n        extra_args+=(-DCMAKE_INSTALL_BUNDLEDIR=\"${CMAKE_DIR}/bin\")\n        extra_args+=(-DCMAKE_MACOSX_BUNDLE=OFF)\n    fi\n    # Configure\n    cmake -G Xcode \\\n        -DCMAKE_BUILD_TYPE=\"Release\" \\\n        -DCMAKE_CXX_STANDARD=17 \\\n        -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n        -DPLATFORM=\"$PLATFORM\" \\\n        -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n        -DCMAKE_INSTALL_PREFIX=\"$CMAKE_DIR\" \\\n        \"${extra_args[@]}\" \\\n        \"$src_dir\" || { echo \"CMake configure failed\"; popd > /dev/null; return 1; }\n    # Build\n    cmake --build . --config \"Release\" --target $target\n    # Install if requested\n    if [[ $do_install -eq 1 ]]; then\n        cmake --install . --prefix \"$CMAKE_DIR\" || echo \"Ignoring install failures\"\n    fi\n}\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/abseil-cpp\" \"install\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/re2\" \"install\"\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/pcre2\" \"install\" \\\n    -DPCRE2_BUILD_PCRE2_8=ON \\\n    -DPCRE2_BUILD_PCRE2_16=OFF \\\n    -DPCRE2_BUILD_PCRE2_32=OFF \\\n    -DPCRE2_BUILD_TESTS=OFF \\\n    -DPCRE2_BUILD_PCRE2GREP=OFF \\\n    -DPCRE2_BUILD_PCRE2TEST=OFF \\\n    -DPCRE2_BUILD_PCRE2GPERF=OFF \\\n    -DPCRE2_BUILD_DOCS=OFF \\\n    -DPCRE2_BUILD_LIBPCRE2_PDB=OFF\n\ncmake_build \"$SRCROOT/../../../llm/tokenizers/third-party/sentencepiece\" \"sentencepiece-static sentencepiece_train-static\" \"install\" \\\n    -DSPM_ENABLE_SHARED=OFF \\\n    -DSPM_BUILD_TEST=OFF \\\n    -DCMAKE_SYSTEM_NAME=\"iOS\"\n    \ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/llama.cpp-unicode\" \"install\"\n    \n# Include the single header for json.\nmkdir -p \"$CMAKE_DIR/include/nlohmann\"\ncp \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/json/single_include/nlohmann/json.hpp\" \"$CMAKE_DIR/include/nlohmann/json.hpp\"\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
+			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"Cmake not found, please install Cmake. \\n1. Download Cmake.app from https://cmake.org/download with version > 3.19. \\n2. Install it to Applications/ folder and run `sudo /Applications/CMake.app/Contents/bin/cmake-gui --install` to install CMake commandline tools.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"12.0\"\nfi\n\ncmake_build() {\n    local src_dir target do_install=0\n    local extra_args=()\n    local build_dir\n    # Parse arguments\n    src_dir=\"$1\"\n    shift\n    target=\"$1\"\n    if [[ \"$target\" == \"install\" ]]; then\n        # Usage: cmake_build <src_dir> install [extra_args...]\n        do_install=1\n        shift\n    else\n        # Usage: cmake_build <src_dir> <target> [install] [extra_args...]\n        shift\n        if [[ \"$1\" == \"install\" ]]; then\n            do_install=1\n            shift\n        fi\n    fi\n    # Collect any remaining arguments as extra_args\n    extra_args=(\"$@\")\n    build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n    mkdir -p \"$build_dir\" || { echo \"Failed to create build dir\"; return 1; }\n    pushd \"$build_dir\" > /dev/null || { echo \"Failed to enter build dir\"; return 1; }\n    # Platform-specific CMake args\n    if [[ \"$PLATFORM\" == \"MAC_ARM64\" ]]; then\n        extra_args+=(-DCMAKE_INSTALL_BUNDLEDIR=\"${CMAKE_DIR}/bin\")\n        extra_args+=(-DCMAKE_MACOSX_BUNDLE=OFF)\n    fi\n    # Configure\n    cmake -G Xcode \\\n        -DCMAKE_BUILD_TYPE=\"Release\" \\\n        -DCMAKE_CXX_STANDARD=17 \\\n        -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n        -DPLATFORM=\"$PLATFORM\" \\\n        -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n        -DCMAKE_INSTALL_PREFIX=\"$CMAKE_DIR\" \\\n        \"${extra_args[@]}\" \\\n        \"$src_dir\" || { echo \"CMake configure failed\"; popd > /dev/null; return 1; }\n    # Build\n    cmake --build . --config \"Release\" --target $target\n    # Install if requested\n    if [[ $do_install -eq 1 ]]; then\n        cmake --install . --prefix \"$CMAKE_DIR\" || echo \"Ignoring install failures\"\n    fi\n}\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/abseil-cpp\" \"install\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/re2\" \"install\"\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/pcre2\" \"install\" \\\n    -DPCRE2_BUILD_PCRE2_8=ON \\\n    -DPCRE2_BUILD_PCRE2_16=OFF \\\n    -DPCRE2_BUILD_PCRE2_32=OFF \\\n    -DPCRE2_BUILD_TESTS=OFF \\\n    -DPCRE2_BUILD_PCRE2GREP=OFF \\\n    -DPCRE2_BUILD_PCRE2TEST=OFF \\\n    -DPCRE2_BUILD_PCRE2GPERF=OFF \\\n    -DPCRE2_BUILD_DOCS=OFF \\\n    -DPCRE2_BUILD_LIBPCRE2_PDB=OFF \\\n    -DSUPPORT_REGEX_LOOKAHEAD=ON\n\ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/sentencepiece\" \"sentencepiece-static sentencepiece_train-static\" \"install\" \\\n    -DSPM_ENABLE_SHARED=OFF \\\n    -DSPM_BUILD_TEST=OFF \\\n    -DCMAKE_SYSTEM_NAME=\"iOS\"\n    \ncmake_build \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/llama.cpp-unicode\" \"install\"\n    \n# Include the single header for json.\nmkdir -p \"$CMAKE_DIR/include/nlohmann\"\ncp \"$SRCROOT/../../../../extension/llm/tokenizers/third-party/json/single_include/nlohmann/json.hpp\" \"$CMAKE_DIR/include/nlohmann/json.hpp\"\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -584,8 +565,12 @@
 				03D151B82E0E0908007A38BE /* LLaVARunner.mm in Sources */,
 				03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */,
 				0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */,
+				03D151CA2E0E98C4007A38BE /* sentencepiece.cpp in Sources */,
+				03D151CB2E0E98C4007A38BE /* regex_lookahead.cpp in Sources */,
+				03D151CF2E0E9ACB007A38BE /* text_prefiller.cpp in Sources */,
+				03D151D02E0E9ACB007A38BE /* text_llm_runner.cpp in Sources */,
+				03D151D12E0E9ACB007A38BE /* text_decoder_runner.cpp in Sources */,
 				F292B1022D88B20C00BE6839 /* llama_tiktoken.cpp in Sources */,
-				03D03DAB2C7823830088D6A7 /* text_decoder_runner.cpp in Sources */,
 				F292B0752D88B0C200BE6839 /* tiktoken.cpp in Sources */,
 				F292B0762D88B0C200BE6839 /* llama2c_tokenizer.cpp in Sources */,
 				F292B0772D88B0C200BE6839 /* bpe_tokenizer_base.cpp in Sources */,
@@ -598,7 +583,6 @@
 				306A71502DC1DC3D00936B1F /* regex.cpp in Sources */,
 				306A71512DC1DC3D00936B1F /* pre_tokenizer.cpp in Sources */,
 				306A71522DC1DC3D00936B1F /* token_decoder.cpp in Sources */,
-				03D03DA72C7823620088D6A7 /* text_prefiller.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
