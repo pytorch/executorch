@@ -4,14 +4,14 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from executorch.examples.models.llama.attention import (
+from executorch.extension.llm.modeling.text_decoder.attention.attention import (
     Attention,
     AttentionMHA,
     ForwardOptions,
     register_attention,
 )
-from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.rope import Rope
+from executorch.extension.llm.modeling.text_decoder.model_args import ModelArgs
+from executorch.extension.llm.modeling.text_decoder.rope import Rope
 
 
 _CacheMap = Dict[str, torch.Tensor]

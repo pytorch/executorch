@@ -1,0 +1,43 @@
+# Buck targets for attention modules
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "attention",
+    srcs = [
+        "attention.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.modeling.text_decoder.attention",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_model_args",
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_norm",
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_rope",
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "static_attention",
+    srcs = [
+        "static_attention.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.modeling.text_decoder.attention",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":attention",
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_model_args",
+        "//executorch/extension/llm/modeling/text_decoder:text_decoder_rope",
+        "//caffe2:torch",
+    ],
+)
