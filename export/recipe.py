@@ -13,14 +13,13 @@ for ExecuTorch models, including export configurations and quantization recipes.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, List, Optional, Sequence
+from typing import List, Optional, Sequence
 
 from executorch.exir._warnings import experimental
 
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.pass_manager import PassType
-from torch.export import ExportedProgram
 from torchao.core.config import AOBaseConfig
 from torchao.quantization.pt2e.quantizer import Quantizer
 
@@ -52,7 +51,7 @@ class QuantizationRecipe:
     quantizers: Optional[List[Quantizer]] = None
     ao_base_config: Optional[List[AOBaseConfig]] = None
 
-    def get_quantizers(self) -> Optional[Quantizer]:
+    def get_quantizers(self) -> Optional[List[Quantizer]]:
         """
         Get the quantizer associated with this recipe.
 
@@ -89,17 +88,16 @@ class ExportRecipe:
 
     name: Optional[str] = None
     quantization_recipe: Optional[QuantizationRecipe] = None
+    # pyre-ignore[11]: Type not defined
     edge_compile_config: Optional[EdgeCompileConfig] = (
-        None  # pyre-ignore[11]: Type not defined
+        None
     )
-    pre_edge_transform_passes: Optional[
-        Callable[[ExportedProgram], ExportedProgram]
-        | List[Callable[[ExportedProgram], ExportedProgram]]
-    ] = None
+    pre_edge_transform_passes: Optional[Sequence[PassType]] = None
     edge_transform_passes: Optional[Sequence[PassType]] = None
     transform_check_ir_validity: bool = True
     partitioners: Optional[List[Partitioner]] = None
+    # pyre-ignore[11]: Type not defined
     executorch_backend_config: Optional[ExecutorchBackendConfig] = (
-        None  # pyre-ignore[11]: Type not defined
+        None
     )
     mode: Mode = Mode.RELEASE
