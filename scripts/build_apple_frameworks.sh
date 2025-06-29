@@ -70,6 +70,11 @@ libquantized_kernels.a,\
 libquantized_ops_lib.a,\
 :"
 
+FRAMEWORK_KERNELS_TORCHAO="kernels_torchao:\
+libtorchao_ops_executorch.a,\
+libtorchao_kernels_aarch64.a,\
+:"
+
 usage() {
   echo "Usage: $0 [OPTIONS]"
   echo "Build frameworks for Apple platforms."
@@ -83,6 +88,7 @@ usage() {
   echo "  --optimized          Only build the Optimized kernels."
   echo "  --quantized          Only build the Quantized kernels."
   echo "  --xnnpack            Only build the XNNPACK backend."
+  echo "  --torchao            Build the TorchAO kernels."
   echo
   exit 0
 }
@@ -100,6 +106,7 @@ set_cmake_options_override() {
       "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
       "-DEXECUTORCH_BUILD_XNNPACK=OFF"
+      "-DEXECUTORCH_BUILD_KERNELS_TORCHAO=OFF"
     )
   fi
 
@@ -113,27 +120,28 @@ set_cmake_options_override() {
 
 for arg in "$@"; do
   case $arg in
-      -h|--help) usage ;;
-      --Release)
-        if [[ ! " ${MODES[*]:-} " =~ \bRelease\b ]]; then
-          MODES+=("Release")
-        fi
-        ;;
-      --Debug)
-        if [[ ! " ${MODES[*]:-} " =~ \bDebug\b ]]; then
-          MODES+=("Debug")
-        fi
-        ;;
-      --coreml) set_cmake_options_override "EXECUTORCH_BUILD_COREML";;
-      --custom) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_CUSTOM" ;;
-      --mps) set_cmake_options_override "EXECUTORCH_BUILD_MPS" ;;
-      --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
-      --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
-      --xnnpack) set_cmake_options_override "EXECUTORCH_BUILD_XNNPACK" ;;
-      *)
-        echo -e "\033[31m[error] unknown option: ${arg}\033[0m"
-        exit 1
-      ;;
+  -h | --help) usage ;;
+  --Release)
+    if [[ ! " ${MODES[*]:-} " =~ \bRelease\b ]]; then
+      MODES+=("Release")
+    fi
+    ;;
+  --Debug)
+    if [[ ! " ${MODES[*]:-} " =~ \bDebug\b ]]; then
+      MODES+=("Debug")
+    fi
+    ;;
+  --coreml) set_cmake_options_override "EXECUTORCH_BUILD_COREML" ;;
+  --custom) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_CUSTOM" ;;
+  --mps) set_cmake_options_override "EXECUTORCH_BUILD_MPS" ;;
+  --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
+  --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
+  --xnnpack) set_cmake_options_override "EXECUTORCH_BUILD_XNNPACK" ;;
+  --torchao) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_TORCHAO" ;;
+  *)
+    echo -e "\033[31m[error] unknown option: ${arg}\033[0m"
+    exit 1
+    ;;
   esac
 done
 
@@ -149,15 +157,15 @@ for preset_index in "${!PRESETS[@]}"; do
 
     # Do NOT add options here. Update the respective presets instead.
     cmake -S "${SOURCE_ROOT_DIR}" \
-          -B "${preset_output_dir}" \
-          -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
-          -DCMAKE_BUILD_TYPE="${mode}" \
-          ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
-          --preset "${preset}"
+      -B "${preset_output_dir}" \
+      -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
+      -DCMAKE_BUILD_TYPE="${mode}" \
+      ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
+      --preset "${preset}"
 
     cmake --build "${preset_output_dir}" \
-          --config "${mode}" \
-          -j$(sysctl -n hw.ncpu)
+      --config "${mode}" \
+      -j$(sysctl -n hw.ncpu)
   done
 done
 
@@ -167,8 +175,8 @@ mkdir -p "$HEADERS_ABSOLUTE_PATH"
 
 "$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
   //extension/module: \
-  //extension/tensor: \
-| rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_ABSOLUTE_PATH/executorch"
+  //extension/tensor: |
+  rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_ABSOLUTE_PATH/executorch"
 
 # HACK: XCFrameworks don't appear to support exporting any build
 # options, but we need the following:
@@ -187,7 +195,7 @@ cp -r $HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch "$H
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_ABSOLUTE_PATH/executorch"
 
-cat > "$HEADERS_ABSOLUTE_PATH/module.modulemap" << 'EOF'
+cat >"$HEADERS_ABSOLUTE_PATH/module.modulemap" <<'EOF'
 module ExecuTorch {
   umbrella header "ExecuTorch/ExecuTorch.h"
   export *
@@ -211,10 +219,10 @@ append_framework_flag() {
   fi
 
   if [[ -n "$mode" && "$mode" != "Release" ]]; then
-      local name spec
-      name=$(echo "$framework" | cut -d: -f1)
-      spec=$(echo "$framework" | cut -d: -f2-)
-      framework="${name}_$(echo "$mode" | tr '[:upper:]' '[:lower:]'):${spec}"
+    local name spec
+    name=$(echo "$framework" | cut -d: -f1)
+    spec=$(echo "$framework" | cut -d: -f2-)
+    framework="${name}_$(echo "$mode" | tr '[:upper:]' '[:lower:]'):${spec}"
   fi
   echo "Adding framework: ${framework}"
   FRAMEWORK_FLAGS+=("--framework=$framework")
@@ -235,6 +243,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_KERNELS_TORCHAO" "$FRAMEWORK_KERNELS_TORCHAO" "$mode"
 
   cd "${OUTPUT_DIR}"
   "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"

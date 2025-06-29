@@ -94,6 +94,8 @@ set(lib_list
     quantized_kernels
     quantized_ops_lib
     quantized_ops_aot_lib
+    torchao_ops_executorch
+    torchao_kernels_aarch64
 )
 foreach(lib ${lib_list})
   # Name of the variable which stores result of the find_library search
@@ -138,6 +140,13 @@ if(TARGET optimized_kernels)
   set_target_properties(
     optimized_kernels PROPERTIES INTERFACE_LINK_LIBRARIES
                                  "executorch_core;cpublas;extension_threadpool"
+  )
+endif()
+
+if(TARGET torchao_ops_executorch)
+  set_target_properties(
+    torchao_ops_executorch PROPERTIES INTERFACE_LINK_LIBRARIES
+                                 "executorch_core;extension_threadpool;cpuinfo;pthreadpool"
   )
 endif()
 
