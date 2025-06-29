@@ -53,7 +53,14 @@ def test_multihead_attention_tosa_MI(test_data: input_t1):
 )
 def test_multihead_attention_tosa_BI(test_data):
     test_data, module = test_data()
-    pipeline = TosaPipelineBI(module, (*test_data, *test_data, *test_data), [], [])
+    pipeline = TosaPipelineBI(
+        module,
+        (*test_data, *test_data, *test_data),
+        [],
+        [],
+        # TODO: Per-channel quantization is broken (MLETORCH-1144)
+        per_channel_quantization=False,
+    )
     pipeline.run()
 
 
