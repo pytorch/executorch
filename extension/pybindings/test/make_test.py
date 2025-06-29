@@ -168,6 +168,7 @@ def make_test(  # noqa: C901
     subfunction of wrapper.
     """
     load_fn: Callable = runtime._load_for_executorch_from_buffer
+    load_prog_fn: Callable = runtime._load_program_from_buffer
 
     def wrapper(tester: unittest.TestCase) -> None:
         ######### TEST CASES #########
@@ -474,6 +475,36 @@ def make_test(  # noqa: C901
             # This should raise a Python error, not hit a fatal assert in the C++ code.
             tester.assertRaises(RuntimeError, executorch_module, inputs)
 
+        def test_program_methods_one(tester):
+            # Create an ExecuTorch program from ModuleAdd.
+            exported_program, _ = create_program(ModuleAdd())
+
+            # Use pybindings to load the program.
+            executorch_program = load_prog_fn(exported_program.buffer)
+
+            tester.assertEqual(executorch_program.num_methods(), 1)
+            tester.assertEqual(executorch_program.get_method_name(0), "forward")
+
+        def test_program_methods_multi(tester):
+            # Create an ExecuTorch program from ModuleMulti.
+            exported_program, _ = create_program(ModuleMulti())
+
+            # Use pybindings to load the program.
+            executorch_program = load_prog_fn(exported_program.buffer)
+
+            tester.assertEqual(executorch_program.num_methods(), 2)
+            tester.assertEqual(executorch_program.get_method_name(0), "forward")
+            tester.assertEqual(executorch_program.get_method_name(1), "forward2")
+
+        def test_program_method_index_out_of_bounds(tester):
+            # Create an ExecuTorch program from ModuleMulti.
+            exported_program, _ = create_program(ModuleMulti())
+
+            # Use pybindings to load the program.
+            executorch_program = load_prog_fn(exported_program.buffer)
+
+            tester.assertRaises(RuntimeError, executorch_program.get_method_name, 2)
+
         ######### RUN TEST CASES #########
         test_e2e(tester)
         test_multiple_entry(tester)
@@ -490,5 +521,8 @@ def make_test(  # noqa: C901
         test_bad_name(tester)
         test_verification_config(tester)
         test_unsupported_input_type(tester)
+        test_program_methods_one(tester)
+        test_program_methods_multi(tester)
+        test_program_method_index_out_of_bounds(tester)
 
     return wrapper
