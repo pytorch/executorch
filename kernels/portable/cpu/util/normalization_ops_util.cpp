@@ -15,6 +15,10 @@
 namespace torch {
 namespace executor {
 
+#ifdef __clang__
+#pragma clang diagnostic ignore "-Wvla-extension"
+#endif
+
 using Tensor = executorch::aten::Tensor;
 
 bool check_batch_norm_args(

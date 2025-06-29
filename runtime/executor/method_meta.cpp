@@ -9,6 +9,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/portable_type/c10/c10/util/safe_numerics.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/core/tag.h>
@@ -56,23 +57,20 @@ size_t calculate_nbytes(
     Span<const int32_t> sizes,
     executorch::aten::ScalarType scalar_type) {
   size_t n = 1;
-  size_t prev_n = 1;
   for (size_t i = 0; i < sizes.size(); i++) {
-    prev_n = n;
-    n *= sizes[i];
-    // Check for overflow
-    ET_CHECK(sizes[i] == 0 || n / sizes[i] == prev_n);
+    size_t next_n;
+    bool overflow =
+        c10::mul_overflows(n, static_cast<size_t>(sizes[i]), &next_n);
+    ET_CHECK(!overflow);
+    n = next_n;
   }
 
   size_t elem_size = executorch::runtime::elementSize(scalar_type);
+  size_t total_bytes;
+  bool overflow = c10::mul_overflows(n, elem_size, &total_bytes);
+  ET_CHECK(!overflow);
 
-  prev_n = n;
-  n = n * elem_size;
-
-  // Check for overflow
-  ET_CHECK(elem_size == 0 || n / elem_size == prev_n);
-
-  return n;
+  return total_bytes;
 }
 
 } // namespace
