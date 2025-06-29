@@ -5,11 +5,19 @@ ET_PLATFORM[sdk=macos*] = macos
 OTHER_LDFLAGS = $(inherited) \
     -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml_$(ET_PLATFORM).a \
+    -framework Foundation \
+    -framework CoreML \
+    -framework Accelerate \
+    -framework Metal \
+    -framework MetalPerformanceShaders \
+    -framework MetalPerformanceShadersGraph \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_custom_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_torchao_$(ET_PLATFORM).a \
+    -lsqlite3 \
     @$(TEMP_DIR)/cmake/linker_flags
 
 // LLaMARunner requires additional dependencies built with CMake in a custom run script phase.
