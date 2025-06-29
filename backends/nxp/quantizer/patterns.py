@@ -513,6 +513,15 @@ class PermutePattern(SharedSpecPattern):
         return [torch.ops.aten.permute.default]
 
 
+class TransposeIntPattern(SharedSpecPattern):
+    """
+    Quantizer for Transpose Int operator.
+    """
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.transpose.int]
+
+
 class ReluPattern(SharedSpecPattern):
     """
     Quantizer for Relu operator. Shared quantization spec is selected, as ReLU usually follows computation layer.
