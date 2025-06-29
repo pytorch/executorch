@@ -70,8 +70,8 @@ def test_softmax_conversion__unknown_input_format(input_shape, dim: int):
 @pytest.mark.parametrize(
     "input_shape,dim",
     [
-        pytest.param((10, 4, 32, 32), 1, id="4D,dim=1"),
-        pytest.param((10, 4, 16, 16), -3, id="4D,dim=-3"),
+        pytest.param((1, 4, 32, 32), 1, id="4D,dim=1"),
+        pytest.param((1, 4, 16, 16), -3, id="4D,dim=-3"),
     ],
 )
 def test_softmax_conversion_channel_last(input_shape, dim: int):
