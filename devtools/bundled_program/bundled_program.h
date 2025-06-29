@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -36,6 +37,31 @@ using ::executorch::ET_RUNTIME_NAMESPACE::Method;
  * execution.
  */
 ET_NODISCARD ::executorch::runtime::Error load_bundled_input(
+    Method& method,
+    SerializedBundledProgram* bundled_program_ptr,
+    size_t testset_idx);
+
+struct ErrorStats {
+  ::executorch::runtime::Error status;
+  double mean_abs_error;
+  double max_abs_error;
+  double mean_relative_error;
+  double max_relative_error;
+};
+
+/**
+ * Compute error stats for method.outputs() vs. the bundled "expected_outputs"
+ * for testset_idx.
+ *
+ * @param[in] method The Method to extract outputs from.
+ * @param[in] bundled_program_ptr The bundled program contains expected output.
+ * @param[in] testset_idx  The index of expected output needs to be compared.
+ *
+ * @returns Return ErrorStats with status set to Error::Ok if stats are filled
+ * in.
+ */
+
+ET_NODISCARD ErrorStats compute_method_output_error_stats(
     Method& method,
     SerializedBundledProgram* bundled_program_ptr,
     size_t testset_idx);
