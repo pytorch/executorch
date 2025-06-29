@@ -28,6 +28,7 @@ class EagerLlamaRunner(LlamaRunner):
         self,
         llm_config: LlmConfig,
         tokenizer_config_path: Optional[str] = None,
+        tokenizer_type: Optional[str] = None,
         use_attention_sink: bool = False,
     ):
         with open(llm_config.base.params, "r") as f:
@@ -35,6 +36,7 @@ class EagerLlamaRunner(LlamaRunner):
         super().__init__(
             tokenizer_path=llm_config.base.tokenizer_path,
             tokenizer_config_path=tokenizer_config_path,
+            tokenizer_type=tokenizer_type,
             max_seq_len=llm_config.export.max_seq_length,
             max_batch_size=1,
             use_kv_cache=llm_config.model.use_kv_cache,
@@ -89,6 +91,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Path to an accompanying tokenizer_config.json, which provides metadata for the main tokenizer.json",
     )
 
+    parser.add_argument(
+        "--tokenizer_type",
+        type=str,
+        choices=["sentencepiece", "huggingface", "llama2c", "tiktoken"],
+        help="Type of tokenizer",
+    )
+
     return parser
 
 
@@ -105,6 +114,7 @@ def execute_runner(runner_class: Type[LlamaRunner]) -> None:
     show_tokens = args.show_tokens
     chat_mode = args.chat
     tokenizer_config_path = args.tokenizer_config_path
+    tokenizer_type = args.tokenizer_type
     use_attention_sink = args.use_attention_sink
 
     with torch.no_grad():
@@ -112,6 +122,7 @@ def execute_runner(runner_class: Type[LlamaRunner]) -> None:
         runner = runner_class(
             llm_config=llm_config,
             tokenizer_config_path=tokenizer_config_path,
+            tokenizer_type=tokenizer_type,
             use_attention_sink=use_attention_sink,
         )
 

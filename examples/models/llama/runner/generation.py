@@ -10,7 +10,7 @@ from typing import List, Optional
 
 import torch
 
-from pytorch_tokenizers import get_tokenizer
+from pytorch_tokenizers import get_tokenizer, TokenizerType
 
 
 def sample_top_p(probs, p):
@@ -52,6 +52,7 @@ class LlamaRunner(ABC):
         *,
         tokenizer_path: str,
         tokenizer_config_path: Optional[str] = None,
+        tokenizer_type: Optional[str] = None,
         max_seq_len: int,
         max_batch_size: int,
         use_kv_cache: bool,
@@ -72,7 +73,11 @@ class LlamaRunner(ABC):
         self.max_seq_len = max_seq_len
         self.max_batch_size = max_batch_size
         self.use_kv_cache = use_kv_cache
-        self.tokenizer = get_tokenizer(tokenizer_path, tokenizer_config_path)
+        self.tokenizer = get_tokenizer(
+            tokenizer_path,
+            tokenizer_config_path,
+            TokenizerType.from_str(tokenizer_type),
+        )
         self.device = device
         # For some models like qwen, mismatch is acceptable: https://github.com/QwenLM/Qwen2.5/issues/466#issuecomment-2146759706
         if vocab_size != self.tokenizer.n_words:
@@ -172,8 +177,10 @@ class LlamaRunner(ABC):
         Note:
             This method generates text completion for the provided prompt, employing nucleus sampling to introduce controlled randomness.
         """
+        prompt_tokens = self.tokenizer.encode(prompt, bos=True, eos=False)
+        print(prompt_tokens)
         return self.generate(
-            prompt_tokens=self.tokenizer.encode(prompt, bos=True, eos=False),
+            prompt_tokens=prompt_tokens,
             max_seq_len=self.max_seq_len,
             temperature=temperature,
             top_p=top_p,

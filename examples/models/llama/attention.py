@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.norm import RMSNorm
+from executorch.examples.models.llama.norm import Norm
 from executorch.examples.models.llama.rope import Rope
 
 
@@ -324,7 +324,14 @@ class RingKVCache(KVCache):
 
 @register_attention("mha")
 class AttentionMHA(Attention):
-    def __init__(self, args: ModelArgs, layer_id: int, rope: Rope):
+    def __init__(
+        self,
+        args: ModelArgs,
+        layer_id: int,
+        rope: Rope,
+        q_norm_fn: Optional[Norm] = None,
+        k_norm_fn: Optional[Norm] = None,
+    ):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
@@ -343,11 +350,8 @@ class AttentionMHA(Attention):
         self.qk_norm_before_rope = args.qk_norm_before_rope
         self.enable_dynamic_shape = args.enable_dynamic_shape
 
-        if self.use_qk_norm:
-            q_norm_dim = self.head_dim
-            k_norm_dim = self.head_dim
-            self.q_norm_fn = RMSNorm(q_norm_dim, eps=args.norm_eps)
-            self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
+        self.q_norm_fn = q_norm_fn
+        self.k_norm_fn = k_norm_fn
 
         self.wq = nn.Linear(
             self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias

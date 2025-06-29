@@ -11,6 +11,7 @@ from executorch.examples.models.llama.attention import (
     register_attention,
 )
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.norm import Norm
 from executorch.examples.models.llama.rope import Rope
 
 
@@ -365,7 +366,14 @@ class StaticAttention(Attention):
     model only needs to perform a concat to combine past and new data.
     """
 
-    def __init__(self, config: ModelArgs, layer_id: int, rope: Rope):
+    def __init__(
+        self,
+        config: ModelArgs,
+        layer_id: int,
+        rope: Rope,
+        q_norm_fn: Optional[Norm] = None,
+        k_norm_fn: Optional[Norm] = None,
+    ):
         super().__init__()
         self.n_heads = config.n_heads
         self.n_kv_heads = (
@@ -410,8 +418,16 @@ class StaticAttention(Attention):
         self.rope = _Rope(rope.params.use_hf_rope)
 
         if self.use_qk_norm:
-            self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
-            self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+            self.q_norm = (
+                q_norm_fn
+                if q_norm_fn is not None
+                else torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+            )
+            self.k_norm = (
+                k_norm_fn
+                if k_norm_fn is not None
+                else torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+            )
         else:
             self.q_norm = torch.nn.Identity()
             self.k_norm = torch.nn.Identity()
@@ -512,10 +528,16 @@ class StaticAttention(Attention):
         if other.use_qk_norm:
             self.use_qk_norm = True
             self.qk_norm_before_rope = other.qk_norm_before_rope
-            self.q_norm = torch.nn.RMSNorm(other.q_norm_fn.dim, other.q_norm_fn.eps)
-            self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
-            self.k_norm = torch.nn.RMSNorm(other.k_norm_fn.dim, other.k_norm_fn.eps)
-            self.k_norm.load_state_dict(other.k_norm_fn.state_dict())
+            if other.q_norm_fn is not None:
+                self.q_norm = torch.nn.RMSNorm(
+                    other.q_norm_fn.weight.shape[0], other.q_norm_fn.eps
+                )
+                self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
+            if other.k_norm_fn is not None:
+                self.k_norm = torch.nn.RMSNorm(
+                    other.k_norm_fn.weight.shape[0], other.k_norm_fn.eps
+                )
+                self.k_norm.load_state_dict(other.k_norm_fn.state_dict())
 
     def linear_to_conv2d(self):
         def transfer_weight(linear, conv2d):
