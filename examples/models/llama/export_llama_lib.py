@@ -1342,7 +1342,8 @@ def _get_source_transforms(  # noqa
         """
         transforms.append(
             get_quant_embedding_transform(
-                embedding_quantize, use_shared_embedding, checkpoint_dtype
+                embedding_quantize,
+                use_shared_embedding,
             )
         )
 
