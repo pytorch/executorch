@@ -42,9 +42,11 @@ except ImportError:
     LOWERED_BACKEND_MODULE_TYPE = "LoweredBackendModule"
 
     # pyre-ignore
-    def trace_call_delegate(proxy_mode, func_overload, lowered_module, *args):
+    def trace_call_delegate(
+        proxy_mode: Any, func_overload: Any, lowered_module: Any, *args: Any
+    ) -> Any:
         # pyre-ignore
-        def _unwrap_proxy(e):
+        def _unwrap_proxy(e: Any) -> Any:
             if not isinstance(e, (torch.Tensor, torch.SymInt, torch.SymFloat)):
                 return e
             return get_proxy_slot(
@@ -151,7 +153,7 @@ except ImportError:
     def get_lowered_module_name(
         root: torch.nn.Module,
         # pyre-ignore: Undefined or invalid type [11]: Annotation `LoweredBackendModule` is not defined as a type.
-        lowered_module: LOWERED_BACKEND_MODULE_TYPE,  # noqa
+        lowered_module: Any,  # noqa
     ) -> str:
         """
         Adds the given lowered_module into the given root module and returns the
