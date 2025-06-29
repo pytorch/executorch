@@ -314,6 +314,7 @@ class TestProgramManagers(unittest.TestCase):
         inp = (torch.tensor(3), torch.randn(2, 2))
         exported = export(M(), inp)
         to_edge(exported)
+        # ep.to_executorch()
 
     def test_constraint_present_after_dce(self):
         import executorch.exir as exir

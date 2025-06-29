@@ -340,7 +340,7 @@ class ToOutVarPass(PassBase):
             if target == torch.ops.higher_order.map_impl:
                 self.call(get_submodule(node.args[0]))
                 continue
-            elif target == control_flow.while_loop:
+            elif target == torch.ops.higher_order.while_loop:
                 self.call(get_submodule(node.args[0]))
                 self.call(get_submodule(node.args[1]))
                 continue
