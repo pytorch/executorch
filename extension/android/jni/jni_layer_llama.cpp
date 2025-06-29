@@ -311,12 +311,12 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           .seq_len = seq_len,
           .temperature = temperature_,
       };
-      runner_->generate_from_pos(
+      return static_cast<jint>(runner_->generate_from_pos(
           prompt->toStdString(),
           start_pos,
           config,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); });
+          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
     }
   }
 
