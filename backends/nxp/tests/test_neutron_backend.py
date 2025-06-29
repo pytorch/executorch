@@ -31,7 +31,9 @@ def test_neutron_backend__single_conv_model():
 
 def test_neutron_backend__single_conv_model__payload_header_channels_last():
     edge_program_manager = to_quantized_edge_program(
-        Conv2dModule(bias=False), (1, 4, 32, 32), keep_io_format=False
+        Conv2dModule(bias=False),
+        (1, 4, 32, 32),
+        use_neutron_for_format_conversion=False,
     )
     payload = (
         edge_program_manager.exported_program().graph_module.lowered_module_0.processed_bytes
@@ -78,7 +80,7 @@ def test_delegating_format_related_transpose_operators__unsupported_shapes(mocke
     edge_program = to_quantized_edge_program(
         model,
         input_shape,
-        keep_io_format=True,  # Make sure the IR converter inserts the extra `Transpose` operators.
+        use_neutron_for_format_conversion=True,  # Make sure the IR converter inserts the extra `Transpose` operators.
     ).exported_program()
 
     # Make sure the edge_program only contains the 1 delegate call.
@@ -99,7 +101,7 @@ def test_delegating_format_related_transpose_operators__unsupported_shapes(mocke
     tflite_subgraph = Model.GetRootAs(tflite_flatbuffers_model).Subgraphs(0)
     assert tflite_subgraph.OperatorsLength() == 2
     assert (
-        tflite_subgraph.Operators(0).BuiltinOptionsType() == BuiltinOptions.PadOptions
+        tflite_subgraph.Operators(0).BuiltinOptionsType() == BuiltinOptions.PadV2Options
     )
     assert (
         tflite_subgraph.Operators(1).BuiltinOptionsType()
@@ -128,7 +130,7 @@ def test_delegating_format_related_transpose_operators__supported_case(mocker):
     edge_program = to_quantized_edge_program(
         model,
         input_shape,
-        keep_io_format=True,  # Make sure the IR converter inserts the extra `Transpose` operators.
+        use_neutron_for_format_conversion=True,  # Make sure the IR converter inserts the extra `Transpose` operators.
     ).exported_program()
 
     # Make sure the edge_program only contains the 1 delegate call.
@@ -153,7 +155,7 @@ def test_delegating_format_related_transpose_operators__supported_case(mocker):
         == BuiltinOptions.TransposeOptions
     )
     assert (
-        tflite_subgraph.Operators(1).BuiltinOptionsType() == BuiltinOptions.PadOptions
+        tflite_subgraph.Operators(1).BuiltinOptionsType() == BuiltinOptions.PadV2Options
     )
     assert (
         tflite_subgraph.Operators(2).BuiltinOptionsType()
@@ -188,7 +190,7 @@ def test_delegating_format_related_transpose_operators__supported_output__unsupp
     edge_program = to_quantized_edge_program(
         model,
         input_shape,
-        keep_io_format=True,  # Make sure the IR converter inserts the extra `Transpose` operators.
+        use_neutron_for_format_conversion=True,  # Make sure the IR converter inserts the extra `Transpose` operators.
     ).exported_program()
 
     # Make sure the edge_program only contains the 1 delegate call.
@@ -209,7 +211,7 @@ def test_delegating_format_related_transpose_operators__supported_output__unsupp
     tflite_subgraph = Model.GetRootAs(tflite_flatbuffers_model).Subgraphs(0)
     assert tflite_subgraph.OperatorsLength() == 3
     assert (
-        tflite_subgraph.Operators(0).BuiltinOptionsType() == BuiltinOptions.PadOptions
+        tflite_subgraph.Operators(0).BuiltinOptionsType() == BuiltinOptions.PadV2Options
     )
     assert (
         tflite_subgraph.Operators(1).BuiltinOptionsType()
@@ -243,7 +245,7 @@ def test_delegating_format_related_transpose_operators__supported_input__unsuppo
     edge_program = to_quantized_edge_program(
         model,
         input_shape,
-        keep_io_format=True,  # Make sure the IR converter inserts the extra `Transpose` operators.
+        use_neutron_for_format_conversion=True,  # Make sure the IR converter inserts the extra `Transpose` operators.
     ).exported_program()
 
     # Make sure the edge_program only contains the 1 delegate call.

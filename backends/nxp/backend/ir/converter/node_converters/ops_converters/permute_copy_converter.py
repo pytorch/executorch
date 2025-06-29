@@ -4,21 +4,45 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+import torch
 
 from executorch.backends.nxp.backend.ir.converter import quantization_utils
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
+    NeutronTargetSpec,
     NodeConverter,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     transpose_options,
 )
+from executorch.backends.nxp.backend.neutron_operator_support import (
+    transposition_is_supported_on_neutron,
+)
 from torch.fx import Node
 from torch.nn import Parameter
 
 
+def _get_shape(node: torch.fx.Node) -> list[int]:
+    return list(node.meta["val"].shape)
+
+
 class PermuteCopyConverter(NodeConverter):
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        input_shape = _get_shape(node.args[0])
+        permutation = list(node.args[1])
+
+        # TODO Handle tensor formats properly.
+
+        return transposition_is_supported_on_neutron(
+            input_shape, permutation, neutron_target_spec
+        )
 
     @staticmethod
     def _is_supported_in_IR(
@@ -26,6 +50,9 @@ class PermuteCopyConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if not NodeConverter._has_shared_q_params_if_quantized(node):
+            return False
+
         return True
 
     def convert(self, node: Node):
