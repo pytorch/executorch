@@ -25,6 +25,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     ReluPattern,
     ReshapePattern,
     SoftMaxPattern,
+    ViewPattern,
 )
 from executorch.backends.nxp.quantizer.utils import (
     find_sequential_partitions_aten,
@@ -200,6 +201,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(ReluPattern(), static_qconfig),
                 NeutronAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(AvgPoolPattern(), static_qconfig),
+                NeutronAtenQuantizer(ViewPattern(), static_qconfig),
             ]
         )
 
