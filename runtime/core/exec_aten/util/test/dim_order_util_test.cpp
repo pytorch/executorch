@@ -20,6 +20,7 @@ using executorch::runtime::Error;
 using executorch::runtime::is_channels_last_dim_order;
 using executorch::runtime::is_contiguous_dim_order;
 using executorch::runtime::stride_to_dim_order;
+using executorch::runtime::can_be_interpreted_as_channels_last_and_contiguous;
 
 namespace {
 void check_strides_eq(
@@ -286,4 +287,44 @@ TEST(DimOrderUtilTest, IsChannelsLastDimOrderFailCasesTest) {
 
   EXPECT_FALSE(is_channels_last_dim_order(dim_order_4d, 4));
   EXPECT_FALSE(is_channels_last_dim_order(dim_order_5d, 5));
+}
+
+
+TEST(DimOrderUtilTest, MultiMemoryFormatInterpretSuccess) {
+  // Test that tensors having following sizes should be interruptable to both and contiguous memory format
+  exec_aten::SizesType sizes[][4] = {
+      {2, 1, 2, 2},
+      {2, 2, 1, 1},
+      {1, 2, 1, 1},
+      {2, 1, 1, 2},
+      {2, 1, 2, 1},
+      {1, 1, 1, 2},
+      {1, 1, 2, 2},
+      {1, 1, 1, 1},
+      {2, 1, 1, 1},
+      {1, 1, 2, 1}
+  };
+
+  ssize_t n_testcases = sizeof(sizes) / sizeof(sizes[0]);
+
+  for (size_t i = 0; i < n_testcases; i++) {
+      EXPECT_TRUE(can_be_interpreted_as_channels_last_and_contiguous(sizes[i], 4));
+  }
+}
+
+TEST(DimOrderUtilTest, MultiMemoryFormatInterpretFail) {
+  // Test that tensors having following sizes should only fall into single memory format.
+  exec_aten::SizesType sizes[][4] = {
+    {1, 2, 1, 2},
+    {1, 2, 2, 1},
+    {2, 2, 1, 2},
+    {2, 2, 2, 2},
+    {1, 2, 2, 2},
+    {2, 2, 2, 1}
+  };
+
+  ssize_t n_testcases = sizeof(sizes) / sizeof(sizes[0]);
+  for (size_t i = 0; i < n_testcases; i++) {
+      EXPECT_FALSE(can_be_interpreted_as_channels_last_and_contiguous(sizes[i], 4));
+  }
 }
