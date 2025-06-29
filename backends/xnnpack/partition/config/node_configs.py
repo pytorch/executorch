@@ -9,6 +9,9 @@ import operator
 from typing import List, Optional
 
 import torch
+from executorch.backends.xnnpack._passes.convert_batch_norm_to_depthwise_conv import (
+    ConvertBatchNormToDepthwiseConvPass,
+)
 from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
@@ -35,20 +38,20 @@ class BatchNormConfig(XNNPartitionerConfig):
             return False
 
         bn = node
-        conv = node.all_input_nodes[0]
+        input_node = node.all_input_nodes[0]
 
-        if conv.op != "call_function":
-            return False
+        # First check if this can be fused with a convolution
+        if input_node.op == "call_function":
+            conv_name = format_target_name(input_node.target.__name__)  # pyre-ignore
+            if conv_name in ["convolution.default"]:
+                can_fuse = FuseBatchNormWithConvPass.can_fuse(input_node, bn, ep)
+                if can_fuse:
+                    return True
 
-        conv_name = format_target_name(conv.target.__name__)  # pyre-ignore
-
-        if conv_name not in ["convolution.default"]:
-            why(node, f"Invalid conv target {conv_name}")
-            return False
-
-        can_fuse = FuseBatchNormWithConvPass.can_fuse(conv, bn, ep)
-        if not can_fuse:
-            why(node, "BatchNorm cannot be fused with Convolution")
+        # If not fuseable with conv, check if it can be converted to depthwise conv
+        can_convert = ConvertBatchNormToDepthwiseConvPass.can_convert_standalone_batch_norm(bn, ep)
+        if not can_convert:
+            why(node, "BatchNorm cannot be fused with Convolution or converted to depthwise conv")
             return False
 
         return True
