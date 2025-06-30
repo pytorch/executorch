@@ -91,4 +91,3 @@ These options allow a user to tailor the cmake build process to utilize the diff
 |<code><br> cmake -D… -DSELECT_OPS_YAML=ON <br></code> | <code><br>  set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml) <br> gen_selected_ops("${_custom_ops_yaml}" "" "") <br></code> |
 |<code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" <br></code> | <code><br> gen_selected_ops("" "" "" "${_model_path}" "") <br></code> |
 |<code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON<br></code> | <code><br> gen_selected_ops("" "" "" "${_model_path}" "ON") <br></code> |
-
