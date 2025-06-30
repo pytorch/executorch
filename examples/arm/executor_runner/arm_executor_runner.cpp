@@ -289,7 +289,7 @@ class Box {
   }
 };
 
-Result<BufferCleanup> prepare_input_tensors(
+Error prepare_input_tensors(
     Method& method,
     MemoryAllocator& allocator,
     const std::vector<std::pair<char*, size_t>>& input_buffers) {
@@ -304,12 +304,15 @@ Result<BufferCleanup> prepare_input_tensors(
       "Wrong number of inputs allocated compared to method");
 #endif
 
-  void** inputs =
-      static_cast<void**>(allocator.allocate(num_inputs * sizeof(void*)));
+  EValue* input_evalues =
+      static_cast<EValue*>(allocator.allocate(num_inputs * sizeof(EValue*)));
   ET_CHECK_OR_RETURN_ERROR(
-      inputs != nullptr,
+      input_evalues != nullptr,
       MemoryAllocationFailed,
-      "Could not allocate memory for pointers to input buffers.");
+      "Could not allocate memory for input evalues.");
+
+  Error err = method.get_inputs(input_evalues, num_inputs);
+  ET_CHECK_OK_OR_RETURN_ERROR(err);
 
   for (size_t i = 0; i < num_inputs; i++) {
     auto tag = method_meta.input_tag(i);
@@ -322,67 +325,54 @@ Result<BufferCleanup> prepare_input_tensors(
     Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
     ET_CHECK_OK_OR_RETURN_ERROR(tensor_meta.error());
 
-    // Input is a tensor. Allocate a buffer for it.
-    void* data_ptr = allocator.allocate(tensor_meta->nbytes());
-    ET_CHECK_OR_RETURN_ERROR(
-        data_ptr != nullptr,
-        MemoryAllocationFailed,
-        "Could not allocate memory for input buffers.");
-    inputs[num_allocated++] = data_ptr;
-
-    Error err = Error::Ok;
+    err = Error::Ok;
     if (input_buffers.size() > 0) {
       auto [buffer, buffer_size] = input_buffers.at(i);
       if (buffer_size != tensor_meta->nbytes()) {
         ET_LOG(
             Error,
-            "input size (%d) and tensor size (%d) missmatch!",
+            "input size (%d) and tensor size (%d) mismatch!",
             buffer_size,
             tensor_meta->nbytes());
         err = Error::InvalidArgument;
-      } else {
-        ET_LOG(Info, "Copying read input to tensor.");
-        std::memcpy(data_ptr, buffer, buffer_size);
+      } else if (input_evalues[i].isTensor()) {
+        // Copy the data from the input buffer to the tensor
+        Tensor& tensor = input_evalues[i].toTensor();
+        std::memcpy(tensor.mutable_data_ptr<int8_t>(), buffer, buffer_size);
       }
     }
-
-    TensorImpl impl = TensorImpl(
-        tensor_meta.get().scalar_type(),
-        tensor_meta.get().sizes().size(),
-        const_cast<TensorImpl::SizesType*>(tensor_meta.get().sizes().data()),
-        data_ptr,
-        const_cast<TensorImpl::DimOrderType*>(
-            tensor_meta.get().dim_order().data()));
-    Tensor t(&impl);
 
     // If input_buffers.size <= 0, we don't have any input, fill it with 1's.
     if (input_buffers.size() <= 0) {
-      for (size_t j = 0; j < t.numel(); j++) {
-        switch (t.scalar_type()) {
+      if (input_evalues[i].isTensor()) {
+        Tensor& tensor = input_evalues[i].toTensor();
+        switch (tensor.scalar_type()) {
           case ScalarType::Int:
-            t.mutable_data_ptr<int>()[j] = 1;
+            std::fill(
+                tensor.mutable_data_ptr<int>(),
+                tensor.mutable_data_ptr<int>() + tensor.numel(),
+                1);
             break;
           case ScalarType::Float:
-            t.mutable_data_ptr<float>()[j] = 1.;
+            std::fill(
+                tensor.mutable_data_ptr<float>(),
+                tensor.mutable_data_ptr<float>() + tensor.numel(),
+                1.0);
             break;
           case ScalarType::Char:
-            t.mutable_data_ptr<int8_t>()[j] = 1;
+            std::fill(
+                tensor.mutable_data_ptr<int8_t>(),
+                tensor.mutable_data_ptr<int8_t>() + tensor.numel(),
+                1);
             break;
         }
+      } else {
+        printf("Input[%d]: Not Tensor\n", i);
       }
     }
-
-    err = method.set_input(t, i);
-
-    if (err != Error::Ok) {
-      ET_LOG(
-          Error, "Failed to prepare input %zu: 0x%" PRIx32, i, (uint32_t)err);
-      // The BufferCleanup will free the inputs when it goes out of scope.
-      BufferCleanup cleanup({inputs, num_allocated});
-      return err;
-    }
   }
-  return BufferCleanup({inputs, num_allocated});
+
+  return err;
 }
 
 #if defined(SEMIHOSTING)
@@ -437,7 +427,6 @@ struct RunnerContext {
   size_t input_memsize = 0;
   size_t pte_size = 0;
   bool bundle_io = false;
-  Box<Result<BufferCleanup>> prepared_inputs;
   Box<ArmMemoryAllocator> method_allocator;
   Box<ArmMemoryAllocator> temp_allocator;
   Box<Result<Method>> method;
@@ -591,20 +580,10 @@ void runner_init(
   } else
 #endif
   {
-    // Here you would add code to get input from your Hardware
-    // Get inputs from SEMIHOSTING or fake it with a lot of "1"
-    // Use "static" to force to compiler to remove this when it goes out of
-    // scope
-    ctx.prepared_inputs.reset(::prepare_input_tensors(
-        *ctx.method.value(), ctx.method_allocator.value(), input_buffers));
-
-    if (!ctx.prepared_inputs->ok()) {
-      ET_LOG(
-          Info,
-          "Preparing inputs tensors for method %s failed with status 0x%" PRIx32,
-          ctx.method_name,
-          ctx.prepared_inputs->error());
-    }
+    Error status = ::prepare_input_tensors(
+        *ctx.method.value(), ctx.method_allocator.value(), input_buffers);
+    ET_CHECK_MSG(
+        status == Error::Ok, "Failed to prepare inputs 0x%" PRIx32, status);
   }
 #if defined(ET_DUMP_INPUT)
   {
