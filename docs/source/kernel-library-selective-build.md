@@ -66,13 +66,19 @@ This API lets users pass in a list of operator names. Note that this API can be 
 
 ### Select ops from model
 
-This API lets users pass in a pte file of an exported model. When enable, the pte file will be parsed to generate a yaml file that enumerates the operators and dtypes. Flag `DTYPE_SELECTIVE_BUILD` must be set to `ON` for the flow to use the generated YAML file. Once enabled, a header file that specifies only the operators and dtypes used by the model is created and linked against a rebuild of the portable_kernels lib. This feature is not yet supported for other libs. 
+This API lets users pass in a pte file of an exported model. When used, the pte file will be parsed to generate a yaml file that enumerates the operators and dtypes used in the model. 
+
+### Dtype Selective Build
+
+Beyond pruning the binary to remove unused operators, the binary size can furhter reduced by enforcing checks on what dtypes are used by the specific operators. For example, if your model only uses floats for the `add` operator, then including variants of the `add` operators for `doubles` and `ints` is unnecessary. The flag `DTYPE_SELECTIVE_BUILD` can be set to `ON` to support this additional optimization. Currently, dtype selective build is only support with the model API described above. Once enabled, a header file that specifies only the operators and dtypes used by the model is created and linked against a rebuild of the `portable_kernels` lib. This feature is not yet supported for other libs.
 
 ## Example Walkthrough
 
-In CMakeLists.txt we have the following logic:
+In [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/examples/selective_build/CMakeLists.txt#L89-L123) we have the following logic:
+
 ```cmake
 set(_kernel_lib)
+
 if(SELECT_ALL_OPS)
   gen_selected_ops("" "" "${SELECT_ALL_OPS}" "" "")
 elseif(SELECT_OPS_LIST)
@@ -80,9 +86,13 @@ elseif(SELECT_OPS_LIST)
 elseif(SELECT_OPS_YAML)
  set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml)
   gen_selected_ops("${_custom_ops_yaml}" "" "")
-elseif(SELECT_OPS_MODEL && DTYPE_SELECTIVE_BUILD)
+elseif(SELECT_OPS_MODEL)
  set(_model_path $(realpath model.pte))
-  gen_selected_ops("" "" "" "${_model_path}" "ON")
+  if(DTYPE_SELECTIVE_BUILD)
+    gen_selected_ops("" "" "" "${_model_path}" "ON")
+  else
+    gen_selected_ops("" "" "" "${_model_path}" "")
+  endif()
 endif()
 ```
 Then when calling CMake, we can do:
@@ -97,7 +107,14 @@ Or
 cmake -D… -DSELECT_OPS_YAML=ON
 ```
 
-To select from either an operator name list or a schema yaml from kernel library. To select operators and dtypes using the model API, we can run:
+Or 
+
+
+```
+cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out"
+```
+
+To select from either an operator name list, a schema yaml, or directly from an exported model's pte from kernel library. To further optimize the binary size for dtype selection, we can run:
 
 ```
 cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON
