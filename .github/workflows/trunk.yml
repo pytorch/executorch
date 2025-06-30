@@ -239,12 +239,12 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         cxx_flags="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
+        setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then 
-          setup_script=.ci/scripts/setup-arm-baremetal-tools.sh
           toolchain_prefix=arm-none-eabi-
           threshold="103268" # ~100KiB
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
-          setup_script=.ci/scripts/setup-arm-zephyr-x86-64-tools.sh
+          setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
           threshold="133120" # should be ~125KB, set threshold to 130KB
         else
@@ -301,7 +301,7 @@ jobs:
 
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
-        ${setup_script}
+        .ci/scripts/setup-arm-baremetal-tools.sh "$setup_script_args"
         source examples/arm/ethos-u-scratch/setup_path.sh
 
         # User toolchain
