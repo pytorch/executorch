@@ -272,6 +272,38 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
   VK_THROW("Could not get dtype of value with type ", val.type());
 }
 
+bool ComputeGraph::is_contiguous_buffer_tensor(const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (!is_buffer_storage(idx)) {
+    return false;
+  }
+  return is_contiguous(idx);
+}
+
+bool ComputeGraph::is_standard_channels_packed_texture_tensor(
+    const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return false;
+  }
+  return has_standard_axis_map(idx) && packed_dim_of(idx) == 2;
+}
+
+bool ComputeGraph::is_standard_width_packed_texture_tensor(
+    const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return false;
+  }
+  return has_standard_axis_map(idx) && packed_dim_of(idx) == 0;
+}
+
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
@@ -482,6 +514,14 @@ ValueRef ComputeGraph::set_output_tensor(
     }
     outputs_.push_back({idx, staging_idx});
     return staging_idx;
+  }
+  outputs_.push_back({idx, kDummyValueRef});
+  return idx;
+}
+
+ValueRef ComputeGraph::set_output_value(const ValueRef idx) {
+  if (values_.at(idx).isTensor()) {
+    return set_output_tensor(idx);
   }
   outputs_.push_back({idx, kDummyValueRef});
   return idx;

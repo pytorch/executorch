@@ -12,6 +12,7 @@
 
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/util.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 #include <pytorch/tokenizers/sentencepiece.h>
@@ -256,6 +257,7 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
     std::optional<std::string> pattern,
     size_t bos_token_index,
     size_t eos_token_index) {
+  runtime::runtime_init();
   auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
   if (json_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
     ET_LOG(Info, "Loaded json tokenizer");
@@ -393,8 +395,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 
   // Create text_decoder_runner. Use a shared_ptr so that it can be shared with
   // TextPrefiller and TextTokenGenerator
-  auto text_decoder_runner = std::make_unique<TextDecoderRunner>(
-      module.get(), metadata.at(kUseKVCache));
+  auto text_decoder_runner = std::make_unique<TextDecoderRunner>(module.get());
 
   // Create text_prefiller
   auto text_prefiller = std::make_unique<TextPrefiller>(

@@ -78,9 +78,10 @@ def define_common_targets():
         xplat_exported_deps = [
             "//xplat/caffe2:aten_header",
             "//xplat/caffe2/c10:c10_headers",
-            ("//xplat/caffe2:ovrsource_aten_Config.h"
-            if is_arvr_mode() else "//xplat/caffe2:generated_aten_config_header"),
-        ] + get_sleef_deps(),
+        ] + select({
+            "DEFAULT": ["//xplat/caffe2:generated_aten_config_header"],
+            "ovr_config//build_mode:arvr_mode": ["//xplat/caffe2:ovrsource_aten_Config.h"],
+        }) + get_sleef_deps(),
         fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",
             "//caffe2:generated-config-header",
@@ -111,6 +112,7 @@ def define_common_targets():
                 "util/complex_utils.h",
                 "util/floating_point_utils.h",
                 "util/irange.h",
+                "util/overflows.h",
             ],
             exported_preprocessor_flags = [
                 "-DC10_USING_CUSTOM_GENERATED_MACROS",
@@ -122,7 +124,9 @@ def define_common_targets():
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
             ],
-            deps = select({
+            exported_deps = [
+                "//executorch/runtime/core/portable_type/c10/torch/standalone:torch_standalone_headers",
+            ] + select({
                 "DEFAULT": [],
                 # Half-inl.h depends on vec_half.h from ATen, but only when building for x86.
                 "ovr_config//cpu:x86_64": [

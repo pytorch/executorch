@@ -151,8 +151,8 @@ inline double reciprocal(double x) {
 template <
     typename Integer,
     std::enable_if_t<std::is_integral_v<Integer>, bool> = true>
-double reciprocal(Integer x) {
-  return reciprocal((double)x);
+float reciprocal(Integer x) {
+  return reciprocal((float)x);
 }
 
 template <

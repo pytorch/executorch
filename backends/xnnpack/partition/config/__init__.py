@@ -25,10 +25,11 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     ConstantPadConfig,
     DeQuantizedPerTensorConfig,
     DivConfig,
+    # EluConfig,
+    ExpConfig,
     FloorConfig,
     GeluConfig,
     HardswishConfig,
-    # EluConfig,
     HardtanhConfig,
     LeakyReLUConfig,
     LogConfig,
@@ -43,7 +44,6 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     QuantizedPerTensorConfig,
     ReciprocalSquareRootConfig,
     ReLUConfig,
-    # SDPAConfig, TODO: D60553559: preserving SDPA for fairseq fails
     SigmoidConfig,
     SliceCopyConfig,
     SoftmaxConfig,
@@ -80,6 +80,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     ClampConfig,
     DivConfig,
     # EluConfig, # Waiting for PyTorch Pin Update
+    ExpConfig,
     FloorConfig,
     GeluConfig,
     HardtanhConfig,
@@ -101,7 +102,6 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     ReciprocalSquareRootConfig,
     ReLUConfig,
     TanhConfig,
-    # SDPAConfig, TODO: D60553559: preserving SDPA for fairseq fails
     SigmoidConfig,
     SliceCopyConfig,
     SoftmaxConfig,
