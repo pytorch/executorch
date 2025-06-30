@@ -36,14 +36,16 @@ The basic flow looks like this:
 
 ## APIs
 
-We expose a CMake macro `[gen_selected_ops](https://github.com/pytorch/executorch/blob/main/tools/cmake/Codegen.cmake#L12)`, to allow users specifying op info:
+We expose a CMake macro [gen_selected_ops](https://github.com/pytorch/executorch/blob/main/tools/cmake/Codegen.cmake#L12), to allow users specifying op info:
 
 ```
 gen_selected_ops(
-  LIB_NAME         # the name of the selective build operator library to be generated
-  OPS_SCHEMA_YAML  # path to a yaml file containing operators to be selected
-  ROOT_OPS         # comma separated operator names to be selected
-  INCLUDE_ALL_OPS  # boolean flag to include all operators
+  LIB_NAME              # the name of the selective build operator library to be generated
+  OPS_SCHEMA_YAML       # path to a yaml file containing operators to be selected
+  ROOT_OPS              # comma separated operator names to be selected
+  INCLUDE_ALL_OPS       # boolean flag to include all operators
+  OPS_FROM_MODEL        # path to a pte file of model to select operators from
+  DTYPE_SELECTIVE_BUILD # boolean flag to enable dtye selection
 )
 ```
 
@@ -62,6 +64,9 @@ Context: each kernel library is designed to have a yaml file associated with it.
 
 This API lets users pass in a list of operator names. Note that this API can be combined with the API above and we will create a allowlist from the union of both API inputs.
 
+### Select ops from model
+
+This API lets users pass in a pte file of an exported model. When enable, the pte file will be parsed to generate a yaml file that enumerates the operators and dtypes. Flag `DTYPE_SELECTIVE_BUILD` must be set to `ON` for the flow to use the generated YAML file. Once enabled, a header file that specifies only the operators and dtypes used by the model is created and linked against a rebuild of the portable_kernels lib. This feature is not yet supported for other libs. 
 
 ## Example Walkthrough
 
@@ -69,18 +74,21 @@ In CMakeLists.txt we have the following logic:
 ```cmake
 set(_kernel_lib)
 if(SELECT_ALL_OPS)
-  gen_selected_ops("" "" "${SELECT_ALL_OPS}")
+  gen_selected_ops("" "" "${SELECT_ALL_OPS}" "" "")
 elseif(SELECT_OPS_LIST)
-  gen_selected_ops("" "${SELECT_OPS_LIST}" "")
+  gen_selected_ops("" "${SELECT_OPS_LIST}" "" "" "")
 elseif(SELECT_OPS_YAML)
  set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml)
   gen_selected_ops("${_custom_ops_yaml}" "" "")
+elseif(SELECT_OPS_MODEL && DTYPE_SELECTIVE_BUILD)
+ set(_model_path $(realpath model.pte))
+  gen_selected_ops("" "" "" "${_model_path}" "ON")
 endif()
 ```
 Then when calling CMake, we can do:
 
 ```
-cmake -D… -DSELECT_OPS_LIST="aten::add.out,aten::mm.out”
+cmake -D… -DSELECT_OPS_LIST="aten::add.out,aten::mm.out"
 ```
 
 Or
@@ -89,4 +97,8 @@ Or
 cmake -D… -DSELECT_OPS_YAML=ON
 ```
 
-To select from either an operator name list or a schema yaml from kernel library.
+To select from either an operator name list or a schema yaml from kernel library. To select operators and dtypes using the model API, we can run:
+
+```
+cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON
+```
