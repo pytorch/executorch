@@ -623,18 +623,17 @@
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
 <span class="c1"># Step 1: Define a LinearQuantizerConfig and create an instance of a CoreMLQuantizer</span>
-<span class="n">quantization_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="o">.</span><span class="n">from_dict</span><span class="p">(</span>
-    <span class="p">{</span>
-        <span class="s2">&quot;global_config&quot;</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s2">&quot;quantization_scheme&quot;</span><span class="p">:</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">QuantizationScheme</span><span class="o">.</span><span class="n">symmetric</span><span class="p">,</span>
-            <span class="s2">&quot;milestones&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span>
-            <span class="s2">&quot;activation_dtype&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">quint8</span><span class="p">,</span>
-            <span class="s2">&quot;weight_dtype&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
-            <span class="s2">&quot;weight_per_channel&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-        <span class="p">}</span>
-    <span class="p">}</span>
+<span class="c1"># Note that linear here does not mean only linear layers are quantized, but that linear (aka affine) quantization</span>
+<span class="c1"># is being performed</span>
+<span class="n">static_8bit_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="p">(</span>
+    <span class="n">global_config</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">ModuleLinearQuantizerConfig</span><span class="p">(</span>
+        <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">&quot;symmetric&quot;</span><span class="p">,</span>
+        <span class="n">activation_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">quint8</span><span class="p">,</span>
+        <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
+        <span class="n">weight_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
 <span class="p">)</span>
-<span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">quantization_config</span><span class="p">)</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">static_8bit_config</span><span class="p">)</span>
 
 <span class="c1"># Step 2: Export the model for training</span>
 <span class="n">training_gm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
@@ -664,6 +663,21 @@
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 </pre></div>
 </div>
+<p>The above does static quantization (activations and weights are quantized).  Quantizing activations requires calibrating the model on representative data.  You can also do weight-only quantization, which does not require calibration data, by specifying the activation_dtype to be torch.float32:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">weight_only_8bit_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="p">(</span>
+    <span class="n">global_config</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">ModuleLinearQuantizerConfig</span><span class="p">(</span>
+        <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">&quot;symmetric&quot;</span><span class="p">,</span>
+        <span class="n">activation_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
+        <span class="n">weight_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">weight_only_8bit_config</span><span class="p">)</span>
+<span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">training_gm</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Note that static quantization requires exporting the model for iOS17 or later.</p>
 <p>See <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
 </div>
 </div>
@@ -712,6 +726,13 @@
 raise RuntimeError(“BlobWriter not loaded”)</p></li>
 </ol>
 <p>If you’re using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13, see this <a class="reference external" href="https://github.com/apple/coremltools/issues/2487">issue</a>.</p>
+</div>
+<div class="section" id="at-runtime">
+<h3>At runtime<a class="headerlink" href="#at-runtime" title="Permalink to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>[ETCoreMLModelCompiler.mm:55] [Core ML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 “Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset ‘CoreML7’.” UserInfo={NSLocalizedDescription=Failed to par$</p></li>
+</ol>
+<p>This means the model requires the the CoreML opset ‘CoreML7’, which requires running the model on iOS17/macOS14 or later.</p>
 </div>
 </div>
 </div>
@@ -782,6 +803,7 @@ raise RuntimeError(“BlobWriter not loaded”)</p></li>
 </li>
 <li><a class="reference internal" href="#common-issues-and-what-to-do">Common issues and what to do</a><ul>
 <li><a class="reference internal" href="#during-lowering">During lowering</a></li>
+<li><a class="reference internal" href="#at-runtime">At runtime</a></li>
 </ul>
 </li>
 </ul>
