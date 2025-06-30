@@ -230,6 +230,7 @@ OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_log_softmax",
         deps = [
+            "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
