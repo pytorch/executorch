@@ -307,12 +307,11 @@ jobs:
         # User toolchain
         ${toolchain_prefix}c++ --version
 
-        # We will use the the bare metal default, specify to use the 
-        # arm zephyr toolchain if we need to
+        # Setup cmake target to desired toolchain
         toolchain_cmake=examples/arm/ethos-u-setup/${toolchain_prefix}gcc.cmake
         toolchain_cmake=$(realpath ${toolchain_cmake})
 
-        # Build and test size test
+        # Build and run size test
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then 
           bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
