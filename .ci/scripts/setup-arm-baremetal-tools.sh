@@ -8,6 +8,7 @@
 # Setup arm example environment (including TOSA tools)
 git config --global user.email "github_executorch@arm.com"
 git config --global user.name "Github Executorch"
+echo "$#"
 if [[ -z "$#" ]]; then
     bash examples/arm/setup.sh --i-agree-to-the-contained-eula
 else
