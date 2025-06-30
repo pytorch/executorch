@@ -16,6 +16,7 @@
 
 # pyre-unsafe
 
+import logging
 import math
 import operator
 from operator import neg
@@ -2346,6 +2347,66 @@ class ReplaceMulTensorWithMulAndFullOpsPass(ExportPass):
         return const_arg
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(ExportPass):
+    """
+    Replace the aten adaptive avg_pool op with the aten avg_pool2d op.
+    """
+
+    def call_operator(self, op, args, kwargs, meta):
+        # Only continue for avg_pool op
+        if op not in {exir_ops.edge.aten._adaptive_avg_pool2d.default}:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # Get the input tensor
+        in_tensor = args[0].to_tensor() if isinstance(args[0], ProxyValue) else args[0]
+        # Permute NCHW to NHWC for computation
+        in_tensor_permuted = in_tensor.permute(0, 2, 3, 1)
+        in_tensor_shape = in_tensor_permuted.shape
+
+        output_size = args[1]
+        num_dims = len(output_size)
+
+        # TODO: If in_tensor_shape is not a multiple of output size,
+        # this pass will not work. T224984800
+        dim_multiples = [
+            (in_tensor_shape[i + 1] % output_size[i]) == 0 for i in range(num_dims)
+        ]
+        if not all(dim_multiples):
+            logging.info(
+                f"Unable to replace adaptive average pool with average pool. Input tensor shape of {in_tensor_shape} is not a multiple of output size: {output_size}"
+            )
+            return super().call_operator(op, args, kwargs, meta)
+
+        # Compute stride and kernel_size, then set default values for other arguments
+        stride = [(in_tensor_shape[i + 1] // output_size[i]) for i in range(num_dims)]
+        kernel_size = [
+            in_tensor_shape[i + 1] - (output_size[i] - 1) * stride[i]
+            for i in range(num_dims)
+        ]
+        padding = [0] * num_dims
+        ceil_mode = False
+        count_include_pad = True
+        divisor_override = None
+
+        # Create a new avg_pool node with the updated args
+        new_args = (
+            args[0],
+            kernel_size,
+            stride,
+            padding,
+            ceil_mode,
+            count_include_pad,
+            divisor_override,
+        )
+        return super().call_operator(
+            exir_ops.edge.aten.avg_pool2d.default,
+            new_args,
+            kwargs,
+            meta,
+        )
+
+
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
@@ -2382,6 +2443,7 @@ class CadenceReplaceOpsInGraph:
         ReplacePT2QuantWithCadenceQuantPass,
         ReplacePT2DequantWithCadenceDequantPass,
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
+        ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
         ReplaceAtenApproxGeluWithApproxGeluPass,
