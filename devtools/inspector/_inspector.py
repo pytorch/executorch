@@ -43,6 +43,7 @@ from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
     calculate_time_scale_factor,
     create_debug_handle_to_op_node_mapping,
+    DebugHandle,
     display_or_print_df,
     EDGE_DIALECT_GRAPH_KEY,
     EXCLUDED_COLUMNS_WHEN_PRINTING,
@@ -262,7 +263,7 @@ class RunSignature:
 
 # Typing for mapping Event.delegate_debug_identifiers to debug_handle(s)
 DelegateIdentifierDebugHandleMap: TypeAlias = Union[
-    Mapping[int, Tuple[int, ...]], Mapping[str, Tuple[int, ...]]
+    Mapping[int, DebugHandle], Mapping[str, DebugHandle]
 ]
 
 # Typing for Dict containig delegate metadata
@@ -1149,7 +1150,7 @@ class Inspector:
 
     def _get_aot_intermediate_outputs_and_op_names(
         self,
-    ) -> Tuple[Dict[Tuple[int, ...], Any], Dict[Tuple[int, ...], str]]:
+    ) -> Tuple[Dict[DebugHandle, Any], Dict[DebugHandle, str]]:
         """
         Capture intermediate outputs only if _representative_inputs are provided
         when using bundled program to create the etrecord
@@ -1170,7 +1171,7 @@ class Inspector:
     # TODO: Make it more extensible to further merge overlapping debug handles
     def _get_runtime_intermediate_outputs_and_op_names(
         self,
-    ) -> Tuple[Dict[Tuple[int, ...], Any], Dict[Tuple[int, ...], str]]:
+    ) -> Tuple[Dict[DebugHandle, Any], Dict[DebugHandle, str]]:
         """
         Retrieve the runtime intermediate outputs(debug handles and intermediate values mappings)
         from the event blocks, along with the corresponding debug handles and op names mapping.
