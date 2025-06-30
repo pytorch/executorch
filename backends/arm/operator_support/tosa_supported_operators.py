@@ -189,6 +189,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.gt.Tensor,
             exir_ops.edge.aten.gt.Scalar,
             exir_ops.edge.aten.le.Tensor,
+            exir_ops.edge.aten.le.Scalar,
             exir_ops.edge.aten.lt.Tensor,
             exir_ops.edge.aten.lt.Scalar,
             exir_ops.edge.aten.mul.Tensor,
