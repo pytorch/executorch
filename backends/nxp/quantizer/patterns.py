@@ -216,6 +216,26 @@ class Conv2dPattern(QuantizationPattern):
         )
 
 
+class HardTanhPattern(SharedSpecPattern):
+    """
+    Quantizer for HardTanh operator. Shared quantization spec is selected, as activation functions usually follows
+    computation layer.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.hardtanh.default]
+
+
+class HardTanhInPlacePattern(SharedSpecPattern):
+    """
+    Quantizer for HardTanh operator with param inplace=True. Shared quantization spec is selected, as activation
+    functions usually follows computation layer.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.hardtanh_.default]
+
+
 class LinearPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.linear.default]

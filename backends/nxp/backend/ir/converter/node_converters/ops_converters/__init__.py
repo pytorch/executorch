@@ -10,6 +10,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.convolution_converter import (
     ConvolutionConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import (
+    HardTanhConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool_2d_converter import (
     MaxPool2dConverter,
 )
@@ -48,4 +51,5 @@ __all__ = [
     "ReLUConverter",
     "MaxPool2dConverter",
     "AvgPool2dConverter",
+    "HardTanhConverter",
 ]
