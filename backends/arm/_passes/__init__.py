@@ -22,7 +22,10 @@ from .convert_minmax_pass import ConvertMinMaxPass  # noqa
 from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
 from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp import ConvertToClampPass  # noqa
+from .decompose_acosh_pass import DecomposeAcoshPass  # noqa
+from .decompose_atan_pass import DecomposeAtanPass  # noqa
 from .decompose_avg_pool2d import DecomposeAvgPool2d  # noqa
+from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
@@ -39,6 +42,7 @@ from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
 from .decompose_silu_pass import DecomposeSiluPass  # noqa
+from .decompose_sinh_pass import DecomposeSinhPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
 from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noqa
 from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
