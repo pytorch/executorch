@@ -38,7 +38,6 @@ memory_mode=""
 et_build_root="${et_root_dir}/arm_test"
 ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
 scratch_dir_set=false
-toolchain=arm-none-eabi-gcc
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -76,7 +75,6 @@ for arg in "$@"; do
       --no_quantize) aot_arm_compiler_flag_quantize="" ;;
       --portable_kernels=*) portable_kernels="${arg#*=}";;
       --target=*) target="${arg#*=}";;
-      --toolchain=*) toolchain="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --bundleio) bundleio=true ;;
       --etdump) build_with_etdump=true ;;
@@ -96,7 +94,7 @@ done
 # Default Ethos-u tool folder override with --scratch-dir=<FOLDER>
 ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
 setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
-toolchain_cmake=${script_dir}/ethos-u-setup/${toolchain}.cmake
+toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
 
 
@@ -136,8 +134,8 @@ function check_setup () {
     fi
 
     # If setup_path_script was correct all these checks should now pass
-    hash ${toolchain} \
-        || { echo "Could not find ${toolchain} toolchain on PATH, ${_setup_msg}"; return 1; }
+    hash arm-none-eabi-gcc \
+        || { echo "Could not find arm baremetal toolchain on PATH, ${_setup_msg}"; return 1; }
 
     [[ -f ${toolchain_cmake} ]] \
         || { echo "Could not find ${toolchain_cmake} file, ${_setup_msg}"; return 1; }
@@ -182,8 +180,8 @@ if [ "$bundleio" = true ] ; then
     et_dump_flag="--etdump"
 fi
 
-backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag --toolchain="${toolchain}"
-backends/arm/scripts/build_portable_kernels.sh --et_build_root="${et_build_root}" --build_type=$build_type --portable_kernels=$portable_kernels --toolchain="${toolchain}"
+backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag
+backends/arm/scripts/build_portable_kernels.sh --et_build_root="${et_build_root}" --build_type=$build_type --portable_kernels=$portable_kernels
 
 if [[ -z "$model_name" ]]; then
     # the test models run, and whether to delegate
@@ -267,7 +265,7 @@ for i in "${!test_model[@]}"; do
     else
         set -x
         # Rebuild the application as the pte is imported as a header/c array
-        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}"
+        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
             elf_file="${output_folder}/${elf_folder}/cmake-out/arm_executor_runner"

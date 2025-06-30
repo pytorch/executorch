@@ -9,7 +9,7 @@ set -eu
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
-toolchain=arm-none-eabi-gcc
+toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
 setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
@@ -46,7 +46,6 @@ help() {
     echo "  --output=<FOLDER>               Output folder Default: <MODEL>/<MODEL>_<TARGET INFO>.pte"
     echo "  --et_build_root=<FOLDER>        Build output root folder to use, defaults to ${et_build_root}"
     echo "  --ethosu_tools_dir=<FOLDER>     Path to your Ethos-U tools dir if you not using default: ${ethosu_tools_dir}"
-    echo "  --toolchain=<TOOLCHAIN>         Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc"
     exit 0
 }
 
@@ -64,14 +63,10 @@ for arg in "$@"; do
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --ethosu_tools_dir=*) ethosu_tools_dir="${arg#*=}";;
-      --toolchain=*) toolchain="${arg#*=}";;
       *)
       ;;
     esac
 done
-
-toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
-toolchain_cmake=$(realpath ${toolchain_cmake})
 
 # Source the tools
 # This should be prepared by the setup.sh
@@ -121,7 +116,7 @@ else
     target_cpu=cortex-m85
 fi
 echo "--------------------------------------------------------------------------------"
-echo "Build Arm ${toolchain/-gcc/} executor_runner for ${target} with ${pte_file} using ${system_config} ${memory_mode} ${extra_build_flags} to '${output_folder}/cmake-out'"
+echo "Build Arm Baremetal executor_runner for ${target} with ${pte_file} using ${system_config} ${memory_mode} ${extra_build_flags} to '${output_folder}/cmake-out'"
 echo "--------------------------------------------------------------------------------"
 
 cd ${et_root_dir}/examples/arm/executor_runner
@@ -135,27 +130,7 @@ if [ "$build_with_etdump" = true ] ; then
 fi
 
 echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${extra_build_flags}"
-echo "toolchain_cmake set to ${toolchain_cmake}"
-echo "$(pwd)"
 
-echo "
-cmake \
-    -DCMAKE_BUILD_TYPE=${build_type}            \
-    -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}   \
-    -DTARGET_CPU=${target_cpu}                  \
-    -DET_DIR_PATH:PATH=${et_root_dir}           \
-    -DET_BUILD_DIR_PATH:PATH=${et_build_dir}    \
-    -DET_PTE_FILE_PATH:PATH="${pte_file}"       \
-    -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}   \
-    -DETHOSU_TARGET_NPU_CONFIG=${target}        \
-    ${build_bundleio_flags}                     \
-    ${build_with_etdump_flags}                  \
-    -DPYTHON_EXECUTABLE=$(which python3)        \
-    -DSYSTEM_CONFIG=${system_config}            \
-    -DMEMORY_MODE=${memory_mode}                \
-    ${extra_build_flags}                        \
-    -B ${output_folder}/cmake-out
-"
 cmake \
     -DCMAKE_BUILD_TYPE=${build_type}            \
     -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}   \
@@ -177,8 +152,8 @@ echo "[${BASH_SOURCE[0]}] Configured CMAKE"
 
 cmake --build ${output_folder}/cmake-out -j$(nproc) -- arm_executor_runner
 
-echo "[${BASH_SOURCE[0]}] Generated ${toolchain} elf file:"
+echo "[${BASH_SOURCE[0]}] Generated baremetal elf file:"
 find ${output_folder}/cmake-out -name "arm_executor_runner"
-echo "executable_text: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec ${toolchain/-gcc/-size} {} \; | grep -v filename | awk '{print $1}') bytes"
-echo "executable_data: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec ${toolchain/-gcc/-size} {} \; | grep -v filename | awk '{print $2}') bytes"
-echo "executable_bss:  $(find ${output_folder}/cmake-out -name arm_executor_runner -exec ${toolchain/-gcc/-size} {} \; | grep -v filename | awk '{print $3}') bytes"
+echo "executable_text: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $1}') bytes"
+echo "executable_data: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $2}') bytes"
+echo "executable_bss:  $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $3}') bytes"
