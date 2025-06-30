@@ -49,6 +49,7 @@ gen_selected_ops(
 )
 ```
 
+The macro makes a call to gen_oplist.py, which requires a [distinct selection](https://github.com/BujSet/executorch/blob/main/codegen/tools/gen_oplist.py#L222-L228) of API choice. `OPS_SCHEMA_YAML`, `ROOT_OPS`, `INCLUDE_ALL_OPS`, and `OPS_FROM_MODEL` are mutually exclusive options, and should not be used in conjunction. 
 
 ### Select all ops
 
@@ -70,7 +71,7 @@ This API lets users pass in a pte file of an exported model. When used, the pte 
 
 ### Dtype Selective Build
 
-Beyond pruning the binary to remove unused operators, the binary size can furhter reduced by enforcing checks on what dtypes are used by the specific operators. For example, if your model only uses floats for the `add` operator, then including variants of the `add` operators for `doubles` and `ints` is unnecessary. The flag `DTYPE_SELECTIVE_BUILD` can be set to `ON` to support this additional optimization. Currently, dtype selective build is only support with the model API described above. Once enabled, a header file that specifies only the operators and dtypes used by the model is created and linked against a rebuild of the `portable_kernels` lib. This feature is not yet supported for other libs.
+Beyond pruning the binary to remove unused operators, the binary size can further reduced by removing unused dtypes. For example, if your model only uses floats for the `add` operator, then including variants of the `add` operators for `doubles` and `ints` is unnecessary. The flag `DTYPE_SELECTIVE_BUILD` can be set to `ON` to support this additional optimization. Currently, dtype selective build is only supported with the model API described above. Once enabled, a header file that specifies only the operators and dtypes used by the model is created and linked against a rebuild of the `portable_kernels` lib. This feature is only supported for the portable kernels library; it's not supported for optimized, quantized or custom kernel libraries.
 
 ## Example Walkthrough
 
