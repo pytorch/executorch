@@ -215,6 +215,7 @@ _one_to_one = [
     torch.ops.aten.gelu.default,
     torch.ops.aten.sinh.default,
     torch.ops.aten.atan.default,
+    torch.ops.aten.acosh.default,
 ]
 
 _one_to_one_shared_input_qspec = [
