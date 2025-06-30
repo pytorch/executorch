@@ -74,48 +74,20 @@ Beyond pruning the binary to remove unused operators, the binary size can furhte
 
 ## Example Walkthrough
 
-In [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/examples/selective_build/CMakeLists.txt#L89-L123) we have the following logic:
+In [CMakeLists.txt](https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L48-L72), we have the following cmake config options:
 
-```cmake
-set(_kernel_lib)
+1. `EXECUTORCH_SELECT_OPS_YAML`
+2. `EXECUTORCH_SELECT_OPS_LIST`
+3. `EXECUTORCH_SELECT_ALL_OPS`
+4. `EXECUTORCH_SELECT_OPS_FROM_MODEL`
+5. `EXECUTORCH_DTYPE_SELECTIVE_BUILD`
 
-if(SELECT_ALL_OPS)
-  gen_selected_ops("" "" "${SELECT_ALL_OPS}" "" "")
-elseif(SELECT_OPS_LIST)
-  gen_selected_ops("" "${SELECT_OPS_LIST}" "" "" "")
-elseif(SELECT_OPS_YAML)
- set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml)
-  gen_selected_ops("${_custom_ops_yaml}" "" "")
-elseif(SELECT_OPS_MODEL)
- set(_model_path $(realpath model.pte))
-  if(DTYPE_SELECTIVE_BUILD)
-    gen_selected_ops("" "" "" "${_model_path}" "ON")
-  else
-    gen_selected_ops("" "" "" "${_model_path}" "")
-  endif()
-endif()
-```
-Then when calling CMake, we can do:
+These options allow a user to tailor the cmake build process to utilize the different APIs, and results in different invocations on the `gen_selected_ops` [function](https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L110-L123). The following table describes some examples of how the invocation changes when these configs are set:
 
-```
-cmake -D… -DSELECT_OPS_LIST="aten::add.out,aten::mm.out"
-```
+| Example cmake Call | Resultant `gen_selected_ops` Invocation |
+| :----: | :---:| 
+|<code><br>  cmake -D… -DSELECT_OPS_LIST="aten::add.out,aten::mm.out" <br></code> | <code><br>  gen_selected_ops("" "${SELECT_OPS_LIST}" "" "" "") <br></code> |
+|<code><br> cmake -D… -DSELECT_OPS_YAML=ON <br></code> | <code><br>  set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml) <br> gen_selected_ops("${_custom_ops_yaml}" "" "") <br></code> |
+|<code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" <br></code> | <code><br> gen_selected_ops("" "" "" "${_model_path}" "") <br></code> |
+|<code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON<br></code> | <code><br> gen_selected_ops("" "" "" "${_model_path}" "ON") <br></code> |
 
-Or
-
-```
-cmake -D… -DSELECT_OPS_YAML=ON
-```
-
-Or 
-
-
-```
-cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out"
-```
-
-To select from either an operator name list, a schema yaml, or directly from an exported model's pte from kernel library. To further optimize the binary size for dtype selection, we can run:
-
-```
-cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON
-```
