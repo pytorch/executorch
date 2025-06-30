@@ -12,18 +12,11 @@
 namespace torch {
 namespace executor {
 namespace native {
-namespace {
-
-double reciprocal(double x) {
-  return 1.0 / x;
-}
-
-} // namespace
-
 Tensor&
 reciprocal_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realhbbf16_to_floathbf16(
-      reciprocal, ctx, in, out);
+  static constexpr const char op_name[] = "reciprocal.out";
+  return internal::unary_ufunc_realhbbf16_to_floathbf16<op_name>(
+      [](auto x) { return executorch::math::reciprocal(x); }, ctx, in, out);
 }
 
 } // namespace native
