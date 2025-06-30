@@ -55,6 +55,7 @@ endforeach()
 set(EXECUTORCH_FOUND ON)
 
 target_link_libraries(executorch INTERFACE executorch_core)
+target_link_options_shared_lib(prim_ops_lib)
 
 set(lib_list
     flatccrt

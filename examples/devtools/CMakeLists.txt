@@ -37,7 +37,7 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
 # etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
-target_link_options_shared_lib(executorch)
+# Note: target_link_options_shared_lib(prim_ops_lib) is now called automatically in executorch-config.cmake
 target_link_options_shared_lib(portable_ops_lib)
 
 target_include_directories(executorch INTERFACE ${_common_include_directories})
