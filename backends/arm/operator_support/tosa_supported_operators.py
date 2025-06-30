@@ -23,6 +23,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55DtypeSupport,
     EthosU55NotSupported,
     EthosU55TransposeCheck,
+    EthosU55ViewCheck,
 )
 from executorch.backends.arm.tosa_quant_utils import dq_ops, q_ops
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -133,6 +134,7 @@ def tosa_support_factory(
         negative_checks.append(EthosU55NotSupported(reporter))
         negative_checks.append(EthosU55DtypeSupport(reporter))
         negative_checks.append(EthosU55TransposeCheck(reporter))
+        negative_checks.append(EthosU55ViewCheck(reporter))
 
     return chain(
         reporter.wrap_check(
