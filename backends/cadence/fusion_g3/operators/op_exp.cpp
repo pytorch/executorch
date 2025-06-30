@@ -59,8 +59,10 @@ Tensor& exp_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
     return out;
   } else {
+    static constexpr const char op_name[] = "exp.out";
     return torch::executor::native::internal::
-        unary_ufunc_realhbbf16_to_floathbf16(std::exp, ctx, in, out);
+        unary_ufunc_realhbbf16_to_floathbf16<op_name>(
+            [](auto x) { return executorch::math::exp(x); }, ctx, in, out);
   }
 }
 
