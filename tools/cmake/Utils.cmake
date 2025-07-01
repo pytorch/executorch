@@ -90,6 +90,8 @@ function(extract_sources sources_file)
         set(target_platforms_arg "--target-platforms=shim_et//:android-arm64")
       elseif("${ANDROID_ABI}" STREQUAL "x86_64")
         set(target_platforms_arg "--target-platforms=shim_et//:android-x86_64")
+      elseif("${ANDROID_ABI}" STREQUAL "armeabi-v7a")
+        set(target_platforms_arg "--target-platforms=shim_et//:android-arm32")
       else()
         message(
           FATAL_ERROR
