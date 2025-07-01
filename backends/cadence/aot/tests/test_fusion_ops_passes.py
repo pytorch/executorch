@@ -598,7 +598,7 @@ class TestFusionPasses(TestFusionPassesBase):
         self.assertEqual(deq_scale, dequant_scale * mul_value)
 
     def test_fuse_mul_into_quant(self) -> None:
-        quant_scale = 1.5
+        quant_scale = 5
         mul_value = 10
 
         builder = GraphBuilder()
@@ -613,7 +613,7 @@ class TestFusionPasses(TestFusionPassesBase):
         )
         quant = builder.call_operator(
             op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            args=(mul, quant_scale, 0, 0, 255, torch.uint8),
+            args=(mul, quant_scale, 7, 0, 255, torch.uint8),
         )
         builder.output([quant])
         original_graph = builder.get_graph_module()
@@ -631,14 +631,18 @@ class TestFusionPasses(TestFusionPassesBase):
         )
 
         # verify that the quant scale value was updated correctly
-        deq_scale = -1
-        for node in converted_graph.graph.nodes:
-            if (
-                node.target
-                == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-            ):
-                deq_scale = node.args[1]
-        self.assertEqual(deq_scale, quant_scale * mul_value)
+        for node in converted_graph.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        ):
+            new_quant_scale = node.args[1]
+            self.assertEqual(new_quant_scale, quant_scale / mul_value)
+
+        # verify the math is correct
+        inp = torch.randn(4, 32, dtype=torch.float32)
+        original_out = original_graph(inp)[0]
+        new_out = converted_graph(inp)[0]
+        assert torch.equal(original_out, new_out)
 
     def test_fuse_then_transpose_pass(self) -> None:
         # Create a graph with full -> transpose.
