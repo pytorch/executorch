@@ -20,7 +20,7 @@ concurrency:
 jobs:
   test-models-macos:
     name: test-models-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.8
     strategy:
       matrix:
         # Mac runners are expensive and limited, and non reliable.
@@ -57,7 +57,7 @@ jobs:
 
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.8
     permissions:
       id-token: write
       contents: read
@@ -107,7 +107,7 @@ jobs:
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.8
     strategy:
       matrix:
         include:
@@ -129,7 +129,7 @@ jobs:
 
   test-selective-build-macos:
     name: test-selective-build-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.8
     strategy:
       matrix:
         include:
@@ -151,7 +151,7 @@ jobs:
 
   test-demo-backend-delegation:
     name: test-demo-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.8
     permissions:
       id-token: write
       contents: read
@@ -178,7 +178,7 @@ jobs:
 
   test-arm-backend:
     name: test-arm-backend
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.8
     permissions:
       id-token: write
       contents: read
@@ -219,7 +219,7 @@ jobs:
 
   test-arm-cortex-m-size-test:
     name: test-arm-cortex-m-size-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.8
     permissions:
       id-token: write
       contents: read
@@ -273,7 +273,7 @@ jobs:
 
   test-coreml-delegate:
     name: test-coreml-delegate
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.8
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
@@ -291,7 +291,7 @@ jobs:
 
   test-static-llama-ane:
     name: test-static-llama-ane
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.8
     with:
       runner: macos-m1-stable
       python-version: '3.11'
@@ -313,7 +313,7 @@ jobs:
 
   test-llama-torchao-lowbit:
     name: test-llama-torchao-lowbit
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.8
     with:
       runner: macos-m1-stable
       python-version: '3.11'
@@ -334,7 +334,7 @@ jobs:
   test-llama-runner-linux:
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.8
     permissions:
       id-token: write
       contents: read
@@ -392,7 +392,7 @@ jobs:
 
   test-llama-runner-macos:
     name: test-llama-runner-mac
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.8
     strategy:
       matrix:
         dtype: [fp32]
@@ -428,7 +428,7 @@ jobs:
   # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
   # test-llava-runner-macos:
   #   name: test-llava-runner-macos
-  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.8
   #   strategy:
   #     fail-fast: false
   #   with:
@@ -456,7 +456,7 @@ jobs:
 
   test-qnn-model:
     name: test-qnn-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.8
     permissions:
       id-token: write
       contents: read
@@ -482,7 +482,7 @@ jobs:
 
   test-qnn-optimum-model:
     name: test-qnn-optimum-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.8
     permissions:
       id-token: write
       contents: read
@@ -508,7 +508,7 @@ jobs:
 
   test-apple-model:
     name: test-apple-model
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.8
     strategy:
       fail-fast: false
     with:
@@ -543,7 +543,7 @@ jobs:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.8
     permissions:
       id-token: write
       contents: read
@@ -664,7 +664,7 @@ jobs:
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.8
     permissions:
       id-token: write
       contents: read
@@ -712,7 +712,7 @@ jobs:
       docker-image: executorch-ubuntu-22.04-clang12
 
   unittest-nxp-neutron:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.8
     permissions:
       id-token: write
       contents: read
