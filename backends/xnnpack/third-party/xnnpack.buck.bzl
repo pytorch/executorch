@@ -1100,7 +1100,16 @@ def define_xnnpack():
             # "-DXNN_ENABLE_DWCONV_MULTIPLASS=1",
             "-DXNN_ENABLE_ARM_I8MM=1",
             "-DXNN_ENABLE_ARM_FP16_VECTOR=1",
-            "-DXNN_ENABLE_AVX512BF16=0"
+            "-DXNN_ENABLE_AVX512BF16=1"
+            "-DXNN_ENABLE_AVX512F=1",
+            "-DXNN_ENABLE_AVX512SKX=1",
+            "-DXNN_ENABLE_AVX512VNNI=1",
+            "-DXNN_ENABLE_AVX512VNNIGFNI=1",
+            "-DXNN_ENABLE_AVX512AMX=1",
+            "-DXNN_ENABLE_AVX512VBMI=1",
+            "-DXNN_ENABLE_AVX512FP16=1",
+            "-DXNN_ENABLE_AVXVNNIINT8=1",
+            "-DXNN_ENABLE_AVX256VNNIGFNI=1",
         ],
         visibility = ["PUBLIC"],
         exported_deps = COMMON_XNNPACK_DEPS + [
