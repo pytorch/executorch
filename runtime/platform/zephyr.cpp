@@ -18,19 +18,19 @@
 void et_pal_init(void) {}
 
 ET_NORETURN void et_pal_abort(void) {
-	k_panic();
-	// k_panic() should never return, but ensure compiler knows this
-	while (1) {
-		/* Never reached */
-	}
+  k_panic();
+  // k_panic() should never return, but ensure compiler knows this
+  while (1) {
+    /* Never reached */
+  }
 }
 
 et_timestamp_t et_pal_current_ticks(void) {
-	return k_uptime_ticks();
+  return k_uptime_ticks();
 }
 
 et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
-	return { NSEC_PER_SEC, sys_clock_hw_cycles_per_sec() };
+  return {NSEC_PER_SEC, sys_clock_hw_cycles_per_sec()};
 }
 
 void et_pal_emit_log_message(
@@ -41,7 +41,7 @@ void et_pal_emit_log_message(
     ET_UNUSED size_t line,
     const char* message,
     ET_UNUSED size_t length) {
-	printk("%s\n", message);
+  printk("%s\n", message);
 }
 
 void* et_pal_allocate(size_t size) {
@@ -50,4 +50,4 @@ void* et_pal_allocate(size_t size) {
 
 void et_pal_free(void* ptr) {
   k_free(ptr);
-} 
+}
