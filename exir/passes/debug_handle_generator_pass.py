@@ -15,20 +15,23 @@ from torch.fx.passes.infra.pass_base import PassResult
 
 class DebugHandleGeneratorPass(ExportPass):
     def call(self, graph_module: GraphModule) -> PassResult:
-        """Lower a quantized reference model (with reference quantized operator patterns)
-        to executorch backend, that has a canonical set of quantized operators
+        """Generate debug handles for each node in the graph module and its submodule except
+        placeholder and output nodes. The debug handle is generated starting from 1 and
+        incrementally. The debug handle of a node is the same as the node sharing the same
+        greatest ancestor node in the export flow.
         """
 
         FROM_NODE_KEY = "from_node"
         DEBUG_HANDLE_KEY = "debug_handle"
 
-        source_node_to_debug_handle: Dict[str, int] = {}
+        source_node_id_to_debug_handle: Dict[str, int] = {}
 
-        def _get_greatest_ancestor_source_node(node: Node) -> str:
-            """Get the source of the greatest ancestor node of the given node. The source
-            here means the name of the node concated with the id the graph it belongs to.
-            For example, if the node transformation is node a -> b -> c, then the greatest
-            ancestor node of c is a.
+        def _get_greatest_ancestor_node_identifier(node: Node) -> str:
+            """Get the identifier of the greatest ancestor node of the given node.
+
+            The identifier is the concatenation of the node name and graph id of the
+            greatest ancestor node, where the graph id is the unique id for every graph
+            module in the export flow and node name is unique within the same graph module.
             """
 
             node_source = node.meta[FROM_NODE_KEY]
@@ -53,15 +56,15 @@ class DebugHandleGeneratorPass(ExportPass):
                 FROM_NODE_KEY in node.meta
             ), f"Node {node} does not have meta key {FROM_NODE_KEY}"
 
-            source_node = _get_greatest_ancestor_source_node(node)
+            greatest_ancestor_node_id = _get_greatest_ancestor_node_identifier(node)
 
             debug_handle = (
-                len(source_node_to_debug_handle) + 1
-                if source_node not in source_node_to_debug_handle
-                else source_node_to_debug_handle[source_node]
+                len(source_node_id_to_debug_handle) + 1
+                if greatest_ancestor_node_id not in source_node_id_to_debug_handle
+                else source_node_id_to_debug_handle[greatest_ancestor_node_id]
             )
-            source_node_to_debug_handle[source_node] = debug_handle
 
+            source_node_id_to_debug_handle[greatest_ancestor_node_id] = debug_handle
             node.meta[DEBUG_HANDLE_KEY] = debug_handle
 
         bfs_trace_with_node_process(graph_module, _extract_debug_handles_from_node)

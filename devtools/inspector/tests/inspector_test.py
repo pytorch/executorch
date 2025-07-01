@@ -230,7 +230,14 @@ class TestInspector(unittest.TestCase):
 
         # Call the method that's under testing and verify
         event_with_multiple_debug_handles._associate_with_op_graph_nodes(
-            {debug_handles[0]: [node_0, ], debug_handles[1]: [node_1, ]}
+            {
+                debug_handles[0]: [
+                    node_0,
+                ],
+                debug_handles[1]: [
+                    node_1,
+                ],
+            }
         )
 
         expected_stack_traces = {
@@ -669,7 +676,7 @@ class TestInspector(unittest.TestCase):
         events = []
         for i in range(2):
             events.append(
-                # OPERATOR_CALL with debug_hanldes/instruction_id 0 and 2
+                # OPERATOR_CALL with debug_handle/instruction_id 0 and 2
                 Event(
                     name="OPERATOR_CALL",
                     op_types=[OP_TYPE],
@@ -680,7 +687,7 @@ class TestInspector(unittest.TestCase):
                 )
             )
             events.append(
-                # op_0/op_1 wiht empty op_types and with debug_hanldes/instruction_id 1 and 3
+                # op_0/op_1 wiht empty op_types and with debug_handle/instruction_id 1 and 3
                 Event(
                     name=f"op_{i}",
                     op_types=[],
@@ -691,7 +698,7 @@ class TestInspector(unittest.TestCase):
                 )
             )
 
-        # op_2 with debug_hanldes/instruction_id 4
+        # op_2 with debug_handle/instruction_id 4
         events.append(
             Event(
                 name="op_2",
@@ -702,7 +709,7 @@ class TestInspector(unittest.TestCase):
                 _instruction_id=4,
             )
         )
-        # op_3 also with debug_hanldes 4 but with instruction_id 5
+        # op_3 also with debug_handle 4 but with instruction_id 5
         events.append(
             Event(
                 name="op_3",
@@ -714,7 +721,7 @@ class TestInspector(unittest.TestCase):
             )
         )
 
-        # op_4 to op_7 with debug_hanldes 5 to 8 and instruction_id 6 to 9
+        # op_4 to op_7 with debug_handle 5 to 8 and instruction_id 6 to 9
         for i in range(4, EVENTS_SIZE - 2):
             events.append(
                 Event(
