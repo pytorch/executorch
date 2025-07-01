@@ -35,7 +35,7 @@ jobs:
         ${CONDA_RUN} cmake --build cmake-out -j$(( $(sysctl -n hw.ncpu) - 1 ))
 
   zephyr:
-    uses: pytorch/test-infra/.github/workflows/zephyr_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     strategy:
       fail-fast: false
       matrix:
