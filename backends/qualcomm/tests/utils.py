@@ -18,7 +18,10 @@ from executorch import exir
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_PASS_ACTIVATE_KEY,
@@ -178,6 +181,7 @@ class TestQNN(unittest.TestCase):
     compiler_specs: List[CompileSpec] = None
     chipset_table = get_soc_to_chipset_map()
     error_only = False
+    oss_repo: str = ""
     ip = "localhost"
     port = 8080
     executorch_root: str = ""
@@ -185,8 +189,10 @@ class TestQNN(unittest.TestCase):
     image_dataset: str = ""
     sentence_dataset: str = ""
     pretrained_weight: str = ""
+    model_name: str = ""
     enable_profile: bool = False
     op_package_dir: str = ""
+    backend: str = ""
     online_prepare: bool = False
     use_8a8w: str = "8a8w"
     use_16a16w: str = "16a16w"
@@ -239,6 +245,9 @@ class TestQNN(unittest.TestCase):
             file.write(buffer)
 
         return input_list, ref_outputs, pte_fname
+
+    def get_backend_type(self):
+        return getattr(QnnExecuTorchBackendType, f"k{self.backend.title()}Backend")
 
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
@@ -421,6 +430,7 @@ class TestQNN(unittest.TestCase):
                     dump_intermediate_outputs=(
                         True if expected_intermediate_events != -1 else False
                     ),
+                    backend=self.get_backend_type(),
                     expected_input_shape=(
                         (tensor.shape for tensor in processed_inputs)
                         if check_io_shape

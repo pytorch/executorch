@@ -27,6 +27,7 @@ from executorch.backends.qualcomm.tests.utils import (
     generate_context_binary,
     ModuleQConfig,
     prepare_pt2e,
+    QnnExecuTorchBackendType,
     QuantDtype,
     TestQNN,
     validate_context_binary,
@@ -44,6 +45,7 @@ from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     dump_context_from_pte,
     from_context_binary,
+    generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     PyQnnManagerAdaptor,
@@ -95,9 +97,16 @@ from executorch.exir.backend.backend_api import disable_validation
 class TestQNNFloatingPointOperator(TestQNN):
     # TODO: refactor to support different backends
     def setUp(self):
+        match self.get_backend_type():
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=True)
+            case QnnExecuTorchBackendType.kGpuBackend:
+                backend_options = generate_gpu_compiler_spec()
+            case _:
+                raise ValueError("Backend is not implemented yet")
+
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1e-1
-        backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
@@ -5758,13 +5767,17 @@ def setup_environment():
         default="",
         type=str,
     )
-
+    parser.add_argument(
+        "--backend",
+        help="Backend to be deployed ('htp'/'gpu' are currently supported).",
+        default="htp",
+        type=str,
+    )
     parser.add_argument(
         "--pre_gen_pte",
         help="Run the pre-generated pte in the given directory.",
         type=str,
     )
-
     parser.add_argument(
         "--llama_artifacts",
         help="A folder that contains: weight, tokenizer, and params.",
@@ -5793,6 +5806,7 @@ def setup_environment():
     TestQNN.pre_gen_pte = args.pre_gen_pte
     TestQNN.llama_artifacts = args.llama_artifacts
     TestQNN.op_package_dir = args.op_package_dir
+    TestQNN.backend = args.backend
     return sys.argv[:1] + ns_args
 
 

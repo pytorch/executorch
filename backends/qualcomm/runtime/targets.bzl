@@ -44,10 +44,12 @@ def define_common_targets():
                 [
                     "*.cpp",
                     "backends/*.cpp",
-                    "backends/irbackend/*.cpp",
-                    "backends/htpbackend/*.cpp",
-                ] + (["backends/htpbackend/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/htpbackend/aarch64/*.cpp"]) + (
-                    ["backends/irbackend/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/irbackend/aarch64/*.cpp"]
+                    "backends/gpu/*.cpp",
+                    "backends/htp/*.cpp",
+                    "backends/ir/*.cpp",
+                ] + (["backends/gpu/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/gpu/aarch64/*.cpp"]) + (
+                    ["backends/htp/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/htp/aarch64/*.cpp"]) + (
+                    ["backends/ir/x86_64/*.cpp"] if include_aot_qnn_lib else ["backends/ir/aarch64/*.cpp"]
                 ),
                 exclude = ["Logging.cpp"],
             ),
@@ -55,8 +57,9 @@ def define_common_targets():
                 [
                     "*.h",
                     "backends/*.h",
-                    "backends/irbackend/*.h",
-                    "backends/htpbackend/*.h",
+                    "backends/gpu/*.h",
+                    "backends/htp/*.h",
+                    "backends/ir/*.h",
                 ],
                 exclude = ["Logging.h"],
             ),
