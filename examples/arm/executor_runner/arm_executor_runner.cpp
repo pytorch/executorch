@@ -433,9 +433,10 @@ struct RunnerContext {
 #if defined(ET_EVENT_TRACER_ENABLED)
   Box<torch::executor::ETDumpGen> etdump_gen;
 #endif
-
-  /// Runs the loaded method and returns the status
-  Error run();
+#if defined(SEMIHOSTING)
+  Box<ArmMemoryAllocator> input_file_allocator;
+  const char* output_basename = nullptr;
+#endif
 };
 
 void runner_init(
@@ -637,124 +638,37 @@ void runner_init(
   ET_LOG(Info, "Input prepared.");
 }
 
-Error RunnerContext::run() {
+void run_model(RunnerContext& ctx) {
   ET_LOG(Info, "Starting the model execution...");
 
   StartMeasurements();
   // Run the model.
-  Error status = method.value()->execute();
+  Error status = ctx.method.value()->execute();
   StopMeasurements();
 
-  return status;
+  ET_CHECK_MSG(
+      status == Error::Ok,
+      "Execution of method %s failed with status 0x%" PRIx32,
+      ctx.method_name,
+      status);
 }
 
-} // namespace
-
-int main(int argc, const char* argv[]) {
-#if defined(SEMIHOSTING)
-  ET_LOG(Info, "Running executor with parameter:");
-  if (argc < 7) {
-    ET_LOG(Fatal, "Not right number of parameters!");
-    ET_LOG(
-        Fatal,
-        "app -m model.pte -i input.bin [-i input2.bin] -o output_basename");
-    ET_LOG(Fatal, "Exiting!");
-    _exit(1);
-  }
-  ET_LOG(Info, "   %s", argv[0]);
-  for (int i = 1; i < argc; i++) {
-    ET_LOG(Info, "   %s %s", argv[i], argv[++i]);
-  }
-#else
-  (void)argc;
-  (void)argv;
-#endif
-
-  executorch::runtime::runtime_init();
-  std::vector<std::pair<char*, size_t>> input_buffers;
-  size_t pte_size = sizeof(model_pte);
-
-#if defined(SEMIHOSTING)
-  const char* output_basename = nullptr;
-  ArmMemoryAllocator input_file_allocator(
-      input_file_allocation_pool_size, input_file_allocation_pool);
-
-  /* parse input parameters */
-  for (int i = 0; i < argc; i++) {
-    size_t nbr_inputs = 0;
-    if (std::strcmp(argv[i], "-i") == 0) {
-      // input file, read the data into memory
-      const char* input_tensor_filename = argv[++i];
-      ET_LOG(
-          Info,
-          "Reading input tensor %d from file %s",
-          ++nbr_inputs,
-          input_tensor_filename);
-      auto [buffer, buffer_size] =
-          read_binary_file(input_tensor_filename, input_file_allocator);
-      if (buffer == nullptr) {
-        ET_LOG(
-            Error,
-            "Reading input tensor %d from file %s ERROR Out of memory",
-            nbr_inputs,
-            input_tensor_filename);
-        _exit(1);
-      }
-      input_buffers.push_back(std::make_pair(buffer, buffer_size));
-    } else if (std::strcmp(argv[i], "-m") == 0) {
-      const char* pte_filename = argv[++i];
-      ET_LOG(Info, "Reading pte model from file %s", pte_filename);
-      auto [buffer, buffer_size] =
-          read_binary_file(pte_filename, input_file_allocator);
-      if (buffer == nullptr) {
-        ET_LOG(
-            Error,
-            "Reading pte model from file %s ERROR Out of memory",
-            pte_filename);
-        _exit(1);
-      }
-
-      // Store the model data with the same variable as if it was loaded
-      // from compiled in location.
-      model_pte = buffer;
-      pte_size = buffer_size;
-    } else if (std::strcmp(argv[i], "-o") == 0) {
-      // store the base filename to write output to.
-      output_basename = argv[++i];
-    }
-  }
-#endif
-  ET_LOG(
-      Info, "PTE in %p %c Size: %lu bytes", model_pte, model_pte[0], pte_size);
-
-  RunnerContext ctx;
-  runner_init(ctx, input_buffers, pte_size);
-
-  Error status = ctx.run();
-  if (status != Error::Ok) {
-    ET_LOG(
-        Info,
-        "Execution of method %s failed with status 0x%" PRIx32,
-        ctx.method_name,
-        status);
-  } else {
-    ET_LOG(Info, "Model executed successfully.");
-  }
-
+void log_mem_status(const RunnerContext& ctx) {
   size_t executor_memsize =
       ctx.method_allocator->used_size() - ctx.executor_membase;
 
   ET_LOG(Info, "model_pte_program_size:     %lu bytes.", ctx.program_data_len);
   ET_LOG(Info, "model_pte_loaded_size:      %lu bytes.", ctx.pte_size);
 #if defined(SEMIHOSTING)
-  if (input_file_allocator.size() > 0) {
+  if (ctx.input_file_allocator->size() > 0) {
     ET_LOG(
         Info,
         "input_file_allocator_used: %zu / %zu free: %zu ( used: %zu %% ) ",
-        input_file_allocator.used_size(),
-        input_file_allocator.size(),
-        input_file_allocator.free_size(),
-        100 * input_file_allocator.used_size() / input_file_allocator.size());
+        ctx.input_file_allocator->used_size(),
+        ctx.input_file_allocator->size(),
+        ctx.input_file_allocator->free_size(),
+        100 * ctx.input_file_allocator->used_size() /
+            ctx.input_file_allocator->size());
   }
 #endif
   if (ctx.method_allocator->size() != 0) {
@@ -786,10 +700,13 @@ int main(int argc, const char* argv[]) {
         ctx.temp_allocator->free_size(),
         100 * ctx.temp_allocator->peak_used() / ctx.temp_allocator->size());
   }
+}
 
+void print_outputs(RunnerContext& ctx) {
   std::vector<EValue> outputs(ctx.method.value()->outputs_size());
   ET_LOG(Info, "%zu outputs: ", outputs.size());
-  status = ctx.method.value()->get_outputs(outputs.data(), outputs.size());
+  Error status =
+      ctx.method.value()->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
 
   // Print the outputs.
@@ -831,7 +748,7 @@ int main(int argc, const char* argv[]) {
 #endif
 #else
       char out_filename[255];
-      snprintf(out_filename, 255, "%s-%d.bin", output_basename, i);
+      snprintf(out_filename, 255, "%s-%d.bin", ctx.output_basename, i);
       ET_LOG(Info, "Writing output to file: %s", out_filename);
       FILE* out_file = fopen(out_filename, "wb");
       auto written_size =
@@ -842,7 +759,9 @@ int main(int argc, const char* argv[]) {
       printf("Output[%d]: Not Tensor\n", i);
     }
   }
+}
 
+void write_etdump(RunnerContext& ctx) {
 #if defined(ET_EVENT_TRACER_ENABLED)
 #if !defined(SEMIHOSTING)
   // Dump the etdump data containing profiling/debugging data to the serial line
@@ -887,7 +806,9 @@ int main(int argc, const char* argv[]) {
   }
 #endif
 #endif
+}
 
+void verify_result(RunnerContext& ctx, const void* model_pte) {
 #if defined(ET_BUNDLE_IO)
   if (ctx.bundle_io) {
     // Check result
@@ -908,7 +829,7 @@ int main(int argc, const char* argv[]) {
     }
 
     // Verify the result.
-    status = verify_method_outputs(
+    Error status = verify_method_outputs(
         *ctx.method.value(), model_pte, testset_idx, et_rtol, et_atol);
     if (status == Error::Ok) {
       ET_LOG(Info, "Model output match expected BundleIO bpte ref data.");
@@ -926,7 +847,98 @@ int main(int argc, const char* argv[]) {
         "Bundle verification failed with status 0x%" PRIx32,
         status);
   }
+#else
+  (void)ctx;
+  (void)model_pte;
 #endif
+}
+
+} // namespace
+
+int main(int argc, const char* argv[]) {
+#if defined(SEMIHOSTING)
+  ET_LOG(Info, "Running executor with parameter:");
+  if (argc < 7) {
+    ET_LOG(Fatal, "Not right number of parameters!");
+    ET_LOG(
+        Fatal,
+        "app -m model.pte -i input.bin [-i input2.bin] -o output_basename");
+    ET_LOG(Fatal, "Exiting!");
+    _exit(1);
+  }
+  ET_LOG(Info, "   %s", argv[0]);
+  for (int i = 1; i < argc; i++) {
+    ET_LOG(Info, "   %s %s", argv[i], argv[++i]);
+  }
+#else
+  (void)argc;
+  (void)argv;
+#endif
+
+  executorch::runtime::runtime_init();
+  std::vector<std::pair<char*, size_t>> input_buffers;
+  size_t pte_size = sizeof(model_pte);
+
+  RunnerContext ctx;
+
+#if defined(SEMIHOSTING)
+  ctx.input_file_allocator.reset(
+      input_file_allocation_pool_size, input_file_allocation_pool);
+
+  /* parse input parameters */
+  for (int i = 0; i < argc; i++) {
+    size_t nbr_inputs = 0;
+    if (std::strcmp(argv[i], "-i") == 0) {
+      // input file, read the data into memory
+      const char* input_tensor_filename = argv[++i];
+      ET_LOG(
+          Info,
+          "Reading input tensor %d from file %s",
+          ++nbr_inputs,
+          input_tensor_filename);
+      auto [buffer, buffer_size] = read_binary_file(
+          input_tensor_filename, ctx.input_file_allocator.value());
+      if (buffer == nullptr) {
+        ET_LOG(
+            Error,
+            "Reading input tensor %d from file %s ERROR Out of memory",
+            nbr_inputs,
+            input_tensor_filename);
+        _exit(1);
+      }
+      input_buffers.push_back(std::make_pair(buffer, buffer_size));
+    } else if (std::strcmp(argv[i], "-m") == 0) {
+      const char* pte_filename = argv[++i];
+      ET_LOG(Info, "Reading pte model from file %s", pte_filename);
+      auto [buffer, buffer_size] =
+          read_binary_file(pte_filename, ctx.input_file_allocator.value());
+      if (buffer == nullptr) {
+        ET_LOG(
+            Error,
+            "Reading pte model from file %s ERROR Out of memory",
+            pte_filename);
+        _exit(1);
+      }
+
+      // Store the model data with the same variable as if it was loaded
+      // from compiled in location.
+      model_pte = buffer;
+      pte_size = buffer_size;
+    } else if (std::strcmp(argv[i], "-o") == 0) {
+      // store the base filename to write output to.
+      ctx.output_basename = argv[++i];
+    }
+  }
+#endif
+  ET_LOG(
+      Info, "PTE in %p %c Size: %lu bytes", model_pte, model_pte[0], pte_size);
+
+  runner_init(ctx, input_buffers, pte_size);
+  run_model(ctx);
+  log_mem_status(ctx);
+  print_outputs(ctx);
+  write_etdump(ctx);
+  verify_result(ctx, model_pte);
 
   ET_LOG(Info, "Program complete, exiting.");
 #if defined(SEMIHOSTING)
