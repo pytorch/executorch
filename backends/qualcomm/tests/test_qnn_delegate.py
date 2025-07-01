@@ -157,6 +157,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(16, 3, 4, 4),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_atan(self):
+        sample_input = (torch.randn(3, 4),)
+        module = Atan()  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_avg_pool2d(self):
         modules = [
             AvgPoolModule((2, 2), (1, 1), (1, 1), False),  # noqa: F405
@@ -513,6 +518,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_expm1(self):
         sample_input = (torch.randn(3, 4, 5),)
         module = ExpM1()  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_floor(self):
+        sample_input = (torch.randn(3, 4),)
+        module = Floor()  # noqa: F405
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_fold(self):
@@ -927,6 +937,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_round(self):
+        module = Round()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rsqrt(self):
         module = Rsqrt()  # noqa: F405
@@ -1375,6 +1390,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_atan(self):
+        sample_input = (torch.randn(3, 4),)
+        module = Atan()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_avg_pool2d(self):
         modules = [
             AvgPoolModule((2, 2), (1, 1), (1, 1), False),  # noqa: F405
@@ -1785,6 +1806,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_expm1(self):
         sample_input = (torch.randn(3, 4, 5),)
         module = ExpM1()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_floor(self):
+        sample_input = (torch.randn(3, 4),)
+        module = Floor()  # noqa: F405
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -2260,6 +2287,12 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_round(self):
+        module = Round()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rsqrt(self):
         module = Rsqrt()  # noqa: F405

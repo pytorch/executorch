@@ -146,6 +146,14 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         return squeeze_out, conv_out
 
 
+class Atan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.atan(x)
+
+
 class AvgPoolModule(torch.nn.Module):
     def __init__(self, kernel_size, stride, padding, ceil_mode):
         super().__init__()
@@ -739,6 +747,14 @@ class ExpM1(torch.nn.Module):
 
     def forward(self, x):
         return torch.special.expm1(x)
+
+
+class Floor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.floor(x)
 
 
 class Fold(torch.nn.Module):
@@ -1446,6 +1462,14 @@ class Roll(torch.nn.Module):
 
     def forward(self, x):
         return torch.roll(x, shifts=self.shifts, dims=self.dims)
+
+
+class Round(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.round(x)
 
 
 class Rsqrt(torch.nn.Module):
