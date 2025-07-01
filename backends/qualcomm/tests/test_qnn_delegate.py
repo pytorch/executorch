@@ -53,6 +53,7 @@ from executorch.backends.qualcomm.utils.utils import (
     from_context_binary,
     generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
+    generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     is_qnn_sdk_version_less_than,
     PyQnnManagerAdaptor,
@@ -2102,9 +2103,15 @@ class TestQNNFloatingPointModel(TestQNN):
 class TestQNNQuantizedOperator(TestQNN):
     # TODO: refactor to support different backends
     def setUp(self):
+        match get_backend_type(self.backend):
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                backend_options = generate_lpai_compiler_spec()
+            case _:
+                raise ValueError("Backend is not implemented yet")
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1
-        backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset_table[TestQNN.model],
             backend_options=backend_options,
@@ -2487,6 +2494,84 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_lpai(self):
+        from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
+        from executorch.backends.qualcomm.utils.constants import (
+            QCOM_DTYPE,
+            QCOM_QUANT_ATTRS,
+        )
+        from executorch.exir.capture._config import ExecutorchBackendConfig
+        from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
+
+        """ fp_module = torch.load(
+            "/local2/mnt/workspace/executorch_artifacts/meta_models/four_class.pt",
+            weights_only=False,
+        ).eval()
+        input_shape = (1,1,372,496)
+        sample_input = (torch.randn(input_shape),) """
+
+        fp_module = torch.load(
+            "/local2/mnt/workspace/executorch_artifacts/meta_models/ocr_haptic.pt",
+            weights_only=False,
+        ).eval()
+        input_shape = (1,1,372,496)
+        sample_input = (torch.randn(input_shape),)
+
+        with torch.no_grad():
+            module = self.get_qdq_module(
+                fp_module,
+                sample_input,
+                quant_dtype=QuantDtype.use_8a8w,
+            )
+            # strip unsupported quantize / dequantize ops generated in preprocess
+            pass_jobs = get_capture_program_passes()
+            pass_jobs[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
+            pass_jobs[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+                "get_quant_io_dtype_fn"
+            ] = lambda n: (
+                torch.uint8
+                if n.name in {
+                    "x_1", "aten_permute_copy_default", "aten_permute_copy_default_1"
+                }
+                else None
+            )
+            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module,
+                sample_input,
+                self.compiler_specs,
+                passes_job=pass_jobs,
+            )
+
+            # collect encodings for ios
+            input_encodings, output_encodings = [], []
+            for n in edge_prog_mgr.exported_program().graph.nodes:
+                if n.op == "placeholder":
+                    input_encodings.append(n.meta[QCOM_QUANT_ATTRS])
+                    input_encodings[-1][QCOM_DTYPE] = torch.uint8
+                elif n.op == "output":
+                    output_encodings = n.meta[QCOM_QUANT_ATTRS_MAP].values()
+                    for output_encoding in output_encodings:
+                        output_encoding[QCOM_DTYPE] = torch.uint8
+
+            exec_prog = edge_prog_mgr.to_executorch(
+                ExecutorchBackendConfig(
+                    passes=[BuildQuantIo()],
+                    memory_planning_pass=MemoryPlanningPass(
+                        alloc_graph_input=False,
+                        alloc_graph_output=False,
+                    ),
+                    segment_alignment=256,
+                )
+            )
+            self.verify_output(
+                fp_module,
+                sample_input,
+                exec_prog,
+                input_encodings=tuple(input_encodings),
+                output_encodings=tuple(output_encodings),
+                artifact_dir=self.artifact_dir,
+            )
 
     def test_qnn_backend_conv2d(self):
         modules = [Conv2dSequential(), Conv2dSequential(bias=False)]  # noqa: F405

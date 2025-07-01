@@ -118,7 +118,17 @@ TensorWrapper::TensorWrapper(
 Error TensorWrapper::FillDataBuffer(const void* data, bool copy_data) {
   if (data != nullptr) {
     QNN_TENSOR_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_RAW;
+#ifdef __hexagon__
+    // alignment is required
+    auto align_size = [](size_t alignment, size_t sz) {
+      return (sz + (alignment - 1)) & ~(alignment - 1);
+    };
+    const size_t alignment = 64;
+    QNN_TENSOR_VER_PTR(tensor_)->clientBuf.dataSize =
+        align_size(alignment, bytes_);
+#else
     QNN_TENSOR_VER_PTR(tensor_)->clientBuf.dataSize = bytes_;
+#endif
     if (copy_data) {
       owned_data_ = std::make_unique<char[]>(bytes_);
       const char* src_data = static_cast<const char*>(data);

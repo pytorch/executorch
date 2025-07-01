@@ -34,7 +34,7 @@ class QnnGraph {
 
   virtual ~QnnGraph(){};
 
-  executorch::runtime::Error Configure(const std::string& graph_name);
+  virtual executorch::runtime::Error Configure(const std::string& graph_name);
 
   Qnn_ErrorHandle_t GraphExecute(
       const std::string& graph_name,
@@ -81,10 +81,10 @@ class QnnGraph {
       std::vector<const QnnGraph_Config_t*>& config) {
     return executorch::runtime::Error::Ok;
   };
-
- private:
   std::unordered_map<std::string, Qnn_GraphHandle_t> handle_;
   QnnImplementation* implementation_;
+
+ private:
   QnnBackend* backend_;
   QnnContext* context_;
   QnnExecuTorchProfileLevel profile_level_;

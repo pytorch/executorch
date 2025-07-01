@@ -158,6 +158,7 @@ class TestQNN(unittest.TestCase):
     compiler_specs: List[CompileSpec] = None
     chipset_table = get_soc_to_chipset_map()
     error_only = False
+    oss_repo: str = ""
     ip = "localhost"
     port = 8080
     executorch_root: str = ""
@@ -166,6 +167,7 @@ class TestQNN(unittest.TestCase):
     qa_dataset: str = ""
     sentence_dataset: str = ""
     pretrained_weight: str = ""
+    model_name: str = ""
     enable_profile: bool = False
     op_package_dir: str = ""
     target: str = ""
@@ -213,6 +215,9 @@ class TestQNN(unittest.TestCase):
                 ref_outputs.append(output.detach())
         else:
             ref_outputs.append(ref_output.detach())
+
+        for i, output in enumerate(ref_output):
+            output.numpy().tofile(f"{dir_name}/golden_{0}_{i}.raw")
 
         pte_fname = f"{dir_name}/qnn_executorch_test.pte"
         with open(pte_fname, "wb") as file:
@@ -284,8 +289,12 @@ class TestQNN(unittest.TestCase):
         save_inference_speed: bool = False,
         expected_compared_events: int = -1,
         qnn_intermediate_debugger: QNNIntermediateDebugger = None,
+        artifact_dir: str = None,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_dir = artifact_dir if artifact_dir is not None else tmp_dir
+            if artifact_dir is not None:
+                make_output_dir(artifact_dir)
             (
                 ref_outputs,
                 pte_fname,
@@ -324,6 +333,9 @@ class TestQNN(unittest.TestCase):
                             .sub(enc[QCOM_ZERO_POINT])
                             .mul(enc[QCOM_SCALE])
                         )
+                    from torchao.quantization.utils import compute_error
+
+                    print(f"SQNR:{compute_error(ref_outputs[i], output)}")
                     outputs.append(output)
 
             def validate_profile():
@@ -363,6 +375,10 @@ class TestQNN(unittest.TestCase):
                         )
 
             processed_inputs = list(sample_inputs)
+            with open(f"{tmp_dir}/encoding.txt", "w") as f:
+                for enc in output_encodings:
+                    f.write(f"{enc[QCOM_SCALE]} {enc[QCOM_ZERO_POINT]}\n")
+
             for i, enc in enumerate(input_encodings):
                 processed_inputs[i] = (
                     processed_inputs[i]
@@ -489,6 +505,7 @@ class TestQNN(unittest.TestCase):
                 adb.push(
                     inputs=[processed_inputs],
                     files=op_package_paths,
+                    artifact_dir=tmp_dir,
                 )
                 adb.extra_cmds += extra_cmds
                 if save_inference_speed:
@@ -622,9 +639,14 @@ class TestQNN(unittest.TestCase):
         block_size_map: Dict[str, Tuple] = None,
         submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export(
-            module, inputs, dynamic_shapes=dynamic_shapes, strict=True
-        ).module()
+        if isinstance(module, torch.jit.ScriptModule):
+            from torch._export.converter import TS2EPConverter
+
+            m = TS2EPConverter(module, inputs).convert().module()
+        else:
+            m = torch.export.export(
+                module, inputs, dynamic_shapes=dynamic_shapes, strict=True
+            ).module()
 
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,

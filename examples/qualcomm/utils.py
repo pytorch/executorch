@@ -40,7 +40,8 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
-    get_soc_to_arch_map,
+    get_soc_to_htp_arch_map,
+    get_soc_to_lpai_hw_ver_map,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.exir.backend.utils import get_delegates
@@ -104,7 +105,8 @@ class SimpleADB:
         self.dump_intermediate_outputs = dump_intermediate_outputs
         self.debug_output_path = f"{self.workspace}/debug_output.bin"
         self.output_folder = f"{self.workspace}/outputs"
-        self.htp_arch = get_soc_to_arch_map()[soc_model]
+        self.htp_arch = get_soc_to_htp_arch_map()[soc_model]
+        self.soc_model = soc_model
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
@@ -131,7 +133,9 @@ class SimpleADB:
                 cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
             )
 
-    def push(self, inputs=None, input_list=None, files=None, init_env=True):
+    def push(
+        self, inputs=None, input_list=None, files=None, init_env=True, artifact_dir=None
+    ):
         artifacts = []
         if init_env:
             self._adb(["shell", f"rm -rf {self.workspace}"])
@@ -154,6 +158,15 @@ class SimpleADB:
             QnnExecuTorchBackendType.kGpuBackend: [
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
             ],
+            # please note that users need to sign LPAI related libs manually
+            QnnExecuTorchBackendType.kLpaiBackend: [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnLpai.so",
+                (
+                    f"{self.qnn_sdk}/lib/lpai-v{get_soc_to_lpai_hw_ver_map()[self.soc_model]}/"
+                    f"signed/libQnnLpaiSkel.so"
+                ),
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnLpaiStub.so",
+            ],
         }[self.backend]
 
         artifacts.extend(
@@ -166,6 +179,7 @@ class SimpleADB:
             ]
         )
         with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_dir = artifact_dir if artifact_dir is not None else tmp_dir
             input_list_file, input_files = generate_inputs(
                 tmp_dir, self.input_list_filename, inputs
             )
@@ -230,6 +244,8 @@ class SimpleADB:
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
+                    "export ADSP_LIBRARY_PATH=. &&",
+                    "export LD_LIBRARY_PATH=. &&",
                     "chmod +x ./qnn_executor_runner &&",
                     f"./qnn_executor_runner {qnn_executor_runner_args}",
                 ]
@@ -529,6 +545,7 @@ def make_output_dir(path: str):
     if os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)
     os.makedirs(path)
+    os.chmod(path, 0o777)
 
 
 def topk_accuracy(predictions, targets, k):
@@ -885,8 +902,8 @@ def setup_common_args_and_variables():
 
     parser.add_argument(
         "--backend",
-        help="Backend to be deployed ('htp'/'gpu' are currently supported).",
-        choices=["htp", "gpu"],
+        help="Backend to be deployed ('htp'/'gpu'/'lpai' are currently supported).",
+        choices=["htp", "gpu", "lpai"],
         default="htp",
         type=str,
     )
