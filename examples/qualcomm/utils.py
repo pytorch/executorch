@@ -31,6 +31,7 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
 )
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
+    QnnExecuTorchBackendType,
     QnnExecuTorchOpPackageOptions,
 )
 from executorch.backends.qualcomm.utils.utils import (
@@ -83,6 +84,7 @@ class SimpleADB:
         dump_intermediate_outputs=False,
         runner="examples/qualcomm/executor_runner/qnn_executor_runner",
         target="aarch64-android",
+        backend=QnnExecuTorchBackendType.kHtpBackend,
         expected_input_shape=None,
         expected_output_shape=None,
     ):
@@ -103,6 +105,7 @@ class SimpleADB:
         self.shared_buffer = shared_buffer
         self.runner = runner
         self.target = target
+        self.backend = backend
         self.expected_input_shape = expected_input_shape
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
@@ -130,9 +133,9 @@ class SimpleADB:
             self._adb(["shell", f"rm -rf {self.workspace}"])
             self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-            # necessary artifacts
-            artifacts = [
-                *self.pte_path,
+        # necessary artifacts
+        artifacts = {
+            QnnExecuTorchBackendType.kHtpBackend: [
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnHtp.so",
                 (
                     f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
@@ -143,11 +146,21 @@ class SimpleADB:
                     f"libQnnHtpV{self.htp_arch}Stub.so"
                 ),
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
+            ],
+            QnnExecuTorchBackendType.kGpuBackend: [
+                f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
+            ],
+        }[self.backend]
+
+        artifacts.extend(
+            [
+                *self.pte_path,
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
                 f"{self.build_path}/{self.runner}",
                 f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
             ]
+        )
         with tempfile.TemporaryDirectory() as tmp_dir:
             input_list_file, input_files = generate_inputs(
                 tmp_dir, self.input_list_filename, inputs
