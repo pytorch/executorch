@@ -84,7 +84,7 @@ def main(args):
         .to("cpu")
     )
 
-    pte_filename = "mobilevit1_qnn_q16"
+    pte_filename = "mobilevit_v1_qnn_q16"
     build_executorch_binary(
         module.eval(),
         inputs[0],
@@ -157,8 +157,8 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts by this example. "
-        "Default ./mobilevit1",
-        default="./mobilevit1",
+        "Default ./mobilevit_v1",
+        default="./mobilevit_v1",
         type=str,
     )
 
