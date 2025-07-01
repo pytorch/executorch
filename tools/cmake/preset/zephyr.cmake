@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set(ARM_TOOLCHAIN_NAME zephyr)
 set_overridable_option(EXECUTORCH_BUILD_COREML                  OFF)
 set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER           OFF)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_CUSTOM          OFF)
