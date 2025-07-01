@@ -64,13 +64,21 @@ for arg in "$@"; do
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --ethosu_tools_dir=*) ethosu_tools_dir="${arg#*=}";;
-      --toolchain=*) toolchain="${arg#*=}";;
+      --toolchain=*) toolchain="${arg#*=}"; toolchain=arm-none-eabi-gcc;
       *)
       ;;
     esac
 done
 
-toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
+    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
+    toolchain_cmake=${et_root_dir}/examples/zephyr/arm-x86-64-gcc.cmake
+else
+    echo "Error: Invalid toolchain selection, provided: ${tolchain}"
+    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
+    exit 1;
+fi
 toolchain_cmake=$(realpath ${toolchain_cmake})
 
 # Source the tools
