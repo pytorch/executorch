@@ -243,10 +243,12 @@ jobs:
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then 
           toolchain_prefix=arm-none-eabi-
           threshold="103268" # ~100KiB
+          toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
           threshold="133120" # should be ~125KB, set threshold to 130KB
+          toolchain_cmake=examples/zephyr/arm-x86-64-gcc.cmake
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
           exit 1
@@ -308,7 +310,6 @@ jobs:
         ${toolchain_prefix}c++ --version
 
         # Setup cmake target to desired toolchain
-        toolchain_cmake=examples/arm/ethos-u-setup/${toolchain_prefix}gcc.cmake
         toolchain_cmake=$(realpath ${toolchain_cmake})
 
         # Build and run size test
