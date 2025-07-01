@@ -6,17 +6,19 @@
 
 # pyre-unsafe
 
+import dataclasses
 import math
 import unittest
 
 from typing import List, Optional
+
+from executorch.exir._serialize._cord import Cord
 
 from executorch.exir._serialize.data_serializer import (
     DataEntry,
     DataPayload,
     DataSerializer,
 )
-
 from executorch.exir._serialize.padding import aligned_size
 
 from executorch.exir.schema import ScalarType
@@ -223,3 +225,39 @@ class TestSerialize(unittest.TestCase):
         )
 
         self.assertEqual(segments[2].offset + segments[2].size, len(segment_data))
+
+    def test_round_trip(self) -> None:
+        # Serialize and then deserialize the test payload. Make sure it's reconstructed
+        # properly.
+        config = FlatTensorConfig()
+        serializer: DataSerializer = FlatTensorSerializer(config)
+
+        # Round trip the data.
+        serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
+        deserialized_payload = serializer.deserialize(Cord(serialized_data))
+
+        # Validate the deserialized payload. Since alignment isn't serialized, we need to
+        # do this somewhat manually.
+        for i in range(len(deserialized_payload.buffers)):
+            self.assertEqual(
+                TEST_DATA_PAYLOAD.buffers[i],
+                deserialized_payload.buffers[i],
+                f"Buffer at index {i} does not match.",
+            )
+
+        self.assertEqual(
+            TEST_DATA_PAYLOAD.named_data.keys(), deserialized_payload.named_data.keys()
+        )
+
+        SKIP_FIELDS = {"alignment"}  # Fields to ignore in comparison.
+        for key in TEST_DATA_PAYLOAD.named_data.keys():
+            reference = TEST_DATA_PAYLOAD.named_data[key]
+            actual = deserialized_payload.named_data[key]
+
+            for field in dataclasses.fields(reference):
+                if field.name not in SKIP_FIELDS:
+                    self.assertEqual(
+                        getattr(reference, field.name),
+                        getattr(actual, field.name),
+                        f"Named data record {key}.{field.name} does not match.",
+                    )

@@ -86,8 +86,8 @@ test_model() {
   if [[ "${MODEL_NAME}" == "llama2" ]]; then
     # Install requirements for export_llama
     bash examples/models/llama/install_requirements.sh
-    # Test export_llama script: python3 -m examples.models.llama.export_llama
-    "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/llama/params/demo_config.json
+    # Test export_llm script: python3 -m extension.llm.export.export_llm
+    "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.checkpoint=examples/models/llama/params/demo_rand_params.pth base.params=examples/models/llama/params/demo_config.json
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi
@@ -100,17 +100,17 @@ test_model() {
   if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
-      # Test export_llama script: python3 -m examples.models.llama.export_llama.
+      # Test export_llm script: python3 -m extension.llm.export.export_llm.
       # Use Llama random checkpoint with Qwen 2.5 1.5b model configuration.
-      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -p examples/models/qwen2_5/1_5b_config.json
+      "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.params=examples/models/qwen2_5/config/1_5b_config.json
       rm "./${MODEL_NAME}.pte"
       return  # Skip running with portable executor runnner since portable doesn't support Qwen's biased linears.
   fi
   if [[ "${MODEL_NAME}" == "phi_4_mini" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
-      # Test export_llama script: python3 -m examples.models.llama.export_llama.
-      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -p examples/models/phi_4_mini/config.json
+      # Test export_llm script: python3 -m extension.llm.export.export_llm.
+      "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.params=examples/models/phi_4_mini/config/config.json
       run_portable_executor_runner
       rm "./${MODEL_NAME}.pte"
       return

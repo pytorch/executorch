@@ -234,12 +234,17 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       supported |=
           (tensor_in.scalar_type() == ScalarType::Short and
            handles.inputs->io[i].elem_size == 2);
+      // bool (IOQDQ pass prepared networks)
+      supported |=
+          (tensor_in.scalar_type() == ScalarType::Bool and
+           handles.inputs->io[i].elem_size == 1);
       if (!supported) {
         ET_LOG(
             Error,
-            "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs, got ScalarType id %s",
+            "Input %d expected Integer (4 byte), Char (1 byte) or Bool (1 byte) integer inputs, got ScalarType id %s size %d",
             i,
-            executorch::runtime::toString(tensor_in.scalar_type()));
+            executorch::runtime::toString(tensor_in.scalar_type()),
+            handles.inputs->io[i].elem_size);
         return Error::InvalidProgram;
       }
       supported = executorch::runtime::is_contiguous_dim_order(
@@ -257,15 +262,17 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       bool permuted_input_shape;
       ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
           i, tensor_in, &handles.inputs->io[i], &permuted_input_shape));
-      bool both_char = tensor_in.scalar_type() == ScalarType::Char and
-          handles.inputs->io[i].elem_size == 1;
-      bool both_int = tensor_in.scalar_type() == ScalarType::Int and
+      bool both_int = tensor_in.scalar_type() == ScalarType::Int &&
           handles.inputs->io[i].elem_size == 4;
-      bool both_short = tensor_in.scalar_type() == ScalarType::Short and
+      bool both_char = tensor_in.scalar_type() == ScalarType::Char &&
+          handles.inputs->io[i].elem_size == 1;
+      bool both_short = tensor_in.scalar_type() == ScalarType::Short &&
           handles.inputs->io[i].elem_size == 2;
+      bool both_bool = tensor_in.scalar_type() == ScalarType::Bool &&
+          (handles.inputs->io[i].elem_size == 1);
 
       // Select a compatible copy routine
-      if (both_char && permuted_input_shape) {
+      if ((both_char || both_bool) && permuted_input_shape) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer,
             "+EthosUBackend::execute()handles.input.permute_CHW_to_HWC()");
@@ -276,7 +283,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             tensor_in.size(1),
             tensor_in.size(2),
             tensor_in.size(3));
-      } else if (both_char || both_int || both_short) {
+      } else if (both_char || both_int || both_short || both_bool) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
         // Sizes match and elt size matches so memcpy
@@ -363,7 +370,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       bool permuted_output_shape;
       ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
           i, tensor_out, &handles.outputs->io[i], &permuted_output_shape));
-      if (tensor_out.scalar_type() == ScalarType::Char &&
+
+      if ((tensor_out.scalar_type() == ScalarType::Char ||
+           tensor_out.scalar_type() == ScalarType::Bool) &&
           permuted_output_shape) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer,
@@ -379,17 +388,12 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             tensor_out.size(3));
       } else {
         EXECUTORCH_PROF_SCOPE(
-            event_tracer, "+EthosUBackend::execute()handles.output.move()");
-        for (int j = 0; j < tensor_out.numel(); j++) {
-          if (tensor_out.scalar_type() == ScalarType::Char) {
-            const char* output_address = static_cast<const char*>(output_addr);
-            tensor_out.mutable_data_ptr<char>()[j] = output_address[j];
-          } else {
-            const int* output_address =
-                reinterpret_cast<const int*>(output_addr);
-            tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
-          }
-        }
+            event_tracer, "+EthosUBackend::execute()handles.output.memcpy()");
+
+        memcpy(
+            tensor_out.mutable_data_ptr<char>(),
+            static_cast<const char*>(output_addr),
+            tensor_out.nbytes());
       }
     }
     if (tensor_dim != io_dim) {
