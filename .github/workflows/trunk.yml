@@ -248,7 +248,7 @@ jobs:
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
           threshold="133120" # should be ~125KB, set threshold to 130KB
-          toolchain_cmake=examples/zephyr/arm-x86-64-gcc.cmake
+          toolchain_cmake=examples/zephyr/arm-x86-64-eabi-gcc.cmake
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
           exit 1
@@ -311,7 +311,6 @@ jobs:
 
         # Setup cmake target to desired toolchain
         toolchain_cmake=$(realpath ${toolchain_cmake})
-        echo "toolchain_cmake path set as ${toolchain_cmake}"
 
         # Build and run size test
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then 
@@ -319,8 +318,6 @@ jobs:
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
           CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
           cmake --build cmake-out -j9 --target install --config Release
-          ls -lah $(realpath examples/)
-          ls -lah $(realpath examples/zephyr/)
           CXXFLAGS=${cxx_flags}  cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
           cmake --build cmake-out/test -j9 --config Release
         else
