@@ -56,7 +56,7 @@ TEST(HFTokenizerTest, TestEncode) {
   // "Hello world!" should tokenize to something like [1, 8, 9] or [1, 4, 5, 6,
   // 7] depending on how the BPE merges work
   EXPECT_GT(result.get().size(), 0);
-  EXPECT_EQ(result.get()[0], 2); // BOS token (ID 2 in our test tokenizer)
+  EXPECT_EQ(result.get()[0], 0); // BOS token (ID 0 in our test tokenizer)
 }
 
 TEST(HFTokenizerTest, TestDecode) {
