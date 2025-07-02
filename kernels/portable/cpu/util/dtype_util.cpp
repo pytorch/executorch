@@ -27,6 +27,8 @@ bool check_tensor_dtype(
       return executorch::runtime::tensor_is_floating_type(t);
     case SupportedTensorDtypes::INTB:
       return executorch::runtime::tensor_is_integral_type(t, true);
+    case SupportedTensorDtypes::BOOL:
+      return executorch::runtime::tensor_is_type(t, ScalarType::Bool);
     case SupportedTensorDtypes::BOOL_OR_BYTE:
       return (executorch::runtime::tensor_is_type(
           t, ScalarType::Bool, ScalarType::Byte));
