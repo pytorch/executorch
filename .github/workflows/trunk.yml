@@ -254,6 +254,30 @@ jobs:
           exit 1
         fi
 
+        elf="cmake-out/test/size_test"
+
+        # Dump basic info
+        ls -al ${elf}
+        ${toolchain_prefix}size ${elf}
+
+        # Dump symbol
+        python .github/scripts/run_nm.py -e ${elf}
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "${toolchain_prefix}"
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "${toolchain_prefix}"
+
+        # Add basic guard - TODO: refine this!
+        ${toolchain_prefix}strip ${elf}
+        output=$(ls -la ${elf})
+        arr=($output)
+        size=${arr[4]}
+        echo "size: $size, threshold: $threshold"
+        if [[ "$size" -le "$threshold" ]]; then
+          echo "Success $size <= $threshold"
+        else
+          echo "Fail $size > $threshold"
+          exit 1
+        fi
+
   nxp-build-test:
     name: nxp-build-test
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
