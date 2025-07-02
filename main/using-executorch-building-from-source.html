@@ -575,7 +575,7 @@ git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </spa
 <div class="section" id="install-executorch-pip-package-from-source">
 <h2>Install ExecuTorch pip package from source<a class="headerlink" href="#install-executorch-pip-package-from-source" title="Permalink to this heading">¶</a></h2>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Install ExecuTorch pip package and its dependencies, as well as</span>
-<span class="c1"># development tools like CMake.</span>
+<span class="c1"># development tools like CMake, and backend support for XNNPACK and CoreML.</span>
 <span class="c1"># If developing on a Mac, make sure to install the Xcode Command Line Tools first.</span>
 <span class="c1"># Intel-based macOS systems require building PyTorch from source (see below)</span>
 ./install_executorch.sh
@@ -590,8 +590,13 @@ git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </spa
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_executorch.sh<span class="w"> </span>--use-pt-pinned-commit<span class="w"> </span>--minimal
 </pre></div>
 </div>
-<p>Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">&quot;-DEXECUTORCH_BUILD_MPS=ON&quot;</span><span class="w"> </span>./install_executorch.sh
+<p>Notice that only XNNPACK and CoreML backends are supported by default. You can enable additional backends or disable default backends by setting the corresponding CMake flags:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Enable the MPS backend</span>
+<span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">&quot;-DEXECUTORCH_BUILD_MPS=ON&quot;</span><span class="w"> </span>./install_executorch.sh
+</pre></div>
+</div>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Disable the XNNPACK backend</span>
+<span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">&quot;-DEXECUTORCH_BUILD_XNNPACK=OFF&quot;</span><span class="w"> </span>./install_executorch.sh
 </pre></div>
 </div>
 <p>For development mode, run the command with <code class="docutils literal notranslate"><span class="pre">--editable</span></code>, which allows us to modify Python source code and see changes reflected immediately.</p>
