@@ -1,11 +1,5 @@
 # YOLO12 Detection C++ Inference with ExecuTorch
 
-<p align="center">
-      <br>
-      <img src="./yolo12s_demo.gif">
-      <br>
-</p>
-
 This example demonstrates how to perform inference of [Ultralytics YOLO12 family](https://docs.ultralytics.com/models/yolo12/) detection models in C++ leveraging the Executorch backends:
 - [OpenVINO](../../../backends/openvino/README.md)
 - [XNNPACK](../../../backends/xnnpack/README.md)
@@ -117,5 +111,3 @@ To get a full parameters description please use the following command:
 # Credits:
 
 Ultralytics examples: https://github.com/ultralytics/ultralytics/tree/main/examples
-
-Sample video: https://www.pexels.com/@shanu-1040189/
