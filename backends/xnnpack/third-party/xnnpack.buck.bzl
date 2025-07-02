@@ -1108,9 +1108,11 @@ def define_xnnpack():
             "-DXNN_ENABLE_AVX512AMX=1",
             "-DXNN_ENABLE_AVX512VBMI=1",
             "-DXNN_ENABLE_AVX512FP16=1",
+            "-DXNN_ENABLE_AVXVNNI=1",
             "-DXNN_ENABLE_AVXVNNIINT8=1",
             "-DXNN_ENABLE_AVX256VNNIGFNI=1",
             "-DXNN_ENABLE_AVX256SKX=1",
+            "-DXNN_ENABLE_AVX256VNNI=1",
         ],
         visibility = ["PUBLIC"],
         exported_deps = COMMON_XNNPACK_DEPS + [
