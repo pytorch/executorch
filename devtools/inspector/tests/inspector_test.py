@@ -183,7 +183,11 @@ class TestInspector(unittest.TestCase):
 
         # Call the method that's under testing and verify
         event_with_single_debug_handle._associate_with_op_graph_nodes(
-            {debug_handle: node_0}
+            {
+                debug_handle: [
+                    node_0,
+                ]
+            }
         )
 
         expected_stack_traces = {"node_0": "stack_trace_relu"}
@@ -226,7 +230,14 @@ class TestInspector(unittest.TestCase):
 
         # Call the method that's under testing and verify
         event_with_multiple_debug_handles._associate_with_op_graph_nodes(
-            {debug_handles[0]: node_0, debug_handles[1]: node_1}
+            {
+                debug_handles[0]: [
+                    node_0,
+                ],
+                debug_handles[1]: [
+                    node_1,
+                ],
+            }
         )
 
         expected_stack_traces = {
