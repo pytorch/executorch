@@ -26,10 +26,11 @@ class MergedDataMap final
    * Note: the data maps must outlive the MergedDataMap instance.
    */
   static executorch::runtime::Result<MergedDataMap> load(
-      const std::array<const NamedDataMap*, N>& data_maps) {
-    std::array<const NamedDataMap*, N> valid_data_maps;
+      const NamedDataMap* data_maps[N],
+      size_t data_maps_size) {
+    const NamedDataMap* valid_data_maps[N] = {};
     size_t num_data_maps = 0;
-    for (size_t i = 0; i < data_maps.size(); i++) {
+    for (size_t i = 0; i < data_maps_size; i++) {
       if (data_maps[i] != nullptr) {
         valid_data_maps[num_data_maps++] = data_maps[i];
       }
@@ -40,7 +41,7 @@ class MergedDataMap final
     // Check for duplicate keys.
     for (size_t i = 0; i < num_data_maps; i++) {
       for (size_t j = i + 1; j < num_data_maps; j++) {
-        for (int k = 0; k < valid_data_maps[i]->get_num_keys().get(); k++) {
+        for (size_t k = 0; k < valid_data_maps[i]->get_num_keys().get(); k++) {
           const auto key = valid_data_maps[i]->get_key(k).get();
           ET_CHECK_OR_RETURN_ERROR(
               valid_data_maps[j]->get_tensor_layout(key).error() ==
@@ -161,17 +162,19 @@ class MergedDataMap final
   ~MergedDataMap() override = default;
 
  private:
-  MergedDataMap(
-      const std::array<const NamedDataMap*, N>& data_maps,
-      size_t num_data_maps)
-      : data_maps_(data_maps), num_data_maps_(num_data_maps){};
+  MergedDataMap(const NamedDataMap* data_maps[N], size_t num_data_maps)
+      : num_data_maps_(num_data_maps) {
+    for (size_t i = 0; i < N; ++i) {
+      data_maps_[i] = data_maps[i];
+    }
+  }
 
   // Not copyable or assignable.
   MergedDataMap(const MergedDataMap& rhs) = delete;
   MergedDataMap& operator=(MergedDataMap&& rhs) noexcept = delete;
   MergedDataMap& operator=(const MergedDataMap& rhs) = delete;
 
-  const std::array<const NamedDataMap*, N> data_maps_;
+  const NamedDataMap* data_maps_[N]{};
   const size_t num_data_maps_;
 };
 

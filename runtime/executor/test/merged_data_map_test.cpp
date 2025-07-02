@@ -125,43 +125,42 @@ void compare_ndm_api_calls(
 }
 
 TEST_F(MergedDataMapTest, LoadSingleDataMap) {
-  const std::array<const NamedDataMap*, 1> data_map = {
-      data_maps_["addmul"].get()};
-  Result<MergedDataMap<1>> merged_map = MergedDataMap<1>::load(data_map);
+  const NamedDataMap* data_map[1] = {data_maps_["addmul"].get()};
+  Result<MergedDataMap<1>> merged_map = MergedDataMap<1>::load(data_map, 1);
   EXPECT_EQ(merged_map.error(), Error::Ok);
 
   // Load one data map into a merged one with storage for up to 5 data maps.
-  const std::array<const NamedDataMap*, 5> data_maps = {
+  const NamedDataMap* data_maps[5] = {
       data_maps_["addmul"].get(), nullptr, nullptr, nullptr, nullptr};
-  Result<MergedDataMap<5>> merged_map2 = MergedDataMap<5>::load(data_maps);
+  Result<MergedDataMap<5>> merged_map2 = MergedDataMap<5>::load(data_maps, 5);
   EXPECT_EQ(merged_map2.error(), Error::Ok);
 }
 
 TEST_F(MergedDataMapTest, LoadNullDataMap) {
-  const std::array<const NamedDataMap*, 2> data_maps = {nullptr, nullptr};
-  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps);
+  const NamedDataMap* data_maps[2] = {nullptr, nullptr};
+  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps, 2);
   EXPECT_EQ(merged_map.error(), Error::InvalidArgument);
 }
 
 TEST_F(MergedDataMapTest, LoadMultipleDataMaps) {
   // Add pte data map here.
-  const std::array<const NamedDataMap*, 2> data_maps = {
+  const NamedDataMap* data_maps[2] = {
       data_maps_["addmul"].get(), data_maps_["linear"].get()};
-  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps);
+  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps, 2);
   EXPECT_EQ(merged_map.error(), Error::Ok);
 }
 
 TEST_F(MergedDataMapTest, LoadDuplicateDataMapsFail) {
-  const std::array<const NamedDataMap*, 2> data_maps = {
+  const NamedDataMap* data_maps[2] = {
       data_maps_["addmul"].get(), data_maps_["addmul"].get()};
-  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps);
+  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps, 2);
   EXPECT_EQ(merged_map.error(), Error::InvalidArgument);
 }
 
 TEST_F(MergedDataMapTest, CheckDataMapContents) {
-  const std::array<const NamedDataMap*, 2> data_maps = {
+  const NamedDataMap* data_maps[2] = {
       data_maps_["addmul"].get(), data_maps_["linear"].get()};
-  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps);
+  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps, 2);
   EXPECT_EQ(merged_map.error(), Error::Ok);
 
   // Num keys.
