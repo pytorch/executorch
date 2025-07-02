@@ -60,7 +60,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 ## Install ExecuTorch pip package from source
    ```bash
    # Install ExecuTorch pip package and its dependencies, as well as
-   # development tools like CMake.
+   # development tools like CMake, and backend support for XNNPACK and CoreML.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
    # Intel-based macOS systems require building PyTorch from source (see below)
    ./install_executorch.sh
@@ -79,10 +79,16 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    ./install_executorch.sh --use-pt-pinned-commit --minimal
    ```
 
-   Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:
+  Notice that only XNNPACK and CoreML backends are supported by default. You can enable additional backends or disable default backends by setting the corresponding CMake flags:
 
   ```bash
+  # Enable the MPS backend
   CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
+  ```
+
+  ```bash
+  # Disable the XNNPACK backend
+  CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=OFF" ./install_executorch.sh
   ```
 
    For development mode, run the command with `--editable`, which allows us to modify Python source code and see changes reflected immediately.

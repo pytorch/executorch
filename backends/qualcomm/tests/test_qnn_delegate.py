@@ -351,6 +351,7 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_ceil(self):
+        torch.manual_seed(8)
         module = Ceil()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
         self.lower_module_and_test_output(module, sample_input)
@@ -715,6 +716,7 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_leaky_relu(self):
+        torch.manual_seed(8)
         test_comb = [
             {
                 QCOM_MODULE: [LeakyReLUDefault()],  # noqa: F405
@@ -3085,6 +3087,10 @@ class TestQNNFloatingPointUtils(TestQNN):
         ), "Generated .dot file does not match the golden file."
 
     def test_qnn_backend_generate_optrace(self):
+        if self.enable_x86_64:
+            self.skipTest(
+                "At the moment, testing is only being conducted on the device."
+            )
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         backend_options = generate_htp_compiler_spec(use_fp16=True)
@@ -3791,6 +3797,10 @@ class TestQNNQuantizedUtils(TestQNN):
         ), "Generated .dot file does not match the golden file."
 
     def test_qnn_backend_generate_optrace(self):
+        if self.enable_x86_64:
+            self.skipTest(
+                "At the moment, testing is only being conducted on the device."
+            )
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
