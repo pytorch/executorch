@@ -496,6 +496,10 @@ if(EXECUTORCH_BUILD_CADENCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cadence)
 endif()
 
+if(EXECUTORCH_BUILD_NXP_NEUTRON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/nxp)
+endif()
+
 if(EXECUTORCH_BUILD_COREML)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
 endif()
