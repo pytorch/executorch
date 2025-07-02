@@ -1156,9 +1156,7 @@
     <span class="c1"># well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.</span>
     <span class="c1"># It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.</span>
 
-    <span class="n">pre_op_replace_passes</span> <span class="o">=</span> <span class="n">base_pre_op_replace_passes</span> <span class="o">+</span> <span class="p">(</span>
-        <span class="p">[]</span> <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_skip_type_promotion</span> <span class="k">else</span> <span class="p">[</span><span class="n">RemoveMixedTypeOperators</span><span class="p">()]</span>
-    <span class="p">)</span>
+    <span class="n">pre_op_replace_passes</span> <span class="o">=</span> <span class="n">base_pre_op_replace_passes</span> <span class="o">+</span> <span class="p">[</span><span class="n">RemoveMixedTypeOperators</span><span class="p">()]</span>
 
     <span class="n">post_op_replace_passes</span> <span class="o">=</span> <span class="n">base_post_op_replace_passes</span>
 
