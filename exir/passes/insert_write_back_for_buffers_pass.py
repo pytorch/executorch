@@ -30,11 +30,7 @@ def _insert_copy(
     Find the all the buffers and inputs that were mutated and insert copy_
     operators to reflect mutations.
     """
-    output_node = None
-    for node in gm.graph.nodes:
-        if node.op == "output":
-            output_node = node
-            break
+    output_node = gm.graph.output_node()
     assert output_node is not None
     outputs = pytree.tree_flatten(output_node.args)[0]
     assert len(outputs) == len(mutated_outputs)
@@ -139,11 +135,7 @@ def insert_write_back_for_buffers_pass(
         if lifted_node is not None:
             input_name_to_node[lifted_node] = input_node
 
-    output_node = None
-    for node in gm.graph.nodes:
-        if node.op == "output":
-            output_node = node
-            break
+    output_node = gm.graph.output_node()
 
     # Grab the mutable buffer nodes in the outputs,
     mutated_outputs: List[Optional[str]] = []
