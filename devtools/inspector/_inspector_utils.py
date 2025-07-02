@@ -306,6 +306,11 @@ def gen_graphs_from_etrecord(
 # One debug handle should only be associated with one node. We are in the middle of migrating debug handle generation
 # from graph after to_edge to graph after torch.export, one every debug handle in exported graph may be associated with multiple nodes in to_edge
 # graph. After fully migration, we should bring the bring type as well as the #node check back.
+#
+# Before migration: returned Dict for 1 debug handle to 1 node in to_edge graph
+# During migration: returned Dict for 1 debug handle to multiple nodes in to_edge graph
+# After migration: returned Dict for 1 debug handle to 1 node in exported graph
+#
 # TODO(gasoonjia): recover the return type to Dict[int, List[OperatorNode], reenable the #node check.
 def create_debug_handle_to_op_node_mapping(
     op_graph: OperatorGraph,
