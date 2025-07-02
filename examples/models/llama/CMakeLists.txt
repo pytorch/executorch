@@ -210,10 +210,9 @@ endif()
 
 add_executable(llama_main ${_srcs})
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  if(APPLE)
-    target_link_options(llama_main PRIVATE "LINKER:-dead_strip")
-  else()
-    target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+  target_link_options_gc_sections(llama_main)
+  if(NOT APPLE)
+    target_link_options(llama_main PRIVATE "LINKER:-s")
   endif()
 endif()
 

@@ -650,36 +650,35 @@ int main(int argc, const char* argv[]) {
 
     for (int i = 0; i < inputs.size(); ++i) {
       if (inputs[i].isTensor()) {
-        Tensor t = inputs[i].toTensor();
+        Tensor tensor = inputs[i].toTensor();
         // The output might be collected and parsed so printf() is used instead
         // of ET_LOG() here
-        for (int j = 0; j < inputs[i].toTensor().numel(); ++j) {
-          if (t.scalar_type() == ScalarType::Int) {
+        for (int j = 0; j < tensor.numel(); ++j) {
+          if (tensor.scalar_type() == ScalarType::Int) {
             printf(
                 "Input[%d][%d]: (int) %d\n",
                 i,
                 j,
-                inputs[i].toTensor().const_data_ptr<int>()[j]);
-          } else if (t.scalar_type() == ScalarType::Float) {
+                tensor.const_data_ptr<int>()[j]);
+          } else if (tensor.scalar_type() == ScalarType::Float) {
             printf(
                 "Input[%d][%d]: (float) %f\n",
                 i,
                 j,
-                inputs[i].toTensor().const_data_ptr<float>()[j]);
-          } else if (t.scalar_type() == ScalarType::Char) {
+                tensor.const_data_ptr<float>()[j]);
+          } else if (tensor.scalar_type() == ScalarType::Char) {
             printf(
                 "Input[%d][%d]: (char) %d\n",
                 i,
                 j,
-                inputs[i].toTensor().const_data_ptr<int8_t>()[j]);
-          } else if (t.scalar_type() == ScalarType::Bool) {
+                tensor.const_data_ptr<int8_t>()[j]);
+          } else if (tensor.scalar_type() == ScalarType::Bool) {
             printf(
                 "Input[%d][%d]: (bool) %s (0x%x)\n",
                 i,
                 j,
-                inputs[i].toTensor().const_data_ptr<int8_t>()[j] ? "true"
-                                                                 : "false",
-                inputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+                tensor.const_data_ptr<int8_t>()[j] ? "true" : "false",
+                tensor.const_data_ptr<int8_t>()[j]);
           }
         }
       } else {
@@ -754,53 +753,53 @@ int main(int argc, const char* argv[]) {
 
   // Print the outputs.
   for (int i = 0; i < outputs.size(); ++i) {
-    Tensor t = outputs[i].toTensor();
+    if (outputs[i].isTensor()) {
+      Tensor tensor = outputs[i].toTensor();
 #if !defined(SEMIHOSTING)
 #if defined(ET_DUMP_OUTPUT)
-    // The output might be collected and parsed so printf() is used instead
-    // of ET_LOG() here
-    for (int j = 0; j < outputs[i].toTensor().numel(); ++j) {
-      if (t.scalar_type() == ScalarType::Int) {
-        printf(
-            "Output[%d][%d]: (int) %d\n",
-            i,
-            j,
-            outputs[i].toTensor().const_data_ptr<int>()[j]);
-      } else if (t.scalar_type() == ScalarType::Float) {
-        printf(
-            "Output[%d][%d]: (float) %f\n",
-            i,
-            j,
-            outputs[i].toTensor().const_data_ptr<float>()[j]);
-      } else if (t.scalar_type() == ScalarType::Char) {
-        printf(
-            "Output[%d][%d]: (char) %d\n",
-            i,
-            j,
-            outputs[i].toTensor().const_data_ptr<int8_t>()[j]);
-      } else if (t.scalar_type() == ScalarType::Bool) {
-        printf(
-            "Output[%d][%d]: (bool) %s (0x%x)\n",
-            i,
-            j,
-            outputs[i].toTensor().const_data_ptr<int8_t>()[j] ? "true "
-                                                              : "false",
-            outputs[i].toTensor().const_data_ptr<int8_t>()[j]);
+      // The output might be collected and parsed so printf() is used instead
+      // of ET_LOG() here
+      for (int j = 0; j < tensor.numel(); ++j) {
+        if (tensor.scalar_type() == ScalarType::Int) {
+          printf(
+              "Output[%d][%d]: (int) %d\n",
+              i,
+              j,
+              tensor.const_data_ptr<int>()[j]);
+        } else if (tensor.scalar_type() == ScalarType::Float) {
+          printf(
+              "Output[%d][%d]: (float) %f\n",
+              i,
+              j,
+              tensor.const_data_ptr<float>()[j]);
+        } else if (tensor.scalar_type() == ScalarType::Char) {
+          printf(
+              "Output[%d][%d]: (char) %d\n",
+              i,
+              j,
+              tensor.const_data_ptr<int8_t>()[j]);
+        } else if (tensor.scalar_type() == ScalarType::Bool) {
+          printf(
+              "Output[%d][%d]: (bool) %s (0x%x)\n",
+              i,
+              j,
+              tensor.const_data_ptr<int8_t>()[j] ? "true " : "false",
+              tensor.const_data_ptr<int8_t>()[j]);
+        }
       }
-    }
 #endif
 #else
-    char out_filename[255];
-    snprintf(out_filename, 255, "%s-%d.bin", output_basename, i);
-    ET_LOG(Info, "Writing output to file: %s", out_filename);
-    FILE* out_file = fopen(out_filename, "wb");
-    auto written_size = fwrite(
-        outputs[i].toTensor().const_data_ptr<char>(),
-        1,
-        outputs[i].toTensor().nbytes(),
-        out_file);
-    fclose(out_file);
+      char out_filename[255];
+      snprintf(out_filename, 255, "%s-%d.bin", output_basename, i);
+      ET_LOG(Info, "Writing output to file: %s", out_filename);
+      FILE* out_file = fopen(out_filename, "wb");
+      auto written_size =
+          fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
+      fclose(out_file);
 #endif
+    } else {
+      printf("Output[%d]: Not Tensor\n", i);
+    }
   }
 
 #if defined(ET_EVENT_TRACER_ENABLED)

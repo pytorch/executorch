@@ -89,7 +89,7 @@ def main(args):
 
     data_num = 100
     if args.ci:
-        inputs = [torch.rand(1, 3, 224, 224)]
+        inputs = [(torch.rand(1, 3, 224, 224),)]
         logging.warning(
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
@@ -181,8 +181,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a",
         "--artifact",
-        help="path for storing generated artifacts by this example. " "Default ./swin",
-        default="./swin",
+        help="path for storing generated artifacts by this example. "
+        "Default ./swin_transformer",
+        default="./swin_transformer",
         type=str,
     )
 
