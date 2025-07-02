@@ -61,7 +61,7 @@ jobs:
         curl --output "${toolchain_dir}.tar.xz" -L "${toolchain_url}"
 
         # Verify download
-        echo "93128be0235cf5cf5f1ee561aa6eac5f  arm-zephyr-x86-64-eabi.tar.xz" > arm-zephyr-eabi.md5
+        echo "93128be0235cf5cf5f1ee561aa6eac5f  ${toolchain_dir}.tar.xz" > arm-zephyr-eabi.md5
         md5sum -c --strict arm-zephyr-eabi.md5
         
         # Extract and install to PATH
