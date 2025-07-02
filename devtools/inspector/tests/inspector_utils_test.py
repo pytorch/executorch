@@ -223,7 +223,7 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertGreater(calculate_snr([a], [b])[0], 30.0)
         self.assertAlmostEqual(calculate_cosine_similarity([a], [b])[0], 1.0)
 
-    def test_merge_overlapping_debug_handles(self):
+    def test_merge_overlapping_debug_handles_basic(self):
         big_tensor = torch.rand(100, 100)
         intermediate_outputs = {
             (1, 2, 3): "val1",
@@ -233,7 +233,7 @@ class TestInspectorUtils(unittest.TestCase):
             (11, 12): big_tensor,
         }
         # basic merge behavior
-        merge_overlapping_debug_handles(intermediate_outputs)
+        intermediate_outputs = merge_overlapping_debug_handles(intermediate_outputs)
         expected_intermediate_outputs = {
             (1, 2, 3, 4, 5): "val2",
             (6, 7, 8): "val3",
@@ -242,6 +242,28 @@ class TestInspectorUtils(unittest.TestCase):
 
         self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
         self.assertIs(expected_intermediate_outputs[(10, 11, 12)], big_tensor)
+
+    def test_merge_overlapping_debug_handles_non_continuous(self):
+        tensor1 = (torch.randn(3, 4),)
+        tensor2 = (torch.randn(2, 3),)
+        tensor3 = (torch.randn(4, 5),)
+        tensor4 = (torch.randn(6, 7),)
+        tensor5 = (torch.randn(8, 9),)
+        intermediate_outputs = {
+            (1, 10): tensor1,
+            (2, 5): tensor2,
+            (1, 7, 9): tensor3,
+            (11, 13): tensor4,
+            (11, 15): tensor5,
+        }
+        intermediate_outputs = merge_overlapping_debug_handles(intermediate_outputs)
+        expected_intermediate_outputs = {
+            (2, 5): tensor2,
+            (1, 7, 9, 10): tensor1,
+            (11, 13, 15): tensor5,
+        }
+
+        self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
 
     def test_map_runtime_aot_intermediate_outputs_empty_inputs(self):
         # When the inputs are empty, the output should also be empty
