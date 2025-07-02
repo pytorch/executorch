@@ -1100,7 +1100,7 @@ def define_xnnpack():
             # "-DXNN_ENABLE_DWCONV_MULTIPLASS=1",
             "-DXNN_ENABLE_ARM_I8MM=1",
             "-DXNN_ENABLE_ARM_FP16_VECTOR=1",
-            "-DXNN_ENABLE_AVX512BF16=1"
+            "-DXNN_ENABLE_AVX512BF16=1",
             "-DXNN_ENABLE_AVX512F=1",
             "-DXNN_ENABLE_AVX512SKX=1",
             "-DXNN_ENABLE_AVX512VNNI=1",
