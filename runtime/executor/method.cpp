@@ -812,10 +812,10 @@ Error Method::init(
     const NamedDataMap* named_data_map = nullptr;
     // Merge them.
     if (external_data_map && pte_data_map.ok()) {
-      const std::array<const NamedDataMap*, 2> data_maps = {
+      const NamedDataMap* data_maps[2] = {
           external_data_map, pte_data_map.ok() ? pte_data_map.get() : nullptr};
 
-      auto merged = MergedDataMap<2>::load(data_maps);
+      auto merged = MergedDataMap<2>::load(data_maps, 2);
       if (!merged.ok()) {
         return merged.error();
       }

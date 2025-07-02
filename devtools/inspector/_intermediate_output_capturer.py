@@ -7,10 +7,10 @@
 # pyre-unsafe
 
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import torch
-from executorch.devtools.inspector._inspector_utils import NodeFilter
+from executorch.devtools.inspector._inspector_utils import DebugHandle, NodeFilter
 from torch.fx import GraphModule
 from torch.fx.interpreter import Interpreter
 
@@ -30,7 +30,7 @@ class IntermediateOutputCapturer(Interpreter):
         ]
 
     # Runs the graph module and captures the intermediate outputs.
-    def run_and_capture(self, *args, **kwargs) -> Dict[Tuple[int, ...], Any]:
+    def run_and_capture(self, *args, **kwargs) -> Dict[DebugHandle, Any]:
         captured_outputs = {}
 
         def capture_run_node(n: torch.fx.Node) -> Any:
