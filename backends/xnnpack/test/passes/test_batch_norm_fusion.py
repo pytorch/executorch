@@ -41,10 +41,10 @@ class TestBatchNormFusion(unittest.TestCase):
             return self.bn(y)
 
     class ModelLinearBN(torch.nn.Module):
-        def __init__(self, in_features, out_features):
+        def __init__(self, in_features, out_features, bias=True):
             super().__init__()
             op = torch.nn.Linear
-            self.linear = op(in_features, out_features)
+            self.linear = op(in_features, out_features, bias=bias)
             self.bn = torch.nn.BatchNorm1d(out_features)
             self.forward(torch.randn(2, 2) * 2 + 2)  # update the BN stats
 
@@ -109,16 +109,17 @@ class TestBatchNormFusion(unittest.TestCase):
         )
 
     def test_fp32_linear_batch_norm_fusion(self):
-        (
-            Tester(
-                self.ModelLinearBN(2, 2).eval(),
-                (torch.randn(2, 2),),
+        for bias in [True, False]:
+            (
+                Tester(
+                    self.ModelLinearBN(2, 2, bias).eval(),
+                    (torch.randn(2, 2),),
+                )
+                .export()
+                .to_edge_transform_and_lower()
+                .check_count({self.bn_name: 1})
+                .run_method_and_compare_outputs()
             )
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({self.bn_name: 1})
-            .run_method_and_compare_outputs()
-        )
 
     def test_fp32_linear_batch_norm_no_fusion_doesnt_partition(self):
         """

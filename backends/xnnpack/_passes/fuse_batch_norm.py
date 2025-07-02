@@ -38,23 +38,17 @@ class FuseBatchNormPass(XNNPACKPass):
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
         constant_placeholders_to_delete = set()
-        for node in graph.nodes:
+        for input_node in graph.nodes:
             # We want to discover a chain of conv -> batch_norm or linear -> batch_norm.
-            # Only proceed if the current node is a conv or linear node, and has a single
-            # user/successor.
-            is_conv = node.target == exir_ops.edge.aten.convolution.default
-            is_linear = node.target == exir_ops.edge.aten.linear.default
+            # Only proceed if the current node is a conv or linear, and has a single user/successor.
+            is_conv = input_node.target == exir_ops.edge.aten.convolution.default
+            is_linear = input_node.target == exir_ops.edge.aten.linear.default
 
-            if not (is_conv or is_linear):
-                continue
-            if len(node.users) != 1:
+            if not (is_conv or is_linear) or len(input_node.users) != 1:
                 continue
 
-            # Conv or linear op to fuse.
-            target_op = node
-
-            # The single user of the op must be batch_norm. If not, bail.
-            bn = list(target_op.users.keys())[0]
+            # The single user of the conv or linear node must be batch_norm. If not, bail.
+            bn = list(input_node.users.keys())[0]
             if (
                 bn.target != exir_ops.edge.aten.native_batch_norm.default
                 and bn.target
@@ -62,13 +56,13 @@ class FuseBatchNormPass(XNNPACKPass):
             ):
                 continue
 
-            if not self.can_fuse(target_op, bn, self.exported_program):
+            if not self.can_fuse(input_node, bn, self.exported_program):
                 continue
 
             self._fuse_ops(
                 graph_module,
                 graph,
-                target_op,
+                input_node,
                 bn,
                 is_conv,
                 constant_placeholders_to_delete,
@@ -81,38 +75,38 @@ class FuseBatchNormPass(XNNPACKPass):
                     delete_constant_placeholder(self.exported_program, node)
 
         graph_module.recompile()
-        # To Regenerate metadata and shape information, retrace module.
+        # To regenerate metadata and shape information, retrace module.
         graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, True)
 
     @staticmethod
     def can_fuse(
-        target_op: torch.fx.Node, bn: torch.fx.Node, program: ExportedProgram
+        input_node: torch.fx.Node, bn: torch.fx.Node, program: ExportedProgram
     ) -> bool:
         """
-        Determine whether a batchnorm node can be fused with a preceding conv or linear node.
+        Determine whether a BatchNorm node can be fused with the preceding convolution or linear node.
         """
 
-        # All the users of batchnorm node must be getitem ops. batchnorm
-        # returns a 3-element tuple. Each user must only access the first
-        # element of the tuple.
+        # All users of the batch_norm node must be getitem ops.
+        # batch_norm returns a 3-element tuple.
+        # Each user must only access the first element of the tuple.
         if [
             (user.target == operator.getitem and user.args[1] == 0) for user in bn.users
         ].count(False):
             return False
 
-        target_op_weights = target_op.args[1]
+        input_node_weights = input_node.args[1]
         bn_weights = bn.args[1]
 
-        # Check that the weights for conv or linear and batchnorm are both params.
-        if not isinstance(target_op_weights, torch.fx.Node) or not isinstance(
+        # Check that the weights for conv or linear and batch_norm are both params.
+        if not isinstance(input_node_weights, torch.fx.Node) or not isinstance(
             bn_weights, torch.fx.Node
         ):
             return False
 
         if [
-            is_param_node(program, node) for node in {target_op_weights, bn_weights}
+            is_param_node(program, node) for node in {input_node_weights, bn_weights}
         ].count(False):
             return False
 
@@ -122,32 +116,45 @@ class FuseBatchNormPass(XNNPACKPass):
         self,
         graph_module: torch.fx.GraphModule,
         graph: torch.fx.Graph,
-        target_op: torch.fx.Node,
+        input_node: torch.fx.Node,
         bn: torch.fx.Node,
         is_conv: bool,
         constant_placeholders_to_delete: set,
     ) -> None:
         """
-        Fuse a BatchNorm into the preceding conv or linear op.
-        Update the fused op's weight and bias, rewire users of the BatchNorm's output, and remove the BatchNorm node.
+        Fuse a BatchNorm node into the preceding convolution or linear node.
+        Update the fused node's weight and bias, rewire users of the BatchNorm output,
+        and remove the BatchNorm node.
         """
 
         if is_conv:
-            assert len(target_op.args) == 9
-        else:  # Linear path: (input, weight, bias).
-            assert len(target_op.args) == 3
+            assert len(input_node.args) == 9
+            has_bias_arg = True
+        else:
+            # Otherwise, this is a linear node.
+            # Linear has 2 or 3 args depending on whether bias is used: (input, weight, bias).
+            assert len(input_node.args) in (2, 3)
+            has_bias_arg = len(input_node.args) == 3
 
         # Get the weight and bias parameters from the conv or linear op.
-        target_op_weight = get_param_tensor(self.exported_program, target_op.args[1])
-        target_op_weight_name = get_tensor_name(
-            self.exported_program, target_op.args[1]
+        input_node_weight = get_param_tensor(self.exported_program, input_node.args[1])
+        input_node_weight_name = get_tensor_name(
+            self.exported_program, input_node.args[1]
         )
-        assert target_op_weight is not None
+        assert input_node_weight is not None
 
-        target_op_bias = get_param_tensor(self.exported_program, target_op.args[2])
-        target_op_bias_name = get_tensor_name(self.exported_program, target_op.args[2])
+        if has_bias_arg:
+            input_node_bias = get_param_tensor(
+                self.exported_program, input_node.args[2]
+            )
+            input_node_bias_name = get_tensor_name(
+                self.exported_program, input_node.args[2]
+            )
+        else:
+            input_node_bias = None
+            input_node_bias_name = ""
 
-        # Get the parameters from the batchnorm op.
+        # Get the parameters from the batch_norm op.
         assert (
             bn.target == exir_ops.edge.aten.native_batch_norm.default
             and len(bn.args) == 8
@@ -169,10 +176,10 @@ class FuseBatchNormPass(XNNPACKPass):
         # as an arg).
         eps = bn.args[-1]
 
-        # Compute the updated weight and bias after fusing conv or linear op with batchnorm op.
+        # Compute the updated weight and bias after fusing the conv or linear op with the batch_norm op.
         fuse_args = (
-            target_op_weight,
-            target_op_bias,
+            input_node_weight,
+            input_node_bias,
             running_mean,
             running_var,
             eps,
@@ -181,23 +188,24 @@ class FuseBatchNormPass(XNNPACKPass):
         )
 
         if is_conv:
-            is_transpose = target_op.args[6]
+            is_transpose = input_node.args[6]
             fused_weight, fused_bias = fuse_conv_bn_weights(*fuse_args, is_transpose)
-        else:  # Linear path.
+        else:
+            # Otherwise, this is a linear node.
             fused_weight, fused_bias = fuse_linear_bn_weights(*fuse_args)
 
-        fused_weight_name = (target_op_weight_name + "_fused_bn").replace(".", "_")
-        if target_op_bias_name == "":
-            fused_bias_name = (target_op_weight_name + "_bias_fused_bn").replace(
+        fused_weight_name = (input_node_weight_name + "_fused_bn").replace(".", "_")
+        if input_node_bias_name == "":
+            fused_bias_name = (input_node_weight_name + "_bias_fused_bn").replace(
                 ".", "_"
             )
         else:
-            fused_bias_name = (target_op_bias_name + "_fused_bn").replace(".", "_")
+            fused_bias_name = (input_node_bias_name + "_fused_bn").replace(".", "_")
 
-        # Modify the graph by updating the weight and bias of conv or linear op
+        # Modify the graph by updating the weight and bias of the conv or linear op
         # with the fused weight and bias params, and replacing all the users
-        # of getitem(batchnorm) with the conv or linear op.
-        with graph.inserting_before(target_op.args[1]):
+        # of getitem(batch_norm) with the conv or linear op.
+        with graph.inserting_before(input_node.args[1]):
             fused_op_weight_node = create_constant_placeholder(
                 exp_program=self.exported_program,
                 graph=graph_module.graph,
@@ -216,17 +224,24 @@ class FuseBatchNormPass(XNNPACKPass):
             else:
                 fused_op_bias_node = None
 
-            # Replace weight and bias with the fused batchnorm values.
-            args = list(target_op.args)
+            # Replace the original weight and bias with the fused batch_norm values.
+            args = list(input_node.args)
             args[1] = fused_op_weight_node
-            args[2] = fused_op_bias_node
-            target_op.args = tuple(args)
 
-            # Remove any use of batchnorm from the graph
+            if has_bias_arg:
+                # Overwrite original bias with the fused bias.
+                args[2] = fused_op_bias_node
+            elif fused_op_bias_node is not None:
+                # Add the fused bias as a new argument if no bias had originally existed in the input_node.
+                args.append(fused_op_bias_node)
+
+            input_node.args = tuple(args)
+
+            # Remove any use of batch_norm from the graph.
             for user in bn.users.copy():
                 assert user.target == operator.getitem
-                user.replace_all_uses_with(target_op)
+                user.replace_all_uses_with(input_node)
                 graph.erase_node(user)
 
             graph.erase_node(bn)
-            constant_placeholders_to_delete.update(target_op.args[1:3] + bn.args[1:5])
+            constant_placeholders_to_delete.update(input_node.args[1:3] + bn.args[1:5])
