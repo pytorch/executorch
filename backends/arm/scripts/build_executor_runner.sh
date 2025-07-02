@@ -64,7 +64,7 @@ for arg in "$@"; do
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --ethosu_tools_dir=*) ethosu_tools_dir="${arg#*=}";;
-      --toolchain=*) toolchain="${arg#*=}"; toolchain=arm-none-eabi-gcc;
+      --toolchain=*) toolchain="${arg#*=}";;
       *)
       ;;
     esac
