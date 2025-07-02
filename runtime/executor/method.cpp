@@ -1693,7 +1693,9 @@ Method::~Method() {
     external_constants_[i].buffer.~FreeableBuffer();
   }
   // Free the MergedDataMap
-  merged_data_map_->~MergedDataMap<2>();
+  if (merged_data_map_ != nullptr) {
+    merged_data_map_->~MergedDataMap<2>();
+  }
   // All other fields are trivially destructible.
 }
 } // namespace ET_RUNTIME_NAMESPACE
