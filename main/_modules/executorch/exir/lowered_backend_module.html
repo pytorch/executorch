@@ -737,14 +737,11 @@
             <span class="p">)</span>
         <span class="p">]</span>
 
-        <span class="n">output_node</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">node</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span> <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span>
-        <span class="p">]</span>
-        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">output_node</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;There should be only one output node&quot;</span>
+        <span class="n">output_node</span> <span class="o">=</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span>
 
         <span class="c1"># Step 1. Cleaning up the graph before inserting the call_delegate node</span>
         <span class="c1"># Remove the original output node</span>
-        <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">output_node</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">output_node</span><span class="p">)</span>
 
         <span class="c1"># Remove all the everything else except the input</span>
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">):</span>
@@ -773,11 +770,9 @@
         <span class="p">)</span>
         <span class="c1"># Get the output list. Since the output node is a tuple of list, like ([aten_mul_tensor, aten_add_tensor],)</span>
         <span class="c1"># We add some handling logic to get the list `[aten_mul_tensor, aten_add_tensor]` properly</span>
-        <span class="n">original_output_nodes</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">node</span>
-            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_original_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span>
-        <span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">original_output_nodes</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_original_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="p">)</span>
 
         <span class="n">delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;spec&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
             <span class="p">[</span><span class="n">make_spec</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">])</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">original_output_nodes</span><span class="p">]</span>
@@ -1431,11 +1426,7 @@
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid input spec </span><span class="si">{</span><span class="n">input_spec</span><span class="si">}</span><span class="s2"> received&quot;</span><span class="p">)</span>
 
     <span class="c1"># Delete buffer mutations from the output which were consumed by the delegate</span>
-    <span class="n">toplevel_output_node</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
-            <span class="n">toplevel_output_node</span> <span class="o">=</span> <span class="n">node</span>
-            <span class="k">break</span>
+    <span class="n">toplevel_output_node</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span>
 
     <span class="k">assert</span> <span class="n">toplevel_output_node</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
     <span class="k">assert</span> <span class="p">(</span>
