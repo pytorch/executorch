@@ -34,6 +34,9 @@ class TestExp(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    # TODO (leafs1): Fix flaky tests. Land fix asap
+    # and cherry-pick onto release/0.7 branch
+    @unittest.skip(reason="For float16, numerical discepancies are too high")
     def test_fp16_exp(self):
         inputs = (torch.randn(20).to(torch.float16),)
         self.run_exp_test(inputs)

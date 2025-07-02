@@ -14,8 +14,6 @@
 #include <cmath>
 #include <type_traits>
 
-#include <ATen/cpu/vec/functional.h>
-#include <ATen/cpu/vec/vec.h>
 #include <ATen/native/cpu/LogSoftmaxKernelImpl.h>
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
