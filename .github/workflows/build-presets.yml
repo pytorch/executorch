@@ -57,7 +57,7 @@ jobs:
         toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
         toolchain_dir="arm-zephyr-eabi"
         curl --output "${toolchain_dir}.tar.xz" -L "${toolchain_url}"
-        tar xf "${toolchain_dir}.tar.xz" -C "$(pwd)/${toolchain_dir}"
+        tar xf "${toolchain_dir}.tar.xz"
         rm -f "${toolchain_dir}.tar.xz"
         toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
         export PATH="\${PATH}:${toolchain_bin_path}"
