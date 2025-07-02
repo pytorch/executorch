@@ -254,6 +254,30 @@ jobs:
           exit 1
         fi
 
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+        .ci/scripts/setup-arm-baremetal-tools.sh ${setup_script_args}
+        source examples/arm/ethos-u-scratch/setup_path.sh
+
+        # User toolchain
+        ${toolchain_prefix}c++ --version
+
+        # Setup cmake target to desired toolchain
+        toolchain_cmake=$(realpath ${toolchain_cmake})
+
+        # Build and run size test
+        if [[ ${{ matrix.os}} == "bare_metal" ]]; then
+          bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
+          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
+          cmake --build cmake-out -j9 --target install --config Release
+          CXXFLAGS=${cxx_flags}  cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
+          cmake --build cmake-out/test -j9 --config Release
+        else
+          echo "Fail unsupport OS selection ${{ matrix.os }}"
+          exit 1
+        fi
+
         elf="cmake-out/test/size_test"
 
         # Dump basic info
