@@ -53,7 +53,18 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        # Download toolchain and add to path
+        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
+        toolchain_dir="arm-zephyr-x86-64-eabi"
+        curl --output "${toolchain_dir}.tar.xz" -L "${toolchain_url}"
+        tar xf "${toolchain_dir}.tar.xz"
+        rm -f "${toolchain_dir}.tar.xz"
+        toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
+        export PATH="\${PATH}:${toolchain_bin_path}"
+
         ./install_requirements.sh > /dev/null
+
+        # Build Arm Zephyr Preset
         cmake --preset ${{ matrix.preset }}
         cmake --build cmake-out -j$(( $(nproc) - 1 ))
   linux:
