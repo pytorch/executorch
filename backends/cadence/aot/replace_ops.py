@@ -2449,4 +2449,5 @@ class CadenceReplaceOpsInGraph:
         ReplaceAtenApproxGeluWithApproxGeluPass,
         ReplaceSplitWithSlicePass,
         ReplacePowWithMulPass,
+        ReplaceMulTensorWithMulAndFullOpsPass,
     ]
