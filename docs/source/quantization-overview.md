@@ -12,16 +12,16 @@ Talk briefly about options for evaluating quantized model accuracy (running in e
 
 # Quantizing ExecuTorch Models
 
-ExecuTorch uses [torchao](https://github.com/pytorch/ao) for quantization.  In general, ExecuTorch quantization is backend specific, and we allow each backned to define exactly how models are quantization based on the capability of the underlying hardware.
+ExecuTorch uses [torchao](https://github.com/pytorch/ao) for quantization.  In general, ExecuTorch quantization is backend specific, and we allow each backned to define exactly how model quantization is done based on the capability of the underlying hardware.
+
 
 Each backend defines its own PT2E quantizers.
 
 PT2E quantization happens after model export, but before lowering to a backend.
 
 
-* XNNPACK quantization example
-* CoreML quantization example
-* Vulkan quantization example
+* [XNNPACK quantization example](backends-xnnpack.md#quantization)
+* [CoreML quantization example](backends-coreml.md#quantization)
 
 
 ```
