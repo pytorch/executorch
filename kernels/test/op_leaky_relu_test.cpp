@@ -40,10 +40,29 @@ class OpLeakyReluTest : public OperatorTest {
     EXPECT_TENSOR_EQ(out, ret);
     EXPECT_TENSOR_EQ(out, tf.ones({2, 2}));
   }
+
+  template <ScalarType DTYPE>
+  void expect_bad_scalar_value_dies(const Scalar& bad_value) {
+    TensorFactory<DTYPE> tf;
+    Tensor in = tf.ones({2, 2});
+    Tensor out = tf.zeros({2, 2});
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_leaky_relu_out(in, bad_value, out));
+  }
 };
 
 TEST_F(OpLeakyReluTest, SanityCheck) {
 #define TEST_ENTRY(ctype, dtype) test_leaky_relu_dtype<ScalarType::dtype>();
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
+}
+
+TEST_F(OpLeakyReluTest, FloatTensorTooSmallScalarDies) {
+  /* Cannot be represented by a float. */
+  expect_bad_scalar_value_dies<ScalarType::Float>(-3.41e+38);
+}
+
+TEST_F(OpLeakyReluTest, FloatTensorTooLargeScalarDies) {
+  /* Cannot be represented by a float. */
+  expect_bad_scalar_value_dies<ScalarType::Float>(3.41e+38);
 }
