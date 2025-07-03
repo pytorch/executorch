@@ -142,6 +142,10 @@ function(generate_bindings_for_kernels)
     set(_gen_command "${_gen_command}" --add-exception-boundary)
   endif()
 
+  if(GEN_LIB_NAME)
+    list(APPEND _gen_command --lib-name=${GEN_LIB_NAME})
+  endif()
+
   set(_gen_command_sources
       ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
       ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h

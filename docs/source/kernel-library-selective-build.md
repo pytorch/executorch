@@ -90,3 +90,37 @@ cmake -D… -DSELECT_OPS_YAML=ON
 ```
 
 To select from either an operator name list or a schema yaml from kernel library.
+
+## Manual Kernel Registration with '--lib-name'
+ExecuTorch now supports generating library-specific kernel registration APIs using the '--lib-name' option along with '--manual-registration' during codegen. This allows applications to avoid using static initialization or linker flags like '-force_load' when linking in kernel libraries.
+
+## Motivation
+In environments like Xcode, using static libraries requires developers to manually specify '-force_load' flags to ensure kernel registration code is executed. This is inconvenient and error-prone.
+
+By passing a library name to the codegen script, developers can generate explicit registration functions and headers, which they can call directly in their application.
+
+## How to Use
+Run the codegen script like this:
+
+```
+python -m codegen.gen \
+  --functions-yaml-path=path/to/functions.yaml \
+  --manual-registration \
+  --lib-name=custom
+```
+This will generate:
+
+'register_custom_kernels.cpp' defines 'register_custom_kernels()' with only the kernels selected and 'register_custom_kernels.h' declares the function for inclusion in your application
+
+Then in your application, call:
+
+```
+#include "register_custom_kernels.h"
+
+register_custom_kernels(); // Registers only the "custom" kernels
+```
+
+This avoids relying on static initialization and enables you to register only the kernels you want.
+
+### Compatibility
+If '--lib-name' is not passed, the default behavior remains unchanged, the codegen script will generate a general 'RegisterKernels.cpp' and 'register_all_kernels()' function.

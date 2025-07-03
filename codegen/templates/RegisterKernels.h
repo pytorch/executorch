@@ -16,7 +16,7 @@
 namespace torch {
 namespace executor {
 
-Error register_all_kernels();
+Error register_${lib_name}_kernels();
 
 } // namespace executor
 } // namespace torch

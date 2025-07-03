@@ -323,6 +323,7 @@ def gen_unboxing(
     use_aten_lib: bool,
     kernel_index: ETKernelIndex,
     manual_registration: bool,
+    lib_name: Optional[str] = None,
     add_exception_boundary: bool = False,
 ) -> None:
     # Iterable type for write_sharded is a Tuple of (native_function, (kernel_key, metadata))
@@ -339,7 +340,9 @@ def gen_unboxing(
 
     header = ["Functions.h" if use_aten_lib else "NativeFunctions.h"]
     filename = (
-        "RegisterKernels.cpp"
+        f"register_{lib_name}_kernels.cpp"
+        if manual_registration and lib_name
+        else "RegisterKernels.cpp"
         if manual_registration
         else "RegisterCodegenUnboxedKernels.cpp"
     )
@@ -356,9 +359,10 @@ def gen_unboxing(
             "fn_header": (
                 header if unbox_kernel_entry == items[0] else []
             ),  # Only write header once
+            "lib_name": lib_name or "all",
         },
         num_shards=1,
-        sharded_keys={"unboxed_kernels", "fn_header"},
+        sharded_keys={"unboxed_kernels", "fn_header", "lib_name"},
     )
 
 
@@ -954,6 +958,12 @@ def main() -> None:
         "register_kernels() or rely on static init. ",
     )
     parser.add_argument(
+        "--lib-name",
+        type=str,
+        default=None,
+        help="Optional library name used to customize the generated register_<lib>_kernels() function and file names.",
+    )
+    parser.add_argument(
         "--generate",
         type=str,
         nargs="*",
@@ -1015,6 +1025,7 @@ def main() -> None:
             kernel_index=kernel_index,
             manual_registration=options.manual_registration,
             add_exception_boundary=options.add_exception_boundary,
+            lib_name=options.lib_name,
         )
         if custom_ops_native_functions:
             gen_custom_ops(
