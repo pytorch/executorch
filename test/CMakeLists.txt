@@ -53,7 +53,7 @@ list(TRANSFORM _size_test__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_executable(size_test ${_size_test__srcs})
 target_link_libraries(size_test executorch)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options(size_test PRIVATE "LINKER:--gc-sections")
+  target_link_options_gc_sections(size_test)
 endif()
 
 #
@@ -65,7 +65,7 @@ target_link_libraries(
   size_test_all_ops executorch portable_ops_lib portable_kernels
 )
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options(size_test_all_ops PRIVATE "LINKER:--gc-sections")
+  target_link_options_gc_sections(size_test_all_ops)
 endif()
 
 #
@@ -77,6 +77,6 @@ target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 target_link_libraries(
   size_test_all_optimized_ops executorch optimized_native_cpu_ops_lib)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options(size_test_all_optimized_ops PRIVATE "LINKER:--gc-sections")
+  target_link_options_gc_sections(size_test_all_optimized_ops)
 endif()
 endif()

@@ -450,6 +450,12 @@ install(
   PATTERN "*.h"
 )
 install(
+  DIRECTORY runtime/executor/
+  DESTINATION include/executorch/runtime/executor
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
   DIRECTORY runtime/kernel/
   DESTINATION include/executorch/runtime/kernel
   FILES_MATCHING
@@ -494,6 +500,10 @@ endif()
 
 if(EXECUTORCH_BUILD_CADENCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cadence)
+endif()
+
+if(EXECUTORCH_BUILD_NXP_NEUTRON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/nxp)
 endif()
 
 if(EXECUTORCH_BUILD_COREML)
@@ -542,6 +552,12 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+  install(
+    DIRECTORY extension/module/
+    DESTINATION include/executorch/extension/module
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
@@ -706,11 +722,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
 
   add_executable(executor_runner ${_executor_runner__srcs})
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-    if(APPLE)
-      target_link_options(executor_runner PRIVATE "LINKER:-dead_strip")
-    else()
-      target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
-    endif()
+    target_link_options_gc_sections(executor_runner)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})

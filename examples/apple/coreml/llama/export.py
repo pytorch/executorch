@@ -206,7 +206,6 @@ def main() -> None:
         ],
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
-            _skip_type_promotion=(float_dtype == torch.float16),
             _skip_dim_order=True,
         ),
     )
