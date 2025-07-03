@@ -193,9 +193,8 @@ inline void dtype_specialized_elementwise_fn_impl(
       });
 }
 
-template <typename CTYPE_COMPUTE, typename Op, typename... Args>
+template <typename CTYPE_COMPUTE, typename... Args>
 inline bool validate_elementwise_fn_inputs(
-    const Op& compute_fun,
     KernelRuntimeContext& ctx,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes,
@@ -288,7 +287,7 @@ inline void apply_elementwise_fn_runtime_out_dtypes(
     SupportedTensorDtypes out_dtypes,
     Args... inputs) {
   const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMPUTE>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
+      ctx, out, out_dtypes, inputs...);
   if (!inputs_valid) {
     return;
   }
@@ -313,7 +312,7 @@ inline void apply_elementwise_fn(
     const Tensor& out,
     Args... inputs) {
   const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMPUTE>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
+      ctx, out, out_dtypes, inputs...);
   if (!inputs_valid) {
     return;
   }
