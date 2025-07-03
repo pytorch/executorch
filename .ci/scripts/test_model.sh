@@ -190,6 +190,8 @@ test_model_with_qnn() {
     pip install piq
   elif [[ "${MODEL_NAME}" == "cvt" ]]; then
     EXPORT_SCRIPT=cvt
+  elif [[ "${MODEL_NAME}" == "deit" ]]; then
+    EXPORT_SCRIPT=deit
   elif [[ "${MODEL_NAME}" == "dit" ]]; then
     EXPORT_SCRIPT=dit
   elif [[ "${MODEL_NAME}" == "efficientnet" ]]; then
@@ -228,7 +230,7 @@ test_model_with_qnn() {
     "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
         SCRIPT_FOLDER=scripts
         ;;
-    "cvt"|"dit"|"focalnet"|"mobilevit_v2"|"pvt"|"swin")
+    "cvt"|"deit"|"dit"|"focalnet"|"mobilevit_v2"|"pvt"|"swin")
         SCRIPT_FOLDER=oss_scripts
         ;;
     "albert"|"bert"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")

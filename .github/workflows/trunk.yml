@@ -489,10 +489,10 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        model: [cvt, dit, efficientnet, focalnet, mobilevit_v1, mobilevit_v2, pvt, swin, albert, bert, distilbert, roberta] # eurobert requires transfomer >= 4.48.0, skip for now
+        model: [cvt, deit, dit, efficientnet, focalnet, mobilevit_v1, mobilevit_v2, pvt, swin, albert, bert, distilbert, roberta] # eurobert requires transfomer >= 4.48.0, skip for now
       fail-fast: false
     with:
-      runner: linux.2xlarge
+      runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
