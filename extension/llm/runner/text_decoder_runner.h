@@ -76,10 +76,11 @@ class ET_EXPERIMENTAL TextDecoderRunner {
       }
     } ctx;
 
-    ET_SWITCH_THREE_TYPES(
+    ET_SWITCH_FOUR_TYPES(
         Float,
         Half,
         BFloat16,
+        UInt16,
         logits_tensor.scalar_type(),
         ctx,
         "logits_to_token",
