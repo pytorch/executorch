@@ -236,3 +236,16 @@ class Conv2dPermuteModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return torch.permute(x, [0, 2, 1, 3])
+
+
+class Conv2dReLUMaxPoolModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 64, 2, bias=False)
+        self.relu = torch.nn.ReLU()
+        self.pool = torch.nn.MaxPool2d(2, 2)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.relu(x)
+        return self.pool(x)
