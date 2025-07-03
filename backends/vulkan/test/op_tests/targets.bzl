@@ -211,7 +211,7 @@ def define_common_targets(is_fbcode = False):
         ]
     )
     define_test_targets(
-        "linear_qta8a_qga4w_qta8o_test",
+        "linear_qta8a_qga4w_test",
         extra_deps = [
             ":test_utils",
         ]

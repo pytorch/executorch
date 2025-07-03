@@ -83,6 +83,26 @@ class ConvlLinearModel(nn.Module):
             (21,): [torch.tensor([[0.9734]]), torch.tensor([[0.9891]])],
         }
 
+    @staticmethod
+    def get_expected_debug_handle_to_op_name():
+        """
+        Returns the expected debug handle and op name mapping for this model for the given input.
+        """
+        return {
+            (10,): "aten_convolution_default",
+            (11,): "aten_view_copy_default",
+            (12,): "aten_permute_copy_default",
+            (13,): "aten_addmm_default",
+            (14,): "aten_add_tensor",
+            (15,): "aten_sub_tensor",
+            (16,): "aten_mul_tensor",
+            (17,): "aten_add_tensor_1",
+            (18,): "aten_div_tensor",
+            (19,): "aten_relu_default",
+            (20,): "aten_sigmoid_default",
+            (21,): "aten_split_with_sizes_copy_default",
+        }
+
 
 # Global model registry
 model_registry = {
@@ -115,4 +135,22 @@ def check_if_final_outputs_match(model_name, actual_outputs_with_handles):
         else:
             if not torch.allclose(actual_output, expected_output, rtol=1e-4, atol=1e-5):
                 return False
+    return True
+
+
+def check_if_debug_handle_to_op_name_match(model_name, actual_debug_handle_to_op_name):
+    """
+    Checks if the actual op names match the expected op names for the specified model.
+    Returns True if all match, otherwise returns False.
+    """
+    model_instance = model_registry[model_name]
+    expected_debug_handle_to_op_name = (
+        model_instance.get_expected_debug_handle_to_op_name()
+    )
+    if len(actual_debug_handle_to_op_name) != len(expected_debug_handle_to_op_name):
+        return False
+    for debug_handle, expected_op_name in expected_debug_handle_to_op_name.items():
+        actual_op_name = actual_debug_handle_to_op_name.get(debug_handle)
+        if actual_op_name != expected_op_name:
+            return False
     return True

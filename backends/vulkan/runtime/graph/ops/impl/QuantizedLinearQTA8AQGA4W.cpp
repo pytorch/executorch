@@ -16,28 +16,27 @@
 
 namespace vkcompute {
 
-void check_linear_qta8a_qga4w_qta8o_args(
+void check_linear_qta8a_qga4w_args(
     ComputeGraph& graph,
     const ValueRef mat1,
     const ValueRef mat1_scale,
     const ValueRef mat1_zero_point,
     const ValueRef mat2_data,
     const ValueRef group_size,
-    const ValueRef scales_and_zeros,
-    const ValueRef output_scale,
-    const ValueRef output_zero_point,
+    const ValueRef weight_scales,
+    const ValueRef weight_zeros,
     const ValueRef out) {
   VK_CHECK_COND(graph.val_is_tensor(mat1));
   VK_CHECK_COND(graph.val_is_tensor(mat1_scale));
   VK_CHECK_COND(graph.val_is_tensor(mat1_zero_point));
   VK_CHECK_COND(graph.val_is_tref(mat2_data));
-  VK_CHECK_COND(graph.val_is_tref(scales_and_zeros));
-  VK_CHECK_COND(graph.val_is_tensor(output_scale));
-  VK_CHECK_COND(graph.val_is_tensor(output_zero_point));
+  VK_CHECK_COND(graph.val_is_tref(weight_scales));
+  VK_CHECK_COND(graph.val_is_tref(weight_zeros));
 
   VK_CHECK_COND(graph.dim_of(mat1) <= 3);
   VK_CHECK_COND(graph.dim_of(mat2_data) == 2);
-  VK_CHECK_COND(graph.dim_of(scales_and_zeros) == 3);
+  VK_CHECK_COND(graph.dim_of(weight_scales) == 2);
+  VK_CHECK_COND(graph.dim_of(weight_zeros) == 2);
 
   VK_CHECK_COND(graph.size_at<int>(-3, mat1) == 1);
   const int K = graph.size_at<int>(-1, mat1);
@@ -57,42 +56,31 @@ void check_linear_qta8a_qga4w_qta8o_args(
   VK_CHECK_COND(graph.packed_dim_of(mat1_scale) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.is_buffer_storage(mat1_zero_point));
   VK_CHECK_COND(graph.packed_dim_of(mat1_zero_point) == WHCN::kWidthDim);
-  VK_CHECK_COND(graph.is_buffer_storage(output_scale));
-  VK_CHECK_COND(graph.packed_dim_of(output_scale) == WHCN::kWidthDim);
-  VK_CHECK_COND(graph.is_buffer_storage(output_zero_point));
-  VK_CHECK_COND(graph.packed_dim_of(output_zero_point) == WHCN::kWidthDim);
 
-  // Calculate number of tokens for input and output
+  // Calculate number of tokens for input
   int64_t input_num_tokens = 1;
   const auto mat1_sizes = graph.sizes_of(mat1);
   for (size_t i = 0; i < mat1_sizes.size() - 1; i++) {
     input_num_tokens *= mat1_sizes[i];
   }
 
-  int64_t output_num_tokens = 1;
-  const auto out_sizes = graph.sizes_of(out);
-  for (size_t i = 0; i < out_sizes.size() - 1; i++) {
-    output_num_tokens *= out_sizes[i];
-  }
-
   // Verify scale and zero_point tensor sizes match number of tokens
   const auto mat1_scale_sizes = graph.sizes_of(mat1_scale);
   const auto mat1_zero_point_sizes = graph.sizes_of(mat1_zero_point);
-  const auto output_scale_sizes = graph.sizes_of(output_scale);
-  const auto output_zero_point_sizes = graph.sizes_of(output_zero_point);
 
   VK_CHECK_COND(mat1_scale_sizes.size() == 1);
   VK_CHECK_COND(mat1_zero_point_sizes.size() == 1);
-  VK_CHECK_COND(output_scale_sizes.size() == 1);
-  VK_CHECK_COND(output_zero_point_sizes.size() == 1);
 
   VK_CHECK_COND(mat1_scale_sizes[0] == input_num_tokens);
   VK_CHECK_COND(mat1_zero_point_sizes[0] == input_num_tokens);
-  VK_CHECK_COND(output_scale_sizes[0] == output_num_tokens);
-  VK_CHECK_COND(output_zero_point_sizes[0] == output_num_tokens);
+
+  // Verify weight scales and zeros have the same shape
+  const auto weight_scales_sizes = graph.sizes_of(weight_scales);
+  const auto weight_zeros_sizes = graph.sizes_of(weight_zeros);
+  VK_CHECK_COND(weight_scales_sizes == weight_zeros_sizes);
 }
 
-void resize_linear_qta8a_qga4w_qta8o_node(
+void resize_linear_qta8a_qga4w_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
@@ -124,7 +112,7 @@ void resize_linear_qta8a_qga4w_qta8o_node(
  * dimensions. Apply the coop algorithm for vectors (GEMV cases), tiled for
  * matrices (GEMM cases).
  */
-bool should_use_coop_algorithm_qta8a_qga4w_qta8o(
+bool should_use_coop_algorithm_qta8a_qga4w(
     ComputeGraph* graph,
     const ValueRef& mat1) {
   const uint32_t M = graph->size_at<uint32_t>(-2, mat1);
@@ -132,7 +120,7 @@ bool should_use_coop_algorithm_qta8a_qga4w_qta8o(
   return M == 1;
 }
 
-vkapi::ShaderInfo pick_linear_qta8a_qga4w_qta8o_shader(
+vkapi::ShaderInfo pick_linear_qta8a_qga4w_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
@@ -143,9 +131,9 @@ vkapi::ShaderInfo pick_linear_qta8a_qga4w_qta8o_shader(
   const ValueRef mat2 = args.at(1).refs.at(1);
 
   const bool use_coop_algorithm =
-      should_use_coop_algorithm_qta8a_qga4w_qta8o(graph, mat1);
+      should_use_coop_algorithm_qta8a_qga4w(graph, mat1);
 
-  std::string kernel_name = "linear_qta8a_qga4w_qta8o";
+  std::string kernel_name = "linear_qta8a_qga4w";
   if (use_coop_algorithm) {
     kernel_name += "_coop";
   } else {
@@ -159,7 +147,7 @@ vkapi::ShaderInfo pick_linear_qta8a_qga4w_qta8o_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-utils::uvec3 linear_qta8a_qga4w_qta8o_global_wg_size(
+utils::uvec3 linear_qta8a_qga4w_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -183,7 +171,7 @@ utils::uvec3 linear_qta8a_qga4w_qta8o_global_wg_size(
   return global_wg_size;
 }
 
-utils::uvec3 linear_qta8a_qga4w_qta8o_local_wg_size(
+utils::uvec3 linear_qta8a_qga4w_local_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const utils::uvec3& global_workgroup_size,
@@ -205,49 +193,43 @@ utils::uvec3 linear_qta8a_qga4w_qta8o_local_wg_size(
   return local_wg_size;
 }
 
-void add_linear_qta8a_qga4w_qta8o_node(
+void add_linear_qta8a_qga4w_node(
     ComputeGraph& graph,
     const ValueRef mat1,
     const ValueRef mat1_scale,
     const ValueRef mat1_zero_point,
     const ValueRef mat2_data,
     const ValueRef group_size,
-    const ValueRef scales_and_zeros_data,
-    const ValueRef output_scale,
-    const ValueRef output_zero_point,
+    const ValueRef weight_scales_data,
+    const ValueRef weight_zeros_data,
     const ValueRef out) {
-  check_linear_qta8a_qga4w_qta8o_args(
+  check_linear_qta8a_qga4w_args(
       graph,
       mat1,
       mat1_scale,
       mat1_zero_point,
       mat2_data,
       group_size,
-      scales_and_zeros_data,
-      output_scale,
-      output_zero_point,
+      weight_scales_data,
+      weight_zeros_data,
       out);
   const uint32_t group_size_val = graph.extract_scalar<int64_t>(group_size);
 
   ValueRef mat2 =
       prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
-  ValueRef scales_and_zeros = prepack_standard_hw_transposed(
-      graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
+  ValueRef weight_scales = prepack_standard(
+      graph, weight_scales_data, utils::kBuffer, utils::kWidthPacked);
+  ValueRef weight_zeros = prepack_standard(
+      graph, weight_zeros_data, utils::kBuffer, utils::kWidthPacked);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      pick_linear_qta8a_qga4w_qta8o_shader,
-      linear_qta8a_qga4w_qta8o_global_wg_size,
-      linear_qta8a_qga4w_qta8o_local_wg_size,
+      pick_linear_qta8a_qga4w_shader,
+      linear_qta8a_qga4w_global_wg_size,
+      linear_qta8a_qga4w_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite},
-       {{mat1,
-         mat2,
-         scales_and_zeros,
-         mat1_scale,
-         mat1_zero_point,
-         output_scale,
-         output_zero_point},
+       {{mat1, mat2, weight_scales, weight_zeros, mat1_scale, mat1_zero_point},
         vkapi::kRead}},
       // Shader params buffers
       {},
@@ -260,29 +242,27 @@ void add_linear_qta8a_qga4w_qta8o_node(
       // Resize Args
       {},
       // Resizing Logic
-      resize_linear_qta8a_qga4w_qta8o_node));
+      resize_linear_qta8a_qga4w_node));
 }
 
-void linear_qta8a_qga4w_qta8o(
+void linear_qta8a_qga4w(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-  return add_linear_qta8a_qga4w_qta8o_node(
+  return add_linear_qta8a_qga4w_node(
       graph,
       args[0], // quantized input (char tensor)
       args[1], // input_scale (float buffer tensor)
       args[2], // input_zero_point (int buffer tensor)
       args[3], // quantized weights (4-bit packed, byte)
       args[4], // group_size (int)
-      args[5], // weight_scales_and_zeros (float tensor)
-      args[6], // output_scale (float buffer tensor)
-      args[7], // output_zero_point (int buffer tensor)
-      args[8] // quantized output (char tensor)
+      args[5], // weight_scales (float tensor)
+      args[6], // weight_zeros (int tensor)
+      args[7] // float output tensor
   );
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(
-      et_vk.linear_qta8a_qga4w_qta8o.default, linear_qta8a_qga4w_qta8o);
+  VK_REGISTER_OP(et_vk.linear_qta8a_qga4w.default, linear_qta8a_qga4w);
 }
 
 } // namespace vkcompute
