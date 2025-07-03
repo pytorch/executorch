@@ -205,13 +205,7 @@ def define_common_targets(is_fbcode = False):
         ]
     )
     define_test_targets(
-        "linear_weight_int4_test",
-        extra_deps = [
-            ":test_utils",
-        ]
-    )
-    define_test_targets(
-        "linear_qta8a_qga4w_test",
+        "quantized_linear_test",
         extra_deps = [
             ":test_utils",
         ]
