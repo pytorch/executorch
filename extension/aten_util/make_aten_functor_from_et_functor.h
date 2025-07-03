@@ -154,21 +154,41 @@ struct type_convert<
   at::Tensor converted_;
 };
 
-// Optionals: ATen to ETen.
+// Optionals: ETen to ATen.
 template <class F, class T>
-struct type_convert<std::optional<F>, torch::executor::optional<T>> final {
+struct type_convert<torch::executor::optional<F>, std::optional<T>> final {
  public:
-  std::optional<F> val;
+  torch::executor::optional<F> val;
   std::unique_ptr<struct type_convert<F, T>> convert_struct;
-  explicit type_convert(std::optional<F> value) : val(value) {}
-  torch::executor::optional<T> call() {
+  explicit type_convert(torch::executor::optional<F> value) : val(value) {}
+  std::optional<T> call() {
     if (val.has_value()) {
       convert_struct = std::make_unique<struct type_convert<F, T>>(
           type_convert<F, T>(val.value()));
-      return torch::executor::optional<T>(convert_struct->call());
+      return std::optional<T>(convert_struct->call());
     } else {
-      return torch::executor::optional<T>();
+      return std::optional<T>();
     }
+  }
+};
+
+// Specific specialization for optional tensor conversion: std::optional<at::Tensor> to std::optional<executorch::runtime::etensor::Tensor>
+template <>
+struct type_convert<const std::optional<at::Tensor>&, const std::optional<torch::executor::Tensor>&> final {
+ public:
+  const std::optional<at::Tensor>& val;
+  std::unique_ptr<struct type_convert<const at::Tensor&, const torch::executor::Tensor&>> convert_struct;
+  explicit type_convert(const std::optional<at::Tensor>& value) : val(value) {}
+  const std::optional<torch::executor::Tensor>& call() {
+    static std::optional<torch::executor::Tensor> result;
+    if (val.has_value()) {
+      convert_struct = std::make_unique<struct type_convert<const at::Tensor&, const torch::executor::Tensor&>>(
+          type_convert<const at::Tensor&, const torch::executor::Tensor&>(val.value()));
+      result = std::optional<torch::executor::Tensor>(convert_struct->call());
+    } else {
+      result = std::optional<torch::executor::Tensor>();
+    }
+    return result;
   }
 };
 
