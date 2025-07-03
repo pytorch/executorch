@@ -519,6 +519,14 @@ ValueRef ComputeGraph::set_output_tensor(
   return idx;
 }
 
+ValueRef ComputeGraph::set_output_value(const ValueRef idx) {
+  if (values_.at(idx).isTensor()) {
+    return set_output_tensor(idx);
+  }
+  outputs_.push_back({idx, kDummyValueRef});
+  return idx;
+}
+
 vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
     const ValueRef idx) {
   if (values_.at(idx).isInt()) {

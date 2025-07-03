@@ -10,7 +10,11 @@ import unittest
 
 import torch
 from executorch.exir import to_edge
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.reinplace import reinplace_pass
+from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
+    _load_for_executorch_from_buffer,
+)
 from torch.export import export
 
 
@@ -35,8 +39,8 @@ class TestReinplacePass(unittest.TestCase):
         values = torch.tensor([1.0])
 
         exported_program = export(model, (indices, values), strict=True)
-        print(exported_program.graph)
-        edge_program = to_edge(exported_program).exported_program()
+        edge = to_edge(exported_program)
+        edge_program = edge._edge_programs["forward"]
 
         # Find the index_put node
         index_put_node = None
@@ -47,15 +51,31 @@ class TestReinplacePass(unittest.TestCase):
 
         self.assertIsNotNone(index_put_node, "Should find an index_put node")
 
-        ep = reinplace_pass(edge_program)
+        et = edge.to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
         # Find the index_put node
         index_put_node = None
-        for node in ep.graph.nodes:
+        for node in et.exported_program().graph.nodes:
             if node.op == "call_function" and "index_put_" in str(node.target):
                 index_put_node = node
                 break
 
         self.assertIsNotNone(index_put_node, "Should find an index_put_ node")
+
+        # Find the copy_ node
+        copy_node = None
+        for node in et.exported_program().graph.nodes:
+            if node.op == "call_function" and "copy_" in str(node.target):
+                copy_node = node
+                break
+
+        self.assertIsNone(copy_node, "Shouldn't find an copy_ node")
+
+        e = _load_for_executorch_from_buffer(et.buffer)
+        self.assertTrue(
+            torch.allclose(
+                e.forward((indices, values))[0], torch.tensor([1.0, 0.0, 0.0, 0.0, 0.0])
+            )
+        )
 
     def test_cant_reinplace(self) -> None:
         """Test that index_put on a mutable buffer that is viewed later is not safe."""

@@ -9,6 +9,8 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/kernels/portable/cpu/selective_build.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
@@ -27,34 +29,6 @@ namespace torch {
 namespace executor {
 namespace native {
 namespace utils {
-
-/*
- * Convert Scalar to C++ type
- */
-
-template <typename T>
-T scalar_to(const Scalar& s) {
-  if (s.isBoolean()) {
-    return static_cast<T>(s.to<bool>());
-  } else if (s.isFloatingPoint()) {
-    return static_cast<T>(s.to<double>());
-  } else {
-    return static_cast<T>(s.to<int64_t>());
-  }
-}
-
-template <>
-inline double scalar_to<double>(const Scalar& s) {
-  return s.isFloatingPoint() ? s.to<double>()
-                             : static_cast<double>(s.to<int64_t>());
-}
-
-template <>
-inline int64_t scalar_to<int64_t>(const Scalar& s) {
-  return s.isFloatingPoint() ? static_cast<int64_t>(s.to<double>())
-                             : s.to<int64_t>();
-}
-
 namespace internal {
 /**
  * Causes these utility functions to make sure to respect Tensor
@@ -345,20 +319,22 @@ inline void apply_elementwise_fn(
   }
 
   constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMPUTE>::value;
-  const bool all_inputs_compute_dtype =
-      ((inputs.first->scalar_type() == compute_type) && ...);
+  if constexpr (should_include_kernel_dtype(op_name, compute_type)) {
+    const bool all_inputs_compute_dtype =
+        ((inputs.first->scalar_type() == compute_type) && ...);
 
-  constexpr ScalarType out_specialized_scalar_type =
-      specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
-  if (all_inputs_compute_dtype &&
-      out.scalar_type() == out_specialized_scalar_type) {
-    using CTYPE_OUT =
-        typename ScalarTypeToCppType<out_specialized_scalar_type>::type;
-    dtype_specialized_elementwise_fn_impl<
-        CTYPE_COMPUTE,
-        CTYPE_OUT,
-        support_noncontiguous_tensors>(compute_fun, ctx, out, inputs...);
-    return;
+    constexpr ScalarType out_specialized_scalar_type =
+        specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
+    if (all_inputs_compute_dtype &&
+        out.scalar_type() == out_specialized_scalar_type) {
+      using CTYPE_OUT =
+          typename ScalarTypeToCppType<out_specialized_scalar_type>::type;
+      dtype_specialized_elementwise_fn_impl<
+          CTYPE_COMPUTE,
+          CTYPE_OUT,
+          support_noncontiguous_tensors>(compute_fun, ctx, out, inputs...);
+      return;
+    }
   }
 
   apply_elementwise_fn_generic_impl<
