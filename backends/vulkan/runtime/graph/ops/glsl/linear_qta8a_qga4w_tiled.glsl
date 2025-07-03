@@ -129,7 +129,7 @@ void main() {
       // Preload B (weights) - keep as quantized integers
       [[unroll]] for (int r = 0; r < 4; ++r) {
         $if WEIGHT_STORAGE == "buffer":
-          const uvec4 packed_weight_tex = t_qmat2[(k + r) * qmat2_stride + gl_GlobalInvocationID.x];
+          const u8vec4 packed_weight_tex = t_qmat2[(k + r) * qmat2_stride + gl_GlobalInvocationID.x];
         $else:
           const uvec4 packed_weight_tex = texelFetch(
               t_qmat2,
@@ -144,15 +144,15 @@ void main() {
       // Preload A (quantized input) - keep as quantized integers
       [[unroll]] for (int r = 0; r < TILE_ROWS; ++r) {
         $if IN_STORAGE == "buffer":
-          mat1_quantized[r] = ivec4(t_mat1[((out_row + r) * mat1_sizes.x + k) >> 2] - t_input_zero_point[int(out_row) + r]);
+          mat1_quantized[r] = t_mat1[((out_row + r) * mat1_sizes.x + k) >> 2] - t_input_zero_point[int(out_row) + r];
         $else:
-          mat1_quantized[r] = ivec4(texelFetch(t_mat1, ivec3(k >> 2, out_row + r, 0), 0) - t_input_zero_point[int(out_row) + r]);
-
-        input_sums[r] += mat1_quantized[r].x + mat1_quantized[r].y + mat1_quantized[r].z + mat1_quantized[r].w;
+          mat1_quantized[r] = texelFetch(t_mat1, ivec3(k >> 2, out_row + r, 0), 0) - t_input_zero_point[int(out_row) + r];
       }
 
       // Accumulate in integer arithmetic: (input_quantized - input_zero_point) * (weight_quantized - weight_zero_point)
       [[unroll]] for (int r = 0; r < TILE_ROWS; ++r) {
+        input_sums[r] += mat1_quantized[r].x + mat1_quantized[r].y + mat1_quantized[r].z + mat1_quantized[r].w;
+
         int32_sums[r][0] +=   mat1_quantized[r].x * qmat2_quantized[0][0]
                             + mat1_quantized[r].y * qmat2_quantized[1][0]
                             + mat1_quantized[r].z * qmat2_quantized[2][0]
