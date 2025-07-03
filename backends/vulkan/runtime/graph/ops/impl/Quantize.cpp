@@ -51,17 +51,19 @@ utils::uvec3 quantize_per_channel_local_wg_size(
 
   const ValueRef input = args.at(1).refs.at(0);
 
-  utils::uvec3 local_wg_size = graph->create_local_wg_size(global_workgroup_size);
+  utils::uvec3 local_wg_size =
+      graph->create_local_wg_size(global_workgroup_size);
 
-  // WORKAROUND: The CommandBuffer::dispatch function divides global_workgroup_size
-  // by local_workgroup_size to get the number of workgroups to dispatch.
-  // For per-channel quantization along the batch axis, we need to ensure that
-  // we dispatch the correct number of workgroups in the Z dimension to cover
-  // all batch-channel combinations.
+  // WORKAROUND: The CommandBuffer::dispatch function divides
+  // global_workgroup_size by local_workgroup_size to get the number of
+  // workgroups to dispatch. For per-channel quantization along the batch axis,
+  // we need to ensure that we dispatch the correct number of workgroups in the
+  // Z dimension to cover all batch-channel combinations.
   //
-  // If local_wg_size[2] > 1, then div_up(global_workgroup_size[2], local_wg_size[2])
-  // might reduce the number of workgroups dispatched. To ensure we dispatch
-  // global_workgroup_size[2] workgroups in the Z dimension, we set local_wg_size[2] = 1.
+  // If local_wg_size[2] > 1, then div_up(global_workgroup_size[2],
+  // local_wg_size[2]) might reduce the number of workgroups dispatched. To
+  // ensure we dispatch global_workgroup_size[2] workgroups in the Z dimension,
+  // we set local_wg_size[2] = 1.
   const auto input_sizes = graph->sizes_of(input);
   if (global_workgroup_size[2] > 1 && input_sizes[3] > 0) {
     local_wg_size[2] = 1;
@@ -241,8 +243,8 @@ void add_quantize_per_channel_node(
 
   int num_channels;
   if (axis_val == 0 && ndim == 4 && !graph.is_buffer_storage(input)) {
-    // For batch dimension quantization in 4D tensors, pass the actual number of channels
-    // so the shader can correctly unfold the batch-channel folding
+    // For batch dimension quantization in 4D tensors, pass the actual number of
+    // channels so the shader can correctly unfold the batch-channel folding
     num_channels = static_cast<int>(input_sizes[1]); // Channel dimension
   } else {
     num_channels = static_cast<int>(input_sizes[axis_val]);
