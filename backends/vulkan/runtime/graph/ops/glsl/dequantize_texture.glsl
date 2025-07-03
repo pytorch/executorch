@@ -30,9 +30,14 @@ ${layout_declare_tensor(B, "w", "t_out", OUT_DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "texture3d")}
 
 $if MODE == "per_tensor":
+  $if SHAPE == "tensor":
+    ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
+    ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+
   layout(push_constant) uniform restrict Block {
-    float scale;
-    int zero_point;
+    $if SHAPE == "scalar":
+      float scale;
+      int zero_point;
     int quant_min;
     int quant_max;
   };
@@ -148,7 +153,11 @@ void dequantize_per_tensor() {
 
   [[unroll]] for (int i = 0; i < 4; ++i) {
     IN_T qvalue = IN_T(intex[i]);
-    OUT_T value = dequantize_val(qvalue, scale, zero_point);
+    $if SHAPE == "scalar":
+      OUT_T value = dequantize_val(qvalue, scale, zero_point);
+    $if SHAPE == "tensor":
+      OUT_T value = dequantize_val(qvalue, t_scale[0], t_zero_point[0]);
+
     $if OUT_DTYPE == "double":
       outtex[i] = float(value);
     $else:

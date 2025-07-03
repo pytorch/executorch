@@ -3,6 +3,7 @@ dequantize_texture:
     IN_DTYPE: int32
     OUT_DTYPE: float
     MODE: per_tensor
+    SHAPE: tensor
   generate_variant_forall:
     IN_DTYPE:
       - VALUE: uint8
@@ -14,6 +15,9 @@ dequantize_texture:
       - VALUE: double
   shader_variants:
     - NAME: dequantize_per_tensor_texture3d
+      MODE: per_tensor
+      SHAPE: scalar
+    - NAME: dequantize_per_tensor_tensor_texture3d
       MODE: per_tensor
     - NAME: dequantize_per_token_texture3d
       MODE: per_token
