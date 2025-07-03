@@ -110,7 +110,15 @@ Tensor& dequantize_per_channel_out_no_context(
     executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   return torch::executor::native::dequantize_per_channel_out(
-      input, scale, zero_points, axis, quant_min, quant_max, dtype, out_dtype, out);
+      input,
+      scale,
+      zero_points,
+      axis,
+      quant_min,
+      quant_max,
+      dtype,
+      out_dtype,
+      out);
 }
 
 // Wrapper function for dequantize_per_tensor_tensor_args_out without context
@@ -532,7 +540,8 @@ at::Tensor dequantize_per_channel_reference_impl(
     }
 
     // Store casted values to avoid repeated casting
-    const int32_t channel_zero_point_int32 = static_cast<int32_t>(channel_zero_point);
+    const int32_t channel_zero_point_int32 =
+        static_cast<int32_t>(channel_zero_point);
     const float channel_scale_float = static_cast<float>(channel_scale);
 
     // Get the input value and dequantize
@@ -542,19 +551,24 @@ at::Tensor dequantize_per_channel_reference_impl(
     // Following the CPU implementation pattern: (input - zero_point) * scale
     if (dtype == at::kByte) {
       uint8_t qvalue = input.flatten()[flat_idx].item<uint8_t>();
-      dequantized_value = (qvalue - channel_zero_point_int32) * channel_scale_float;
+      dequantized_value =
+          (qvalue - channel_zero_point_int32) * channel_scale_float;
     } else if (dtype == at::kChar) {
       int8_t qvalue = input.flatten()[flat_idx].item<int8_t>();
-      dequantized_value = (qvalue - channel_zero_point_int32) * channel_scale_float;
+      dequantized_value =
+          (qvalue - channel_zero_point_int32) * channel_scale_float;
     } else if (dtype == at::kShort) {
       int16_t qvalue = input.flatten()[flat_idx].item<int16_t>();
-      dequantized_value = (qvalue - channel_zero_point_int32) * channel_scale_float;
+      dequantized_value =
+          (qvalue - channel_zero_point_int32) * channel_scale_float;
     } else if (dtype == at::kInt) {
       int32_t qvalue = input.flatten()[flat_idx].item<int32_t>();
-      dequantized_value = (qvalue - channel_zero_point_int32) * channel_scale_float;
+      dequantized_value =
+          (qvalue - channel_zero_point_int32) * channel_scale_float;
     } else if (dtype == at::kLong) {
       int64_t qvalue = input.flatten()[flat_idx].item<int64_t>();
-      dequantized_value = (qvalue - channel_zero_point_int32) * channel_scale_float;
+      dequantized_value =
+          (qvalue - channel_zero_point_int32) * channel_scale_float;
     } else {
       throw std::runtime_error("Unsupported input dtype");
     }
@@ -981,7 +995,8 @@ void test_vulkan_dequantize_per_tensor_impl(
     output_correct =
         at::allclose(reference_out, vk_out, /*rtol=*/1e-2, /*atol=*/1e-2);
   } else {
-    output_correct = at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
+    output_correct =
+        at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
   }
   if (!output_correct) {
     std::cout << "\n"
@@ -1461,7 +1476,8 @@ void test_vulkan_dequantize_per_token_impl(
     output_correct =
         at::allclose(reference_out, vk_out, /*rtol=*/1e-2, /*atol=*/1e-2);
   } else {
-    output_correct = at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
+    output_correct =
+        at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
   }
   if (!output_correct) {
     std::cout << "\n"
@@ -1840,16 +1856,21 @@ void test_vulkan_dequantize_per_channel_impl(
   check_dequantize_args(quant_min, quant_max, dtype, out_dtype);
   check_dequantize_per_channel_args(input_sizes, scales, zero_points, axis);
 
-  std::vector<int64_t> input_sizes_int64(input_sizes.begin(), input_sizes.end());
+  std::vector<int64_t> input_sizes_int64(
+      input_sizes.begin(), input_sizes.end());
 
   // Create random float tensor
-  at::Tensor float_x = at::rand(input_sizes_int64, at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor float_x =
+      at::rand(input_sizes_int64, at::device(at::kCPU).dtype(at::kFloat));
 
   // Create scale and zero_point tensors
-  at::Tensor scale_tensor = at::tensor(scales, at::device(at::kCPU).dtype(at::kFloat));
-  at::Tensor zero_point_tensor = at::tensor(zero_points, at::device(at::kCPU).dtype(at::kInt));
+  at::Tensor scale_tensor =
+      at::tensor(scales, at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor zero_point_tensor =
+      at::tensor(zero_points, at::device(at::kCPU).dtype(at::kInt));
 
-  // Map the dtype to the corresponding quantized type and quantize the float tensor
+  // Map the dtype to the corresponding quantized type and quantize the float
+  // tensor
   c10::ScalarType qtype;
   at::Tensor adjusted_zero_points = zero_point_tensor;
 
@@ -1867,7 +1888,8 @@ void test_vulkan_dequantize_per_channel_impl(
     qtype = c10::kQInt32;
   }
 
-  // Normalize axis for ATen (ATen doesn't handle negative axes in quantize_per_channel)
+  // Normalize axis for ATen (ATen doesn't handle negative axes in
+  // quantize_per_channel)
   int64_t normalized_axis = axis;
   if (normalized_axis < 0) {
     normalized_axis += input_sizes_int64.size();
@@ -1875,11 +1897,7 @@ void test_vulkan_dequantize_per_channel_impl(
 
   // Quantize using ATen
   at::Tensor quantized_aten = at::quantize_per_channel(
-      float_x,
-      scale_tensor,
-      adjusted_zero_points,
-      normalized_axis,
-      qtype);
+      float_x, scale_tensor, adjusted_zero_points, normalized_axis, qtype);
 
   // Get ATen dequantized output
   at::Tensor aten_out = at::dequantize(quantized_aten).to(out_dtype);
@@ -1887,16 +1905,18 @@ void test_vulkan_dequantize_per_channel_impl(
   // Extract the quantized values (int_repr) to use with our implementations
   at::Tensor quantized_input = quantized_aten.int_repr().to(dtype);
 
-  // Get reference output using torch::executor::native::dequantize_per_channel_aten
-  at::Tensor reference_out = torch::executor::native::dequantize_per_channel_aten(
-      quantized_input,
-      scale_tensor.to(at::kDouble),
-      zero_point_tensor.to(at::kLong),
-      axis,
-      quant_min,
-      quant_max,
-      dtype,
-      out_dtype);
+  // Get reference output using
+  // torch::executor::native::dequantize_per_channel_aten
+  at::Tensor reference_out =
+      torch::executor::native::dequantize_per_channel_aten(
+          quantized_input,
+          scale_tensor.to(at::kDouble),
+          zero_point_tensor.to(at::kLong),
+          axis,
+          quant_min,
+          quant_max,
+          dtype,
+          out_dtype);
 
   // Build Vulkan dequantize_per_channel graph
   using namespace vkcompute;
@@ -1931,8 +1951,10 @@ void test_vulkan_dequantize_per_channel_impl(
   const ValueRef r_axis = graph.add_scalar<int64_t>(axis);
   const ValueRef r_quant_min = graph.add_scalar<int64_t>(quant_min);
   const ValueRef r_quant_max = graph.add_scalar<int64_t>(quant_max);
-  const ValueRef r_dtype = graph.add_scalar<int64_t>(static_cast<int64_t>(dtype));
-  const ValueRef r_output_dtype = graph.add_scalar<int64_t>(static_cast<int64_t>(out_dtype));
+  const ValueRef r_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(dtype));
+  const ValueRef r_output_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(out_dtype));
 
   VK_GET_OP_FN("quantized_decomposed.dequantize_per_channel.default")
   (graph,
@@ -1957,7 +1979,9 @@ void test_vulkan_dequantize_per_channel_impl(
 
   // Copy input data to GPU
   graph.copy_into_staging(
-      r_input.staging, quantized_input.const_data_ptr(), quantized_input.numel());
+      r_input.staging,
+      quantized_input.const_data_ptr(),
+      quantized_input.numel());
 
   // copy scale tensor to GPU
   graph.copy_into_staging(
@@ -1984,7 +2008,8 @@ void test_vulkan_dequantize_per_channel_impl(
     output_correct =
         at::allclose(reference_out, vk_out, /*rtol=*/1e-2, /*atol=*/1e-2);
   } else {
-    output_correct = at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
+    output_correct =
+        at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
   }
   if (!output_correct) {
     std::cout << "\n"
@@ -2095,7 +2120,9 @@ TEST(
 
 // END OF REFERENCE TESTS
 
-TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_int8_to_float_axis0) {
+TEST(
+    VulkanDequantizePerChannelTest,
+    test_vulkan_dequantize_per_channel_int8_to_float_axis0) {
   std::vector<float> scales(9, 0.1f);
   std::vector<int> zero_points(9, 2);
 
@@ -2155,7 +2182,9 @@ TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_int8_to_
       at::kFloat);
 }
 
-TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_int8_to_float_axis1) {
+TEST(
+    VulkanDequantizePerChannelTest,
+    test_vulkan_dequantize_per_channel_int8_to_float_axis1) {
   std::vector<float> scales(14, 0.001f);
   std::vector<int> zero_points(14, -5);
 
@@ -2204,7 +2233,9 @@ TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_int8_to_
       at::kFloat);
 }
 
-TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_int8_to_float_axis2) {
+TEST(
+    VulkanDequantizePerChannelTest,
+    test_vulkan_dequantize_per_channel_int8_to_float_axis2) {
   std::vector<float> scales(11, 0.5f);
   std::vector<int> zero_points(11, 12);
 
@@ -2242,7 +2273,9 @@ TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_int8_to_
       at::kFloat);
 }
 
-TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_int8_to_float_axis3) {
+TEST(
+    VulkanDequantizePerChannelTest,
+    test_vulkan_dequantize_per_channel_int8_to_float_axis3) {
   std::vector<float> scales(7, 0.5f);
   std::vector<int> zero_points(7, 12);
 
@@ -2269,7 +2302,9 @@ TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_int8_to_
       at::kFloat);
 }
 
-TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_uint8_to_float_comprehensive) {
+TEST(
+    VulkanDequantizePerChannelTest,
+    test_vulkan_dequantize_per_channel_uint8_to_float_comprehensive) {
   std::vector<float> scales = {0.1, 0.2, 0.0001, 0.5, 0.02};
   std::vector<int> zero_points = {0, 5, -5, 1, 12};
 
@@ -2329,7 +2364,9 @@ TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_uint8_to
       at::kFloat);
 }
 
-TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_8bit_to_half) {
+TEST(
+    VulkanDequantizePerChannelTest,
+    test_vulkan_dequantize_per_channel_8bit_to_half) {
   std::vector<float> scales = {0.1, 0.2, 0.01, 0.5, 0.02};
   std::vector<int> zero_points = {0, 5, 5, 1, 12};
 
@@ -2389,7 +2426,9 @@ TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_8bit_to_
       at::kHalf);
 }
 
-TEST(VulkanDequantizePerChannelTest, test_vulkan_dequantize_per_channel_8bit_to_double) {
+TEST(
+    VulkanDequantizePerChannelTest,
+    test_vulkan_dequantize_per_channel_8bit_to_double) {
   std::vector<float> scales = {0.1, 0.2, 0.01, 0.5, 0.02};
   std::vector<int> zero_points = {0, 5, 5, 1, 12};
 
@@ -2510,8 +2549,15 @@ void test_vulkan_dequantize_per_tensor_tensor_impl(
       at::tensor({zero_point}, at::device(at::kCPU).dtype(at::kLong));
 
   // Get reference output using tensor variant
-  at::Tensor reference_out = torch::executor::native::dequantize_per_tensor_tensor_args_aten(
-      input, scale_tensor, zero_point_tensor, quant_min, quant_max, dtype, out_dtype);
+  at::Tensor reference_out =
+      torch::executor::native::dequantize_per_tensor_tensor_args_aten(
+          input,
+          scale_tensor,
+          zero_point_tensor,
+          quant_min,
+          quant_max,
+          dtype,
+          out_dtype);
 
   // Build Vulkan dequantize_per_tensor.tensor graph
   using namespace vkcompute;
@@ -2595,7 +2641,8 @@ void test_vulkan_dequantize_per_tensor_tensor_impl(
     output_correct =
         at::allclose(reference_out, vk_out, /*rtol=*/1e-2, /*atol=*/1e-2);
   } else {
-    output_correct = at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
+    output_correct =
+        at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
   }
   if (!output_correct) {
     std::cout << "\n"
@@ -2622,7 +2669,9 @@ void test_vulkan_dequantize_per_tensor_tensor_impl(
   ASSERT_TRUE(output_correct);
 }
 
-TEST(VulkanDequantizePerTensorTensorTest, test_vulkan_dequantize_per_tensor_tensor_int8_to_float) {
+TEST(
+    VulkanDequantizePerTensorTensorTest,
+    test_vulkan_dequantize_per_tensor_tensor_int8_to_float) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
@@ -2638,7 +2687,9 @@ TEST(VulkanDequantizePerTensorTensorTest, test_vulkan_dequantize_per_tensor_tens
       at::kFloat); // output dtype
 }
 
-TEST(VulkanDequantizePerTensorTensorTest, test_vulkan_dequantize_per_tensor_tensor_uint8_to_float) {
+TEST(
+    VulkanDequantizePerTensorTensorTest,
+    test_vulkan_dequantize_per_tensor_tensor_uint8_to_float) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
@@ -2654,7 +2705,9 @@ TEST(VulkanDequantizePerTensorTensorTest, test_vulkan_dequantize_per_tensor_tens
       at::kFloat); // output dtype
 }
 
-TEST(VulkanDequantizePerTensorTensorTest, test_vulkan_dequantize_per_tensor_tensor_int32_to_float) {
+TEST(
+    VulkanDequantizePerTensorTensorTest,
+    test_vulkan_dequantize_per_tensor_tensor_int32_to_float) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
@@ -2670,7 +2723,9 @@ TEST(VulkanDequantizePerTensorTensorTest, test_vulkan_dequantize_per_tensor_tens
       at::kFloat); // output dtype
 }
 
-TEST(VulkanDequantizePerTensorTensorTest, test_vulkan_dequantize_per_tensor_tensor_uint8_to_half) {
+TEST(
+    VulkanDequantizePerTensorTensorTest,
+    test_vulkan_dequantize_per_tensor_tensor_uint8_to_half) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
@@ -2686,7 +2741,9 @@ TEST(VulkanDequantizePerTensorTensorTest, test_vulkan_dequantize_per_tensor_tens
       at::kHalf); // output dtype
 }
 
-TEST(VulkanDequantizePerTensorTensorTest, test_vulkan_dequantize_per_tensor_tensor_int8_to_double) {
+TEST(
+    VulkanDequantizePerTensorTensorTest,
+    test_vulkan_dequantize_per_tensor_tensor_int8_to_double) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
