@@ -271,7 +271,6 @@ def _do_annotate_conv(
 
         # skip if transposed conv has more than 1 group
         skip = skip or (is_conv_transpose and num_groups != 1)
-        print(f"{skip} conv transpose and num_groups")
 
         if is_conv_transpose:
             # transposed convs per output channel quantization
