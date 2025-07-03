@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
+#include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -51,21 +52,9 @@ class XnnpackBackend final
     }
 
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
-    // Create a workspace for the XNNExecutor to use. This workspace will be
-    // shared across all delegate instances.
-    ET_LOG(Debug, "Creating XNN workspace");
-    xnn_workspace_t workspace = nullptr;
-    status = xnn_create_workspace(&workspace);
-    if (status != xnn_status_success) {
-      ET_LOG(
-          Error,
-          "Failed to create XNN workspace, XNNPACK status: 0x%x",
-          (unsigned int)status);
-      workspace = nullptr;
-      return;
-    }
-    workspace_.reset(workspace);
-    ET_LOG(Debug, "Created XNN workspace: %p", workspace_.get());
+    enable_shared_workspace_ = true;
+#else
+    enable_shared_workspace_ = false;
 #endif // ENABLE_XNNPACK_SHARED_WORKSPACE
   }
 
@@ -86,9 +75,29 @@ class XnnpackBackend final
     const NamedDataMap* named_data_map = context.get_named_data_map();
     // thread safe. This can heppen when multiple threads call init() on
     // the same backend instance.
-#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
-    const std::lock_guard<std::mutex> lock(workspace_mutex_);
-#endif
+
+    std::unique_lock<std::mutex> lock(workspace_mutex_, std::defer_lock);
+    if (enable_shared_workspace_) {
+      lock.lock();
+      if (!workspace_) {
+        // Create a workspace for the XNNExecutor to use. This workspace will be
+        // shared across all delegate instances.
+        ET_LOG(Debug, "Creating XNN workspace");
+        xnn_workspace_t workspace = nullptr;
+        auto status = xnn_create_workspace(&workspace);
+        if (status != xnn_status_success) {
+          ET_LOG(
+              Error,
+              "Failed to create XNN workspace, XNNPACK status: 0x%x",
+              (unsigned int)status);
+          workspace = nullptr;
+          return Error::Internal;
+        }
+        // NOLINTNEXTLINE(facebook-hte-NullableDereference) - false positive
+        workspace_.reset(workspace);
+        ET_LOG(Debug, "Created XNN workspace: %p", workspace_.get());
+      }
+    }
 
 #ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
     const std::lock_guard<std::mutex> lock_weight_cache(weights_cache_mutex_);
@@ -129,9 +138,10 @@ class XnnpackBackend final
       EValue** args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
-#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
-    const std::lock_guard<std::mutex> lock(workspace_mutex_);
-#endif
+    std::unique_lock<std::mutex> lock(workspace_mutex_, std::defer_lock);
+    if (enable_shared_workspace_) {
+      lock.lock();
+    }
 
 #ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
     const std::lock_guard<std::mutex> lock_weights_cache(weights_cache_mutex_);
@@ -160,9 +170,10 @@ class XnnpackBackend final
       // This is needed to serialize access to xnn_delete_runtime which is not
       // thread safe. This can heppen when multiple threads call destroy() on
       // the same backend instance.
-#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
-      const std::lock_guard<std::mutex> lock(workspace_mutex_);
-#endif
+      std::unique_lock<std::mutex> lock(workspace_mutex_, std::defer_lock);
+      if (enable_shared_workspace_) {
+        lock.lock();
+      }
 
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
@@ -181,12 +192,16 @@ class XnnpackBackend final
     }
   }
 
+  void set_workspace_sharing_enabled(bool enable) {
+    this->enable_shared_workspace_ = enable;
+  }
+
  private:
+  bool enable_shared_workspace_;
   // This is a global workspace for all delegate instances.
   mutable std::mutex workspace_mutex_;
-  std::unique_ptr<xnn_workspace, decltype(&xnn_release_workspace)> workspace_{
-      nullptr,
-      &xnn_release_workspace};
+  mutable std::unique_ptr<xnn_workspace, decltype(&xnn_release_workspace)>
+      workspace_{nullptr, &xnn_release_workspace};
 
   // Weights cache is global to all delegate instances.
   mutable std::mutex weights_cache_mutex_;
@@ -199,10 +214,16 @@ class XnnpackBackend final
 };
 
 namespace {
-auto cls = XnnpackBackend();
-Backend backend{"XnnpackBackend", &cls};
+auto backend_instance = XnnpackBackend();
+Backend backend{"XnnpackBackend", &backend_instance};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
+
+namespace xnnpack {
+void set_workspace_sharing_enabled(bool enable) {
+  backend_instance.set_workspace_sharing_enabled(enable);
+}
+} // namespace xnnpack
 
 } // namespace backends
 } // namespace executorch
