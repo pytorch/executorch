@@ -116,9 +116,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
                     arg, self.buffer_limit
                 )
 
+        op_available_layouts = features.supported_memory_layouts(
+            VkStorageType.TEXTURE_3D
+        )
+
+        can_use_texture = any(
+            layout in op_available_layouts for layout in valid_texture_layouts
+        )
+
         # If there are no valid texture memory layouts, then buffer storage must be
         # supported by the operator implementation.
-        if len(valid_texture_layouts) == 0:
+        if not can_use_texture:
             if not can_use_buffers:
                 return (
                     False,
@@ -131,17 +139,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 reason = "op requires buffers which is not supported by op impl"
             return compatible, reason
 
-        op_available_layouts = features.supported_memory_layouts(
-            VkStorageType.TEXTURE_3D
-        )
 
-        is_compatible = any(
-            layout in op_available_layouts for layout in valid_texture_layouts
-        )
-        if not is_compatible:
-            return False, "Required texutre memory layout not supported"
-
-        return is_compatible, "Op is compatible"
+        return True, "Op is compatible"
 
     def node_is_compatible(
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -220,7 +219,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
     def log_skip(self, node: torch.fx.Node, reason: str) -> None:
         if node.op == "call_function":
-            logger.info(
+            print(
                 f"[Vulkan Partitioner] Due to [{reason}], skipping {node.format_node()}"
             )
 
@@ -231,6 +230,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         return r
 
     def _is_node_supported(self, node: torch.fx.Node) -> bool:
+        print("is_node_supported")
         target = node.target
         if node.target == torch.ops.higher_order.auto_functionalized:
             first_arg = node.args[0]
@@ -339,6 +339,10 @@ class VulkanPartitioner(Partitioner):
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
         partition_tags = {}
+
+        logger.setLevel(logging.INFO)
+        print("partition")
+        print("set level but no logging...")
 
         texture_limits: utils.ImageExtents = self.options.get(
             "texture_limits", utils.DEFAULT_TEXTURE_LIMITS
