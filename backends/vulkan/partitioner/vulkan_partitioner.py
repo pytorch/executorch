@@ -219,7 +219,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
     def log_skip(self, node: torch.fx.Node, reason: str) -> None:
         if node.op == "call_function":
-            print(
+            logger.info(
                 f"[Vulkan Partitioner] Due to [{reason}], skipping {node.format_node()}"
             )
 
@@ -230,7 +230,6 @@ class VulkanSupportedOperators(OperatorSupportBase):
         return r
 
     def _is_node_supported(self, node: torch.fx.Node) -> bool:
-        print("is_node_supported")
         target = node.target
         if node.target == torch.ops.higher_order.auto_functionalized:
             first_arg = node.args[0]
@@ -339,10 +338,6 @@ class VulkanPartitioner(Partitioner):
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
         partition_tags = {}
-
-        logger.setLevel(logging.INFO)
-        print("partition")
-        print("set level but no logging...")
 
         texture_limits: utils.ImageExtents = self.options.get(
             "texture_limits", utils.DEFAULT_TEXTURE_LIMITS
