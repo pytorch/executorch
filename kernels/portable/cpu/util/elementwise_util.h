@@ -217,35 +217,27 @@ inline bool validate_elementwise_fn_inputs(
   return true;
 }
 
+template <typename CTYPE_COMPUTE>
+struct InputInfo {
+  load_to_compute_fn<CTYPE_COMPUTE> load_to_compute;
+  const char* data_ptr;
+  ssize_t element_size;
+};
+
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
     bool support_noncontiguous_tensors,
+    size_t kNumInputs,
     typename Op,
     typename... Args>
-inline void apply_elementwise_fn_generic_impl(
+inline void apply_elementwise_fn_generic_impl_with_load_store_functions(
+    const std::array<InputInfo<CTYPE_COMPUTE>, kNumInputs>& inputs_info,
+    store_compute_to_tensor_fn<CTYPE_COMPUTE> store_compute_to_out,
     const Op& compute_fun,
     KernelRuntimeContext& ctx,
     const Tensor& out,
-    SupportedTensorDtypes out_dtypes,
     Args... inputs) {
-  constexpr auto kNumInputs = sizeof...(inputs);
-
-  struct InputInfo {
-    load_to_compute_fn<CTYPE_COMPUTE> load_to_compute;
-    const char* data_ptr;
-    ssize_t element_size;
-  };
-  std::array<InputInfo, kNumInputs> inputs_info = {(InputInfo{
-      internal::get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
-          *inputs.first, inputs.second),
-      reinterpret_cast<const char*>(inputs.first->const_data_ptr()),
-      inputs.first->element_size(),
-  })...};
-
-  const auto store_compute_to_out =
-      internal::get_store_compute_to_tensor_fn<CTYPE_COMPUTE, op_name>(
-          out, out_dtypes);
+  static_assert(kNumInputs == sizeof...(inputs));
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
   const auto out_element_size = out.element_size();
 
@@ -273,6 +265,140 @@ inline void apply_elementwise_fn_generic_impl(
               result, &data_out[indexes[0] * out_element_size]);
         }
       });
+}
+
+template <
+    typename CTYPE_COMPUTE,
+    bool support_noncontiguous_tensors,
+    size_t kNumInputs,
+    typename... Args>
+ET_NOINLINE void
+apply_elementwise_fn_generic_impl_with_load_store_functions_and_outlined_op(
+    const std::array<InputInfo<CTYPE_COMPUTE>, kNumInputs>& inputs_info,
+    store_compute_to_tensor_fn<CTYPE_COMPUTE> store_compute_to_out,
+    CTYPE_COMPUTE (*compute_fun)(CTYPE_COMPUTE),
+    KernelRuntimeContext& ctx,
+    const Tensor& out,
+    Args... inputs) {
+  apply_elementwise_fn_generic_impl_with_load_store_functions<
+      CTYPE_COMPUTE,
+      support_noncontiguous_tensors,
+      kNumInputs>(
+      inputs_info, store_compute_to_out, compute_fun, ctx, out, inputs...);
+}
+
+template <
+    typename CTYPE_COMPUTE,
+    bool support_noncontiguous_tensors,
+    size_t kNumInputs,
+    typename... Args>
+ET_NOINLINE void
+apply_elementwise_fn_generic_impl_with_load_store_functions_and_outlined_op(
+    const std::array<InputInfo<CTYPE_COMPUTE>, kNumInputs>& inputs_info,
+    store_compute_to_tensor_fn<CTYPE_COMPUTE> store_compute_to_out,
+    CTYPE_COMPUTE (*compute_fun)(CTYPE_COMPUTE, CTYPE_COMPUTE),
+    KernelRuntimeContext& ctx,
+    const Tensor& out,
+    Args... inputs) {
+  apply_elementwise_fn_generic_impl_with_load_store_functions<
+      CTYPE_COMPUTE,
+      support_noncontiguous_tensors,
+      kNumInputs>(
+      inputs_info, store_compute_to_out, compute_fun, ctx, out, inputs...);
+}
+
+template <
+    typename CTYPE_COMPUTE,
+    bool support_noncontiguous_tensors,
+    size_t kNumInputs,
+    typename... Args>
+ET_NOINLINE void
+apply_elementwise_fn_generic_impl_with_load_store_functions_and_outlined_op(
+    const std::array<InputInfo<CTYPE_COMPUTE>, kNumInputs>& inputs_info,
+    store_compute_to_tensor_fn<CTYPE_COMPUTE> store_compute_to_out,
+    CTYPE_COMPUTE (*compute_fun)(CTYPE_COMPUTE, CTYPE_COMPUTE, CTYPE_COMPUTE),
+    KernelRuntimeContext& ctx,
+    const Tensor& out,
+    Args... inputs) {
+  apply_elementwise_fn_generic_impl_with_load_store_functions<
+      CTYPE_COMPUTE,
+      support_noncontiguous_tensors,
+      kNumInputs>(
+      inputs_info, store_compute_to_out, compute_fun, ctx, out, inputs...);
+}
+
+template <
+    typename CTYPE_COMPUTE,
+    const char* op_name,
+    bool support_noncontiguous_tensors,
+    typename Op,
+    typename... Args>
+inline void apply_elementwise_fn_generic_impl(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& out,
+    SupportedTensorDtypes out_dtypes,
+    Args... inputs) {
+  constexpr auto kNumInputs = sizeof...(inputs);
+
+  std::array<InputInfo<CTYPE_COMPUTE>, kNumInputs> inputs_info = {
+      (InputInfo<CTYPE_COMPUTE>{
+          internal::get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
+              *inputs.first, inputs.second),
+          reinterpret_cast<const char*>(inputs.first->const_data_ptr()),
+          inputs.first->element_size(),
+      })...};
+
+  const auto store_compute_to_out =
+      internal::get_store_compute_to_tensor_fn<CTYPE_COMPUTE, op_name>(
+          out, out_dtypes);
+  if constexpr (std::is_convertible_v<Op, CTYPE_COMPUTE (*)(CTYPE_COMPUTE)>) {
+    apply_elementwise_fn_generic_impl_with_load_store_functions_and_outlined_op<
+        CTYPE_COMPUTE,
+        support_noncontiguous_tensors,
+        kNumInputs>(
+        inputs_info,
+        store_compute_to_out,
+        static_cast<CTYPE_COMPUTE (*)(CTYPE_COMPUTE)>(compute_fun),
+        ctx,
+        out,
+        inputs...);
+  } else if constexpr (std::is_convertible_v<
+                           Op,
+                           CTYPE_COMPUTE (*)(CTYPE_COMPUTE, CTYPE_COMPUTE)>) {
+    apply_elementwise_fn_generic_impl_with_load_store_functions_and_outlined_op<
+        CTYPE_COMPUTE,
+        support_noncontiguous_tensors,
+        kNumInputs>(
+        inputs_info,
+        store_compute_to_out,
+        static_cast<CTYPE_COMPUTE (*)(CTYPE_COMPUTE, CTYPE_COMPUTE)>(
+            compute_fun),
+        ctx,
+        out,
+        inputs...);
+  } else if constexpr (std::is_convertible_v<
+                           Op,
+                           CTYPE_COMPUTE (*)(
+                               CTYPE_COMPUTE, CTYPE_COMPUTE, CTYPE_COMPUTE)>) {
+    apply_elementwise_fn_generic_impl_with_load_store_functions_and_outlined_op<
+        CTYPE_COMPUTE,
+        support_noncontiguous_tensors,
+        kNumInputs>(
+        inputs_info,
+        store_compute_to_out,
+        static_cast<CTYPE_COMPUTE (*)(
+            CTYPE_COMPUTE, CTYPE_COMPUTE, CTYPE_COMPUTE)>(compute_fun),
+        ctx,
+        out,
+        inputs...);
+  } else {
+    apply_elementwise_fn_generic_impl_with_load_store_functions<
+        CTYPE_COMPUTE,
+        support_noncontiguous_tensors,
+        kNumInputs>(
+        inputs_info, store_compute_to_out, compute_fun, ctx, out, inputs...);
+  }
 }
 
 template <
