@@ -156,11 +156,22 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
         def forward(self, x):
             rank = x.dim()
-            x = x.unsqueeze(-1) if rank == 3 else x.reshape(1, *x.shape, 1)
-            x = torch.transpose(x, 1, 2)
+            if rank == 2:
+                x = x.reshape(1, *x.shape, 1).permute(0, 2, 3, 1) # (dim, C) -> (1, C, 1, dim)
+            elif rank == 3:
+                x = x.unsqueeze(-1).permute(0, 2, 3, 1) # (N, dim, C) -> (N, C, 1, dim)
+            elif rank == 4:
+                x = x.permute(0, 3, 1, 2) # (N, H, W, C) -> (N, C, H, W)
+            else:
+                raise NotImplementedError(f"{self.__class__.__name__} could not handle input with shape {x.shape}")
+
             res = self.conv(x)
-            res = torch.transpose(res, 1, 2)
-            res = res.squeeze(-1) if rank == 3 else res.reshape(*res.shape[1:3])
+            if rank == 2:
+                res = res.permute(0, 3, 1, 2).squeeze(-1).squeeze(0) # (1, C, 1, dim) -> (dim, C) 
+            elif rank == 3:
+                res = res.permute(0, 3, 1, 2).squeeze(-1) # (N, C, 1, dim) -> (N, dim C)
+            elif rank == 4:
+                res = res.permute(0, 2, 3, 1) # (N, C, H, W) -> (N, H, W, C)
             return res
 
     def replace_linear(module: torch.nn.Module):
