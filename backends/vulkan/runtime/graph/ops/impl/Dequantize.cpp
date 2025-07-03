@@ -180,7 +180,14 @@ void dequantize_per_tensor_impl(
   const ValueRef zero_point = args[arg_idx++];
   const ValueRef quant_min = args[arg_idx++];
   const ValueRef quant_max = args[arg_idx++];
+  const ValueRef dtype = args[arg_idx++]; // Added dtype parameter
+  const ValueRef output_dtype = args[arg_idx++]; // Added output_dtype parameter
   const ValueRef output = args[arg_idx++];
+
+  // Suppress unused variable warnings - dtype and output_dtype are inferred
+  // from output
+  (void)dtype;
+  (void)output_dtype;
 
   // Check tensor types
   VK_CHECK_COND(graph.val_is_tensor(input));
@@ -212,7 +219,14 @@ void dequantize_per_token_impl(
   const ValueRef zero_point = args[arg_idx++];
   const ValueRef quant_min = args[arg_idx++];
   const ValueRef quant_max = args[arg_idx++];
+  const ValueRef dtype = args[arg_idx++]; // Added dtype parameter
+  const ValueRef output_dtype = args[arg_idx++]; // Added output_dtype parameter
   const ValueRef output = args[arg_idx++];
+
+  // Suppress unused variable warnings - dtype and output_dtype are inferred
+  // from output
+  (void)dtype;
+  (void)output_dtype;
 
   // Check tensor types
   VK_CHECK_COND(graph.val_is_tensor(input));
@@ -257,18 +271,34 @@ void dequantize_per_token_impl(
   const auto scale_sizes = graph.sizes_of(scale);
   const auto zero_point_sizes = graph.sizes_of(zero_point);
 
-  VK_CHECK_COND(scale_sizes.size() == 1);
-  VK_CHECK_COND(zero_point_sizes.size() == 1);
-  VK_CHECK_COND(scale_sizes[0] == num_tokens);
-  VK_CHECK_COND(zero_point_sizes[0] == num_tokens);
+  // Calculate total number of elements in scale and zero_point tensors
+  int64_t scale_numel = 1;
+  for (size_t i = 0; i < scale_sizes.size(); i++) {
+    scale_numel *= scale_sizes[i];
+  }
+
+  int64_t zero_point_numel = 1;
+  for (size_t i = 0; i < zero_point_sizes.size(); i++) {
+    zero_point_numel *= zero_point_sizes[i];
+  }
+
+  // Check that the total number of elements matches num_tokens
+  // This allows for both 1D tensors (size [num_tokens]) and reshaped tensors
+  // (size [num_tokens, 1])
+  VK_CHECK_COND(scale_numel == num_tokens);
+  VK_CHECK_COND(zero_point_numel == num_tokens);
 
   add_dequantize_per_token_node(
       graph, input, scale, zero_point, quant_min, quant_max, output);
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(dequantize_per_tensor.default, dequantize_per_tensor_impl);
-  VK_REGISTER_OP(dequantize_per_token.default, dequantize_per_token_impl);
+  VK_REGISTER_OP(
+      quantized_decomposed.dequantize_per_tensor.default,
+      dequantize_per_tensor_impl);
+  VK_REGISTER_OP(
+      quantized_decomposed.dequantize_per_token.default,
+      dequantize_per_token_impl);
 }
 
 } // namespace vkcompute
