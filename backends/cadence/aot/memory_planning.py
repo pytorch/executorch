@@ -9,11 +9,12 @@
 import collections
 import itertools
 import logging
-from typing import Callable, Iterable, List, Optional, Set, Tuple, TypeAlias
+from typing import Iterable, List, Optional, Sequence, Set, Tuple
 
 import torch
 from executorch.backends.cadence.aot.memory_constraints import MemConstraints
 from executorch.backends.cadence.aot.memory_planning_algo import (
+    ConstraintsGenPass,
     get_aligned_offset,
     MemoryPlanningAlgo,
     MemoryPlanningState,
@@ -126,10 +127,9 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
                     prev_offset,
                 )
             if spec.mem_offset is None:
-                if get_aligned_offset(
-                    prev_offset + spec.allocated_memory,
-                    self.get_alignment(spec.mem_id),
-                ) > self.get_size(spec.mem_id):
+                spec.mem_offset = prev_offset
+                if not self.is_valid_placement(spec):
+                    spec.mem_offset = None
                     continue
                 else:
                     spec.mem_offset = prev_offset
@@ -344,12 +344,6 @@ def print_memory_planning_info(
     )
 
 
-ConstraintGenPassType: TypeAlias = Callable[
-    [MemConstraints],
-    Callable[[torch.fx.GraphModule], Optional[PassResult]],
-]
-
-
 class CadenceMemoryPlanning:
     def __init__(
         self,
@@ -358,7 +352,7 @@ class CadenceMemoryPlanning:
         mem_algo: int,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
-        additional_constraint_gen_passes: Optional[list[ConstraintGenPassType]] = None,
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
     ) -> None:
         self.memory_config = memory_config
         self.opt_level = opt_level
@@ -379,7 +373,7 @@ class CadenceMemoryPlanning:
         opt_level: int,
         alloc_graph_input: bool,
         alloc_graph_output: bool,
-        additional_constraint_gen_passes: Optional[list[ConstraintGenPassType]],
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]],
     ) -> list[MemoryPlanningAlgo]:
         return [
             PositionBasedGreedyWithHierarchy(

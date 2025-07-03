@@ -13,8 +13,7 @@ set -eu
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
-toolchain_cmake=${script_dir}/../../../examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
-toolchain_cmake=$(realpath ${toolchain_cmake})
+toolchain=arm-none-eabi-gcc
 setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
@@ -30,6 +29,7 @@ help() {
     echo "  --build_type=<TYPE>       Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --devtools                Build Devtools libs"
     echo "  --etdump                  Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
+    echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc"
     exit 0
 }
 
@@ -40,10 +40,22 @@ for arg in "$@"; do
       --build_type=*) build_type="${arg#*=}";;
       --devtools) build_devtools=true ;;
       --etdump) build_with_etdump=true ;;
+      --toolchain=*) toolchain="${arg#*=}";;
       *)
       ;;
     esac
 done
+
+if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
+    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
+    toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+else
+    echo "Error: Invalid toolchain selection, provided: ${tolchain}"
+    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
+    exit 1;
+fi
+toolchain_cmake=$(realpath ${toolchain_cmake})
 
 # Source the tools
 # This should be prepared by the setup.sh

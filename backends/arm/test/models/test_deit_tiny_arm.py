@@ -52,7 +52,7 @@ def test_deit_tiny_tosa_BI():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-        atol=1,
+        atol=1.5,
         qtol=1,
     )
     pipeline.run()

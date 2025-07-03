@@ -112,6 +112,7 @@ def define_common_targets():
                 "util/complex_utils.h",
                 "util/floating_point_utils.h",
                 "util/irange.h",
+                "util/overflows.h",
             ],
             exported_preprocessor_flags = [
                 "-DC10_USING_CUSTOM_GENERATED_MACROS",
@@ -123,7 +124,9 @@ def define_common_targets():
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
             ],
-            deps = select({
+            exported_deps = [
+                "//executorch/runtime/core/portable_type/c10/torch/standalone:torch_standalone_headers",
+            ] + select({
                 "DEFAULT": [],
                 # Half-inl.h depends on vec_half.h from ATen, but only when building for x86.
                 "ovr_config//cpu:x86_64": [

@@ -965,6 +965,89 @@ struct PyModule final {
   }
 };
 
+inline std::unique_ptr<DataLoader> loader_from_buffer(
+    const void* ptr,
+    size_t ptr_len) {
+  return std::make_unique<BufferDataLoader>(ptr, ptr_len);
+}
+
+inline std::unique_ptr<DataLoader> loader_from_file(const std::string& path) {
+  Result<MmapDataLoader> res = MmapDataLoader::from(
+      path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
+  THROW_IF_ERROR(
+      res.error(),
+      "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
+      path.c_str(),
+      static_cast<uint32_t>(res.error()));
+
+  return std::make_unique<MmapDataLoader>(std::move(res.get()));
+}
+
+inline std::unique_ptr<Program> load_program(
+    DataLoader* loader,
+    Program::Verification program_verification) {
+  Result<Program> res = Program::load(loader, program_verification);
+  THROW_IF_ERROR(
+      res.error(),
+      "Failed to load program, error: 0x:%" PRIx32,
+      static_cast<uint32_t>(res.error()));
+  return std::make_unique<Program>(std::move(res.get()));
+}
+
+struct PyProgram final {
+  explicit PyProgram(
+      const py::bytes& buffer,
+      Program::Verification program_verification =
+          Program::Verification::Minimal)
+      : loader_(loader_from_buffer(
+            buffer.cast<std::string_view>().data(),
+            py::len(buffer))),
+        program_(load_program(loader_.get(), program_verification)) {}
+
+  explicit PyProgram(
+      const std::string& path,
+      Program::Verification program_verification =
+          Program::Verification::Minimal)
+      : loader_(loader_from_file(path)),
+        program_(load_program(loader_.get(), program_verification)) {}
+
+  static std::unique_ptr<PyProgram> load_from_buffer(
+      const py::bytes& buffer,
+      Program::Verification program_verification =
+          Program::Verification::Minimal) {
+    return std::make_unique<PyProgram>(buffer, program_verification);
+  }
+
+  static std::unique_ptr<PyProgram> load_from_file(
+      const std::string& path,
+      Program::Verification program_verification =
+          Program::Verification::Minimal) {
+    return std::make_unique<PyProgram>(path, program_verification);
+  }
+
+  PyProgram(const PyProgram&) = delete;
+  PyProgram& operator=(const PyProgram&) = delete;
+  PyProgram(PyProgram&&) = default;
+  PyProgram& operator=(PyProgram&&) = default;
+
+  size_t num_methods() const {
+    return program_->num_methods();
+  }
+
+  std::string get_method_name(size_t method_index) const {
+    Result<const char*> res = program_->get_method_name(method_index);
+    THROW_IF_ERROR(
+        res.error(),
+        "Failed get method name, error: 0x:%" PRIx32,
+        static_cast<uint32_t>(res.error()));
+    return std::string(res.get());
+  }
+
+ private:
+  std::unique_ptr<DataLoader> loader_;
+  std::unique_ptr<Program> program_;
+};
+
 void create_profile_block(const std::string& name) {
   EXECUTORCH_PROFILE_CREATE_BLOCK(name.c_str());
 }
@@ -1151,6 +1234,26 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("index"),
           call_guard)
       .def("__repr__", &PyMethodMeta::repr, call_guard);
+
+  m.def(
+      "_load_program",
+      &PyProgram::load_from_file,
+      py::arg("path"),
+      py::arg("program_verification") = Program::Verification::Minimal,
+      call_guard);
+  m.def(
+      "_load_program_from_buffer",
+      &PyProgram::load_from_buffer,
+      py::arg("buffer"),
+      py::arg("program_verification") = Program::Verification::Minimal,
+      call_guard);
+  py::class_<PyProgram>(m, "ExecuTorchProgram")
+      .def("num_methods", &PyProgram::num_methods, call_guard)
+      .def(
+          "get_method_name",
+          &PyProgram::get_method_name,
+          py::arg("method_index"),
+          call_guard);
 }
 
 namespace {

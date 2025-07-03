@@ -10,6 +10,21 @@ import torch
 from executorch.backends.xnnpack.test.tester import Tester
 
 
+def calculate_fp16_gelu_tolerance(ref_output_tensor):
+    fp16_epsilon = 9.77e-4
+    abs_tol = 2 * fp16_epsilon
+    rel_tol = 6 * fp16_epsilon
+
+    ref_abs = ref_output_tensor.abs()
+    mixed_tol = torch.maximum(
+        torch.full_like(ref_abs, abs_tol),
+        ref_abs * rel_tol,
+    )
+
+    final_atol = mixed_tol.max().item()
+    return final_atol, rel_tol
+
+
 class TestGelu(unittest.TestCase):
     def setUp(self):
         torch._dynamo.reset()
@@ -23,6 +38,18 @@ class TestGelu(unittest.TestCase):
             return self.gelu(x)
 
     def run_gelu_test(self, inputs):
+        input_tensor = inputs[0]
+
+        if input_tensor.dtype == torch.float16:
+            with torch.no_grad():
+                ref_output = torch.nn.functional.gelu(
+                    input_tensor.to(torch.float32)
+                ).to(torch.float16)
+            atol, rtol = calculate_fp16_gelu_tolerance(ref_output)
+        else:
+            atol = 1e-03
+            rtol = 1e-03
+
         (
             Tester(self.Gelu(), inputs)
             .export()
@@ -32,7 +59,7 @@ class TestGelu(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_gelu_default"])
             .to_executorch()
             .serialize()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(atol=atol, rtol=rtol)
         )
 
     def test_fp16_gelu(self):

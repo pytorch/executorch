@@ -591,7 +591,7 @@ def compile(args, pte_filename, tokenizer):
     for llama_instance in llama_instance_list:
         llama_instance.load_state_dict(
             state_dict,
-            strict=False,
+            strict=True,
             assign=True,
         )
     end_load_ts = time.time()

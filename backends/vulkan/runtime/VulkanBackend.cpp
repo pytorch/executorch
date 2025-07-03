@@ -359,15 +359,11 @@ class GraphBuilder {
       vkFn(*compute_graph_, args);
     }
 
-    // Parse the outputs, which will be mostly tensors.  For some reason,
-    // mutable buffers are shown to be returned in the fx.Graph but do not get
-    // returned by the delegate; this may be an implementation detail of how the
-    // executorch emitter handles mutable buffers.
+    // Parse the outputs, which will be mostly tensors but may contain tensorref
+    // values as well if the source graph returns parameter nodes.
     for (const uint32_t fb_id : *flatbuffer_->output_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      if (compute_graph_->val_is_tensor(ref)) {
-        compute_graph_->set_output_tensor(ref);
-      }
+      compute_graph_->set_output_value(ref);
     }
 
     if (compute_graph_->graphconfig().enable_querypool) {
@@ -609,6 +605,12 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             compute_graph->outputs()[i].staging,
             args[o]->toTensor().mutable_data_ptr(),
             args[o]->toTensor().numel());
+      }
+      // TensorRef values represent constant tensors which will not have been
+      // modified by the graph execution. Therefore, if a constant tensor is
+      // returned as an output, no action is required.
+      else if (compute_graph->val_is_tref(oref)) {
+        continue;
       } else {
         VK_THROW(
             "Could not handle output with type ",
