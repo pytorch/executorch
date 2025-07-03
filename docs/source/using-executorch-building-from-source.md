@@ -30,6 +30,7 @@ Windows (x86_64)
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
 * `python` version 3.10-3.12
+* `ccache` (optional) - A compiler cache that speeds up recompilation
 
 Note that the cross-compilable core runtime code supports a wider range of
 toolchains, down to C++17. See the [Runtime Overview](runtime-overview.md) for
@@ -59,13 +60,13 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 ## Install ExecuTorch pip package from source
    ```bash
    # Install ExecuTorch pip package and its dependencies, as well as
-   # development tools like CMake.
+   # development tools like CMake, and backend support for XNNPACK and CoreML.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
    # Intel-based macOS systems require building PyTorch from source (see below)
    ./install_executorch.sh
    ```
-  
-   See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.  
+
+   See the [PyTorch instructions](https://github.com/pytorch/pytorch#installation) on how to build PyTorch from source.
 
    Use the [`--use-pt-pinned-commit` flag](../../install_executorch.py) to install ExecuTorch with an existing PyTorch build:
 
@@ -78,10 +79,16 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    ./install_executorch.sh --use-pt-pinned-commit --minimal
    ```
 
-   Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:
+  Notice that only XNNPACK and CoreML backends are supported by default. You can enable additional backends or disable default backends by setting the corresponding CMake flags:
 
   ```bash
+  # Enable the MPS backend
   CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
+  ```
+
+  ```bash
+  # Disable the XNNPACK backend
+  CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=OFF" ./install_executorch.sh
   ```
 
    For development mode, run the command with `--editable`, which allows us to modify Python source code and see changes reflected immediately.
@@ -90,7 +97,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 
    # Or you can directly do the following if dependencies are already installed
    # either via a previous invocation of `./install_executorch.sh` or by explicitly installing requirements via `./install_requirements.sh` first.
-   pip install -e .
+   pip install -e . --no-build-isolation
    ```
 
    If C++ files are being modified, you will still have to reinstall ExecuTorch from source.
@@ -119,6 +126,8 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 > git submodule sync
 > git submodule update --init --recursive
 > ```
+>
+> The `--clean` command removes build artifacts, pip outputs, and also clears the ccache if it's installed, ensuring a completely fresh build environment.
 
 ## Build ExecuTorch C++ runtime from source
 
@@ -171,6 +180,29 @@ To further optimize the release build for size, use both:
 -DEXECUTORCH_OPTIMIZE_SIZE=ON
 ```
 
+#### Compiler Cache (ccache)
+
+ExecuTorch automatically detects and enables [ccache](https://ccache.dev/) if it's installed on your system. This significantly speeds up recompilation by caching previously compiled objects:
+
+- If ccache is detected, you'll see: `ccache found and enabled for faster builds`
+- If ccache is not installed, you'll see: `ccache not found, builds will not be cached`
+
+To install ccache:
+```bash
+# Ubuntu/Debian
+sudo apt install ccache
+
+# macOS
+brew install ccache
+
+# CentOS/RHEL
+sudo yum install ccache
+# or
+sudo dnf install ccache
+```
+
+No additional configuration is needed - the build system will automatically use ccache when available.
+
 See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)
 
 ### Build the runtime components
@@ -189,6 +221,8 @@ cd executorch
 # "core count + 1" as the `-j` value.
 cmake --build cmake-out -j9
 ```
+
+> **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) above). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
 
 ## Use an example binary `executor_runner` to execute a .pte file
 
@@ -243,7 +277,7 @@ Install ClangCL for Windows from the [official website](https://learn.microsoft.
 To check if conda is detected by the powershell prompt, try `conda list` or `conda --version`
 
 If conda is not detected, you could run the powershell script for conda named `conda-hook.ps1`.
-To verify that Conda is available in the in the powershell environment, run try `conda list` or `conda --version`. 
+To verify that Conda is available in the in the powershell environment, run try `conda list` or `conda --version`.
 If Conda is not available, run conda-hook.ps1 as follows:
 ```bash
 $miniconda_dir\\shell\\condabin\\conda-hook.ps1

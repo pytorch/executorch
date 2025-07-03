@@ -78,16 +78,13 @@ class ET_EXPERIMENTAL TextTokenGenerator {
     // initialize tensor wrappers
     auto tokens_managed = from_blob(
         token_data.data(), token_shape, executorch::aten::ScalarType::Long);
-    auto start_pos_managed =
-        from_blob(&pos, {1}, executorch::aten::ScalarType::Long);
 
     should_stop_ = false;
 
     // Generate our tokens
     while (pos < start_pos + max_new_tokens) {
       // Run the model
-      auto logits_res =
-          text_decoder_runner_->step(tokens_managed, start_pos_managed);
+      auto logits_res = text_decoder_runner_->step(tokens_managed, pos);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
       executorch::aten::Tensor& logits_tensor = logits_res.get();
