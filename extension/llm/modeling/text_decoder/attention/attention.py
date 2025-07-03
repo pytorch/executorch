@@ -5,9 +5,9 @@ from typing import Any, Dict, Optional, Tuple, Type, TypedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.norm import RMSNorm
-from executorch.examples.models.llama.rope import Rope
+from executorch.extension.llm.modeling.text_decoder.model_args import ModelArgs
+from executorch.extension.llm.modeling.text_decoder.norm import RMSNorm
+from executorch.extension.llm.modeling.text_decoder.rope import Rope
 
 
 class ForwardOptions(TypedDict, total=False):

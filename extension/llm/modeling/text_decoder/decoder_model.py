@@ -16,14 +16,14 @@ from executorch.examples.models.checkpoint import (
     get_default_model_resource_dir,
 )
 from executorch.examples.models.llama.llama_transformer import construct_transformer
-from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.rope import Rope
 
 from executorch.extension.llm.export.config.llm_config import LlmConfig
+from executorch.extension.llm.modeling.text_decoder.model_args import ModelArgs
+from executorch.extension.llm.modeling.text_decoder.rope import Rope
 from torchao.utils import TorchAOBaseTensor
 
 try:
-    from .fairseq2 import convert_to_llama_checkpoint
+    from executorch.examples.models.llama.fairseq2 import convert_to_llama_checkpoint
 
 except ImportError:
 
@@ -33,10 +33,10 @@ except ImportError:
         )
 
 
-from ..model_base import EagerModelBase
+from executorch.examples.models.model_base import EagerModelBase
 
 
-class Llama2Model(EagerModelBase):
+class DecoderModel(EagerModelBase):
     def __init__(self, llm_config: Optional[LlmConfig] = None):
         resource_dir = get_default_model_resource_dir(__file__)
 
@@ -185,7 +185,9 @@ the checkpoint format to avoid generating faulty models.
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
             # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.examples.models.source_transformation.quantize`
-            from ..source_transformation.quantize import WeightOnlyInt8QuantHandler
+            from executorch.examples.models.llama.source_transformation.quantize import (
+                WeightOnlyInt8QuantHandler,
+            )
 
             simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
@@ -200,7 +202,7 @@ the checkpoint format to avoid generating faulty models.
             print("Using SPIN quantization.")
             self._transform_for_pre_quantization(checkpoint, model_args)
 
-            from .source_transformation.pre_quantization import (
+            from executorch.examples.models.llama.source_transformation.pre_quantization import (
                 sanitize_checkpoint_from_pre_quantization,
             )
 
@@ -211,7 +213,7 @@ the checkpoint format to avoid generating faulty models.
             if self.llm_config.base.use_lora:
                 lora_rank = self.llm_config.base.use_lora
                 assert model_args.lora_args["rank"] == lora_rank
-                from .source_transformation.lora import (
+                from executorch.examples.models.llama.source_transformation.lora import (
                     transform_linear_for_lora_after_quantization,
                 )
 
@@ -221,14 +223,16 @@ the checkpoint format to avoid generating faulty models.
                     lora_rank,
                 )
 
-            from .source_transformation.pre_quantization import (
+            from executorch.examples.models.llama.source_transformation.pre_quantization import (
                 sanitize_checkpoint_from_pre_quantization,
             )
 
             sanitize_checkpoint_from_pre_quantization(checkpoint)
 
         if self.llm_config.model.use_attention_sink:
-            from .source_transformation.attention_sink import enable_attention_sink
+            from executorch.examples.models.llama.source_transformation.attention_sink import (
+                enable_attention_sink,
+            )
 
             attention_sink_params = self.llm_config.model.use_attention_sink.split(",")
             assert len(attention_sink_params) == 3
@@ -284,13 +288,17 @@ the checkpoint format to avoid generating faulty models.
 
         # Prune the input layer if input_prune_map is provided
         if input_prune_map is not None:
-            from .source_transformation.prune_vocab import prune_input_vocab
+            from executorch.examples.models.llama.source_transformation.prune_vocab import (
+                prune_input_vocab,
+            )
 
             self.model_ = prune_input_vocab(self.model_, input_prune_map)
 
         # Prune the output layer if output_prune_map is provided
         if output_prune_map is not None:
-            from .source_transformation.prune_vocab import prune_output_vocab
+            from executorch.examples.models.llama.source_transformation.prune_vocab import (
+                prune_output_vocab,
+            )
 
             self.model_ = prune_output_vocab(self.model_, output_prune_map)
 
@@ -335,7 +343,7 @@ the checkpoint format to avoid generating faulty models.
         assert self.llm_config.base.preq_group_size, "preq_group_size must be specified"
         assert self.llm_config.model.dtype_override, "dtype_override must be specified"
 
-        from .source_transformation.pre_quantization import (
+        from executorch.examples.models.llama.source_transformation.pre_quantization import (
             transform_linear_for_pre_quantization,
         )
 
@@ -352,7 +360,7 @@ the checkpoint format to avoid generating faulty models.
 
         # Transform the output layer first if needed.
         if self.llm_config.base.preq_mode.value == "8da4w_output_8da8w":
-            from .source_transformation.pre_quantization import (
+            from executorch.examples.models.llama.source_transformation.pre_quantization import (
                 transform_output_linear_for_pre_quantization,
             )
 
@@ -374,7 +382,7 @@ the checkpoint format to avoid generating faulty models.
             embedding_bit_width, embedding_group_size = (
                 self.llm_config.base.preq_embedding_quantize.split(",")
             )
-            from .source_transformation.pre_quantization import (
+            from executorch.examples.models.llama.source_transformation.pre_quantization import (
                 transform_embedding_for_pre_quantization,
             )
 

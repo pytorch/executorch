@@ -12,7 +12,7 @@ from functools import partial
 from typing import Optional, Tuple
 
 import torch
-from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.extension.llm.modeling.text_decoder.model_args import ModelArgs
 
 # ======================== Stock Implementation ========================
 
