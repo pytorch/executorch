@@ -1,3 +1,37 @@
+The current quantization overview page is a bit sparse: https://pytorch.org/executorch/main/quantization-overview.html. I'd like to update it as follows:
+
+Move under Usage/ since it's the only page under Quantization/ currently.
+Split out information intended for backend authors (info about writing a quantizer, for example). Focus on user-facing APIs.
+Document backend-invariant quantization flows (embeddings, ao kernels, etc.). Include info (and example) on composable quantizer.
+Document PT2E and quantize_ flows.
+Cover the general, high level approach to quantizing different types of models.
+CV models
+Transformers / language models
+Talk briefly about options for evaluating quantized model accuracy (running in eager mode vs pybindings vs on-device, for example)
+-----
+
+# Quantizing ExecuTorch Models
+
+ExecuTorch uses [torchao](https://github.com/pytorch/ao) for quantization.  In general, ExecuTorch quantization is backend specific, and we allow each backned to define exactly how models are quantization based on the capability of the underlying hardware.
+
+Each backend defines its own PT2E quantizers.
+
+PT2E quantization happens after model export, but before lowering to a backend.
+
+
+* XNNPACK quantization example
+* CoreML quantization example
+* Vulkan quantization example
+
+
+```
+
+```
+
+
+
+
+
 # Quantization Overview
 Quantization is a process that reduces the precision of computations and lowers memory footprint in the model. To learn more, please visit the [ExecuTorch concepts page](concepts.md#quantization). This is particularly useful for edge devices including wearables, embedded devices and microcontrollers, which typically have limited resources such as processing power, memory, and battery life. By using quantization, we can make our models more efficient and enable them to run effectively on these devices.
 
