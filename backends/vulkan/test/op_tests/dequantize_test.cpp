@@ -100,7 +100,15 @@ Tensor& dequantize_per_channel_out_no_context(
     executorch::aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   return torch::executor::native::dequantize_per_channel_out(
-      input, scale, zero_points, axis, quant_min, quant_max, dtype, out_dtype, out);
+      input,
+      scale,
+      zero_points,
+      axis,
+      quant_min,
+      quant_max,
+      dtype,
+      out_dtype,
+      out);
 }
 
 // ATen wrapper for dequantize_per_tensor
@@ -480,7 +488,8 @@ at::Tensor dequantize_per_channel_reference_impl(
     }
 
     // Store casted values to avoid repeated casting
-    const int32_t channel_zero_point_int32 = static_cast<int32_t>(channel_zero_point);
+    const int32_t channel_zero_point_int32 =
+        static_cast<int32_t>(channel_zero_point);
     const float channel_scale_float = static_cast<float>(channel_scale);
 
     // Get the input value and dequantize
@@ -490,19 +499,24 @@ at::Tensor dequantize_per_channel_reference_impl(
     // Following the CPU implementation pattern: (input - zero_point) * scale
     if (dtype == at::kByte) {
       uint8_t qvalue = input.flatten()[flat_idx].item<uint8_t>();
-      dequantized_value = (qvalue - channel_zero_point_int32) * channel_scale_float;
+      dequantized_value =
+          (qvalue - channel_zero_point_int32) * channel_scale_float;
     } else if (dtype == at::kChar) {
       int8_t qvalue = input.flatten()[flat_idx].item<int8_t>();
-      dequantized_value = (qvalue - channel_zero_point_int32) * channel_scale_float;
+      dequantized_value =
+          (qvalue - channel_zero_point_int32) * channel_scale_float;
     } else if (dtype == at::kShort) {
       int16_t qvalue = input.flatten()[flat_idx].item<int16_t>();
-      dequantized_value = (qvalue - channel_zero_point_int32) * channel_scale_float;
+      dequantized_value =
+          (qvalue - channel_zero_point_int32) * channel_scale_float;
     } else if (dtype == at::kInt) {
       int32_t qvalue = input.flatten()[flat_idx].item<int32_t>();
-      dequantized_value = (qvalue - channel_zero_point_int32) * channel_scale_float;
+      dequantized_value =
+          (qvalue - channel_zero_point_int32) * channel_scale_float;
     } else if (dtype == at::kLong) {
       int64_t qvalue = input.flatten()[flat_idx].item<int64_t>();
-      dequantized_value = (qvalue - channel_zero_point_int32) * channel_scale_float;
+      dequantized_value =
+          (qvalue - channel_zero_point_int32) * channel_scale_float;
     } else {
       throw std::runtime_error("Unsupported input dtype");
     }
@@ -878,7 +892,8 @@ void test_vulkan_dequantize_per_tensor_impl(
     output_correct =
         at::allclose(reference_out, vk_out, /*rtol=*/1e-2, /*atol=*/1e-2);
   } else {
-    output_correct = at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
+    output_correct =
+        at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
   }
   if (!output_correct) {
     std::cout << "\n"
@@ -1358,7 +1373,8 @@ void test_vulkan_dequantize_per_token_impl(
     output_correct =
         at::allclose(reference_out, vk_out, /*rtol=*/1e-2, /*atol=*/1e-2);
   } else {
-    output_correct = at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
+    output_correct =
+        at::allclose(reference_out, vk_out, /*rtol=*/1e-5, /*atol=*/1e-5);
   }
   if (!output_correct) {
     std::cout << "\n"

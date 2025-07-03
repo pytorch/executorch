@@ -616,22 +616,26 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         // Handle dtype conversion between Vulkan and ExecutorTorch (in-place)
         if (vulkan_dtype == vkapi::kFloat &&
             et_dtype == executorch::aten::ScalarType::Double) {
-          // Convert float32 to float64 in-place (backwards to avoid overwriting)
+          // Convert float32 to float64 in-place (backwards to avoid
+          // overwriting)
           double* data_64 = args[o]->toTensor().mutable_data_ptr<double>();
           const float* data_32 = args[o]->toTensor().const_data_ptr<float>();
           for (size_t j = args[o]->toTensor().numel() - 1; j >= 0; --j) {
             data_64[j] = static_cast<double>(data_32[j]);
-            if (j == 0) break; // Prevent underflow for size_t
+            if (j == 0)
+              break; // Prevent underflow for size_t
           }
         } else if (
             vulkan_dtype == vkapi::kInt &&
             et_dtype == executorch::aten::ScalarType::Long) {
           // Convert int32 to int64 in-place (backwards to avoid overwriting)
           int64_t* data_64 = args[o]->toTensor().mutable_data_ptr<int64_t>();
-          const int32_t* data_32 = args[o]->toTensor().const_data_ptr<int32_t>();
+          const int32_t* data_32 =
+              args[o]->toTensor().const_data_ptr<int32_t>();
           for (size_t j = args[o]->toTensor().numel() - 1; j >= 0; --j) {
             data_64[j] = static_cast<int64_t>(data_32[j]);
-            if (j == 0) break; // Prevent underflow for size_t
+            if (j == 0)
+              break; // Prevent underflow for size_t
           }
         }
       }
