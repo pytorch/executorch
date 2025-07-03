@@ -746,8 +746,10 @@ void test_vulkan_quantize_per_tensor_impl(
   at::Tensor reference_int = reference_out.to(at::kInt);
   at::Tensor vk_int = vk_out.to(at::kInt);
 
-  // Tolerance is 1 to address rounding errors and fp math differences between CPU/GPU
-  const bool output_correct = at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
+  // Tolerance is 1 to address rounding errors and fp math differences between
+  // CPU/GPU
+  const bool output_correct =
+      at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
   if (!output_correct) {
     at::Tensor diffs = at::abs(reference_int - vk_int);
 
@@ -1123,8 +1125,10 @@ void test_vulkan_quantize_per_token_impl(
   at::Tensor reference_int = reference_out.to(at::kInt);
   at::Tensor vk_int = vk_out.to(at::kInt);
 
-  // Tolerance is 1 to address rounding errors and fp math differences between CPU/GPU
-  const bool output_correct = at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
+  // Tolerance is 1 to address rounding errors and fp math differences between
+  // CPU/GPU
+  const bool output_correct =
+      at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
   if (!output_correct) {
     at::Tensor diffs = at::abs(reference_int - vk_int);
 
@@ -1244,9 +1248,7 @@ TEST(
       at::kByte);
 }
 
-TEST(
-    VulkanQuantizePerTokenTest,
-    test_vulkan_quantize_per_token_float_to_int8) {
+TEST(VulkanQuantizePerTokenTest, test_vulkan_quantize_per_token_float_to_int8) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {

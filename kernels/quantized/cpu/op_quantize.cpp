@@ -292,29 +292,25 @@ Tensor& quantize_per_channel_out(
     const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();             \
     const int64_t input_numel = input.numel();                                 \
     const int64_t axis_size = input.size(axis);                                \
-    \
+                                                                               \
     /* Calculate the stride pattern for efficient channel index calculation */ \
-    int64_t axis_block_size = 1;                                              \
-    for (int64_t i = axis + 1; i < input.dim(); i++) {                        \
-      axis_block_size *= input.size(i);                                       \
+    int64_t axis_block_size = 1;                                               \
+    for (int64_t i = axis + 1; i < input.dim(); i++) {                         \
+      axis_block_size *= input.size(i);                                        \
     }                                                                          \
-    \
+                                                                               \
     /* Single loop over all elements */                                        \
-    for (int64_t i = 0; i < input_numel; i++) {                               \
+    for (int64_t i = 0; i < input_numel; i++) {                                \
       /* Calculate which channel this element belongs to */                    \
-      int64_t channel_idx = (i / axis_block_size) % axis_size;                \
-      \
+      int64_t channel_idx = (i / axis_block_size) % axis_size;                 \
+                                                                               \
       /* Get quantization parameters for this channel */                       \
       double _scale = scale_data[channel_idx];                                 \
       int64_t _zero_point = zero_point_data[channel_idx];                      \
-      \
+                                                                               \
       /* Apply quantization */                                                 \
-      out_data_ptr[i] = quantize_val<CTYPE_OUT, CTYPE_IN>(                    \
-          _scale,                                                              \
-          _zero_point,                                                         \
-          input_data_ptr[i],                                                   \
-          quant_min,                                                           \
-          quant_max);                                                          \
+      out_data_ptr[i] = quantize_val<CTYPE_OUT, CTYPE_IN>(                     \
+          _scale, _zero_point, input_data_ptr[i], quant_min, quant_max);       \
     }                                                                          \
   } break;
 
