@@ -172,18 +172,28 @@ struct type_convert<torch::executor::optional<F>, std::optional<T>> final {
   }
 };
 
-// Specific specialization for optional tensor conversion: std::optional<at::Tensor> to std::optional<executorch::runtime::etensor::Tensor>
+// Specific specialization for optional tensor conversion:
+// std::optional<at::Tensor> to
+// std::optional<executorch::runtime::etensor::Tensor>
 template <>
-struct type_convert<const std::optional<at::Tensor>&, const std::optional<torch::executor::Tensor>&> final {
+struct type_convert<
+    const std::optional<at::Tensor>&,
+    const std::optional<torch::executor::Tensor>&>
+    final {
  public:
   const std::optional<at::Tensor>& val;
-  std::unique_ptr<struct type_convert<const at::Tensor&, const torch::executor::Tensor&>> convert_struct;
+  std::unique_ptr<
+      struct type_convert<const at::Tensor&, const torch::executor::Tensor&>>
+      convert_struct;
   explicit type_convert(const std::optional<at::Tensor>& value) : val(value) {}
   const std::optional<torch::executor::Tensor>& call() {
     static std::optional<torch::executor::Tensor> result;
     if (val.has_value()) {
-      convert_struct = std::make_unique<struct type_convert<const at::Tensor&, const torch::executor::Tensor&>>(
-          type_convert<const at::Tensor&, const torch::executor::Tensor&>(val.value()));
+      convert_struct = std::make_unique<struct type_convert<
+          const at::Tensor&,
+          const torch::executor::Tensor&>>(
+          type_convert<const at::Tensor&, const torch::executor::Tensor&>(
+              val.value()));
       result = std::optional<torch::executor::Tensor>(convert_struct->call());
     } else {
       result = std::optional<torch::executor::Tensor>();

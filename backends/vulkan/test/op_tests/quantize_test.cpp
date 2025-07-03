@@ -746,8 +746,10 @@ void test_vulkan_quantize_per_tensor_impl(
   at::Tensor reference_int = reference_out.to(at::kInt);
   at::Tensor vk_int = vk_out.to(at::kInt);
 
-  // Tolerance is 1 to address rounding errors and fp math differences between CPU/GPU
-  const bool output_correct = at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
+  // Tolerance is 1 to address rounding errors and fp math differences between
+  // CPU/GPU
+  const bool output_correct =
+      at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
   if (!output_correct) {
     at::Tensor diffs = at::abs(reference_int - vk_int);
 
@@ -1123,8 +1125,10 @@ void test_vulkan_quantize_per_token_impl(
   at::Tensor reference_int = reference_out.to(at::kInt);
   at::Tensor vk_int = vk_out.to(at::kInt);
 
-  // Tolerance is 1 to address rounding errors and fp math differences between CPU/GPU
-  const bool output_correct = at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
+  // Tolerance is 1 to address rounding errors and fp math differences between
+  // CPU/GPU
+  const bool output_correct =
+      at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
   if (!output_correct) {
     at::Tensor diffs = at::abs(reference_int - vk_int);
 
@@ -1244,9 +1248,7 @@ TEST(
       at::kByte);
 }
 
-TEST(
-    VulkanQuantizePerTokenTest,
-    test_vulkan_quantize_per_token_float_to_int8) {
+TEST(VulkanQuantizePerTokenTest, test_vulkan_quantize_per_token_float_to_int8) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
@@ -1606,8 +1608,10 @@ void test_vulkan_quantize_per_channel_impl(
   at::Tensor reference_int = reference_out.to(at::kInt);
   at::Tensor vk_int = vk_out.to(at::kInt);
 
-  // Tolerance is 1 to address rounding errors and fp math differences between CPU/GPU
-  const bool output_correct = at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
+  // Tolerance is 1 to address rounding errors and fp math differences between
+  // CPU/GPU
+  const bool output_correct =
+      at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
   if (!output_correct) {
     at::Tensor diffs = at::abs(reference_int - vk_int);
 
@@ -1717,7 +1721,9 @@ TEST(
 
 // END OF REFERENCE TESTS
 
-TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int8_axis0) {
+TEST(
+    VulkanQuantizePerChannelTest,
+    test_vulkan_quantize_per_channel_float_to_int8_axis0) {
   std::vector<float> scales(9, 0.1f);
   std::vector<int> zero_points(9, 2);
 
@@ -1777,7 +1783,9 @@ TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int
       at::kChar);
 }
 
-TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int8_axis1) {
+TEST(
+    VulkanQuantizePerChannelTest,
+    test_vulkan_quantize_per_channel_float_to_int8_axis1) {
   std::vector<float> scales(14, 0.001f);
   std::vector<int> zero_points(14, -5);
 
@@ -1826,7 +1834,9 @@ TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int
       at::kChar);
 }
 
-TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int8_axis2) {
+TEST(
+    VulkanQuantizePerChannelTest,
+    test_vulkan_quantize_per_channel_float_to_int8_axis2) {
   std::vector<float> scales(11, 0.5f);
   std::vector<int> zero_points(11, 12);
 
@@ -1864,7 +1874,9 @@ TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int
       at::kChar);
 }
 
-TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int8_axis3) {
+TEST(
+    VulkanQuantizePerChannelTest,
+    test_vulkan_quantize_per_channel_float_to_int8_axis3) {
   std::vector<float> scales(7, 0.5f);
   std::vector<int> zero_points(7, 12);
 
@@ -1891,7 +1903,9 @@ TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int
       at::kChar);
 }
 
-TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_uint8_comprehensive) {
+TEST(
+    VulkanQuantizePerChannelTest,
+    test_vulkan_quantize_per_channel_float_to_uint8_comprehensive) {
   std::vector<float> scales = {0.1, 0.2, 0.0001, 0.5, 0.02};
   std::vector<int> zero_points = {0, 5, -5, 1, 12};
 
@@ -1951,7 +1965,9 @@ TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_uin
       at::kByte);
 }
 
-TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_half_to_8bit) {
+TEST(
+    VulkanQuantizePerChannelTest,
+    test_vulkan_quantize_per_channel_half_to_8bit) {
   std::vector<float> scales = {0.1, 0.2, 0.01, 0.5, 0.02};
   std::vector<int> zero_points = {0, 5, 5, 1, 12};
 
@@ -2011,7 +2027,9 @@ TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_half_to_8bit
       at::kByte);
 }
 
-TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_double_to_8bit) {
+TEST(
+    VulkanQuantizePerChannelTest,
+    test_vulkan_quantize_per_channel_double_to_8bit) {
   std::vector<float> scales = {0.1, 0.2, 0.01, 0.5, 0.02};
   std::vector<int> zero_points = {0, 5, 5, 1, 12};
 
