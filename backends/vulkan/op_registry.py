@@ -259,6 +259,7 @@ def register_ephemeral_op(features: OpFeatures):
         exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.div.Tensor_mode,
         exir_ops.edge.aten.pow.Tensor_Tensor,
+        exir_ops.edge.aten.eq.Tensor,
     ]
 )
 def register_binary_op(features: OpFeatures):
