@@ -2205,8 +2205,9 @@ void test_vulkan_quantize_per_tensor_tensor_impl(
       at::tensor({zero_point}, at::device(at::kCPU).dtype(at::kLong));
 
   // Get reference output using tensor variant
-  at::Tensor reference_out = torch::executor::native::quantize_per_tensor_tensor_args_aten(
-      input, scale_tensor, zero_point_tensor, quant_min, quant_max, dtype);
+  at::Tensor reference_out =
+      torch::executor::native::quantize_per_tensor_tensor_args_aten(
+          input, scale_tensor, zero_point_tensor, quant_min, quant_max, dtype);
 
   // Build Vulkan quantize_per_tensor.tensor graph
   using namespace vkcompute;
@@ -2314,7 +2315,9 @@ void test_vulkan_quantize_per_tensor_tensor_impl(
   ASSERT_TRUE(output_correct);
 }
 
-TEST(VulkanQuantizePerTensorTensorTest, test_vulkan_quantize_per_tensor_tensor_float_to_int8) {
+TEST(
+    VulkanQuantizePerTensorTensorTest,
+    test_vulkan_quantize_per_tensor_tensor_float_to_int8) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
@@ -2330,7 +2333,9 @@ TEST(VulkanQuantizePerTensorTensorTest, test_vulkan_quantize_per_tensor_tensor_f
       at::kChar); // output dtype
 }
 
-TEST(VulkanQuantizePerTensorTensorTest, test_vulkan_quantize_per_tensor_tensor_float_to_uint8) {
+TEST(
+    VulkanQuantizePerTensorTensorTest,
+    test_vulkan_quantize_per_tensor_tensor_float_to_uint8) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
@@ -2346,7 +2351,9 @@ TEST(VulkanQuantizePerTensorTensorTest, test_vulkan_quantize_per_tensor_tensor_f
       at::kByte); // output dtype
 }
 
-TEST(VulkanQuantizePerTensorTensorTest, test_vulkan_quantize_per_tensor_tensor_float_to_int32) {
+TEST(
+    VulkanQuantizePerTensorTensorTest,
+    test_vulkan_quantize_per_tensor_tensor_float_to_int32) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
@@ -2362,7 +2369,9 @@ TEST(VulkanQuantizePerTensorTensorTest, test_vulkan_quantize_per_tensor_tensor_f
       at::kInt); // output dtype
 }
 
-TEST(VulkanQuantizePerTensorTensorTest, test_vulkan_quantize_per_tensor_tensor_half_to_uint8) {
+TEST(
+    VulkanQuantizePerTensorTensorTest,
+    test_vulkan_quantize_per_tensor_tensor_half_to_uint8) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
@@ -2378,7 +2387,9 @@ TEST(VulkanQuantizePerTensorTensorTest, test_vulkan_quantize_per_tensor_tensor_h
       at::kByte); // output dtype
 }
 
-TEST(VulkanQuantizePerTensorTensorTest, test_vulkan_quantize_per_tensor_tensor_double_to_int8) {
+TEST(
+    VulkanQuantizePerTensorTensorTest,
+    test_vulkan_quantize_per_tensor_tensor_double_to_int8) {
   if (!vkcompute::api::context()
            ->adapter_ptr()
            ->has_full_int8_buffers_support()) {
