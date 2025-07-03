@@ -328,6 +328,7 @@ class CheckProperQuantization(OperatorSupportBase):
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.upsample_nearest2d.vec,
         torch.ops.aten.scalar_tensor.default,
+        exir_ops.edge.aten.mean.dim,
         *TableOps.included_ops(),
     )
 
