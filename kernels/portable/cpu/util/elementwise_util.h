@@ -319,12 +319,13 @@ inline void apply_elementwise_fn(
   }
 
   constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMPUTE>::value;
-  if constexpr (should_include_kernel_dtype(op_name, compute_type)) {
+  constexpr ScalarType out_specialized_scalar_type =
+      specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
+  if constexpr (should_include_kernel_dtype(
+                    op_name, out_specialized_scalar_type)) {
     const bool all_inputs_compute_dtype =
         ((inputs.first->scalar_type() == compute_type) && ...);
 
-    constexpr ScalarType out_specialized_scalar_type =
-        specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
     if (all_inputs_compute_dtype &&
         out.scalar_type() == out_specialized_scalar_type) {
       using CTYPE_OUT =
