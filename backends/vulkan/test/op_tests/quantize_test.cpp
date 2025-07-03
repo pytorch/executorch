@@ -1488,6 +1488,165 @@ void test_reference_quantize_per_channel(
   ASSERT_TRUE(output_correct);
 }
 
+void test_vulkan_quantize_per_channel_impl(
+    const std::vector<int>& input_sizes,
+    const std::vector<float>& pre_scales,
+    const std::vector<int>& zero_points,
+    int64_t axis,
+    int64_t quant_min,
+    int64_t quant_max,
+    at::ScalarType in_dtype = at::kFloat,
+    at::ScalarType dtype = at::kInt,
+    const vkcompute::utils::StorageType in_storage =
+        vkcompute::utils::kTexture3D,
+    const vkcompute::utils::StorageType out_storage =
+        vkcompute::utils::kTexture3D) {
+  check_quantize_args(quant_min, quant_max, dtype);
+  check_quantize_per_channel_args(input_sizes, pre_scales, zero_points, axis);
+
+  std::vector<float> scales = pre_scales;
+  for (auto& s : scales) {
+    s = s < eps ? eps : s;
+  }
+
+  // Create input tensor with random values
+  std::vector<int64_t> input_sizes_int64(
+      input_sizes.begin(), input_sizes.end());
+  at::Tensor input =
+      at::rand(input_sizes_int64, at::device(at::kCPU).dtype(in_dtype));
+  at::Tensor scale_tensor =
+      at::tensor(scales, at::device(at::kCPU).dtype(at::kDouble));
+  at::Tensor zero_point_tensor =
+      at::tensor(zero_points, at::device(at::kCPU).dtype(at::kLong));
+
+  // Get reference output
+  at::Tensor reference_out = torch::executor::native::quantize_per_channel_aten(
+      input,
+      scale_tensor,
+      zero_point_tensor,
+      axis,
+      quant_min,
+      quant_max,
+      dtype);
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(in_storage);
+  ComputeGraph graph(config);
+
+  IOValueRef r_input = graph.add_input_tensor(
+      input.sizes().vec(), from_at_scalartype(input.scalar_type()), in_storage);
+  IOValueRef r_scale = graph.add_input_tensor(
+      scale_tensor.sizes().vec(),
+      vkapi::kFloat,
+      utils::kBuffer,
+      utils::kWidthPacked);
+  IOValueRef r_zero_point = graph.add_input_tensor(
+      zero_point_tensor.sizes().vec(),
+      vkapi::kInt,
+      utils::kBuffer,
+      utils::kWidthPacked);
+
+  const ValueRef r_axis = graph.add_scalar<int64_t>(axis);
+  const ValueRef r_quant_min = graph.add_scalar<int64_t>(quant_min);
+  const ValueRef r_quant_max = graph.add_scalar<int64_t>(quant_max);
+
+  const ValueRef r_out = graph.add_tensor(
+      input.sizes().vec(), from_at_scalartype(dtype), out_storage);
+
+  const ValueRef r_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(dtype));
+
+  VK_GET_OP_FN("quantized_decomposed.quantize_per_channel.default")
+  (graph,
+   {
+       r_input.value,
+       r_scale.value,
+       r_zero_point.value,
+       r_axis,
+       r_quant_min,
+       r_quant_max,
+       r_dtype,
+       r_out,
+   });
+
+  ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  // Copy input data to GPU
+  graph.copy_into_staging(
+      r_input.staging, input.const_data_ptr(), input.numel());
+
+  // Convert scale tensor to float and copy to GPU
+  at::Tensor scale_float = scale_tensor.to(at::kFloat);
+  graph.copy_into_staging(
+      r_scale.staging, scale_float.const_data_ptr(), scale_float.numel());
+
+  // Convert zero_point tensor to int and copy to GPU
+  at::Tensor zero_point_int = zero_point_tensor.to(at::kInt);
+  graph.copy_into_staging(
+      r_zero_point.staging,
+      zero_point_int.const_data_ptr(),
+      zero_point_int.numel());
+
+  // Execute the graph
+  graph.execute();
+
+  // Copy output data back to CPU
+  at::Tensor vk_out = at::empty_like(reference_out).contiguous();
+  graph.copy_from_staging(
+      staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
+
+  // Compare outputs
+  at::Tensor reference_int = reference_out.to(at::kInt);
+  at::Tensor vk_int = vk_out.to(at::kInt);
+
+  // Tolerance is 1 to address rounding errors and fp math differences between CPU/GPU
+  const bool output_correct = at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
+  if (!output_correct) {
+    at::Tensor diffs = at::abs(reference_int - vk_int);
+
+    std::cout << "\n"
+              << "Failed with parameters: " << std::endl;
+    std::cout << "  axis: " << axis << std::endl;
+    std::cout << "  input sizes:";
+    for (size_t i = 0; i < input_sizes.size(); i++) {
+      std::cout << " " << input_sizes[i] << " ";
+    }
+    std::cout << "" << std::endl;
+    std::cout << "  scale(s):";
+    for (size_t i = 0; i < scales.size(); i++) {
+      std::cout << " " << scales[i] << " ";
+    }
+    std::cout << "" << std::endl;
+    std::cout << "  zero_point(s):";
+    for (size_t i = 0; i < zero_points.size(); i++) {
+      std::cout << " " << zero_points[i] << " ";
+    }
+    std::cout << "" << std::endl;
+    std::cout << "  quant_min: " << quant_min << std::endl;
+    std::cout << "  quant_max: " << quant_max << std::endl;
+    std::cout << "  storage type: "
+              << (in_storage == vkcompute::utils::kBuffer ? "buffer"
+                                                          : "texture")
+              << std::endl;
+
+    std::cout << "input:" << std::endl;
+    std::cout << input << std::endl;
+    std::cout << "reference:" << std::endl;
+    std::cout << reference_int << std::endl;
+    std::cout << "vulkan:" << std::endl;
+    std::cout << vk_int << std::endl;
+  }
+
+  ASSERT_TRUE(output_correct);
+}
+
 TEST(
     VulkanQuantizePerChannelTest,
     test_reference_quantize_per_channel_float_to_int8_3D_axis0) {
@@ -1554,4 +1713,360 @@ TEST(
       127, // quant_max
       at::kFloat,
       at::kChar);
+}
+
+// END OF REFERENCE TESTS
+
+TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int8_axis0) {
+  std::vector<float> scales(9, 0.1f);
+  std::vector<int> zero_points(9, 2);
+
+  // 1D Tensor
+  test_vulkan_quantize_per_channel(
+      {9}, // input sizes
+      scales,
+      zero_points,
+      0, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+
+  // 2D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14}, // input sizes
+      scales,
+      zero_points,
+      0, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+
+  // 3D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 7, 11}, // input sizes
+      scales,
+      zero_points,
+      0, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 17, 5, 5}, // input sizes
+      scales,
+      zero_points,
+      0, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+
+  // 4D Tensor (negative axis)
+  test_vulkan_quantize_per_channel(
+      {5, 17, 5, 9}, // input sizes
+      scales,
+      zero_points,
+      -1, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+}
+
+TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int8_axis1) {
+  std::vector<float> scales(14, 0.001f);
+  std::vector<int> zero_points(14, -5);
+
+  // 2D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14}, // input sizes
+      scales,
+      zero_points,
+      1, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+
+  // 3D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 11}, // input sizes
+      scales,
+      zero_points,
+      1, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 5, 5}, // input sizes
+      scales,
+      zero_points,
+      1, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+
+  // 4D Tensor (negative axis)
+  test_vulkan_quantize_per_channel(
+      {9, 7, 14, 5}, // input sizes
+      scales,
+      zero_points,
+      -2, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+}
+
+TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int8_axis2) {
+  std::vector<float> scales(11, 0.5f);
+  std::vector<int> zero_points(11, 12);
+
+  // 3D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 11}, // input sizes
+      scales,
+      zero_points,
+      2, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 11, 5}, // input sizes
+      scales,
+      zero_points,
+      2, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+
+  // 4D Tensor (negative axis)
+  test_vulkan_quantize_per_channel(
+      {9, 11, 14, 5}, // input sizes
+      scales,
+      zero_points,
+      -3, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+}
+
+TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_int8_axis3) {
+  std::vector<float> scales(7, 0.5f);
+  std::vector<int> zero_points(7, 12);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      3, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+
+  // 4D Tensor (negative axis)
+  test_vulkan_quantize_per_channel(
+      {7, 14, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      -4, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat,
+      at::kChar);
+}
+
+TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_float_to_uint8_comprehensive) {
+  std::vector<float> scales = {0.1, 0.2, 0.0001, 0.5, 0.02};
+  std::vector<int> zero_points = {0, 5, -5, 1, 12};
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {5, 14, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      0, // axis
+      0, // quant_min
+      255, // quant_max
+      at::kFloat,
+      at::kByte);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 5, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      1, // axis
+      0, // quant_min
+      255, // quant_max
+      at::kFloat,
+      at::kByte);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 5, 7}, // input sizes
+      scales,
+      zero_points,
+      2, // axis
+      0, // quant_min
+      255, // quant_max
+      at::kFloat,
+      at::kByte);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 11, 5}, // input sizes
+      scales,
+      zero_points,
+      3, // axis
+      0, // quant_min
+      255, // quant_max
+      at::kFloat,
+      at::kByte);
+
+  // 4D Tensor (negative axis)
+  test_vulkan_quantize_per_channel(
+      {5, 14, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      -4, // axis
+      0, // quant_min
+      255, // quant_max
+      at::kFloat,
+      at::kByte);
+}
+
+TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_half_to_8bit) {
+  std::vector<float> scales = {0.1, 0.2, 0.01, 0.5, 0.02};
+  std::vector<int> zero_points = {0, 5, 5, 1, 12};
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {5, 14, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      0, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kHalf,
+      at::kChar);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 5, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      1, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kHalf,
+      at::kChar);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 5, 7}, // input sizes
+      scales,
+      zero_points,
+      2, // axis
+      0, // quant_min
+      255, // quant_max
+      at::kHalf,
+      at::kByte);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 11, 5}, // input sizes
+      scales,
+      zero_points,
+      3, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kHalf,
+      at::kChar);
+
+  // 4D Tensor (negative axis)
+  test_vulkan_quantize_per_channel(
+      {5, 14, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      -4, // axis
+      0, // quant_min
+      255, // quant_max
+      at::kHalf,
+      at::kByte);
+}
+
+TEST(VulkanQuantizePerChannelTest, test_vulkan_quantize_per_channel_double_to_8bit) {
+  std::vector<float> scales = {0.1, 0.2, 0.01, 0.5, 0.02};
+  std::vector<int> zero_points = {0, 5, 5, 1, 12};
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {5, 14, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      0, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kDouble,
+      at::kChar);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 5, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      1, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kDouble,
+      at::kChar);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 5, 7}, // input sizes
+      scales,
+      zero_points,
+      2, // axis
+      0, // quant_min
+      255, // quant_max
+      at::kDouble,
+      at::kByte);
+
+  // 4D Tensor
+  test_vulkan_quantize_per_channel(
+      {9, 14, 11, 5}, // input sizes
+      scales,
+      zero_points,
+      3, // axis
+      -128, // quant_min
+      127, // quant_max
+      at::kDouble,
+      at::kChar);
+
+  // 4D Tensor (negative axis)
+  test_vulkan_quantize_per_channel(
+      {5, 14, 11, 7}, // input sizes
+      scales,
+      zero_points,
+      -4, // axis
+      0, // quant_min
+      255, // quant_max
+      at::kDouble,
+      at::kByte);
 }
