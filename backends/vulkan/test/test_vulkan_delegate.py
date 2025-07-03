@@ -1972,12 +1972,14 @@ class TestVulkanBackend(unittest.TestCase):
 
             def forward(self, x):
                 # Step 1: Choose quantization parameters per tensor
-                scale, zero_point = torch.ops.quantized_decomposed.choose_qparams.tensor(
-                    x,
-                    quant_min=-2147483648,  # int32 min
-                    quant_max=2147483647,   # int32 max
-                    eps=1e-5,
-                    dtype=torch.int32,
+                scale, zero_point = (
+                    torch.ops.quantized_decomposed.choose_qparams.tensor(
+                        x,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        eps=1e-5,
+                        dtype=torch.int32,
+                    )
                 )
 
                 # Step 2: Quantize using the calculated parameters
@@ -1986,18 +1988,20 @@ class TestVulkanBackend(unittest.TestCase):
                     scale,
                     zero_point,
                     quant_min=-2147483648,  # int32 min
-                    quant_max=2147483647,   # int32 max
+                    quant_max=2147483647,  # int32 max
                     dtype=torch.int32,
                 )
 
                 # Step 3: Dequantize back to float
-                dequantized = torch.ops.quantized_decomposed.dequantize_per_tensor.tensor(
-                    quantized,
-                    scale,
-                    zero_point,
-                    quant_min=-2147483648,  # int32 min
-                    quant_max=2147483647,   # int32 max
-                    dtype=torch.int32,
+                dequantized = (
+                    torch.ops.quantized_decomposed.dequantize_per_tensor.tensor(
+                        quantized,
+                        scale,
+                        zero_point,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        dtype=torch.int32,
+                    )
                 )
 
                 return dequantized
@@ -2006,7 +2010,9 @@ class TestVulkanBackend(unittest.TestCase):
         sample_inputs = (torch.rand(size=(2, 3, 4), dtype=torch.float32),)
 
         # Use higher tolerance since quantization introduces some error
-        self.lower_module_and_test_output(full_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3)
+        self.lower_module_and_test_output(
+            full_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
+        )
 
     def test_vulkan_backend_full_per_token_quantization_workflow(self):
         class FullPerTokenQuantizationWorkflowModule(torch.nn.Module):
@@ -2015,9 +2021,11 @@ class TestVulkanBackend(unittest.TestCase):
 
             def forward(self, x):
                 # Step 1: Choose quantization parameters per token
-                scale, zero_point = torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
-                    x,
-                    dtype=torch.int32,
+                scale, zero_point = (
+                    torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
+                        x,
+                        dtype=torch.int32,
+                    )
                 )
 
                 # Step 2: Quantize using the calculated parameters per token
@@ -2026,19 +2034,21 @@ class TestVulkanBackend(unittest.TestCase):
                     scale,
                     zero_point,
                     quant_min=-2147483648,  # int32 min
-                    quant_max=2147483647,   # int32 max
+                    quant_max=2147483647,  # int32 max
                     dtype=torch.int32,
                 )
 
                 # Step 3: Dequantize back to float per token
-                dequantized = torch.ops.quantized_decomposed.dequantize_per_token.default(
-                    quantized,
-                    scale,
-                    zero_point,
-                    quant_min=-2147483648,  # int32 min
-                    quant_max=2147483647,   # int32 max
-                    dtype=torch.int32,
-                    output_dtype=torch.float32,
+                dequantized = (
+                    torch.ops.quantized_decomposed.dequantize_per_token.default(
+                        quantized,
+                        scale,
+                        zero_point,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        dtype=torch.int32,
+                        output_dtype=torch.float32,
+                    )
                 )
 
                 return dequantized
@@ -2047,4 +2057,6 @@ class TestVulkanBackend(unittest.TestCase):
         sample_inputs = (torch.rand(size=(6, 4), dtype=torch.float32),)
 
         # Use higher tolerance since quantization introduces some error
-        self.lower_module_and_test_output(full_per_token_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3)
+        self.lower_module_and_test_output(
+            full_per_token_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
+        )
