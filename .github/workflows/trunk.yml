@@ -463,36 +463,10 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        model: [dl3, mv3, mv2, ic4, ic3, vit, mb, w2l]
+        model: [dl3, mv3, mv2, ic4, ic3, vit, mb, w2l, cvt, deit, dit, efficientnet, focalnet, mobilevit_v1, mobilevit_v2, pvt, swin, albert, bert, distilbert, roberta]
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
-
-  test-qnn-optimum-model:
-    name: test-qnn-optimum-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        dtype: [fp32]
-        model: [cvt, deit, dit, efficientnet, focalnet, mobilevit_v1, mobilevit_v2, pvt, swin, albert, bert, distilbert, roberta] # eurobert requires transfomer >= 4.48.0, skip for now
-      fail-fast: false
-    with:
-      runner: linux.2xlarge.memory
       docker-image: executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
