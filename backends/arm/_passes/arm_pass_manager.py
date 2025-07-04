@@ -6,6 +6,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+
+import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AddBiasPass,
     AnnotateChannelsLastDimOrder,
@@ -45,6 +47,7 @@ from executorch.backends.arm._passes import (
     DecomposeNotEqualPass,
     DecomposeRoundPass,
     DecomposeSelectPass,
+    DecomposeSignPass,
     DecomposeSiluPass,
     DecomposeSinhPass,
     DecomposeSoftmaxPass,
@@ -160,6 +163,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())
+        self.add_pass(DecomposeSignPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
@@ -245,6 +249,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoundPass())
         self.add_pass(CastBoolToInt8Pass())
+        self.add_pass(DecomposeSignPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())

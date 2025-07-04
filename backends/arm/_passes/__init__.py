@@ -42,6 +42,7 @@ from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_round_pass import DecomposeRoundPass  # noqa
 from .decompose_select import DecomposeSelectPass  # noqa
+from .decompose_sign_pass import DecomposeSignPass  # noqa
 from .decompose_silu_pass import DecomposeSiluPass  # noqa
 from .decompose_sinh_pass import DecomposeSinhPass  # noqa
 from .decompose_softmax_pass import DecomposeSoftmaxPass  # noqa
