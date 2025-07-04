@@ -77,7 +77,7 @@ void add_binary_op_texture_node(
   kernel_name.reserve(kShaderNameReserve);
   kernel_name += op_name;
   add_storage_type_suffix(kernel_name, *t_out);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(in1));
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -121,7 +121,8 @@ void add_binary_op_buffer_node(
   kernel_name.reserve(kShaderNameReserve);
   kernel_name += op_name;
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  add_dtype_suffix(kernel_name, graph.dtype_of(in1));
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -189,6 +190,11 @@ DEFINE_BINARY_OP_FN(mul);
 DEFINE_BINARY_OP_FN(div);
 DEFINE_BINARY_OP_FN(pow);
 DEFINE_BINARY_OP_FN(minimum);
+DEFINE_BINARY_OP_FN(eq);
+DEFINE_BINARY_OP_FN(lt);
+DEFINE_BINARY_OP_FN(le);
+DEFINE_BINARY_OP_FN(gt);
+DEFINE_BINARY_OP_FN(ge);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.add.Tensor, add);
@@ -198,6 +204,11 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.div.Tensor_mode, floor_divide);
   VK_REGISTER_OP(aten.pow.Tensor_Tensor, pow);
   VK_REGISTER_OP(aten.minimum.default, minimum);
+  VK_REGISTER_OP(aten.eq.Tensor, eq);
+  VK_REGISTER_OP(aten.lt.Tensor, lt);
+  VK_REGISTER_OP(aten.le.Tensor, le);
+  VK_REGISTER_OP(aten.gt.Tensor, gt);
+  VK_REGISTER_OP(aten.ge.Tensor, ge);
 }
 
 } // namespace vkcompute
