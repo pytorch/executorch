@@ -170,7 +170,8 @@ quantized_model = convert_pt2e(prepared_model)
 
 Note that static quantization requires exporting the model for iOS17 or later.
 
-See [PyTorch 2 Export Post Training Quantization](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html) for more information.
+See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
+
 
 ----
 
@@ -220,7 +221,7 @@ This happens because the model is in FP16, but CoreML interprets some of the arg
 2. coremltools/converters/mil/backend/mil/load.py", line 499, in export
     raise RuntimeError("BlobWriter not loaded")
 
-If you're using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13, see this [issue](https://github.com/apple/coremltools/issues/2487).  
+If you're using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13, see this [issue](https://github.com/apple/coremltools/issues/2487).
 
 ### At runtime
 1. [ETCoreMLModelCompiler.mm:55] [Core ML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 "Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset 'CoreML7'." UserInfo={NSLocalizedDescription=Failed to par$
