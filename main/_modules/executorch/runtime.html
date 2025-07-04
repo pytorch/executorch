@@ -549,8 +549,9 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="k">try</span><span class="p">:</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.pybindings.portable_lib</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-        <span class="n">ExecuTorchModule</span><span class="p">,</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.pybindings.portable_lib</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>  <span class="c1"># type: ignore[import-not-found]</span>
+        <span class="n">ExecuTorchMethod</span><span class="p">,</span>
+        <span class="n">ExecuTorchProgram</span><span class="p">,</span>
         <span class="n">MethodMeta</span><span class="p">,</span>
         <span class="n">Verification</span><span class="p">,</span>
     <span class="p">)</span>
@@ -566,10 +567,8 @@
 <span class="sd">    This can be used to execute the method with inputs.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">module</span><span class="p">:</span> <span class="n">ExecuTorchModule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="c1"># TODO: This class should be pybind to the C++ counterpart instead of hosting ExecuTorchModule.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_method_name</span> <span class="o">=</span> <span class="n">method_name</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_module</span> <span class="o">=</span> <span class="n">module</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="n">ExecuTorchMethod</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_method</span> <span class="o">=</span> <span class="n">method</span>
 
 <div class="viewcode-block" id="Method.execute"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Method.execute">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Executes the method with the given inputs.</span>
@@ -580,7 +579,7 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            The outputs of the method.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">run_method</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_method_name</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span></div>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MethodMeta</span><span class="p">:</span>
@@ -589,7 +588,7 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            The metadata for the method.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">method_meta</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_method_name</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span><span class="o">.</span><span class="n">method_meta</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="Program"><a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Program">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">Program</span><span class="p">:</span>
@@ -598,17 +597,15 @@
 <span class="sd">    This can be used to load the methods/models defined by the program.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module</span><span class="p">:</span> <span class="n">ExecuTorchModule</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">program</span><span class="p">:</span> <span class="n">ExecuTorchProgram</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># Hold the data so the program is not freed.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_data</span> <span class="o">=</span> <span class="n">data</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_module</span> <span class="o">=</span> <span class="n">module</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Method</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="c1"># ExecuTorchModule already pre-loads all Methods when created, so this</span>
-        <span class="c1"># doesn&#39;t do any extra work. TODO: Don&#39;t load a given Method until</span>
-        <span class="c1"># load_method() is called. Create a separate Method instance each time,</span>
-        <span class="c1"># to allow multiple independent instances of the same model.</span>
-        <span class="k">for</span> <span class="n">method_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_module</span><span class="o">.</span><span class="n">method_names</span><span class="p">():</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">Method</span><span class="p">(</span><span class="n">method_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_module</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_program</span> <span class="o">=</span> <span class="n">program</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Method</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1"># The names of the methods are preemptively added to the dictionary,</span>
+        <span class="c1"># but only map to None until they are loaded.</span>
+        <span class="k">for</span> <span class="n">method_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">num_methods</span><span class="p">()):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">get_method_name</span><span class="p">(</span><span class="n">method_idx</span><span class="p">)]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">method_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
@@ -626,7 +623,12 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            The loaded method.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div></div>
+
+        <span class="n">method</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">method</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">method</span> <span class="o">=</span> <span class="n">Method</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">method</span>
+        <span class="k">return</span> <span class="n">method</span></div></div>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">BackendRegistry</span><span class="p">:</span>
@@ -676,7 +678,7 @@
     <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">get</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="s2">&quot;Runtime&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the Runtime singleton.&quot;&quot;&quot;</span>
-        <span class="kn">import</span><span class="w"> </span><span class="nn">executorch.extension.pybindings.portable_lib</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">legacy_module</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">executorch.extension.pybindings.portable_lib</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">legacy_module</span>  <span class="c1"># type: ignore[import-not-found]</span>
 
         <span class="k">return</span> <span class="n">Runtime</span><span class="p">(</span><span class="n">legacy_module</span><span class="o">=</span><span class="n">legacy_module</span><span class="p">)</span></div>
 
@@ -703,13 +705,13 @@
 <span class="sd">            The loaded program.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="n">Path</span><span class="p">,</span> <span class="nb">str</span><span class="p">)):</span>
-            <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_load_for_executorch</span><span class="p">(</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_load_program</span><span class="p">(</span>
                 <span class="nb">str</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
                 <span class="n">enable_etdump</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                 <span class="n">debug_buffer_size</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
                 <span class="n">program_verification</span><span class="o">=</span><span class="n">verification</span><span class="p">,</span>
             <span class="p">)</span>
-            <span class="k">return</span> <span class="n">Program</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">Program</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">):</span>
             <span class="n">data_bytes</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">):</span>
@@ -720,14 +722,14 @@
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Expected data to be bytes, bytearray, a path to a .pte file, or a file-like object, but got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.&quot;</span>
             <span class="p">)</span>
-        <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_load_for_executorch_from_buffer</span><span class="p">(</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_load_program_from_buffer</span><span class="p">(</span>
             <span class="n">data_bytes</span><span class="p">,</span>
             <span class="n">enable_etdump</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
             <span class="n">debug_buffer_size</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
             <span class="n">program_verification</span><span class="o">=</span><span class="n">verification</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="k">return</span> <span class="n">Program</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data_bytes</span><span class="p">)</span></div></div>
+        <span class="k">return</span> <span class="n">Program</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data_bytes</span><span class="p">)</span></div></div>
 </pre></div>
 
              </article>
