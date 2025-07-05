@@ -38,10 +38,10 @@ from torch.fx import GraphModule
 ALLOWED_META_KEYS = {"spec", "stack_trace"}
 
 class AmbiguousDimOrderError(RuntimeError):
-    '''
+    """
     Returns an Ambiguous Dimension Order Error when any node's output tensor dim_order
     is ambiguous for a list of formats.
-    '''
+    """
     def __init__(self, message: str) -> None:
         super().__init__(message)
 
@@ -59,9 +59,7 @@ def assert_unambiguous_dim_order(gm):
                 meta,
             )
 
-    # This is an example of how one can detect ambiguous dim_order anywhere in the graph.
-    # You can be surgical and only detect it in the nodes you are interested in or something else.
-    def detect_ambiguity(gm):
+    def detect_ambiguity(gm, checks =[torch.contiguous_format, torch.channels_last]):
         """
         Check every node's output tensor dim_order and raise if it is ambiguous for a list of formats.
         """
@@ -82,10 +80,7 @@ def assert_unambiguous_dim_order(gm):
                     # The right course of follow up action is to ask user to try with a different example input.
                     try:
                         _ = tensor.dim_order(
-                            ambiguity_check=[
-                                torch.contiguous_format,
-                                torch.channels_last,
-                            ]
+                            ambiguity_check=checks
                         )
                     except Exception:
                         raise AmbiguousDimOrderError("Tensors should not have ambigous dim order, try with a different example input")
