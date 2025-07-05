@@ -32,3 +32,50 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
+
+    runtime.python_library(
+        name = "api",
+        srcs = [
+            "api/__init__.py",
+            "api/custom_ops.py",
+            "api/et_cpp.py",
+            "api/types/__init__.py",
+            "api/types/signatures.py",
+            "api/types/types.py",
+            "api/unboxing.py",
+        ],
+        base_module = "executorch.codegen",
+        external_deps = [
+            "torchgen",
+        ],
+    )
+
+    runtime.python_library(
+        name = "gen_lib",
+        srcs = [
+            "gen.py",
+            "model.py",
+            "parse.py",
+        ],
+        base_module = "executorch.codegen",
+        deps = [
+            ":api",
+        ],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+            "//executorch/codegen/...",
+        ],
+    )
+
+    runtime.python_binary(
+        name = "gen",
+        main_module = "executorch.codegen.gen",
+        package_style = "inplace",
+        deps = [
+            ":gen_lib",
+        ],
+        _is_external_target = True,
+        visibility = [
+            "PUBLIC",
+        ],
+    )

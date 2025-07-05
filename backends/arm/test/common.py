@@ -47,16 +47,15 @@ def maybe_get_tosa_collate_path() -> str | None:
     tosa_test_base = os.environ.get("TOSA_TESTCASES_BASE_PATH")
     if tosa_test_base:
         current_test = os.environ.get("PYTEST_CURRENT_TEST")
-        #'backends/arm/test/ops/test_mean_dim.py::TestMeanDim::test_meandim_tosa_BI_0_zeros (call)'
-        test_class = current_test.split("::")[1]  # type: ignore[union-attr]
-        test_name = current_test.split("::")[-1].split(" ")[0]  # type: ignore[union-attr]
+        # '::test_collate_tosa_BI_tests[randn] (call)'
+        test_name = current_test.split("::")[1].split(" ")[0]  # type: ignore[union-attr]
         if "BI" in test_name:
             tosa_test_base = os.path.join(tosa_test_base, "tosa-bi")
         elif "MI" in test_name:
             tosa_test_base = os.path.join(tosa_test_base, "tosa-mi")
         else:
             tosa_test_base = os.path.join(tosa_test_base, "other")
-        return os.path.join(tosa_test_base, test_class, test_name)
+        return os.path.join(tosa_test_base, test_name)
 
     return None
 
@@ -187,25 +186,6 @@ def get_u85_compile_spec_unbuilt(
     return compile_spec  # type: ignore[return-value]
 
 
-SkipIfNoCorstone300 = pytest.mark.skipif(
-    not corstone300_installed() or not arm_executor_runner_exists("corstone-300"),
-    reason="Did not find Corstone-300 FVP or executor_runner on path",
-)
-"""
-TO BE DEPRECATED - Use XfailIfNoCorstone300 instead
-Skips a test if Corsone300 FVP is not installed, or if the executor runner is not built
-"""
-
-SkipIfNoCorstone320 = pytest.mark.skipif(
-    not corstone320_installed() or not arm_executor_runner_exists("corstone-320"),
-    reason="Did not find Corstone-320 FVP or executor_runner on path",
-)
-"""
-TO BE DEPRECATED - Use XfailIfNoCorstone320 instead
-Skips a test if Corsone320 FVP is not installed, or if the executor runner is not built
-"""
-
-
 XfailIfNoCorstone300 = pytest.mark.xfail(
     condition=not (
         corstone300_installed() and arm_executor_runner_exists("corstone-300")
@@ -259,17 +239,15 @@ def parametrize(
                     raise RuntimeError(
                         "xfail info needs to be str, or tuple[str, type[Exception]]"
                     )
-                pytest_param = pytest.param(
-                    test_parameters,
-                    id=id,
-                    marks=pytest.mark.xfail(
-                        reason=reason, raises=raises, strict=strict
-                    ),
+                # Set up our fail marker
+                marker = (
+                    pytest.mark.xfail(reason=reason, raises=raises, strict=strict),
                 )
             else:
-                pytest_param = pytest.param(test_parameters, id=id)
-            pytest_testsuite.append(pytest_param)
+                marker = ()
 
+            pytest_param = pytest.param(test_parameters, id=id, marks=marker)
+            pytest_testsuite.append(pytest_param)
         return pytest.mark.parametrize(arg_name, pytest_testsuite)(func)
 
     return decorator_func

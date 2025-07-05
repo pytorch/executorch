@@ -9,11 +9,13 @@
 #include <executorch/runtime/executor/method_meta.h>
 
 #include <cstdlib>
-#include <filesystem>
+#include <limits>
+#include <vector>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/program.h>
+#include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
 using namespace ::testing;
@@ -21,31 +23,64 @@ using executorch::runtime::Error;
 using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
 using torch::executor::util::FileDataLoader;
 
+namespace executorch {
+namespace runtime {
+namespace testing {
+// Provides access to private TensorInfo methods.
+class TensorInfoTestFriend final {
+ public:
+  ET_NODISCARD static TensorInfo get(
+      Span<const int32_t> sizes,
+      Span<const uint8_t> dim_order,
+      executorch::aten::ScalarType scalar_type,
+      const bool is_memory_planned,
+      executorch::aten::string_view name) {
+    return TensorInfo(
+        Span<const int32_t>(sizes.data(), sizes.size()),
+        Span<const uint8_t>(dim_order.data(), dim_order.size()),
+        scalar_type,
+        is_memory_planned,
+        name);
+  }
+};
+} // namespace testing
+} // namespace runtime
+} // namespace executorch
+
 class MethodMetaTest : public ::testing::Test {
  protected:
-  void SetUp() override {
-    // Create a loader for the serialized ModuleAdd program.
-    const char* path = std::getenv("ET_MODULE_ADD_PATH");
+  void load_program(const char* path, const char* module_name) {
+    // Create a loader for the serialized program.
     Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
-    loader_ = std::make_unique<FileDataLoader>(std::move(loader.get()));
+    loaders_.insert(
+        {module_name,
+         std::make_unique<FileDataLoader>(std::move(loader.get()))});
 
     // Use it to load the program.
     Result<Program> program = Program::load(
-        loader_.get(), Program::Verification::InternalConsistency);
+        loaders_[module_name].get(),
+        Program::Verification::InternalConsistency);
     ASSERT_EQ(program.error(), Error::Ok);
-    program_ = std::make_unique<Program>(std::move(program.get()));
+    programs_.insert(
+        {module_name, std::make_unique<Program>(std::move(program.get()))});
+  }
+
+  void SetUp() override {
+    load_program(std::getenv("ET_MODULE_ADD_PATH"), "add");
+    load_program(std::getenv("ET_MODULE_STATEFUL_PATH"), "stateful");
   }
 
  private:
   // Must outlive program_, but tests shouldn't need to touch it.
-  std::unique_ptr<FileDataLoader> loader_;
+  std::unordered_map<std::string, std::unique_ptr<FileDataLoader>> loaders_;
 
  protected:
-  std::unique_ptr<Program> program_;
+  std::unordered_map<std::string, std::unique_ptr<Program>> programs_;
 };
 
 namespace {
@@ -67,7 +102,7 @@ void check_tensor(const TensorInfo& tensor_info) {
 } // namespace
 
 TEST_F(MethodMetaTest, MethodMetaApi) {
-  Result<MethodMeta> method_meta = program_->method_meta("forward");
+  Result<MethodMeta> method_meta = programs_["add"]->method_meta("forward");
   ASSERT_EQ(method_meta.error(), Error::Ok);
 
   // Appropriate amount of inputs
@@ -97,11 +132,12 @@ TEST_F(MethodMetaTest, MethodMetaApi) {
 
   // Missing method fails
   EXPECT_EQ(
-      program_->method_meta("not_a_method").error(), Error::InvalidArgument);
+      programs_["add"]->method_meta("not_a_method").error(),
+      Error::InvalidArgument);
 }
 
 TEST_F(MethodMetaTest, TensorInfoApi) {
-  Result<MethodMeta> method_meta = program_->method_meta("forward");
+  Result<MethodMeta> method_meta = programs_["add"]->method_meta("forward");
   ASSERT_EQ(method_meta.error(), Error::Ok);
 
   // Input 1
@@ -137,4 +173,43 @@ TEST_F(MethodMetaTest, TensorInfoApi) {
   EXPECT_EQ(method_meta->output_tensor_meta(3).error(), Error::InvalidArgument);
   EXPECT_EQ(
       method_meta->output_tensor_meta(-1).error(), Error::InvalidArgument);
+}
+
+TEST_F(MethodMetaTest, MethodMetaAttribute) {
+  Result<MethodMeta> method_meta =
+      programs_["stateful"]->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+
+  ASSERT_EQ(method_meta->num_attributes(), 1);
+  auto state = method_meta->attribute_tensor_meta(0);
+  ASSERT_TRUE(state.ok());
+
+  ASSERT_EQ(state->name(), "state");
+  ASSERT_FALSE(state->is_memory_planned());
+
+  auto bad_access = method_meta->attribute_tensor_meta(1);
+  ASSERT_EQ(bad_access.error(), Error::InvalidArgument);
+}
+
+TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
+  // Create sizes that will cause overflow when multiplied
+  std::vector<int32_t> overflow_sizes = {
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::max(),
+  };
+
+  // Create a minimal dim_order
+  std::vector<uint8_t> dim_order = {0, 1, 2, 3};
+
+  // Create a TensorInfo with the overflow sizes and expect it to fail.
+  ET_EXPECT_DEATH(
+      executorch::runtime::testing::TensorInfoTestFriend::get(
+          Span<const int32_t>(overflow_sizes.data(), overflow_sizes.size()),
+          Span<const uint8_t>(dim_order.data(), dim_order.size()),
+          executorch::aten::ScalarType::Float,
+          false, // is_memory_planned
+          executorch::aten::string_view{nullptr, 0}),
+      "");
 }

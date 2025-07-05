@@ -184,6 +184,53 @@ lib.define(
 lib.impl(name, linear_weight_int4_impl, "CompositeExplicitAutograd")
 linear_weight_int4_op = getattr(getattr(torch.ops, namespace), name)
 
+#################
+## linear_qcs4w ##
+#################
+
+
+def linear_qcs4w(
+    x: torch.Tensor,
+    weights_4x2: torch.Tensor,
+    scales: torch.Tensor,
+):
+    original_x_shape = x.shape
+    x = x.reshape(-1, original_x_shape[-1])
+
+    unpacked_weights_shape = weights_4x2.shape
+    out_features = unpacked_weights_shape[0]
+    in_features = unpacked_weights_shape[1]
+
+    weights_unpacked = torch.empty(
+        (out_features, in_features * 2), dtype=torch.int8, device=weights_4x2.device
+    )
+
+    weights_unpacked[:, ::2] = weights_4x2 >> 4
+    weights_unpacked[:, 1::2] = weights_4x2 & 0x0F
+
+    n_bit = 8
+    quant_min = -(2 ** (n_bit - 1))
+    quant_max = 2 ** (n_bit - 1) - 1
+    dq_weights = torch.ops.quantized_decomposed.dequantize_per_channel(
+        weights_unpacked,
+        scales,
+        None,
+        0,
+        quant_min,
+        quant_max,
+        torch.int8,
+    )
+
+    out = torch.nn.functional.linear(x, dq_weights)
+    out_shape = original_x_shape[:-1] + (out_features,)
+    return out.reshape(out_shape)
+
+
+name = "linear_qcs4w"
+lib.define(f"{name}(Tensor self, Tensor weight, Tensor scales) -> Tensor")
+lib.impl(name, linear_qcs4w, "CompositeExplicitAutograd")
+linear_qc4w_op = getattr(getattr(torch.ops, namespace), name)
+
 ######################
 ## apply_rotary_emb ##
 ######################

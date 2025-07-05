@@ -32,7 +32,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.lowered_backend_module import (
     LoweredBackendModule as ExirLoweredBackendModule,
 )
-from executorch.exir.serde.export_serialize import GraphModuleOpUpgrader, SerializeError
+from executorch.exir.serde.export_serialize import SerializeError
 from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
@@ -617,12 +617,6 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             symbol_name_to_range,
             res.names_to_symbols,
         )
-        model_opset_version: Optional[Dict[str, int]] = exported_program.opset_version
-        self._validate_model_opset_version(model_opset_version)
-
-        upgrader = GraphModuleOpUpgrader(
-            self.expected_opset_version, model_opset_version
-        )
 
         dummy_g = torch.fx.Graph()
         dummy_g.output(())
@@ -656,7 +650,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
                     node.target,
                     getattr(res.graph_module, node.target),
                 )
-        return upgrader.upgrade(exported_program)
+        return exported_program
 
 
 def serialize(
@@ -683,7 +677,6 @@ def serialize(
 
 def deserialize(
     artifact: export_serialize.SerializedArtifact,
-    expected_opset_version: Optional[Dict[str, int]] = None,
 ) -> ep.ExportedProgram:
     assert isinstance(artifact.exported_program, bytes)
     exported_program_str = artifact.exported_program.decode("utf-8")
@@ -691,7 +684,7 @@ def deserialize(
     serialized_exported_program = export_serialize._dict_to_dataclass(
         schema.ExportedProgram, exported_program_dict
     )
-    return ExportedProgramDeserializer(expected_opset_version).deserialize(
+    return ExportedProgramDeserializer().deserialize(
         serialized_exported_program,
         artifact.state_dict,
         artifact.constants,
@@ -735,7 +728,6 @@ def load(
     f: Union[str, os.PathLike[str], io.BytesIO],
     *,
     extra_files: Optional[Dict[str, Any]] = None,
-    expected_opset_version: Optional[Dict[str, int]] = None,
 ) -> ep.ExportedProgram:
     if isinstance(f, (str, os.PathLike)):
         f = os.fspath(str(f))
@@ -796,6 +788,6 @@ def load(
         )
 
         # Deserialize ExportedProgram
-        ep = deserialize(artifact, expected_opset_version)
+        ep = deserialize(artifact)
 
         return ep

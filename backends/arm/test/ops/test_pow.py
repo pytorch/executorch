@@ -71,6 +71,10 @@ class Pow_TensorScalar(torch.nn.Module):
             torch.abs(torch.randn((1, 2, 3, 6))),
             6.789,
         ),
+        "neg_base_exp_pos_integer": lambda: (
+            -torch.abs(torch.randn((1, 2, 3, 6))) - 10,
+            3,
+        ),
     }
 
     def __init__(self, exp):
@@ -81,8 +85,14 @@ class Pow_TensorScalar(torch.nn.Module):
         return torch.pow(x, self.exp)
 
 
-@common.parametrize("test_data", Pow_TensorTensor.test_data)
-def test_pow_tensor_tensor_MI(test_data: Pow_TensorTensor.input_t):
+x_fail = {
+    "zero_base_zero_exp": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "neg_base_zero_exp": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+}
+
+
+@common.parametrize("test_data", Pow_TensorTensor.test_data, x_fail, strict=False)
+def test_pow_tensor_tensor_tosa_MI(test_data: Pow_TensorTensor.input_t):
     pipeline = TosaPipelineMI[Pow_TensorTensor.input_t](
         Pow_TensorTensor(),
         test_data(),
@@ -92,8 +102,18 @@ def test_pow_tensor_tensor_MI(test_data: Pow_TensorTensor.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Pow_TensorScalar.test_data)
-def test_pow_tensor_scalar_MI(test_data: Pow_TensorScalar.input_t):
+x_fail = {
+    "exp_minus_three": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "exp_minus_one": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "exp_zero": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "exp_one": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "exp_two": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "non_neg_base_exp_pos_decimal": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+}
+
+
+@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+def test_pow_tensor_scalar_tosa_MI(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
     pipeline = TosaPipelineMI[Pow_TensorScalar.input_t](
         Pow_TensorScalar(exp),
@@ -104,8 +124,8 @@ def test_pow_tensor_scalar_MI(test_data: Pow_TensorScalar.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Pow_TensorScalar.test_data)
-def test_pow_tensor_scalar_BI(test_data: Pow_TensorScalar.input_t):
+@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+def test_pow_tensor_scalar_tosa_BI(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
     pipeline = TosaPipelineBI[Pow_TensorScalar.input_t](
         Pow_TensorScalar(exp),

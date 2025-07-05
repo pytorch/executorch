@@ -68,23 +68,8 @@
     }                                                             \
   })
 
-// Our logs work by writing to stderr. By default this is done through fprintf
-// (as defined in posix.cpp) which then does not show up in python environments.
-// Here we override the pal to use std::cerr which can be properly redirected by
-// scoped_estream_redirect.
-void et_pal_emit_log_message(
-    et_timestamp_t timestamp,
-    et_pal_log_level_t level,
-    const char* filename,
-    ET_UNUSED const char* function,
-    size_t line,
-    const char* message,
-    ET_UNUSED size_t length) {
-  std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
-}
-
 namespace py = pybind11;
-using executorch::bundled_program::verify_method_outputs;
+using executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs;
 using ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface;
 using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_class;
 using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_name;
@@ -578,7 +563,15 @@ struct PyMethodMeta final {
     }
     py::list output_meta_strs;
     for (size_t i = 0; i < meta_.num_outputs(); ++i) {
-      output_meta_strs.append(py::str(output_tensor_meta(i)->repr()));
+      auto output_tag_res = meta_.output_tag(i);
+      THROW_INDEX_IF_ERROR(
+          output_tag_res.error(), "Cannot get Tag for output at %zu", i);
+      if (output_tag_res.get() == Tag::Tensor) {
+        output_meta_strs.append(py::str(output_tensor_meta(i)->repr()));
+      } else {
+        output_meta_strs.append(
+            py::str(runtime::tag_to_string(output_tag_res.get())));
+      }
     }
     // Add quotes to be more similar to Python's repr for strings.
     py::str format =
@@ -757,7 +750,9 @@ struct PyModule final {
       } else if (py::isinstance<py::int_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
       } else {
-        ET_ASSERT_UNREACHABLE_MSG("Unsupported pytype: %s", type_str.c_str());
+        throw std::runtime_error(
+            "Unsupported python type " + type_str +
+            ". Ensure that inputs are passed as a flat list of tensors.");
       }
     }
 
@@ -826,7 +821,7 @@ struct PyModule final {
       const std::string method_name,
       size_t testset_idx) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    Error status = executorch::bundled_program::load_bundled_input(
+    Error status = executorch::BUNDLED_PROGRAM_NAMESPACE::load_bundled_input(
         module_->get_method(method_name), bundled_program_ptr, testset_idx);
     THROW_IF_ERROR(
         status,
@@ -842,14 +837,14 @@ struct PyModule final {
       double atol = 1e-8) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
     auto& method = module_->get_method(method_name);
-    Error status = executorch::bundled_program::load_bundled_input(
+    Error status = executorch::BUNDLED_PROGRAM_NAMESPACE::load_bundled_input(
         method, bundled_program_ptr, testset_idx);
     THROW_IF_ERROR(
         status,
         "load_bundled_input failed with status 0x%" PRIx32,
         static_cast<uint32_t>(status));
     py::list outputs = plan_execute(method_name);
-    status = executorch::bundled_program::verify_method_outputs(
+    status = executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs(
         method, bundled_program_ptr, testset_idx, rtol, atol);
     THROW_IF_ERROR(
         status,
@@ -1157,6 +1152,32 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           call_guard)
       .def("__repr__", &PyMethodMeta::repr, call_guard);
 }
+
+namespace {
+
+// Our logs work by writing to stderr. By default this is done through fprintf
+// (as defined in posix.cpp) which then does not show up in python environments.
+// Here we override the pal to use std::cerr which can be properly redirected by
+// scoped_estream_redirect.
+void emit_log_message(
+    et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    ET_UNUSED const char* function,
+    size_t line,
+    const char* message,
+    ET_UNUSED size_t length) {
+  std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
+}
+
+runtime::PalImpl build_pal() {
+  return runtime::PalImpl::create(emit_log_message, __FILE__);
+}
+
+// Update PAL to redirect logs.
+ET_UNUSED bool registration_result = runtime::register_pal(build_pal());
+
+} // namespace
 
 } // namespace pybindings
 } // namespace extension

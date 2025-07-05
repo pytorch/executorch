@@ -9,9 +9,9 @@
 #include <executorch/extension/llm/custom_ops/op_sdpa.h>
 #include <executorch/extension/llm/custom_ops/op_sdpa_impl.h>
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
-#include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -400,7 +400,8 @@ Tensor& custom_sdpa_out_impl(
 
   ET_CHECK_MSG(q.dim() == 4, "query must be a 4D tensor");
 
-  const int64_t num_keys_for_causal_attention = start_pos + seq_len;
+  const int64_t num_keys_for_causal_attention =
+      attn_mask.has_value() ? -1 : start_pos + seq_len;
 
   ET_KERNEL_CHECK(
       ctx,

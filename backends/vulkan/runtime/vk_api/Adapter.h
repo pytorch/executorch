@@ -56,13 +56,20 @@ class Adapter final {
       const uint32_t num_queues,
       const std::string& cache_data_path);
 
+  explicit Adapter(
+      VkInstance instance,
+      VkPhysicalDevice physical_device,
+      VkDevice logical_device,
+      const uint32_t num_queues,
+      const std::string& cache_data_path);
+
   Adapter(const Adapter&) = delete;
   Adapter& operator=(const Adapter&) = delete;
 
   Adapter(Adapter&&) = delete;
   Adapter& operator=(Adapter&&) = delete;
 
-  ~Adapter() = default;
+  ~Adapter();
 
   struct Queue {
     uint32_t family_index;
@@ -94,6 +101,7 @@ class Adapter final {
   Allocator vma_;
   // Miscellaneous
   bool linear_tiling_3d_enabled_;
+  bool owns_device_;
 
  public:
   // Physical Device metadata
@@ -120,6 +128,15 @@ class Adapter final {
 
   inline float timestamp_period() const {
     return physical_device_.timestamp_period;
+  }
+
+  // Device Identity
+  inline const std::string& device_name() const {
+    return physical_device_.device_name;
+  }
+
+  inline vkapi::DeviceType device_type() const {
+    return physical_device_.device_type;
   }
 
   // Queue Management

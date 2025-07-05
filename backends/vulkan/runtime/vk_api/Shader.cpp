@@ -59,10 +59,11 @@ ShaderLayout::ShaderLayout(
     const ShaderLayout::Signature& signature)
     : device_(device), handle_{VK_NULL_HANDLE} {
   std::vector<VkDescriptorSetLayoutBinding> bindings;
+  bindings.reserve(signature.size());
 
   uint32_t binding_num = 0u;
   for (const VkDescriptorType type : signature) {
-    bindings.push_back({
+    bindings.emplace_back(VkDescriptorSetLayoutBinding{
         binding_num++, // binding
         type, // descriptorType
         1u, // descriptorCount

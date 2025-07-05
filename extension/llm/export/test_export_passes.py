@@ -2,7 +2,10 @@ import unittest
 
 import torch
 
-from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
+from executorch.extension.llm.export.export_passes import (
+    RemoveRedundantTransposes,
+    ReplaceSDPAWithCustomSDPAPass,
+)
 
 from torch.export import export_for_training
 from torch.testing import FileCheck
@@ -160,3 +163,47 @@ class RemoveRedundantTransposesPassTest(unittest.TestCase):
 
         m = TestModule2()
         self._check(m, (x,), key, 3, 2)
+
+
+class ReplaceSDPAWithCustomSDPAPassTest(unittest.TestCase):
+    class TestModule(torch.nn.Module):
+        def forward(self, x, mask, is_causal):
+            return torch.nn.functional.scaled_dot_product_attention(
+                x, x, x, attn_mask=mask, is_causal=is_causal
+            )
+
+    def setUp(self):
+        torch.manual_seed(0)
+
+    def _test(self, args, assume_causal_mask=False):
+        m = self.TestModule()
+        gm = export_for_training(m, args, strict=True).module()
+
+        sdpa_key = "torch.ops.aten.scaled_dot_product_attention.default"
+        custom_sdpa_key = "torch.ops.llama.custom_sdpa.default"
+        FileCheck().check_count(sdpa_key, 1, exactly=True).run(gm.code)
+        gm = ReplaceSDPAWithCustomSDPAPass(assume_causal_mask)(gm).graph_module
+        FileCheck().check_count(sdpa_key, 0, exactly=True).run(gm.code)
+        FileCheck().check_count(custom_sdpa_key, 1, exactly=True).run(gm.code)
+
+        y1 = m(*args)
+        y2 = gm(*args)
+        self.assertTrue(torch.allclose(y1, y2))
+
+    def test_causal_mask(self):
+        self._test((torch.rand(1, 4, 32, 64), None, True))
+
+    def test_explicit_causal_mask(self):
+        mask = torch.tril(torch.ones(32, 32, dtype=torch.bool))
+        self._test((torch.rand(1, 4, 32, 64), mask, False), assume_causal_mask=True)
+
+    def test_custom_mask(self):
+        m1 = torch.tril(torch.ones(32, 32, dtype=torch.bool))
+        m2 = torch.tril(torch.ones(32, 32, dtype=torch.bool), diagonal=-16)
+        self._test((torch.rand(1, 4, 32, 64), torch.logical_xor(m1, m2), False))
+
+    def test_squeezable_mask(self):
+        m1 = torch.tril(torch.ones(32, 32, dtype=torch.bool))
+        m2 = torch.tril(torch.ones(32, 32, dtype=torch.bool), diagonal=-16)
+        m = torch.logical_xor(m1, m2).view(1, 1, 32, 32)
+        self._test((torch.rand(1, 4, 32, 64), m, False))

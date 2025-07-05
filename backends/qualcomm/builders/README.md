@@ -176,7 +176,8 @@ import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 # op builder will inherit NodeVisitor and have its own implementation
 # register_node_visitor for book-keeping the dictionary of target name v.s. callback
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 # the definitions required to build operator in QNN
 from .qnn_constants import OpLayerNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 # utility to get parameter value when creating tensor in QNN
@@ -227,7 +228,7 @@ Now, we can start to fill in function body step by step:
 
 2. Define input gamma / beta tensors:
     ```python
-        weight_node = node.args[2]
+        weight_node = self.get_node(node.args[2])
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
@@ -237,7 +238,7 @@ Now, we can start to fill in function body step by step:
             nodes_to_wrappers,
         )
 
-        bias_node = node.args[3]
+        bias_node = self.get_node(node.args[3])
         bias_tensor = get_parameter(bias_node, self.edge_program)
         bias_tensor_wrapper = self.define_tensor(
             bias_node,

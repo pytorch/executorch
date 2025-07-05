@@ -1,0 +1,109 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "common",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/cmake-out"
+    },
+    {
+      "name": "macos",
+      "displayName": "Build everything buildable on macOS",
+      "inherits": ["common"],
+      "generator": "Xcode",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/macos.cmake",
+        "PLATFORM": "MAC_ARM64",
+        "DEPLOYMENT_TARGET": "12.0"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "ios",
+      "displayName": "Build everything buildable on iOS",
+      "inherits": ["common"],
+      "generator": "Xcode",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
+        "PLATFORM": "OS64",
+        "DEPLOYMENT_TARGET": "17.0"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "ios-simulator",
+      "displayName": "Build everything buildable on iOS simulator",
+      "inherits": ["common"],
+      "generator": "Xcode",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
+        "PLATFORM": "SIMULATORARM64",
+        "DEPLOYMENT_TARGET": "17.0"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "linux",
+      "displayName": "Build everything buildable on Linux",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Linux",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/linux.cmake"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "pybind",
+      "displayName": "Build pybindings exported in the wheel",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/pybind.cmake",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Darwin", "Linux", "Windows"]
+      }
+    },
+    {
+        "name": "llm",
+        "displayName": "Build LLM libraries",
+        "inherits": [
+            "common"
+        ],
+        "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/llm.cmake",
+            "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        },
+        "condition": {
+            "type": "inList",
+            "string": "${hostSystemName}",
+            "list": [
+                "Darwin",
+                "Linux",
+                "Windows"
+            ]
+        }
+    }
+  ]
+}

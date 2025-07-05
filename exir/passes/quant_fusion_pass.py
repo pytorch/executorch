@@ -7,6 +7,8 @@
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from torch.export import ExportedProgram
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
@@ -90,6 +92,18 @@ def _fuse_quantized_cat(model: GraphModule) -> None:
         model.graph.erase_node(qnode)
 
 
+def _remove_dtype_getattr_nodes(model: GraphModule) -> None:
+    for n in model.graph.nodes:
+        if n.op == "call_function" and n.target == getattr:
+            if isinstance(n.args[0], torch.fx.Node) and n.args[1] == "dtype":
+                dtype = n.args[0].meta["val"].dtype
+                n.replace_all_uses_with(dtype)
+                model.graph.erase_node(n)
+    model.graph.eliminate_dead_code()
+    model.graph.lint()
+    model.recompile()
+
+
 class QuantFusionPass(ExportPass):
     def __init__(self, _fix_node_meta_val=False):
         super().__init__()
@@ -123,6 +137,17 @@ class QuantFusionPass(ExportPass):
                         torch.fx.Node, lambda x: x.meta["val"], (n.args, n.kwargs)
                     )
                     n.meta["val"] = n.target(*args, **kwargs)
+        _remove_dtype_getattr_nodes(graph_module)
         graph_module.graph.lint()
         graph_module.graph.eliminate_dead_code()
         return PassResult(graph_module, True)
+
+
+def quant_fusion_and_const_prop_pass(program: ExportedProgram) -> ExportedProgram:
+    gm = program.graph_module
+    gm_res = QuantFusionPass(_fix_node_meta_val=True)(gm)
+    gm = gm_res.graph_module
+
+    # Do const prop pass to remove packing/dtype conversion ops
+    program = constant_prop_pass(program)
+    return program

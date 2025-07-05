@@ -9,15 +9,17 @@
 import argparse
 import os
 import platform
+import ssl
 import stat
 import sys
 import urllib.request
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence, Union
+from typing import Union
 
 import buck_util
+import certifi
 import zstd
 
 """
@@ -46,54 +48,34 @@ def _buck_version_path() -> Path:
 @dataclass
 class BuckInfo:
     archive_name: str
-    target_versions: Sequence[str]
 
 
-# Mapping of os family and architecture to buck2 binary versions. The
-# target version is the hash given by running 'buck2 --version'. The
+# Mapping of os family and architecture to buck2 archive name. The target version is the
+# hash given by running 'buck2 --version', which is now consistent across platforms. The
 # archive name is the archive file name to download, as seen under
 # https://github.com/facebook/buck2/releases/.
 #
-# To add or update versions, download the appropriate version of buck2
-# and run 'buck2 --version'. Add the corresponding entry to the platform
-# map below, and if adding new os families or architectures, update the
-# platform detection logic in resolve_buck2().
-#
-# Some platforms (linux) provide multiple binaries (GNU and MUSL). All
-# versions in the list are accepted when validating a user-provided or
-# system buck2.
+# To update Buck2, download the appropriate version of buck2 for your platform, run
+# 'buck2 --version', and update BUCK_TARGET_VERSION. To add a new platform, add the
+# corresponding entry to the platform map below, and if adding new os families or
+# architectures, update the platform detection logic in resolve_buck2().
+BUCK_TARGET_VERSION = "2025-05-06-201beb86106fecdc84e30260b0f1abb5bf576988"
+
 BUCK_PLATFORM_MAP = {
     ("linux", "x86_64"): BuckInfo(
         archive_name="buck2-x86_64-unknown-linux-musl.zst",
-        target_versions=[
-            # MUSL
-            "edae27cfca00053d9c5f7c7be81b6b0d7d07573a50be374ce53a9d8692afa5fc",
-            # GNU
-            "10334cb20cb7c321",
-        ],
     ),
     ("linux", "aarch64"): BuckInfo(
         archive_name="buck2-aarch64-unknown-linux-gnu.zst",
-        target_versions=[
-            # MUSL
-            "5d7af382acbe0dde70f0e9b0a0bc36deea906077ec1ffe80d3fa280490109051",
-            # GNU
-            "08d4382de22fab275978abc7c27c001d7823eb2f",
-        ],
     ),
     ("darwin", "aarch64"): BuckInfo(
         archive_name="buck2-aarch64-apple-darwin.zst",
-        target_versions=["f3b7a37732803ed090cd8a37f00cc000"],
     ),
     ("darwin", "x86_64"): BuckInfo(
         archive_name="buck2-x86_64-apple-darwin.zst",
-        target_versions=["9c9a583658d43e82b41f3fc9d369a9b0"],
     ),
     ("windows", "x86_64"): BuckInfo(
         archive_name="buck2-x86_64-pc-windows-msvc.exe.zst",
-        target_versions=[
-            "c7d378f3f307e9590f0b29a5f7f1b21b8e784f4e4bd30a0160b2a69df50d2ee0"
-        ],
     ),
 }
 
@@ -160,13 +142,13 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
         # If we have an explicit buck2 arg, check the version and fail if
         # there is a mismatch.
         ver = buck_util.get_buck2_version(args.buck2)
-        if ver in buck_info.target_versions:
+        if ver == BUCK_TARGET_VERSION:
             return args.buck2
         else:
             print(
                 f'The provided buck2 binary "{args.buck2}" reports version '
                 f'"{ver}", but ExecuTorch needs version '
-                f'"{buck_info.target_versions[0]}". Ensure that the correct buck2'
+                f'"{BUCK_TARGET_VERSION}". Ensure that the correct buck2'
                 " version is installed or avoid explicitly passing the BUCK2 "
                 "version to automatically download the correct version.",
                 file=sys.stderr,
@@ -181,7 +163,7 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
         # Look for system buck2 and check version. Note that this can return
         # None.
         ver = buck_util.get_buck2_version("buck2")
-        if ver in buck_info.target_versions:
+        if ver == BUCK_TARGET_VERSION:
             # Use system buck2.
             return "buck2"
         else:
@@ -190,9 +172,7 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
             os.makedirs(cache_dir, exist_ok=True)
 
             buck2_local_path = (
-                (cache_dir / f"buck2-{buck_info.target_versions[0]}")
-                .absolute()
-                .as_posix()
+                (cache_dir / f"buck2-{BUCK_TARGET_VERSION}").absolute().as_posix()
             )
 
             # Check for a previously cached buck2 binary. The filename includes
@@ -201,26 +181,23 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
             if os.path.isfile(buck2_local_path):
                 return buck2_local_path
 
-            buck2_archive_url = f"https://github.com/facebook/buck2/releases/download/{target_buck_version}/{buck_info.archive_name}"
+        buck2_archive_url = f"https://github.com/facebook/buck2/releases/download/{target_buck_version}/{buck_info.archive_name}"
 
-            try:
-                print(f"Downloading buck2 from {buck2_archive_url}...", file=sys.stderr)
-                archive_file, _ = urllib.request.urlretrieve(buck2_archive_url)
+        print(f"Downloading buck2 from {buck2_archive_url}...", file=sys.stderr)
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
 
-                # Extract and chmod.
-                with open(archive_file, "rb") as f:
-                    data = f.read()
-                    decompressed_bytes = zstd.decompress(data)
+        with urllib.request.urlopen(buck2_archive_url, context=ssl_context) as request:
+            # Extract and chmod.
+            data = request.read()
+            decompressed_bytes = zstd.decompress(data)
 
-                with open(buck2_local_path, "wb") as f:
-                    f.write(decompressed_bytes)
+            with open(buck2_local_path, "wb") as f:
+                f.write(decompressed_bytes)
 
-                file_stat = os.stat(buck2_local_path)
-                os.chmod(buck2_local_path, file_stat.st_mode | stat.S_IEXEC)
-            finally:
-                os.remove(archive_file)
+        file_stat = os.stat(buck2_local_path)
+        os.chmod(buck2_local_path, file_stat.st_mode | stat.S_IEXEC)
 
-            return buck2_local_path
+    return buck2_local_path
 
 
 def main():

@@ -5,6 +5,8 @@
 
 from typing import Callable
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -54,16 +56,22 @@ class ArangeAdd(torch.nn.Module):
 def test_arange_start_step_tosa_MI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineMI[input_t](
-        ArangeAdd(*init_data), input_data(), ArangeAdd.aten_op, ArangeAdd.exir_op
+        ArangeAdd(*init_data),
+        input_data(),
+        ArangeAdd.aten_op,
+        ArangeAdd.exir_op,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", ArangeAdd.test_data_dtypes)
-def test_arange_start_step_dtypes_tosa_MI(test_data: test_data_t):
+def test_arange_start_step_tosa_MI_dtypes(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineMI[input_t](
-        ArangeAdd(*init_data), input_data(), ArangeAdd.aten_op, ArangeAdd.exir_op
+        ArangeAdd(*init_data),
+        input_data(),
+        ArangeAdd.aten_op,
+        ArangeAdd.exir_op,
     )
     pipeline.run()
 
@@ -72,27 +80,36 @@ def test_arange_start_step_dtypes_tosa_MI(test_data: test_data_t):
 def test_arange_start_step_tosa_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineBI[input_t](
-        ArangeAdd(*init_data), input_data(), ArangeAdd.aten_op, ArangeAdd.exir_op
+        ArangeAdd(*init_data),
+        input_data(),
+        ArangeAdd.aten_op,
+        ArangeAdd.exir_op,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", ArangeAdd.test_data)
-def test_arange_start_step_tosa_u55(test_data: test_data_t):
+@common.XfailIfNoCorstone300
+def test_arange_start_step_u55_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = EthosU55PipelineBI[input_t](
-        ArangeAdd(*init_data), input_data(), ArangeAdd.aten_op
+        ArangeAdd(*init_data),
+        input_data(),
+        ArangeAdd.aten_op,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", ArangeAdd.test_data)
-def test_arange_start_step_tosa_u85(test_data: test_data_t):
+@common.XfailIfNoCorstone320
+def test_arange_start_step_u85_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = EthosU85PipelineBI[input_t](
-        ArangeAdd(*init_data), input_data(), ArangeAdd.aten_op
+        ArangeAdd(*init_data),
+        input_data(),
+        ArangeAdd.aten_op,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -120,7 +137,10 @@ class LinspaceAdd(torch.nn.Module):
 def test_linspace_tosa_MI(test_data):
     input_data, init_data = test_data
     pipeline = TosaPipelineMI[input_t](
-        LinspaceAdd(*init_data), input_data(), LinspaceAdd.aten_op, LinspaceAdd.exir_op
+        LinspaceAdd(*init_data),
+        input_data(),
+        LinspaceAdd.aten_op,
+        LinspaceAdd.exir_op,
     )
     pipeline.run()
 
@@ -129,7 +149,33 @@ def test_linspace_tosa_MI(test_data):
 def test_linspace_tosa_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineBI[input_t](
-        LinspaceAdd(*init_data), input_data(), LinspaceAdd.aten_op, LinspaceAdd.exir_op
+        LinspaceAdd(*init_data),
+        input_data(),
+        LinspaceAdd.aten_op,
+        LinspaceAdd.exir_op,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
+
+
+skip_str = "aten.arange.default is decomposed to aten.arange.start_step, so it will never exist in a lowered graph."
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_tosa_MI():
+    pass
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_tosa_BI():
+    pass
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_u55_BI():
+    pass
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_u85_BI():
+    pass

@@ -93,7 +93,14 @@ void et_view(KernelRuntimeContext& context, EValue** stack) {
       "Failed to resize output tensor.");
 
   // Do some checks
-  ET_KERNEL_CHECK(context, self.numel() == out.numel(), InvalidArgument, );
+  ET_KERNEL_CHECK_MSG(
+      context,
+      self.numel() == out.numel(),
+      InvalidArgument,
+      ,
+      "self.numel(): %" ET_PRIsize_t ", out.numel(): %" ET_PRIsize_t,
+      static_cast<size_t>(self.numel()),
+      static_cast<size_t>(out.numel()));
 
   // Update data ptr
   ET_KERNEL_CHECK_MSG(

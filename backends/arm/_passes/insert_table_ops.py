@@ -48,6 +48,8 @@ class TableOps:
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
+        exir_ops.edge.aten.cos.default: torch.cos,
+        exir_ops.edge.aten.sin.default: torch.sin,
         exir_ops.edge.aten.tanh.default: torch.tanh,
         exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
         exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,
@@ -141,9 +143,7 @@ class InsertTableOpsPass(ExportPass):
                     start=in_quantargs.qmin,
                     end=in_quantargs.qmax,
                     steps=256,
-                    # use torch.int64 to avoid overflow when dequantizing (subtracting zp).
-                    # e.g. torch.tensor(-50, dtype=torch.int8) - 100 == torch.tensor(106, dtype=torch.int8)
-                    dtype=torch.int64,
+                    dtype=torch.int8,
                 )
             ).to(dtype=torch.int8),
             0,
@@ -171,6 +171,9 @@ class InsertTableOpsPass(ExportPass):
         """
 
         def f(x: torch.Tensor) -> torch.Tensor:
+            x = x.clamp(in_quantargs.qmin, in_quantargs.qmax).to(
+                dtype=in_quantargs.dtype
+            )
             # Dont use the 7 LSBs.
             x = in_quantargs.dequantize_value((x & ~0x7F))
             x = torch_op(x)
@@ -181,9 +184,8 @@ class InsertTableOpsPass(ExportPass):
                 start=in_quantargs.qmin,
                 end=in_quantargs.qmax + 1,
                 steps=513,
-                # use torch.int64 to avoid overflow when dequantizing (subtracting zp).
-                # e.g. torch.tensor(-50, dtype=torch.int8) - 100 == torch.tensor(106, dtype=torch.int8)
-                dtype=torch.int64,
+                # use torch.int32 to avoid overflow for end=in_quantargs.qmax + 1.
+                dtype=torch.int32,
             )
         )
         # Calculate how much we need to shift table values to fit in 16 signed bits
@@ -238,8 +240,17 @@ class InsertTableOpsPass(ExportPass):
                     args=(node.args[0],),
                 )
                 output_node = table_node
-                assert len(input_qparams) == 1
-                assert len(output_qparams) == 1
+                # Expect exactly one quantization parameter for input and output
+                if len(input_qparams) != 1:
+                    raise ValueError(
+                        f"InsertTableOpsPass expected exactly one input quantization parameter, "
+                        f"got {len(input_qparams)} for node {node.name}"
+                    )
+                if len(output_qparams) != 1:
+                    raise ValueError(
+                        f"InsertTableOpsPass expected exactly one output quantization parameter, "
+                        f"got {len(output_qparams)} for node {node.name}"
+                    )
 
                 # Generate table buffer and how much to lshift the table output.
                 buffer, lshift = self.generate_table_values(

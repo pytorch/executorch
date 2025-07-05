@@ -43,15 +43,24 @@ target_include_directories(
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
-set(runner_deps executorch extension_data_loader extension_module
-                extension_tensor
+# add tokenizers
+set(SUPPORT_REGEX_LOOKAHEAD ON)
+# llama/runner/CMakeLists.txt builds a shared library libllama_runner.so that
+# transitively depends on tokenizers. Need to build tokenizers with -fPIC.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers
+  ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/tokenizers
 )
+
+set(runner_deps executorch_core extension_module extension_tensor tokenizers)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
 
 target_include_directories(
-  extension_llm_runner INTERFACE ${_common_include_directories}
-                                 ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+  extension_llm_runner
+  INTERFACE ${_common_include_directories}
+            ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 
 if(BUILD_TESTING)

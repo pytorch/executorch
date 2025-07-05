@@ -44,8 +44,12 @@ Tensor& elu_out(
     ET_EXTRACT_SCALAR(scale, math_scale);
     ET_EXTRACT_SCALAR(input_scale, math_input_scale);
     const auto negcoef = math_alpha * math_scale;
-    utils::apply_unitensor_elementwise_fn<CTYPE, op_name>(
-        [negcoef, math_scale, math_input_scale](auto x) {
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE,
+        op_name,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON>(
+        [negcoef, math_scale, math_input_scale](const auto x) {
+          // TODO: rewrite this to be vectorization-capable.
           return MathT(x) <= MathT(0)
               ? std::expm1(MathT(x) * math_input_scale) * negcoef
               : MathT(x) * math_scale;
@@ -53,8 +57,7 @@ Tensor& elu_out(
         ctx,
         in,
         utils::SupportedTensorDtypes::FLOATHBF16,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
+        out);
   });
   return out;
 }

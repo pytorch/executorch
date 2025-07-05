@@ -16,8 +16,8 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from torch.ao.quantization.quantizer import Quantizer
-from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
+from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.pt2e.quantizer.embedding_quantizer import EmbeddingQuantizer
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -154,7 +154,7 @@ def get_qnn_quantizer(
             QnnQuantizer,
             QuantDtype,
         )
-        from torch.ao.quantization.observer import MinMaxObserver
+        from torchao.quantization.pt2e import MinMaxObserver
 
     except ImportError:
         raise ImportError(
@@ -266,16 +266,12 @@ def get_coreml_quantizer(pt2e_quantize: str):
 
 def get_vulkan_quantizer(pt2e_quantize: str):
     from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
-        get_weight_quantization_config,
+        get_linear_weight_only_qcs_xnn_qconfig,
         VulkanQuantizer,
     )
 
     if pt2e_quantize == "vulkan_8w":
-        config = get_weight_quantization_config(
-            is_per_channel=True,
-            weight_qmin=-128,
-            weight_qmax=127,
-        )
+        config = get_linear_weight_only_qcs_xnn_qconfig(8)
     else:
         raise ValueError(f"Unsupported Vulkan quantizer specification {pt2e_quantize}")
 

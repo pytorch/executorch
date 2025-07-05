@@ -70,8 +70,8 @@ ET_NODISCARD bool check_bounds(
 Tensor& clamp_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Scalar>& min_opt,
-    const executorch::aten::optional<Scalar>& max_opt,
+    const std::optional<Scalar>& min_opt,
+    const std::optional<Scalar>& max_opt,
     Tensor& out) {
   bool has_min = min_opt.has_value();
   bool has_max = max_opt.has_value();
@@ -134,8 +134,12 @@ Tensor& clamp_out(
   static constexpr const char op_name[] = "clamp.out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON>(
         [has_min, min_opt, has_max, max_opt](const CTYPE_COMPUTE val_in) {
+          // TODO: rewrite this to be vectorization-capable.
           CTYPE_COMPUTE val_out = val_in;
           if (has_min) {
             val_out = utils::max_override(
@@ -150,8 +154,7 @@ Tensor& clamp_out(
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
+        out);
   });
 
   return out;
@@ -160,8 +163,8 @@ Tensor& clamp_out(
 Tensor& clamp_tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& min_opt,
-    const executorch::aten::optional<Tensor>& max_opt,
+    const std::optional<Tensor>& min_opt,
+    const std::optional<Tensor>& max_opt,
     Tensor& out) {
   bool has_min = min_opt.has_value();
   bool has_max = max_opt.has_value();
@@ -210,11 +213,15 @@ Tensor& clamp_tensor_out(
   static constexpr const char op_name[] = "clamp.Tensor_out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_tritensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+    utils::apply_tritensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::REALHBBF16>(
         [has_min, has_max](
             const CTYPE_COMPUTE val_in,
             const CTYPE_COMPUTE val_min,
             const CTYPE_COMPUTE val_max) {
+          // TODO: rewrite this to be vectorization-capable.
           CTYPE_COMPUTE val_out = val_in;
           if (has_min) {
             val_out = utils::max_override(val_out, val_min);
@@ -231,8 +238,7 @@ Tensor& clamp_tensor_out(
         utils::SupportedTensorDtypes::REALHBBF16,
         max,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBBF16);
+        out);
   });
 
   return out;

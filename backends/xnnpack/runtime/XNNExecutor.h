@@ -75,7 +75,7 @@ class XNNExecutor {
    * Executes the graph using the args prepared at prepare_args().
    */
   ET_NODISCARD executorch::runtime::Error forward(
-      executorch::runtime::BackendExecutionContext& context);
+      executorch::ET_RUNTIME_NAMESPACE::BackendExecutionContext& context);
 
   /**
    * Prepares the outputs to be returned by the delegate

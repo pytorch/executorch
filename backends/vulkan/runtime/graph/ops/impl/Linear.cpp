@@ -113,8 +113,7 @@ void add_addmm_naive_texture_node(
       global_wg_size,
       graph.create_local_wg_size(global_wg_size),
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{mat1, mat2, self}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {{mat1, mat2, self}, vkapi::kRead}},
       // Shader params buffers
       {
           graph.sizes_ubo(out),
@@ -124,14 +123,17 @@ void add_addmm_naive_texture_node(
           graph.sizes_ubo(self),
           graph.create_params_buffer(params),
       },
+      // Push Constants
+      {},
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(mat1),
        graph.hashed_layout_of(mat2),
        graph.hashed_layout_of(self)},
+      // Resize Args
+      {mat2_is_transposed},
       // Resizing Logic
-      resize_addmm_node,
-      {mat2_is_transposed}));
+      resize_addmm_node));
 }
 
 void add_addmm_naive_buffer_node(
@@ -190,11 +192,14 @@ void add_addmm_naive_buffer_node(
           graph.numel_ubo(out),
           graph.create_params_buffer(params),
       },
+      // Push Constants
+      {},
       // Specialization Constants
       {mat2_is_transposed_val},
+      // Resize Args
+      {mat2_is_transposed},
       // Resizing Logic
-      resize_addmm_node,
-      {mat2_is_transposed}));
+      resize_addmm_node));
 }
 
 void add_addmm_optimized_node(
@@ -269,8 +274,8 @@ void add_addmm_optimized_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {{mat1_W_packed, mat2_packed, self}, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite},
+       {{mat1_W_packed, mat2_packed, self}, vkapi::kRead}},
       // Shader params buffers
       {
           graph.sizes_ubo(out),
@@ -279,14 +284,17 @@ void add_addmm_optimized_node(
           graph.sizes_ubo(self),
           graph.create_params_buffer(params),
       },
+      // Push Constants
+      {},
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(mat1_W_packed),
        graph.hashed_layout_of(mat2_packed),
        graph.hashed_layout_of(self)},
+      // Resize Args
+      {mat2_is_transposed},
       // Resizing Logic
-      resize_addmm_node,
-      {mat2_is_transposed}));
+      resize_addmm_node));
 }
 
 void add_addmm_node(

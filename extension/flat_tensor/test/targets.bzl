@@ -35,8 +35,8 @@ def define_common_targets(is_fbcode=False):
             # The tests use this var to find the program file to load. This uses
             # an fbcode target path because the authoring/export tools
             # intentionally don't work in xplat (since they're host-only tools).
-            "ET_MODULE_LINEAR_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.pte])",
-            "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
+            "ET_MODULE_ADD_MUL_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleAddMul.pte])",
+            "ET_MODULE_ADD_MUL_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleAddMul.ptd])",
         }
 
         runtime.cxx_test(

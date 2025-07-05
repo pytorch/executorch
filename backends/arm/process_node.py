@@ -36,11 +36,11 @@ def process_call_function(
     tosa_spec: TosaSpecification,
 ):
     # Unpack arguments and convert
-    inputs = getNodeArgs(node)
+    inputs = getNodeArgs(node, tosa_spec)
 
     # Convert output (this node itself)
     try:
-        output = TosaArg(node)
+        output = TosaArg(node, tosa_spec)
     except ValueError as e:
         raise ValueError(
             f"Failed processing call_function: {node.name}. "
@@ -78,7 +78,7 @@ def process_inputs(
             f"Expected dim_order: {tuple(range(meta.dim()))}, but got: {meta.dim_order()} for node {node.name}"
         )
     try:
-        tosa_arg = TosaArg(node)
+        tosa_arg = TosaArg(node, tosa_spec)
     except ValueError as e:
         raise ValueError(
             f"Failed processing input placeholder: {node.name}. "
@@ -112,7 +112,7 @@ def process_inputs_to_parameters(
 ):
     """Serialize bias and non-quantized weights"""
     try:
-        tosa_arg = TosaArg(node)
+        tosa_arg = TosaArg(node, tosa_spec)
     except ValueError as e:
         raise ValueError(
             f"Failed processing parameter placeholder: {node.name}. "
@@ -137,10 +137,11 @@ def process_inputs_to_buffers(
     node: torch.fx.Node,
     tosa_graph: Any,
     edge_program: ExportedProgram,
+    tosa_spec: TosaSpecification,
 ):
     """Serialize quantized weights"""
     try:
-        tosa_arg = TosaArg(node)
+        tosa_arg = TosaArg(node, tosa_spec)
     except ValueError as e:
         raise ValueError(
             f"Failed processing buffer placeholder: {node.name}. "
@@ -165,9 +166,10 @@ def process_inputs_to_lifted_tensor_constants(
     node: torch.fx.Node,
     tosa_graph: Any,
     edge_program: ExportedProgram,
+    tosa_spec: TosaSpecification,
 ):
     try:
-        tosa_arg = TosaArg(node)
+        tosa_arg = TosaArg(node, tosa_spec)
     except ValueError as e:
         raise ValueError(
             f"Failed processing lifted tensor constant placeholder: {node.name}. "
@@ -196,9 +198,11 @@ def process_placeholder(
     elif is_param(edge_program, node):
         process_inputs_to_parameters(node, tosa_graph, edge_program, tosa_spec)
     elif is_buffer(edge_program, node):
-        process_inputs_to_buffers(node, tosa_graph, edge_program)
+        process_inputs_to_buffers(node, tosa_graph, edge_program, tosa_spec)
     elif is_lifted_tensor_constant(edge_program, node):
-        process_inputs_to_lifted_tensor_constants(node, tosa_graph, edge_program)
+        process_inputs_to_lifted_tensor_constants(
+            node, tosa_graph, edge_program, tosa_spec
+        )
     elif node.name in edge_program.graph_signature.inputs_to_lifted_custom_objs:
         raise NotImplementedError(
             "Placeholder is of type 'lifted custom object' which is not supported."

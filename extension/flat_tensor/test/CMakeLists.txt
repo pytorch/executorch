@@ -19,23 +19,23 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 add_custom_command(
-  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
-         "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
   COMMAND
-    python -m test.models.export_program --modules "ModuleLinear"
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
     --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
 add_custom_target(
   extension_flat_tensor_test_resources
-  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
-          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
+  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
 )
 
 set(test_env
-    "ET_MODULE_LINEAR_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
-    "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
+    "ET_MODULE_ADD_MUL_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
+    "ET_MODULE_ADD_MUL_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
 )
 
 set(_test_srcs flat_tensor_data_map_test.cpp flat_tensor_header_test.cpp)

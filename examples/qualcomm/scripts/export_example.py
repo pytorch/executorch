@@ -16,7 +16,7 @@ from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import save_pte_program
 
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def main() -> None:

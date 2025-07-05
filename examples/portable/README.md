@@ -78,4 +78,4 @@ Output 0: tensor(sizes=[1, 1000], [
 
 ## Custom Operator Registration
 
-Explore the demos in the [`custom_ops/`](./custom_ops) directory to learn how to register custom operators into ExecuTorch as well as register its kernels into ExecuTorch runtime.
+Explore the demos in the [`custom_ops/`](custom_ops) directory to learn how to register custom operators into ExecuTorch as well as register its kernels into ExecuTorch runtime.

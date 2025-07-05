@@ -102,3 +102,6 @@ class ExecutorchBackendConfig:
     # serialized in the PTE file. Its value is ignored if mutable buffers are not
     # memory planned as the names must be serialized in that case.
     emit_mutable_buffer_names: bool = False
+
+    # If set to true, we run quant fusion and constant propagation passes
+    do_quant_fusion_and_const_prop: bool = False

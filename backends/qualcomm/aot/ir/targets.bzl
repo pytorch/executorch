@@ -57,6 +57,7 @@ def define_common_targets():
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",

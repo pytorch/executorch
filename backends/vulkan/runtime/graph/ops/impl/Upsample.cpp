@@ -16,6 +16,8 @@
 
 namespace vkcompute {
 
+enum class UpsampleMode : int { NEAREST, BILINEAR };
+
 void resize_upsample_nearest2d_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -39,19 +41,12 @@ void resize_upsample_nearest2d_node(
   out->virtual_resize(out_sizes);
 }
 
-// ExecuTorch-Vulkan framework to add node
-// Args:
-//   in: will be converted from NCHW input tensor to 3D ARGB representation in
-//   openGL (via ExecuTorch) output_sizes: optional 2D array of targetting
-//   output size of H and W dimensions. >= input sizes;
-
-//      will be computed if only given the scale_factors.
-//   scale_factors: optional 2D array of scale factors for H and W dimensions.
-//      Will be computed if only given the output_sizes.
 void add_upsample_nearest2d_node(
     ComputeGraph& graph,
+    const UpsampleMode mode,
     const ValueRef in,
     const ValueRef output_sizes,
+    const ValueRef align_corners,
     const ValueRef scale_factors,
     const ValueRef out) {
   if (graph.val_is_none(output_sizes) && graph.val_is_none(scale_factors)) {
@@ -63,36 +58,61 @@ void add_upsample_nearest2d_node(
         "Invalid input, must provide ONLY one of output_sizes or scale_factors");
   }
 
-  vTensorPtr t_in = graph.get_tensor(in);
-  utils::uvec3 input_sizes = t_in->logical_limits();
-
-  utils::ivec2 input_size = {
-      utils::safe_downcast<int32_t>(input_sizes[0]),
-      utils::safe_downcast<int32_t>(input_sizes[1])};
-  utils::vec2 rev_scales = {
-      utils::safe_downcast<float>(1.0), utils::safe_downcast<float>(1.0)};
-
-  // Reverse scale factors that pre-computed before GLSL.
-  if (!graph.val_is_none(output_sizes)) {
-    auto output_size_ref = graph.get_int_list(output_sizes);
-    rev_scales = {
-        utils::safe_downcast<float>(
-            (float)input_size[0] / output_size_ref->at(1)),
-        utils::safe_downcast<float>(
-            (float)input_size[1] / output_size_ref->at(0))};
-
-  } else {
-    auto scales = graph.get_double_list(scale_factors);
-    rev_scales = {
-        utils::safe_downcast<float>(1.0 / scales->at(1)),
-        utils::safe_downcast<float>(1.0 / scales->at(0))};
+  int align_corners_val = 0;
+  if (is_valid(align_corners) && graph.get_bool(align_corners)) {
+    align_corners_val = 1;
   }
 
-  vTensorPtr t_out = graph.get_tensor(out);
+  utils::uvec3 in_limits = graph.logical_limits_of(in);
+  utils::uvec3 out_limits = graph.logical_limits_of(out);
 
-  std::string kernel_name("upsample_nearest2d");
+  uint32_t out_width = out_limits[0u];
+  uint32_t out_height = out_limits[1u];
+
+  float scale_factor_x = float(in_limits[0u]) / float(out_width);
+  float scale_factor_y = float(in_limits[1u]) / float(out_height);
+
+  float recip_scale_factor_x = 1.0f / scale_factor_x;
+  float recip_scale_factor_y = 1.0f / scale_factor_y;
+
+  if (!graph.val_is_none(output_sizes)) {
+    IntListPtr output_size_ref = graph.get_int_list(output_sizes);
+    out_width = output_size_ref->at(1);
+    out_height = output_size_ref->at(0);
+
+    VK_CHECK_COND(out_width == out_limits[0u]);
+    VK_CHECK_COND(out_height == out_limits[1u]);
+
+  } else {
+    DoubleListPtr scales = graph.get_double_list(scale_factors);
+    scale_factor_x = scales->at(1);
+    scale_factor_y = scales->at(0);
+
+    VK_CHECK_COND(in_limits[0u] * scale_factor_x == out_width);
+    VK_CHECK_COND(in_limits[1u] * scale_factor_y == out_height);
+  }
+
+  if (align_corners_val == 1) {
+    recip_scale_factor_x = float(in_limits[0u] - 1) / float(out_width - 1);
+    recip_scale_factor_y = float(in_limits[1u] - 1) / float(out_height - 1);
+  } else {
+    recip_scale_factor_x = float(in_limits[0u]) / float(out_width);
+    recip_scale_factor_y = float(in_limits[1u]) / float(out_height);
+  }
+
+  utils::vec2 recip_scales = {recip_scale_factor_x, recip_scale_factor_y};
+
+  std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
+  switch (mode) {
+    case UpsampleMode::NEAREST:
+      kernel_name = "upsample_nearest2d";
+      break;
+    case UpsampleMode::BILINEAR:
+      kernel_name = "upsample_bilinear2d";
+      break;
+  }
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -103,21 +123,48 @@ void add_upsample_nearest2d_node(
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->logical_limits_ubo(),
-       graph.create_params_buffer(input_size),
-       graph.create_params_buffer(rev_scales)},
-      // Specialization Constants
+      {graph.logical_limits_ubo(out),
+       graph.logical_limits_ubo(in),
+       graph.create_params_buffer(recip_scales)},
+      // Push Constants
       {},
-      resize_upsample_nearest2d_node,
-      {output_sizes, scale_factors}));
+      // Specialization Constants
+      {align_corners_val},
+      // Resize Args
+      {output_sizes, scale_factors},
+      // Resizing Logic
+      resize_upsample_nearest2d_node));
 }
 
-void upsample(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  return add_upsample_nearest2d_node(graph, args[0], args[1], args[2], args[3]);
+void upsample_nearest2d(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  return add_upsample_nearest2d_node(
+      graph,
+      UpsampleMode::NEAREST,
+      args[0],
+      args[1],
+      kDummyValueRef,
+      args[2],
+      args[3]);
+}
+
+void upsample_bilinear2d(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  return add_upsample_nearest2d_node(
+      graph,
+      UpsampleMode::BILINEAR,
+      args[0],
+      args[1],
+      args[2],
+      args[3],
+      args[4]);
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(aten.upsample_nearest2d.vec, upsample);
+  VK_REGISTER_OP(aten.upsample_nearest2d.vec, upsample_nearest2d);
+  VK_REGISTER_OP(aten.upsample_bilinear2d.vec, upsample_bilinear2d);
 }
 
 } // namespace vkcompute

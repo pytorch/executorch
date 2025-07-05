@@ -21,8 +21,28 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
+
+
+def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
+    return (
+        is_param(exp_prog, node)
+        or is_buffer(exp_prog, node)
+        or is_lifted_tensor_constant(exp_prog, node)
+    )
+
+
+def get_total_num_ops_in_ep(edge_programs, supported_ops):
+    total_number_of_ops = 0
+    for edge_program in edge_programs.values():
+        for partitioned_program in edge_program:
+            for node in partitioned_program.graph.nodes:
+                if node.op == "call_function":
+                    if node.target in supported_ops:
+                        total_number_of_ops += 1
+    return total_number_of_ops
 
 
 def _preprocess_multimethod(
@@ -37,13 +57,7 @@ def _preprocess_multimethod(
     in testing for a partitioner which tags different partitions for different backends
     to be lowered to
     """
-    total_number_of_ops = 0
-    for edge_program in edge_programs.values():
-        for partitioned_program in edge_program:
-            for node in partitioned_program.graph.nodes:
-                if node.op == "call_function":
-                    if node.target in supported_ops:
-                        total_number_of_ops += 1
+    total_number_of_ops = get_total_num_ops_in_ep(edge_programs, supported_ops)
     all_processed_results = {key: [] for key in edge_programs.keys()}
 
     for method_name, partitioned_programs in edge_programs.items():
@@ -67,6 +81,8 @@ def _preprocess_multimethod(
                         raise RuntimeError(
                             f"{node.op} {node.target.__name__} is not supported in backend {backend_name}"
                         )
+                if is_param_node(partitioned_program, node):
+                    processed_bytes += f"CONST{node.name}:"
 
             processed_bytes += "#"
             for cs in compile_spec_for_partition:
@@ -171,14 +187,30 @@ class SecondBackendWithPreprocessAll(BackendDetails):
 
 
 class AddSinOperatorSupport(OperatorSupportBase):
+    def __init__(self, original_program):
+        self.original_program = original_program
+        super().__init__()
+
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        return node.op == "call_function" and node.target in [
+        supported_targets = [
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.sin.default,
         ]
+        if node.op == "call_function" and node.target in supported_targets:
+            return True
+
+        if node.op == "placeholder" and is_param_node(self.original_program, node):
+            for user in node.users.keys():
+                if user.target in supported_targets:
+                    return True
+        return False
 
 
 class SubCosOperatorSupport(OperatorSupportBase):
+    def __init__(self, original_program):
+        self.original_program = original_program
+        super().__init__()
+
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         return node.op == "call_function" and node.target in [
             exir_ops.edge.aten.sub.Tensor,
@@ -199,11 +231,8 @@ class BackendWithPreprocessAllPartitioner(Partitioner):
     """
 
     def __init__(self) -> None:
-        self.add_sin_support = any_chain(AddSinOperatorSupport())
-        self.add_sin_backend_id = FirstBackendWithPreprocessAll.__name__
-
-        self.sub_cos_support = any_chain(SubCosOperatorSupport())
         self.sub_cos_backend_id = SecondBackendWithPreprocessAll.__name__
+        self.add_sin_backend_id = FirstBackendWithPreprocessAll.__name__
 
     def _partition_graph_module(
         self,
@@ -260,6 +289,8 @@ class BackendWithPreprocessAllPartitioner(Partitioner):
         return partition_tags, start_idx_for_submodules
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        self.add_sin_support = any_chain(AddSinOperatorSupport(exported_program))
+        self.sub_cos_support = any_chain(SubCosOperatorSupport(exported_program))
         partition_tags, _ = self._partition_graph_module(exported_program.graph_module)
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

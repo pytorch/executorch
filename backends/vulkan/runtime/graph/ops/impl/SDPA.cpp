@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
@@ -22,6 +23,24 @@
 
 namespace vkcompute {
 
+utils::uvec3 kv_cache_update_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+
+  const ValueRef cache = args.at(0).refs.at(0);
+  const ValueRef projected = args.at(1).refs.at(0);
+
+  if (graph->is_buffer_storage(cache)) {
+    return graph->create_global_wg_size(projected);
+  } else {
+    return graph->logical_limits_of(projected);
+  }
+}
+
 void add_kv_cache_update_node(
     ComputeGraph& graph,
     const ValueRef input_pos_symint,
@@ -31,39 +50,57 @@ void add_kv_cache_update_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(projected));
   add_dtype_suffix(kernel_name, graph.dtype_of(projected));
 
-  utils::uvec3 global_size;
   vkapi::ParamsBindList param_ubos;
 
   if (graph.is_buffer_storage(cache)) {
-    global_size = graph.create_global_wg_size(projected);
-
     param_ubos = {
         graph.numel_ubo(projected),
         graph.strides_ubo(cache),
         graph.get_or_create_int_param_buffer(input_pos_symint)};
   } else {
-    global_size = graph.logical_limits_of(projected);
-
     param_ubos = {
         graph.logical_limits_ubo(projected),
         graph.get_or_create_int_param_buffer(input_pos_symint)};
   }
-  const utils::uvec3 local_size = graph.create_local_wg_size(global_size);
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      kv_cache_update_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{cache, vkapi::kWrite}, {projected, vkapi::kRead}},
       // Shader param buffers
       param_ubos,
+      // Push Constants
+      {},
       // Specialization Constants
       {},
+      // Resize Args
+      {},
       // Resizing Logic
-      nullptr,
-      {}));
+      nullptr));
+}
+
+utils::uvec3 attn_weight_scale_and_mask_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+
+  const ValueRef attn_weight = args.at(0).refs.at(0);
+
+  if (graph->is_buffer_storage(attn_weight)) {
+    return {
+        graph->size_at<uint32_t>(-1, attn_weight),
+        graph->size_at<uint32_t>(-2, attn_weight),
+        graph->size_at<uint32_t>(-3, attn_weight),
+    };
+  } else {
+    return graph->logical_limits_of(attn_weight);
+  }
 }
 
 void add_attn_weight_scale_and_mask_node(
@@ -78,46 +115,37 @@ void add_attn_weight_scale_and_mask_node(
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
   const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
 
-  utils::uvec3 global_size;
-  utils::uvec3 local_size;
   vkapi::ParamsBindList param_ubos;
 
   if (graph.is_buffer_storage(attn_weight)) {
-    global_size = {
-        graph.size_at<uint32_t>(-1, attn_weight),
-        graph.size_at<uint32_t>(-2, attn_weight),
-        graph.size_at<uint32_t>(-3, attn_weight),
-    };
-
     param_ubos = {
         graph.sizes_ubo(attn_weight),
         graph.strides_ubo(attn_weight),
         graph.create_params_buffer(scale_val)};
   } else {
-    global_size = graph.logical_limits_of(attn_weight);
-
     param_ubos = {
         graph.logical_limits_ubo(attn_weight),
         graph.get_or_create_int_param_buffer(input_pos_symint),
         graph.create_params_buffer(scale_val)};
   }
 
-  local_size = graph.create_local_wg_size(global_size);
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      attn_weight_scale_and_mask_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{attn_weight, vkapi::kReadWrite}},
       // Shader param buffers
       param_ubos,
+      // Push Constants
+      {},
       // Specialization Constants
       {},
+      // Resize Args
+      {},
       // Resizing Logic
-      nullptr,
-      {}));
+      nullptr));
 }
 
 std::vector<int64_t> get_cache_slice_sizes(

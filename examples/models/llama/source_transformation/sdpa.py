@@ -22,9 +22,11 @@ class SDPACustom(torch.nn.Module):
     def __init__(
         self,
         dim: int,
+        use_attention_mask: bool = False,
     ):
         super().__init__()
         self.dim = dim
+        self.use_attention_mask = use_attention_mask
 
     def forward(
         self,
@@ -47,34 +49,52 @@ class SDPACustom(torch.nn.Module):
         k = k.to(dtype=torch.float)
         v = v.to(dtype=torch.float)
 
-        output = torch.ops.llama.custom_sdpa(
-            q,
-            k,
-            v,
-            input_pos[0].item(),
-            None,  # Attention mask
-            0,  # dropout probability. Ignored by the code
-            True,  # is_causal
-        )
+        if self.use_attention_mask:
+            output = torch.ops.llama.custom_sdpa(
+                q,
+                k,
+                v,
+                input_pos[0].item(),
+                mask,  # Attention mask
+                0,  # dropout probability. Ignored by the code
+                False,  # is_causal
+            )
+        else:
+            output = torch.ops.llama.custom_sdpa(
+                q,
+                k,
+                v,
+                input_pos[0].item(),
+                None,  # Attention mask
+                0,  # dropout probability. Ignored by the code
+                True,  # is_causal
+            )
         return output.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
-def _replace_sdpa_with_custom_op(module: torch.nn.Module):
+def _replace_sdpa_with_custom_op(
+    module: torch.nn.Module, use_attention_mask: bool = False
+):
     for name, child in module.named_children():
         if isinstance(child, SDPA):
             setattr(
                 module,
                 name,
-                SDPACustom(child.dim),
+                SDPACustom(
+                    child.dim,
+                    use_attention_mask=use_attention_mask,
+                ),
             )
         else:
-            _replace_sdpa_with_custom_op(child)
+            _replace_sdpa_with_custom_op(child, use_attention_mask=use_attention_mask)
 
 
-def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
+def replace_sdpa_with_custom_op(
+    module: torch.nn.Module, use_attention_mask: bool = False
+) -> torch.nn.Module:
     from executorch.extension.llm.custom_ops import custom_ops  # noqa
 
-    _replace_sdpa_with_custom_op(module)
+    _replace_sdpa_with_custom_op(module, use_attention_mask=use_attention_mask)
     return module
 
 
@@ -97,12 +117,15 @@ class QuantizedSDPA(torch.nn.Module):
     zero points, we need to pass kv_cache to SDPA.
     """
 
-    def __init__(self, dim: int, kv_cache: QuantizedKVCache):
+    def __init__(
+        self, dim: int, kv_cache: QuantizedKVCache, use_attention_mask: bool = False
+    ):
         super().__init__()
         self.dim = dim
         self.quantized_dtype = torch.int8
         self.float_dtype = torch.float32
         self.kv_cache = kv_cache
+        self.use_attention_mask = use_attention_mask
 
     def forward(
         self,
@@ -140,22 +163,40 @@ class QuantizedSDPA(torch.nn.Module):
         v_scale_fp32 = self.kv_cache.v_cache_scales
 
         start_pos = input_pos[0].item()
-        output = torch.ops.llama.custom_quantized_sdpa(
-            q_quantized,
-            k_quantized,
-            v_quantized,
-            start_pos,
-            None,
-            0,
-            True,
-            None,
-            q_zero_point_int8,
-            q_scale_fp32,
-            k_zero_point_int8,
-            k_scale_fp32,
-            v_zero_point_int8,
-            v_scale_fp32,
-        )
+        if self.use_attention_mask:
+            output = torch.ops.llama.custom_quantized_sdpa(
+                q_quantized,
+                k_quantized,
+                v_quantized,
+                start_pos,
+                mask,
+                0,
+                False,
+                None,
+                q_zero_point_int8,
+                q_scale_fp32,
+                k_zero_point_int8,
+                k_scale_fp32,
+                v_zero_point_int8,
+                v_scale_fp32,
+            )
+        else:
+            output = torch.ops.llama.custom_quantized_sdpa(
+                q_quantized,
+                k_quantized,
+                v_quantized,
+                start_pos,
+                None,
+                0,
+                True,
+                None,
+                q_zero_point_int8,
+                q_scale_fp32,
+                k_zero_point_int8,
+                k_scale_fp32,
+                v_zero_point_int8,
+                v_scale_fp32,
+            )
 
         return output.view(bsz, seqlen, self.dim)
 
@@ -165,6 +206,7 @@ def _update_attention_module_with_quantized_sdpa(
 ):
     sdpa = getattr(module, "SDPA", None)
     assert sdpa is not None
+    # TODO: add support for SDPA with attention mask
     # pyre-ignore
     setattr(module, "SDPA", QuantizedSDPA(sdpa.dim, kv_cache))  # noqa: B010
 
@@ -218,7 +260,8 @@ class SDPASimple(torch.nn.Module):
         seqlen,
         mask,
     ):
-        attn_mask = mask[None, None, input_pos]
+        # Input mask is slided however it is 2D
+        attn_mask = mask[None, None]
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
@@ -274,7 +317,8 @@ class SDPAFlex(torch.nn.Module):
         """
         k = repeat_kv(k, self.n_rep)
         v = repeat_kv(v, self.n_rep)
-        attn_mask = mask[input_pos]
+        # Mask is already sliced as needed
+        attn_mask = mask
 
         scale_factor = 1 / math.sqrt(q.size(-1))
         attn_weight = q @ k.transpose(-2, -1) * scale_factor
@@ -355,7 +399,8 @@ class SDPACoreML(torch.nn.Module):
         seqlen,
         mask,
     ):
-        attn_mask = mask[None, None, input_pos]
+        # Input mask is slided however it is 2D
+        attn_mask = mask[None, None]
 
         if self.n_rep > 1:
             k = k.repeat_interleave(self.n_rep, dim=1)
@@ -448,12 +493,10 @@ class KVCacheSimple(torch.nn.Module):
         self.register_buffer(
             "past_k_caches",
             torch.zeros(cache_shape, dtype=dtype, device="cpu"),
-            persistent=False,
         )
         self.register_buffer(
             "past_v_caches",
             torch.zeros(cache_shape, dtype=dtype, device="cpu"),
-            persistent=False,
         )
 
     def update(

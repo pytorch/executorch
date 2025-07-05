@@ -13,10 +13,8 @@ namespace backends {
 namespace qnn {
 class HtpBackendCache : public QnnBackendCache {
  public:
-  explicit HtpBackendCache(
-      const QnnExecuTorchContextBinary& qnn_context_blob,
-      const std::string& aot_graph_name)
-      : QnnBackendCache(qnn_context_blob, aot_graph_name), spill_fill_buf_(0) {}
+  explicit HtpBackendCache(const QnnExecuTorchContextBinary& qnn_context_blob)
+      : QnnBackendCache(qnn_context_blob), spill_fill_buf_(0) {}
   ~HtpBackendCache() override = default;
 
   uint64_t GetSpillFillBufferSize() {

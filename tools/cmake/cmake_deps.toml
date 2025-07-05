@@ -56,6 +56,20 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_threadpool",
+  "kernels_util_all_deps",
+]
+
+[targets.kernels_util_all_deps]
+buck_targets = [
+  "//kernels/portable/cpu/util:all_deps",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch_core",
+  "extension_threadpool",
 ]
 
 # HACK: prevent reduce_util from also showing up in custom_ops. The
@@ -89,6 +103,7 @@ deps = [
   "executorch",
   "executorch_core",
   "extension_threadpool",
+  "kernels_util_all_deps",
   "optimized_cpublas",
   "portable_kernels",
 ]
@@ -108,6 +123,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_threadpool",
+  "kernels_util_all_deps",
   "portable_kernels",
 ]
 
@@ -147,6 +164,7 @@ deps = [
   "executorch_core",
   "executorch",
   "extension_threadpool",
+  "kernels_util_all_deps",
   "optimized_cpublas",
   "portable_kernels",
 ]
@@ -178,7 +196,6 @@ filters = [
 ]
 deps = [
   "executorch_core",
-  "executorch",
 ]
 
 [targets.extension_flat_tensor_schema]
@@ -197,9 +214,7 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "extension_flat_tensor_schema",
   "executorch_core",
-  "executorch",
 ]
 
 [targets.extension_module]
@@ -210,9 +225,9 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
   "extension_data_loader",
+  "extension_flat_tensor",
 ]
 
 [targets.extension_runner_util]
@@ -223,8 +238,18 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
+]
+
+[targets.extension_tokenizers]
+buck_targets = [
+  "//extension/llm/tokenizers:sentencepiece",
+  "//extension/llm/tokenizers:tiktoken",
+  "//extension/llm/tokenizers:hf_tokenizer",
+  "//extension/llm/tokenizers:llama2c_tokenizer",
+]
+filters = [
+  ".cpp$",
 ]
 
 [targets.extension_llm_runner]
@@ -235,10 +260,15 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
+  "extension_data_loader",
+  "extension_flat_tensor",
   "extension_module",
+  "extension_data_loader",
+  "extension_flat_tensor",
   "extension_runner_util",
+  "extension_tensor",
+  "extension_tokenizers",
 ]
 
 [targets.extension_tensor]
@@ -249,7 +279,6 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
 ]
 
@@ -261,7 +290,6 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch",
   "executorch_core",
 ]
 
@@ -290,6 +318,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_threadpool",
+  "kernels_util_all_deps",
   "portable_kernels",
 ]
 # ---------------------------------- extension end ----------------------------------
@@ -308,6 +338,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_threadpool",
+  "kernels_util_all_deps",
   "portable_kernels",
   "quantized_kernels",
   "etdump_flatcc",
@@ -342,6 +374,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_threadpool",
+  "kernels_util_all_deps",
   "portable_kernels",
 ]
 
@@ -382,6 +416,7 @@ deps = [
   "executorch",
   "executorch_core",
   "extension_threadpool",
+  "kernels_util_all_deps",
   "xnnpack_backend",
   "portable_kernels",
   "etdump_flatcc",
@@ -453,8 +488,11 @@ deps = [
   "executorch",
   "executorch_core",
   "extension_data_loader",
+  "extension_flat_tensor",
   "extension_module",
+  "extension_tensor",
   "extension_threadpool",
+  "kernels_util_all_deps",
   "optimized_cpublas",
   "portable_kernels",
   "quantized_kernels",

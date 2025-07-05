@@ -29,9 +29,11 @@ if(ANDROID)
     message(FATAL_ERROR "ANDROID_NDK not set")
   endif()
 
-  set(GLSLC_PATH
-      "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc"
-  )
+  if(NOT GLSLC_PATH)
+    set(GLSLC_PATH
+        "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc"
+    )
+  endif()
 else()
   find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
 
@@ -56,7 +58,7 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
       ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
       --glslc-path=${GLSLC_PATH}
       --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}/shader_cache/ --env
-      ${VULKAN_GEN_ARG_ENV}
+      ${VULKAN_GEN_ARG_ENV} --optimize
     DEPENDS ${shaders_path}/*
             ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py
   )

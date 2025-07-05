@@ -25,8 +25,8 @@ class OpNativeBatchNormLegitNoTrainingOutTest : public OperatorTest {
       executorch::aten::Tensor&>
   op_native_batch_norm_legit_no_training_out(
       const executorch::aten::Tensor& input,
-      const executorch::aten::optional<executorch::aten::Tensor>& weight,
-      const executorch::aten::optional<executorch::aten::Tensor>& bias,
+      const std::optional<executorch::aten::Tensor>& weight,
+      const std::optional<executorch::aten::Tensor>& bias,
       const executorch::aten::Tensor& running_mean,
       const executorch::aten::Tensor& running_var,
       double momentum,
@@ -63,8 +63,8 @@ class OpNativeBatchNormLegitNoTrainingOutTest : public OperatorTest {
                  9.971039772033691,  3.5423521995544434, 7.452159881591797,
                  9.93700122833252,   1.8560808897018433, 1.524025797843933,
                  7.3222975730896});
-    executorch::aten::optional<executorch::aten::Tensor> weight =
-        executorch::aten::optional<executorch::aten::Tensor>(tf.make(
+    std::optional<executorch::aten::Tensor> weight =
+        std::optional<executorch::aten::Tensor>(tf.make(
             {7},
             {8.287437438964844,
              8.227645874023438,
@@ -73,8 +73,8 @@ class OpNativeBatchNormLegitNoTrainingOutTest : public OperatorTest {
              4.119281768798828,
              8.593960762023926,
              2.3760855197906494}));
-    executorch::aten::optional<executorch::aten::Tensor> bias =
-        executorch::aten::optional<executorch::aten::Tensor>(tf.make(
+    std::optional<executorch::aten::Tensor> bias =
+        std::optional<executorch::aten::Tensor>(tf.make(
             {7},
             {7.824275970458984,
              6.84327507019043,
@@ -163,8 +163,8 @@ class OpNativeBatchNormLegitOutTest : public OperatorTest {
       executorch::aten::Tensor&>
   op_native_batch_norm_legit_out(
       const executorch::aten::Tensor& input,
-      const executorch::aten::optional<executorch::aten::Tensor>& weight,
-      const executorch::aten::optional<executorch::aten::Tensor>& bias,
+      const std::optional<executorch::aten::Tensor>& weight,
+      const std::optional<executorch::aten::Tensor>& bias,
       executorch::aten::Tensor& running_mean,
       executorch::aten::Tensor& running_var,
       bool training,
@@ -198,8 +198,8 @@ class OpNativeBatchNormLegitNoStatsOutTest : public OperatorTest {
       executorch::aten::Tensor&>
   op_native_batch_norm_legit_no_stats_out(
       const executorch::aten::Tensor& input,
-      const executorch::aten::optional<executorch::aten::Tensor>& weight,
-      const executorch::aten::optional<executorch::aten::Tensor>& bias,
+      const std::optional<executorch::aten::Tensor>& weight,
+      const std::optional<executorch::aten::Tensor>& bias,
       bool training,
       double momentum,
       double eps,
@@ -225,10 +225,10 @@ class OpNativeBatchNormLegitNoStatsOutTest : public OperatorTest {
 
     executorch::aten::Tensor input =
         tf.make({3, 4}, {0, 1, 4, 9, 16, 25, 36, 49, 64, 81, 100, 121});
-    executorch::aten::optional<executorch::aten::Tensor> weight =
-        executorch::aten::optional<executorch::aten::Tensor>();
-    executorch::aten::optional<executorch::aten::Tensor> bias =
-        executorch::aten::optional<executorch::aten::Tensor>();
+    std::optional<executorch::aten::Tensor> weight =
+        std::optional<executorch::aten::Tensor>();
+    std::optional<executorch::aten::Tensor> bias =
+        std::optional<executorch::aten::Tensor>();
     bool training = true;
     double momentum = 1e-3;
     double eps = 1e-5;
@@ -339,8 +339,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
                   3.887125253677368,  9.278786659240723,    6.742891311645508,
                   5.01821756362915,   2.326876640319824,    7.939553737640381,
                   3.2622408866882324, 3.829448699951172});
-  executorch::aten::optional<executorch::aten::Tensor> weight =
-      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
+  std::optional<executorch::aten::Tensor> weight =
+      std::optional<executorch::aten::Tensor>(tfFloat.make(
           {7},
           {0.5193436145782471,
            4.531304836273193,
@@ -349,8 +349,8 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
            2.6848177909851074,
            7.309220314025879,
            2.2476916313171387}));
-  executorch::aten::optional<executorch::aten::Tensor> bias =
-      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
+  std::optional<executorch::aten::Tensor> bias =
+      std::optional<executorch::aten::Tensor>(tfFloat.make(
           {7},
           {4.643010139465332,
            0.2791440486907959,
@@ -521,15 +521,15 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
        9.173870086669922,   3.781676769256592,   5.6734232902526855,
        3.301741600036621,   1.3799077272415161,  8.990988731384277,
        2.2520315647125244,  2.483280897140503});
-  executorch::aten::optional<executorch::aten::Tensor> weight =
-      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
+  std::optional<executorch::aten::Tensor> weight =
+      std::optional<executorch::aten::Tensor>(tfFloat.make(
           {4},
           {1.8311285972595215,
            5.851841926574707,
            6.108979225158691,
            5.1755266189575195}));
-  executorch::aten::optional<executorch::aten::Tensor> bias =
-      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
+  std::optional<executorch::aten::Tensor> bias =
+      std::optional<executorch::aten::Tensor>(tfFloat.make(
           {4},
           {5.1375732421875,
            3.7950849533081055,
@@ -681,15 +681,15 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
        1.7936384677886963,  1.8733304738998413,  9.386192321777344,
        2.442445755004883,   2.2374587059020996,  1.6268903017044067,
        1.9272565841674805,  0.04978537559509277, 5.165012359619141});
-  executorch::aten::optional<executorch::aten::Tensor> weight =
-      executorch::aten::optional<executorch::aten::Tensor>(tfDouble.make(
+  std::optional<executorch::aten::Tensor> weight =
+      std::optional<executorch::aten::Tensor>(tfDouble.make(
           {4},
           {5.4100823402404785,
            3.3440847396850586,
            0.9714162349700928,
            0.6811875104904175}));
-  executorch::aten::optional<executorch::aten::Tensor> bias =
-      executorch::aten::optional<executorch::aten::Tensor>(tfDouble.make(
+  std::optional<executorch::aten::Tensor> bias =
+      std::optional<executorch::aten::Tensor>(tfDouble.make(
           {4},
           {6.839208126068115,
            6.471728801727295,
@@ -820,9 +820,9 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
                   6.707937240600586,   0.946076512336731,  6.623589515686035,
                   5.87992000579834,    2.196932315826416,  8.085456848144531,
                   7.774395942687988,   8.86058235168457});
-  executorch::aten::optional<executorch::aten::Tensor> weight;
-  executorch::aten::optional<executorch::aten::Tensor> bias =
-      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
+  std::optional<executorch::aten::Tensor> weight;
+  std::optional<executorch::aten::Tensor> bias =
+      std::optional<executorch::aten::Tensor>(tfFloat.make(
           {7},
           {3.2798612117767334,
            7.070205211639404,
@@ -939,8 +939,8 @@ TEST_F(
        0.1542043685913086,  3.606675863265991,  2.65787410736084,
        5.136600494384766,   6.950716972351074,  6.051759719848633,
        7.304986953735352,   6.186429977416992});
-  executorch::aten::optional<executorch::aten::Tensor> weight;
-  executorch::aten::optional<executorch::aten::Tensor> bias;
+  std::optional<executorch::aten::Tensor> weight;
+  std::optional<executorch::aten::Tensor> bias;
   executorch::aten::Tensor running_mean = tfFloat.make(
       {4},
       {8.043643951416016,
@@ -1004,8 +1004,8 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
                9.971039772033691,  3.5423521995544434, 7.452159881591797,
                9.93700122833252,   1.8560808897018433, 1.524025797843933,
                7.3222975730896});
-  executorch::aten::optional<executorch::aten::Tensor> weight =
-      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
+  std::optional<executorch::aten::Tensor> weight =
+      std::optional<executorch::aten::Tensor>(tfFloat.make(
           {7},
           {8.287437438964844,
            8.227645874023438,
@@ -1014,8 +1014,8 @@ TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
            4.119281768798828,
            8.593960762023926,
            2.3760855197906494}));
-  executorch::aten::optional<executorch::aten::Tensor> bias =
-      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
+  std::optional<executorch::aten::Tensor> bias =
+      std::optional<executorch::aten::Tensor>(tfFloat.make(
           {7},
           {7.824275970458984,
            6.84327507019043,
@@ -1092,10 +1092,10 @@ TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest3D) {
   executorch::aten::Tensor input = tfFloat.make(
       {2, 3, 4}, {0,   1,   4,   9,   16,  25,  36,  49,  64,  81,  100, 121,
                   144, 169, 196, 225, 256, 289, 324, 361, 400, 441, 484, 529});
-  executorch::aten::optional<executorch::aten::Tensor> weight =
-      executorch::aten::optional<executorch::aten::Tensor>();
-  executorch::aten::optional<executorch::aten::Tensor> bias =
-      executorch::aten::optional<executorch::aten::Tensor>();
+  std::optional<executorch::aten::Tensor> weight =
+      std::optional<executorch::aten::Tensor>();
+  std::optional<executorch::aten::Tensor> bias =
+      std::optional<executorch::aten::Tensor>();
   bool training = true;
   double momentum = 1e-3;
   double eps = 1e-5;
@@ -1128,11 +1128,11 @@ TEST_F(OpNativeBatchNormLegitNoStatsOutTest, SampleAtomicTest4D) {
       tfFloat.make({2, 3, 2, 2}, {0,   1,   4,   9,   16,  25,  36,  49,
                                   64,  81,  100, 121, 144, 169, 196, 225,
                                   256, 289, 324, 361, 400, 441, 484, 529});
-  executorch::aten::optional<executorch::aten::Tensor> weight =
-      executorch::aten::optional<executorch::aten::Tensor>(
+  std::optional<executorch::aten::Tensor> weight =
+      std::optional<executorch::aten::Tensor>(
           tfFloat.make({3}, {1.1, 0.7, 0.3}));
-  executorch::aten::optional<executorch::aten::Tensor> bias =
-      executorch::aten::optional<executorch::aten::Tensor>(
+  std::optional<executorch::aten::Tensor> bias =
+      std::optional<executorch::aten::Tensor>(
           tfFloat.make({3}, {1.7, 2.2, 3.3}));
   bool training = true;
   double momentum = 1e-3;

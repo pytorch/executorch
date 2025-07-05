@@ -18,28 +18,24 @@ if [ -z "$ANDROID_NDK" ]; then
     exit 1
 fi
 
-# Check if the NEURON_BUFFER_ALLOCATOR_LIB environment variable is set
-if [ -z "$NEURON_BUFFER_ALLOCATOR_LIB" ]; then
-    echo "Error: NEURON_BUFFER_ALLOCATOR_LIB environment variable is not set." >&2
-    exit 1
-fi
-
 # Create and enter the build directory
+# Set build directory
+build_dir="cmake-android-out"
 cd "$SOURCE_DIR"
-rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
+rm -rf "${build_dir}"
 
 # Configure the project with CMake
 # Note: Add any additional configuration options you need here
-cmake -DBUCK2="$BUCK_PATH" \
+cmake -DCMAKE_INSTALL_PREFIX="${build_dir}" \
       -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
       -DANDROID_ABI=arm64-v8a \
+      -DANDROID_NATIVE_API_LEVEL=26 \
+      -DANDROID_PLATFORM=android-26 \
       -DEXECUTORCH_BUILD_NEURON=ON \
-      -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
-      ..
+      -B"${build_dir}"
 
 # Build the project
-cd ..
-cmake --build cmake-android-out -j4
+cmake --build "${build_dir}" --target install --config Release -j5
 
 # Switch back to the original directory
 cd - > /dev/null

@@ -42,7 +42,7 @@ struct ContextConfig final {
 
 class Context final {
  public:
-  explicit Context(size_t adapter_i, const ContextConfig&);
+  explicit Context(vkapi::Adapter*, const ContextConfig&);
 
   Context(const Context&) = delete;
   Context& operator=(const Context&) = delete;

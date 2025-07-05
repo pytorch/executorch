@@ -14,6 +14,7 @@
 
 using executorch::extension::llm::GenerationConfig;
 using executorch::extension::llm::Image;
+using executorch::extension::llm::TextLLMRunner;
 using executorch::runtime::Error;
 
 NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
@@ -23,7 +24,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 @end
 
 @implementation LLaMARunner {
-  std::unique_ptr<example::Runner> _runner;
+  std::unique_ptr<TextLLMRunner> _runner;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
@@ -31,7 +32,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = std::make_unique<example::Runner>(
+    _runner = example::create_llama_runner(
         modelPath.UTF8String, tokenizerPath.UTF8String);
   }
   return self;

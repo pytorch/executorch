@@ -53,12 +53,13 @@ class SDPATest(unittest.TestCase):
         self.mask = torch.triu(self.mask, diagonal=1)
         self.use_mask_with_custom_op = False
         self.is_causal = False
+        self.start_pos = 0
 
     def test_sdpa_with_cache_no_mqa_1(self):
         q = torch.rand((1, 1, 8, 4))
         k = torch.rand((1, 1, 8, 4))
         v = torch.rand((1, 1, 8, 4))
-        start_pos = 0
+        start_pos = self.start_pos
         seq_len = q.size(1)
         attn_mask = self.mask[start_pos : start_pos + seq_len, :]
         attn_mask = attn_mask[:, : start_pos + seq_len]
@@ -67,12 +68,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -108,12 +111,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -150,12 +155,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -191,12 +198,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -228,6 +237,38 @@ class SDPAWithAttentionMaskTest(SDPATest):
             100.642,
         )
         self.use_mask_with_custom_op = True
+
+
+class SDPAWithAttentionMaskLongSequenceTest(SDPATest):
+
+    def setUp(self):
+        SDPATest.setUp(self)
+        max_context_len = 700
+        context_window_len = 60
+        self.k_cache = torch.zeros((1, 700, 8, 4))
+        self.v_cache = torch.zeros((1, 700, 8, 4))
+        causal_mask = torch.tril(
+            torch.ones(
+                max_context_len,
+                max_context_len,
+                dtype=torch.bool,
+                device="cpu",
+            )
+        )
+        causal_mask2 = torch.tril(
+            torch.ones(
+                max_context_len,
+                max_context_len,
+                dtype=torch.bool,
+                device="cpu",
+            ),
+            diagonal=-context_window_len,
+        )
+        mask = torch.logical_xor(causal_mask, causal_mask2)
+        self.mask = torch.where(mask == True, 0.0, float("-inf"))  # noqa: E712
+
+        self.use_mask_with_custom_op = True
+        self.start_pos = 575
 
 
 class SDPAWithCausalTest(SDPATest):

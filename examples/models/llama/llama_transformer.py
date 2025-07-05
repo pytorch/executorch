@@ -13,6 +13,7 @@ import torch
 import torch.nn.functional as F
 
 from executorch.examples.models.llama.attention import (
+    Attention,
     ATTENTION_REGISTRY,
     ForwardOptions,
 )
@@ -83,25 +84,45 @@ class MOEFeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, layer_id: int, args: ModelArgs, rope: Rope):
+    def __init__(self, args: ModelArgs, attention: Attention):
+        """
+        Transformer block with support for pre-norm and post-norm.
+        Args:
+            args (ModelArgs): model configuration parameters.
+            attention (Attention): attention object to use in the transformer
+                block. See `attention.py` for types of attention. Make sure
+                the attention type is registered in the ATTENTION_REGISTRY.
+        """
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
         self.dim = args.dim
         self.head_dim = args.head_dim
-        if args.attention_type not in ATTENTION_REGISTRY:
-            raise ValueError(
-                f"Unknown attention type: {args.attention_type}. "
-                f"Available: {list(ATTENTION_REGISTRY.keys())}"
-            )
-        cls = ATTENTION_REGISTRY[args.attention_type]
-        self.attention = cls(args, layer_id, rope)
+        self.attention = attention
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
         else:
             self.feed_forward = FeedForward(args)
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+
+    @classmethod
+    def from_type(cls, layer_id, args, rope) -> "TransformerBlock":
+        """
+        Create a TransformerBlock with the legacy constructor.
+        Args:
+            layer_id (int): the index of the layer.
+            args (ModelArgs): model configuration parameters.
+            rope (Rope): the rope object to use for rotary embeddings.
+        """
+        if args.attention_type not in ATTENTION_REGISTRY:
+            raise ValueError(
+                f"Unknown attention type: {args.attention_type}. "
+                f"Available: {list(ATTENTION_REGISTRY.keys())}"
+            )
+        cls = ATTENTION_REGISTRY[args.attention_type]
+        attention = cls(args, layer_id, rope)
+        return TransformerBlock(args, attention)
 
     def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
         h, attn_options_update = self.attention.forward(
@@ -117,7 +138,15 @@ class TransformerBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, params: ModelArgs):
+    def __init__(self, params: ModelArgs, layers: nn.ModuleList, rope: Rope):
+        """
+        Transformer model.
+        Args:
+            params (ModelArgs): model configuration parameters.
+            layers (nn.ModuleList): list of transformer blocks - see the
+                `TransformerBlock` type above.
+            rope (Rope): the rope object to use for rotary embeddings.
+        """
         super().__init__()
         self.params = params
         self.vocab_size = params.vocab_size
@@ -130,10 +159,8 @@ class Transformer(nn.Module):
             if self.apply_embedding
             else None
         )
-        self.rope = Rope(params)
-        self.layers = torch.nn.ModuleList()
-        for layer_id in range(params.n_layers):
-            self.layers.append(TransformerBlock(layer_id, params, self.rope))
+        self.layers = layers
+        self.rope = rope
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = (
             nn.Linear(params.dim, params.vocab_size, bias=False)
@@ -212,3 +239,23 @@ class Transformer(nn.Module):
             return logits, attn_options_update
 
         return logits
+
+
+def construct_transformer(model_args: ModelArgs) -> Transformer:
+    """
+    Construct a Transformer model from the given model arguments.
+    """
+    rope = Rope(model_args)
+    if model_args.attention_type not in ATTENTION_REGISTRY:
+        raise ValueError(
+            f"Unknown attention type: {model_args.attention_type}. "
+            f"Available: {list(ATTENTION_REGISTRY.keys())}"
+        )
+    layers = torch.nn.ModuleList()
+    cls = ATTENTION_REGISTRY[model_args.attention_type]
+    for layer_id in range(model_args.n_layers):
+        attention = cls(model_args, layer_id, rope)
+        transformer_block = TransformerBlock(model_args, attention)
+        layers.append(transformer_block)
+
+    return Transformer(model_args, layers, rope)

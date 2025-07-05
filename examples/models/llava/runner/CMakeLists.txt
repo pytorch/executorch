@@ -28,8 +28,6 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # build llava_runner library
 set(_llava_runner__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/llava_runner.cpp"
-    "${EXECUTORCH_ROOT}/extension/llm/sampler/sampler.cpp"
-    "${EXECUTORCH_ROOT}/extension/llm/tokenizers/src/llama2c_tokenizer.cpp"
 )
 
 # extension llm runner lib
@@ -40,13 +38,8 @@ add_subdirectory(
 
 add_library(llava_runner STATIC ${_llava_runner__srcs})
 
-set(llava_runner_deps executorch extension_data_loader extension_llm_runner
-                      extension_module extension_tensor
+set(llava_runner_deps executorch_core extension_data_loader extension_llm_runner
+                      extension_module extension_tensor extension_flat_tensor
 )
 
 target_link_libraries(llava_runner PUBLIC ${llava_runner_deps})
-
-target_include_directories(
-  llava_runner INTERFACE ${_common_include_directories}
-                         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
-)

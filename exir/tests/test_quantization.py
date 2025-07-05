@@ -23,14 +23,14 @@ from torch.ao.quantization import QConfigMapping  # @manual
 from torch.ao.quantization.backend_config import get_executorch_backend_config
 from torch.ao.quantization.qconfig import default_per_channel_symmetric_qnnpack_qconfig
 from torch.ao.quantization.quantize_fx import prepare_fx
-from torch.ao.quantization.quantize_pt2e import (
+from torch.export import export
+from torch.testing import FileCheck
+from torch.testing._internal.common_quantized import override_quantized_engine
+from torchao.quantization.pt2e.quantize_pt2e import (
     _convert_to_reference_decomposed_fx,
     convert_pt2e,
     prepare_pt2e,
 )
-from torch.export import export
-from torch.testing import FileCheck
-from torch.testing._internal.common_quantized import override_quantized_engine
 
 # load executorch out variant ops
 torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")

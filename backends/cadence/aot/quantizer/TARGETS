@@ -9,6 +9,7 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//pytorch/ao:torchao",
     ],
 )
 
@@ -34,7 +35,6 @@ python_library(
         ":patterns",
         ":utils",
         "//caffe2:torch",
-        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer_utils",
     ],
 )
 

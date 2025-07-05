@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/trunk/*
   pull_request:
     paths:
       - .ci/scripts/setup-ios.sh
@@ -152,8 +154,8 @@ jobs:
           "backend_xnnpack"
           "kernels_custom"
           "kernels_optimized"
-          "kernels_portable"
           "kernels_quantized"
+          "threadpool"
         )
 
         .ci/scripts/setup-conda.sh
@@ -166,13 +168,8 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         backends/apple/coreml/scripts/install_requirements.sh
 
-        # Install MPS Backend Requirements
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        backends/apple/mps/install_requirements.sh
-
         # Build iOS Frameworks
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        scripts/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output scripts/build_apple_frameworks.sh
 
         # Bundle iOS Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
@@ -305,15 +302,10 @@ jobs:
         # Install CoreML Backend Requirements
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           backends/apple/coreml/scripts/install_requirements.sh
-
-        # Install MPS Backend Requirements
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          backends/apple/mps/install_requirements.sh
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch iOS frameworks"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          scripts/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output scripts/build_apple_frameworks.sh
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch benchmark app"

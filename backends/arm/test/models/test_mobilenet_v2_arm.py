@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,6 +46,7 @@ def test_mv2_tosa_BI():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
+        per_channel_quantization=True,
         atol=0.25,
         qtol=1,
     )
@@ -53,7 +54,6 @@ def test_mv2_tosa_BI():
 
 
 @pytest.mark.slow
-@pytest.mark.corstone_fvp
 @common.XfailIfNoCorstone300
 def test_mv2_u55_BI():
     pipeline = EthosU55PipelineBI[input_t](
@@ -63,6 +63,7 @@ def test_mv2_u55_BI():
         exir_ops=[],
         run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
+        per_channel_quantization=True,
         atol=0.25,
         qtol=1,
     )
@@ -70,7 +71,6 @@ def test_mv2_u55_BI():
 
 
 @pytest.mark.slow
-@pytest.mark.corstone_fvp
 @common.XfailIfNoCorstone320
 def test_mv2_u85_BI():
     pipeline = EthosU85PipelineBI[input_t](
@@ -80,6 +80,7 @@ def test_mv2_u85_BI():
         exir_ops=[],
         run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
+        per_channel_quantization=True,
         atol=0.25,
         qtol=1,
     )

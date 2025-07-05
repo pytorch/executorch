@@ -11,8 +11,8 @@ In this tutorial we will walk you through the process of setting up the prerequi
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
 * [Introduction to ExecuTorch](intro-how-it-works.md)
-* [Setting up ExecuTorch](getting-started-setup.md)
-* [Building ExecuTorch with CMake](runtime-build-and-cross-compilation.md)
+* [Setting up ExecuTorch](getting-started.md)
+* [Building ExecuTorch with CMake](using-executorch-building-from-source.md)
 :::
 ::::
 

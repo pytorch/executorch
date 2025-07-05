@@ -1,20 +1,24 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-import unittest
 
 from typing import Tuple
 
 import pytest
 
 import torch
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.backend_details import CompileSpec
-from parameterized import parameterized
+from executorch.backends.arm.test import common
+
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineBI,
+    EthosU85PipelineBI,
+    TosaPipelineBI,
+    TosaPipelineMI,
+)
+
+input_t1 = Tuple[torch.Tensor]
+
 from torch.nn.parameter import Parameter
 
 
@@ -37,28 +41,28 @@ class ComboBlockBottleneckResidual(torch.nn.Module):
         # (t, c, n, s) = (6, 96, 1, 1)
         # 1. 1x1 CONV2d + ReLU6 (Pointwise)
         self.pointwise_conv2d = torch.nn.Conv2d(
-            in_channels=64, out_channels=384, kernel_size=1, stride=1, groups=1
-        )  ## (1, 384, 81, 81)
-        self.batch_norm2d_16 = torch.nn.BatchNorm2d(384, affine=False)
+            in_channels=32, out_channels=128, kernel_size=1, stride=1, groups=1
+        )  ## (1, 128, 81, 81)
+        self.batch_norm2d_16 = torch.nn.BatchNorm2d(128, affine=False)
         self.relu6 = torch.nn.ReLU6()
 
         # 2. 3x3 DepthwiseConv2d + ReLu6
         self.depthwise_conv2d = torch.nn.Conv2d(
-            in_channels=384,
-            out_channels=384,
+            in_channels=128,
+            out_channels=128,
             kernel_size=3,
             padding=1,
             stride=1,
-            groups=384,
-        )  ## (1, 384, H, W)
+            groups=128,
+        )  ## (1, 128, H, W)
 
         # 3. Linear 1x1 Conv2d
         self.pointwise_conv2d_linear = torch.nn.Conv2d(
-            in_channels=384, out_channels=64, kernel_size=1, stride=1, groups=1
-        )  ## (1, 64, 81, 81)
+            in_channels=128, out_channels=32, kernel_size=1, stride=1, groups=1
+        )  ## (1, 32, 81, 81)
 
     def get_inputs(self) -> Tuple[torch.Tensor]:
-        return (torch.randn(1, 64, 81, 81),)
+        return (torch.randn(1, 32, 81, 81),)
 
     def forward(self, x):
         input = x
@@ -138,13 +142,13 @@ class ComboConvRelu6(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
     ]
 
-    test_data = [
-        (2 * torch.randn(1, 3, 256, 256),),
-        (0.5 * torch.randn(1, 3, 256, 256),),
-        (torch.randn(1, 3, 256, 256),),
-        (-0.5 * torch.randn(1, 3, 256, 256),),
-        (-2 * torch.randn(1, 3, 256, 256),),
-    ]
+    test_data = {
+        "combo_conv_relu_2_x_4d": lambda: (2 * torch.randn(1, 3, 256, 256),),
+        "combo_conv_relu_0_5_x_4d": lambda: (0.5 * torch.randn(1, 3, 256, 256),),
+        "combo_conv_relu_4d": lambda: (torch.randn(1, 3, 256, 256),),
+        "combo_conv_relu_neg_0_5_x_4d": lambda: (-0.5 * torch.randn(1, 3, 256, 256),),
+        "combo_conv_relu_neg_2_x_4d": lambda: (-2 * torch.randn(1, 3, 256, 256),),
+    }
 
     def __init__(self):
         super().__init__()
@@ -165,12 +169,12 @@ class ComboConvAvgPool2d(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default",
     ]
 
-    test_data = [
-        (20 * torch.randn(1, 3, 64, 32),),
-        (torch.randn(1, 3, 100, 200),),
-        (5 * torch.randn(1, 3, 256, 256),),
-        (torch.rand(1, 3, 512, 128),),
-    ]
+    test_data = {
+        "combo_conv_avgpool_20_x_4d": lambda: (20 * torch.randn(1, 3, 64, 32),),
+        "combo_conv_avgpool_4d": lambda: (torch.randn(1, 3, 100, 200),),
+        "combo_conv_avgpool_5_x_4d_randn": lambda: (5 * torch.randn(1, 3, 256, 256),),
+        "combo_conv_avgpool_2_x_4d": lambda: (torch.rand(1, 3, 512, 128),),
+    }
 
     def __init__(self):
         super().__init__()
@@ -185,238 +189,283 @@ class ComboConvAvgPool2d(torch.nn.Module):
         return x
 
 
-class TestConvCombos(unittest.TestCase):
-    """Tests conv combined with other ops."""
+####################
+## Conv + meandim ##
+####################
 
-    def _test_conv_combo_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI",
-                ),
-            )
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(list(module.edge_op_list))
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
 
-    def _test_conv_combo_tosa_BI_pipeline(
-        self,
-        module: torch.nn.Module,
-        test_data: Tuple[torch.Tensor],
-        atol: float = 1e-3,
-        rtol: float = 1e-3,
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI",
-                ),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(list(module.edge_op_list))
-            .to_executorch()
-            .run_method_and_compare_outputs(
-                inputs=test_data, atol=atol, rtol=rtol, qtol=1
-            )
-        )
+def test_convolution_2d_tosa_MI_meandim():
+    model = ComboConv2dMeandim()
 
-    def _test_conv_combo_ethos_BI_pipeline(
-        self,
-        module: torch.nn.Module,
-        compile_spec: CompileSpec,
-        test_data: Tuple[torch.Tensor],
-    ):
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(list(module.edge_op_list))
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+    pipeline = TosaPipelineMI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboConv2dMeandim.edge_op_list,
+    )
+    pipeline.run()
 
-    ####################
-    ## Conv + meandim ##
-    ####################
-    def test_conv_meandim_tosa_MI(self):
-        model = ComboConv2dMeandim()
-        self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
 
-    def test_conv_meandim_tosa_BI(self):
-        model = ComboConv2dMeandim()
-        self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
+def test_convolution_2d_tosa_BI_meandim():
+    model = ComboConv2dMeandim()
+    pipeline = TosaPipelineBI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboConv2dMeandim.edge_op_list,
+    )
+    pipeline.run()
 
-    @pytest.mark.corstone_fvp
-    def test_conv_meandim_u55_BI(self):
-        model = ComboConv2dMeandim()
-        self._test_conv_combo_ethos_BI_pipeline(
-            model,
-            common.get_u55_compile_spec(),
-            model.get_inputs(),
-        )
 
-    @pytest.mark.corstone_fvp
-    def test_conv_meandim_u85_BI(self):
-        model = ComboConv2dMeandim()
-        self._test_conv_combo_ethos_BI_pipeline(
-            model,
-            common.get_u85_compile_spec(),
-            model.get_inputs(),
-        )
+@common.XfailIfNoCorstone300
+def test_convolution_2d_u55_BI_meandim():
+    model = ComboConv2dMeandim()
+    pipeline = EthosU55PipelineBI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=ComboConv2dMeandim.edge_op_list,
+        run_on_fvp=True,
+    )
+    pipeline.run()
 
-    ##############################
-    ## Conv + batch norm + relu ##
-    ##############################
-    affine_params = [("affine", True), ("_no_affine", False)]
 
-    @parameterized.expand(affine_params)
-    def test_conv_batchnorm_relu6_tosa_MI(self, test_suffix, affine):
-        model = ComboConvBatchnormRelu6(affine)
-        self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
+@common.XfailIfNoCorstone320
+def test_convolution_2d_u85_BI_meandim():
+    model = ComboConv2dMeandim()
+    pipeline = EthosU85PipelineBI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=ComboConv2dMeandim.edge_op_list,
+        run_on_fvp=True,
+    )
+    pipeline.run()
 
-    @parameterized.expand(affine_params)
-    def test_conv_batchnorm_relu6_tosa_BI(self, test_suffix, affine):
-        model = ComboConvBatchnormRelu6(affine)
-        self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
-    @parameterized.expand(affine_params)
-    @pytest.mark.corstone_fvp
-    def test_conv_batchnorm_relu6_u55_BI(self, test_suffix, affine):
-        model = ComboConvBatchnormRelu6(affine)
-        self._test_conv_combo_ethos_BI_pipeline(
-            model, common.get_u55_compile_spec(), model.get_inputs()
-        )
+##############################
+## Conv + batch norm + relu ##
+##############################
+affine_params = {"affine": True, "_no_affine": False}
 
-    @parameterized.expand(affine_params)
-    @pytest.mark.corstone_fvp
-    def test_conv_batchnorm_relu_u85_BI(self, test_suffix, affine):
-        model = ComboConvBatchnormRelu6(affine)
-        self._test_conv_combo_ethos_BI_pipeline(
-            model,
-            common.get_u85_compile_spec(),
-            model.get_inputs(),
-        )
 
-    ##################
-    ## Conv + ReLU6 ##
-    ##################
-    @parameterized.expand(ComboConvRelu6.test_data)
-    def test_conv_relu6_tosa_MI(self, test_data: torch.Tensor):
-        model = ComboConvRelu6()
-        test_data = (test_data,)
-        self._test_conv_combo_tosa_MI_pipeline(model, test_data)
+@common.parametrize("affine", affine_params)
+def test_convolution_2d_tosa_MI_batchnorm_relu6(affine):
+    model = ComboConvBatchnormRelu6(affine)
+    pipeline = TosaPipelineMI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboConvBatchnormRelu6.edge_op_list,
+    )
+    pipeline.run()
 
-    @parameterized.expand(ComboConvRelu6.test_data)
-    def test_conv_relu6_tosa_BI(self, test_data: torch.Tensor):
-        model = ComboConvRelu6()
-        test_data = (test_data,)
-        self._test_conv_combo_tosa_BI_pipeline(model, test_data)
 
-    @parameterized.expand(ComboConvRelu6.test_data)
-    @pytest.mark.corstone_fvp
-    def test_conv_relu6_u55_BI(self, test_data: torch.Tensor):
-        model = ComboConvRelu6()
-        test_data = (test_data,)
-        self._test_conv_combo_ethos_BI_pipeline(
-            model, common.get_u55_compile_spec(), test_data
-        )
+@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
+@common.parametrize("affine", affine_params)
+def test_convolution_2d_tosa_BI_batchnorm_relu6(affine):
+    model = ComboConvBatchnormRelu6(affine)
+    pipeline = TosaPipelineBI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboConvBatchnormRelu6.edge_op_list,
+    )
+    pipeline.run()
 
-    @parameterized.expand(ComboConvRelu6.test_data)
-    @pytest.mark.corstone_fvp
-    def test_conv_relu6_u85_BI(self, test_data: torch.Tensor):
-        model = ComboConvRelu6()
-        test_data = (test_data,)
-        self._test_conv_combo_ethos_BI_pipeline(
-            model, common.get_u85_compile_spec(), test_data
-        )
 
-    ###############################
-    ## Block bottleneck residual ##
-    ###############################
-    def test_block_bottleneck_residual_tosa_MI(self):
-        model = ComboBlockBottleneckResidual()
-        self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
+@common.parametrize("affine", affine_params)
+@common.XfailIfNoCorstone300
+def test_convolution_2d_u55_BI_batchnorm_relu6(affine):
+    model = ComboConvBatchnormRelu6(affine)
+    pipeline = EthosU55PipelineBI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
 
-    @pytest.mark.flaky  # TODO: Investigate flakyness (MLTORCH-307)
-    def test_block_bottleneck_residual_tosa_BI(self):
-        model = ComboBlockBottleneckResidual()
-        self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
-    @pytest.mark.corstone_fvp
-    def test_block_bottleneck_residual_u55_BI(self):
-        model = ComboBlockBottleneckResidual()
-        self._test_conv_combo_ethos_BI_pipeline(
-            model,
-            common.get_u55_compile_spec(),
-            model.get_inputs(),
-        )
+@common.parametrize("affine", affine_params)
+@common.XfailIfNoCorstone320
+def test_convolution_2d_u85_BI_batchnorm_relu6(affine):
+    model = ComboConvBatchnormRelu6(affine)
+    pipeline = EthosU85PipelineBI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
 
-    @pytest.mark.corstone_fvp
-    def test_block_bottleneck_residual_u85_BI(self):
-        model = ComboBlockBottleneckResidual()
-        self._test_conv_combo_ethos_BI_pipeline(
-            model,
-            common.get_u85_compile_spec(),
-            model.get_inputs(),
-        )
 
-    ######################
-    ## Conv + AvgPool2d ##
-    ######################
-    @parameterized.expand(ComboConvAvgPool2d.test_data)
-    def test_conv_avgpool2d_tosa_MI(self, test_data: torch.Tensor):
-        model = ComboConvAvgPool2d()
-        test_data = (test_data,)
-        self._test_conv_combo_tosa_MI_pipeline(model, test_data)
+##################
+## Conv + ReLU6 ##
+##################
 
-    @parameterized.expand(ComboConvAvgPool2d.test_data)
-    def test_conv_avgpool2d_tosa_BI(self, test_data: torch.Tensor):
-        model = ComboConvAvgPool2d()
-        test_data = (test_data,)
-        self._test_conv_combo_tosa_BI_pipeline(model, test_data)
 
-    @parameterized.expand(ComboConvAvgPool2d.test_data)
-    @pytest.mark.corstone_fvp
-    def test_conv_avgpool2d_u55_BI(self, test_data: torch.Tensor):
-        model = ComboConvAvgPool2d()
-        test_data = (test_data,)
-        self._test_conv_combo_ethos_BI_pipeline(
-            model,
-            common.get_u55_compile_spec(),
-            test_data,
-        )
+@common.parametrize("test_data", ComboConvRelu6.test_data)
+def test_convolution_2d_tosa_MI_relu6(test_data: torch.Tensor):
+    model = ComboConvRelu6()
+    pipeline = TosaPipelineMI[input_t1](
+        model,
+        test_data(),
+        aten_op=[],
+        exir_op=ComboConvRelu6.edge_op_list,
+    )
+    pipeline.run()
 
-    @parameterized.expand(ComboConvAvgPool2d.test_data)
-    @pytest.mark.corstone_fvp
-    def test_conv_avgpool2d_u85_BI(self, test_data: torch.Tensor):
-        model = ComboConvAvgPool2d()
-        test_data = (test_data,)
-        self._test_conv_combo_ethos_BI_pipeline(
-            model,
-            common.get_u85_compile_spec(),
-            test_data,
-        )
+
+@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
+@common.parametrize("test_data", ComboConvRelu6.test_data)
+def test_convolution_2d_tosa_BI_relu6(test_data: torch.Tensor):
+    model = ComboConvRelu6()
+    pipeline = TosaPipelineBI[input_t1](
+        model,
+        test_data(),
+        aten_op=[],
+        exir_op=ComboConvRelu6.edge_op_list,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ComboConvRelu6.test_data)
+@common.XfailIfNoCorstone300
+def test_convolution_2d_u55_BI_relu6(test_data: torch.Tensor):
+    model = ComboConvRelu6()
+    pipeline = EthosU55PipelineBI[input_t1](
+        model,
+        test_data(),
+        aten_ops=[],
+        exir_ops=ComboConvRelu6.edge_op_list,
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ComboConvRelu6.test_data)
+@common.XfailIfNoCorstone320
+def test_convolution_2d_u85_BI_relu6(test_data: torch.Tensor):
+    model = ComboConvRelu6()
+    pipeline = EthosU85PipelineBI[input_t1](
+        model,
+        test_data(),
+        aten_ops=[],
+        exir_ops=ComboConvRelu6.edge_op_list,
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+###############################
+## Block bottleneck residual ##
+###############################
+def test_convolution_2d_tosa_MI_block_bottleneck():
+    model = ComboBlockBottleneckResidual()
+    pipeline = TosaPipelineMI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboBlockBottleneckResidual.edge_op_list,
+    )
+    pipeline.run()
+
+
+@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
+def test_convolution_2d_tosa_BI_block_bottleneck():
+    model = ComboBlockBottleneckResidual()
+    pipeline = TosaPipelineBI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboBlockBottleneckResidual.edge_op_list,
+    )
+    pipeline.change_args("run_method_and_compare_outputs", model.get_inputs(), qtol=1)
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone300
+def test_convolution_2d_u55_BI_block_bottleneck():
+    model = ComboBlockBottleneckResidual()
+    pipeline = EthosU55PipelineBI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_convolution_2d_u85_BI_block_bottleneck():
+    model = ComboBlockBottleneckResidual()
+    pipeline = EthosU85PipelineBI[input_t1](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+######################
+## Conv + AvgPool2d ##
+######################
+
+
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data)
+def test_convolution_2d_tosa_MI_avgpool2d(test_data: torch.Tensor):
+    model = ComboConvAvgPool2d()
+    pipeline = TosaPipelineMI[input_t1](
+        model,
+        test_data(),
+        aten_op=[],
+        exir_op=ComboConvAvgPool2d.edge_op_list,
+    )
+    pipeline.run()
+
+
+@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data)
+def test_convolution_2d_tosa_BI_avgpool2d(test_data: torch.Tensor):
+    model = ComboConvAvgPool2d()
+    pipeline = TosaPipelineBI[input_t1](
+        model,
+        test_data(),
+        aten_op=[],
+        exir_op=ComboConvAvgPool2d.edge_op_list,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data)
+@common.XfailIfNoCorstone300
+def test_convolution_2d_u55_BI_avgpool2d(test_data: torch.Tensor):
+    model = ComboConvAvgPool2d()
+    pipeline = EthosU55PipelineBI[input_t1](
+        model,
+        test_data(),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data)
+@common.XfailIfNoCorstone320
+def test_convolution_2d_u85_BI_avgpool2d(test_data: torch.Tensor):
+    model = ComboConvAvgPool2d()
+    pipeline = EthosU85PipelineBI[input_t1](
+        model,
+        test_data(),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
