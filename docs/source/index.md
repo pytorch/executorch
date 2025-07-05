@@ -39,6 +39,7 @@ ExecuTorch provides support for:
 - [Runtime Integration](using-executorch-runtime-integration)
 - [Troubleshooting](using-executorch-troubleshooting)
 - [Building from Source](using-executorch-building-from-source)
+- [Quantization](quantization-overview)
 - [FAQs](using-executorch-faqs)
 #### Examples
 - [Android Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
@@ -80,8 +81,6 @@ ExecuTorch provides support for:
 - [Runtime Python API Reference](runtime-python-api-reference)
 - [API Life Cycle](api-life-cycle)
 - [Javadoc](https://pytorch.org/executorch/main/javadoc/)
-#### Quantization
-- [Overview](quantization-overview)
 #### Kernel Library
 - [Overview](kernel-library-overview)
 - [Custom ATen Kernel](kernel-library-custom-aten-kernel)
