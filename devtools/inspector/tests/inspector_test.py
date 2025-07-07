@@ -571,7 +571,7 @@ class TestInspector(unittest.TestCase):
             self.assertIn((4,), runtime_outputs)
             self.assertIn((4,), op_names)
             self.assertTrue(
-                torch.equal(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
+                torch.allclose(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
             )
             self.assertEqual(op_names[(4,)], "op_3")
 
@@ -579,7 +579,7 @@ class TestInspector(unittest.TestCase):
             for key in range(5, 9):
                 self.assertIn((key,), runtime_outputs)
                 self.assertIn((key,), op_names)
-                self.assertEqual(len(runtime_outputs[(key,)]), RAW_DATA_SIZE)
+                self.assertEqual(runtime_outputs[(key,)][0].size(0), RAW_DATA_SIZE)
                 self.assertEqual(op_names[(key,)], f"op_{key-1}")
 
     def test_calculate_numeric_gap(self):
@@ -659,13 +659,13 @@ class TestInspector(unittest.TestCase):
     def _gen_random_runtime_output(
         self,
     ) -> List[Union[None, List[torch.Tensor], bool, float, int, str, torch.Tensor]]:
-        return list(torch.randn(RAW_DATA_SIZE))
+        return [torch.randn(RAW_DATA_SIZE)]
 
     def _gen_random_events(self) -> List[Event]:
         events = []
         for i in range(2):
             events.append(
-                # OPERATOR_CALL with debug_hanldes/instruction_id 0 and 2
+                # OPERATOR_CALL with debug_handle/instruction_id 0 and 2
                 Event(
                     name="OPERATOR_CALL",
                     op_types=[OP_TYPE],
@@ -676,7 +676,7 @@ class TestInspector(unittest.TestCase):
                 )
             )
             events.append(
-                # op_0/op_1 wiht empty op_types and with debug_hanldes/instruction_id 1 and 3
+                # op_0/op_1 wiht empty op_types and with debug_handle/instruction_id 1 and 3
                 Event(
                     name=f"op_{i}",
                     op_types=[],
@@ -687,7 +687,7 @@ class TestInspector(unittest.TestCase):
                 )
             )
 
-        # op_2 with debug_hanldes/instruction_id 4
+        # op_2 with debug_handle/instruction_id 4
         events.append(
             Event(
                 name="op_2",
@@ -698,7 +698,7 @@ class TestInspector(unittest.TestCase):
                 _instruction_id=4,
             )
         )
-        # op_3 also with debug_hanldes 4 but with instruction_id 5
+        # op_3 also with debug_handle 4 but with instruction_id 5
         events.append(
             Event(
                 name="op_3",
@@ -710,7 +710,7 @@ class TestInspector(unittest.TestCase):
             )
         )
 
-        # op_4 to op_7 with debug_hanldes 5 to 8 and instruction_id 6 to 9
+        # op_4 to op_7 with debug_handle 5 to 8 and instruction_id 6 to 9
         for i in range(4, EVENTS_SIZE - 2):
             events.append(
                 Event(

@@ -223,6 +223,10 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    strategy:
+      matrix:
+        os: [bare_metal, zephyr-preset]
+      fail-fast: false
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -234,41 +238,98 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        cxx_flags="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
+        setup_script_args=""
+        if [[ ${{ matrix.os}} == "bare_metal" ]]; then 
+          toolchain_prefix=arm-none-eabi-
+          threshold="103268" # ~100KiB
+          toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
+          setup_script_args="--target-toolchain zephyr"
+          toolchain_prefix=arm-zephyr-eabi-
+          threshold="133120" # should be ~125KB, set threshold to 130KB
+          toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+        else
+          echo "Fail unsupport OS selection ${{ matrix.os }}"
+          exit 1
+        fi
+
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
-        .ci/scripts/setup-arm-baremetal-tools.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh ${setup_script_args}
         source examples/arm/ethos-u-scratch/setup_path.sh
 
-        # User baremetal toolchain
-        arm-none-eabi-c++ --version
-        toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+        # User toolchain
+        ${toolchain_prefix}c++ --version
+
+        # Setup cmake target to desired toolchain
         toolchain_cmake=$(realpath ${toolchain_cmake})
 
-        # Build and test size test
-        bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+        # Build and run size test
+        if [[ ${{ matrix.os}} == "bare_metal" ]]; then
+          bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
+          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
+          cmake --build cmake-out -j9 --target install --config Release
+          CXXFLAGS=${cxx_flags}  cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
+          cmake --build cmake-out/test -j9 --config Release
+        else
+          echo "Fail unsupport OS selection ${{ matrix.os }}"
+          exit 1
+        fi
+
         elf="cmake-out/test/size_test"
 
         # Dump basic info
         ls -al ${elf}
-        arm-none-eabi-size ${elf}
+        ${toolchain_prefix}size ${elf}
 
-        # Dump symbols
+        # Dump symbol
         python .github/scripts/run_nm.py -e ${elf}
-        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "arm-none-eabi-"
-        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "arm-none-eabi-"
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "${toolchain_prefix}"
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "${toolchain_prefix}"
 
         # Add basic guard - TODO: refine this!
-        arm-none-eabi-strip ${elf}
+        ${toolchain_prefix}strip ${elf}
         output=$(ls -la ${elf})
         arr=($output)
         size=${arr[4]}
-        threshold="103268" # ~100KiB
         echo "size: $size, threshold: $threshold"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
           echo "Fail $size > $threshold"
           exit 1
+        fi
+
+  nxp-build-test:
+    name: nxp-build-test
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Build
+        cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -Bcmake-out .
+        cmake --build cmake-out --target executorch_delegate_neutron --config Release
+
+        # Build check for the neutron backend library
+        lib_neutron="cmake-out/backends/nxp/libexecutorch_delegate_neutron.a"
+        if [ -f $lib_neutron ]; then
+            echo "Neutron backend library built."
+        else
+            echo "Neutron backend library not found!"
+            exit 1
         fi
 
   test-coreml-delegate:

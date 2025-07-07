@@ -530,47 +530,63 @@ def compare_results(
     return results
 
 
-def merge_overlapping_debug_handles(intermediate_outputs: Dict[DebugHandle, Any]):
+def merge_overlapping_debug_handles(
+    intermediate_outputs: Dict[DebugHandle, Any]
+) -> Dict[DebugHandle, Any]:
     """
-    Merge overlapping debug handles int a single key
+    Merges overlapping debug handles into a single key in the dict.
+    For each debug handle, this function checks for overlaps with existing keys in the merged dict.
+    If overlaps are found, it combines the overlapping keys into a single key by taking the union of their elements.
+    The value associated with the merged key is determined by the debug handle with the highest last element.
     """
+
     if len(intermediate_outputs) == 0:
-        return
-    # Extract and normalize into (start, end, val)
-    intervals = [(min(key), max(key), val) for key, val in intermediate_outputs.items()]
-    intervals.sort(key=lambda x: x[0])
+        return {}
 
-    # Merge overlapping debug_hanldes, picking the last value
-    merged_intermediate_outputs = []
-    cur_start, cur_end, cur_val = intervals[0]
-    for start, end, val in intervals[1:]:
-        if start <= cur_end:  # Overlaps
-            if end > cur_end:  # Extend if this one goes further
-                cur_end, cur_val = end, val
+    merged: Dict[DebugHandle, Any] = {}
 
-        else:
-            merged_intermediate_outputs.append((cur_start, cur_end, cur_val))
-            cur_start, cur_end, cur_val = start, end, val
-    merged_intermediate_outputs.append((cur_start, cur_end, cur_val))
+    for debug_handle, value in intermediate_outputs.items():
+        debug_handle_set = set(debug_handle)
+        curr_debug_handle, last_value = debug_handle, value
 
-    # Clear original one and populate with merged keys (value will point to the same object)
-    intermediate_outputs.clear()
-    for start, end, val in merged_intermediate_outputs:
-        intermediate_outputs[tuple(range(start, end + 1))] = val
+        # collect any existing keys that overlap with the current key
+        to_remove = []
+        for existing_debug_handle, existing_value in merged.items():
+            if debug_handle_set.intersection(set(existing_debug_handle)):
+                # abosrb their ints
+                debug_handle_set |= set(existing_debug_handle)
+                if existing_debug_handle[-1] > curr_debug_handle[-1]:
+                    curr_debug_handle, last_value = (
+                        existing_debug_handle,
+                        existing_value,
+                    )
+                to_remove.append(existing_debug_handle)
+
+        # remove all the keys that overlap with the current key
+        for debug_handle in to_remove:
+            merged.pop(debug_handle)
+
+        # add the current key to the merged one
+        new_debug_handle = tuple(sorted(debug_handle_set))
+        merged[new_debug_handle] = last_value
+
+    # Sort the merged debug handles in ascending order based on their last element
+    # TODO: Consider adding more logic to align the order with the execution order
+    return dict(sorted(merged.items(), key=lambda item: item[0][-1]))
 
 
 def _debug_handles_have_overlap(
-    aot_debug_hanlde: DebugHandle, runtime_debug_handle: DebugHandle
+    debug_handle: DebugHandle, target_debug_handle: DebugHandle
 ) -> bool:
     """
-    Check if the AOT debug handle and the runtime debug handle have any overlap.
+    Check if the debug handle and the target runtime debug handle have any overlap.
     """
-    aot_set = set(aot_debug_hanlde)
-    runtime_set = set(runtime_debug_handle)
+    aot_set = set(debug_handle)
+    runtime_set = set(target_debug_handle)
     return len(aot_set.intersection(runtime_set)) > 0
 
 
-def _combine_debug_hanldes(debug_handles: List[DebugHandle]) -> DebugHandle:
+def _combine_debug_handles(debug_handles: List[DebugHandle]) -> DebugHandle:
     """Combine multiple debug handles into one debug handle"""
     combined_debug_handles_set = set()
     for debug_handle in debug_handles:
@@ -584,7 +600,7 @@ def _combine_overlapped_intermediate_outputs(
     """Combine multiple overlapped intermediate outputs into one with combined debug_handles and last output"""
     debug_handles = [debug_handle for debug_handle, _ in nodes]
     outputs = [output for _, output in nodes]
-    combined_debug_handle = _combine_debug_hanldes(debug_handles)
+    combined_debug_handle = _combine_debug_handles(debug_handles)
     output = outputs[-1]  # Pick the last one
     return combined_debug_handle, output
 
@@ -673,8 +689,10 @@ def map_runtime_aot_intermediate_outputs(
         from runtime intermediate output to AOT intermediate output
     """
     # Merge overlapping debug handles
-    merge_overlapping_debug_handles(aot_intermediate_outputs)
-    merge_overlapping_debug_handles(runtime_intermediate_outputs)
+    aot_intermediate_outputs = merge_overlapping_debug_handles(aot_intermediate_outputs)
+    runtime_intermediate_outputs = merge_overlapping_debug_handles(
+        runtime_intermediate_outputs
+    )
 
     # Create a graph(nodes and edges) of overlapping(between aot and runtime) debug handles
     nodes, edges = _create_debug_handle_overlap_graph(
@@ -714,6 +732,19 @@ def map_runtime_aot_intermediate_outputs(
             # runtime follow the same format as aot, so it's safe to convert to tuple
             if isinstance(runtime_intermediate_output, list):
                 runtime_intermediate_output = tuple(runtime_intermediate_output)
+
+            # Currently, runtime_intermediate_output logs all delegate call arguments.
+            # Process here to extract only the outputs.
+            if isinstance(aot_intermediate_output, tuple):
+                # If both are sequences, slice runtime_intermediate_output to match the length of aot_intermediate_output
+                if isinstance(runtime_intermediate_output, tuple):
+                    runtime_intermediate_output = runtime_intermediate_output[
+                        -len(aot_intermediate_output) :
+                    ]
+            # If aot_intermediate_output is not a sequence but runtime_intermediate_output is, get the last element
+            elif isinstance(runtime_intermediate_output, tuple):
+                runtime_intermediate_output = runtime_intermediate_output[-1]
+
             # Create a mapping between runtime and aot
             aot_runtime_mapping[
                 (aot_combined_debug_handle, aot_intermediate_output)
