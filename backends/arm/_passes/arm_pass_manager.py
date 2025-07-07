@@ -6,6 +6,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+
+import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AddBiasPass,
     AnnotateChannelsLastDimOrder,
@@ -26,6 +28,7 @@ from executorch.backends.arm._passes import (
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
     DecomposeAcoshPass,
+    DecomposeAdaptiveAvgPool2dPass,
     DecomposeAtanPass,
     DecomposeAvgPool2d,
     DecomposeBatchNormNoStatsPass,
@@ -44,6 +47,7 @@ from executorch.backends.arm._passes import (
     DecomposeNotEqualPass,
     DecomposeRoundPass,
     DecomposeSelectPass,
+    DecomposeSignPass,
     DecomposeSiluPass,
     DecomposeSinhPass,
     DecomposeSoftmaxPass,
@@ -125,6 +129,7 @@ class ArmPassManager(PassManager):
         if self.tosa_spec.is_U55_subset:
             self.add_pass(BroadcastArgsPass())
         self.add_pass(DecomposeLinearPass())
+        self.add_pass(DecomposeAdaptiveAvgPool2dPass())
         self.add_pass(DecomposeAvgPool2d())
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
@@ -159,6 +164,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())
+        self.add_pass(DecomposeSignPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
@@ -191,6 +197,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
         self.add_pass(MatchArgRanksPass(exported_program))
+        self.add_pass(DecomposeAdaptiveAvgPool2dPass())
         self.add_pass(DecomposeAvgPool2d())
         self.add_pass(
             DecorateFp32toInt32CastingPass()
@@ -246,6 +253,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoundPass())
         self.add_pass(CastBoolToInt8Pass())
+        self.add_pass(DecomposeSignPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())
