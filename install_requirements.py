@@ -71,10 +71,19 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250601"
+NIGHTLY_VERSION = "dev20250625"
 
 
 def install_requirements(use_pytorch_nightly):
+    # Skip pip install on Intel macOS if using nightly.
+    if use_pytorch_nightly and is_intel_mac_os():
+        print(
+            "ERROR: Prebuilt PyTorch wheels are no longer available for Intel-based macOS.\n"
+            "Please build from source by following https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # pip packages needed by exir.
     TORCH_PACKAGE = [
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
@@ -160,6 +169,17 @@ def install_optional_example_requirements(use_pytorch_nightly):
             TORCH_NIGHTLY_URL,
         ],
         check=True,
+    )
+
+
+# Prebuilt binaries for Intel-based macOS are no longer available on PyPI; users must compile from source.
+# PyTorch stopped building macOS x86_64 binaries since version 2.3.0 (January 2024).
+def is_intel_mac_os():
+    # Returns True if running on Intel macOS.
+    return platform.system().lower() == "darwin" and platform.machine().lower() in (
+        "x86",
+        "x86_64",
+        "i386",
     )
 
 

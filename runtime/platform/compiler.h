@@ -173,7 +173,7 @@ using ssize_t = ptrdiff_t;
 
 #ifdef __EXCEPTIONS
 #define ET_HAS_EXCEPTIONS 1
-#elif defined(_HAS_EXCEPTIONS) && _HAS_EXCEPTIONS
+#elif defined(_MSC_VER) && defined(_HAS_EXCEPTIONS) && _HAS_EXCEPTIONS
 #define ET_HAS_EXCEPTIONS 1
 #else
 #define ET_HAS_EXCEPTIONS 0

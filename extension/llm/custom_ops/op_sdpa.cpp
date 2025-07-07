@@ -59,8 +59,8 @@ bool validate_flash_attention_args(
 
   ET_CHECK_OR_RETURN_FALSE(
       !attn_mask.has_value() ||
-          attn_mask.value().scalar_type() == query.scalar_type(),
-      "Attention mask must be a 2D tensor");
+          attn_mask.value().scalar_type() == ScalarType::Float,
+      "Attention mask must be a Float tensor");
 
   ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(query.dim_order().data(), query.dim()),

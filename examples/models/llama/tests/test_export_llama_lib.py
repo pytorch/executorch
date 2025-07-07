@@ -7,11 +7,11 @@
 import unittest
 
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
     build_args_parser,
 )
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 
 UNWANTED_OPS = [
     "aten_permute_copy_default",

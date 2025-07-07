@@ -22,22 +22,36 @@ logger = logging.getLogger(__name__)
 def _print_channels(result, reference, channels_close, C, H, W, rtol, atol):
 
     output_str = ""
+    booldata = False
+    if reference.dtype == torch.bool or result.dtype == torch.bool:
+        booldata = True
+
     for c in range(C):
         if channels_close[c]:
             continue
-
-        max_diff = torch.max(torch.abs(reference - result))
-        exp = f"{max_diff:2e}"[-3:]
-        output_str += f"channel {c} (e{exp})\n"
+        if not booldata:
+            max_diff = torch.max(torch.abs(reference - result))
+            exp = f"{max_diff:2e}"[-3:]
+            output_str += f"channel {c} (e{exp})\n"
+        else:
+            max_diff = torch.max(reference ^ result)
+            output_str += f"channel {c} (bool)\n"
 
         for y in range(H):
             res = "["
             for x in range(W):
                 if torch.allclose(reference[c, y, x], result[c, y, x], rtol, atol):
-                    res += " .    "
+                    if not booldata:
+                        res += " .    "
+                    else:
+                        res += " . "
                 else:
-                    diff = (reference[c, y, x] - result[c, y, x]) / 10 ** (int(exp))
-                    res += f"{diff: .2f} "
+                    if not booldata:
+                        diff = (reference[c, y, x] - result[c, y, x]) / 10 ** (int(exp))
+                        res += f"{diff: .2f} "
+                    else:
+                        diff = reference[c, y, x] ^ result[c, y, x]
+                        res += " X "
 
                 # Break early for large widths
                 if x == 16:
@@ -157,12 +171,6 @@ def print_error_diffs(
         result_batch = result[n, :, :, :]
         reference_batch = reference[n, :, :, :]
 
-        if reference_batch.dtype == torch.bool or result_batch.dtype == torch.bool:
-            mismatches = (reference_batch != result_batch).sum().item()
-            total = reference_batch.numel()
-            output_str += f"(BOOLEAN tensor) {mismatches} / {total} elements differ ({mismatches / total:.2%})\n"
-            continue
-
         is_close = torch.allclose(result_batch, reference_batch, rtol, atol)
         if is_close:
             output_str += ".\n"
@@ -189,6 +197,11 @@ def print_error_diffs(
                 output_str += _print_elements(
                     result[n, :, :, :], reference[n, :, :, :], C, H, W, rtol, atol
                 )
+        if reference_batch.dtype == torch.bool or result_batch.dtype == torch.bool:
+            mismatches = (reference_batch != result_batch).sum().item()
+            total = reference_batch.numel()
+            output_str += f"(BOOLEAN tensor) {mismatches} / {total} elements differ ({mismatches / total:.2%})\n"
+
     # Only compute numeric error metrics if tensor is not boolean
     if reference.dtype != torch.bool and result.dtype != torch.bool:
         reference_range = torch.max(reference) - torch.min(reference)

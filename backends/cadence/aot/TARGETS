@@ -299,6 +299,9 @@ python_library(
         "typing_stubs.py",
     ],
     typing = True,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+    ],
 )
 
 
@@ -327,7 +330,6 @@ python_unittest(
     supports_static_listing = False,
     typing = True,
     deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
         ":compiler",
         ":typing_stubs",
         ":replace_ops",
@@ -349,7 +351,6 @@ python_unittest(
     supports_static_listing = False,
     typing = True,
     deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
         ":compiler",
         ":decompose_ops",
         "//caffe2:torch",
@@ -371,7 +372,6 @@ python_unittest(
     supports_static_listing = False,
     typing = True,
     deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
         ":compiler",
         ":typing_stubs",
         "//caffe2:torch",
@@ -393,7 +393,6 @@ python_unittest(
     supports_static_listing = False,
     typing = True,
     deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
         "fbsource//third-party/pypi/pyre-extensions:pyre-extensions",
         ":typing_stubs",
         ":compiler",
@@ -417,7 +416,6 @@ python_unittest(
     typing = True,
     deps = [
         ":typing_stubs",
-        "fbsource//third-party/pypi/parameterized:parameterized",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:compiler",
         "//executorch/backends/cadence/aot:graph_builder",
@@ -449,6 +447,22 @@ python_unittest(
 )
 
 python_library(
+    name = "memory_planning_algo",
+    srcs = [
+        "memory_planning_algo.py",
+    ],
+    deps = [
+        ":memory_constraints",
+        ":pass_utils",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory_planning",
+        "//executorch/exir:tensor",
+        "//executorch/exir/passes:lib",
+        "fbsource//third-party/pypi/tabulate:tabulate",
+    ],
+)
+
+python_library(
     name = "memory_planning",
     srcs = [
         "memory_planning.py",
@@ -456,6 +470,7 @@ python_library(
     deps = [
         "fbsource//third-party/pypi/tabulate:tabulate",
         ":memory_constraints",
+        ":memory_planning_algo",
         ":pass_utils",
         "//caffe2:torch",
         "//executorch/exir:lib",
@@ -495,9 +510,21 @@ python_unittest(
         ":pass_utils",
         "//caffe2:torch",
         "//executorch/exir:memory",
-        "fbsource//third-party/pypi/parameterized:parameterized",
         "//executorch/exir/dialects:lib",
         "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/exir/tests:models",
+    ],
+)
+
+python_unittest(
+    name = "test_idma_ops",
+    srcs = [
+        "tests/test_idma_ops.py",
+    ],
+    typing = True,
+    deps = [
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//later:lib",
     ],
 )
