@@ -622,17 +622,57 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_index_copy(self):
         test_comb = [
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=False
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
                 ),
             },
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=True
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
                 ),
             },
         ]
@@ -1907,17 +1947,57 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_index_copy(self):
         test_comb = [
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=False
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
                 ),
             },
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=True
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
                 ),
             },
         ]
@@ -4585,42 +4665,6 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 85)
 
-    def test_mobilevit_v1(self):
-        if not self.required_envs([self.image_dataset]):
-            self.skipTest("missing required envs")
-
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/mobilevit_v1.py"
-            "--dataset",
-            self.image_dataset,
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertGreaterEqual(msg["top_1"], 70)
-                self.assertGreaterEqual(msg["top_5"], 85)
-
     @unittest.skip("Only outputs good accuracy in QNN 2.29")
     def test_mobilevit_v2(self):
         if not self.required_envs([self.image_dataset]):
@@ -4690,6 +4734,42 @@ class TestExampleOssScript(TestQNN):
                 self.fail(msg["Error"])
             else:
                 self.assertGreaterEqual(msg["top_1"], 65)
+                self.assertGreaterEqual(msg["top_5"], 85)
+
+    def test_mobilevit1(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/mobilevit1.py"
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 70)
                 self.assertGreaterEqual(msg["top_5"], 85)
 
     def test_regnet(self):
@@ -4908,6 +4988,39 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 80)
+
+    def test_whisper(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/whisper/whisper.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertLessEqual(msg["wer"], 0.25)
 
 
 class TestExampleQaihubScript(TestQNN):
