@@ -24,7 +24,6 @@
 		E931C6862CFAF39500DA599B /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = E931C6852CFAF39500DA599B /* backend_xnnpack */; };
 		E931C6882CFAF39A00DA599B /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = E931C6872CFAF39A00DA599B /* kernels_custom */; };
 		E931C68A2CFAF3A500DA599B /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = E931C6892CFAF3A500DA599B /* kernels_optimized */; };
-		E931C68C2CFAF3AC00DA599B /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = E931C68B2CFAF3AC00DA599B /* kernels_portable */; };
 		E931C68E2CFAF3B200DA599B /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = E931C68D2CFAF3B200DA599B /* kernels_quantized */; };
 		E931C6A72CFBD70E00DA599B /* LLaMARunner.h in Headers */ = {isa = PBXBuildFile; fileRef = E931C6A42CFBD70E00DA599B /* LLaMARunner.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		E931C6A82CFBD70E00DA599B /* LLaMARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = E931C6A52CFBD70E00DA599B /* LLaMARunner.mm */; };
@@ -138,7 +137,6 @@
 				E931C6842CFAF38A00DA599B /* backend_mps in Frameworks */,
 				E931C6822CFAF38500DA599B /* backend_coreml in Frameworks */,
 				E931C6882CFAF39A00DA599B /* kernels_custom in Frameworks */,
-				E931C68C2CFAF3AC00DA599B /* kernels_portable in Frameworks */,
 				E931C68A2CFAF3A500DA599B /* kernels_optimized in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -947,7 +945,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch.git";
 			requirement = {
-				branch = "swiftpm-0.7.0.20250401";
+				branch = "swiftpm-0.8.0.20250702";
 				kind = branch;
 			};
 		};
