@@ -1,0 +1,5 @@
+load("targets.bzl", "define_common_targets")
+
+oncall("wrist_motion_systems")
+
+define_common_targets()
