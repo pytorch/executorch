@@ -155,6 +155,7 @@ class TestPasses(unittest.TestCase):
             class Module(torch.nn.Module):
                 def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
                     return fwd(x, y)
+
             return Module
 
         Add = make_module(lambda x, y: (x + y) + x)
@@ -169,7 +170,6 @@ class TestPasses(unittest.TestCase):
             lambda x, y: torch.div(x, y, rounding_mode="floor")
         )
 
-        ETPK = ELEMENTWISE_TYPE_PROMOTION_KIND
         for module, op, expected_count, promotion_kind in (
             (
                 Add,
