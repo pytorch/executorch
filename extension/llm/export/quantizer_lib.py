@@ -192,7 +192,7 @@ def get_qnn_quantizer(
             act_observer=MinMaxObserver,
         )
     elif quant_config == "16a4w":
-        quant_dtype = QuantDtype.use_16a16w  # pyre-fixme[16]
+        quant_dtype = QuantDtype.use_16a4w  # pyre-fixme[16]
         qnn_quantizer.set_default_quant_config(
             quant_dtype,
             is_qat=is_qat,
