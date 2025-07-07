@@ -6,12 +6,10 @@
 
 import getpass
 import json
-import logging
 import os
 from multiprocessing.connection import Client
 
 import numpy as np
-import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
@@ -48,23 +46,16 @@ def main(args):
     data_num = 100
     height = config.image_size
     width = config.image_size
-
-    if args.ci:
-        inputs = [(torch.rand(1, 3, height, width),)]
-        logging.warning(
-            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
-        )
-    else:
-        inputs, targets, input_list = get_imagenet_dataset(
-            dataset_path=f"{args.dataset}",
-            data_size=data_num,
-            image_shape=(height, width),
-            crop_size=(height, width),
-        )
+    inputs, targets, input_list = get_imagenet_dataset(
+        dataset_path=f"{args.dataset}",
+        data_size=data_num,
+        image_shape=(height, width),
+        crop_size=(height, width),
+    )
 
     # Get the Deit model.
     model = get_instance()
-    pte_filename = "deit_qnn_q8"
+    pte_filename = "deit_qnn"
 
     # lower to QNN
     passes_job = get_capture_program_passes()
@@ -129,8 +120,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a",
         "--artifact",
-        help="path for storing generated artifacts and output by this example. Default ./deit",
-        default="./deit",
+        help="path for storing generated artifacts and output by this example. Default ./deit_qnn",
+        default="./deit_qnn",
         type=str,
     )
 
@@ -143,7 +134,7 @@ if __name__ == "__main__":
             "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
         ),
         type=str,
-        required=False,
+        required=True,
     )
 
     args = parser.parse_args()

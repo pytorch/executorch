@@ -357,7 +357,7 @@ conv2d_groups_bias = Conv2d(
 
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
 # FAIL: test_convolution_2d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
-test_modules = {
+test_data_MI = {
     "2x2_3x2x40x40_nobias": lambda: conv2d_2x2_3x2x40x40_nobias,
     "3x3_1x3x256x256_st1": lambda: conv2d_3x3_1x3x256x256_st1,
     "3x3_1x3x12x12_st2_pd1": lambda: conv2d_3x3_1x3x12x12_st2_pd1,
@@ -380,58 +380,79 @@ test_modules = {
     "groups_bias": lambda: conv2d_groups_bias,
 }
 
-fvp_xfails = {
-    "2x2_3x2x40x40_nobias": "MLETORCH-520: Numerical issues on FVP.",
-    "5x5_3x2x128x128_st1": "MLETORCH-520: Numerical issues on FVP.",
+# Generate a new test set paired with per_channel_quant=True/False.
+test_data_BI = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
+    for (k, v) in test_data_MI.items()
+    for q in [True, False]
+    # TODO: Invalid TOSA graph (MLETORCH-1144)
+    if (k not in ["groups", "groups_bias"]) and (q is True)
 }
+
+fvp_xfails = {
+    f"{k},per_channel_quant={q}": reason
+    for k, reason in {
+        "2x2_3x2x40x40_nobias": "MLETORCH-520: Numerical issues on FVP.",
+        "5x5_3x2x128x128_st1": "MLETORCH-520: Numerical issues on FVP.",
+    }.items()
+    for q in [True, False]
+}
+
 input_t = Tuple[torch.Tensor]
 
 
-@common.parametrize("test_module", test_modules)
-def test_convolution_2d_tosa_MI(test_module):
+@common.parametrize("test_data", test_data_MI)
+def test_convolution_2d_tosa_MI(test_data):
+    model = test_data()
     pipeline = TosaPipelineMI[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
-def test_convolution_2d_tosa_BI(test_module):
+@common.parametrize("test_data", test_data_BI)
+def test_convolution_2d_tosa_BI(test_data):
+    model, per_channel_quantization = test_data()
     pipeline = TosaPipelineBI[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
+        per_channel_quantization=per_channel_quantization,
+        qtol=1,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules, fvp_xfails)
+@common.parametrize("test_data", test_data_BI, fvp_xfails)
 @common.XfailIfNoCorstone300
-def test_convolution_2d_u55_BI(test_module):
+def test_convolution_2d_u55_BI(test_data):
+    model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineBI[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules, fvp_xfails)
+@common.parametrize("test_data", test_data_BI, fvp_xfails)
 @common.XfailIfNoCorstone320
-def test_convolution_2d_u85_BI(test_module):
+def test_convolution_u85_BI(test_data):
+    model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineBI[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
