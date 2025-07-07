@@ -88,7 +88,7 @@ def trace(
 
     # Export with dynamo
     program = torch.export.export_for_training(
-        model, inputs, strict=True
+        model, inputs
     ).run_decompositions(decomp_table)
 
     if dump_graphs:
