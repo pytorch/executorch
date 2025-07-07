@@ -86,12 +86,13 @@ To quantize a PyTorch model for the CoreML backend, use the `CoreMLQuantizer`. `
 
 ### 8-bit Quantization using the PT2E Flow
 
+Quantization with the CoreML backend requires exporting the model for iOS17 or later.
 To perform 8-bit quantization with the PT2E flow, perform the following steps:
 
 1) Define [coremltools.optimize.torch.quantization.LinearQuantizerConfig](https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig) and use to to create an instance of a `CoreMLQuantizer`.
 2) Use `torch.export.export_for_training` to export a graph module that will be prepared for quantization.
 3) Call `prepare_pt2e` to prepare the model for quantization.
-4) For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
+4) Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
 5) Call `convert_pt2e` to quantize the model.
 6) Export and lower the model using the standard flow.
 
@@ -152,7 +153,9 @@ et_program = to_edge_transform_and_lower(
 ).to_executorch()
 ```
 
-The above does static quantization (activations and weights are quantized).  Quantizing activations requires calibrating the model on representative data.  You can also do weight-only quantization, which does not require calibration data, by specifying the activation_dtype to be torch.float32:
+The above does static quantization (activations and weights are quantized).
+
+You can see a full description of available quantization configs in the [coremltools documentation](https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig).  For example, the config below will perform weight-only quantization:
 
 ```
 weight_only_8bit_config = ct.optimize.torch.quantization.LinearQuantizerConfig(
@@ -164,11 +167,9 @@ weight_only_8bit_config = ct.optimize.torch.quantization.LinearQuantizerConfig(
     )
 )
 quantizer = CoreMLQuantizer(weight_only_8bit_config)
-prepared_model = prepare_pt2e(training_gm, quantizer)
-quantized_model = convert_pt2e(prepared_model)
 ```
 
-Note that static quantization requires exporting the model for iOS17 or later.
+Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling convert_pt2e, even for data-free weight-only quantization.
 
 See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
 
