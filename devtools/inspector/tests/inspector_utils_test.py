@@ -343,6 +343,60 @@ class TestInspectorUtils(unittest.TestCase):
         expected = {((1, 2, 3, 4, 5, 6), 300): ((2, 3, 4, 5, 6, 7), 350)}
         self.assertEqual(actual, expected)
 
+    def test_map_runtime_aot_intermediate_outputs_delegated(self):
+        # Currently, runtime_intermediate_output logs all delegate call arguments
+        # Test that the map function correctly extracted out the delegated outputs
+        aot_intermediate_outputs = {
+            (1, 2): torch.tensor([4, 5]),
+            (3, 4): torch.tensor([10, 11, 12]),
+            (5, 6): torch.tensor([13, 14, 15, 16, 17]),
+        }
+        runtime_intermediate_outputs = {
+            (1, 2): [torch.tensor([1, 2, 3]), torch.tensor([4, 5])],
+            (3, 4): [
+                torch.tensor([6, 7, 8, 9]),
+                torch.tensor(1),
+                torch.tensor([10, 11, 12]),
+            ],
+            (5, 6): [
+                torch.tensor([1]),
+                torch.tensor([2]),
+                torch.tensor([13, 14, 15, 16, 17]),
+            ],
+        }
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {
+            ((1, 2), torch.tensor([4, 5])): ((1, 2), torch.tensor([4, 5])),
+            ((3, 4), torch.tensor([10, 11, 12])): ((3, 4), torch.tensor([10, 11, 12])),
+            ((5, 6), torch.tensor([13, 14, 15, 16, 17])): (
+                (5, 6),
+                torch.tensor([13, 14, 15, 16, 17]),
+            ),
+        }
+        self.assertEqual(len(actual), len(expected))
+
+        for (exp_aot_key, exp_aot_value), (
+            exp_runtime_key,
+            exp_runtime_value,
+        ) in expected.items():
+            found = False
+            for (act_aot_key, act_aot_value), (
+                act_runtime_key,
+                act_runtime_value,
+            ) in actual.items():
+                if exp_aot_key == act_aot_key and torch.allclose(
+                    exp_aot_value, act_aot_value
+                ):
+                    found = True
+                    self.assertEqual(exp_runtime_key, act_runtime_key)
+                    self.assertTrue(
+                        torch.allclose(exp_runtime_value, act_runtime_value)
+                    )
+                    break
+            self.assertTrue(found)
+
     def test_convert_input_to_tensor_convertible_inputs(self):
         # Scalar -> tensor
         actual_output1 = convert_to_float_tensor(5)
