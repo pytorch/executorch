@@ -34,8 +34,6 @@
 		03CF43A62CEC5CEC00C7113B /* kernels_custom_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */; };
 		03CF43A82CEC5CEC00C7113B /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A72CEC5CEC00C7113B /* kernels_optimized */; };
 		03CF43AA2CEC5CEC00C7113B /* kernels_optimized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A92CEC5CEC00C7113B /* kernels_optimized_debug */; };
-		03CF43AC2CEC5CEC00C7113B /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AB2CEC5CEC00C7113B /* kernels_portable */; };
-		03CF43AE2CEC5CEC00C7113B /* kernels_portable_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */; };
 		03CF43B02CEC5CEC00C7113B /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AF2CEC5CEC00C7113B /* kernels_quantized */; };
 		03CF43B22CEC5CEC00C7113B /* kernels_quantized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43B12CEC5CEC00C7113B /* kernels_quantized_debug */; };
 		03D151B82E0E0908007A38BE /* LLaVARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03D151B72E0E0908007A38BE /* LLaVARunner.mm */; };
@@ -191,8 +189,6 @@
 				03CF43A62CEC5CEC00C7113B /* kernels_custom_debug in Frameworks */,
 				03CF43A82CEC5CEC00C7113B /* kernels_optimized in Frameworks */,
 				03CF43AA2CEC5CEC00C7113B /* kernels_optimized_debug in Frameworks */,
-				03CF43AC2CEC5CEC00C7113B /* kernels_portable in Frameworks */,
-				03CF43AE2CEC5CEC00C7113B /* kernels_portable_debug in Frameworks */,
 				03CF43B02CEC5CEC00C7113B /* kernels_quantized in Frameworks */,
 				03CF43B22CEC5CEC00C7113B /* kernels_quantized_debug in Frameworks */,
 			);
@@ -954,7 +950,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = "swiftpm-0.6.0";
+				branch = "swiftpm-0.8.0.20250702";
 				kind = branch;
 			};
 		};

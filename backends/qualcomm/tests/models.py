@@ -910,9 +910,10 @@ class Index(torch.nn.Module):
 
 
 class IndexCopy(torch.nn.Module):
-    def __init__(self, skip_mutable_buffer=False):
+    def __init__(self, copy_dim=1, skip_mutable_buffer=False):
         super().__init__()
         self.skip_mutable_buffer = skip_mutable_buffer
+        self.copy_dim = copy_dim
         self.register_buffer(
             "k_cache",
             torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
@@ -921,7 +922,7 @@ class IndexCopy(torch.nn.Module):
 
     def forward(self, input_pos, k_val):
         k_out = self.k_cache
-        k_out.index_copy_(1, input_pos, k_val)
+        k_out.index_copy_(self.copy_dim, input_pos, k_val)
         return k_out + 0
 
 
