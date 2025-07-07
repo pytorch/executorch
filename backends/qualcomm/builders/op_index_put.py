@@ -88,11 +88,15 @@ class IndexPutVisitor(NodeVisitor):
 
         # Need to reconstruct the index tensor.
         # E.g., based on ScatterND Op Def in QNN Docs.
-        # Given that
-        #   shape of input: [1, 12, 1024, 64]
-        #   indicies_node: [None, None, aten__to_copy_default_1]
-        #   shape of aten__to_copy_default_1: [1]
-        # The shape of index tensor should be [1, 12, 1, 3]
+        # Torch:
+        #   Given that
+        #     shape of input: [1, 12, 1024, 64]
+        #     indicies_node: [None, None, aten__to_copy_default_1]
+        #     shape of aten__to_copy_default_1: [1]
+        # QNN:
+        #   Index tensor:
+        #     Shape: [1, 12, 1, 3]
+        #     Value: [[[0,0,x]],[[0,1,x]],...,[[0,11,x]]]
         # The index tensor is treated as 4-dimensional tensor of 3-tuples,
         # where each 3-tuple is a partial-index into input
         # Reference code for QNN ScatterNd:
