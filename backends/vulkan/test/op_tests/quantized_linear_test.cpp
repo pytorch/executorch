@@ -18,6 +18,21 @@
 
 #include <cassert>
 
+class VulkanLinearQCS4WTest : public ::testing::Test {
+ public:
+  void SetUp() override {
+    if (!vkcompute::api::context()
+             ->adapter_ptr()
+             ->supports_int16_shader_types()) {
+      GTEST_SKIP();
+    }
+  }
+
+  void TearDown() override {
+    // Clean up any resources if needed
+  }
+};
+
 class VulkanLinearQTA8AQGA4WTest : public ::testing::Test {
  public:
   void SetUp() override {
@@ -597,7 +612,7 @@ TEST(VulkanLinearQGA4WTest, test_vulkan_impl_gemm) {
       /*N = */ 256);
 }
 
-TEST(VulkanLinearQCS4WTest, test_reference_impl) {
+TEST_F(VulkanLinearQCS4WTest, test_reference_impl) {
   test_reference_linear_qcs4w(
       /*B = */ 1,
       /*M = */ 4,
@@ -605,7 +620,7 @@ TEST(VulkanLinearQCS4WTest, test_reference_impl) {
       /*N = */ 32);
 }
 
-TEST(VulkanLinearQCS4WTest, test_vulkan_impl_small_m) {
+TEST_F(VulkanLinearQCS4WTest, test_vulkan_impl_small_m) {
   test_vulkan_linear_qcs4w(
       /*B = */ 1,
       /*M = */ 4,
@@ -619,7 +634,7 @@ TEST(VulkanLinearQCS4WTest, test_vulkan_impl_small_m) {
       /*N = */ 256);
 }
 
-TEST(VulkanLinearQCS4WTest, test_vulkan_impl_gemm) {
+TEST_F(VulkanLinearQCS4WTest, test_vulkan_impl_gemm) {
   test_vulkan_linear_qcs4w(
       /*B = */ 1,
       /*M = */ 32,
