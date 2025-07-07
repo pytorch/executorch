@@ -25,6 +25,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_per_tensor,
     is_qparam,
     is_quant,
+    tag_as_implicit_q_dq,
 )
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
@@ -135,6 +136,11 @@ class GEMMConfig(XNNPartitionerConfig):
 
         valid_deps = valid_bias and valid_weight and valid_act and valid_output
         deps = list(chain(bias_deps, weight_deps, act_deps, output_deps))
+
+        # Tag q/dq nodes as implicit q/dq nodes
+        for dep in deps:
+            if is_dequant(dep) or is_quant(dep):
+                tag_as_implicit_q_dq(dep)
 
         return valid_deps, deps
 
@@ -268,7 +274,6 @@ class GEMMConfig(XNNPartitionerConfig):
             if not is_quant(q_input):
                 why(node, "Expected  dequant input to be quant node")
                 return (False, [])
-
             gemm_deps.append(q_input)
             q_input_args = q_input.args
             if is_affine_qdq(q_input):

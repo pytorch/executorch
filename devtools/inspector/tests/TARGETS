@@ -70,6 +70,14 @@ python_unittest(
     ],
 )
 
+python_unittest(
+    name = "snr_comparator_test",
+    srcs = ["snr_comparator_test.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:lib",
+    ],
+)
+
 python_library(
     name = "inspector_test_utils",
     srcs = [

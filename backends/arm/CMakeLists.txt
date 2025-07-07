@@ -12,6 +12,8 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+add_compile_options("-Wall" "-Werror")
+
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)

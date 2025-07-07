@@ -32,3 +32,14 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     )
+
+    # this test requires ET_USE_PYTORCH_HEADERS, which doesn't work in OSS Buck.
+    if not runtime.is_oss:
+        runtime.cxx_test(
+            name = "vectorized_math_test",
+            srcs = ["vectorized_math_test.cpp"],
+            deps = [
+                "//executorch/kernels/portable/cpu/util:vectorized_math",
+                "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+            ],
+        )

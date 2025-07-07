@@ -108,6 +108,26 @@ def annotate_in_out_obs_sharing_op(
     )
 
 
+def annotate_single_in_share_out(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
+    if _is_annotated([node]):
+        return
+
+    input_qspec_map = {}
+    if _is_float_tensor(node.args[0]):
+        input_act = node.args[0]
+        assert isinstance(input_act, Node)
+        input_qspec_map[input_act] = quantization_config.input_activation
+
+    if _is_float_tensor(node):
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=SharedQuantizationSpec((input_act, node)),
+            _annotated=True,
+        )
+
+
 def annotate_single_in(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
@@ -505,7 +525,7 @@ def annotate_avgpool2d(node: Node, quantization_config: QuantizationConfig) -> N
 def annotate_permute(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
-        annotate_single_in_single_out(node, quantization_config)
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.prelu.default])
@@ -523,7 +543,7 @@ def annotate_prelu(node: Node, quantization_config: QuantizationConfig) -> None:
 def annotate_view(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
-        annotate_single_in_single_out(node, quantization_config)
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.pixel_shuffle.default])
@@ -641,7 +661,7 @@ def annotate_scaled_dot_product_attention(
 def annotate_squeeze(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
-        annotate_single_in_single_out(node, quantization_config)
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.rms_norm.default])
@@ -757,7 +777,7 @@ def annotate_pow(node: Node, quantization_config: QuantizationConfig) -> None:
 def annotate_unsqueeze(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
-        annotate_single_in_single_out(node, quantization_config)
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator(
@@ -770,14 +790,14 @@ def annotate_unsqueeze_copy(
 ) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
-        annotate_single_in_single_out(node, quantization_config)
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.transpose.int])
 def annotate_transpose(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
-        annotate_single_in_single_out(node, quantization_config)
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.elu.default])
@@ -803,30 +823,39 @@ def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> N
 def annotate_index(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
-        input_qspec_map = {}
-        input = node.args[0]
-        input_qspec_map[input] = quantization_config.input_activation
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
-            input_qspec_map=input_qspec_map,
-            output_qspec=SharedQuantizationSpec((input, node)),
-            _annotated=True,
-        )
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator(
     [torch.ops.aten.index_put.default, torch.ops.aten.index_put_.default]
 )
 def annotate_index_put(node: Node, quantization_config: QuantizationConfig) -> None:
-    input = node.args[0]
+    # Avoid annotating the input node because mutable buffers will be folded during the convert_pt2e process.
     value = node.args[2]
 
     input_qspec_map = {}
-    input_qspec_map[input] = quantization_config.input_activation
-    input_qspec_map[value] = SharedQuantizationSpec((input, node))
+    input_qspec_map[value] = quantization_config.input_activation
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
-        output_qspec=SharedQuantizationSpec((input, node)),
+        output_qspec=SharedQuantizationSpec((value, node)),
+        _annotated=True,
+    )
+
+
+@register_annotator(
+    [torch.ops.aten.index_copy.default, torch.ops.aten.index_copy_.default]
+)
+def annotate_index_copy(node: Node, quantization_config: QuantizationConfig) -> None:
+    # Avoid annotating the input node because mutable buffers will be folded during the convert_pt2e process.
+    value = node.args[3]
+
+    input_qspec_map = {}
+    input_qspec_map[value] = quantization_config.input_activation
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=SharedQuantizationSpec((value, node)),
         _annotated=True,
     )
 
@@ -840,7 +869,7 @@ def annotate_exp(node: Node, quantization_config: QuantizationConfig) -> None:
 def annotate_expand(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
-        annotate_single_in_single_out(node, quantization_config)
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.group_norm.default])
@@ -880,7 +909,7 @@ def annotate_group_norm(node: Node, quantization_config: QuantizationConfig) -> 
 def annotate_flatten(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
-        annotate_single_in_single_out(node, quantization_config)
+        annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.stack.default])

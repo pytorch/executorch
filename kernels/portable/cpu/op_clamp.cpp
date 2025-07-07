@@ -26,10 +26,9 @@ using Tensor = executorch::aten::Tensor;
 
 namespace {
 
-template <typename CTYPE_VAL, typename CTYPE_OUT, typename CTYPE_CAST>
+template <typename CTYPE_OUT, typename CTYPE_CAST>
 /** Check if val, when cast to CTYPE_CAST, is not in the range of CTYPE_OUT */
-bool is_out_of_bounds(CTYPE_VAL val) {
-  const CTYPE_CAST val_cast = static_cast<CTYPE_CAST>(val);
+bool is_out_of_bounds(CTYPE_CAST val_cast) {
   return val_cast < std::numeric_limits<CTYPE_OUT>::lowest() ||
       val_cast > std::numeric_limits<CTYPE_OUT>::max();
 }
@@ -41,26 +40,24 @@ ET_NODISCARD bool check_bounds(
     const char* val_name) {
   auto is_valid = true;
 
-  ET_SWITCH_SCALAR_OBJ_TYPES(val_type, ctx, "clamp.out", CTYPE_VAL, [&]() {
-    CTYPE_VAL val = 0;
-    utils::extract_scalar(val_scalar, &val);
-    if (isIntegralType(out_type, /*includeBool=*/false)) {
-      ET_SWITCH_INT_TYPES(out_type, ctx, "clamp.out", CTYPE_OUT, [&]() {
-        if (is_out_of_bounds<CTYPE_VAL, CTYPE_OUT, long>(val)) {
-          ET_LOG(Error, "%s value out of bounds", val_name);
-          is_valid = false;
-        }
-      });
-    } else if (isFloatingType(out_type)) {
-      ET_SWITCH_FLOATH_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
-        if (std::isfinite(val) &&
-            is_out_of_bounds<CTYPE_VAL, CTYPE_OUT, double>(val)) {
-          ET_LOG(Error, "%s value out of bounds", val_name);
-          is_valid = false;
-        }
-      });
-    }
-  });
+  if (isIntegralType(out_type, /*includeBool=*/false)) {
+    const long val_long = utils::scalar_to<long>(val_scalar);
+    ET_SWITCH_INT_TYPES(out_type, ctx, "clamp.out", CTYPE_OUT, [&]() {
+      if (is_out_of_bounds<CTYPE_OUT, long>(val_long)) {
+        ET_LOG(Error, "%s value out of bounds", val_name);
+        is_valid = false;
+      }
+    });
+  } else if (isFloatingType(out_type)) {
+    ET_SWITCH_FLOATHBF16_TYPES(out_type, ctx, "clamp.out", CTYPE_OUT, [&]() {
+      const double val_double = utils::scalar_to<double>(val_scalar);
+      if (std::isfinite(val_double) &&
+          is_out_of_bounds<CTYPE_OUT, double>(val_double)) {
+        ET_LOG(Error, "%s value out of bounds", val_name);
+        is_valid = false;
+      }
+    });
+  }
 
   return is_valid;
 }
@@ -138,9 +135,8 @@ Tensor& clamp_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [has_min, min_opt, has_max, max_opt](const CTYPE_COMPUTE val_in) {
-          // TODO: rewrite this to be vectorization-capable.
-          CTYPE_COMPUTE val_out = val_in;
+        [has_min, min_opt, has_max, max_opt](const auto val_in) {
+          auto val_out = val_in;
           if (has_min) {
             val_out = utils::max_override(
                 val_out, utils::scalar_to<CTYPE_COMPUTE>(min_opt.value()));

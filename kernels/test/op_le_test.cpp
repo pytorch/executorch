@@ -1112,3 +1112,70 @@ TEST_F(OpLeTensorOutTest, Broadcast22dBy1dReverseTest) {
 
   EXPECT_TENSOR_EQ(out, tf_bool.make({3, 4}, expected_data));
 }
+
+TEST_F(OpLeTensorOutTest, MonotonicIncreasingVsScalarBroadcastTest) {
+  TensorFactory<ScalarType::Int> tf;
+  TensorFactory<ScalarType::Bool> tf_bool;
+
+  // Test case: 1D tensor [0, 1, 2, ..., 63] vs 2D tensor [1, 1] with value 2
+  std::vector<int32_t> lhs_data;
+  for (int i = 0; i < 64; ++i) {
+    lhs_data.push_back(i);
+  }
+
+  Tensor lhs = tf.make({64}, lhs_data);
+  Tensor rhs = tf.make({1, 1}, {2});
+  Tensor out = tf_bool.zeros({1, 64});
+
+  op_le_tensor_out(lhs, rhs, out);
+
+  // Expected: [0, 1, 2] <= 2 should be [true, true, true], rest false
+  using ctype =
+      executorch::runtime::testing::internal::ScalarTypeToCppTypeWrapper<
+          ScalarType::Bool>::ctype;
+  std::vector<ctype> expected_data;
+  for (int i = 0; i < 64; ++i) {
+    expected_data.push_back(i <= 2);
+  }
+
+  EXPECT_TENSOR_EQ(out, tf_bool.make({1, 64}, expected_data));
+
+  // Test with rhs value 4
+  rhs = tf.make({1, 1}, {4});
+  out = tf_bool.zeros({1, 64});
+
+  op_le_tensor_out(lhs, rhs, out);
+
+  expected_data.clear();
+  for (int i = 0; i < 64; ++i) {
+    expected_data.push_back(i <= 4);
+  }
+
+  EXPECT_TENSOR_EQ(out, tf_bool.make({1, 64}, expected_data));
+
+  // Test with rhs value 10
+  rhs = tf.make({1, 1}, {10});
+  out = tf_bool.zeros({1, 64});
+
+  op_le_tensor_out(lhs, rhs, out);
+
+  expected_data.clear();
+  for (int i = 0; i < 64; ++i) {
+    expected_data.push_back(i <= 10);
+  }
+
+  EXPECT_TENSOR_EQ(out, tf_bool.make({1, 64}, expected_data));
+
+  // Test with rhs value 32
+  rhs = tf.make({1, 1}, {32});
+  out = tf_bool.zeros({1, 64});
+
+  op_le_tensor_out(lhs, rhs, out);
+
+  expected_data.clear();
+  for (int i = 0; i < 64; ++i) {
+    expected_data.push_back(i <= 32);
+  }
+
+  EXPECT_TENSOR_EQ(out, tf_bool.make({1, 64}, expected_data));
+}
