@@ -249,7 +249,7 @@ two_conv1d = Conv1d(
     batches=1,
 )
 
-test_modules = {
+test_data_MI = {
     "2_3x2x40_nobias": lambda: conv1d_2_3x2x40_nobias,
     "3_1x3x256_st1": lambda: conv1d_3_1x3x256_st1,
     "3_1x3x12_st2_pd1": lambda: conv1d_3_1x3x12_st2_pd1,
@@ -265,53 +265,65 @@ test_modules = {
     "two_conv1d": lambda: two_conv1d,
 }
 
+test_data_BI = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
+    for (k, v) in test_data_MI.items()
+    for q in [True, False]
+}
 
-@common.parametrize("test_module", test_modules)
-def test_convolution_1d_tosa_MI(test_module):
+
+@common.parametrize("test_data", test_data_MI)
+def test_convolution_1d_tosa_MI(test_data):
     pipeline = TosaPipelineMI[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        test_data(),
+        test_data().get_inputs(),
         aten_op,
         exir_op,
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
-def test_convolution_1d_tosa_BI(test_module):
+@common.parametrize("test_data", test_data_BI)
+def test_convolution_1d_tosa_BI(test_data):
+    model, per_channel_quantization = test_data()
     pipeline = TosaPipelineBI[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
+        per_channel_quantization=per_channel_quantization,
+        qtol=1,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
+@common.parametrize("test_data", test_data_BI)
 @common.XfailIfNoCorstone300
-def test_convolution_1d_u55_BI(test_module):
+def test_convolution_1d_u55_BI(test_data):
+    model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineBI[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+        qtol=1,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
+@common.parametrize("test_data", test_data_BI)
 @common.XfailIfNoCorstone320
-def test_convolution_1d_u85_BI(test_module):
+def test_convolution_1d_u85_BI(test_data):
+    model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineBI[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+        qtol=1,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

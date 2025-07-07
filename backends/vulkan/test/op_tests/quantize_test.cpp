@@ -1813,6 +1813,11 @@ TEST(
 TEST(
     VulkanQuantizePerChannelTest,
     test_vulkan_quantize_per_channel_float_to_int8_axis0) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales(9, 0.1f);
   std::vector<int> zero_points(9, 2);
 
@@ -1875,6 +1880,11 @@ TEST(
 TEST(
     VulkanQuantizePerChannelTest,
     test_vulkan_quantize_per_channel_float_to_int8_axis1) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales(14, 0.001f);
   std::vector<int> zero_points(14, -5);
 
@@ -1926,6 +1936,11 @@ TEST(
 TEST(
     VulkanQuantizePerChannelTest,
     test_vulkan_quantize_per_channel_float_to_int8_axis2) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales(11, 0.5f);
   std::vector<int> zero_points(11, 12);
 
@@ -1966,6 +1981,11 @@ TEST(
 TEST(
     VulkanQuantizePerChannelTest,
     test_vulkan_quantize_per_channel_float_to_int8_axis3) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales(7, 0.5f);
   std::vector<int> zero_points(7, 12);
 
@@ -1995,6 +2015,11 @@ TEST(
 TEST(
     VulkanQuantizePerChannelTest,
     test_vulkan_quantize_per_channel_float_to_uint8_comprehensive) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales = {0.1, 0.2, 0.0001, 0.5, 0.02};
   std::vector<int> zero_points = {0, 5, -5, 1, 12};
 
@@ -2057,6 +2082,16 @@ TEST(
 TEST(
     VulkanQuantizePerChannelTest,
     test_vulkan_quantize_per_channel_half_to_8bit) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_float16_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales = {0.1, 0.2, 0.01, 0.5, 0.02};
   std::vector<int> zero_points = {0, 5, 5, 1, 12};
 
@@ -2119,6 +2154,11 @@ TEST(
 TEST(
     VulkanQuantizePerChannelTest,
     test_vulkan_quantize_per_channel_double_to_8bit) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   std::vector<float> scales = {0.1, 0.2, 0.01, 0.5, 0.02};
   std::vector<int> zero_points = {0, 5, 5, 1, 12};
 
