@@ -18,10 +18,6 @@ prepare_add() {
   python3 -m test.models.export_program --modules "ModuleAdd" --outdir "${BASEDIR}/src/androidTest/resources/"
 }
 
-prepare_xor() {
-  python3 -m extension.training.examples.XOR.export_model  --outdir "${BASEDIR}/src/androidTest/resources/" --external
-}
-
 prepare_tinyllama() {
   pushd "${BASEDIR}/../../../"
   curl -C - -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.pt" --output stories15M.pt
@@ -47,6 +43,5 @@ prepare_vision() {
 }
 
 prepare_add
-prepare_xor
 prepare_tinyllama
 prepare_vision
