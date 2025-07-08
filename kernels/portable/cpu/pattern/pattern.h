@@ -60,10 +60,16 @@ namespace internal {
  * the input tensor element-wise.
  */
 Tensor& unary_ufunc_realhbf16(
-    double (*fn)(double),
+    float (*fn_float)(float),
+    double (*fn_double)(double),
     KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
+
+#define DEFINE_UNARY_UFUNC_REALHBF16(op_name, fn)                             \
+  Tensor& op_name(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) { \
+    return internal::unary_ufunc_realhbf16(fn, fn, ctx, in, out);             \
+  }
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
