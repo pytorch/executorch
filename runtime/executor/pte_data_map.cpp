@@ -21,7 +21,7 @@ namespace internal {
   ET_CHECK_OR_RETURN_ERROR(
       loader != nullptr && named_data != nullptr && segments != nullptr,
       InvalidArgument,
-      "PteDataMap loader, named_data or segments is null; most likely the program does not have any named_data segments.");
+      "PteDataMap loader, named_data or segments is null; most likely the program does not have any named_data segments");
   return PteDataMap(loader, segment_base_offset, named_data, segments);
 }
 
@@ -47,7 +47,7 @@ Result<FreeableBuffer> PteDataMap::get_data(
       ET_CHECK_OR_RETURN_ERROR(
           segment_index < segments_->size(),
           InvalidArgument,
-          "Segment index %zu for key %.*s is out of range for size %u",
+          "Segment index %zu for key %.*s is out of range for segments size %u",
           segment_index,
           static_cast<int>(key.size()),
           key.data(),
