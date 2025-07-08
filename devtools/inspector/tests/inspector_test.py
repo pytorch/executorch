@@ -327,7 +327,7 @@ class TestInspector(unittest.TestCase):
                     tmpdirname + "/etrecord.bin",
                     edge_output,
                     et_output,
-                    {
+                    extra_recorded_export_modules={
                         "aten_dialect_output": captured_output,
                     },
                 )
