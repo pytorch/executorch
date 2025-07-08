@@ -6,7 +6,6 @@
 
 from executorch.backends.xnnpack.test.tester.tester import (
     Export,
-    ToEdge,
     Partition,
     Quantize,
     RunPasses,

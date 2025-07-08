@@ -9,16 +9,15 @@
 import copy
 import functools
 import traceback
-from typing import Any, Callable, List, OrderedDict, Sequence, Tuple
 import unittest
+from typing import Any, Callable, Sequence
 
 import torch
 from executorch.backends.test.harness.tester import Tester as TesterBase
-from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower, Tester as XnnpackTester
+from executorch.backends.xnnpack.test.tester.tester import Tester as XnnpackTester
 from facto.inputgen.argtuple.gen import ArgumentTupleGenerator
-from facto.inputgen.specs.model import Constraint, ConstraintProducer as cp, Spec
+from facto.inputgen.specs.model import ConstraintProducer as cp, Spec
 from facto.inputgen.utils.random_manager import random_manager
-from facto.inputgen.variable.type import ScalarDtype
 from facto.specdb.db import SpecDictDB
 from torch._ops import OpOverload
 
@@ -46,6 +45,7 @@ RUNTIME_INPUT_NAMES = {
     "other",
 }
 
+
 def _patch_spec(spec: Spec) -> Spec:
     spec = copy.deepcopy(spec)
     for inspec in spec.inspec:
@@ -55,16 +55,18 @@ def _patch_spec(spec: Spec) -> Spec:
             inspec.constraints.extend(COMMON_SCALAR_CONSTRAINS)
     return spec
 
+
 class OpModel(torch.nn.Module):
     """
     Wraps a single torch operator in an nn.Module.
     """
+
     def __init__(
-        self, 
-        op: OpOverload, 
-        runtime_input_count: int, 
+        self,
+        op: OpOverload,
+        runtime_input_count: int,
         fixed_args: Sequence[Any],
-        fixed_kwargs: dict[str, Any]
+        fixed_kwargs: dict[str, Any],
     ):
         super().__init__()
         self.op = op
@@ -88,9 +90,12 @@ class OpModel(torch.nn.Module):
     def forward(self, *args, **kwargs):
         return self.op(*(args + self.fixed_args), **(kwargs | self.fixed_kwargs))
 
+
 class ConvModel(OpModel):
     def forward(self, *args, **kwargs):
-        weight, bias, stride, padding, dilation, transposed, output_padding, groups = self.fixed_args
+        weight, bias, stride, padding, dilation, transposed, output_padding, groups = (
+            self.fixed_args
+        )
 
         if not transposed:
             if len(weight.shape) == 3:
@@ -99,7 +104,7 @@ class ConvModel(OpModel):
                 op = torch.nn.functional.conv2d
             elif len(weight.shape) == 5:
                 op = torch.nn.functional.conv3d
-            
+
             return op(args[0], weight, bias, stride, padding, dilation, groups)
         else:
             if len(weight.shape) == 3:
@@ -108,14 +113,18 @@ class ConvModel(OpModel):
                 op = torch.nn.functional.conv_transpose2d
             elif len(weight.shape) == 5:
                 op = torch.nn.functional.conv_transpose3d
-            
-            return op(args[0], weight, bias, stride, padding, output_padding, groups, dilation)
+
+            return op(
+                args[0], weight, bias, stride, padding, output_padding, groups, dilation
+            )
+
 
 def get_module_for_op(op: OpOverload):
     if op == torch.ops.aten.convolution.default:
         return ConvModel
     else:
         return OpModel
+
 
 class FactoTestsBase(unittest.TestCase):
     def __init__(self, tester_factory: Callable[[], TesterBase], *args, **kwargs):
@@ -129,36 +138,37 @@ class FactoTestsBase(unittest.TestCase):
         torch_op = functools.reduce(getattr, sections, torch.ops.aten)
 
         test_name = "test_" + op_name.replace(".", "_")
-        test_body = lambda self: self._test_op(torch_op)
+
+        def test_body(self):
+            self._test_op(torch_op)
 
         setattr(FactoTestsBase, test_name, test_body)
-    
+
     @staticmethod
     def get_runtime_input_count(spec: Spec):
         # Determine which inputs are fixed at tracing time (weights, for example),
         # vs inputs to the runtime graph. We currently assume that the runtime graph
         # inputs start at the beginning of the arg list and are contiguous.
-        # 
+        #
         # Args are consider to be runtime inputs if they are positional and are named
         # one of RUNTIME_INPUT_NAMES. If none match, we assume only the first arg is a
         # runtime input.
         runtime_input_count = 0
         for inspec in spec.inspec:
             is_runtime_input = (
-                inspec.type.is_tensor() and 
-                inspec.name.lower() in RUNTIME_INPUT_NAMES
+                inspec.type.is_tensor() and inspec.name.lower() in RUNTIME_INPUT_NAMES
             )
             if is_runtime_input:
                 runtime_input_count += 1
             else:
                 break
-        
+
         return max(1, runtime_input_count)
 
     def setUp(self):
         torch.set_printoptions(threshold=3)
-    
-    def _test_op(self, op: OpOverload) -> None:
+
+    def _test_op(self, op: OpOverload) -> None:  # noqa
         random_manager.seed(0)
 
         # Strip namespace
@@ -167,15 +177,15 @@ class FactoTestsBase(unittest.TestCase):
         # Default to .default overload
         if "." not in op_name:
             op_name += ".default"
-        
+
         # Find and patch op spec
-        if not op_name in CombinedSpecDB:
+        if op_name not in CombinedSpecDB:
             raise ValueError(f"Operator {op_name} not found in SpecDictDB.")
         spec = _patch_spec(CombinedSpecDB[op_name])
 
         runtime_input_count = FactoTestsBase.get_runtime_input_count(spec)
 
-        print(f"Op: {op_name}, {runtime_input_count} runtime inputs") 
+        print(f"Op: {op_name}, {runtime_input_count} runtime inputs")
 
         # Run test cases
         success_count_delegated = 0
@@ -196,10 +206,7 @@ class FactoTestsBase(unittest.TestCase):
 
                 module_cls = get_module_for_op(op)
                 model = module_cls(
-                    op,
-                    runtime_input_count,
-                    posargs[runtime_input_count:],
-                    inkwargs
+                    op, runtime_input_count, posargs[runtime_input_count:], inkwargs
                 )
 
                 # Sanity check to make sure it runs in eager. This can present nicer error
@@ -211,15 +218,14 @@ class FactoTestsBase(unittest.TestCase):
                     continue
 
                 tester = self._tester_factory(
-                        model,
-                        tuple(posargs[:runtime_input_count])
+                    model, tuple(posargs[:runtime_input_count])
                 )
 
                 # Dynamo will also fail to handle some patterns that are valid in eager.
                 try:
                     tester.export()
-                except Exception as e:
-                    print(f"Export failed.")
+                except Exception:
+                    print("Export failed.")
                     continue
 
                 tester.to_edge_transform_and_lower()
@@ -233,20 +239,18 @@ class FactoTestsBase(unittest.TestCase):
                 # Only run the runtime test if the op was delegated.
                 if is_delegated:
                     (
-                        tester
-                        .to_executorch()
+                        tester.to_executorch()
                         .serialize()
                         .run_method_and_compare_outputs()
                     )
-                
+
                 if is_delegated:
                     success_count_delegated += 1
                 else:
                     success_count_undelegated += 1
-            #finally:
-            except Exception as e:
+            except Exception:
                 fail_count += 1
-                print(f"Args:")
+                print("Args:")
                 for arg in posargs:
                     if isinstance(arg, torch.Tensor):
                         print(f"  {arg.dtype} {arg.shape}")
@@ -255,22 +259,31 @@ class FactoTestsBase(unittest.TestCase):
 
                 traceback.print_exc()
 
-        print(f"{success_count_delegated + success_count_undelegated} PASS, {fail_count} FAIL")
-        print(f"  {success_count_delegated} DELEGATED, {success_count_undelegated} UNDELEGATED")
+        print(
+            f"{success_count_delegated + success_count_undelegated} PASS, {fail_count} FAIL"
+        )
+        print(
+            f"  {success_count_delegated} DELEGATED, {success_count_undelegated} UNDELEGATED"
+        )
+
 
 # Programatically generate tests for each operator.
 for op_name in CombinedSpecDB.keys():
     FactoTestsBase._generate_test(op_name)
+
 
 # TODO Figure out where to put these
 class FactoTestsXNNPACK(FactoTestsBase):
     def __init__(self, *args, **kwargs):
         super().__init__(XnnpackTester, *args, **kwargs)
 
+
 try:
     from executorch.backends.apple.coreml.test.tester import CoreMLTester
+
     class FactoTestsCoreML(FactoTestsBase):
         def __init__(self, *args, **kwargs):
             super().__init__(CoreMLTester, *args, **kwargs)
+
 except:
     print("Skipping Core ML facto tests as Core ML AOT is not available.")
