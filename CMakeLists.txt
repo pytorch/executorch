@@ -726,6 +726,16 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+
+  if(EMSCRIPTEN)
+    # Directory of model pte files to embed in the wasm binary.
+    if(NOT DEFINED WASM_MODEL_DIR)
+      set(WASM_MODEL_DIR "${CMAKE_SOURCE_DIR}/models/")
+    endif()
+
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
