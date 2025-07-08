@@ -16,12 +16,8 @@ read -r BUILD_TOOL BUILD_MODE EDITABLE < <(parse_args "$@")
 # have already been installed, so we use PyTorch build from source here instead
 # of nightly. This allows CI to test against latest commits from PyTorch
 if [[ "${EDITABLE:-false}" == "true" ]]; then
-  install_executorch --use-pt-pinned-commit --editable
+  install_executorch --editable
 else
-  install_executorch --use-pt-pinned-commit
+  install_executorch
 fi
 build_executorch_runner "${BUILD_TOOL}" "${BUILD_MODE}"
-
-if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]]; then
-  do_not_use_nightly_on_ci
-fi
