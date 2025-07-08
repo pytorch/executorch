@@ -732,6 +732,19 @@ def map_runtime_aot_intermediate_outputs(
             # runtime follow the same format as aot, so it's safe to convert to tuple
             if isinstance(runtime_intermediate_output, list):
                 runtime_intermediate_output = tuple(runtime_intermediate_output)
+
+            # Currently, runtime_intermediate_output logs all delegate call arguments.
+            # Process here to extract only the outputs.
+            if isinstance(aot_intermediate_output, tuple):
+                # If both are sequences, slice runtime_intermediate_output to match the length of aot_intermediate_output
+                if isinstance(runtime_intermediate_output, tuple):
+                    runtime_intermediate_output = runtime_intermediate_output[
+                        -len(aot_intermediate_output) :
+                    ]
+            # If aot_intermediate_output is not a sequence but runtime_intermediate_output is, get the last element
+            elif isinstance(runtime_intermediate_output, tuple):
+                runtime_intermediate_output = runtime_intermediate_output[-1]
+
             # Create a mapping between runtime and aot
             aot_runtime_mapping[
                 (aot_combined_debug_handle, aot_intermediate_output)

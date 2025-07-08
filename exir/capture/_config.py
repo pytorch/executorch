@@ -43,7 +43,6 @@ class EdgeCompileConfig:
     _core_aten_ops_exception_list: List[torch._ops.OpOverload] = field(
         default_factory=list
     )
-    _skip_type_promotion: bool = False
     # TODO(gasoonjia): remove this
     _skip_dim_order: bool = False
 

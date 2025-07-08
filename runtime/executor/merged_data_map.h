@@ -11,50 +11,39 @@
 #include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
+namespace internal {
+
 /**
  * A NamedDataMap implementation that wraps other NamedDataMaps.
  */
-template <size_t N>
-class MergedDataMap final
-    : public executorch::ET_RUNTIME_NAMESPACE::NamedDataMap {
+class MergedDataMap final : public NamedDataMap {
  public:
   /**
-   * Creates a new NamedDataMap that takes in other data maps.
+   * Creates a new NamedDataMap that wraps two other data maps.
    *
-   * @param[in] data_maps Array of NamedDataMap pointers to merge.
+   * @param[in] first The first NamedDataMap to merge.
+   * @param[in] second The second NamedDataMap to merge.
    * Note: the data maps must outlive the MergedDataMap instance.
    */
-  static executorch::runtime::Result<MergedDataMap> load(
-      const NamedDataMap* data_maps[N],
-      size_t data_maps_size) {
-    const NamedDataMap* valid_data_maps[N] = {};
-    size_t num_data_maps = 0;
-    for (size_t i = 0; i < data_maps_size; i++) {
-      if (data_maps[i] != nullptr) {
-        valid_data_maps[num_data_maps++] = data_maps[i];
-      }
-    }
+  static Result<MergedDataMap> load(
+      const NamedDataMap* first,
+      const NamedDataMap* second) {
     ET_CHECK_OR_RETURN_ERROR(
-        num_data_maps > 0, InvalidArgument, "All provided data maps are null");
+        first != nullptr && second != nullptr,
+        InvalidArgument,
+        "Input data map is null.");
 
     // Check for duplicate keys.
-    for (size_t i = 0; i < num_data_maps; i++) {
-      for (size_t j = i + 1; j < num_data_maps; j++) {
-        for (size_t k = 0; k < valid_data_maps[i]->get_num_keys().get(); k++) {
-          const auto key = valid_data_maps[i]->get_key(k).get();
-          ET_CHECK_OR_RETURN_ERROR(
-              valid_data_maps[j]->get_tensor_layout(key).error() ==
-                  executorch::runtime::Error::NotFound,
-              InvalidArgument,
-              "Duplicate key %s in data maps at index %zu and %zu",
-              key,
-              i,
-              j);
-        }
-      }
+    for (uint32_t k = 0; k < first->get_num_keys().get(); k++) {
+      const auto key = first->get_key(k).get();
+      ET_CHECK_OR_RETURN_ERROR(
+          second->get_tensor_layout(key).error() == Error::NotFound,
+          InvalidArgument,
+          "Duplicate key %s.",
+          key);
     }
-    return MergedDataMap<N>(std::move(valid_data_maps), num_data_maps);
+    return MergedDataMap(first, second);
   }
 
   /**
@@ -65,19 +54,16 @@ class MergedDataMap final
    * @return Error::NotFound if the key is not present.
    */
   ET_NODISCARD
-  executorch::runtime::Result<
-      const executorch::ET_RUNTIME_NAMESPACE::TensorLayout>
-  get_tensor_layout(executorch::aten::string_view key) const override {
-    for (size_t i = 0; i < num_data_maps_; i++) {
-      auto layout = data_maps_[i]->get_tensor_layout(key);
-      if (layout.ok()) {
-        return layout.get();
-      }
-      if (layout.error() != executorch::runtime::Error::NotFound) {
-        return layout.error();
-      }
+  Result<const TensorLayout> get_tensor_layout(
+      executorch::aten::string_view key) const override {
+    auto layout = first_->get_tensor_layout(key);
+    if (layout.ok()) {
+      return layout.get();
     }
-    return executorch::runtime::Error::NotFound;
+    if (layout.error() != Error::NotFound) {
+      return layout.error();
+    }
+    return second_->get_tensor_layout(key);
   }
 
   /**
@@ -88,19 +74,18 @@ class MergedDataMap final
    * @return error if the key is not present or data cannot be loaded.
    */
   ET_NODISCARD
-  executorch::runtime::Result<executorch::runtime::FreeableBuffer> get_data(
+  Result<FreeableBuffer> get_data(
       executorch::aten::string_view key) const override {
-    for (size_t i = 0; i < num_data_maps_; i++) {
-      auto data = data_maps_[i]->get_data(key);
-      if (data.error() != executorch::runtime::Error::NotFound) {
-        return data;
-      }
+    auto data = first_->get_data(key);
+    if (data.error() != Error::NotFound) {
+      return data;
     }
-    return executorch::runtime::Error::NotFound;
+    return second_->get_data(key);
   }
 
   /**
    * Loads the data of the specified tensor into the provided buffer.
+   * Not used in the MergedDataMap.
    *
    * @param[in] key The name of the tensor to get the data of.
    * @param[in] buffer The buffer to load data into. Must point to at least
@@ -109,36 +94,24 @@ class MergedDataMap final
    *
    * @returns an Error indicating if the load was successful.
    */
-  ET_NODISCARD executorch::runtime::Error load_data_into(
-      executorch::aten::string_view key,
-      void* buffer,
-      size_t size) const override {
-    for (size_t i = 0; i < num_data_maps_; i++) {
-      auto error = data_maps_[i]->load_data_into(key, buffer, size);
-      if (error != executorch::runtime::Error::NotFound) {
-        return error;
-      }
-    }
-    return executorch::runtime::Error::NotFound;
+  ET_NODISCARD Error load_data_into(
+      ET_UNUSED executorch::aten::string_view key,
+      ET_UNUSED void* buffer,
+      ET_UNUSED size_t size) const override {
+    return Error::NotImplemented;
   }
 
   /**
    * @returns The number of keys in the map.
    */
-  ET_NODISCARD executorch::runtime::Result<uint32_t> get_num_keys()
-      const override {
-    uint32_t num_keys = 0;
-    for (size_t i = 0; i < num_data_maps_; i++) {
-      num_keys += data_maps_[i]->get_num_keys().get();
-    }
-    return num_keys;
+  ET_NODISCARD Result<uint32_t> get_num_keys() const override {
+    return first_->get_num_keys().get() + second_->get_num_keys().get();
   }
 
   /**
    * @returns The key at the specified index, error if index out of bounds.
    */
-  ET_NODISCARD executorch::runtime::Result<const char*> get_key(
-      uint32_t index) const override {
+  ET_NODISCARD Result<const char*> get_key(uint32_t index) const override {
     uint32_t total_num_keys = get_num_keys().get();
     ET_CHECK_OR_RETURN_ERROR(
         index >= 0 && index < total_num_keys,
@@ -146,15 +119,12 @@ class MergedDataMap final
         "Index %u out of range of size %u",
         index,
         total_num_keys);
-    for (size_t i = 0; i < num_data_maps_; i++) {
-      auto num_keys = data_maps_[i]->get_num_keys().get();
-      if (index < num_keys) {
-        return data_maps_[i]->get_key(index);
-      }
-      index -= num_keys;
+
+    if (index < first_->get_num_keys().get()) {
+      return first_->get_key(index);
+    } else {
+      return second_->get_key(index - first_->get_num_keys().get());
     }
-    // Shouldn't reach here.
-    return executorch::runtime::Error::Internal;
   }
 
   MergedDataMap(MergedDataMap&&) noexcept = default;
@@ -162,21 +132,18 @@ class MergedDataMap final
   ~MergedDataMap() override = default;
 
  private:
-  MergedDataMap(const NamedDataMap* data_maps[N], size_t num_data_maps)
-      : num_data_maps_(num_data_maps) {
-    for (size_t i = 0; i < N; ++i) {
-      data_maps_[i] = data_maps[i];
-    }
-  }
+  MergedDataMap(const NamedDataMap* first, const NamedDataMap* second)
+      : first_{first}, second_{second} {}
 
   // Not copyable or assignable.
   MergedDataMap(const MergedDataMap& rhs) = delete;
   MergedDataMap& operator=(MergedDataMap&& rhs) noexcept = delete;
   MergedDataMap& operator=(const MergedDataMap& rhs) = delete;
 
-  const NamedDataMap* data_maps_[N]{};
-  const size_t num_data_maps_;
+  const NamedDataMap* first_;
+  const NamedDataMap* second_;
 };
 
-} // namespace runtime
+} // namespace internal
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

@@ -801,7 +801,7 @@ Error Method::init(
       return Error::MemoryAllocationFailed;
     }
 
-    // Merge NamedDataMaps.
+    // Get PTE data map, if it exists.
     auto pte_data_map = program_->get_named_data_map();
     ET_CHECK_OR_RETURN_ERROR(
         pte_data_map.ok() || pte_data_map.error() == Error::NotFound,
@@ -810,25 +810,25 @@ Error Method::init(
         static_cast<uint32_t>(pte_data_map.error()));
 
     const NamedDataMap* named_data_map = nullptr;
-    // Merge them.
     if (external_data_map && pte_data_map.ok()) {
-      const NamedDataMap* data_maps[2] = {
-          external_data_map, pte_data_map.ok() ? pte_data_map.get() : nullptr};
-
-      auto merged = MergedDataMap<2>::load(data_maps, 2);
+      // Merge external_data_map and pte_data_map if both are present.
+      auto merged = internal::MergedDataMap::load(external_data_map, pte_data_map.get());
       if (!merged.ok()) {
         return merged.error();
       }
-      merged_data_map_ = method_allocator->allocateInstance<MergedDataMap<2>>();
+      // Allocate memory for the merged data map.
+      merged_data_map_ = method_allocator->allocateInstance<internal::MergedDataMap>();
       if (merged_data_map_ == nullptr) {
         return Error::MemoryAllocationFailed;
       }
-      new (merged_data_map_) MergedDataMap<2>(std::move(merged.get()));
+      new (merged_data_map_)internal::MergedDataMap(std::move(merged.get()));
+      named_data_map = merged_data_map_;
     } else if (external_data_map) {
       named_data_map = external_data_map;
     } else if (pte_data_map.ok()) {
       named_data_map = pte_data_map.get();
     }
+
     // n_delegate_ counts the number of successfully-initialized delegates for
     // ~Method() to clean up, and is incremented at the bottom of the loop. This
     // makes it safe for errors to return without updating any state.
@@ -1692,9 +1692,9 @@ Method::~Method() {
   for (const auto i : c10::irange(n_external_constants_)) {
     external_constants_[i].buffer.~FreeableBuffer();
   }
-  // Free the MergedDataMap
+  // Free the MergedDataMap.
   if (merged_data_map_ != nullptr) {
-    merged_data_map_->~MergedDataMap<2>();
+    merged_data_map_->~MergedDataMap();
   }
   // All other fields are trivially destructible.
 }

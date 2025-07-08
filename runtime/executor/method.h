@@ -369,7 +369,7 @@ class Method final {
   size_t n_chains_;
   Chain* chains_;
 
-  MergedDataMap<2>* merged_data_map_;
+  internal::MergedDataMap* merged_data_map_;
   NamedData* external_constants_;
   size_t n_external_constants_ = 0;
 
