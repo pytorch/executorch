@@ -1163,7 +1163,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_associate_with_op_graph_nodes</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">debug_handle_to_op_node_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">OperatorNode</span><span class="p">],</span>
+        <span class="n">debug_handle_to_op_node_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">OperatorNode</span><span class="p">]],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Helper function to populate the stack_traces, module_hierarchy and op_types attributes</span>
@@ -1181,14 +1181,21 @@
             <span class="n">debug_handles</span> <span class="o">=</span> <span class="p">[</span><span class="n">debug_handles</span><span class="p">]</span>
 
         <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="n">debug_handles</span><span class="p">:</span>
-            <span class="n">node</span> <span class="o">=</span> <span class="n">debug_handle_to_op_node_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">handle</span><span class="p">)</span>
-            <span class="c1"># Attach node metadata including stack traces, module hierarchy and op_types to this event</span>
-            <span class="k">if</span> <span class="n">node</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span><span class="n">metadata</span> <span class="o">:=</span> <span class="n">node</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stack_trace&quot;</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;nn_module_stack&quot;</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">:</span>
-                    <span class="c1"># TODO: consider having this as a dict from node.name -&gt; node.op</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">op_types</span> <span class="o">+=</span> <span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">]</span></div>
+            <span class="n">nodes</span> <span class="o">=</span> <span class="n">debug_handle_to_op_node_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">nodes</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">nodes</span><span class="p">:</span>
+                <span class="c1"># Attach node metadata including stack traces, module hierarchy and op_types to this event</span>
+                <span class="k">if</span> <span class="n">node</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span><span class="n">metadata</span> <span class="o">:=</span> <span class="n">node</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stack_trace&quot;</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                            <span class="s2">&quot;nn_module_stack&quot;</span>
+                        <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">:</span>
+                        <span class="c1"># TODO: consider having this as a dict from node.name -&gt; node.op</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">op_types</span> <span class="o">+=</span> <span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">]</span></div>
 
 
 <div class="viewcode-block" id="EventBlock"><a class="viewcode-back" href="../../../../model-inspector.html#executorch.devtools.inspector.EventBlock">[docs]</a><span class="nd">@dataclass</span>
