@@ -21,10 +21,10 @@ using executorch::extension::FlatTensorDataMap;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
-using executorch::runtime::MergedDataMap;
 using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
 using executorch::runtime::TensorLayout;
+using executorch::runtime::internal::MergedDataMap;
 
 class MergedDataMapTest : public ::testing::Test {
  protected:
@@ -85,8 +85,8 @@ void check_tensor_layout(TensorLayout& layout1, TensorLayout& layout2) {
 void compare_ndm_api_calls(
     const NamedDataMap* ndm,
     const NamedDataMap* merged) {
-  size_t num_keys = ndm->get_num_keys().get();
-  for (size_t i = 0; i < num_keys; i++) {
+  uint32_t num_keys = ndm->get_num_keys().get();
+  for (uint32_t i = 0; i < num_keys; i++) {
     auto key = ndm->get_key(i).get();
 
     // Compare get_tensor_layout.
@@ -98,69 +98,36 @@ void compare_ndm_api_calls(
     auto ndm_data = ndm->get_data(key);
     auto merged_data = merged->get_data(key);
     EXPECT_EQ(ndm_data.get().size(), merged_data.get().size());
-    for (size_t i = 0; i < ndm_meta.nbytes(); i++) {
+    for (size_t j = 0; j < ndm_meta.nbytes(); j++) {
       EXPECT_EQ(
-          ((uint8_t*)ndm_data.get().data())[i],
-          ((uint8_t*)merged_data.get().data())[i]);
+          ((uint8_t*)ndm_data.get().data())[j],
+          ((uint8_t*)merged_data.get().data())[j]);
     }
     ndm_data->Free();
     merged_data->Free();
-
-    // Compare load_data_into.
-    void* ndm_load_into = malloc(ndm_meta.nbytes());
-    ASSERT_EQ(
-        Error::Ok, ndm->load_data_into(key, ndm_load_into, ndm_meta.nbytes()));
-
-    void* merged_load_into = malloc(merged_meta.nbytes());
-    ASSERT_EQ(
-        Error::Ok,
-        merged->load_data_into(key, merged_load_into, merged_meta.nbytes()));
-
-    for (size_t i = 0; i < ndm_meta.nbytes(); i++) {
-      EXPECT_EQ(((uint8_t*)ndm_load_into)[i], ((uint8_t*)merged_load_into)[i]);
-    }
-    free(ndm_load_into);
-    free(merged_load_into);
   }
 }
 
-TEST_F(MergedDataMapTest, LoadSingleDataMap) {
-  const NamedDataMap* data_map[1] = {data_maps_["addmul"].get()};
-  Result<MergedDataMap<1>> merged_map = MergedDataMap<1>::load(data_map, 1);
-  EXPECT_EQ(merged_map.error(), Error::Ok);
-
-  // Load one data map into a merged one with storage for up to 5 data maps.
-  const NamedDataMap* data_maps[5] = {
-      data_maps_["addmul"].get(), nullptr, nullptr, nullptr, nullptr};
-  Result<MergedDataMap<5>> merged_map2 = MergedDataMap<5>::load(data_maps, 5);
-  EXPECT_EQ(merged_map2.error(), Error::Ok);
-}
-
 TEST_F(MergedDataMapTest, LoadNullDataMap) {
-  const NamedDataMap* data_maps[2] = {nullptr, nullptr};
-  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps, 2);
+  Result<MergedDataMap> merged_map = MergedDataMap::load(nullptr, nullptr);
   EXPECT_EQ(merged_map.error(), Error::InvalidArgument);
 }
 
 TEST_F(MergedDataMapTest, LoadMultipleDataMaps) {
-  // Add pte data map here.
-  const NamedDataMap* data_maps[2] = {
-      data_maps_["addmul"].get(), data_maps_["linear"].get()};
-  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps, 2);
+  Result<MergedDataMap> merged_map = MergedDataMap::load(
+      data_maps_["addmul"].get(), data_maps_["linear"].get());
   EXPECT_EQ(merged_map.error(), Error::Ok);
 }
 
 TEST_F(MergedDataMapTest, LoadDuplicateDataMapsFail) {
-  const NamedDataMap* data_maps[2] = {
-      data_maps_["addmul"].get(), data_maps_["addmul"].get()};
-  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps, 2);
+  Result<MergedDataMap> merged_map = MergedDataMap::load(
+      data_maps_["addmul"].get(), data_maps_["addmul"].get());
   EXPECT_EQ(merged_map.error(), Error::InvalidArgument);
 }
 
 TEST_F(MergedDataMapTest, CheckDataMapContents) {
-  const NamedDataMap* data_maps[2] = {
-      data_maps_["addmul"].get(), data_maps_["linear"].get()};
-  Result<MergedDataMap<2>> merged_map = MergedDataMap<2>::load(data_maps, 2);
+  Result<MergedDataMap> merged_map = MergedDataMap::load(
+      data_maps_["addmul"].get(), data_maps_["linear"].get());
   EXPECT_EQ(merged_map.error(), Error::Ok);
 
   // Num keys.
@@ -168,6 +135,12 @@ TEST_F(MergedDataMapTest, CheckDataMapContents) {
   size_t linear_num_keys = data_maps_["linear"]->get_num_keys().get();
   EXPECT_EQ(
       merged_map->get_num_keys().get(), addmul_num_keys + linear_num_keys);
+
+  // Load data into is not implemented for the merged data map.
+  void* memory_block = malloc(10);
+  ASSERT_EQ(
+      Error::NotImplemented, merged_map->load_data_into("a", memory_block, 10));
+  free(memory_block);
 
   // API calls produce equivalent results.
   compare_ndm_api_calls(data_maps_["addmul"].get(), &merged_map.get());
