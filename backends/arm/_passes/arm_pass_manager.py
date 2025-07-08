@@ -29,6 +29,7 @@ from executorch.backends.arm._passes import (
     ConvertToClampPass,
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
+    DecomposeAsinPass,
     DecomposeAtanPass,
     DecomposeAvgPool2d,
     DecomposeBatchNormNoStatsPass,
@@ -159,6 +160,7 @@ class ArmPassManager(PassManager):
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeAcoshPass())
+        self.add_pass(DecomposeAsinPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeAtanPass())
         self.add_pass(ConvertIntPowToMuls())
