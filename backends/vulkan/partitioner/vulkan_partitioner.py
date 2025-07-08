@@ -139,7 +139,6 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 reason = "op requires buffers which is not supported by op impl"
             return compatible, reason
 
-
         return True, "Op is compatible"
 
     def node_is_compatible(
