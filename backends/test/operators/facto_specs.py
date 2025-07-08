@@ -2,14 +2,20 @@ import facto.specdb.function as fn
 import torch
 
 from facto.inputgen.argument.type import ArgType
-from facto.inputgen.specs.model import ConstraintProducer as cp, InPosArg, OutArg, Spec
+from facto.inputgen.specs.model import (
+    ConstraintProducer as cp,
+    InKwArg,
+    InPosArg,
+    OutArg,
+    Spec,
+)
 
 """
 This file contains FACTO operator specs for ops not in the standard FACTO db. This mainly
 includes ops not in the Core ATen op set and preserved by a backend, such as linear.
 """
 
-LiNEAR_DEFAULT_SPEC = Spec(
+LINEAR_DEFAULT_SPEC = Spec(
     op="linear.default",  # (Tensor input, Tensor weight, Tensor? bias=None) -> Tensor
     inspec=[
         InPosArg(
@@ -53,7 +59,9 @@ LiNEAR_DEFAULT_SPEC = Spec(
 )
 
 _extra_specs = [
-    LiNEAR_DEFAULT_SPEC,
+    LINEAR_DEFAULT_SPEC,
 ]
 
-ExtraSpecDB: dict[str, Spec] = {s.op: s for s in _extra_specs}
+ExtraSpecDB: dict[str, Spec] = {
+    s.op: s for s in _extra_specs
+}
