@@ -13,11 +13,11 @@ Quantization in ExecuTorch is backend-specific. Each backend defines how models 
 
 The PT2E quantization workflow has three main steps:
 
-1. Create a backend-specific quantizer.
+1. Configure a backend-specific quantizer.
 2. Prepare, calibrate, convert, and evalute the quantized model in PyTorch
 3. Lower the model to the target backend
 
-## 1. Create a Backend-Specific Quantizer
+## 1. Configure a Backend-Specific Quantizer
 
 Each backend provides its own quantizer (e.g., XNNPACKQuantizer, CoreMLQuantizer) that defines how quantization should be applied to a model in a way that is compatible with the target hardware.
 These quantizers usually support configs that allow users to specify quantization options such as:
@@ -69,4 +69,4 @@ Note that numerics on device can differ those in PyTorch even for unquantized mo
 
 ## 3. Lower the model
 
-The final step is to lower the quantized_model to the desired backend, as you would an unquantized one.  See backend-specific pages for lowering information.
+The final step is to lower the quantized_model to the desired backend, as you would an unquantized one.  See [backend-specific pages](backends-overview.md) for lowering information.
