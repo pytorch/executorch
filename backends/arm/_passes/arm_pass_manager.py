@@ -6,8 +6,6 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-
-import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AddBiasPass,
     AnnotateChannelsLastDimOrder,
