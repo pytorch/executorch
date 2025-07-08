@@ -37,12 +37,15 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
+@pytest.mark.parametrize("bias", [False, True])
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [2, 1])
 @pytest.mark.parametrize("kernel_size", [(1,), (3,)])
-def test_conv1d_quant_conversion(stride, dilation, kernel_size, mocker):
+def test_conv1d_quant_conversion(bias, stride, dilation, kernel_size, mocker):
     input_shape = (1, 4, 16)
-    model = Conv1dModule(stride=stride, dilation=dilation, kernel_size=kernel_size)
+    model = Conv1dModule(
+        bias=bias, stride=stride, dilation=dilation, kernel_size=kernel_size
+    )
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
     ops_spy = mocker.spy(ModelBuilder, "finish")
 
@@ -144,13 +147,17 @@ def test_conv1d_quant_conversion__padded(
     )  # `Conv` input zp.
 
 
+@pytest.mark.parametrize("bias", [False, True])
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [2, 1])
 @pytest.mark.parametrize("kernel_size", [(1,), (3,)])
-def test_conv1d_quant_conversion__depthwise(stride, dilation, kernel_size, mocker):
+def test_conv1d_quant_conversion__depthwise(
+    bias, stride, dilation, kernel_size, mocker
+):
     input_shape = (1, 4, 16)
     group = input_shape[1]
     model = Conv1dModule(
+        bias=bias,
         group=group,
         in_channels=group,
         out_channels=group,
@@ -371,6 +378,26 @@ def test_conv1d_quant_conversion__depthwise__padded(
             (1, 32, 32, 32),
             id="In ch 32, out ch 32, kernel 4, padding (0, 2), dilation (1, 2)",
         ),
+        pytest.param(
+            Conv2dModule(
+                in_channels=8, out_channels=32, kernel_size=5, padding=3, bias=False
+            ),
+            (1, 8, 32, 32),
+            id="In ch 8, out ch 32, kernel 5, padding 3, no bias",
+        ),
+        pytest.param(
+            Conv2dModule(
+                in_channels=32,
+                out_channels=32,
+                kernel_size=3,
+                padding=(1, 0),
+                dilation=(3, 1),
+                bias=False,
+            ),
+            (1, 32, 35, 35),
+            id="In ch 32, out ch 32, kernel 3, padding (1, 0), dilation (3, 1),"
+            "no bias",
+        ),
     ],
 )
 def test_conv2d_quant_conversion(mocker, model: torch.nn.Module, input_shape):
@@ -397,47 +424,12 @@ def test_conv2d_quant_conversion(mocker, model: torch.nn.Module, input_shape):
     )
 
 
-@pytest.mark.parametrize("stride", [1, 2])
-@pytest.mark.parametrize("dilation", [1, 2])
-@pytest.mark.parametrize("kernel_shape", [[1, 2], [3, 3], [4, 1]])
-def test_conv2d_conversion__depthwise(stride, dilation, kernel_shape, mocker):
-    input_shape = (1, 3, 12, 16)
-    group = input_shape[1]
-    edge_program = to_edge_program(
-        Conv2dModule(
-            group=group,
-            in_channels=group,
-            out_channels=group,
-            stride=stride,
-            dilation=dilation,
-            kernel_size=kernel_shape,
-        ),
-        input_shape,
-    ).exported_program()
-
-    input_data = np.random.random(input_shape).astype(np.float32)
-
-    spy = mocker.spy(ModelBuilder, "finish")
-
-    convert_run_compare(
-        edge_program,
-        input_data,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-        atol=4e-7,
-    )
-    conversion_result = spy.spy_return
-    ops = conversion_result.sub_graphs[0].operators.vector
-
-    assert len(ops) == 1
-    assert ops[0].builtin_options.operator_type == BuiltinOperator.DEPTHWISE_CONV_2D
-
-
+@pytest.mark.parametrize("bias", [False, True])
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [1, 2])
 @pytest.mark.parametrize("kernel_shape", [[1, 2], [3, 3], [4, 1]])
 def test_conv2d_conversion__depthwise__quantized(
-    stride, dilation, kernel_shape, mocker
+    bias, stride, dilation, kernel_shape, mocker
 ):
     input_shape = (1, 4, 12, 12)
     group = input_shape[1]
@@ -445,6 +437,7 @@ def test_conv2d_conversion__depthwise__quantized(
 
     edge_program = to_quantized_edge_program(
         Conv2dModule(
+            bias=bias,
             group=group,
             in_channels=group,
             out_channels=group,
