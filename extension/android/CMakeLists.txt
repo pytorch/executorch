@@ -63,7 +63,7 @@ set_target_properties(fbjni PROPERTIES
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
 target_link_options_shared_lib(executorch)
 
-add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
+add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp jni/jni_layer_training.cpp)
 
 set(link_libraries)
 list(
@@ -76,6 +76,7 @@ list(
   extension_runner_util
   extension_tensor
   extension_threadpool
+  extension_training
   fbjni
 )
 
