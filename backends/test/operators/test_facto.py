@@ -4,7 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
+# pyre-unsafe
+
+#
+# This file contains logic to run generated operator tests using the FACTO
+# library (https://github.com/pytorch-labs/FACTO). To run the tests, first
+# clone and install FACTO by running pip install . from the FACTO source
+# directory. Then, from the executorch root directory, run the following:
+#
+# python -m unittest backends.test.operators.test_facto.FactoTestsXNNPACK
+#
 
 import copy
 import functools
@@ -26,9 +35,9 @@ from .facto_specs import ExtraSpecDB
 CombinedSpecDB = SpecDictDB | ExtraSpecDB
 
 COMMON_TENSOR_CONSTRAINTS = [
-    cp.Rank.Ge(lambda deps: 1),
+    cp.Rank.Ge(lambda deps: 1),  # Avoid zero and high rank tensors.
     cp.Rank.Le(lambda deps: 4),
-    cp.Size.Ge(lambda deps, r, d: 1),
+    cp.Size.Ge(lambda deps, r, d: 1),  # Keep sizes reasonable.
     cp.Size.Le(lambda deps, r, d: 2**9),
 ]
 
@@ -171,7 +180,7 @@ class FactoTestsBase(unittest.TestCase):
     def setUp(self):
         torch.set_printoptions(threshold=3)
 
-    def _test_op(self, op: OpOverload) -> None:  # noqa
+    def _test_op(self, op: OpOverload) -> None:  # noqa: C901
         random_manager.seed(0)
 
         # Strip namespace
