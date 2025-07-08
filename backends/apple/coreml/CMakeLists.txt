@@ -1,33 +1,21 @@
 # Copyright © 2023 Apple Inc. All rights reserved.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.19)
-
-project(executorch_coreml_backend)
-
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
-
-# Source root directory for executorch.
-if(NOT EXECUTORCH_ROOT)
-  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+if(APPLE)
+  find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+  find_library(ACCELERATE_FRAMEWORK Accelerate REQUIRED)
+  find_library(COREML_FRAMEWORK CoreML REQUIRED)
+  find_library(SQLITE_LIBRARY sqlite3 REQUIRED)
 endif()
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
   # protobuf requires frtti
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -frtti")
 endif()
-
-option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
-
-# inmemoryfs sources
-set(INMEMORYFS_SOURCES
-    runtime/inmemoryfs/inmemory_filesystem.cpp
-    runtime/inmemoryfs/inmemory_filesystem_utils.mm
-    runtime/inmemoryfs/memory_buffer.cpp
-    runtime/inmemoryfs/memory_stream.cpp
-    runtime/inmemoryfs/reversed_memory_stream.cpp
-)
 
 # kvstore sources
 set(KVSTORE_SOURCES
@@ -55,9 +43,6 @@ set(DELEGATE_SOURCES
     runtime/delegate/multiarray.mm
     runtime/delegate/serde_json.mm
 )
-
-# util sources
-set(UTIL_SOURCES runtime/util/json_util.cpp runtime/util/objc_json_serde.mm)
 
 # sdk sources
 set(SDK_SOURCES
@@ -111,96 +96,149 @@ set(PROTOBUF_SOURCES
     runtime/sdk/format/WordTagger.pb.cc
 )
 
-# Define the delegate library
-add_library(coremldelegate)
-target_sources(
-  coremldelegate PRIVATE ${INMEMORYFS_SOURCES} ${KVSTORE_SOURCES}
-                         ${DELEGATE_SOURCES} ${UTIL_SOURCES}
-)
+# CoreML util
 
-target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
-)
-target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/kvstore
-)
-target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
-)
-target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/delegate
-)
-target_include_directories(
-  coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
-)
-target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/..)
-target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
-target_compile_definitions(coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS)
-target_link_libraries(coremldelegate PRIVATE executorch_core)
-
-if(EXECUTORCH_BUILD_DEVTOOLS)
-  target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
-  target_include_directories(
-    coremldelegate
-    PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/runtime/sdk
-      ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/src
-  )
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
-  )
-
-  target_link_options_shared_lib(libprotobuf-lite)
-  target_link_libraries(coremldelegate PRIVATE libprotobuf-lite)
+set(UTIL_SOURCES runtime/util/json_util.cpp)
+if(APPLE)
+  list(APPEND UTIL_SOURCES runtime/util/objc_json_serde.mm)
 endif()
 
-find_library(ACCELERATE_FRAMEWORK Accelerate)
-find_library(COREML_FRAMEWORK CoreML)
-find_library(FOUNDATION_FRAMEWORK Foundation)
-find_library(SQLITE_LIBRARY sqlite3)
-
-target_link_libraries(
-  coremldelegate
-  PRIVATE executorch_core ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
-          ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
-)
-
-target_link_options_shared_lib(coremldelegate)
-
-if(COREML_BUILD_EXECUTOR_RUNNER)
-  target_link_libraries(
-    coremldelegate PRIVATE portable_ops_lib portable_kernels
-  )
+add_library(coreml_util ${UTIL_SOURCES})
+target_include_directories(coreml_util PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util)
+if(APPLE)
+  target_link_libraries(coreml_util PRIVATE ${FOUNDATION_FRAMEWORK})
 endif()
-
-target_compile_options(coremldelegate PRIVATE "-fobjc-arc")
-target_compile_options(coremldelegate PRIVATE "-fno-exceptions")
-
-if(EXECUTORCH_BUILD_DEVTOOLS)
-  target_compile_options(
-    executorch_core PUBLIC -DET_EVENT_TRACER_ENABLED
-  )
-  target_compile_options(coremldelegate PRIVATE "-frtti")
-  target_compile_options(libprotobuf-lite PRIVATE "-frtti")
-else()
-  target_compile_options(coremldelegate PRIVATE "-fno-rtti")
-endif()
-
-set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
-           "-x objective-c++"
-)
-
-set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
-           "-Wno-null-character"
-)
-
-set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
-           "-Wno-receiver-expr"
-)
+target_compile_options(coreml_util PUBLIC -fPIC)
 
 install(
-  TARGETS coremldelegate
+  TARGETS coreml_util
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+
+# CoreML inmemoryfs
+
+set(
+  INMEMORYFS_SOURCES
+  runtime/inmemoryfs/inmemory_filesystem.cpp
+  runtime/inmemoryfs/memory_buffer.cpp
+  runtime/inmemoryfs/memory_stream.cpp
+  runtime/inmemoryfs/reversed_memory_stream.cpp
+)
+if(APPLE)
+  list(APPEND INMEMORYFS_SOURCES runtime/inmemoryfs/inmemory_filesystem_utils.mm)
+endif()
+
+add_library(coreml_inmemoryfs ${INMEMORYFS_SOURCES})
+target_include_directories(coreml_inmemoryfs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs)
+if(APPLE)
+  target_link_libraries(coreml_inmemoryfs PRIVATE coreml_util ${FOUNDATION_FRAMEWORK})
+endif()
+target_compile_options(coreml_inmemoryfs PUBLIC -fPIC)
+
+install(
+  TARGETS coreml_inmemoryfs
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)
+
+# executorchcoreml
+
+if(EXECUTORCH_BUILD_PYBIND)
+  pybind11_add_module(
+    executorchcoreml
+    SHARED
+      runtime/inmemoryfs/inmemory_filesystem_py.cpp
+      runtime/inmemoryfs/inmemory_filesystem_utils.cpp
+  )
+  target_link_libraries(
+    executorchcoreml
+    PRIVATE
+      coreml_util
+      coreml_inmemoryfs
+      nlohmann_json::nlohmann_json
+  )
+  target_compile_options(executorchcoreml PUBLIC -fPIC)
+endif()
+
+# coremldelegate
+
+if(APPLE)
+  add_library(coremldelegate)
+  target_sources(coremldelegate PRIVATE ${KVSTORE_SOURCES} ${DELEGATE_SOURCES})
+
+  target_include_directories(
+    coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
+  )
+  target_include_directories(
+    coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/kvstore
+  )
+  target_include_directories(
+    coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/delegate
+  )
+  target_include_directories(coremldelegate PRIVATE ${PROJECT_SOURCE_DIR}/..)
+  target_include_directories(coremldelegate PRIVATE ${PROJECT_SOURCE_DIR}/runtime/core/portable_type/c10)
+  target_compile_definitions(coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS)
+
+  if(EXECUTORCH_BUILD_DEVTOOLS)
+    target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
+    target_include_directories(
+      coremldelegate
+      PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/runtime/sdk
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/src
+    )
+    add_subdirectory(
+      ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
+    )
+
+    target_link_options_shared_lib(libprotobuf-lite)
+    target_link_libraries(coremldelegate PRIVATE libprotobuf-lite)
+  endif()
+
+  target_link_libraries(
+    coremldelegate
+    PUBLIC  coreml_util
+            coreml_inmemoryfs
+    PRIVATE executorch_core
+            ${ACCELERATE_FRAMEWORK}
+            ${COREML_FRAMEWORK}
+            ${FOUNDATION_FRAMEWORK}
+            ${SQLITE_LIBRARY}
+  )
+
+  target_link_options_shared_lib(coremldelegate)
+
+  if(EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER)
+    target_link_libraries(
+      coremldelegate PRIVATE portable_ops_lib portable_kernels
+    )
+  endif()
+
+  target_compile_options(
+    coremldelegate
+    PRIVATE
+      -fobjc-arc
+      -fno-exceptions
+      -x objective-c++
+      -Wno-null-character
+      -Wno-receiver-expr
+  )
+
+  if(EXECUTORCH_BUILD_DEVTOOLS)
+    target_compile_options(executorch_core PUBLIC -DET_EVENT_TRACER_ENABLED)
+    target_compile_options(coremldelegate PRIVATE "-frtti")
+    target_compile_options(libprotobuf-lite PRIVATE "-frtti")
+  else()
+    target_compile_options(coremldelegate PRIVATE "-fno-rtti")
+  endif()
+
+  install(
+    TARGETS coremldelegate
+    DESTINATION lib
+    INCLUDES
+    DESTINATION ${_common_include_directories}
+  )
+endif()

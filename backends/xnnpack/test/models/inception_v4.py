@@ -12,6 +12,9 @@ from timm.models import inception_v4
 
 
 class TestInceptionV4(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     ic4 = inception_v4(pretrained=False).eval()
     model_inputs = (torch.randn(3, 299, 299).unsqueeze(0),)
 

@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -23,7 +24,7 @@ namespace runtime {
 namespace {
 template <typename DimOrderType>
 bool validate_dim_order(const DimOrderType* dim_order, const size_t dims) {
-  for (size_t i = 0; i < dims; ++i) {
+  for (const auto i : c10::irange(dims)) {
     if (dim_order[i] >= static_cast<DimOrderType>(dims)) {
       return false;
     }
@@ -43,7 +44,7 @@ template <typename DimOrderType>
 inline bool is_contiguous_dim_order(
     const DimOrderType* dim_order,
     const size_t dims) {
-  for (size_t i = 0; i < dims; ++i) {
+  for (const auto i : c10::irange(dims)) {
     if (dim_order[i] != static_cast<DimOrderType>(i)) {
       return false;
     }

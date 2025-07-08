@@ -8,8 +8,9 @@
 Please refer to executorch/backends/qualcomm/serialization/schema.fbs for the schema definitions
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum, unique
+from typing import List
 
 
 @dataclass
@@ -37,35 +38,37 @@ class HtpInfo:
 @unique
 class QcomChipset(IntEnum):
     UNKNOWN_SM = 0
+    SA8295 = 39  # v68
     SM8450 = 36  # v69
     SM8475 = 42  # v69
     SM8550 = 43  # v73
-    SSG2115P = 46  # v73
     SM8650 = 57  # v75
-    SA8295 = 39  # v68
     SM8750 = 69  # v79
-    SXR1230P = 45
-    SXR2230P = 53
-    SSG2125P = 58
+    SSG2115P = 46  # v73
+    SSG2125P = 58  # v73
+    SXR1230P = 45  # v73
+    SXR2230P = 53  # v69
+    SXR2330P = 75  # v79
 
 
 @dataclass
 class SocInfo:
     soc_model: QcomChipset = QcomChipset.UNKNOWN_SM
-    htp_info: HtpInfo = HtpInfo()
+    htp_info: HtpInfo = field(default_factory=HtpInfo)
 
 
 _soc_info_table = {
+    QcomChipset.SA8295: SocInfo(QcomChipset.SA8295, HtpInfo(HtpArch.V68, 8)),
     QcomChipset.SM8450: SocInfo(QcomChipset.SM8450, HtpInfo(HtpArch.V69, 8)),
     QcomChipset.SM8475: SocInfo(QcomChipset.SM8475, HtpInfo(HtpArch.V69, 8)),
     QcomChipset.SM8550: SocInfo(QcomChipset.SM8550, HtpInfo(HtpArch.V73, 8)),
     QcomChipset.SM8650: SocInfo(QcomChipset.SM8650, HtpInfo(HtpArch.V75, 8)),
     QcomChipset.SM8750: SocInfo(QcomChipset.SM8750, HtpInfo(HtpArch.V79, 8)),
     QcomChipset.SSG2115P: SocInfo(QcomChipset.SSG2115P, HtpInfo(HtpArch.V73, 2)),
-    QcomChipset.SA8295: SocInfo(QcomChipset.SA8295, HtpInfo(HtpArch.V68, 8)),
+    QcomChipset.SSG2125P: SocInfo(QcomChipset.SSG2125P, HtpInfo(HtpArch.V73, 2)),
     QcomChipset.SXR1230P: SocInfo(QcomChipset.SXR1230P, HtpInfo(HtpArch.V73, 2)),
     QcomChipset.SXR2230P: SocInfo(QcomChipset.SXR2230P, HtpInfo(HtpArch.V69, 8)),
-    QcomChipset.SSG2125P: SocInfo(QcomChipset.SSG2125P, HtpInfo(HtpArch.V73, 2)),
+    QcomChipset.SXR2330P: SocInfo(QcomChipset.SXR2330P, HtpInfo(HtpArch.V79, 8)),
 }
 
 
@@ -142,11 +145,41 @@ class QnnExecuTorchBackendOptions:
     htp_options: QnnExecuTorchHtpBackendOptions
 
 
+@unique
+class QnnExecuTorchOpPackageTarget(IntEnum):
+    UNKNOWN = 0
+    CPU = 1
+    HTP = 2
+
+
+@unique
+class QnnExecuTorchOpPackagePlatform(IntEnum):
+    UNKNOWN = 0
+    X86_64 = 1
+    AARCH64_ANDROID = 2
+
+
+@dataclass
+class QnnExecuTorchOpPackageInfo:
+    op_package_name: str = ""
+    op_package_path: str = ""
+    interface_provider: str = ""
+    target: QnnExecuTorchOpPackageTarget = QnnExecuTorchOpPackageTarget.UNKNOWN
+    custom_op_name: str = ""
+    qnn_op_type_name: str = ""
+    platform: QnnExecuTorchOpPackagePlatform = QnnExecuTorchOpPackagePlatform.UNKNOWN
+
+
+@dataclass
+class QnnExecuTorchOpPackageOptions:
+    op_package_infos: List[QnnExecuTorchOpPackageInfo] = field(default_factory=list)
+
+
 @dataclass
 class QnnExecuTorchOptions:
     soc_info: SocInfo
     backend_options: QnnExecuTorchBackendOptions
-    graph_name: str = ""
+    graph_name: List[str] = field(default_factory=lambda: ["forward"])
     library_path: str = ""
     log_level: QnnExecuTorchLogLevel = QnnExecuTorchLogLevel.kLogOff
     online_prepare: bool = False
@@ -154,4 +187,8 @@ class QnnExecuTorchOptions:
     profile_level: QnnExecuTorchProfileLevel = QnnExecuTorchProfileLevel.kProfileOff
     shared_buffer: bool = False
     is_from_context_binary: bool = False
-    multiple_graphs: bool = False
+    saver: bool = False
+    saver_output_dir: str = "saver_output"
+    op_package_options: QnnExecuTorchOpPackageOptions = field(
+        default_factory=QnnExecuTorchOpPackageOptions
+    )

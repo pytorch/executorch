@@ -77,9 +77,8 @@ class BoxedEvalueList {
 };
 
 template <>
-executorch::aten::ArrayRef<executorch::aten::optional<executorch::aten::Tensor>>
-BoxedEvalueList<executorch::aten::optional<executorch::aten::Tensor>>::get()
-    const;
+executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>
+BoxedEvalueList<std::optional<executorch::aten::Tensor>>::get() const;
 
 // Aggregate typing system similar to IValue only slimmed down with less
 // functionality, no dependencies on atomic, and fewer supported types to better
@@ -102,7 +101,7 @@ struct EValue {
       executorch::aten::ArrayRef<bool> as_bool_list;
       BoxedEvalueList<int64_t> as_int_list;
       BoxedEvalueList<executorch::aten::Tensor> as_tensor_list;
-      BoxedEvalueList<executorch::aten::optional<executorch::aten::Tensor>>
+      BoxedEvalueList<std::optional<executorch::aten::Tensor>>
           as_list_optional_tensor;
     } copyable_union;
 
@@ -290,9 +289,9 @@ struct EValue {
     return tag == Tag::String;
   }
 
-  executorch::aten::string_view toString() const {
+  std::string_view toString() const {
     ET_CHECK_MSG(isString(), "EValue is not a String.");
-    return executorch::aten::string_view(
+    return std::string_view(
         payload.copyable_union.as_string.data(),
         payload.copyable_union.as_string.size());
   }
@@ -357,7 +356,7 @@ struct EValue {
 
   /****** List Optional Tensor Type ******/
   /*implicit*/ EValue(
-      BoxedEvalueList<executorch::aten::optional<executorch::aten::Tensor>> t)
+      BoxedEvalueList<std::optional<executorch::aten::Tensor>> t)
       : tag(Tag::ListOptionalTensor) {
     payload.copyable_union.as_list_optional_tensor = t;
   }
@@ -366,8 +365,7 @@ struct EValue {
     return tag == Tag::ListOptionalTensor;
   }
 
-  executorch::aten::ArrayRef<
-      executorch::aten::optional<executorch::aten::Tensor>>
+  executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>
   toListOptionalTensor() const {
     return payload.copyable_union.as_list_optional_tensor.get();
   }
@@ -413,7 +411,7 @@ struct EValue {
    * an uninitialized state.
    */
   template <typename T>
-  inline executorch::aten::optional<T> toOptional() const {
+  inline std::optional<T> toOptional() const {
     if (this->isNone()) {
       return executorch::aten::nullopt;
     }
@@ -494,33 +492,33 @@ EVALUE_DEFINE_TO(executorch::aten::Scalar, toScalar)
 EVALUE_DEFINE_TO(int64_t, toInt)
 EVALUE_DEFINE_TO(bool, toBool)
 EVALUE_DEFINE_TO(double, toDouble)
-EVALUE_DEFINE_TO(executorch::aten::string_view, toString)
+EVALUE_DEFINE_TO(std::string_view, toString)
 EVALUE_DEFINE_TO(executorch::aten::ScalarType, toScalarType)
 EVALUE_DEFINE_TO(executorch::aten::MemoryFormat, toMemoryFormat)
 EVALUE_DEFINE_TO(executorch::aten::Layout, toLayout)
 EVALUE_DEFINE_TO(executorch::aten::Device, toDevice)
 // Tensor and Optional Tensor
 EVALUE_DEFINE_TO(
-    executorch::aten::optional<executorch::aten::Tensor>,
+    std::optional<executorch::aten::Tensor>,
     toOptional<executorch::aten::Tensor>)
 EVALUE_DEFINE_TO(executorch::aten::Tensor, toTensor)
 
 // IntList and Optional IntList
 EVALUE_DEFINE_TO(executorch::aten::ArrayRef<int64_t>, toIntList)
 EVALUE_DEFINE_TO(
-    executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>,
+    std::optional<executorch::aten::ArrayRef<int64_t>>,
     toOptional<executorch::aten::ArrayRef<int64_t>>)
 
 // DoubleList and Optional DoubleList
 EVALUE_DEFINE_TO(executorch::aten::ArrayRef<double>, toDoubleList)
 EVALUE_DEFINE_TO(
-    executorch::aten::optional<executorch::aten::ArrayRef<double>>,
+    std::optional<executorch::aten::ArrayRef<double>>,
     toOptional<executorch::aten::ArrayRef<double>>)
 
 // BoolList and Optional BoolList
 EVALUE_DEFINE_TO(executorch::aten::ArrayRef<bool>, toBoolList)
 EVALUE_DEFINE_TO(
-    executorch::aten::optional<executorch::aten::ArrayRef<bool>>,
+    std::optional<executorch::aten::ArrayRef<bool>>,
     toOptional<executorch::aten::ArrayRef<bool>>)
 
 // TensorList and Optional TensorList
@@ -528,14 +526,12 @@ EVALUE_DEFINE_TO(
     executorch::aten::ArrayRef<executorch::aten::Tensor>,
     toTensorList)
 EVALUE_DEFINE_TO(
-    executorch::aten::optional<
-        executorch::aten::ArrayRef<executorch::aten::Tensor>>,
+    std::optional<executorch::aten::ArrayRef<executorch::aten::Tensor>>,
     toOptional<executorch::aten::ArrayRef<executorch::aten::Tensor>>)
 
 // List of Optional Tensor
 EVALUE_DEFINE_TO(
-    executorch::aten::ArrayRef<
-        executorch::aten::optional<executorch::aten::Tensor>>,
+    executorch::aten::ArrayRef<std::optional<executorch::aten::Tensor>>,
     toListOptionalTensor)
 #undef EVALUE_DEFINE_TO
 

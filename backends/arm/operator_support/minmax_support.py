@@ -22,6 +22,7 @@ class MinMaxSupported(SupportedTOSAOperatorCheck):
     # TODO : "MLETORCH-718 : Quantization of indices in arm_quantizer"
     tosa_specs = [
         TosaSpecification.create_from_string("TOSA-0.80+MI"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):

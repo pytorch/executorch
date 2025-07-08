@@ -20,8 +20,8 @@ from executorch.exir.passes.quantize_io_pass import (
     QuantizeOutputs,
 )
 from executorch.exir.tensor import get_scalar_type
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.testing import FileCheck
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 op_str = {
     "q": "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
@@ -39,12 +39,14 @@ class TestQuantIOPass(unittest.TestCase):
         operator_config = get_symmetric_quantization_config()
         quantizer.set_global(operator_config)
         m = torch.export.export_for_training(
-            mod, copy.deepcopy(example_inputs)
+            mod, copy.deepcopy(example_inputs), strict=True
         ).module()
         m = prepare_pt2e(m, quantizer)
         _ = m(*example_inputs)
         m = convert_pt2e(m)
-        exported_program = torch.export.export_for_training(m, example_inputs)
+        exported_program = torch.export.export_for_training(
+            m, example_inputs, strict=True
+        )
         return exported_program
 
     def _check_count(self, op, count, epm):

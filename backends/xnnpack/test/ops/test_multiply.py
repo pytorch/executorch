@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestMul(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Mul(torch.nn.Module):
         def forward(self, x, y):
             z = x * y

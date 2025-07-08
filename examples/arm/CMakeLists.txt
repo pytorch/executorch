@@ -21,7 +21,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -29,14 +29,16 @@ endif()
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
+add_compile_options("-Wall" "-Werror")
+
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in functions.yaml

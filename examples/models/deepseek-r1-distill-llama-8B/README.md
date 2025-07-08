@@ -17,7 +17,7 @@ pip install -U "huggingface_hub[cli]"
 huggingface-cli download deepseek-ai/DeepSeek-R1-Distill-Llama-8B --local-dir /target_dir/DeepSeek-R1-Distill-Llama-8B --local-dir-use-symlinks False
 ```
 
-2. Download the [tokenizer.model](https://huggingface.co/meta-llama/Llama-3.1-8B/blob/main/original/tokenizer.model) from the Llama3.1 repo which will be needed later on when running the model using the runtime.
+2. Download the [tokenizer.model](https://huggingface.co/meta-llama/Llama-3.1-8B/tree/main/original) from the Llama3.1 repo which will be needed later on when running the model using the runtime.
 
 3. Convert the model to pth file.
 ```
@@ -48,25 +48,15 @@ print("saving checkpoint")
 torch.save(sd, "/tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth")
 ```
 
-4. Download and save the params.json file
-```
-wget https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/blob/main/original/params.json -o /tmp/params.json
-```
+4. Download and save the [params.json](https://huggingface.co/meta-llama/Llama-3.1-8B/tree/main/original) file.
 
 5. Generate a PTE file for use with the Llama runner.
 ```
-python -m examples.models.llama.export_llama \
-    --checkpoint /tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth \
-	-p /tmp/params.json \
-	-kv \
-	--use_sdpa_with_kv_cache \
-	-X \
-	-qmode 8da4w \
-	--group_size 128 \
-	-d fp16 \
-	--metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-	--embedding-quantize 4,32 \
-	--output_name="DeepSeek-R1-Distill-Llama-8B.pte"
+python -m extension.llm.export.export_llm \
+    --config examples/models/deepseek-r1-distill-llama-8B/config/deepseek-r1-distill-llama-8B
+    +base.checkpoint=/tmp/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/checkpoint.pth \
+	+base.params=params.json \
+	+export.output_name="DeepSeek-R1-Distill-Llama-8B.pte"
 ```
 
 6. Run the model on your desktop for validation or integrate with iOS/Android apps. Instructions for these are available in the Llama [README](../llama/README.md) starting at Step 3.

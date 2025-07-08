@@ -11,12 +11,8 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
-
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
@@ -90,6 +86,7 @@ add_library(
   "quantized_fully_connected_out.cpp"
   "dequantize_per_tensor.cpp"
   "quantized_matmul_out.cpp"
+  "requantize_out.cpp"
   "im2row_out.cpp"
 )
 target_include_directories(

@@ -9,6 +9,8 @@
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import torch
+
 
 def get_default_model_resource_dir(model_file_path: str) -> Path:
     """
@@ -52,7 +54,7 @@ def get_default_model_resource_dir(model_file_path: str) -> Path:
     return resource_dir
 
 
-def get_checkpoint_dtype(checkpoint: Dict[str, Any]) -> Optional[str]:
+def get_checkpoint_dtype(checkpoint: Dict[str, Any]) -> Optional[torch.dtype]:
     """
     Get the dtype of the checkpoint, returning "None" if the checkpoint is empty.
     """

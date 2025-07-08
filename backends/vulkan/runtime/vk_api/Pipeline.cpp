@@ -270,28 +270,21 @@ void swap(PipelineLayout& lhs, PipelineLayout& rhs) noexcept {
 // ComputePipeline
 //
 
+ComputePipeline::ComputePipeline(VkDevice device, VkPipeline handle)
+    : device_{device}, handle_{handle} {}
+
 ComputePipeline::ComputePipeline(
     VkDevice device,
     const ComputePipeline::Descriptor& descriptor,
     VkPipelineCache pipeline_cache)
     : device_(device), handle_{VK_NULL_HANDLE} {
-  SpecVarList specialization_constants;
-
-  specialization_constants.reserve(
-      3 + descriptor.specialization_constants.size());
-  specialization_constants.append(descriptor.local_wg_size[0]);
-  specialization_constants.append(descriptor.local_wg_size[1]);
-  specialization_constants.append(descriptor.local_wg_size[2]);
-
-  specialization_constants.append(descriptor.specialization_constants);
-  const std::vector<VkSpecializationMapEntry> map_entries =
-      specialization_constants.generate_map_entries();
+  map_entries_ = descriptor.specialization_constants.generate_map_entries();
 
   const VkSpecializationInfo specialization_info{
-      specialization_constants.size(), // mapEntryCount
-      map_entries.data(), // pMapEntries
-      specialization_constants.data_nbytes(), // dataSize
-      specialization_constants.data(), // pData
+      descriptor.specialization_constants.size(), // mapEntryCount
+      map_entries_.data(), // pMapEntries
+      descriptor.specialization_constants.data_nbytes(), // dataSize
+      descriptor.specialization_constants.data(), // pData
   };
 
   const VkPipelineShaderStageCreateInfo shader_stage_create_info{
@@ -330,7 +323,9 @@ ComputePipeline::ComputePipeline(
 }
 
 ComputePipeline::ComputePipeline(ComputePipeline&& other) noexcept
-    : device_(other.device_), handle_(other.handle_) {
+    : device_(other.device_),
+      handle_(other.handle_),
+      map_entries_(std::move(other.map_entries_)) {
   other.handle_ = VK_NULL_HANDLE;
 }
 
@@ -452,19 +447,94 @@ ComputePipelineCache::~ComputePipelineCache() {
   pipeline_cache_ = VK_NULL_HANDLE;
 }
 
+bool ComputePipelineCache::contains(const ComputePipelineCache::Key& key) {
+  std::lock_guard<std::mutex> lock(cache_mutex_);
+
+  auto it = cache_.find(key);
+  return it != cache_.cend();
+}
+
+void ComputePipelineCache::create_pipelines(
+    const std::unordered_set<Key, Hasher>& descriptors) {
+  std::lock_guard<std::mutex> lock(cache_mutex_);
+
+  const auto num_pipelines = descriptors.size();
+  std::vector<VkPipeline> pipelines(num_pipelines);
+
+  std::vector<std::vector<VkSpecializationMapEntry>> map_entries;
+  map_entries.reserve(num_pipelines);
+
+  std::vector<VkSpecializationInfo> specialization_infos;
+  specialization_infos.reserve(num_pipelines);
+
+  std::vector<VkPipelineShaderStageCreateInfo> shader_stage_create_infos;
+  shader_stage_create_infos.reserve(num_pipelines);
+
+  std::vector<VkComputePipelineCreateInfo> create_infos;
+  create_infos.reserve(num_pipelines);
+
+  for (auto& key : descriptors) {
+    map_entries.push_back(key.specialization_constants.generate_map_entries());
+
+    specialization_infos.push_back(VkSpecializationInfo{
+        key.specialization_constants.size(), // mapEntryCount
+        map_entries.back().data(), // pMapEntries
+        key.specialization_constants.data_nbytes(), // dataSize
+        key.specialization_constants.data(), // pData
+    });
+
+    shader_stage_create_infos.push_back(VkPipelineShaderStageCreateInfo{
+        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // sType
+        nullptr, // pNext
+        0u, // flags
+        VK_SHADER_STAGE_COMPUTE_BIT, // stage
+        key.shader_module, // module
+        "main", // pName
+        &specialization_infos.back(), // pSpecializationInfo
+    });
+
+    create_infos.push_back(VkComputePipelineCreateInfo{
+        VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, // sType
+        nullptr, // pNext
+        0u, // flags
+        shader_stage_create_infos.back(), // stage
+        key.pipeline_layout, // layout
+        VK_NULL_HANDLE, // basePipelineHandle
+        0u, // basePipelineIndex
+    });
+  }
+
+  VK_CHECK(vkCreateComputePipelines(
+      device_,
+      pipeline_cache_,
+      create_infos.size(),
+      create_infos.data(),
+      nullptr,
+      pipelines.data()));
+
+  uint32_t i = 0;
+  for (auto& key : descriptors) {
+    auto it = cache_.find(key);
+    if (it != cache_.cend()) {
+      continue;
+    }
+    cache_.insert({key, ComputePipelineCache::Value(device_, pipelines[i])});
+    ++i;
+  }
+}
+
 VkPipeline ComputePipelineCache::retrieve(
     const ComputePipelineCache::Key& key) {
   std::lock_guard<std::mutex> lock(cache_mutex_);
 
   auto it = cache_.find(key);
-  if (cache_.cend() == it) {
+  if (it == cache_.cend()) {
     it = cache_
              .insert(
                  {key,
                   ComputePipelineCache::Value(device_, key, pipeline_cache_)})
              .first;
   }
-
   return it->second.handle();
 }
 

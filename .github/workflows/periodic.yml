@@ -50,7 +50,7 @@ jobs:
     with:
       runner: ${{ matrix.runner }}
       docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: ${{ matrix.timeout }}
       script: |

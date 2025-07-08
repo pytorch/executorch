@@ -13,8 +13,9 @@ set -eu
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
-toolchain_cmake=${script_dir}/../../../examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
-toolchain_cmake=$(realpath ${toolchain_cmake})
+toolchain=arm-none-eabi-gcc
+setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
+_setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
 
 et_build_root="${et_root_dir}/arm_test"
@@ -27,6 +28,7 @@ help() {
     echo "  --et_build_root=<FOLDER>   Build output root folder to use, defaults to ${et_build_root}"
     echo "  --build_type=<TYPE>        Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --portable_kernels=<OPS>   Comma separated list of portable (non delagated) kernels to include Default: ${portable_kernels}"
+    echo "  --toolchain=<TOOLCHAIN>    Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc"
     exit 0
 }
 
@@ -36,10 +38,29 @@ for arg in "$@"; do
       --et_build_root=*) et_build_root="${arg#*=}";;
       --build_type=*) build_type="${arg#*=}";;
       --portable_kernels=*) portable_kernels="${arg#*=}";;
+      --toolchain=*) toolchain="${arg#*=}";;
       *)
       ;;
     esac
 done
+
+if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
+    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
+    toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+else
+    echo "Error: Invalid toolchain selection, provided: ${tolchain}"
+    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
+    exit 1;
+fi
+toolchain_cmake=$(realpath ${toolchain_cmake})
+
+# Source the tools
+# This should be prepared by the setup.sh
+[[ -f ${setup_path_script} ]] \
+    || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
+
+source ${setup_path_script}
 
 et_build_dir=${et_build_root}/cmake-out
 
@@ -66,7 +87,7 @@ cmake                                                 \
     -B"${et_build_dir}/examples/arm"                  \
     "${et_root_dir}/examples/arm"
 
-cmake --build "${et_build_dir}/examples/arm" --parallel --config ${build_type} --
+cmake --build "${et_build_dir}/examples/arm" -j$(nproc) --config ${build_type} --
 
 set +x
 

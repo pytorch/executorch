@@ -9,9 +9,6 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "thread_parallel",
-        srcs = [
-            "thread_parallel.cpp",
-        ],
         exported_headers = [
             "thread_parallel.h",
         ],
@@ -21,6 +18,5 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/extension/threadpool:threadpool",
-            "//executorch/runtime/core:core",
         ],
     )

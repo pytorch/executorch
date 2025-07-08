@@ -21,9 +21,9 @@ PORTABLE_MODULE_DEPS = [
 ] + get_all_cpu_backend_targets()
 
 ATEN_MODULE_DEPS = [
-    "//executorch/runtime/kernel:operator_registry",
+    "//executorch/runtime/kernel:operator_registry_aten",
     "//executorch/runtime/executor:program_aten",
-    "//executorch/runtime/core/exec_aten:lib",
+    "//executorch/runtime/core/exec_aten:lib_aten",
     "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
@@ -54,6 +54,7 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         ],
         deps = [
             "//executorch/runtime/core:core",
+            "//executorch/extension/threadpool:threadpool",
         ] + cppdeps,
         external_deps = [
             "pybind11",

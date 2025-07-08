@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
@@ -51,17 +52,20 @@ void add_unary_op_node(
   ubos.append(
       {graph.create_params_buffer(min), graph.create_params_buffer(max)});
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {in, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
       ubos,
+      // Push Constants
+      {},
       // Specialization Constants
+      {},
+      // Resize Args
       {},
       // Resizing Logic
       resize_unary_op_node));
@@ -149,6 +153,7 @@ DEFINE_HARDSHRINK_FN(hardshrink);
 DEFINE_ACTIVATION_FN(hardswish);
 DEFINE_ACTIVATION_FN(hardsigmoid);
 DEFINE_LEAKY_RELU_FN(leaky_relu);
+DEFINE_ACTIVATION_FN(round);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -168,6 +173,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.hardswish.default, hardswish);
   VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
   VK_REGISTER_OP(aten.leaky_relu.default, leaky_relu);
+  VK_REGISTER_OP(aten.round.default, round);
 }
 
 } // namespace vkcompute

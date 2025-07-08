@@ -7,7 +7,7 @@
  */
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <iostream>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 namespace torch {
 namespace executor {
@@ -48,26 +48,24 @@ Tensor& opt_where_out(
       cond.scalar_type() == ScalarType::Bool) {
     auto out_numel = out.numel();
     ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-      const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
-      const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
-      const bool cond_is_broadcasted = !out.sizes().equals(cond.sizes());
-      const bool any_is_broadcasted =
-          (a_is_broadcasted || b_is_broadcasted || cond_is_broadcasted);
       const CTYPE_COMPUTE* const data_a = a.const_data_ptr<CTYPE_COMPUTE>();
       const CTYPE_COMPUTE* const data_b = b.const_data_ptr<CTYPE_COMPUTE>();
       const bool* const data_cond = cond.const_data_ptr<bool>();
       CTYPE_COMPUTE* const data_out = out.data_ptr<CTYPE_COMPUTE>();
-      if (any_is_broadcasted) {
-        for (const auto [out_index, a_index, b_index, cond_index] :
-             BroadcastIndexesRange<3>(out, a, b, cond)) {
-          data_out[out_index] =
-              data_cond[cond_index] ? data_a[a_index] : data_b[b_index];
-        }
-      } else {
-        for (const auto i : c10::irange(out_numel)) {
-          data_out[i] = data_cond[i] ? data_a[i] : data_b[i];
-        }
-      }
+      executorch::extension::parallel_for(
+          0,
+          out_numel,
+          ::executorch::extension::internal::GRAIN_SIZE,
+          [&](const auto begin, const auto end) {
+            auto range = BroadcastIndexesRange<3>(out, a, b, cond);
+            auto begin_it = range.begin();
+            begin_it += begin;
+            for (; (*begin_it)[0] < end; ++begin_it) {
+              const auto [out_index, a_index, b_index, cond_index] = *begin_it;
+              data_out[out_index] =
+                  data_cond[cond_index] ? data_a[a_index] : data_b[b_index];
+            }
+          });
     });
   } else {
     // Fall back for mixed dtype to keep code size and compile time

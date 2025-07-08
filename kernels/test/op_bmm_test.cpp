@@ -43,6 +43,61 @@ class OpBmmOutTest : public OperatorTest {
 
     EXPECT_TENSOR_EQ(out, expected);
   }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_complex_dtype() {
+    TensorFactory<DTYPE> tf;
+    Tensor x = tf.make(
+        {2, 2, 3},
+        {CTYPE(1, 1),
+         CTYPE(2, 2),
+         CTYPE(3, 3),
+         CTYPE(4, 4),
+         CTYPE(5, 5),
+         CTYPE(6, 6),
+         CTYPE(7, 7),
+         CTYPE(8, 8),
+         CTYPE(9, 9),
+         CTYPE(10, 10),
+         CTYPE(11, 11),
+         CTYPE(12, 12)});
+    Tensor y = tf.make(
+        {2, 3, 2},
+        {CTYPE(2, 1),
+         CTYPE(4, 2),
+         CTYPE(6, 3),
+         CTYPE(8, 4),
+         CTYPE(10, 5),
+         CTYPE(12, 6),
+         CTYPE(14, 7),
+         CTYPE(16, 8),
+         CTYPE(18, 9),
+         CTYPE(20, 10),
+         CTYPE(22, 11),
+         CTYPE(24, 12)});
+    Tensor out = tf.make(
+        {2, 2, 2},
+        {CTYPE(0, 0),
+         CTYPE(0, 0),
+         CTYPE(0, 0),
+         CTYPE(0, 0),
+         CTYPE(0, 0),
+         CTYPE(0, 0),
+         CTYPE(0, 0),
+         CTYPE(0, 0)});
+    Tensor expected = tf.make(
+        {2, 2, 2},
+        {CTYPE(22, 66),
+         CTYPE(28, 84),
+         CTYPE(49, 147),
+         CTYPE(64, 192),
+         CTYPE(220, 660),
+         CTYPE(244, 732),
+         CTYPE(301, 903),
+         CTYPE(334, 1002)});
+    op_bmm_out(x, y, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
 };
 
 TEST_F(OpBmmOutTest, OutputDim) {
@@ -132,13 +187,23 @@ TEST_F(OpBmmOutTest, OutputDimFloat) {
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
-TEST_F(OpBmmOutTest, AllDtypesSupported) {
+TEST_F(OpBmmOutTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
   // TODO: Also add tests for half, complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()
   // for those types.
+}
+
+TEST_F(OpBmmOutTest, AllComplexDtypesSupported) {
+#define TEST_ENTRY(ctype, dtype) test_complex_dtype<ctype, ScalarType::dtype>();
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    ET_FORALL_COMPLEX_TYPES(TEST_ENTRY);
+  } else {
+    ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
+  }
+#undef TEST_ENTRY
 }
 
 TEST_F(OpBmmOutTest, EmptyInputWithEmptyOutTensorPasses) {

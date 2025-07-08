@@ -6,6 +6,8 @@
 
 from typing import List, Optional, Type
 
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
+
 from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
@@ -23,10 +25,6 @@ from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
-from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
-from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
-    TagImplicitQDqPass,
-)
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 
 from executorch.exir.pass_base import ExportPass
@@ -69,7 +67,6 @@ class XNNPACKPassManager:
                 Conv1dUnsqueezePass,
                 PReLUReshapePass,
                 ChannelsLastTaggedReshapePass,
-                TagImplicitQDqPass,
             ]
         else:
             self.passes = passes

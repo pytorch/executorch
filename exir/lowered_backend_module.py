@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import torch
 import torch.utils._pytree as pytree
 from executorch.exir._serialize import _serialize_pte_binary
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 from executorch.exir.emit import emit_program
@@ -62,6 +63,9 @@ class LoweredBackendModule(torch.nn.Module):
         CompileSpec
     ]  # A list of backend-specific objects with static metadata to configure the "compilation" process.
     _original_exported_program: ExportedProgram  # The original EXIR module
+    _named_data_store_output: Optional[
+        NamedDataStoreOutput
+    ]  # Named Data serialized by the backend
 
     def __init__(
         self,
@@ -69,12 +73,14 @@ class LoweredBackendModule(torch.nn.Module):
         backend_id: str,
         processed_bytes: bytes,
         compile_specs: List[CompileSpec],
+        named_data_store_output: Optional[NamedDataStoreOutput] = None,
     ) -> None:
         super().__init__()
         self._original_exported_program = edge_program
         self._backend_id = backend_id
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
+        self._named_data_store_output = named_data_store_output
 
     # pyre-ignore
     def __deepcopy__(self, memo: Optional[Dict[int, Any]]) -> "LoweredBackendModule":
@@ -101,6 +107,7 @@ class LoweredBackendModule(torch.nn.Module):
             backend_id=self._backend_id,
             processed_bytes=self._processed_bytes,
             compile_specs=copy.deepcopy(self._compile_specs, memo),
+            named_data_store_output=self._named_data_store_output,
         )
         # pyre-fixme[16]: `LoweredBackendModule` has no attribute `meta`.
         res.meta = copy.copy(getattr(self, "meta", {}))
@@ -134,6 +141,13 @@ class LoweredBackendModule(torch.nn.Module):
         """
         return self._original_exported_program
 
+    @property
+    def named_data_store_output(self) -> Optional[NamedDataStoreOutput]:
+        """
+        Returns the Named Data Store Output
+        """
+        return self._named_data_store_output
+
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
     def buffer(
         self,
@@ -154,6 +168,7 @@ class LoweredBackendModule(torch.nn.Module):
                 segment_alignment=segment_alignment,
                 constant_tensor_alignment=constant_tensor_alignment,
                 delegate_alignment=delegate_alignment,
+                named_data=self.named_data_store_output,
             )
         )
         return out
@@ -218,14 +233,11 @@ class LoweredBackendModule(torch.nn.Module):
             )
         ]
 
-        output_node = [
-            node for node in lowered_exported_program.graph.nodes if node.op == "output"
-        ]
-        assert len(output_node) == 1, "There should be only one output node"
+        output_node = lowered_exported_program.graph.output_node()
 
         # Step 1. Cleaning up the graph before inserting the call_delegate node
         # Remove the original output node
-        lowered_exported_program.graph.erase_node(output_node[0])
+        lowered_exported_program.graph.erase_node(output_node)
 
         # Remove all the everything else except the input
         for node in reversed(lowered_exported_program.graph.nodes):
@@ -254,11 +266,9 @@ class LoweredBackendModule(torch.nn.Module):
         )
         # Get the output list. Since the output node is a tuple of list, like ([aten_mul_tensor, aten_add_tensor],)
         # We add some handling logic to get the list `[aten_mul_tensor, aten_add_tensor]` properly
-        original_output_nodes = [
-            node
-            for node in self._original_exported_program.graph.nodes
-            if node.op == "output"
-        ][0].args[0]
+        original_output_nodes = (
+            self._original_exported_program.graph.output_node().args[0]
+        )
 
         delegate_node.meta["spec"] = tuple(
             [make_spec(node.meta["val"]) for node in original_output_nodes]
@@ -366,7 +376,7 @@ def _fixup_output_node(gm: torch.fx.GraphModule) -> None:
 
 
 def arrange_graph_placeholders(
-    gm: torch.fx.GraphModule, owning_program: ExportedProgram
+    gm: torch.fx.GraphModule, owning_program: ExportedProgram, tag
 ) -> torch.fx.GraphModule:
     """
     Modifies the graph of the given graphmodule with one that contains the same nodes as the original,
@@ -396,9 +406,15 @@ def arrange_graph_placeholders(
         if node.op != "placeholder":
             continue
 
-        if node.name in graph_sign.inputs_to_parameters:
+        if (
+            node.name in graph_sign.inputs_to_parameters
+            and node.meta.get("delegation_tag", None) == tag
+        ):
             param_nodes.append(node)
-        elif node.name in graph_sign.inputs_to_buffers:
+        elif (
+            node.name in graph_sign.inputs_to_buffers
+            and node.meta.get("delegation_tag", None) == tag
+        ):
             buffer_nodes.append(node)
         else:
             input_nodes.append(node)
@@ -578,7 +594,10 @@ def _get_new_signature(  # noqa: C901
 
                     if any(
                         orig_output_spec.kind == OutputKind.BUFFER_MUTATION
-                        and orig_output_spec.target in new_state_dict
+                        and (
+                            orig_output_spec.target in new_state_dict
+                            or orig_output_spec.target in new_constants
+                        )
                         for orig_output_spec in orig_output_specs
                     ):
                         # If the delegate wants to consume the buffer, then the
@@ -591,7 +610,10 @@ def _get_new_signature(  # noqa: C901
                             orig_output_spec
                             for orig_output_spec in orig_output_specs
                             if orig_output_spec.kind == OutputKind.BUFFER_MUTATION
-                            and orig_output_spec.target in new_state_dict
+                            and (
+                                orig_output_spec.target in new_state_dict
+                                or orig_output_spec.target in new_constants
+                            )
                         ][0]
 
                         assert len(orig_output_specs) == 1, (
@@ -679,7 +701,7 @@ def create_exported_program_from_submodule(
             removed from the toplevel ExportedProgram.
     """
     # Arrange the submodule's placeholders in order
-    submodule = arrange_graph_placeholders(submodule, owning_program)
+    submodule = arrange_graph_placeholders(submodule, owning_program, tag)
 
     # TODO: we probably need to arrange the outputs wrt buffer mutations.
 
@@ -751,15 +773,15 @@ def create_submodule_from_nodes(
     gm = insert_subgm(gm, sub_gm, orig_inputs, orig_outputs)
     submodule_node = None
     for node in gm.graph.nodes:
-        if node.op == "call_module":
-            if node.target == submodule_name:
-                submodule_node = node
-            else:
-                raise RuntimeError(
-                    f"The submodule created with nodes {node_list} did not form \
-                    one fully contained subgraph. Check that these nodes form a \
-                    fully contained graph. Partitioned graph: {gm.graph}."
-                )
+        if node.op == "call_module" and node.target == submodule_name:
+            submodule_node = node
+
+    if submodule_node is None:
+        raise RuntimeError(
+            f"The submodule created with nodes {node_list} did not form \
+            one fully contained subgraph. Check that these nodes form a \
+            fully contained graph. Partitioned graph: {gm.graph}."
+        )
 
     if len(orig_outputs) == 1 and isinstance(orig_outputs[0].meta["val"], FakeTensor):
         # If the original output is a single tensor, it has been
@@ -794,12 +816,13 @@ def create_submodule_from_nodes(
     for node in gm.graph.nodes:
         if node.op == "call_module" and node.target == submodule_name:
             submodule_node = node
-        elif node.op == "call_module":
-            raise RuntimeError(
-                f"The submodule created with nodes {node_list} did not form \
-                one fully contained subgraph. Check that these nodes form a \
-                fully contained graph. Partitioned graph: {gm.graph}."
-            )
+
+    if submodule_node is None:
+        raise RuntimeError(
+            f"The submodule created with nodes {node_list} did not form \
+            one fully contained subgraph. Check that these nodes form a \
+            fully contained graph. Partitioned graph: {gm.graph}."
+        )
 
     assert (
         submodule_node is not None
@@ -899,11 +922,7 @@ def _unsafe_adjust_original_program(  # noqa: C901
             raise RuntimeError(f"Invalid input spec {input_spec} received")
 
     # Delete buffer mutations from the output which were consumed by the delegate
-    toplevel_output_node = None
-    for node in reversed(original_program.graph.nodes):
-        if node.op == "output":
-            toplevel_output_node = node
-            break
+    toplevel_output_node = original_program.graph.output_node()
 
     assert toplevel_output_node is not None
     assert (
@@ -942,5 +961,3 @@ def _unsafe_adjust_original_program(  # noqa: C901
             if user_idx > idx:
                 user.args = (user.args[0], user_idx - (len(getitem_idxs) - i))
                 break
-
-    original_program._validate()

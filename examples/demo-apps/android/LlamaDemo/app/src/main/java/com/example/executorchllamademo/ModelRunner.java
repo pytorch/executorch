@@ -13,12 +13,14 @@ import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
 import androidx.annotation.NonNull;
-import org.pytorch.executorch.LlamaCallback;
-import org.pytorch.executorch.LlamaModule;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.pytorch.executorch.extension.llm.LlmCallback;
+import org.pytorch.executorch.extension.llm.LlmModule;
 
 /** A helper class to handle all model running logic within this class. */
-public class ModelRunner implements LlamaCallback {
-  LlamaModule mModule = null;
+public class ModelRunner implements LlmCallback {
+  LlmModule mModule = null;
 
   String mModelFilePath = "";
   String mTokenizerFilePath = "";
@@ -45,7 +47,7 @@ public class ModelRunner implements LlamaCallback {
     mTokenizerFilePath = tokenizerFilePath;
     mCallback = callback;
 
-    mModule = new LlamaModule(mModelFilePath, mTokenizerFilePath, 0.8f);
+    mModule = new LlmModule(mModelFilePath, mTokenizerFilePath, 0.8f);
     mHandlerThread = new HandlerThread("ModelRunner");
     mHandlerThread.start();
     mHandler = new ModelRunnerHandler(mHandlerThread.getLooper(), this);
@@ -69,7 +71,16 @@ public class ModelRunner implements LlamaCallback {
   }
 
   @Override
-  public void onStats(float tps) {
+  public void onStats(String stats) {
+    float tps = 0;
+    try {
+      JSONObject jsonObject = new JSONObject(stats);
+      int numGeneratedTokens = jsonObject.getInt("generated_tokens");
+      int inferenceEndMs = jsonObject.getInt("inference_end_ms");
+      int promptEvalEndMs = jsonObject.getInt("prompt_eval_end_ms");
+      tps = (float) numGeneratedTokens / (inferenceEndMs - promptEvalEndMs) * 1000;
+    } catch (JSONException e) {
+    }
     mCallback.onStats("tokens/second: " + tps);
   }
 }

@@ -18,13 +18,15 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.pytorch.executorch.LlamaCallback;
-import org.pytorch.executorch.LlamaModule;
+import org.pytorch.executorch.extension.llm.LlmCallback;
+import org.pytorch.executorch.extension.llm.LlmModule;
 
 @RunWith(AndroidJUnit4.class)
-public class PerfTest implements LlamaCallback {
+public class PerfTest implements LlmCallback {
 
   private static final String RESOURCE_PATH = "/data/local/tmp/llama/";
   private static final String TOKENIZER_BIN = "tokenizer.bin";
@@ -41,7 +43,7 @@ public class PerfTest implements LlamaCallback {
         .filter(file -> file.getName().endsWith(".pte"))
         .forEach(
             model -> {
-              LlamaModule mModule = new LlamaModule(model.getPath(), tokenizerPath, 0.8f);
+              LlmModule mModule = new LlmModule(model.getPath(), tokenizerPath, 0.8f);
               // Print the model name because there might be more than one of them
               report("ModelName", model.getName());
 
@@ -64,8 +66,16 @@ public class PerfTest implements LlamaCallback {
   }
 
   @Override
-  public void onStats(float tps) {
-    tokensPerSecond.add(tps);
+  public void onStats(String result) {
+    try {
+      JSONObject jsonObject = new JSONObject(result);
+      int numGeneratedTokens = jsonObject.getInt("generated_tokens");
+      int inferenceEndMs = jsonObject.getInt("inference_end_ms");
+      int promptEvalEndMs = jsonObject.getInt("prompt_eval_end_ms");
+      float tps = (float) numGeneratedTokens / (inferenceEndMs - promptEvalEndMs) * 1000;
+      tokensPerSecond.add(tps);
+    } catch (JSONException e) {
+    }
   }
 
   private void report(final String metric, final Float value) {

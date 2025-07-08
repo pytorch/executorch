@@ -7,7 +7,7 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Set, Type, Union
+from typing import Callable, List, Optional, Set, Union
 
 import torch
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
@@ -32,36 +32,37 @@ class CadencePassAttribute:
 
 
 # A dictionary that maps an ExportPass to its attributes.
-ALL_CADENCE_PASSES: dict[Type[ExportPass], CadencePassAttribute] = {}
+ALL_CADENCE_PASSES: dict[ExportPass, CadencePassAttribute] = {}
 
 
-def get_cadence_pass_attribute(p: Type[ExportPass]) -> CadencePassAttribute:
-    return ALL_CADENCE_PASSES[p]
+def get_cadence_pass_attribute(p: ExportPass) -> Optional[CadencePassAttribute]:
+    return ALL_CADENCE_PASSES.get(p, None)
 
 
 # A decorator that registers a pass.
 def register_cadence_pass(
     pass_attribute: CadencePassAttribute,
-) -> Callable[[Type[ExportPass]], Type[ExportPass]]:
-    def wrapper(cls: Type[ExportPass]) -> Type[ExportPass]:
+) -> Callable[[ExportPass], ExportPass]:
+    def wrapper(cls: ExportPass) -> ExportPass:
         ALL_CADENCE_PASSES[cls] = pass_attribute
         return cls
 
     return wrapper
 
 
-def get_all_available_cadence_passes() -> Set[Type[ExportPass]]:
+def get_all_available_cadence_passes() -> Set[ExportPass]:
     return set(ALL_CADENCE_PASSES.keys())
 
 
 # Create a new filter to filter out relevant passes from all passes.
 def create_cadence_pass_filter(
     opt_level: int, debug: bool = False
-) -> Callable[[Type[ExportPass]], bool]:
-    def _filter(p: Type[ExportPass]) -> bool:
+) -> Callable[[ExportPass], bool]:
+    def _filter(p: ExportPass) -> bool:
         pass_attribute = get_cadence_pass_attribute(p)
         return (
-            pass_attribute.opt_level is not None
+            pass_attribute is not None
+            and pass_attribute.opt_level is not None
             and pass_attribute.opt_level <= opt_level
             and (not pass_attribute.debug_pass or debug)
         )
@@ -143,6 +144,19 @@ def nodes_not_connected_in_gm(
     return True
 
 
+# Returns the position of the first entry of a node of a given kind in the graph.
+def get_node_pos(
+    graph_module: torch.fx.GraphModule,
+    target: torch.fx.Node,
+) -> int:
+    pos = 0
+    for node in graph_module.graph.nodes:
+        if node.target == target:
+            return pos
+        pos += 1
+    return -1
+
+
 # Returns true if there is no instance of a node with target succ_target
 # positioned immediately after a node with target pred_target in the graph
 def nodes_not_adjacent_in_gm(
@@ -156,3 +170,34 @@ def nodes_not_adjacent_in_gm(
         if node.next.target == succ_target:
             return False
     return True
+
+
+def get_arg(
+    node: torch.fx.Node,
+    arg_index: int,
+    kwarg_name: str,
+    *,
+    default: torch.fx.node.Argument = None,
+) -> torch.fx.node.Argument:
+    """
+    Get the arg at arg_index or kwarg with arg_name of the node. If neither is found
+    return default.
+    """
+    if arg_index < len(node.args):
+        return node.args[arg_index]
+    elif kwarg_name in node.kwargs:
+        return node.kwargs[kwarg_name]
+    else:
+        return default
+
+
+def set_arg(
+    node: torch.fx.Node, arg_index: int, kwarg_name: str, value: torch.fx.node.Argument
+) -> None:
+    """
+    Set the arg at arg_index if it exists, otherwise set the kwarg.
+    """
+    if arg_index < len(node.args):
+        node.update_arg(arg_index, value)
+    else:
+        node.update_kwarg(kwarg_name, value)

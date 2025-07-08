@@ -50,10 +50,11 @@ void main() {
   const uint div_by_x = gl_GlobalInvocationID.x / out_limits.x;
   const ivec3 pos = ivec3(
     gl_GlobalInvocationID.x % out_limits.x,
-    div_by_x % out_limits.y,
-    div_by_x / out_limits.y);
+    div_by_x,
+    gl_GlobalInvocationID.y);
 
-  if (pos.z >= out_limits.z) {
+  // do not process if top pixel does not fit within the output range
+  if (pos.y >= out_limits.y || pos.z >= out_limits.z) {
     return;
   }
 
@@ -64,7 +65,6 @@ void main() {
   // Compute the start and end of the input indices to load. Padding is assumed
   // to be constant 0 padding, so any reads from the padding region is skipped.
   const ivec2 start = ipos;
-  const ivec2 end = ipos + overlay_region.xy;
 
   VEC4_T sum = texelFetch(t_bias, ivec2(pos.z, 0), 0);
   int kx = 0;

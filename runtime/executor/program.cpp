@@ -28,8 +28,7 @@
 #endif
 
 namespace executorch {
-namespace runtime {
-
+namespace ET_RUNTIME_NAMESPACE {
 namespace {
 
 /**
@@ -535,5 +534,5 @@ Error Program::load_mutable_subsegment_into(
       segment_base_offset_ + segment->offset() + offset, size, info, buffer);
 }
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

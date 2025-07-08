@@ -6,13 +6,24 @@
 
 # pyre-strict
 
+import functools
 import itertools
 import logging
 import operator
-import typing
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    cast,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import torch
 from executorch.exir import memory
@@ -24,7 +35,11 @@ from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 
 from torch import fx
-from torch.export.exported_program import ExportGraphSignature
+from torch.export.exported_program import (
+    ConstantArgument,
+    ExportGraphSignature,
+    InputKind,
+)
 from torch.fx import Node
 from torch.utils._pytree import tree_flatten
 
@@ -43,12 +58,14 @@ class Verifier:
         graph_module: torch.fx.GraphModule,
         alloc_graph_input: bool,
         alloc_graph_output: bool,
+        alloc_mutable_buffers: bool,
         graph_signature: Optional[ExportGraphSignature] = None,
     ) -> None:
         self.graph_module = graph_module
         self.graph_signature = graph_signature
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
+        self.alloc_mutable_buffers = alloc_mutable_buffers
 
     @classmethod
     def mem_obj_id_match(
@@ -148,6 +165,7 @@ class Verifier:
                 ignore_const=True,
                 ignore_graph_input=not self.alloc_graph_input,
                 ignore_graph_output=not self.alloc_graph_output,
+                ignore_mutable_buffers=not self.alloc_mutable_buffers,
                 do_assertion=False,
                 ignore_out_var_node=False,
                 dedup=True,
@@ -247,7 +265,10 @@ class Verifier:
                     graph_output_allocated = allocated
                     has_dynamic_unbound_output |= has_dynamic_unbound_tensor
 
-        if "placeholder" in check_list:
+        # only check if inputs are allocated if there are user inputs:
+        user_inputs_exist = _do_user_inputs_exist(graph_signature=self.graph_signature)
+
+        if "placeholder" in check_list and user_inputs_exist:
             assert graph_input_allocated is not None, "graph_input_allocated not set"
             if not has_dynamic_unbound_input:
                 assert (
@@ -280,7 +301,11 @@ def _is_inplace_node(node: torch.fx.Node) -> bool:
 
 
 def update_tensor_lifetime(
-    node: torch.fx.Node, spec: TensorSpec, node_idx: int
+    node: torch.fx.Node,
+    spec: TensorSpec,
+    node_idx: int,
+    max_node_idx: int,
+    gs: Optional[ExportGraphSignature] = None,
 ) -> None:
     r"""
     Update the lifetime of the tensor to cover node_idx. A tensor's lifetime
@@ -296,7 +321,12 @@ def update_tensor_lifetime(
         start = 0
     else:
         start = node_idx if start is None or start > node_idx else start
-    end = node_idx if end is None or end < node_idx else end
+
+    if node.op == "placeholder" and _is_mutable_buffer(node, gs):
+        # mutable buffers are never freed
+        end = max_node_idx
+    else:
+        end = node_idx if end is None or end < node_idx else end
     spec.lifetime = [start, end]
 
 
@@ -327,6 +357,29 @@ def _is_mutable_buffer(
     return False
 
 
+def _do_user_inputs_exist(graph_signature: Optional[ExportGraphSignature]) -> bool:
+    if graph_signature is None:
+        return False
+
+    user_inputs = list(
+        filter(
+            lambda input: input.kind == InputKind.USER_INPUT,
+            graph_signature.input_specs,
+        )
+    )
+
+    # Return false if:
+    # - there are no inputs.
+    # - if user inputs are all prims (as this currently
+    #   causes the memory planning verifier to blow up).
+    # Otherwise, return true.
+    return any(
+        not isinstance(input.arg, ConstantArgument)
+        or not isinstance(input.arg.value, (int, float, bool, str))
+        for input in user_inputs
+    )
+
+
 def get_graph_input_tensors(
     nodes: Iterable[Node], graph_signature: Optional[ExportGraphSignature] = None
 ) -> Set[TensorSpec]:
@@ -354,6 +407,7 @@ def collect_specs_from_nodes(  # noqa: C901
     graph_signature: Optional[ExportGraphSignature] = None,
     ignore_graph_input: bool = False,
     ignore_graph_output: bool = False,
+    ignore_mutable_buffers: bool = False,
     ignore_const: bool = True,
     ignore_out_var_node: bool = True,
     dedup: bool = True,
@@ -392,6 +446,9 @@ def collect_specs_from_nodes(  # noqa: C901
             continue
 
         if _is_inplace_node(node):
+            continue
+
+        if _is_mutable_buffer(node, graph_signature) and ignore_mutable_buffers:
             continue
 
         if do_assertion:
@@ -449,6 +506,7 @@ def update_all_tensors_lifetime(
     Set the lifetime for all the tensors encountered in the Fx graph.
     """
     specs = set()
+    max_node_idx = len(graph_module.graph.nodes) - 1
     for node_idx, node in enumerate(graph_module.graph.nodes):
         for spec in collect_specs_from_nodes(
             filter_nodes(itertools.chain([node], node.args, node.kwargs.values())),
@@ -460,7 +518,7 @@ def update_all_tensors_lifetime(
             do_assertion=False,
             ignore_dynamic_unbound_tensor=False,
         ):
-            update_tensor_lifetime(node, spec, node_idx)
+            update_tensor_lifetime(node, spec, node_idx, max_node_idx, graph_signature)
             specs.add(spec)
     return specs
 
@@ -502,6 +560,31 @@ class SharedObject:
 
     def __repr__(self) -> str:
         return f"SharedObject(idx={self.idx}, offset={self.offset}, size={self.size}, lifetime=[{self.first_used_index, self.last_used_index}])"
+
+
+@dataclass
+class SpecAllocResult:
+    """These are the values that a memory plannig algorithm assigns to a spec.
+    These are not directly written back into the spec object, but are used to
+    track the allocation decisions and assigned back to the spec object in the
+    end, based on which algorithm is picked as the best performing one.
+    """
+
+    mem_id: int
+    mem_obj_id: int
+    mem_offset: int
+
+
+@dataclass
+class MemoryAlgoResult:
+    """This is the result returned by a memory planning algorithm that is
+    invoked by memory_planning_algorithm_suite. It contains the allocation
+    decisions of that algorithm for all the specs, and the size of the buffer
+    that was used for different memory hierarchies.
+    """
+
+    spec_dict: Dict[TensorSpec, SpecAllocResult]
+    bufsizes: List[int]
 
 
 def materialize_buffer(
@@ -686,60 +769,59 @@ def _contains_xnnpack_delegate(graph_module: torch.fx.GraphModule) -> bool:
 
 
 def greedy(
-    graph_module: torch.fx.GraphModule,
     alignment: int,
-    graph_signature: Optional[ExportGraphSignature] = None,
-    alloc_graph_input: bool = True,
-    alloc_graph_output: bool = True,
+    specs: Set[TensorSpec],
+    graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
+    extra_padding: int = 0,
+    *,
     allow_overlapping_allocations: bool = True,
-) -> List[int]:
+) -> MemoryAlgoResult:
     r"""Greedy algorithm to allocate memory for tensors in the graph.
-    alloc_graph_input: If set to true, the algorithm will allocate memory for graph input.
-    alloc_graph_output: If set to true, the algorithm will allocate memory for graph output.
-    allow_overlapping_allocations: If set to true, allows for allocations that overlap
-    in their lifetime but are at different offsets in the storage. By default true.
-    This flag is added to allow for Vulkan to use MemoryPlanningPass with overlapping
-    allocations disabled
+
+    Args:
+        alignment: Memory alignment requirement
+        specs: Set of TensorSpec objects with updated lifetimes
+        graph_module: Graph module
+        graph_signature: Graph signature
+        extra_padding: Additional padding to add to each memory buffer (in bytes)
+        allow_overlapping_allocations: If set to true, allows for allocations that overlap
+            in their lifetime but are at different offsets in the storage. By default true.
+            This flag is added to allow for Vulkan to use MemoryPlanningPass with overlapping
+            allocations disabled
+
+    Returns:
+        MemoryAlgoResult containing the allocation decisions
     """
-    # padding allocation with 64 bytes.
-    # this requirement is really for XNNPACK backend which can read tensors
-    # beyond the end of the tensor. This is done for performance
-    # optimizations in XNNPACK.
-    # While accounting for backend specific requirement is not the right choice
-    # in backend agnostic memory planning, we do it here as it seems most appropriate.
-    # Right now this applies to greedy only so any other
-    # algorithm that plans memory for XNNPACK backend will
-    # not have this.
-    extra_padded_bytes = 0
-    if _contains_xnnpack_delegate(graph_module):
-        extra_padded_bytes = 64
+    greedy_result = MemoryAlgoResult({}, [])
     spec2obj = {}
     shared_objects = defaultdict(list)
-    # Don't do assertion in collect_specs_from_nodes if we have already encountered
-    # and ignored some to_out_variant errors.
-    do_assertion = not getattr(graph_module, "encounter_to_out_var_failure", False)
+
     # For each tensor, pick the available shared object with closest size to
     # the tensor. If there are no available shared object left, create a new
     # one.
     import bisect
 
     sorted_specs = []
-    for spec in collect_specs_from_nodes(
-        graph_module.graph.nodes,
-        graph_signature,
-        do_assertion=do_assertion,
-        ignore_graph_input=not alloc_graph_input,
-        ignore_graph_output=not alloc_graph_output,
-    ):
+    for spec in specs:
         bisect.insort(sorted_specs, spec, key=lambda x: x.allocated_memory)
+
     sorted_specs.reverse()
 
     for spec in sorted_specs:
+        # Create an entry for this TensorSpec in the result object that we'll be
+        # returning from this algorithm.
+        spec_alloc_result = greedy_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
         if spec.mem_id is None:
-            spec.mem_id = 1
+            spec_alloc_result.mem_id = 1
+        else:
+            spec_alloc_result.mem_id = spec.mem_id
+        greedy_result.spec_dict[spec] = spec_alloc_result
         spec.realign(alignment)
         spec2obj[spec] = pick_shared_obj(
-            shared_objects[spec.mem_id], spec, allow_overlapping_allocations
+            shared_objects[spec_alloc_result.mem_id],
+            spec,
+            allow_overlapping_allocations,
         )
 
     if len(shared_objects) == 0:
@@ -752,15 +834,13 @@ def greedy(
         for mem_id in shared_objects:
             input_total_size = 0
             if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
-                # pyre-fixme[6]: For 1st argument expected
-                #  `pyre_extensions.ReadOnly[Sized]` but got `Union[Tensor, Module]`.
+                assert isinstance(bufsizes, list)
                 if len(bufsizes) > mem_id:
-                    # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.Ten...
                     input_total_size = bufsizes[mem_id]
             total_sizes[mem_id] = materialize_buffer(
                 shared_objects[mem_id], input_total_size
             )
-            total_sizes[mem_id] += extra_padded_bytes
+            total_sizes[mem_id] += extra_padding
 
             # Since we now know the number of shared objects we need and the size of
             # each shared object, we can assign offset in the memory buffer for each
@@ -768,24 +848,124 @@ def greedy(
             for sobj in shared_objects[mem_id]:
                 for alloc in sobj.allocations:
                     spec = alloc.spec
-                    alloc.spec.mem_obj_id = sobj.idx
-                    alloc.spec.mem_offset = sobj.offset + alloc.offset
+                    # Get the spec_alloc_result for this spec and update it with the
+                    # mem_obj_id and mem_offset generated by this algorithm.
+                    spec_alloc_result = greedy_result.spec_dict.get(spec, None)
+                    assert spec_alloc_result is not None, f"Spec {spec} not found."
+                    spec_alloc_result.mem_obj_id = sobj.idx
+                    spec_alloc_result.mem_offset = sobj.offset + alloc.offset
                     num_specs_processed += 1
         assert (
             len(spec2obj) == num_specs_processed
         ), f"All specs should be processed but there were {len(spec2obj)} specs and processed {num_specs_processed} specs"
 
     logging.debug(f"greedy algorithm returns bufsizes: {total_sizes}")
-    return total_sizes
+    greedy_result.bufsizes = total_sizes
+    return greedy_result
+
+
+class MemoryPlanningAlgorithmSuite:
+    def __init__(
+        self,
+        algo_list: Optional[List[Callable[..., MemoryAlgoResult]]] = None,
+    ) -> None:
+        if algo_list is None:
+            algo_list = [greedy]
+        self.algo_list: List[Callable[..., MemoryAlgoResult]] = algo_list
+
+    def __call__(
+        self,
+        alignment: int,
+        specs: Set[TensorSpec],
+        graph_module: torch.fx.GraphModule,
+        graph_signature: ExportGraphSignature,
+        extra_padding: int,
+    ) -> List[int]:
+        r"""
+        Memory planning algorithm suite that runs a list of memory planning algorithms
+        and returns the result of the algorithm that minimizes the total memory usage.
+
+        Args:
+            graph_module: The graph module to allocate memory for
+            alignment: Memory alignment requirement
+            graph_signature: Optional graph signature
+            alloc_graph_input: Whether to allocate memory for graph input
+            alloc_graph_output: Whether to allocate memory for graph output
+            allow_overlapping_allocations: Whether to allow overlapping allocations
+            algo_list: List of memory planning algorithms to run
+            specs: Optional set of TensorSpec objects with updated lifetimes. If None, they will be
+                calculated from the graph_module.
+
+        Returns:
+            List of buffer sizes for each memory hierarchy
+        """
+
+        mem_algo_results = {}
+        for algo in self.algo_list:
+            if isinstance(algo, functools.partial):
+                name = algo.func.__name__
+            else:
+                name = getattr(algo, "__name__", None)
+
+            mem_algo_results[name] = algo(
+                alignment,
+                specs,
+                graph_module,
+                graph_signature,
+                extra_padding,
+            )
+
+        # All the algorithms should have the same number of buffers allocated.
+        assert (
+            len(
+                {
+                    len(mem_algo_result.bufsizes)
+                    for mem_algo_result in mem_algo_results.values()
+                }
+            )
+            == 1
+        ), "Different memory planning algorithms should have the same number of buffers allocated."
+
+        # Find the algorithm that minimizes the total memory usage.
+        best_algo = min(
+            mem_algo_results, key=lambda k: sum(mem_algo_results[k].bufsizes)
+        )
+        logging.debug(f"Best memory planning algo for this model is {best_algo}")
+        bufsizes = mem_algo_results[best_algo].bufsizes
+
+        # Update the mem_id and mem_offset for each spec in the graph module based on the
+        # values provided by the best memory planning algorithm.
+        for spec in mem_algo_results[best_algo].spec_dict:
+            spec_alloc_result = mem_algo_results[best_algo].spec_dict[spec]
+            spec.mem_id = spec_alloc_result.mem_id
+            spec.mem_offset = spec_alloc_result.mem_offset
+            spec.mem_obj_id = spec_alloc_result.mem_obj_id
+
+        return bufsizes
 
 
 def naive(
-    graph_module: torch.fx.GraphModule,
     alignment: int,
-    graph_signature: Optional[ExportGraphSignature] = None,
-    alloc_graph_input: bool = True,
-    alloc_graph_output: bool = True,
-) -> List[int]:
+    specs: Set[TensorSpec],
+    graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
+    extra_padding: int,
+) -> MemoryAlgoResult:
+    """Naive algorithm to allocate memory for tensors in the graph.
+
+    This algorithm simply allocates memory for each tensor sequentially without reusing memory.
+
+    Args:
+        alignment: Memory alignment requirement
+        specs: Set of TensorSpec objects with updated lifetimes
+        graph_module: Graph module
+        graph_signature: Graph signature
+        extra_padding: Additional padding to add to each memory buffer (in bytes)
+
+    Returns:
+        MemoryAlgoResult containing the allocation decisions
+    """
+    naive_result = MemoryAlgoResult({}, [])
 
     # allocate 'allocated' bytes from buffer with id mem_id.
     # return the starting offset of the allocated buffer.
@@ -799,24 +979,27 @@ def naive(
     bufsizes = getattr(graph_module, "input_mem_buffer_sizes", None)
     if bufsizes is None:
         bufsizes = [0, 0]
+    bufsizes = cast(List[int], bufsizes)
 
-    bufsizes = typing.cast(List[int], bufsizes)
-    for spec in collect_specs_from_nodes(
-        graph_module.graph.nodes,
-        graph_signature,
-        ignore_graph_input=not alloc_graph_input,
-        ignore_graph_output=not alloc_graph_output,
-    ):
+    for spec in specs:
+        spec_alloc_result = naive_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
         # assume a single memory layer which has mem_id 1
         if spec.mem_id is None:
-            spec.mem_id = 1
+            spec_alloc_result.mem_id = 1
+        else:
+            spec_alloc_result.mem_id = spec.mem_id
+        naive_result.spec_dict[spec] = spec_alloc_result
+
         # allocate spec.allocated_memory bytes in the buffer
         # with the corresponding mem_id
         spec.realign(alignment)
-        spec.mem_offset = _allocate_buf(bufsizes, spec.mem_id, spec.allocated_memory)
+        spec_alloc_result.mem_offset = _allocate_buf(
+            bufsizes, spec_alloc_result.mem_id, spec.allocated_memory
+        )
 
     logging.debug(f"naive algorithm returns bufsizes: {bufsizes}")
-    return bufsizes
+    naive_result.bufsizes = bufsizes
+    return naive_result
 
 
 def get_cond_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
@@ -898,68 +1081,158 @@ def insert_calls_to_free(
     graph_module.recompile()
 
 
+def _merge_bufsizes(bufsizes: list[int], new_bufsizes: list[int]) -> list[int]:
+    """Combine two buffer size lists."""
+    if len(bufsizes) < len(new_bufsizes):
+        bufsizes.extend([0] * (len(new_bufsizes) - len(bufsizes)))
+    for i in range(len(new_bufsizes)):
+        bufsizes[i] = max(bufsizes[i], new_bufsizes[i])
+    return bufsizes
+
+
+def _handle_submodule(
+    algo: Callable[..., list[int]],
+    parent_graph_module: torch.fx.GraphModule,
+    alignment: int,
+    submodule_node: torch.fx.Node,
+    graph_signature: Optional[ExportGraphSignature] = None,
+    alloc_graph_input: bool = False,
+) -> list[int]:
+    """Apply algo to nodes in a submodule of the graph module."""
+    assert submodule_node.op == "get_attr"
+    submodule = getattr(parent_graph_module, submodule_node.target)
+
+    logging.debug(f"Planning memory for submodule {submodule_node.name}...")
+    bufsizes = apply_algo(
+        algo,
+        submodule,
+        alignment,
+        graph_signature,
+        alloc_graph_input=alloc_graph_input,
+        alloc_graph_output=True,
+    )
+    submodule.meta.update({"non_const_buffer_sizes": bufsizes})
+    logging.debug(f"Buffer sizes for submodule {submodule_node.name}: {bufsizes}")
+    return bufsizes
+
+
+def _apply_algo_to_submodules(
+    algo: Callable[..., list[int]],
+    graph_module: torch.fx.GraphModule,
+    alignment: int,
+    graph_signature: Optional[ExportGraphSignature] = None,
+) -> list[int]:
+    """Apply algo to map/cond/while nodes in the graph module.
+
+    This method will popuate graph_module.meta["non_const_buffer_sizes"] for
+    all submodules and return a bufsizes list that is the maximum size of all
+    buffers.
+    """
+
+    # Bufsizes for submodules.
+    bufsizes: list[int] = []
+
+    def _handle(
+        submodule_node: torch.fx.Node,
+        alloc_graph_input: bool = False,
+    ) -> None:
+        current_bufsizes = _handle_submodule(
+            algo,
+            graph_module,
+            alignment,
+            submodule_node,
+            graph_signature,
+            alloc_graph_input=alloc_graph_input,
+        )
+        nonlocal bufsizes
+        _merge_bufsizes(bufsizes, current_bufsizes)
+
+    for cond_node in get_cond_nodes(graph_module):
+        _handle(cast(torch.fx.Node, cond_node.args[1]))
+        _handle(cast(torch.fx.Node, cond_node.args[2]))
+
+    for while_node in get_while_nodes(graph_module):
+        _handle(cast(torch.fx.Node, while_node.args[0]))
+        _handle(cast(torch.fx.Node, while_node.args[1]))
+
+    for map_node in get_map_nodes(graph_module):
+        _handle(cast(torch.fx.Node, map_node.args[0]), alloc_graph_input=True)
+
+    # TODO: We can handle delegates the same way as map/cond/while.
+    # Maybe populate the graph_module.meta["non_const_buffer_sizes"] for delegates.
+
+    return bufsizes
+
+
 def apply_algo(
-    algo: Callable[
-        [torch.fx.GraphModule, int, Optional[ExportGraphSignature], bool, bool],
-        List[int],
-    ],
+    algo: Callable[..., list[int]],
     graph_module: torch.fx.GraphModule,
     alignment: int,
     graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
-) -> List[int]:
+    alloc_mutable_buffers: bool = True,
+) -> list[int]:
     """
     Recursively apply algo to graph_module and its submodules for control flow.
 
-    Quite naively right now since it does not take the following optimizations
-    into considerating:
-    1. for conditional structure, true branch and false true does not overlap
-       in lifetime and can share tensor storage
-    2. tensors inside a submodule (e.g. true branch) has opportunities to share
-       storage with tensors in the outer module.
-    TODO: make these optimizations once we have some baseline working.
-    """
+    Algo implementation should handle one of two meta entries for submodules:
+    1. input_mem_buffer_sizes: List of int offset bytes. Memory allocated by
+       `algo` should start at the offset specified by this list;
+    OR
+    2. non_const_buffer_sizes: List of bufsizes for planned memory in submodule.
+       `algo` should reserve the space specified by this list for the lifetime
+       of the submodule node (e.g. cond, while, map).
 
-    specs = update_all_tensors_lifetime(graph_module, graph_signature)
-    bufsizes: List[int] = algo(
-        graph_module, alignment, graph_signature, alloc_graph_input, alloc_graph_output
+    TODO: Missing optimizations:
+    1. To handle maps, we set `alloc_graph_input=True`, which allocates
+    appropriate space for mapped arg but ends up allocating extra space for
+    `operand` arg. The memory for operands is unused.
+    """
+    # Extract the nodes and their lifespans from the graph_module
+    # Difficult to just filter the list of specs returned by this due to
+    # how we flag trainable weights.
+    _ = update_all_tensors_lifetime(graph_module, graph_signature)
+
+    # Filter specs based on alloc_graph_input and alloc_graph_output
+    specs = collect_specs_from_nodes(
+        graph_module.graph.nodes,
+        graph_signature,
+        do_assertion=False,
+        ignore_graph_input=not alloc_graph_input,
+        ignore_graph_output=not alloc_graph_output,
+        ignore_mutable_buffers=not alloc_mutable_buffers,
     )
+
+    # Get temporary specs for submodules to set aside space during execution
+    # of submodules.
+    submodule_bufsizes = _apply_algo_to_submodules(
+        algo, graph_module, alignment, graph_signature
+    )
+
+    # Update `input_mem_buffer_sizes` in graph_module. This will allow existing
+    # algos to work using `input_mem_buffer_sizes` or use
+    # `non_const_buffer_sizes` directly.
+    # pyre-ignore[16]: `torch.fx.GraphModule` has no attribute `input_mem_buffer_sizes`.
+    graph_module.input_mem_buffer_sizes = submodule_bufsizes
+
+    # Get extra padding for XNNPACK if needed
+    extra_padding = 0
+    if _contains_xnnpack_delegate(graph_module):
+        extra_padding = 64
+
+    # Pass the filtered specs to the algorithm
+    bufsizes: list[int] = algo(
+        alignment,
+        specs,
+        graph_module,
+        graph_signature,
+        extra_padding,
+    )
+
+    # pyre-ignore[6]: Incompatible parameter type [6]
+    # In call `insert_calls_to_free`, for 2nd positional argument, expected `Set[TensorSpec]` but got `Iterable[TensorSpec]`
     insert_calls_to_free(graph_module, specs)
 
-    def handle_submodule(
-        submodule_nd: torch.fx.Node, alloc_graph_input: bool = False
-    ) -> None:
-        nonlocal bufsizes
-        assert submodule_nd.op == "get_attr"
-        submodule = getattr(graph_module, submodule_nd.target)
-        # memory planning for submodule need to be aware of the amount of
-        # buffer already allocated.
-        submodule.input_mem_buffer_sizes = bufsizes
-        bufsizes = apply_algo(
-            algo,
-            submodule,
-            alignment,
-            graph_signature,
-            alloc_graph_input=alloc_graph_input,
-            alloc_graph_output=True,
-        )
-        submodule.meta.update({"non_const_buffer_sizes": bufsizes})
-
-    for cond_node in get_cond_nodes(graph_module):
-        handle_submodule(typing.cast(torch.fx.Node, cond_node.args[1]))
-        handle_submodule(typing.cast(torch.fx.Node, cond_node.args[2]))
-
-    for while_node in get_while_nodes(graph_module):
-        handle_submodule(typing.cast(torch.fx.Node, while_node.args[0]))
-        handle_submodule(typing.cast(torch.fx.Node, while_node.args[1]))
-    # TODO: Add test coverage for map operator once dynamo tracing is
-    # fully supported for this. T142287208
-    for map_node in get_map_nodes(graph_module):
-        handle_submodule(
-            typing.cast(torch.fx.Node, map_node.args[0]), alloc_graph_input=True
-        )
-
     graph_module.meta.update({"non_const_buffer_sizes": bufsizes})
-
     return bufsizes

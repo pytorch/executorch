@@ -15,9 +15,9 @@ unary_op:
       OPERATOR: abs(X)
     - NAME: clamp
       OPERATOR: clamp(X, A, B)
-    - NAME: clamp_int
+    - NAME: clamp_int32
       OPERATOR: clamp(X, A, B)
-      DTYPE: int
+      DTYPE: int32
     - NAME: cos
       OPERATOR: cos(X)
     - NAME: exp
@@ -44,3 +44,5 @@ unary_op:
       OPERATOR: hardsigmoid(X)
     - NAME: leaky_relu
       OPERATOR: leaky_relu(X, A)
+    - NAME: round
+      OPERATOR: round(X)

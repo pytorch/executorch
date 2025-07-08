@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -18,10 +19,10 @@
 
 using namespace ::testing;
 using executorch::aten::MemoryFormat;
-using executorch::aten::optional;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpFullLikeTest : public OperatorTest {
@@ -64,6 +65,18 @@ class OpFullLikeTest : public OperatorTest {
 
     ET_EXPECT_KERNEL_FAILURE(
         context_, op_full_like_out(in, value, memory_format, out));
+  }
+
+  template <ScalarType DTYPE>
+  void expect_bad_scalar_value_dies(const Scalar& bad_value) {
+    TensorFactory<DTYPE> tf;
+    const std::vector<int32_t> sizes = {2, 2};
+    Tensor in = tf.zeros(sizes);
+    Tensor out = tf.zeros(sizes);
+    optional<MemoryFormat> memory_format;
+
+    ET_EXPECT_KERNEL_FAILURE(
+        context_, op_full_like_out(in, bad_value, memory_format, out));
   }
 };
 
@@ -209,3 +222,5 @@ TEST_F(OpFullLikeTest, HalfSupport) {
   op_full_like_out(in, INFINITY, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, INFINITY));
 }
+
+GENERATE_SCALAR_OVERFLOW_TESTS(OpFullLikeTest)

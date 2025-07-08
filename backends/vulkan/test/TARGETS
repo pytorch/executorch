@@ -25,6 +25,19 @@ python_unittest(
 )
 
 python_unittest(
+    name = "test_vulkan_passes",
+    srcs = [
+        "test_vulkan_passes.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/_passes:vulkan_passes",
+        "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+    ]
+)
+
+python_unittest(
     name = "test_vulkan_delegate_header",
     srcs = [
         "test_vulkan_delegate_header.py",

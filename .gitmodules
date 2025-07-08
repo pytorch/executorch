@@ -1,9 +1,9 @@
 [submodule "backends/arm/third-party/ethos-u-core-driver"]
 	path = backends/arm/third-party/ethos-u-core-driver
-	url = https://github.com/pytorch-labs/ethos-u-core-driver-mirror
+	url = https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-core-driver.git
 [submodule "backends/arm/third-party/serialization_lib"]
 	path = backends/arm/third-party/serialization_lib
-	url = https://github.com/pytorch-labs/tosa_serialization_lib-mirror
+	url = https://git.gitlab.arm.com/tosa/tosa-serialization.git
 [submodule "backends/vulkan/third-party/Vulkan-Headers"]
 	path = backends/vulkan/third-party/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers
@@ -67,3 +67,6 @@
 [submodule "shim"]
 	path = shim
 	url = https://github.com/facebook/buck2-shims-meta
+[submodule "third-party/json"]
+	path = third-party/json
+	url = https://github.com/nlohmann/json.git

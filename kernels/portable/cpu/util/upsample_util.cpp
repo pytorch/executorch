@@ -18,10 +18,11 @@ bool check_upsample_2d_common_args(
     const executorch::aten::OptionalArrayRef<double>& scale_factors,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dim_order(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(in.dim() == 4);
   ET_LOG_AND_RETURN_IF_FALSE(out.dim() == 4);
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_dim_order(in));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_dim_order(out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
   ET_LOG_AND_RETURN_IF_FALSE(
       output_size.has_value() ^ scale_factors.has_value());
   if (scale_factors.has_value()) {

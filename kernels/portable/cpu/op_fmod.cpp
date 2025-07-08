@@ -55,9 +55,13 @@ Tensor& fmod_Tensor_out(
   bool div_by_zero_error = false;
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+    utils::apply_bitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::REALHBF16>(
         [&div_by_zero_error](
             const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          // TODO: rewrite this to be vectorization-capable?
           CTYPE_COMPUTE value = 0;
           if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
             if (val_b == 0) {
@@ -73,8 +77,7 @@ Tensor& fmod_Tensor_out(
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBF16);
+        out);
   });
 
   ET_KERNEL_CHECK_MSG(
@@ -131,16 +134,17 @@ Tensor& fmod_Scalar_out(
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [val_b](const CTYPE_COMPUTE val_a) {
-          CTYPE_COMPUTE value = std::fmod(val_a, val_b);
-          return value;
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::REALHBF16>(
+        [val_b](const auto val_a) {
+          return executorch::math::fmod(val_a, (decltype(val_a))val_b);
         },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBF16);
+        out);
   });
 
   return out;

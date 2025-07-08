@@ -281,9 +281,79 @@ class AxisScaleOffsetQuantizeParamsWrapper final
   std::vector<Qnn_ScaleOffset_t> scale_offsets_;
 };
 
+class BlockwiseExpansionQuantizeParamsWrapper final
+    : public QuantizeParamsWrapper {
+ public:
+  explicit BlockwiseExpansionQuantizeParamsWrapper(
+      std::int32_t axis,
+      const std::vector<Qnn_ScaleOffset_t>& scale_offsets,
+      std::uint32_t num_blocks_per_axis,
+      std::uint32_t block_scale_bitwidth,
+      Qnn_BlockwiseExpansionBlockScaleStorageType_t storage_type,
+      const uint8_t* block_scales_ptr,
+      std::uint32_t block_scales_size)
+      : QuantizeParamsWrapper(
+            QNN_DEFINITION_DEFINED,
+            QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION),
+        axis_(axis),
+        scale_offsets_(scale_offsets),
+        num_blocks_per_axis_(num_blocks_per_axis),
+        block_scale_bitwidth_(block_scale_bitwidth),
+        block_storage_type_(storage_type),
+        block_scales_(block_scales_ptr, block_scales_ptr + block_scales_size) {}
+
+  BlockwiseExpansionQuantizeParamsWrapper(
+      const BlockwiseExpansionQuantizeParamsWrapper& rhs)
+      : QuantizeParamsWrapper(
+            rhs.GetEncodingDefinition(),
+            rhs.GetQuantizationEncoding()),
+        axis_(rhs.axis_),
+        scale_offsets_(rhs.scale_offsets_),
+        num_blocks_per_axis_(rhs.num_blocks_per_axis_),
+        block_scale_bitwidth_(rhs.block_scale_bitwidth_),
+        block_storage_type_(rhs.block_storage_type_),
+        block_scales_(rhs.block_scales_) {}
+
+  BlockwiseExpansionQuantizeParamsWrapper(
+      BlockwiseExpansionQuantizeParamsWrapper&& rhs) = delete;
+  BlockwiseExpansionQuantizeParamsWrapper& operator=(
+      const BlockwiseExpansionQuantizeParamsWrapper& rhs) = delete;
+  BlockwiseExpansionQuantizeParamsWrapper& operator=(
+      BlockwiseExpansionQuantizeParamsWrapper&& rhs) = delete;
+
+  ~BlockwiseExpansionQuantizeParamsWrapper() override = default;
+
+  std::unique_ptr<QuantizeParamsWrapper> Clone() override {
+    return std::make_unique<BlockwiseExpansionQuantizeParamsWrapper>(*this);
+  }
+
+  Qnn_QuantizeParams_t CreateQuantizeParams() override {
+    Qnn_QuantizeParams_t rval;
+    rval.encodingDefinition = GetEncodingDefinition();
+    rval.quantizationEncoding = GetQuantizationEncoding();
+    block_expansion_.axis = axis_;
+    block_expansion_.scaleOffsets = scale_offsets_.data();
+    block_expansion_.numBlocksPerAxis = num_blocks_per_axis_;
+    block_expansion_.blockScaleBitwidth = block_scale_bitwidth_;
+    block_expansion_.blockScaleStorageType = block_storage_type_;
+    block_expansion_.blocksScale8 = block_scales_.data();
+    rval.blockwiseExpansion = &block_expansion_;
+    return rval;
+  }
+
+ private:
+  std::int32_t axis_;
+  std::vector<Qnn_ScaleOffset_t> scale_offsets_;
+  std::uint32_t num_blocks_per_axis_;
+  std::uint32_t block_scale_bitwidth_;
+  Qnn_BlockwiseExpansionBlockScaleStorageType_t block_storage_type_;
+  std::vector<std::uint8_t> block_scales_;
+  Qnn_BlockwiseExpansion_t block_expansion_;
+};
+
 // Factory function to create quantization param wrapper from QnnQuantization
 std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
-    const Qnn_QuantizeParams_t& quantization);
+    const Qnn_Tensor_t& tensor);
 } // namespace qnn
 } // namespace backends
 } // namespace executorch

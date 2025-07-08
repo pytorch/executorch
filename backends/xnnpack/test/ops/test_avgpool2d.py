@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestAvgPool2d(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class AvgPool2d(torch.nn.Module):
         def __init__(
             self, count_include_pad=False, ceil_mode=False, divisor_override=None

@@ -7,12 +7,12 @@
  */
 
 #pragma once
+#include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch {
-namespace runtime {
-
+namespace ET_RUNTIME_NAMESPACE {
 /**
  * BackendInitContext will be used to inject runtime info for to initialize
  * delegate.
@@ -25,8 +25,14 @@ class BackendInitContext final {
       const char* method_name = nullptr,
       const NamedDataMap* named_data_map = nullptr)
       : runtime_allocator_(runtime_allocator),
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_(event_tracer),
+#else
+        event_tracer_(nullptr),
+#endif
         method_name_(method_name),
-        named_data_map_(named_data_map) {}
+        named_data_map_(named_data_map) {
+  }
 
   /** Get the runtime allocator passed from Method. It's the same runtime
    * executor used by the standard executor runtime and the life span is the
@@ -70,13 +76,13 @@ class BackendInitContext final {
   const NamedDataMap* named_data_map_ = nullptr;
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::BackendInitContext;
+using ::executorch::ET_RUNTIME_NAMESPACE::BackendInitContext;
 } // namespace executor
 } // namespace torch

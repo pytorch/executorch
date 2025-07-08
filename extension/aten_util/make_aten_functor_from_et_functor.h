@@ -22,6 +22,12 @@
 #include <executorch/extension/kernel_util/type_list.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/evalue.h>
+
+// X11 headers via volk define Complex, so we need to undef it
+#if defined(__linux__)
+#undef Complex
+#endif
+
 #include <torch/torch.h>
 
 namespace executorch {
@@ -162,24 +168,6 @@ struct type_convert<std::optional<F>, torch::executor::optional<T>> final {
       return torch::executor::optional<T>(convert_struct->call());
     } else {
       return torch::executor::optional<T>();
-    }
-  }
-};
-
-// Optionals: ETen to ATen.
-template <class F, class T>
-struct type_convert<torch::executor::optional<F>, std::optional<T>> final {
- public:
-  torch::executor::optional<F> val;
-  std::unique_ptr<struct type_convert<F, T>> convert_struct;
-  explicit type_convert(torch::executor::optional<F> value) : val(value) {}
-  std::optional<T> call() {
-    if (val.has_value()) {
-      convert_struct = std::make_unique<struct type_convert<F, T>>(
-          type_convert<F, T>(val.value()));
-      return std::optional<T>(convert_struct->call());
-    } else {
-      return std::optional<T>();
     }
   }
 };

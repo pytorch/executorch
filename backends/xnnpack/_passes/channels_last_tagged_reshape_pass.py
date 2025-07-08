@@ -8,6 +8,12 @@ from typing import Optional, Tuple
 
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_dynamic_qdq,
+    is_tagged_as_implicit_q_dq,
+    tag_as_implicit_q_dq,
+)
 from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
@@ -55,9 +61,9 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
 
     # Set of ops that require memory format to be NCHW
     memory_sensitive_ops_nchw = {
-        "output",
         exir_ops.edge.aten.squeeze_copy.dim,
         exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.linear.default,
     }
 
     # Tag which is added to a node's meta to indicate that it uses NHWC format.
@@ -143,7 +149,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
                 args=(copy,) + q_params,
             )
-            q.meta = copy.meta
+            q.meta = copy.meta.copy()
 
         with graph_module.graph.inserting_after(q):
             dq = self.create_call_function_node(
@@ -151,9 +157,24 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
                 args=(q,) + q_params,
             )
-            dq.meta = q.meta
+            dq.meta = q.meta.copy()
 
-            after.replace_input_with(before, dq)
+            # Always tag q as implicit
+            tag_as_implicit_q_dq(q)
+
+            # Tag relevant q/ dq nodes
+            # Ex: Original: G = conv -> q1 (Tag) -> dq1 (No Tag) -> output
+            #     Insert (copy q dq pattern), G = conv -> q1 -> dq1 -> (copy q2 dq2)-> output
+            #     if dq1 is not tagged as implicit, then tag dq2 and swap the dq1 and dq2 to simulate
+            #        the pattern: G = conv -> q1 (Tag) -> (dq2 (Tag) copy q2 (Tag))-> dq1 (No Tag) -> output
+
+            if is_dequant(before) and is_tagged_as_implicit_q_dq(before):
+                tag_as_implicit_q_dq(dq)
+            if is_dequant(before):
+                tag_as_implicit_q_dq(before)
+
+            before.replace_all_uses_with(dq)
+            copy.replace_input_with(dq, before)
 
     def insert_dq_copy_q(
         self,
@@ -169,7 +190,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
                 args=(before,) + q_params,
             )
-            dq.meta = before.meta
+            dq.meta = before.meta.copy()
 
         with graph_module.graph.inserting_after(copy):
             q = self.create_call_function_node(
@@ -177,7 +198,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
                 args=(copy,) + q_params,
             )
-            q.meta = copy.meta
+            q.meta = copy.meta.copy()
+
+            # Always tag q/dq as implicit
+            tag_as_implicit_q_dq(dq)
+            tag_as_implicit_q_dq(q)
 
             copy.replace_input_with(before, dq)
             after.replace_input_with(before, q)
@@ -268,7 +293,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             # serializing graph, but don't do anything else here
             self.mark_as_nhwc_node(input_node)
 
-        if self.is_nhwc_node(input_node):
+        if input_node.op == "placeholder":
+            if not input_node.meta["val"][0].is_contiguous():
+                return
+        elif self.is_nhwc_node(input_node):
             return
 
         if not self.can_be_converted_to_nhwc(input_node):
@@ -283,6 +311,14 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             ]
         else:
             # Need to create NHWC node
+            # Check if input uses dynamic quantization
+            is_dynamic_input = is_dynamic_qdq(input_node)
+
+            if is_dynamic_input:
+                # Trace back to original source node
+                while getattr(input_node, "args", None):
+                    input_node = input_node.args[0]
+
             with graph_module.graph.inserting_after(input_node):
                 input_node_nhwc = self.create_call_function_node(
                     graph_module=graph_module,
@@ -290,7 +326,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                     args=(input_node,),
                     memory_format=torch.channels_last,
                 )
-            self.mark_as_nhwc_node(input_node_nhwc)
+
+            if is_dynamic_input:
+                # Replace downstream input_nodes with NHWC node
+                input_node.replace_all_uses_with(input_node_nhwc)
+                input_node_nhwc.args = (input_node,)
 
         self.insert_copy_and_assign_partner_nodes_quantization_sensitive(
             graph_module=graph_module,
@@ -320,7 +360,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             # do anything else here
             self.mark_as_nchw_node(input_node)
 
-        if self.is_nchw_node(input_node):
+        if input_node.op == "placeholder":
+            if input_node.meta["val"].is_contiguous():
+                return
+        elif self.is_nchw_node(input_node):
             return
 
         if ChannelsLastTaggedReshapePass.PARTNER_NODE in input_node.meta:
@@ -353,14 +396,21 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 # This node has no inputs so we don't need to change anything
                 continue
 
-            if self.requires_nhwc_input(node):
+            # Need special case for output node because it can have multiple output dim orders as we can output a tuple multiple nodes
+            if node.op == "output":
+                out_tuple = node.args[0]
+                for out_node in out_tuple:
+                    if out_node.meta["val"].is_contiguous():
+                        self.input_to_nchw(graph_module, out_node, node)
+                    else:
+                        self.input_to_nhwc(graph_module, out_node, node)
+            elif self.requires_nhwc_input(node):
                 # Nodes which enter this branch are ones that require their
                 # first input to be nhwc. This makes this node's output nhwc too
-                # Currently, all nodes like this should have all of their other
-                # inputs as nchw, so fail if this is not true
+
                 self.input_to_nhwc(graph_module, node.args[0], node)
-                for input_node in node.all_input_nodes[1:]:
-                    if self.is_nhwc_node(input_node):
+                for input_node in node.all_input_nodes:
+                    if input_node.op == "placeholder" and self.is_nhwc_node(input_node):
                         raise AssertionError(
                             f"Expected {input_node} to be NCHW in channels last reshape pass"
                         )

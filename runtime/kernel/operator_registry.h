@@ -40,7 +40,7 @@
   }
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 class KernelRuntimeContext; // Forward declaration
 using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
@@ -123,7 +123,7 @@ struct KernelKey {
    * for all input tensor dtypes and dim orders if the specialized kernel is not
    * registered.
    */
-  KernelKey() : is_fallback_(true) {}
+  KernelKey() = default;
 
   /**
    * Creates a specialized (non-fallback) kernel key that matches a specific
@@ -131,7 +131,7 @@ struct KernelKey {
    * expected format of `kernel_key_data`.
    */
   /* implicit */ KernelKey(const char* kernel_key_data)
-      : kernel_key_data_(kernel_key_data), is_fallback_(false) {}
+      : kernel_key_data_(kernel_key_data) {}
 
   bool operator==(const KernelKey& other) const {
     return this->equals(other);
@@ -142,17 +142,17 @@ struct KernelKey {
   }
 
   bool equals(const KernelKey& other) const {
-    if (is_fallback_ != other.is_fallback_) {
+    if (is_fallback() != other.is_fallback()) {
       return false;
     }
-    if (is_fallback_) {
+    if (is_fallback()) {
       return true;
     }
     return strcmp(kernel_key_data_, other.kernel_key_data_) == 0;
   }
 
   bool is_fallback() const {
-    return is_fallback_;
+    return kernel_key_data_ == nullptr;
   }
 
   const char* data() const {
@@ -168,7 +168,6 @@ struct KernelKey {
 
  private:
   const char* kernel_key_data_ = nullptr;
-  bool is_fallback_;
 };
 
 /**
@@ -258,38 +257,41 @@ ET_NODISCARD inline Error register_kernel(const Kernel& kernel) {
   return register_kernels({&kernel, 1});
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::Kernel;
-using ::executorch::runtime::KernelKey;
-using ::executorch::runtime::KernelRuntimeContext;
-using ::executorch::runtime::OpFunction;
-using ::executorch::runtime::TensorMeta;
-using KernelRuntimeContext = ::executorch::runtime::KernelRuntimeContext;
+using ::executorch::ET_RUNTIME_NAMESPACE::Kernel;
+using ::executorch::ET_RUNTIME_NAMESPACE::KernelKey;
+using ::executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
+using ::executorch::ET_RUNTIME_NAMESPACE::OpFunction;
+using ::executorch::ET_RUNTIME_NAMESPACE::TensorMeta;
+using KernelRuntimeContext =
+    ::executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 
 inline ::executorch::runtime::Error register_kernels(ArrayRef<Kernel> kernels) {
-  return ::executorch::runtime::register_kernels(
+  return ::executorch::ET_RUNTIME_NAMESPACE::register_kernels(
       {kernels.data(), kernels.size()});
 }
 inline OpFunction getOpsFn(
     const char* name,
     ArrayRef<TensorMeta> meta_list = {}) {
-  auto result = ::executorch::runtime::get_op_function_from_registry(
-      name, {meta_list.data(), meta_list.size()});
+  auto result =
+      ::executorch::ET_RUNTIME_NAMESPACE::get_op_function_from_registry(
+          name, {meta_list.data(), meta_list.size()});
   ET_CHECK(result.ok()); // get_op_function_from_registry() logs details.
   return *result;
 }
 inline bool hasOpsFn(const char* name, ArrayRef<TensorMeta> meta_list = {}) {
-  return ::executorch::runtime::registry_has_op_function(
+  return ::executorch::ET_RUNTIME_NAMESPACE::registry_has_op_function(
       name, {meta_list.data(), meta_list.size()});
 }
 inline ArrayRef<Kernel> get_kernels() {
-  Span<const Kernel> kernels = ::executorch::runtime::get_registered_kernels();
+  Span<const Kernel> kernels =
+      ::executorch::ET_RUNTIME_NAMESPACE::get_registered_kernels();
   return ArrayRef<Kernel>(kernels.data(), kernels.size());
 }
 } // namespace executor

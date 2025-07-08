@@ -32,6 +32,7 @@ build_executorch() {
   if [ -x "$(command -v glslc)" ]; then
     BUILD_VULKAN="ON"
   fi
+  # -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \  TODO(larryliu0820): Fix the name collision between Abseil and XNNPACK and turn this on.
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \

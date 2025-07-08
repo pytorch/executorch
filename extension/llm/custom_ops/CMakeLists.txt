@@ -11,19 +11,18 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  list(APPEND _common_compile_options "-march=armv8.2-a+dotprod")
+endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -38,6 +37,7 @@ include(${EXECUTORCH_SRCS_FILE})
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+list(APPEND _common_include_directories ${EXECUTORCH_ROOT}/third-party/ao)
 
 # Custom op libraries
 set(custom_ops_libs pthreadpool)
@@ -49,7 +49,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7)$")
   list(APPEND _custom_ops__srcs
        "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_neon.c"
   )
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)")
   list(APPEND _custom_ops__srcs
        "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_avx.c"
   )
@@ -70,10 +70,11 @@ else()
 endif()
 
 add_library(custom_ops ${_custom_ops__srcs})
-
+find_package_torch_headers()
 target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(
   custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+                     ${TORCH_INCLUDE_DIRS}
 )
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 
@@ -99,6 +100,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   )
   target_include_directories(
     custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+                               ${TORCH_INCLUDE_DIRS}
   )
   # TODO: This only works if we install portable_lib.so to
   # <site-packages>/executorch/extension/pybindings/.
@@ -115,7 +117,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   else()
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
     # ops in PyTorch
-    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core)
+    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core kernels_util_all_deps)
   endif()
 
   target_link_libraries(

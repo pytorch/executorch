@@ -142,7 +142,6 @@ class Block(nn.Module):
         return x
 
 
-@torch.jit.export
 def get_abs_pos(
     abs_pos: torch.Tensor, has_cls_token: bool, hw: List[int]
 ) -> torch.Tensor:

@@ -27,6 +27,7 @@ cmake_install_executorch_libraries() {
       -DEXECUTORCH_ENABLE_LOGGING=1 \
       -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
       -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
       -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
       -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
       -DEXECUTORCH_BUILD_XNNPACK=ON \
@@ -56,7 +57,7 @@ cmake_build_phi_3_mini() {
 prepare_tokenizer() {
   echo "Downloading and converting tokenizer.model"
   wget -O tokenizer.model "https://huggingface.co/microsoft/Phi-3-mini-128k-instruct/resolve/main/tokenizer.model?download=true"
-  $PYTHON_EXECUTABLE -m executorch.extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+  $PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 }
 
 # Export phi-3-mini model to pte

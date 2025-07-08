@@ -24,7 +24,49 @@ For non-POSIX-compliant systems, a minimal no-op PAL implementation is provided.
 
 ### Overriding the PAL
 
-Overriding the default PAL implementation is commonly done to route logs to a user-specified destination or to provide PAL functionality on embedded systems. To override one or more PAL methods, take the following steps:
+Overriding the default PAL implementation is commonly done to route logs to a user-specified destination or to provide PAL functionality on embedded systems. The PAL can be overriden usinn runtime APIs or at link time. Prefer the runtime API unless you specifically need link-time overrides.
+
+### Runtime PAL Registration
+
+To register a custom PAL implementation, take the following steps:
+
+- Include
+  [`executorch/runtime/platform/platform.h`](https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h)
+  in one of your application's `.c` or `.cpp` files.
+- Create an instance of the [PalImpl](https://github.com/pytorch/executorch/blob/7b39a0ce63bfb5124d4d29cfb6c8af85a3c580ba/runtime/platform/platform.h#L163) struct.
+  - Set one or more fields to custom PAL function implementations. Leave fields as null to use the default platform implementation.
+  - The PalImpl struct provides a [create](https://github.com/pytorch/executorch/blob/7b39a0ce63bfb5124d4d29cfb6c8af85a3c580ba/runtime/platform/platform.h#L168) method for this purpose.
+- Call `executorch::platform::register_pal(pal_impl)` to register the implementation.
+  - This can be done from as as a global constructor, as in the example below.
+
+Here is a complete example from [pybindings.cpp](https://github.com/pytorch/executorch/blob/7b39a0ce63bfb5124d4d29cfb6c8af85a3c580ba/extension/pybindings/pybindings.cpp#L1178), where logs are redirected to show up properly in a Python notebook environment.
+
+```cpp
+namespace {
+  void emit_log_message(
+      et_timestamp_t timestamp,
+      et_pal_log_level_t level,
+      const char* filename,
+      ET_UNUSED const char* function,
+      size_t line,
+      const char* message,
+      ET_UNUSED size_t length) {
+    std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
+  }
+
+  runtime::PalImpl build_pal() {
+    return runtime::PalImpl::create(emit_log_message, __FILE__);
+  }
+
+  // Update PAL to redirect logs.
+  ET_UNUSED bool registration_result = runtime::register_pal(build_pal());
+}
+```
+
+### Weak Symbol Override
+ExecuTorch also provides a link-time method to override the PAL using weak symbols. This method is primarily maintained for backwards compatability.
+
+To override one or more PAL methods, take the following steps:
 
 - Include
   [`executorch/runtime/platform/platform.h`](https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h)

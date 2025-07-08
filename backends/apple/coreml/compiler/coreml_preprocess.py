@@ -16,8 +16,8 @@ from typing import Any, Dict, final, List, Optional, Tuple
 
 import coremltools as ct
 import coremltools.optimize as cto
-import executorchcoreml
 
+from executorch.backends.apple.coreml import executorchcoreml
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     ExportedProgram,

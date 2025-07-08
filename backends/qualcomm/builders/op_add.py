@@ -9,7 +9,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpElementWiseAdd, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -37,7 +38,7 @@ class Add(NodeVisitor):
 
         add_input_tensors = []
         for index in range(2):
-            input_node = node.args[index]
+            input_node = self.get_node(node.args[index])
             input_tensor = self.get_tensor(input_node, node)
             tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 

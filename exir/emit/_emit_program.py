@@ -57,11 +57,7 @@ class EmitterOutput:
 
 def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.GraphModule:
     gm = exported_program.graph_module
-    output_node = None
-    for node in gm.graph.nodes:
-        if node.op == "output":
-            output_node = node
-    assert output_node is not None
+    output_node = gm.graph.output_node()
 
     mutated_outputs: List[Optional[str]] = [
         out_spec.target if out_spec.kind in (OutputKind.BUFFER_MUTATION,) else None
@@ -118,6 +114,7 @@ def emit_program(
     methods: Union[ExportedProgram, Dict[str, ExportedProgram]],
     emit_stacktrace: bool = False,
     prim_getters: Optional[Dict[str, Any]] = None,
+    emit_mutable_buffer_names: bool = False,
 ) -> EmitterOutput:
     """
     Given a exported program, it returns the program in the format
@@ -163,6 +160,7 @@ def emit_program(
             operator_cache={},
             delegate_cache={},
             emit_stacktrace=emit_stacktrace,
+            emit_mutable_buffer_names=emit_mutable_buffer_names,
         )
 
         gm = _remove_non_user_outputs(exported_program)
