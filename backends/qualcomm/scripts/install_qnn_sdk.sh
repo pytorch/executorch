@@ -95,6 +95,14 @@ setup_libcpp() {
   LLVM_VERSION="12.0.0"
   INSTALL_DIR="/usr/local/libcxx-${LLVM_VERSION}"
 
+  # Check if libc++ is already installed
+  if [ -d "/usr/include/c++/v1" ] && \
+     [ -f "/usr/lib/libc++.so.1" ] && \
+     [ -f "/usr/lib/libc++abi.so.1" ]; then
+    echo "libc++-${clang_version}-dev is already installed - skipping"
+    return
+  fi
+
   echo "Installing libc++-${clang_version}-dev manually from LLVM releases"
 
   # Create temporary directory
