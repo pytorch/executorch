@@ -87,6 +87,7 @@ struct ContentView: View {
     case llava
     case qwen3
     case phi4
+    case gemma3
 
     static func fromPath(_ path: String) -> ModelType {
       let filename = (path as NSString).lastPathComponent.lowercased()
@@ -98,7 +99,9 @@ struct ContentView: View {
         return .qwen3
       } else if filename.hasPrefix("phi4") {
         return .phi4
-      }
+      } else if filename.hasPrefix("gemma3") {
+          return .gemma3
+        }
       print("Unknown model type in path: \(path). Model filename should start with one of: llama, llava, qwen3, or phi4")
       exit(1)
     }
@@ -346,7 +349,7 @@ struct ContentView: View {
       }
 
       switch modelType {
-      case .llama, .qwen3, .phi4:
+      case .llama, .qwen3, .phi4, .gemma3:
         runnerHolder.llamaRunner = runnerHolder.llamaRunner ?? LLaMARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
       case .llava:
         runnerHolder.llavaRunner = runnerHolder.llavaRunner ?? LLaVARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
@@ -354,7 +357,7 @@ struct ContentView: View {
 
       guard !shouldStopGenerating else { return }
       switch modelType {
-      case .llama, .qwen3, .phi4:
+      case .llama, .qwen3, .phi4, .gemma3:
         if let runner = runnerHolder.llamaRunner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
@@ -479,6 +482,8 @@ struct ContentView: View {
             prompt = String(format: Constants.llama3PromptTemplate, text)
           case .phi4:
               prompt = String(format: Constants.phi4PromptTemplate, text)
+          case .gemma3:
+              prompt = String(format: Constants.gemma3PromptTemplate, text)
           }
 
           try runnerHolder.llamaRunner?.generate(prompt, sequenceLength: seq_len) { token in
