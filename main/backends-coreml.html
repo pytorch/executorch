@@ -393,6 +393,7 @@
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
@@ -599,12 +600,13 @@
 </div>
 <div class="section" id="bit-quantization-using-the-pt2e-flow">
 <h3>8-bit Quantization using the PT2E Flow<a class="headerlink" href="#bit-quantization-using-the-pt2e-flow" title="Permalink to this heading">¶</a></h3>
-<p>To perform 8-bit quantization with the PT2E flow, perform the following steps:</p>
+<p>Quantization with the CoreML backend requires exporting the model for iOS17 or later.
+To perform 8-bit quantization with the PT2E flow, perform the following steps:</p>
 <ol class="arabic simple">
 <li><p>Define <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig">coremltools.optimize.torch.quantization.LinearQuantizerConfig</a> and use to to create an instance of a <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p></li>
 <li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export_for_training</span></code> to export a graph module that will be prepared for quantization.</p></li>
 <li><p>Call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> to prepare the model for quantization.</p></li>
-<li><p>For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
+<li><p>Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
 <li><p>Call <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> to quantize the model.</p></li>
 <li><p>Export and lower the model using the standard flow.</p></li>
 </ol>
@@ -663,7 +665,8 @@
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 </pre></div>
 </div>
-<p>The above does static quantization (activations and weights are quantized).  Quantizing activations requires calibrating the model on representative data.  You can also do weight-only quantization, which does not require calibration data, by specifying the activation_dtype to be torch.float32:</p>
+<p>The above does static quantization (activations and weights are quantized).</p>
+<p>You can see a full description of available quantization configs in the <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig">coremltools documentation</a>.  For example, the config below will perform weight-only quantization:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">weight_only_8bit_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="p">(</span>
     <span class="n">global_config</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">ModuleLinearQuantizerConfig</span><span class="p">(</span>
         <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">&quot;symmetric&quot;</span><span class="p">,</span>
@@ -673,12 +676,10 @@
     <span class="p">)</span>
 <span class="p">)</span>
 <span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">weight_only_8bit_config</span><span class="p">)</span>
-<span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">training_gm</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
-<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Note that static quantization requires exporting the model for iOS17 or later.</p>
-<p>See <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
+<p>Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling convert_pt2e, even for data-free weight-only quantization.</p>
+<p>See <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
 </div>
 </div>
 <hr class="docutils" />

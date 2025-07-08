@@ -390,6 +390,7 @@
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
@@ -627,7 +628,42 @@ the core ExecuTorch runtime.</p>
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 </pre></div>
 </div>
-<p>See <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
+<p>See <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
+</div>
+<div class="section" id="llm-quantization-with-quantize">
+<h3>LLM quantization with quantize_<a class="headerlink" href="#llm-quantization-with-quantize" title="Permalink to this heading">¶</a></h3>
+<p>The XNNPACK backend also supports quantizing models with the <a class="reference external" href="https://github.com/pytorch/ao">torchao</a> quantize_ API.  This is most commonly used for LLMs, requiring more advanced quantization.  Since quantize_ is not backend aware, it is important to use a config that is compatible with CPU/XNNPACK:</p>
+<ul class="simple">
+<li><p>Quantize embeedings with IntxWeightOnlyConfig (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity)</p></li>
+<li><p>Quantize linear layers with Int8DynamicActivationIntxWeightConfig (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity)</p></li>
+</ul>
+<p>Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the <a class="reference external" href="https://docs.pytorch.org/ao/main/serving.html#mobile-deployment-with-executorch">torchao documentation</a>.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.granularity</span><span class="w"> </span><span class="kn">import</span> <span class="n">PerGroup</span><span class="p">,</span> <span class="n">PerAxis</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.quant_api</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">IntxWeightOnlyConfig</span><span class="p">,</span>
+    <span class="n">Int8DynamicActivationIntxWeightConfig</span><span class="p">,</span>
+    <span class="n">quantize_</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Quantize embeddings with 8-bits, per channel</span>
+<span class="n">embedding_config</span> <span class="o">=</span> <span class="n">IntxWeightOnlyConfig</span><span class="p">(</span>
+    <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int8</span><span class="p">,</span>
+    <span class="n">granularity</span><span class="o">=</span><span class="n">PerAxis</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">qunatize_</span><span class="p">(</span>
+    <span class="n">eager_model</span><span class="p">,</span>
+    <span class="k">lambda</span> <span class="n">m</span><span class="p">,</span> <span class="n">fqn</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">),</span>
+<span class="p">)</span>
+
+
+<span class="c1"># Quatize linear layers with 8-bit dynamic activations and 4-bit weights</span>
+<span class="n">linear_config</span> <span class="o">=</span> <span class="n">Int8DynamicActivationIntxWeightConfig</span><span class="p">(</span>
+    <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int4</span><span class="p">,</span>
+    <span class="n">weight_granularity</span><span class="o">=</span><span class="n">PerGroup</span><span class="p">(</span><span class="mi">32</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">quantize_</span><span class="p">(</span><span class="n">eager_model</span><span class="p">,</span> <span class="n">linear_config</span><span class="p">)</span>
+</pre></div>
+</div>
 </div>
 </div>
 <hr class="docutils" />
@@ -709,6 +745,7 @@ the core ExecuTorch runtime.</p>
 <li><a class="reference internal" href="#quantization">Quantization</a><ul>
 <li><a class="reference internal" href="#supported-quantization-schemes">Supported Quantization Schemes</a></li>
 <li><a class="reference internal" href="#bit-quantization-using-the-pt2e-flow">8-bit Quantization using the PT2E Flow</a></li>
+<li><a class="reference internal" href="#llm-quantization-with-quantize">LLM quantization with quantize_</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#runtime-integration">Runtime Integration</a></li>
