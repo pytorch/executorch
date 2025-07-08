@@ -90,7 +90,9 @@ class OpModel(torch.nn.Module):
     def forward(self, *args, **kwargs):
         return self.op(*(args + self.fixed_args), **(kwargs | self.fixed_kwargs))
 
-
+# The convolution model has some minor wrapper logic around the actual convolution
+# operator. Most of the backends are expecting this form. 
+# TODO (gjcomer) Investigate these discrepencies.
 class ConvModel(OpModel):
     def forward(self, *args, **kwargs):
         weight, bias, stride, padding, dilation, transposed, output_padding, groups = (
