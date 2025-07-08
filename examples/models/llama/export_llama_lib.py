@@ -862,6 +862,73 @@ def _to_edge_and_lower_llama_xnnpack(
     return builder.to_executorch(passes=additional_passes)
 
 
+def _to_edge_and_lower_llama_openvino(
+    builder_exported,
+    modelname,
+    additional_passes,
+    openvino_device: str = "CPU",
+    nncf_compression: bool = False,
+    verbose: bool = False,
+) -> LLMEdgeManager:  # noqa: C901
+    partitioners = []
+
+    # Add OpenVINO partitioner
+    partitioners.append(get_openvino_partitioner(openvino_device))
+    modelname = f"openvino_{modelname}"
+
+
+    logging.info("Lowering model using following partitioner(s): ")
+    for partitioner in partitioners:
+        logging.info(f"--> {partitioner.__class__.__name__}")
+
+    # Use NNCF compression if enabled
+    # TODO: Enable passing OpenVINOQuantizer as a parameter to pt2e_quantize
+    if nncf_compression:
+        try:
+            import nncf
+            from functools import partial
+            from pytorch_tokenizers import get_tokenizer
+        except ImportError:
+            raise ImportError(
+                "Please install nncf via backends/openvino/requirements.txt"
+            )
+        tokenizer = get_tokenizer(builder_exported.tokenizer_path)
+
+        def transform_fn(
+            prompts: str, tokenizer
+        ):
+            tokenized_text = tokenizer.encode(prompts, bos=False, eos=False)
+            logging.error(tokenized_text)
+
+            inputs = ()
+            inputs = (
+                torch.tensor(tokenized_text).unsqueeze(0),
+                {"input_pos": torch.tensor([0])},
+            )
+
+            return inputs
+
+        builder_exported.calibration_data = [builder_exported.calibration_data] if isinstance(builder_exported.calibration_data, str) else builder_exported.calibration_data
+        builder_exported.calibration_data = [word for prompt in builder_exported.calibration_data for word in prompt.split()] if not builder_exported.dynamic_shapes else builder_exported.calibration_data
+
+        builder_exported.pre_autograd_graph_module = nncf.compress_weights(
+                                                            builder_exported.pre_autograd_graph_module,
+                                                            dataset=nncf.Dataset(builder_exported.calibration_data, transform_func=partial(transform_fn, tokenizer=tokenizer)),
+                                                            mode=nncf.CompressWeightsMode.INT4_SYM,
+                                                            ratio=0.8,
+                                                            sensitivity_metric=nncf.SensitivityMetric.HESSIAN_INPUT_ACTIVATION,
+                                                        )
+
+    builder = builder_exported.to_edge_transform_and_lower(
+        partitioners
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
 def _to_edge_and_lower_llama(  # noqa: C901
     builder_exported,
     modelname,
@@ -873,8 +940,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
     mps: bool = False,
     coreml: bool = False,
     qnn: bool = False,
-    openvino: bool = False,
-    openvino_device: str = "CPU",
     dtype_override: str = "fp32",
     enable_dynamic_shape: bool = True,
     use_kv_cache: bool = False,
@@ -918,10 +983,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
-
-    if openvino:
-        partitioners.append(get_openvino_partitioner(openvino_device))
-        modelname = f"openvino_{modelname}"
 
     if qnn:
         logging.warning(
@@ -1078,6 +1139,15 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
         )
+    elif llm_config.backend.openvino.enabled:
+        builder = _to_edge_and_lower_llama_openvino(
+            builder_exported,
+            modelname,
+            additional_passes,
+            openvino_device=llm_config.backend.openvino.device,
+            nncf_compression=llm_config.backend.openvino.nncf_compression,
+            verbose=llm_config.debug.verbose,
+        )
     else:
         builder = _to_edge_and_lower_llama(
             builder_exported,
@@ -1090,8 +1160,6 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             mps=llm_config.backend.mps.enabled,
             coreml=llm_config.backend.coreml.enabled,
             qnn=llm_config.backend.qnn.enabled,
-            openvino=llm_config.backend.openvino.enabled,
-            openvino_device=llm_config.backend.openvino.device,
             dtype_override=llm_config.model.dtype_override,
             enable_dynamic_shape=llm_config.model.enable_dynamic_shape,
             use_kv_cache=llm_config.model.use_kv_cache,
@@ -1214,7 +1282,6 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
         use_legacy_export=llm_config.backend.qnn.enabled,
         save_exported_program=llm_config.export.export_only,
         verbose=llm_config.debug.verbose,
-        nncf_compression=llm_config.backend.openvino.nncf_compression,
         metadata=_load_llama_model_metadata(
             WeightType.FAIRSEQ2 if llm_config.base.fairseq2 else WeightType.LLAMA,
             llm_config.model.use_kv_cache,
