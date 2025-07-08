@@ -812,16 +812,18 @@ Error Method::init(
     const NamedDataMap* named_data_map = nullptr;
     if (external_data_map && pte_data_map.ok()) {
       // Merge external_data_map and pte_data_map if both are present.
-      auto merged = internal::MergedDataMap::load(external_data_map, pte_data_map.get());
+      auto merged =
+          internal::MergedDataMap::load(external_data_map, pte_data_map.get());
       if (!merged.ok()) {
         return merged.error();
       }
       // Allocate memory for the merged data map.
-      merged_data_map_ = method_allocator->allocateInstance<internal::MergedDataMap>();
+      merged_data_map_ =
+          method_allocator->allocateInstance<internal::MergedDataMap>();
       if (merged_data_map_ == nullptr) {
         return Error::MemoryAllocationFailed;
       }
-      new (merged_data_map_)internal::MergedDataMap(std::move(merged.get()));
+      new (merged_data_map_) internal::MergedDataMap(std::move(merged.get()));
       named_data_map = merged_data_map_;
     } else if (external_data_map) {
       named_data_map = external_data_map;
