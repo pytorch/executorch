@@ -9,7 +9,7 @@ set -eux
 
 # Get the absolute path of this script
 SCRIPT_DIR="$( cd -- "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 ; pwd -P )"
-source "${SCRIPT_DIR}/.../../examples/mediatek/mtk_build_examples.sh"
+source "${SCRIPT_DIR}/../../examples/mediatek/mtk_build_examples.sh"
 
 build_neuron_backend() {
   echo "Start building neuron backend."
