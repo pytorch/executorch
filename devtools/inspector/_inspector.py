@@ -42,6 +42,7 @@ from executorch.devtools.etdump.schema_flatcc import (
 from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
     calculate_time_scale_factor,
+    compare_intermediate_outputs,
     create_debug_handle_to_op_node_mapping,
     DebugHandle,
     display_or_print_df,
@@ -1415,8 +1416,8 @@ class Inspector:
                         runtime_debug_handle, runtime_debug_handle_to_op_name
                     ),
                     "runtime_intermediate_output": runtime_intermediate_output,
-                    "gap": comparator.compare(
-                        aot_intermediate_output, runtime_intermediate_output
+                    "gap": compare_intermediate_outputs(
+                        aot_intermediate_output, runtime_intermediate_output, comparator
                     ),
                 }
             )

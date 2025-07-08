@@ -636,14 +636,14 @@ class TestInspector(unittest.TestCase):
             for i, row in df.iterrows():
                 # Dummpy key to get the expected aot/runtime internmediate outputs
                 key = (i,)
-                # aot_intermediate_output should equal aot_intermediate_outputs[h]
+                # aot_intermediate_output should equal aot_intermediate_outputs[key]
                 self.assertTrue(
                     torch.allclose(
                         row["aot_intermediate_output"],
                         aot_intermediate_outputs[key],
                     )
                 )
-                # runtime_intermediate_output should equal runtime_intermediate_outputs[h]
+                # runtime_intermediate_output should equal runtime_intermediate_outputs[key]
                 self.assertTrue(
                     torch.allclose(
                         row["runtime_intermediate_output"],
@@ -651,7 +651,7 @@ class TestInspector(unittest.TestCase):
                     )
                 )
                 # gap should equal 3.0
-                self.assertEqual(row["gap"], 3.0)
+                self.assertEqual(row["gap"][0], 3.0)
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]

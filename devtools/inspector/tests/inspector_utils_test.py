@@ -29,6 +29,7 @@ from executorch.devtools.inspector._inspector_utils import (
     calculate_mse,
     calculate_snr,
     calculate_time_scale_factor,
+    compare_intermediate_outputs,
     convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
@@ -42,6 +43,7 @@ from executorch.devtools.inspector._inspector_utils import (
     NodeFilter,
     TimeScale,
 )
+from executorch.devtools.inspector.numerical_comparator import L1Comparator
 
 
 class TestInspectorUtils(unittest.TestCase):
@@ -420,19 +422,10 @@ class TestInspectorUtils(unittest.TestCase):
         )
         self.assertEqual(actual_output2.device.type, "cpu")
 
-        # List of tensors -> stacked tensor float32 CPU
+        # List of tensors -> AssertionError
         t_list = [torch.tensor([1, 2]), torch.tensor([2, 3]), torch.tensor([3, 4])]
-        actual_output3 = convert_to_float_tensor(t_list)
-        self.assertIsInstance(actual_output3, torch.Tensor)
-        self.assertEqual(actual_output3.dtype, torch.float64)
-        self.assertEqual(tuple(actual_output3.shape), (3, 2))
-        self.assertTrue(
-            torch.allclose(
-                actual_output3,
-                torch.tensor([[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]], dtype=torch.float64),
-            )
-        )
-        self.assertEqual(actual_output3.device.type, "cpu")
+        with self.assertRaises(AssertionError):
+            convert_to_float_tensor(t_list)
 
     def test_convert_input_to_tensor_non_convertible_raises(self):
         class X:
@@ -565,6 +558,24 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertEqual(
             find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2"]
         )
+
+    def test_compare_intermediate_outputs_sequences(self):
+        a = [1.0, 2.0, 3.0]
+        b = [1.0, 2.5, 3.5]
+        result = compare_intermediate_outputs(a, b, L1Comparator())
+        self.assertEqual(result, [0.0, 0.5, 0.5])
+
+    def test_compare_intermediate_outputs_diff_len_sequences(self):
+        a = [1.0, 2.0]
+        b = [1.0, 2.0, 3.0]
+        with self.assertRaises(ValueError):
+            compare_intermediate_outputs(a, b, L1Comparator())
+
+    def test_compare_intermediate_outputs_sequence_and_non_sequence(self):
+        a = [1.0, 2.0]
+        b = 1.0
+        with self.assertRaises(ValueError):
+            compare_intermediate_outputs(a, b, L1Comparator())
 
 
 def gen_mock_operator_graph_with_expected_map() -> (
