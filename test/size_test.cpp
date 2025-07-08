@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
   for (const auto i : c10::irange(method->outputs_size())) {
     auto output_tensor = output_list[i].toTensor();
     [[maybe_unused]] auto data_output = output_tensor.const_data_ptr<float>();
-    for (const auto j : c10::irange(output_tensor.numel())) {
+    for ([[maybe_unused]] const auto j : c10::irange(output_tensor.numel())) {
       ET_LOG(Info, "%f", data_output[j]);
     }
   }
