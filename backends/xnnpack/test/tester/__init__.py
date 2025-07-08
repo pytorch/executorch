@@ -6,6 +6,7 @@
 
 from executorch.backends.xnnpack.test.tester.tester import (
     Export,
+    ToEdge,
     Partition,
     Quantize,
     RunPasses,
@@ -18,12 +19,12 @@ from executorch.backends.xnnpack.test.tester.tester import (
 
 __all__ = [
     "Export",
-    "ToEdge",
     "Partition",
     "Quantize",
     "RunPasses",
-    "ToEdgeTransformAndLower",
-    "Tester",
     "Serialize",
+    "Tester",
+    "ToEdge",
+    "ToEdgeTransformAndLower",
     "ToExecutorch",
 ]
