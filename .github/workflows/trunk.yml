@@ -637,11 +637,10 @@ jobs:
         pip list
         echo "::endgroup::"
 
-
-        # Test model export
         MODELS=(smollm llama3)
         for MODEL_NAME in "${MODELS[@]}"; do
           ${CONDA_RUN} bash .ci/scripts/export_optimum_et_coreml.sh $MODEL_NAME" /tmp/$MODEL_NAME
+        done
 
   # test-huggingface-transformers:
   #   # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
