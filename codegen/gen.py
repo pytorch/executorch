@@ -340,9 +340,7 @@ def gen_unboxing(
 
     header = ["Functions.h" if use_aten_lib else "NativeFunctions.h"]
     filename = (
-        f"register_{lib_name}_kernels.cpp"
-        if manual_registration and lib_name
-        else "RegisterKernels.cpp"
+        "RegisterKernels.cpp"
         if manual_registration
         else "RegisterCodegenUnboxedKernels.cpp"
     )
@@ -359,10 +357,11 @@ def gen_unboxing(
             "fn_header": (
                 header if unbox_kernel_entry == items[0] else []
             ),  # Only write header once
-            "lib_name": lib_name or "all",
+            "lib_name": lib_name or "", 
+            "use_lib_name_in_register": bool(lib_name),
         },
         num_shards=1,
-        sharded_keys={"unboxed_kernels", "fn_header", "lib_name"},
+        sharded_keys={"unboxed_kernels", "fn_header", "lib_name", "use_lib_name_in_register"},
     )
 
 
@@ -1015,7 +1014,8 @@ def main() -> None:
             cpu_fm=cpu_fm,
             use_aten_lib=options.use_aten_lib,
         )
-
+    if options.lib_name and not options.manual_registration:
+        raise ValueError("--lib-name can only be used with --manual-registration")
     if "sources" in options.generate:
         gen_unboxing(
             native_functions=native_functions,

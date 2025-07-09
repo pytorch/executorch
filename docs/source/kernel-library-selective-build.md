@@ -45,7 +45,7 @@ gen_selected_ops(
   ROOT_OPS              # comma separated operator names to be selected
   INCLUDE_ALL_OPS       # boolean flag to include all operators
   OPS_FROM_MODEL        # path to a pte file of model to select operators from
-  DTYPE_SELECTIVE_BUILD # boolean flag to enable dtye selection
+  DTYPE_SELECTIVE_BUILD # boolean flag to enable dtype selection
 )
 ```
 
@@ -112,14 +112,14 @@ python -m codegen.gen \
 ```
 This will generate:
 
-`register_custom_kernels.cpp` defines `register_custom_kernels()` with only the kernels selected and `register_custom_kernels.h` declares the function for inclusion in your application
+`register_kernels_custom.cpp` defines `register_kernels_custom()` with only the kernels selected and `register_kernels_custom.h` declares the function for inclusion in your application
 
 Then in your application, call:
 
 ```
-#include "register_custom_kernels.h"
+#include "register_kernels_custom.h"
 
-register_custom_kernels(); // Registers only the "custom" kernels
+register_kernels_custom(); // Registers only the "custom" kernels
 ```
 
 This avoids relying on static initialization and enables you to register only the kernels you want.
