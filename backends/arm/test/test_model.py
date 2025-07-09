@@ -7,6 +7,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 
 
 def get_args():
@@ -64,7 +65,7 @@ def get_args():
     parser.add_argument(
         "--timeout",
         required=False,
-        default=60 * 10,
+        default=60 * 20,
         help="Timeout in seconds used when running the model",
     )
     args = parser.parse_args()
@@ -165,11 +166,6 @@ def build_ethosu_runtime(
     extra_flags: str,
     elf_build_path: str,
 ):
-
-    extra_build_flag = ""
-    if extra_flags:
-        extra_build_flag = f"--extra_build_flags={extra_flags}"
-
     run_external_cmd(
         [
             "bash",
@@ -182,7 +178,7 @@ def build_ethosu_runtime(
             "--build_type=Release",
             f"--system_config={system_config}",
             f"--memory_mode={memory_mode}",
-            extra_build_flag,
+            f"--extra_build_flags=-DET_DUMP_OUTPUT=OFF {extra_flags}",
             f"--output={elf_build_path}",
         ]
     )
@@ -204,12 +200,17 @@ def run_elf_with_fvp(script_path: str, elf_file: str, target: str, timeout: int)
 
 
 if __name__ == "__main__":
-
+    total_start_time = time.perf_counter()
     args = get_args()
     script_path = os.path.join("backends", "arm", "scripts")
 
     if args.build_libs:
+        start_time = time.perf_counter()
         build_libs(args.test_output, script_path)
+        end_time = time.perf_counter()
+        print(
+            f"[Test model: {end_time - start_time:.2f} s] Build needed executorch libs"
+        )
 
     if args.model:
         model_name = args.model.split(" ")[0].split(";")[0]
@@ -222,6 +223,7 @@ if __name__ == "__main__":
             args.test_output, f"{model_name}_arm_delegate_{args.target}"
         )
 
+        start_time = time.perf_counter()
         pte_file = build_pte(
             args.test_output,
             model_name,
@@ -231,13 +233,17 @@ if __name__ == "__main__":
             output,
             args.no_intermediate,
         )
-        print(f"PTE file created: {pte_file} ")
+        end_time = time.perf_counter()
+        print(
+            f"[Test model: {end_time - start_time:.2f} s] PTE file created: {pte_file}"
+        )
 
         if "ethos-u" in args.target:
             elf_build_path = os.path.join(
                 output, f"{model_name}_arm_delegate_{args.target}"
             )
 
+            start_time = time.perf_counter()
             elf_file = build_ethosu_runtime(
                 args.test_output,
                 script_path,
@@ -248,7 +254,18 @@ if __name__ == "__main__":
                 args.extra_flags,
                 elf_build_path,
             )
-            print(f"ELF file created: {elf_file} ")
+            end_time = time.perf_counter()
+            print(
+                f"[Test model: {end_time - start_time:.2f} s] ELF file created: {elf_file}"
+            )
 
+            start_time = time.perf_counter()
             run_elf_with_fvp(script_path, elf_file, args.target, args.timeout)
-        print(f"Model: {model_name} on {args.target} -> PASS")
+            end_time = time.perf_counter()
+            print(
+                f"[Test model: {end_time - start_time:.2f} s] Tested elf on FVP {elf_file}"
+            )
+        total_end_time = time.perf_counter()
+        print(
+            f"[Test model: {total_end_time - total_start_time:.2f} s total] Model: {model_name} on {args.target} -> PASS"
+        )

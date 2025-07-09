@@ -43,7 +43,6 @@ class EdgeCompileConfig:
     _core_aten_ops_exception_list: List[torch._ops.OpOverload] = field(
         default_factory=list
     )
-    _skip_type_promotion: bool = False
     # TODO(gasoonjia): remove this
     _skip_dim_order: bool = False
 
@@ -105,3 +104,6 @@ class ExecutorchBackendConfig:
 
     # If set to true, we run quant fusion and constant propagation passes
     do_quant_fusion_and_const_prop: bool = False
+
+    # Experimental: If set to true, we run a pass to reinplace ops in the graph.
+    run_reinplace_pass: bool = False

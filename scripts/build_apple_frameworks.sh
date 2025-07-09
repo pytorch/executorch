@@ -51,7 +51,7 @@ libmpsdelegate.a,\
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
 libxnnpack_backend.a,\
-libmicrokernels-prod.a,\
+libxnnpack-microkernels-prod.a,\
 :"
 
 FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
@@ -179,9 +179,11 @@ sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
 ' \
 "$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
-"$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h"
+"$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h" \
+"$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Export.h"
 
 cp -r $HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_ABSOLUTE_PATH/"
+cp -r $HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch "$HEADERS_ABSOLUTE_PATH/"
 
 cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_ABSOLUTE_PATH/executorch"
 

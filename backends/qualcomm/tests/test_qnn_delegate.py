@@ -351,6 +351,7 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_ceil(self):
+        torch.manual_seed(8)
         module = Ceil()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
         self.lower_module_and_test_output(module, sample_input)
@@ -621,17 +622,57 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_index_copy(self):
         test_comb = [
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=False
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
                 ),
             },
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=True
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
                 ),
             },
         ]
@@ -715,6 +756,7 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_leaky_relu(self):
+        torch.manual_seed(8)
         test_comb = [
             {
                 QCOM_MODULE: [LeakyReLUDefault()],  # noqa: F405
@@ -1905,17 +1947,57 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_index_copy(self):
         test_comb = [
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=False
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
                 ),
             },
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=True
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
                 ),
             },
         ]
@@ -3085,6 +3167,10 @@ class TestQNNFloatingPointUtils(TestQNN):
         ), "Generated .dot file does not match the golden file."
 
     def test_qnn_backend_generate_optrace(self):
+        if self.enable_x86_64:
+            self.skipTest(
+                "At the moment, testing is only being conducted on the device."
+            )
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         backend_options = generate_htp_compiler_spec(use_fp16=True)
@@ -3791,6 +3877,10 @@ class TestQNNQuantizedUtils(TestQNN):
         ), "Generated .dot file does not match the golden file."
 
     def test_qnn_backend_generate_optrace(self):
+        if self.enable_x86_64:
+            self.skipTest(
+                "At the moment, testing is only being conducted on the device."
+            )
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
@@ -4899,6 +4989,39 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 80)
 
+    def test_whisper(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/whisper/whisper.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertLessEqual(msg["wer"], 0.25)
+
 
 class TestExampleQaihubScript(TestQNN):
     def test_utils_export(self):
@@ -5621,6 +5744,68 @@ class TestUtilsScript(TestQNN):
                     with open(qhas, "r") as qhas_file:
                         qhas_data = json.load(qhas_file)
                         self.assertIn("data", qhas_data)
+
+    def test_cli(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sample_input = torch.randn(1, 2, 3, 4)
+            ep = torch.export.export(Relu(), (sample_input,))  # noqa: F405
+            torch.export.save(ep, f"{tmp_dir}/relu.pt2")
+            torch.save(sample_input, f"{tmp_dir}/input_0_0.pt")
+            with open(f"{tmp_dir}/input_list", "w") as f:
+                f.write(f"{tmp_dir}/input_0_0.pt\n")
+
+            # quantize
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "quantize",
+                "--artifact",
+                f"{tmp_dir}/relu.pt2",
+                "--output_folder",
+                f"{tmp_dir}/q_out",
+                "--input_list",
+                f"{tmp_dir}/input_list",
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/q_out/relu_quantized.pt2"))
+            # compile
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "compile",
+                "--artifact",
+                f"{tmp_dir}/q_out/relu_quantized.pt2",
+                "--output_folder",
+                f"{tmp_dir}/c_out",
+                "--model",
+                self.model,
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.pte"))
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.svg"))
+            # execute
+            cmds = [
+                "python",
+                "-m",
+                "examples.qualcomm.util_scripts.cli",
+                "execute",
+                "--artifact",
+                f"{tmp_dir}/c_out/relu_quantized.pte",
+                "--output_folder",
+                f"{tmp_dir}/e_out",
+                "--model",
+                self.model,
+                "--device",
+                self.device,
+                "--build_folder",
+                self.build_folder,
+                "--input_list",
+                f"{tmp_dir}/input_list",
+            ]
+            subprocess.run(cmds, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/output_0_0.pt"))
 
 
 def setup_environment():

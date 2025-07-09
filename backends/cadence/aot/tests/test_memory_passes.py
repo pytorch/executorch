@@ -6,19 +6,25 @@
 
 # pyre-strict
 
+import logging
 import math
 import unittest
-from typing import cast, List, Optional
+from typing import cast, List, Optional, Sequence
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
+from executorch.backends.cadence.aot.memory_constraints import ConstraintsGenPass
 from executorch.backends.cadence.aot.memory_planning import (
     CadenceMemoryPlanning,
     find_peak_memory_usage,
 )
-from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.cadence.aot.pass_utils import (
+    CadencePassAttribute,
+    count_node,
+    register_cadence_pass,
+)
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
@@ -26,12 +32,23 @@ from executorch.backends.cadence.aot.utils import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import collect_specs_from_nodes
+from executorch.exir.pass_base import PassBase, PassResult
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tests.models import MultiLayerPerceptron
+from parameterized import parameterized
 from torch.fx import GraphModule
 
 
 class TestMemPlanningPasses(unittest.TestCase):
+    def setUp(self) -> None:
+        logging.basicConfig(
+            format="%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
+            datefmt="%Y-%m-%d:%H:%M:%S",
+            level=logging.getLevelName(logging.INFO),
+            force=True,
+        )
+        return super().setUp()
+
     def test_calculate_peak_memory_pass(self) -> None:
         class PeakMemoryTestModel(torch.nn.Module):
             def __init__(self, input_dim: int, hidden_dim: int, output_dim: int):
@@ -230,6 +247,7 @@ class TestMemTransform(unittest.TestCase):
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
         memory_config: Optional[MemoryConfig] = None,
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
     ) -> GraphModule:
         if memory_config is None:
             memory_config = get_default_memory_config()
@@ -240,6 +258,7 @@ class TestMemTransform(unittest.TestCase):
             mem_algo=mem_algo,
             alloc_graph_input=alloc_graph_input,
             alloc_graph_output=alloc_graph_output,
+            additional_constraint_gen_passes=additional_constraint_gen_passes,
         )(graph_module).graph_module
 
     @expand(
@@ -984,3 +1003,67 @@ class TestMemTransform(unittest.TestCase):
             ):
                 if spec and spec.mem_offset:
                     self.assertEqual(spec.mem_offset % 37, 0)
+
+    @parameterized.expand([0, 1])
+    def test_block_mem_id(self, mem_algo: int) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(16))
+        add = builder.call_operator(
+            op=torch.ops.aten.add.Scalar,
+            args=(x, 2.0),
+        )
+        mul = builder.call_operator(
+            op=torch.ops.aten.mul.Scalar,
+            args=(add, 2.0),
+        )
+        builder.output([mul])
+        original = builder.get_graph_module()
+
+        dummy_memory_config = MemoryConfig([1024, 1024, 1024, 1024])
+
+        add_scalar_block_mem_ids = [2, 3]
+        mul_scalar_block_mem_ids = [1, 3]
+
+        @register_cadence_pass(CadencePassAttribute(opt_level=0))
+        class DummyMemIdBlockConstraintGen(PassBase):
+            """Blocks placement based on op type.
+            add: blocks 2, 3
+            mul: blocks 1, 3
+
+            """
+
+            def __init__(self, memory_constraints: MemoryConfig):
+                self.memory_constraints = memory_constraints
+
+            def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+                for node in graph_module.graph.find_nodes(
+                    op="call_function", target=torch.ops.aten.add.Scalar
+                ):
+                    spec = node.meta["spec"]
+                    for mem_id in add_scalar_block_mem_ids:
+                        self.memory_constraints.add_mem_id_to_blocklist(spec, mem_id)
+                for node in graph_module.graph.find_nodes(
+                    op="call_function", target=torch.ops.aten.mul.Scalar
+                ):
+                    spec = node.meta["spec"]
+                    for mem_id in mul_scalar_block_mem_ids:
+                        self.memory_constraints.add_mem_id_to_blocklist(spec, mem_id)
+
+        graph_module = self.run_memory_planning(
+            original,
+            mem_algo=mem_algo,
+            memory_config=dummy_memory_config,
+            additional_constraint_gen_passes=[DummyMemIdBlockConstraintGen],
+        )
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.add.Scalar
+        ):
+            spec = node.meta["spec"]
+            self.assertIsNotNone(spec.mem_id)
+            self.assertNotIn(spec.mem_id, add_scalar_block_mem_ids)
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.mul.Scalar
+        ):
+            spec = node.meta["spec"]
+            self.assertIsNotNone(spec.mem_id)
+            self.assertNotIn(spec.mem_id, mul_scalar_block_mem_ids)

@@ -86,6 +86,17 @@ announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 
+# Enable ccache if available
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  message(STATUS "ccache found and enabled for faster builds")
+else()
+  message(STATUS "ccache not found, builds will not be cached")
+endif()
+announce_configured_options(CCACHE_PROGRAM)
+
 # Print all the configs that were called with announce_configured_options.
 print_configured_options()
 
@@ -439,6 +450,12 @@ install(
   PATTERN "*.h"
 )
 install(
+  DIRECTORY runtime/executor/
+  DESTINATION include/executorch/runtime/executor
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
   DIRECTORY runtime/kernel/
   DESTINATION include/executorch/runtime/kernel
   FILES_MATCHING
@@ -483,6 +500,10 @@ endif()
 
 if(EXECUTORCH_BUILD_CADENCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cadence)
+endif()
+
+if(EXECUTORCH_BUILD_NXP_NEUTRON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/nxp)
 endif()
 
 if(EXECUTORCH_BUILD_COREML)
@@ -531,6 +552,12 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+  install(
+    DIRECTORY extension/module/
+    DESTINATION include/executorch/extension/module
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
@@ -606,9 +633,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK and microkernels-prod here otherwise
+    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here otherwise
     # uses XNNPACK and microkernel-prod symbols from libtorch_cpu
-    list(APPEND _dep_libs xnnpack_backend XNNPACK microkernels-prod)
+    list(APPEND _dep_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   endif()
 
   # compile options for pybind
@@ -694,12 +721,8 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
-  if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    if(APPLE)
-      target_link_options(executor_runner PRIVATE "LINKER:-dead_strip")
-    else()
-      target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
-    endif()
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_options_gc_sections(executor_runner)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})

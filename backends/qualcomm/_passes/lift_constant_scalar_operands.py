@@ -59,6 +59,7 @@ SCALAR_OPS = {
 
 SKIP_LIFT_OPS = {
     aten.full_like.default,
+    aten.full.default,
     aten.arange.start_step,
     aten.arange.default,
     aten.scalar_tensor.default,
