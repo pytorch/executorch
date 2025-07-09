@@ -90,8 +90,8 @@ void resize_linear_qta8a_qga4w_node(
   vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
   vTensorPtr mat2 = graph->get_tensor(args[1].refs[1]);
 
-  const int out_cols = utils::val_at(-2, mat1->sizes());
-  const int out_rows = utils::val_at(-1, mat2->sizes()) * 2;
+  const int64_t out_cols = utils::val_at(-2, mat1->sizes());
+  const int64_t out_rows = utils::val_at(-1, mat2->sizes()) * 2;
 
   std::vector<int64_t> new_out_sizes(3);
   if (mat1->sizes().size() == 2) {
