@@ -626,7 +626,8 @@ jobs:
         # There is no release yet, for CI stability, always test from the same commit on main
         # git checkout $OPTIMUM_ET_COMMIT
         gh pr checkout 93
-        python install_dev.py --skip_override_torch
+        pip install .
+        # python install_dev.py --skip_override_torch
         popd
         pip list
         echo "::endgroup::"
