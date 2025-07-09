@@ -163,6 +163,7 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 ":managed_memory_manager",
+                "//executorch/runtime/executor:merged_data_map",
                 "//executorch/runtime/executor:program",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/flat_tensor:flat_tensor_data_map",
