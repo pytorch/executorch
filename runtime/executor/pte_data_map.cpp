@@ -52,11 +52,11 @@ Result<FreeableBuffer> PteDataMap::get_data(
           static_cast<int>(key.size()),
           key.data(),
           segments_->size());
-
-      const auto* segment = segments_->Get(segment_index);
+      size_t segment_offset = segments_->Get(segment_index)->offset();
+      size_t segment_size = segments_->Get(segment_index)->size();
       return loader_->load(
-          /*offset=*/segment_base_offset_ + segment->offset(),
-          segment->size(),
+          /*offset=*/segment_base_offset_ + segment_offset,
+          segment_size,
           DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
     }
   }

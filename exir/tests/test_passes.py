@@ -67,7 +67,7 @@ from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
-from executorch.exir.tests.models import MLP, Mul
+from executorch.exir.tests.models import FeedForwardBlock, MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
@@ -883,11 +883,79 @@ class TestPasses(unittest.TestCase):
             .exported_program()
             .graph_module
         )
+
+        # Every node except input and output should have debug handle
         for node in graph_module.graph.nodes:
-            self.assertIn("debug_handle", node.meta)
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
         ScalarToTensorPass()(graph_module)
+
         for node in graph_module.graph.nodes:
-            self.assertIn("debug_handle", node.meta)
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
+
+    def test_debug_handle_generator_pass_generate_same_debug_handle_on_ops_sharing_same_source(
+        self,
+    ) -> None:
+        eager_model = FeedForwardBlock(256, 512)
+        inputs = (torch.randn(12, 256),)
+
+        graph_module = (
+            to_edge(export(eager_model, inputs, strict=True))
+            .exported_program()
+            .graph_module
+        )
+
+        same_source_nodes = {
+            "aten_native_layer_norm_default": (
+                "aten_native_layer_norm_default",
+                "getitem",
+            ),
+            "getitem": ("aten_native_layer_norm_default", "getitem"),
+            "aten_permute_copy_default": (
+                "aten_permute_copy_default",
+                "aten_addmm_default",
+            ),
+            "aten_addmm_default": ("aten_permute_copy_default", "aten_addmm_default"),
+            "aten_native_dropout_default": ("aten_native_dropout_default", "getitem_1"),
+            "getitem_1": ("aten_native_dropout_default", "getitem_1"),
+            "aten_relu_default": ("aten_relu_default",),
+            "aten_permute_copy_default_1": (
+                "aten_permute_copy_default_1",
+                "aten_addmm_default_1",
+            ),
+            "aten_addmm_default_1": (
+                "aten_permute_copy_default_1",
+                "aten_addmm_default_1",
+            ),
+            "aten_native_dropout_default_1": (
+                "aten_native_dropout_default_1",
+                "getitem_2",
+            ),
+            "getitem_2": ("aten_native_dropout_default_1", "getitem_2"),
+        }
+
+        node_name_to_debug_handle = {}
+
+        # Node having same source should have same debug handle
+        for node in graph_module.graph.nodes:
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
+                if node.name in node_name_to_debug_handle:
+                    for node_name_with_same_debug_handle in same_source_nodes[
+                        node.name
+                    ]:
+                        self.assertEqual(
+                            node_name_to_debug_handle[node_name_with_same_debug_handle],
+                            node.meta["debug_handle"],
+                        )
+                else:
+                    for node_name_with_same_debug_handle in same_source_nodes[
+                        node.name
+                    ]:
+                        node_name_to_debug_handle[node_name_with_same_debug_handle] = (
+                            node.meta["debug_handle"]
+                        )
 
     def test_generate_missing_debug_handles(self) -> None:
         eager_model = MLP(2, output_size=4)
@@ -895,10 +963,15 @@ class TestPasses(unittest.TestCase):
 
         ep = to_edge(export(eager_model, inputs, strict=True)).exported_program()
 
-        list(ep.graph.nodes)[0].meta.pop("debug_handle")
-        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is None)
+        # get the first non-placeholder node
+        first_non_placeholder_node = [
+            n for n in ep.graph.nodes if n.op != "placeholder"
+        ][0]
+
+        first_non_placeholder_node.meta.pop("debug_handle")
+        self.assertTrue(first_non_placeholder_node.meta.get("debug_handle") is None)
         generate_missing_debug_handles(ep)
-        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is not None)
+        self.assertTrue(first_non_placeholder_node.meta.get("debug_handle") is not None)
 
     def test_debug_handle_generator_pass_with_control_flow(self) -> None:
         def true_nested(y: torch.Tensor) -> torch.Tensor:
@@ -952,7 +1025,8 @@ class TestPasses(unittest.TestCase):
             while queue:
                 current_graph_module = queue.pop(0)
                 for node in current_graph_module.graph.nodes:
-                    self.assertIn("debug_handle", node.meta)
+                    if node.op != "placeholder" and node.op != "output":
+                        self.assertIn("debug_handle", node.meta)
                 control_flow_submodules = [
                     submodule
                     for _, submodule, _ in get_control_flow_submodules(
@@ -963,7 +1037,6 @@ class TestPasses(unittest.TestCase):
 
         DebugHandleGeneratorPass()(graph_module)
         check_debug_handle_metadata(graph_module)
-        generate_missing_debug_handles(ep)
 
         # Check debug handle still preserved after ScalarToTensorPass
         ScalarToTensorPass()(graph_module)
