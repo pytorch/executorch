@@ -71,25 +71,6 @@ build_android_native_library() {
   fi
   cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
 
-  cmake extension/android \
-    -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
-    -DANDROID_ABI="${ANDROID_ABI}" \
-    -DANDROID_PLATFORM=android-26 \
-    -DBUILD_TESTING=OFF \
-    -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
-    -DEXECUTORCH_ENABLE_LOGGING=ON \
-    -DEXECUTORCH_LOG_LEVEL=Info \
-    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
-    -DEXECUTORCH_ANDROID_PROFILING="${EXECUTORCH_ANDROID_PROFILING:-OFF}" \
-    -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM="${EXECUTORCH_BUILD_EXTENSION_LLM:-ON}" \
-    -DEXECUTORCH_BUILD_LLAMA_JNI="${EXECUTORCH_BUILD_EXTENSION_LLM:-ON}" \
-    -DSUPPORT_REGEX_LOOKAHEAD=ON \
-    -DCMAKE_BUILD_TYPE="${EXECUTORCH_CMAKE_BUILD_TYPE}" \
-    -B"${CMAKE_OUT}"/extension/android
-
-  cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config "${EXECUTORCH_CMAKE_BUILD_TYPE}"
-
   # Copy artifacts to ABI specific directory
   local SO_STAGE_DIR="cmake-out-android-so/${ANDROID_ABI}"
   mkdir -p ${SO_STAGE_DIR}

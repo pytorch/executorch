@@ -732,4 +732,8 @@ if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
 
+if(ANDROID)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
+endif()
+
 include(Test.cmake)
