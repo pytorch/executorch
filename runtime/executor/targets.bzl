@@ -117,6 +117,7 @@ def define_common_targets():
             exported_deps = [
                 ":memory_manager",
                 ":pte_data_map" + aten_suffix,
+                ":merged_data_map" + aten_suffix,
                 "//executorch/runtime/backend:interface" + aten_suffix,
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:named_data_map" + aten_suffix,
