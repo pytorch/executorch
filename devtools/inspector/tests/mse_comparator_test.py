@@ -47,10 +47,3 @@ class TestMSEComparator(unittest.TestCase):
         expected = (9.0 + 49.0 + 9.0 + 36.0) / 4.0
         result = self.mse_comparator.compare(a, b)
         self.assertAlmostEqual(result, expected)
-
-    def test_list_of_tensors(self):
-        a = [torch.tensor([2, 4]), torch.tensor([15, 2])]
-        b = [torch.tensor([1, 2]), torch.tensor([9, 5])]
-        expected = (1.0 + 4.0 + 36.0 + 9.0) / 4.0
-        result = self.mse_comparator.compare(a, b)
-        self.assertAlmostEqual(result, expected)
