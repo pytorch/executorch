@@ -12,6 +12,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -81,6 +82,33 @@ def test_adaptive_avg_pool2d_u85_INT(test_data):
         run_on_fvp=True,
         symmetric_io_quantization=True,
     ).run()
+
+
+@common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_FP(test_data):
+    pipeline = VgfPipeline[input_t](
+        AdaptiveAveragePool2d(),
+        test_data(),
+        AdaptiveAveragePool2d.aten_op,
+        AdaptiveAveragePool2d.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_INT(test_data):
+    pipeline = VgfPipeline[input_t](
+        AdaptiveAveragePool2d(),
+        test_data(),
+        AdaptiveAveragePool2d.aten_op,
+        AdaptiveAveragePool2d.exir_op,
+        symmetric_io_quantization=True,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
 
 
 class MeanDim(torch.nn.Module):
@@ -294,5 +322,33 @@ def test_mean_dim_u85_INT(test_data):
         [],  # Might be sum, avgpool, or both
         run_on_fvp=True,
         symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDim.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_mean_dim_vgf_FP(test_data):
+    test_data_val, dim, keep_dim = test_data()
+    pipeline = VgfPipeline[input_t](
+        MeanDim(dim, keep_dim),
+        (test_data_val,),
+        MeanDim.torch_op,
+        MeanDim.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDim.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_mean_dim_vgf_INT(test_data):
+    test_data_val, dim, keep_dim = test_data()
+    pipeline = VgfPipeline[input_t](
+        MeanDim(dim, keep_dim),
+        (test_data_val,),
+        [],  # Might be sum, avgpool, or both
+        symmetric_io_quantization=True,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
