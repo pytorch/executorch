@@ -24,7 +24,7 @@
 # the contract of exposing these CMake variables.
 
 cmake_minimum_required(VERSION 3.19)
-include("UtilsINTENTIONALLYBREAKTEST.cmake")
+include("Utils.cmake")
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
