@@ -116,7 +116,7 @@ class MergedDataMap final : public NamedDataMap {
     ET_CHECK_OR_RETURN_ERROR(
         index >= 0 && index < total_num_keys,
         InvalidArgument,
-        "Index %u out of range of size %u",
+        "Index %" PRIu32 " out of range of size %" PRIu32,
         index,
         total_num_keys);
 
