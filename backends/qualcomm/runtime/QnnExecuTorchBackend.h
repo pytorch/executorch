@@ -19,7 +19,6 @@ namespace executorch {
 namespace backends {
 namespace qnn {
 
-constexpr const char* QNN_BACKEND = "QnnBackend";
 class QnnExecuTorchBackend final
     : public ::executorch::runtime::BackendInterface {
  public:

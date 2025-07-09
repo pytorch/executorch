@@ -17,13 +17,10 @@
  * Currently we assume that the outputs are all fp32 tensors.
  */
 
-#include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
-#include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
-#include <executorch/runtime/backend/backend_option_context.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/memory_allocator.h>
@@ -114,7 +111,6 @@ DEFINE_int32(
 
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
-using executorch::backends::qnn::QNN_BACKEND;
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
 using executorch::extension::FileDataLoader;

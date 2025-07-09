@@ -7,12 +7,9 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
-
-#define QNN_RUNTIME_LOG_LEVEL "qnn_runtime_log_level"
-#define QNN_RUNTIME_HTP_PERFORMANCE_MODE "qnn_runtime_htp_performance_mode"
-#define QNN_RUNTIME_PROFILE_LEVEL "qnn_runtime_profile_level"
 
 namespace executorch {
 namespace backends {
