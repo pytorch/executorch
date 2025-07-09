@@ -2329,7 +2329,7 @@ class ReplaceMulTensorWithMulAndFullOpsPass(ExportPass):
             # Extract an argument to a separate full op.
             with graph_module.graph.inserting_before(mul_node):
                 full_tensor = graph_module.graph.call_function(
-                    exir_ops.edge.aten.full.default, args=([1], full_arg)
+                    torch.ops.aten.full.default, args=([1], full_arg)
                 )
                 new_mul_node = graph_module.graph.call_function(
                     torch.ops.aten.mul.Tensor, args=(x_arg, full_tensor)
@@ -2449,4 +2449,5 @@ class CadenceReplaceOpsInGraph:
         ReplaceAtenApproxGeluWithApproxGeluPass,
         ReplaceSplitWithSlicePass,
         ReplacePowWithMulPass,
+        ReplaceMulTensorWithMulAndFullOpsPass,
     ]

@@ -179,7 +179,6 @@ at::Tensor linear_qcs4w_reference_impl(
   return out.reshape(out_shape);
 }
 
-// Quantized matrix multiplication following quantization.md paradigms
 at::Tensor linear_qta8a_qga4w_quantized_matmul(
     const at::Tensor& quantized_input, // [B, M, K] int8 quantized input
     const at::Tensor& input_scale, // [B*M] per-token input scales
