@@ -12,11 +12,10 @@ examples/wasm
 ## Prerequisites
 
 - [emscripten](https://emscripten.org/docs/getting_started/Tutorial.html)
-- [Node.js](https://nodejs.org/en/) (Optional)
 
 ## Generate Models
 
-JavaScript does not have access to the filesystem. To load a model, it needs to be preloaded or embedded into the virtual filesystem. In this example, models in the `./models/` directory are embedded by default. We will then build `executorch_runner` in Wasm.
+JavaScript does not have direct access to the host file system. To load a model, it needs to be preloaded or embedded into the virtual file system. In this example, models in the `./models/` directory are embedded by default. We will then build `executorch_runner` in Wasm.
 
 1. Following the setup guide in [Setting up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup)
 you should be able to get the basic development environment for ExecuTorch working.
@@ -56,7 +55,7 @@ If you need to rebuild `executor_runner` after modifying the contents of `./mode
 cmake --build cmake-out-wasm -j32 --target executor_runner --clean-first
 ```
 
-4. Run the model with Node.js.
+4. Run the model with Node.js (automatically installed with Emscripten).
 
 ```bash
 # Run the tool on the generated model.
