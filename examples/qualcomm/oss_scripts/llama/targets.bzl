@@ -33,6 +33,8 @@ def define_common_targets():
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/backends/qualcomm/runtime:runtime",
             "//pytorch/tokenizers:llama2c_tokenizer",
+            "//pytorch/tokenizers:regex_lookahead",
+            "//pytorch/tokenizers:tiktoken",
         ],
         external_deps = [
             "gflags",

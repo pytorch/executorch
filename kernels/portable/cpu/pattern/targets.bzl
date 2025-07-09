@@ -26,7 +26,7 @@ def define_common_targets():
             "bitwise_op.h",
         ],
         compiler_flags = [],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "//executorch/backends/cadence/..."],
     )
 
     runtime.cxx_library(
@@ -35,7 +35,7 @@ def define_common_targets():
             "comparison_op.h",
         ],
         compiler_flags = [],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "//executorch/backends/cadence/..."],
     )
 
     runtime.cxx_library(
