@@ -9,7 +9,6 @@ def selective_jni_target(name, deps, srcs = [], soname = "libexecutorch.$(ext)")
         name = name,
         srcs = [
             "//xplat/executorch/extension/android/jni:jni_layer.cpp",
-            "//xplat/executorch/extension/android/jni:jni_layer_training.cpp",
             "//xplat/executorch/extension/android/jni:jni_layer_runtime.cpp",
         ] + srcs,
         allow_jni_merging = False,
@@ -22,13 +21,10 @@ def selective_jni_target(name, deps, srcs = [], soname = "libexecutorch.$(ext)")
             "//third-party/glog:glog",
             "//xplat/executorch/extension/android/jni:jni_headers",
             "//xplat/executorch/extension/android/jni:log_provider_static",
-            "//xplat/executorch/extension/data_loader:file_data_loader_static",
             "//xplat/executorch/extension/module:module_static",
             "//xplat/executorch/extension/runner_util:inputs_static",
             "//xplat/executorch/extension/tensor:tensor_static",
             "//xplat/executorch/extension/threadpool:threadpool_static",
-            "//xplat/executorch/extension/training/module:training_module_static",
-            "//xplat/executorch/extension/training/optimizer:sgd_static",
             third_party_dep("cpuinfo"),
         ] + deps,
     )

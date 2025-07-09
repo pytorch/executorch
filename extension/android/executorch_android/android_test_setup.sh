@@ -21,7 +21,7 @@ prepare_add() {
 }
 
 prepare_xor() {
-  pushd "${BASEDIR}/../../../extension/training/"
+  pushd "${BASEDIR}/../../training/"
   python3 -m examples.XOR.export_model  --outdir "${BASEDIR}/src/androidTest/resources/"
   mv "${BASEDIR}/src/androidTest/resources/xor.pte" "${BASEDIR}/src/androidTest/resources/xor_full.pte"
   python3 -m examples.XOR.export_model  --outdir "${BASEDIR}/src/androidTest/resources/" --external

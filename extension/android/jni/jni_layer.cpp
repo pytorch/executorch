@@ -496,7 +496,13 @@ extern void register_natives_for_llm();
 void register_natives_for_llm() {}
 #endif
 extern void register_natives_for_runtime();
+
+#ifdef EXECUTORCH_BUILD_EXTENSION_TRAINING
 extern void register_natives_for_training();
+#else
+// No op if we don't build training JNI
+void register_natives_for_training() {}
+#endif
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   return facebook::jni::initialize(vm, [] {
