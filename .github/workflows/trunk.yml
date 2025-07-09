@@ -240,11 +240,11 @@ jobs:
 
         cxx_flags="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
         setup_script_args=""
-        if [[ ${{ matrix.os}} == "bare_metal" ]]; then 
+        if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
           threshold="103268" # ~100KiB
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
-        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then 
+        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
           threshold="133120" # should be ~125KB, set threshold to 130KB
@@ -599,6 +599,45 @@ jobs:
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "mps"
           echo "::endgroup::"
         done
+
+  test-coreml-optimum-executorch:
+    name: test-apple-model
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        BUILD_TOOL=cmake
+        bash .ci/scripts/setup-conda.sh
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+
+        echo "::group::Set up Hugging Face"
+        pip install -U "huggingface_hub[cli]"
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        git clone https://github.com/huggingface/optimum-executorch
+        pushd optimum-executorch
+        # There is no release yet, for CI stability, always test from the same commit on main
+        # git checkout $OPTIMUM_ET_COMMIT
+        gh pr checkout 93
+        python install_dev.py --skip_override_torch
+        popd
+        pip list
+        echo "::endgroup::"
+
+
+        # Test model export
+        MODELS=(smollm llama3)
+        for MODEL_NAME in "${MODELS[@]}"; do
+          bash .ci/scripts/export_optimum_et_coreml.sh $MODEL_NAME" /tmp/$MODEL_NAME
+
 
   test-huggingface-transformers:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
