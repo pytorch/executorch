@@ -24,6 +24,7 @@
 # the contract of exposing these CMake variables.
 
 cmake_minimum_required(VERSION 3.19)
+include("UtilsINTENTIONALLYBREAKTEST.cmake")
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
@@ -171,3 +172,17 @@ if(TARGET extension_threadpool)
                                     "cpuinfo;pthreadpool"
   )
 endif()
+
+set(shared_lib_list
+  executorch
+  optimized_native_cpu_ops_lib
+  portable_ops_lib
+  quantized_ops_lib
+  xnnpack_backend
+  vulkan_backend
+  quantized_ops_aot_lib)
+foreach(lib ${shared_lib_list})
+  if(TARGET ${lib})
+    target_link_options_shared_lib(${lib})
+  endif()
+endforeach()
