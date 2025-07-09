@@ -84,18 +84,13 @@ if(EXECUTORCH_NNLIB_OPT)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
 elseif(EXECUTORCH_FUSION_G3_OPT)
   set(TARGET_DIR fusion_g3)
-<<<<<<< HEAD
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib
     ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
   )
-=======
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib
-  ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
 elseif(EXECUTORCH_VISION_OPT)
   set(TARGET_DIR vision)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
->>>>>>> 992b83e373 ( Add: Initial backends/cadence/vision module scaffold with optimized softmax (non-iDMA))
 else()
   set(TARGET_DIR reference)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
