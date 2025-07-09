@@ -57,12 +57,14 @@ class PTPerBlockParamObserver(AffineQuantizedMinMaxObserver):
             else:
                 decompressor = INT4SymmetricWeightsDecompressor(scale, q_weight.shape, original_weight.shape, original_weight.dtype)
             packed_q_weight = decompressor.pack_weight(q_weight)
-            new_weight_node = constant_update_fn(model, observer_node, packed_q_weight, input_port_id=0)
-            decompressor_name = f'NNCFDecompressor_{new_weight_node.name}'
+            constant_update_fn(model, observer_node, packed_q_weight, input_port_id=0)
+            compressed_weight_name = observer_node.all_input_nodes[0].name
+            decompressor_suffix = "_".join(compressed_weight_name.replace(".", "_").split("_")[:-2])
+            decompressor_name = f"{decompressor.quantization_mode}_weights_decompressor_{decompressor_suffix}"
 
             module_insertion_transformation_builder(
                         decompressor,
-                        [PTTargetPoint(TargetType.OPERATOR_POST_HOOK, target_node_name=new_weight_node.name)],
+                        [PTTargetPoint(TargetType.OPERATOR_POST_HOOK, target_node_name=compressed_weight_name)],
                         decompressor_name,
                     )(model)
         decomp_node = observer_node.args[0]
@@ -101,12 +103,14 @@ class NNCFInt8observer(PerChannelMinMaxObserver):
             else:
                 decompressor = INT8SymmetricWeightsDecompressor(scale, original_weight.dtype)
             packed_q_weight = decompressor.pack_weight(q_weight)
-            new_weight_node = constant_update_fn(model, observer_node, packed_q_weight, input_port_id=0)
-            decompressor_name = f'NNCFDecompressor_{new_weight_node.name}'
+            constant_update_fn(model, observer_node, packed_q_weight, input_port_id=0)
+            compressed_weight_name = observer_node.all_input_nodes[0].name
+            decompressor_suffix = "_".join(compressed_weight_name.replace(".", "_").split("_")[:-2])
+            decompressor_name = f"{decompressor.quantization_mode}_weights_decompressor_{decompressor_suffix}"
 
             module_insertion_transformation_builder(
                         decompressor,
-                        [PTTargetPoint(TargetType.OPERATOR_POST_HOOK, target_node_name=new_weight_node.name)],
+                        [PTTargetPoint(TargetType.OPERATOR_POST_HOOK, target_node_name=compressed_weight_name)],
                         decompressor_name,
                     )(model)
         decomp_node = observer_node.args[0]
