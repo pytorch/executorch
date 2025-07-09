@@ -11,6 +11,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -94,6 +95,39 @@ def test_eye_u85_INT(test_data: test_data_t):
         EyeAdd.aten_op,
         use_to_edge_transform_and_lower=True,
     ).dump_artifact("to_edge_transform_and_lower")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    EyeAdd.test_data,
+)
+@common.SkipIfNoModelConverter
+def test_eye_vgf_FP(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        EyeAdd(*init_data),
+        input_data(),
+        EyeAdd.aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    EyeAdd.test_data,
+)
+@common.SkipIfNoModelConverter
+def test_eye_vgf_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        EyeAdd(*init_data),
+        input_data(),
+        EyeAdd.aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
