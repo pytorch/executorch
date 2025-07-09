@@ -303,14 +303,23 @@ def gen_graphs_from_etrecord(
     return op_graph_map
 
 
+# One debug handle should only be associated with one node. We are in the middle of migrating debug handle generation
+# from graph after to_edge to graph after torch.export, one every debug handle in exported graph may be associated with multiple nodes in to_edge
+# graph. After fully migration, we should bring the bring type as well as the #node check back.
+#
+# Before migration: returned Dict for 1 debug handle to 1 node in to_edge graph
+# During migration: returned Dict for 1 debug handle to multiple nodes in to_edge graph
+# After migration: returned Dict for 1 debug handle to 1 node in exported graph
+#
+# TODO(gasoonjia): recover the return type to Dict[int, List[OperatorNode], reenable the #node check.
 def create_debug_handle_to_op_node_mapping(
     op_graph: OperatorGraph,
-) -> Dict[int, OperatorNode]:
+) -> Dict[int, List[OperatorNode]]:
     """
     Recursive function to traverse all the operator graph nodes of input op_graph and build a mapping
     from each debug handle to the operator node that contains the debug handle in its metadata.
     """
-    debug_handle_to_op_node_map: Dict[int, OperatorNode] = {}
+    debug_handle_to_op_node_map: Dict[int, List[OperatorNode]] = {}
 
     # Recursively searches through the metadata of nodes
     def _extract_debug_handles(graph: OperatorGraph):
@@ -320,14 +329,13 @@ def create_debug_handle_to_op_node_mapping(
             if isinstance(element, OperatorNode) and element.metadata is not None:
                 metadata = element.metadata
                 debug_handle = metadata.get("debug_handle")
-                if debug_handle is not None:
-                    existing_entry = debug_handle_to_op_node_map.get(debug_handle)
-                    if existing_entry is not None:
-                        raise ValueError(
-                            f"Duplicated debug handle {str(debug_handle)} shared between {element.name} and {existing_entry.name}. "
-                            "No two op nodes of the same graph should have the same debug handle."
-                        )
-                    debug_handle_to_op_node_map[debug_handle] = element
+                if debug_handle is None:
+                    continue
+
+                if debug_handle not in debug_handle_to_op_node_map:
+                    debug_handle_to_op_node_map[debug_handle] = []
+
+                debug_handle_to_op_node_map[debug_handle].append(element)
 
     # Start traversing
     _extract_debug_handles(op_graph)
@@ -762,32 +770,29 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
     This function handles the following types of input:
     - Scalar (int or float): Converts to a tensor with a single element.
     - Tensor: Converts to a float64 tensor on CPU.
-    - Sequence of Tensors: Stacks the tensors into a single float64 tensor on CPU.
     The resulting tensor is detached, moved to CPU, and cast to torch.float64.
     Parameters:
-    input_data (Any): The input data to be converted to a tensor. It can be a scalar,
-                      a tensor, or a list of tensors.
+    input_data (Any): The input data to be converted to a tensor. It can be a scalar
+                      or a tensor.
     Returns:
     torch.Tensor: A tensor on CPU with dtype torch.float64.
-    Raises:
-    ValueError: If the input_data cannot be converted to a tensor.
+    Raises error if the input is not a scalar or a tensor
     """
+    # Assert that the input is not a Sequence
+    assert not isinstance(input_data, Sequence)
     try:
-        # Check if the input is a Sequence of tensors
-        if isinstance(input_data, Sequence):
-            input_tensor = torch.stack([convert_to_float_tensor(a) for a in input_data])
         # Try to convert the input to a tensor
-        else:
-            input_tensor = torch.as_tensor(input_data, dtype=torch.float64)
+        input_tensor = torch.as_tensor(input_data, dtype=torch.float64)
     except Exception as e:
         raise ValueError(
             f"Cannot convert value of type {type(input_data)} to a tensor: {e}"
         )
-    input_tensor = input_tensor.detach().cpu().double()
 
+    input_tensor = input_tensor.detach().cpu().double()
     # Convert NaN to 0.0
     if torch.isnan(input_tensor).any():
         input_tensor = torch.nan_to_num(input_tensor)
+
     return input_tensor
 
 
@@ -837,3 +842,33 @@ def find_op_names(
             result.append(op_name)
 
     return result
+
+
+def compare_intermediate_outputs(a: Any, b: Any, comparator) -> List[float]:
+    """
+    Compare two outputs, handling both sequence and non-sequence cases,
+    and return a list of comparison results.
+    Parameters:
+    a: The first intermediate output to compare.
+    b: The second intermediate output to compare.
+    comparator: A comparator object with a `compare` method.
+    Returns:
+    List[float]: A list of comparison results.
+    Raises:
+    ValueError: If one input is a sequence and the other is not, or if sequences have different lengths.
+    """
+    is_a_sequence = isinstance(a, Sequence)
+    is_b_sequence = isinstance(b, Sequence)
+    if is_a_sequence and is_b_sequence:
+        # Ensure both sequences have the same length
+        if len(a) != len(b):
+            raise ValueError("Sequences must have the same length for comparison.")
+
+        # Compare each element in the sequences and return the list of results
+        return [comparator.compare(x, y) for x, y in zip(a, b)]
+    elif not is_a_sequence and not is_b_sequence:
+        # Compare non-sequence items and return the result in a list
+        return [comparator.compare(a, b)]
+    else:
+        # Raise an error if one is a sequence and the other is not
+        raise ValueError("Both inputs must be sequences or both must be non-sequences.")
