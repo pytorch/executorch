@@ -24,6 +24,7 @@
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
+
 namespace example {
 
 enum LlamaVersion {
@@ -41,7 +42,8 @@ class Runner {
       const std::string& kv_updater = "SmartMask",
       const int ngram = 0,
       const int window = 0,
-      const int gcap = 0);
+      const int gcap = 0,
+      std::unique_ptr<tokenizers::Tokenizer> tokenizer = nullptr);
 
   bool is_loaded() const;
   executorch::runtime::Error load();
