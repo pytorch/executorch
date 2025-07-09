@@ -612,11 +612,15 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
-        BUILD_TOOL=cmake
+        set -eux
         bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
 
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+        # Install requirements
+        ${CONDA_RUN} python install_executorch.py
+
+        # # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        # PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
 
         pip list
 
@@ -628,7 +632,7 @@ jobs:
         # There is no release yet, for CI stability, always test from the same commit on main
         # git checkout $OPTIMUM_ET_COMMIT
         gh pr checkout 93
-        python install_dev.py --skip_override_torch
+        ${CONDA_RUN} python install_dev.py --skip_override_torch
         popd
         pip list
         echo "::endgroup::"
@@ -637,7 +641,7 @@ jobs:
         # Test model export
         MODELS=(smollm llama3)
         for MODEL_NAME in "${MODELS[@]}"; do
-          bash .ci/scripts/export_optimum_et_coreml.sh $MODEL_NAME" /tmp/$MODEL_NAME
+          ${CONDA_RUN} bash .ci/scripts/export_optimum_et_coreml.sh $MODEL_NAME" /tmp/$MODEL_NAME
 
   # test-huggingface-transformers:
   #   # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
