@@ -606,7 +606,6 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -621,7 +620,6 @@ jobs:
 
         echo "::group::Set up Hugging Face"
         pip install -U "huggingface_hub[cli]"
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         git clone https://github.com/huggingface/optimum-executorch
         pushd optimum-executorch
