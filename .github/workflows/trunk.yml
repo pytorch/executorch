@@ -601,7 +601,7 @@ jobs:
         done
 
   test-coreml-optimum-executorch:
-    name: test-apple-model
+    name: test-coreml-optimum-executorch
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       fail-fast: false
@@ -637,7 +637,6 @@ jobs:
         MODELS=(smollm llama3)
         for MODEL_NAME in "${MODELS[@]}"; do
           bash .ci/scripts/export_optimum_et_coreml.sh $MODEL_NAME" /tmp/$MODEL_NAME
-
 
   test-huggingface-transformers:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
