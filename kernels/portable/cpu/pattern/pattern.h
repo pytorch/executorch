@@ -73,15 +73,21 @@ Tensor& unary_ufunc_realhbf16(
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
- * realhb dtye (real, half and boolean), no additional arguments, and outputs a
- * boolean tensor of the same size. The function fn specifies the math
+ * realhbbf16 dtype (real/half/bool/bfloat16), no additional arguments, and
+ * outputs a boolean tensor of the same size. The function fn specifies the math
  * operation which is applied to the input tensor element-wise.
  */
-Tensor& unary_ufunc_realhb_to_bool(
-    bool (*fn)(double),
+Tensor& unary_ufunc_realhbbf16_to_bool(
+    bool (*fn_float)(float),
+    bool (*fn_double)(double),
     KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
+
+#define DEFINE_UNARY_UFUNC_REALHBBF16_TO_BOOL(op_name, fn)                    \
+  Tensor& op_name(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) { \
+    return internal::unary_ufunc_realhbbf16_to_bool(fn, fn, ctx, in, out);    \
+  }
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
