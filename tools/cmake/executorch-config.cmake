@@ -174,7 +174,7 @@ if(TARGET extension_threadpool)
 endif()
 
 set(shared_lib_list
-  executorch
+  # executorch -- size tests fail due to regression if we include this and I'm not sure it's needed.
   optimized_native_cpu_ops_lib
   portable_ops_lib
   quantized_ops_lib
