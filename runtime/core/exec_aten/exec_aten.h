@@ -67,18 +67,18 @@ namespace aten {
 
 using TensorShapeDynamism = executorch::runtime::TensorShapeDynamism;
 
+using std::nullopt;
+using std::nullopt_t;
+using std::optional;
+using std::string_view;
+
 #ifdef USE_ATEN_LIB
 
 using Tensor = at::Tensor;
 using TensorList = at::TensorList;
 using TensorImpl = at::TensorImpl;
-using string_view = std::string_view;
 template <typename T>
 using ArrayRef = c10::ArrayRef<T>;
-template <typename T>
-using optional = std::optional<T>;
-using nullopt_t = std::nullopt_t;
-using std::nullopt;
 using ScalarType = at::ScalarType;
 using Scalar = c10::Scalar;
 using MemoryFormat = c10::MemoryFormat;
@@ -126,14 +126,8 @@ inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
 
 using Tensor = torch::executor::Tensor;
 using TensorImpl = torch::executor::TensorImpl;
-using string_view = torch::executor::string_view;
 template <typename T>
 using ArrayRef = torch::executor::ArrayRef<T>;
-template <typename T>
-using optional = torch::executor::optional<T>;
-using nullopt_t = torch::executor::nullopt_t;
-// NOLINTNEXTLINE(facebook-hte-NamespaceScopedStaticDeclaration)
-using std::nullopt;
 using ScalarType = torch::executor::ScalarType;
 using TensorList = ArrayRef<Tensor>;
 using Scalar = torch::executor::Scalar;

@@ -61,6 +61,10 @@ def define_common_targets():
         deps = [
             ":api",
         ],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+            "//executorch/codegen/...",
+        ],
     )
 
     runtime.python_binary(

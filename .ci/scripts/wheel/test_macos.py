@@ -17,7 +17,7 @@ if __name__ == "__main__":
             ),
             test_base.ModelTest(
                 model=Model.Mv3,
-                backend=Backend.CoreMlTest,
+                backend=Backend.CoreMlExportAndTest,
             ),
         ]
     )

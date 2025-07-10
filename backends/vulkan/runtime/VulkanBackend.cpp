@@ -13,6 +13,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
+
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -139,6 +141,14 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
           static_cast<utils::GPUMemoryLayout>(value_as_int);
 
       config.set_memory_layout_override(memory_layout);
+    }
+    if (strcmp(spec.key, "require_dynamic_shapes") == 0) {
+      ET_CHECK_MSG(value_size == sizeof(uint8_t), "Unexpected value size!");
+      bool value = getBool(value_data);
+
+      if (value) {
+        config.expect_dynamic_shapes = true;
+      }
     }
   }
 #ifdef ET_EVENT_TRACER_ENABLED
@@ -349,15 +359,11 @@ class GraphBuilder {
       vkFn(*compute_graph_, args);
     }
 
-    // Parse the outputs, which will be mostly tensors.  For some reason,
-    // mutable buffers are shown to be returned in the fx.Graph but do not get
-    // returned by the delegate; this may be an implementation detail of how the
-    // executorch emitter handles mutable buffers.
+    // Parse the outputs, which will be mostly tensors but may contain tensorref
+    // values as well if the source graph returns parameter nodes.
     for (const uint32_t fb_id : *flatbuffer_->output_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      if (compute_graph_->val_is_tensor(ref)) {
-        compute_graph_->set_output_tensor(ref);
-      }
+      compute_graph_->set_output_value(ref);
     }
 
     if (compute_graph_->graphconfig().enable_querypool) {
@@ -495,11 +501,17 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     builder.build_graph();
 
     compute_graph->prepare();
+    compute_graph->prepare_pipelines();
 
     compute_graph->encode_prepack();
     compute_graph->prepack();
 
-    compute_graph->encode_execute();
+    // If dynamic shapes are not expected, then the command buffer only needs to
+    // be encoded once. Otherwise, wait until the first inference to encode the
+    // the command buffer, when actual input shapes are known.
+    if (!compute_graph->graphconfig().expect_dynamic_shapes) {
+      compute_graph->encode_execute();
+    }
 
     return Error::Ok;
   }
@@ -514,7 +526,9 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       return Error::MemoryAllocationFailed;
     }
 
-    new (compute_graph) ComputeGraph(get_graph_config(compile_specs));
+    GraphConfig graph_config = get_graph_config(compile_specs);
+    graph_config.external_adapter = vkapi::set_and_get_external_adapter();
+    new (compute_graph) ComputeGraph(graph_config);
 
     Error err = compileModel(processed->data(), compute_graph);
 
@@ -567,9 +581,16 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    if (should_propagate_resize) {
+    // propagate_resize() will re-encode the command buffer so that push
+    // constants are updated and DynamicDispatchNode can update the compute
+    // shader, global workgroup size, and local workgroup size to perform the
+    // model inference.
+    if (should_propagate_resize ||
+        (compute_graph->graphconfig().expect_dynamic_shapes &&
+         compute_graph->execute_count() == 0u)) {
       compute_graph->propagate_resize();
     }
+
     compute_graph->execute();
 
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
@@ -584,6 +605,12 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             compute_graph->outputs()[i].staging,
             args[o]->toTensor().mutable_data_ptr(),
             args[o]->toTensor().numel());
+      }
+      // TensorRef values represent constant tensors which will not have been
+      // modified by the graph execution. Therefore, if a constant tensor is
+      // returned as an output, no action is required.
+      else if (compute_graph->val_is_tref(oref)) {
+        continue;
       } else {
         VK_THROW(
             "Could not handle output with type ",

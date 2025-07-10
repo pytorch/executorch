@@ -16,34 +16,41 @@ import java.nio.FloatBuffer
  * [android.media.Image] source.
  */
 object TensorImageUtils {
-    @JvmField
-    var TORCHVISION_NORM_MEAN_RGB: FloatArray = floatArrayOf(0.485f, 0.456f, 0.406f)
-    @JvmField
-    var TORCHVISION_NORM_STD_RGB: FloatArray = floatArrayOf(0.229f, 0.224f, 0.225f)
+    @JvmField var TORCHVISION_NORM_MEAN_RGB: FloatArray = floatArrayOf(0.485f, 0.456f, 0.406f)
+
+    @JvmField var TORCHVISION_NORM_STD_RGB: FloatArray = floatArrayOf(0.229f, 0.224f, 0.225f)
 
     /**
-     * Creates new [Tensor] from full [android.graphics.Bitmap], normalized with specified
-     * in parameters mean and std.
+     * Creates new [Tensor] from full [android.graphics.Bitmap], normalized with specified in
+     * parameters mean and std.
      *
      * @param normMeanRGB means for RGB channels normalization, length must equal 3, RGB order
      * @param normStdRGB standard deviation for RGB channels normalization, length must equal 3, RGB
-     * order
+     *   order
      */
     @JvmStatic
     fun bitmapToFloat32Tensor(
-        bitmap: Bitmap, normMeanRGB: FloatArray, normStdRGB: FloatArray
+        bitmap: Bitmap,
+        normMeanRGB: FloatArray,
+        normStdRGB: FloatArray,
     ): Tensor {
         checkNormMeanArg(normMeanRGB)
         checkNormStdArg(normStdRGB)
 
         return bitmapToFloat32Tensor(
-            bitmap, 0, 0, bitmap.width, bitmap.height, normMeanRGB, normStdRGB
+            bitmap,
+            0,
+            0,
+            bitmap.width,
+            bitmap.height,
+            normMeanRGB,
+            normStdRGB,
         )
     }
 
     /**
-     * Writes tensor content from specified [android.graphics.Bitmap], normalized with specified
-     * in parameters mean and std to specified [java.nio.FloatBuffer] with specified offset.
+     * Writes tensor content from specified [android.graphics.Bitmap], normalized with specified in
+     * parameters mean and std to specified [java.nio.FloatBuffer] with specified offset.
      *
      * @param bitmap [android.graphics.Bitmap] as a source for Tensor data
      * @param x - x coordinate of top left corner of bitmap's area
@@ -52,7 +59,7 @@ object TensorImageUtils {
      * @param height - height of bitmap's area
      * @param normMeanRGB means for RGB channels normalization, length must equal 3, RGB order
      * @param normStdRGB standard deviation for RGB channels normalization, length must equal 3, RGB
-     * order
+     *   order
      */
     fun bitmapToFloatBuffer(
         bitmap: Bitmap,
@@ -63,7 +70,7 @@ object TensorImageUtils {
         normMeanRGB: FloatArray,
         normStdRGB: FloatArray,
         outBuffer: FloatBuffer,
-        outBufferOffset: Int
+        outBufferOffset: Int,
     ) {
         checkOutBufferCapacity(outBuffer, outBufferOffset, width, height)
         checkNormMeanArg(normMeanRGB)
@@ -88,8 +95,8 @@ object TensorImageUtils {
     }
 
     /**
-     * Creates new [Tensor] from specified area of [android.graphics.Bitmap], normalized
-     * with specified in parameters mean and std.
+     * Creates new [Tensor] from specified area of [android.graphics.Bitmap], normalized with
+     * specified in parameters mean and std.
      *
      * @param bitmap [android.graphics.Bitmap] as a source for Tensor data
      * @param x - x coordinate of top left corner of bitmap's area
@@ -98,7 +105,7 @@ object TensorImageUtils {
      * @param height - height of bitmap's area
      * @param normMeanRGB means for RGB channels normalization, length must equal 3, RGB order
      * @param normStdRGB standard deviation for RGB channels normalization, length must equal 3, RGB
-     * order
+     *   order
      */
     fun bitmapToFloat32Tensor(
         bitmap: Bitmap,
@@ -107,7 +114,7 @@ object TensorImageUtils {
         width: Int,
         height: Int,
         normMeanRGB: FloatArray,
-        normStdRGB: FloatArray
+        normStdRGB: FloatArray,
     ): Tensor {
         checkNormMeanArg(normMeanRGB)
         checkNormStdArg(normStdRGB)
@@ -118,17 +125,31 @@ object TensorImageUtils {
     }
 
     private fun checkOutBufferCapacity(
-        outBuffer: FloatBuffer, outBufferOffset: Int, tensorWidth: Int, tensorHeight: Int
+        outBuffer: FloatBuffer,
+        outBufferOffset: Int,
+        tensorWidth: Int,
+        tensorHeight: Int,
     ) {
-        check(outBufferOffset + 3 * tensorWidth * tensorHeight <= outBuffer.capacity()) { "Buffer underflow" }
+        check(outBufferOffset + 3 * tensorWidth * tensorHeight <= outBuffer.capacity()) {
+            "Buffer underflow"
+        }
     }
 
     private fun checkTensorSize(tensorWidth: Int, tensorHeight: Int) {
-        require(!(tensorHeight <= 0 || tensorWidth <= 0)) { "tensorHeight and tensorWidth must be positive" }
+        require(!(tensorHeight <= 0 || tensorWidth <= 0)) {
+            "tensorHeight and tensorWidth must be positive"
+        }
     }
 
     private fun checkRotateCWDegrees(rotateCWDegrees: Int) {
-        require(!(rotateCWDegrees != 0 && rotateCWDegrees != 90 && rotateCWDegrees != 180 && rotateCWDegrees != 270)) { "rotateCWDegrees must be one of 0, 90, 180, 270" }
+        require(
+            !(rotateCWDegrees != 0 &&
+                rotateCWDegrees != 90 &&
+                rotateCWDegrees != 180 &&
+                rotateCWDegrees != 270)
+        ) {
+            "rotateCWDegrees must be one of 0, 90, 180, 270"
+        }
     }
 
     private fun checkNormStdArg(normStdRGB: FloatArray) {

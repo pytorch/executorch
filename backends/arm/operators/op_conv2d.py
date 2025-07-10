@@ -4,9 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+import itertools
 from typing import Any, List
 
-import numpy as np
 import torch
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -98,7 +98,7 @@ class Conv2dVisitor_0_80(NodeVisitor):
         if inputs[0].dtype == ts.DType.INT8:
             # int8 input requires quantization information
             input_qparams = get_input_qparams(node)
-            input_zp = input_qparams[0].zp
+            input_zp = input_qparams[0].get_zp_per_tensor()
 
         attr.ConvAttribute(
             pad=pad_attr,
@@ -108,24 +108,6 @@ class Conv2dVisitor_0_80(NodeVisitor):
             weight_zp=0,
             local_bound=False,
         )
-
-        # Non-bias case.
-        if len(node.all_input_nodes) == 2:
-            # Create a zero bias tensor if not presented
-            out_channels = weight.shape[0]
-            bias_name = "bias" + node.name.split("default", 1)[1]
-            bias_type = output.dtype
-            if output.dtype == ts.DType.INT8:
-                # Conv is quantized to int8, but the TOSA operator has
-                # output type int32, and the bias must be the same type
-                # as the TOSA output type
-                bias_type = ts.DType.INT32
-            bias = tosa_graph.addConst(
-                [out_channels],
-                bias_type,
-                [0] * out_channels,
-                name=bias_name,
-            )
 
         # The output type is int32 when input type is int8.
         conv2d_output_name = output.name
@@ -179,13 +161,22 @@ class Conv2dVisitor_0_80(NodeVisitor):
         # integer value domain of the next op. Otherwise return float32 output.
         if inputs[0].dtype == ts.DType.INT8:
             # Get scale_factor from input, weight, and output.
-            input_scale = input_qparams[0].scale  # type: ignore[possibly-undefined]  # pyre-ignore [61]
-            weight_scale = input_qparams[1].scale  # pyre-ignore [61]
+            input_scale = input_qparams[0].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore [61]
+
+            per_channel_quant = input_qparams[1].per_channel  # pyre-ignore [61]
+            if per_channel_quant:
+                weight_scale = input_qparams[1].get_scale_per_channel()
+            else:
+                weight_scale = [
+                    input_qparams[1].get_scale_per_tensor()
+                ]  # pyre-ignore [61]
             output_qargs = get_output_qparams(node)
             post_conv2d_scale = [
                 (inp * w) / out
                 for inp, w, out in zip(
-                    [input_scale], [weight_scale], [output_qargs[0].scale]
+                    itertools.cycle([input_scale]),
+                    weight_scale,
+                    itertools.cycle([output_qargs[0].get_scale_per_tensor()]),
                 )
             ]
 
@@ -195,9 +186,9 @@ class Conv2dVisitor_0_80(NodeVisitor):
                 input_node=conv2d_res,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=output.dtype,
-                input_zp=0,
-                output_zp=output_qargs[0].zp,
-                per_channel=isinstance(weight_scale, torch.Tensor),
+                input_zp=[0],
+                output_zp=[output_qargs[0].get_zp_per_tensor()],
+                per_channel=per_channel_quant,
             )  # type: ignore[call-arg]
 
 
@@ -275,7 +266,13 @@ class Conv2dVisitor(NodeVisitor):
         if inputs[0].dtype == ts.DType.INT8:
             # int8 input requires quantization information
             input_qparams = get_input_qparams(node)
-            input_zp = input_qparams[0].zp
+            input_zp = input_qparams[0].get_zp_per_tensor()
+
+        weight_zp = 0
+        if inputs[1].dtype == ts.DType.INT8:
+            # int8 weights requires quantization information
+            input_qparams = get_input_qparams(node)
+            weight_zp = input_qparams[1].zp  # type: ignore[assignment]
 
         # The output type is int32 when input type is int8.
         conv2d_output_name = output.name
@@ -292,26 +289,11 @@ class Conv2dVisitor(NodeVisitor):
             [1], output.dtype, [input_zp], name=f"{conv2d_output_name}_input_zp"
         )
         tosa_graph.addConst(
-            [1], output.dtype, [0], name=f"{conv2d_output_name}_weight_zp"
+            [1],
+            output.dtype,
+            weight_zp,
+            name=f"{conv2d_output_name}_weight_zp",
         )
-
-        # Non-bias case.
-        if len(node.all_input_nodes) == 2:
-            # Create a zero bias tensor if not presented
-            out_channels = weight.shape[0]
-            bias_name = f"{conv2d_output_name}_bias"
-            bias_type = output.dtype
-            if output.dtype == ts.DType.INT8:
-                # Conv is quantized to int8, but the TOSA operator has
-                # output type int32, and the bias must be the same type
-                # as the TOSA output type
-                bias_type = ts.DType.INT32
-            bias = tosa_graph.addConst(
-                [out_channels],
-                bias_type,
-                [0] * out_channels,
-                name=bias_name,
-            )
 
         # Given input.shape is (N, Ci, H, W), and weight.shape is (Co, Ci/G, H, W)
         in_channels = input.shape[1]
@@ -333,21 +315,22 @@ class Conv2dVisitor(NodeVisitor):
                 weight.dtype,
             )
             shape = tosa_graph.addConst(
-                np.array(weight_post_shape).shape,
+                [len(weight_post_shape)],
                 ts.DType.SHAPE,
-                np.array(weight_post_shape),
+                weight_post_shape,
                 name=weight_reshaped.name + "_shape",
             )
 
-            attr = ts.TosaSerializerAttribute()
-            attr.ReshapeAttribute()
+            reshape_attr = ts.TosaSerializerAttribute()
+            reshape_attr.ReshapeAttribute()
             tosa_graph.addOperator(
                 ts.TosaOp.Op().RESHAPE,
                 [weight.name, shape.name],
                 [weight_reshaped.name],
-                attr,
+                reshape_attr,
             )
 
+            attr = ts.TosaSerializerAttribute()
             tosa_op = ts.TosaOp.Op().DEPTHWISE_CONV2D
             weight_name = weight_reshaped.name
 
@@ -388,13 +371,21 @@ class Conv2dVisitor(NodeVisitor):
         # integer value domain of the next op. Otherwise return float32 output.
         if inputs[0].dtype == ts.DType.INT8:
             # Get scale_factor from input, weight, and output.
-            input_scale = input_qparams[0].scale  # type: ignore[possibly-undefined]  # pyre-ignore [61]
-            weight_scale = input_qparams[1].scale  # pyre-ignore [61]
+            input_scale = input_qparams[0].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore [61]
+            per_channel_quant = input_qparams[1].per_channel  # pyre-ignore [61]
+            if per_channel_quant:
+                weight_scale = input_qparams[1].get_scale_per_channel()
+            else:
+                weight_scale = [
+                    input_qparams[1].get_scale_per_tensor()
+                ]  # pyre-ignore [61]
             output_qargs = get_output_qparams(node)
             post_conv2d_scale = [
                 (inp * w) / out
                 for inp, w, out in zip(
-                    [input_scale], [weight_scale], [output_qargs[0].scale]
+                    itertools.cycle([input_scale]),
+                    weight_scale,
+                    itertools.cycle([output_qargs[0].get_scale_per_tensor()]),
                 )
             ]
             build_rescale(
@@ -403,8 +394,8 @@ class Conv2dVisitor(NodeVisitor):
                 input_node=conv2d_res,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=output.dtype,
-                input_zp=0,
-                output_zp=output_qargs[0].zp,
-                per_channel=isinstance(weight_scale, torch.Tensor),
+                input_zp=[0],
+                output_zp=[output_qargs[0].get_zp_per_tensor()],
+                per_channel=per_channel_quant,
                 rounding_mode=RoundingMode.SINGLE_ROUND,
             )

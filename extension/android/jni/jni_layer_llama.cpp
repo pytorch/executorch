@@ -165,16 +165,15 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           tokenizer_path->toStdString().c_str(),
           temperature);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      if (data_path != nullptr) {
-        runner_ = std::make_unique<example::Runner>(
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            data_path->toStdString().c_str());
-      } else {
-        runner_ = std::make_unique<example::Runner>(
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str());
-      }
+      std::optional<const std::string> data_path_str = data_path
+          ? std::optional<const std::string>{data_path->toStdString()}
+          : std::nullopt;
+      // TODO(larryliu0820): Use the API in text_llm_runner.h to create the
+      // runner.
+      runner_ = example::create_llama_runner(
+          model_path->toStdString(),
+          tokenizer_path->toStdString(),
+          data_path_str);
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(
@@ -298,16 +297,27 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jlong start_pos,
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
-    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(Error::NotSupported);
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(multi_modal_runner_->generate_from_pos(
+          prompt->toStdString(),
+          seq_len,
+          start_pos,
+          [callback](const std::string& result) { callback->onResult(result); },
+          [callback](const llm::Stats& stats) { callback->onStats(stats); },
+          echo));
+    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      executorch::extension::llm::GenerationConfig config{
+          .echo = static_cast<bool>(echo),
+          .seq_len = seq_len,
+          .temperature = temperature_,
+      };
+      return static_cast<jint>(runner_->generate_from_pos(
+          prompt->toStdString(),
+          start_pos,
+          config,
+          [callback](std::string result) { callback->onResult(result); },
+          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
     }
-    return static_cast<jint>(multi_modal_runner_->generate_from_pos(
-        prompt->toStdString(),
-        seq_len,
-        start_pos,
-        [callback](const std::string& result) { callback->onResult(result); },
-        [callback](const llm::Stats& stats) { callback->onStats(stats); },
-        echo));
   }
 
   void stop() {

@@ -11,7 +11,7 @@ from executorch.backends.example.example_operators.ops import module_to_annotato
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dim_order_utils import get_dim_order
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.ao.quantization.pt2e.graph_utils import find_sequential_partitions
+from torchao.quantization.pt2e import find_sequential_partitions
 
 
 class PermuteMemoryFormatsPass(ExportPass):

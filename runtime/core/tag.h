@@ -12,6 +12,11 @@
 #include <executorch/runtime/platform/compiler.h>
 #include <cstdint>
 
+// X11 headers via volk define None, so we need to undef it
+#if defined(__linux__)
+#undef None
+#endif
+
 namespace executorch {
 namespace runtime {
 

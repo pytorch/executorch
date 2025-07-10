@@ -235,10 +235,7 @@ class RemoveNopLinalgVectorNormOpPass(ExportPass):
         kwargs: dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op not in {
-            exir_ops.edge.aten.linalg_vector_norm.default,
-            exir_ops.edge.cadence.linalg_vector_norm.default,
-        }:
+        if op is not exir_ops.edge.aten.linalg_vector_norm.default:
             return super().call_operator(op, args, kwargs, meta)
 
         # If the op has three args or less, it can't be a nop
@@ -450,7 +447,7 @@ class RemoveNopRequantizeOpPass(ExportPass):
         kwargs: dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op != exir_ops.edge.cadence.requantize.default:
+        if op != exir_ops.edge.cadence.requantize.per_tensor:
             return super().call_operator(op, args, kwargs, meta)
 
         # Parse the args

@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -73,6 +74,15 @@ class OpFillTest : public OperatorTest {
 
     // Check `out` matches expected output.
     EXPECT_TENSOR_EQ(out, exp_out);
+  }
+
+  template <ScalarType DTYPE>
+  void expect_bad_scalar_value_dies(const Scalar& bad_value) {
+    TensorFactory<DTYPE> tf;
+    Tensor a = tf.ones({2, 2});
+    Tensor out = tf.zeros({2, 2});
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_fill_scalar_out(a, bad_value, out));
   }
 };
 
@@ -157,3 +167,5 @@ TEST_F(OpFillTest, MismatchedOutputDtypeDies) {
   // Assert `out` can't be filled due to incompatible dtype.
   ET_EXPECT_KERNEL_FAILURE(context_, op_fill_scalar_out(self, 0.0, out));
 }
+
+GENERATE_SCALAR_OVERFLOW_TESTS(OpFillTest)

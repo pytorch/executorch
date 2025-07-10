@@ -29,13 +29,21 @@ from executorch.devtools.inspector._inspector_utils import (
     calculate_mse,
     calculate_snr,
     calculate_time_scale_factor,
+    compare_intermediate_outputs,
+    convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
+    find_op_names,
     find_populated_event,
     gen_graphs_from_etrecord,
+    get_aot_debug_handle_to_op_name_mapping,
     is_inference_output_equal,
+    map_runtime_aot_intermediate_outputs,
+    merge_runtime_overlapping_debug_handles,
+    NodeFilter,
     TimeScale,
 )
+from executorch.devtools.inspector.numerical_comparator import L1Comparator
 
 
 class TestInspectorUtils(unittest.TestCase):
@@ -217,6 +225,364 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertGreater(calculate_snr([a], [b])[0], 30.0)
         self.assertAlmostEqual(calculate_cosine_similarity([a], [b])[0], 1.0)
 
+    def test_merge_overlapping_debug_handles_basic(self):
+        big_tensor = torch.rand(100, 100)
+        intermediate_outputs = {
+            (1, 2, 3): (1, "val1"),
+            (2, 3, 4, 5): (2, "val2"),
+            (6, 7, 8): (3, "val3"),
+            (10, 11): (4, "val4"),
+            (11, 12): (5, big_tensor),
+        }
+        # basic merge behavior
+        intermediate_outputs = merge_runtime_overlapping_debug_handles(
+            intermediate_outputs
+        )
+        expected_intermediate_outputs = {
+            (1, 2, 3, 4, 5): (2, "val2"),
+            (6, 7, 8): (3, "val3"),
+            (10, 11, 12): (5, big_tensor),
+        }
+        self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
+        self.assertIs(expected_intermediate_outputs[(10, 11, 12)][1], big_tensor)
+
+    def test_merge_overlapping_debug_handles_non_continuous(self):
+        tensor1 = torch.randn(3, 4)
+        tensor2 = torch.randn(2, 3)
+        tensor3 = torch.randn(4, 5)
+        tensor4 = torch.randn(6, 7)
+        tensor5 = torch.randn(8, 9)
+        intermediate_outputs = {
+            (1, 10): (1, tensor1),
+            (2, 5): (2, tensor2),
+            (1, 7, 9): (3, tensor3),
+            (11, 13): (4, tensor4),
+            (11, 15): (5, tensor5),
+        }
+        intermediate_outputs = merge_runtime_overlapping_debug_handles(
+            intermediate_outputs
+        )
+        expected_intermediate_outputs = {
+            (2, 5): (2, tensor2),
+            (10, 1, 7, 9): (3, tensor3),
+            (13, 11, 15): (5, tensor5),
+        }
+
+        for key in expected_intermediate_outputs:
+            expected_value = expected_intermediate_outputs[key][1]
+            actual_value = intermediate_outputs[key][1]
+            self.assertTrue(torch.allclose(expected_value, actual_value))
+
+    def test_map_runtime_aot_intermediate_outputs_empty_inputs(self):
+        # When the inputs are empty, the output should also be empty
+        aot_intermediate_outputs = {}
+        runtime_intermediate_outputs = {}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_single_element_tuple(self):
+        # Single element tuple
+        aot_intermediate_outputs = {(0,): 100, (1,): 200, (2,): 300}
+        runtime_intermediate_outputs = {(0,): 150, (1,): 250, (2,): 350}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {
+            ((0,), 100): ((0,), 150),
+            ((1,), 200): ((1,), 250),
+            ((2,), 300): ((2,), 350),
+        }
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_exact_match(self):
+        # Exact match between aot and runtime debug_handles
+        aot_intermediate_outputs = {(0, 1): 100, (2, 3): 200, (4, 5): 300}
+        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {
+            ((0, 1), 100): ((0, 1), 150),
+            ((2, 3), 200): ((2, 3), 200),
+            ((4, 5), 300): ((4, 5), 300),
+        }
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_no_overlaps(self):
+        # No overlaps between aot and runtime debug_handles
+        aot_intermediate_outputs = {(0, 1): 100, (4, 5): 300}
+        runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_multiple_aot_to_one_runtime(self):
+        # Multiple aot debug_handles map to one runtime debug_handle
+        aot_intermediate_outputs = {(0, 1, 2): 100, (3, 4): 300}
+        runtime_intermediate_outputs = {(1, 2, 3): 250, (8, 9): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {((0, 1, 2, 3, 4), 300): ((1, 2, 3), 250)}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_one_aot_to_multiple_runtime(self):
+        # One aot debug_handle map to multiple runtime debug_handles
+        aot_intermediate_outputs = {(0, 1, 2, 3, 4): 100, (8, 9): 300}
+        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {((0, 1, 2, 3, 4), 100): ((0, 1, 2, 3, 4, 5), 300)}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_complex_chain(self):
+        # Complex chain (N-to-N mapping)
+        aot_intermediate_outputs = {(1, 2): 100, (3, 4): 200, (5, 6): 300}
+        runtime_intermediate_outputs = {(2, 3): 150, (4, 5): 250, (6, 7): 350}
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {((1, 2, 3, 4, 5, 6), 300): ((2, 3, 4, 5, 6, 7), 350)}
+        self.assertEqual(actual, expected)
+
+    def test_map_runtime_aot_intermediate_outputs_delegated(self):
+        # Currently, runtime_intermediate_output logs all delegate call arguments
+        # Test that the map function correctly extracted out the delegated outputs
+        aot_intermediate_outputs = {
+            (1, 2): torch.tensor([4, 5]),
+            (3, 4): torch.tensor([10, 11, 12]),
+            (5, 6): torch.tensor([13, 14, 15, 16, 17]),
+        }
+        runtime_intermediate_outputs = {
+            (1, 2): [torch.tensor([1, 2, 3]), torch.tensor([4, 5])],
+            (3, 4): [
+                torch.tensor([6, 7, 8, 9]),
+                torch.tensor(1),
+                torch.tensor([10, 11, 12]),
+            ],
+            (5, 6): [
+                torch.tensor([1]),
+                torch.tensor([2]),
+                torch.tensor([13, 14, 15, 16, 17]),
+            ],
+        }
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        expected = {
+            ((1, 2), torch.tensor([4, 5])): ((1, 2), torch.tensor([4, 5])),
+            ((3, 4), torch.tensor([10, 11, 12])): ((3, 4), torch.tensor([10, 11, 12])),
+            ((5, 6), torch.tensor([13, 14, 15, 16, 17])): (
+                (5, 6),
+                torch.tensor([13, 14, 15, 16, 17]),
+            ),
+        }
+        self.assertEqual(len(actual), len(expected))
+
+        for (exp_aot_key, exp_aot_value), (
+            exp_runtime_key,
+            exp_runtime_value,
+        ) in expected.items():
+            found = False
+            for (act_aot_key, act_aot_value), (
+                act_runtime_key,
+                act_runtime_value,
+            ) in actual.items():
+                if exp_aot_key == act_aot_key and torch.allclose(
+                    exp_aot_value, act_aot_value
+                ):
+                    found = True
+                    self.assertEqual(exp_runtime_key, act_runtime_key)
+                    self.assertTrue(
+                        torch.allclose(exp_runtime_value, act_runtime_value)
+                    )
+                    break
+            self.assertTrue(found)
+
+    def test_convert_input_to_tensor_convertible_inputs(self):
+        # Scalar -> tensor
+        actual_output1 = convert_to_float_tensor(5)
+        self.assertIsInstance(actual_output1, torch.Tensor)
+        self.assertEqual(actual_output1.dtype, torch.float64)
+        self.assertEqual(tuple(actual_output1.shape), ())
+        self.assertTrue(
+            torch.allclose(actual_output1, torch.tensor([5.0], dtype=torch.float64))
+        )
+        self.assertEqual(actual_output1.device.type, "cpu")
+
+        # Tensor of ints -> float32 CPU
+        t_int = torch.tensor([4, 5, 6], dtype=torch.int32)
+        actual_output2 = convert_to_float_tensor(t_int)
+        self.assertIsInstance(actual_output2, torch.Tensor)
+        self.assertEqual(actual_output2.dtype, torch.float64)
+        self.assertTrue(
+            torch.allclose(
+                actual_output2, torch.tensor([4.0, 5.0, 6.0], dtype=torch.float64)
+            )
+        )
+        self.assertEqual(actual_output2.device.type, "cpu")
+
+        # List of tensors -> AssertionError
+        t_list = [torch.tensor([1, 2]), torch.tensor([2, 3]), torch.tensor([3, 4])]
+        with self.assertRaises(AssertionError):
+            convert_to_float_tensor(t_list)
+
+    def test_convert_input_to_tensor_non_convertible_raises(self):
+        class X:
+            pass
+
+        with self.assertRaises(ValueError) as cm:
+            convert_to_float_tensor(X())
+        msg = str(cm.exception)
+        self.assertIn("Cannot convert value of type", msg)
+
+    def test_get_aot_debug_handle_to_op_name_mapping_single_debug_handle(self):
+        # Create a simple graph module with one node
+        graph_module = torch.fx.GraphModule({}, torch.fx.Graph())
+        node = graph_module.graph.create_node(
+            "call_function", target=torch.mul, args=(), kwargs={}, name="op1"
+        )
+        node.meta["debug_handle"] = 1
+        debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(graph_module)
+        expected_result = {(1,): "op1"}
+        self.assertEqual(debug_handle_to_op_name, expected_result)
+
+    def test_get_aot_debug_handle_to_op_name_mapping_multiple_debug_handles(self):
+        # Create a simple graph module with two nodes
+        graph_module = torch.fx.GraphModule({}, torch.fx.Graph())
+        node1 = graph_module.graph.create_node(
+            "call_function", target=torch.mul, args=(), kwargs={}, name="op1"
+        )
+        node1.meta["debug_handle"] = (1, 2)
+        node2 = graph_module.graph.create_node(
+            "call_function", target=torch.mul, args=(), kwargs={}, name="op2"
+        )
+        node2.meta["debug_handle"] = 3
+        debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(graph_module)
+        expected_result = {
+            (
+                1,
+                2,
+            ): "op1",
+            (3,): "op2",
+        }
+        self.assertEqual(debug_handle_to_op_name, expected_result)
+
+    def test_get_aot_debug_handle_to_op_name_mapping_no_debug_handles(self):
+        # Create a simple graph module with no nodes
+        graph_module = torch.fx.GraphModule({}, torch.fx.Graph())
+        debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(graph_module)
+        expected_result = {}
+        self.assertEqual(debug_handle_to_op_name, expected_result)
+
+    def test_node_filter_match(self):
+        node_filter = NodeFilter(
+            "debug_handle", "call_function", exclude_ops=["getitem"]
+        )
+
+        # Create a mock node that matches the filter criteria
+        mock_node = torch.fx.Node(
+            graph=torch.fx.Graph(),
+            name="mock_node",
+            op="call_function",
+            target=torch.nn.functional.relu,
+            args=(),
+            kwargs={},
+        )
+        mock_node.meta["debug_handle"] = (1, 2)
+        # Test that the filter matches the mock node
+        self.assertTrue(node_filter.matches(mock_node))
+
+    def test_node_filter_key_mismatch(self):
+        node_filter = NodeFilter(
+            "debug_handle", "call_function", exclude_ops=["getitem"]
+        )
+        mock_node_metadata_key_mismatch = torch.fx.Node(
+            graph=torch.fx.Graph(),
+            name="mock_node_metadata_key_mismatch",
+            op="call_function",
+            target=torch.nn.functional.relu,
+            args=(),
+            kwargs={},
+        )
+        # Test that the filter doesn't match the mock node (meta doesn't have debug_handle key)
+        self.assertFalse(node_filter.matches(mock_node_metadata_key_mismatch))
+
+    def test_node_filter_ops_mismatch(self):
+        node_filter = NodeFilter(
+            "debug_handle", "call_function", exclude_ops=["getitem"]
+        )
+
+        mock_node_exclude_ops_mismatch = torch.fx.Node(
+            graph=torch.fx.Graph(),
+            name="getitem",
+            op="call_function",
+            target=torch.nn.functional.relu,
+            args=(),
+            kwargs={},
+        )
+        mock_node_exclude_ops_mismatch.meta["debug_handle"] = (1, 2)
+        # Test that the filter doesn't match the mock node (exclude_ops mismatch)
+        self.assertFalse(node_filter.matches(mock_node_exclude_ops_mismatch))
+
+    def test_node_op_type_mismatch(self):
+        node_filter = NodeFilter(
+            "debug_handle", "call_function", exclude_ops=["getitem"]
+        )
+
+        mock_node_op_type_mismatch = torch.fx.Node(
+            graph=torch.fx.Graph(),
+            name="mock_node_op_type_mismatch",
+            op="get_attr",
+            target="torch.nn.functional.relu",
+            args=(),
+            kwargs={},
+        )
+        mock_node_op_type_mismatch.meta["debug_handle"] = (1, 2)
+        # Test that the filter doesn't match the mock node (op_type mismatch)
+        self.assertFalse(node_filter.matches(mock_node_op_type_mismatch))
+
+    def test_find_op_names_empty_debug_handle(self):
+        debug_handle = ()
+        debug_handle_to_op_name = {(1, 2): "op1", (3, 4): "op2"}
+        self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
+
+    def test_find_op_names_no_matching_handles(self):
+        debug_handle = (1, 2)
+        debug_handle_to_op_name = {(3, 4): "op1", (5, 6): "op2"}
+        self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
+
+    def test_find_op_names_matching_handles(self):
+        debug_handle = (1, 2, 3)
+        debug_handle_to_op_name = {(1, 2): "op1", (2, 3): "op2", (4, 5, 6): "op3"}
+        self.assertEqual(
+            find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2"]
+        )
+
+    def test_compare_intermediate_outputs_sequences(self):
+        a = [1.0, 2.0, 3.0]
+        b = [1.0, 2.5, 3.5]
+        result = compare_intermediate_outputs(a, b, L1Comparator())
+        self.assertEqual(result, [0.0, 0.5, 0.5])
+
+    def test_compare_intermediate_outputs_diff_len_sequences(self):
+        a = [1.0, 2.0]
+        b = [1.0, 2.0, 3.0]
+        with self.assertRaises(ValueError):
+            compare_intermediate_outputs(a, b, L1Comparator())
+
+    def test_compare_intermediate_outputs_sequence_and_non_sequence(self):
+        a = [1.0, 2.0]
+        b = 1.0
+        with self.assertRaises(ValueError):
+            compare_intermediate_outputs(a, b, L1Comparator())
+
 
 def gen_mock_operator_graph_with_expected_map() -> (
     Tuple[OperatorGraph, Dict[int, OperatorNode]]
@@ -234,7 +600,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_relu",
         },
     )
-    mapping[111] = node_fused_conv_relu
+    mapping[111] = [
+        node_fused_conv_relu,
+    ]
     node_sin = OperatorNode(
         "sin",
         [node_fused_conv_relu],
@@ -245,7 +613,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_sin",
         },
     )
-    mapping[222] = node_sin
+    mapping[222] = [
+        node_sin,
+    ]
     node_cos = OperatorNode(
         "cos",
         [node_sin],
@@ -256,7 +626,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_cos",
         },
     )
-    mapping[333] = node_cos
+    mapping[333] = [
+        node_cos,
+    ]
     node_div = OperatorNode(
         "div",
         [node_cos],
@@ -267,7 +639,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_div",
         },
     )
-    mapping[444] = node_div
+    mapping[444] = [
+        node_div,
+    ]
     node_output = ValueNode("output", [node_div])
     return (
         OperatorGraph(

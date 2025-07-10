@@ -167,6 +167,28 @@ lib.define(
     "where_Scalar.out(Tensor condition, float self, float other, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
+lib.define(
+    "rope(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos) -> (Tensor out)"
+)
+lib.define(
+    "rope.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+# Load/store with iDMA. These only exist before memory planning.
+# Post memory planning, we check that outputs/inputs for the load/store are in
+# DTCM and replace idma_load/idma_store with idma_copy.
+lib.define("idma_load(Tensor src, int task_num=0, int channel=0) -> Tensor")
+lib.define("idma_store(Tensor src, int task_num=0, int channel=0) -> Tensor")
+
+# Non-blocking iDMA copy.
+lib.define("idma_copy(Tensor src, int task_num=0, int channel=0) -> Tensor")
+lib.define(
+    "idma_copy.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
+)
+# iDMA wait.
+lib.define("idma_wait(Tensor src, int task_num=0) -> Tensor")
+lib.define("idma_wait.out(Tensor src, int task_num=0, *, Tensor(a!) out) -> Tensor(a!)")
+
 # ------------------------------------ #
 #   Migrated from custom_ops.yaml      #
 # ------------------------------------ #
@@ -954,3 +976,65 @@ def where_Scalar_meta(
     other: float,
 ) -> torch.Tensor:
     return condition.new_empty(condition.size(), dtype=torch.float32)
+
+
+@register_fake("cadence::rope")
+def rope_meta(
+    input: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: Optional[torch.Tensor],
+) -> torch.Tensor:
+    input_shape = list(input.shape)
+    assert (
+        len(input_shape) in (4, 5) and input_shape[0] == 1
+    ), f"input shape {input_shape} must be (1, seq, h, hd) or (1, seq, h, hd / 2, 2)"
+    seq = input_shape[1]
+    h = input_shape[2]
+    hd = prod(input_shape) / (seq * h)
+    sin_shape = list(sin_tensor.shape)
+    cos_shape = list(cos_tensor.shape)
+    assert sin_shape == cos_shape, f"{sin_shape=} must be same as {cos_shape}"
+    assert (
+        len(sin_shape) == 2 and sin_shape[-1] == hd // 2
+    ), f"{sin_shape=} must be [seq, hd/2]"
+    if pos is not None:
+        assert (
+            len(pos.shape) == 1 and pos.shape[0] == seq
+        ), f"{pos.shape} must be [{seq}]"
+    return input.new_empty(input.shape, dtype=input.dtype)
+
+
+@register_fake("cadence::idma_copy")
+def copy_idma_copy_impl(
+    src: torch.Tensor,
+    task_num: int = 0,
+    channel: int = 0,
+) -> torch.Tensor:
+    return src.new_empty(*src.shape, dtype=src.dtype)
+
+
+@register_fake("cadence::idma_wait")
+def copy_idma_wait_impl(
+    src: torch.Tensor,
+    task_num: int = 0,
+) -> torch.Tensor:
+    return src.new_empty(*src.shape, dtype=src.dtype)
+
+
+@register_fake("cadence::idma_load")
+def idma_load_impl(
+    src: torch.Tensor,
+    task_num: int = 0,
+    channel: int = 0,
+) -> torch.Tensor:
+    return copy_idma_copy_impl(src, task_num, channel)
+
+
+@register_fake("cadence::idma_store")
+def idma_store_impl(
+    src: torch.Tensor,
+    task_num: int = 0,
+    channel: int = 0,
+) -> torch.Tensor:
+    return copy_idma_copy_impl(src, task_num, channel)

@@ -36,7 +36,6 @@ Install dependencies
 
 ```
 ./install_executorch.sh
-./backends/apple/mps/install_requirements.sh
 ```
 
 ## Prepare Models
@@ -50,7 +49,7 @@ Install the required packages to export the model
 
 Export the model
 ```
-python -m examples.models.llama.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" --params "${MODEL_DIR}/params.json" -kv --use_sdpa_with_kv_cache --mps -d fp32 --disable_dynamic_shape -qmode 8da4w -G 32
+python -m extension.llm.export.export_llm base.checkpoint="${MODEL_DIR}/consolidated.00.pth" base.params="${MODEL_DIR}/params.json" model.use_kv_cache=True model.use_sdpa_with_kv_cache=True backend.mps.enabled=True model.dtype_override="fp32" model.enable_dynamic_shape=False quantization.qmode="8da4w" quantization.group_size=32
 ```
 
 ## Pushing Model and Tokenizer
