@@ -1933,7 +1933,7 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
                 graph_after_passes,
                 expected_op_counts={
                     torch.ops.aten.mul.Tensor: 1,
-                    exir_ops.edge.aten.full.default: 1,
+                    torch.ops.aten.full.default: 1,
                 },
             )
         )

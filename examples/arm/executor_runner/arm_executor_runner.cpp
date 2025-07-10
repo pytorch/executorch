@@ -85,6 +85,11 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
+#if defined(ET_BUNDLE_IO)
+using executorch::bundled_program::compute_method_output_error_stats;
+using executorch::bundled_program::ErrorStats;
+using executorch::bundled_program::verify_method_outputs;
+#endif
 #if defined(ET_EVENT_TRACER_ENABLED)
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
@@ -957,8 +962,25 @@ int main(int argc, const char* argv[]) {
 
 #if defined(ET_BUNDLE_IO)
   if (ctx.bundle_io) {
+    // Check result
+    ErrorStats stats = compute_method_output_error_stats(
+        *ctx.method.value(), model_pte, testset_idx);
+    if (stats.status == Error::Ok) {
+      ET_LOG(Info, "=== Error stats for testset %d ===", testset_idx);
+      ET_LOG(Info, " mean_absolute_error: %f", stats.mean_abs_error);
+      ET_LOG(Info, " max_absolute_error:  %f", stats.max_abs_error);
+      ET_LOG(Info, " mean_relative_error: %f", stats.mean_relative_error);
+      ET_LOG(Info, " max_relative_error:  %f", stats.max_relative_error);
+    } else {
+      ET_LOG(
+          Info,
+          "=== Error calculating stats for testset %d ERROR:%d ===",
+          testset_idx,
+          stats.status);
+    }
+
     // Verify the result.
-    status = executorch::bundled_program::verify_method_outputs(
+    status = verify_method_outputs(
         *ctx.method.value(), model_pte, testset_idx, et_rtol, et_atol);
     if (status == Error::Ok) {
       ET_LOG(Info, "Model output match expected BundleIO bpte ref data.");

@@ -183,7 +183,11 @@ class TestInspector(unittest.TestCase):
 
         # Call the method that's under testing and verify
         event_with_single_debug_handle._associate_with_op_graph_nodes(
-            {debug_handle: node_0}
+            {
+                debug_handle: [
+                    node_0,
+                ]
+            }
         )
 
         expected_stack_traces = {"node_0": "stack_trace_relu"}
@@ -226,7 +230,14 @@ class TestInspector(unittest.TestCase):
 
         # Call the method that's under testing and verify
         event_with_multiple_debug_handles._associate_with_op_graph_nodes(
-            {debug_handles[0]: node_0, debug_handles[1]: node_1}
+            {
+                debug_handles[0]: [
+                    node_0,
+                ],
+                debug_handles[1]: [
+                    node_1,
+                ],
+            }
         )
 
         expected_stack_traces = {
@@ -571,7 +582,7 @@ class TestInspector(unittest.TestCase):
             self.assertIn((4,), runtime_outputs)
             self.assertIn((4,), op_names)
             self.assertTrue(
-                torch.equal(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
+                torch.allclose(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
             )
             self.assertEqual(op_names[(4,)], "op_3")
 
@@ -579,7 +590,7 @@ class TestInspector(unittest.TestCase):
             for key in range(5, 9):
                 self.assertIn((key,), runtime_outputs)
                 self.assertIn((key,), op_names)
-                self.assertEqual(len(runtime_outputs[(key,)]), RAW_DATA_SIZE)
+                self.assertEqual(runtime_outputs[(key,)][0].size(0), RAW_DATA_SIZE)
                 self.assertEqual(op_names[(key,)], f"op_{key-1}")
 
     def test_calculate_numeric_gap(self):
@@ -636,14 +647,14 @@ class TestInspector(unittest.TestCase):
             for i, row in df.iterrows():
                 # Dummpy key to get the expected aot/runtime internmediate outputs
                 key = (i,)
-                # aot_intermediate_output should equal aot_intermediate_outputs[h]
+                # aot_intermediate_output should equal aot_intermediate_outputs[key]
                 self.assertTrue(
                     torch.allclose(
                         row["aot_intermediate_output"],
                         aot_intermediate_outputs[key],
                     )
                 )
-                # runtime_intermediate_output should equal runtime_intermediate_outputs[h]
+                # runtime_intermediate_output should equal runtime_intermediate_outputs[key]
                 self.assertTrue(
                     torch.allclose(
                         row["runtime_intermediate_output"],
@@ -651,7 +662,7 @@ class TestInspector(unittest.TestCase):
                     )
                 )
                 # gap should equal 3.0
-                self.assertEqual(row["gap"], 3.0)
+                self.assertEqual(row["gap"][0], 3.0)
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]
@@ -659,7 +670,7 @@ class TestInspector(unittest.TestCase):
     def _gen_random_runtime_output(
         self,
     ) -> List[Union[None, List[torch.Tensor], bool, float, int, str, torch.Tensor]]:
-        return list(torch.randn(RAW_DATA_SIZE))
+        return [torch.randn(RAW_DATA_SIZE)]
 
     def _gen_random_events(self) -> List[Event]:
         events = []

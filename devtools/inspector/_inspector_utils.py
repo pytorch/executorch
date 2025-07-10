@@ -303,14 +303,23 @@ def gen_graphs_from_etrecord(
     return op_graph_map
 
 
+# One debug handle should only be associated with one node. We are in the middle of migrating debug handle generation
+# from graph after to_edge to graph after torch.export, one every debug handle in exported graph may be associated with multiple nodes in to_edge
+# graph. After fully migration, we should bring the bring type as well as the #node check back.
+#
+# Before migration: returned Dict for 1 debug handle to 1 node in to_edge graph
+# During migration: returned Dict for 1 debug handle to multiple nodes in to_edge graph
+# After migration: returned Dict for 1 debug handle to 1 node in exported graph
+#
+# TODO(gasoonjia): recover the return type to Dict[int, List[OperatorNode], reenable the #node check.
 def create_debug_handle_to_op_node_mapping(
     op_graph: OperatorGraph,
-) -> Dict[int, OperatorNode]:
+) -> Dict[int, List[OperatorNode]]:
     """
     Recursive function to traverse all the operator graph nodes of input op_graph and build a mapping
     from each debug handle to the operator node that contains the debug handle in its metadata.
     """
-    debug_handle_to_op_node_map: Dict[int, OperatorNode] = {}
+    debug_handle_to_op_node_map: Dict[int, List[OperatorNode]] = {}
 
     # Recursively searches through the metadata of nodes
     def _extract_debug_handles(graph: OperatorGraph):
@@ -320,14 +329,13 @@ def create_debug_handle_to_op_node_mapping(
             if isinstance(element, OperatorNode) and element.metadata is not None:
                 metadata = element.metadata
                 debug_handle = metadata.get("debug_handle")
-                if debug_handle is not None:
-                    existing_entry = debug_handle_to_op_node_map.get(debug_handle)
-                    if existing_entry is not None:
-                        raise ValueError(
-                            f"Duplicated debug handle {str(debug_handle)} shared between {element.name} and {existing_entry.name}. "
-                            "No two op nodes of the same graph should have the same debug handle."
-                        )
-                    debug_handle_to_op_node_map[debug_handle] = element
+                if debug_handle is None:
+                    continue
+
+                if debug_handle not in debug_handle_to_op_node_map:
+                    debug_handle_to_op_node_map[debug_handle] = []
+
+                debug_handle_to_op_node_map[debug_handle].append(element)
 
     # Start traversing
     _extract_debug_handles(op_graph)
@@ -530,49 +538,71 @@ def compare_results(
     return results
 
 
-def merge_overlapping_debug_handles(
-    intermediate_outputs: Dict[DebugHandle, Any]
-) -> Dict[DebugHandle, Any]:
+def _merge_runtime_debug_handles(
+    debug_handle1: DebugHandle, debug_handle2: DebugHandle
+) -> DebugHandle:
     """
-    Merges overlapping debug handles into a single key in the dict.
-    For each debug handle, this function checks for overlaps with existing keys in the merged dict.
-    If overlaps are found, it combines the overlapping keys into a single key by taking the union of their elements.
-    The value associated with the merged key is determined by the debug handle with the highest last element.
+    Merge two DebugHandles by removing elements from debug_handle1 that are also present in debug_handle2,
+    while preserving the relative order of elements in both modified debug_handle1 and debug_handle2.
+    All elements from the modified debug_handle1 will appear before any elements from debug_handle2.
     """
 
+    # Initialize a list to store unique elements in order
+    unique_ordered_list = []
+
+    # Initialize a set to track elements that have already been seen
+    seen = set(debug_handle2)
+
+    for item in debug_handle1:
+        # If the element has not been seen before, add it to the list and mark it as seen
+        if item not in seen:
+            unique_ordered_list.append(item)
+
+    for item in debug_handle2:
+        unique_ordered_list.append(item)
+    return tuple(unique_ordered_list)
+
+
+def merge_runtime_overlapping_debug_handles(
+    intermediate_outputs: Dict[DebugHandle, Tuple[int, Any]]
+) -> Dict[DebugHandle, Tuple[int, Any]]:
+    """
+    Merges runtimes with overlapping debug handles into a single key in the dict.
+
+    For each debug handle, this function checks for overlaps with existing keys.
+    If overlaps are found, it combines the overlapping keys into a single key by taking
+    the union of their elements while maintaining the order. The order is preserved such that
+    higher instruction_id appears after the debug_handle with lower instruction_id.
+
+    The value associated with the merged key is determined by the debug handle with the highest instruction id.
+    """
     if len(intermediate_outputs) == 0:
         return {}
-
-    merged: Dict[DebugHandle, Any] = {}
-
-    for debug_handle, value in intermediate_outputs.items():
-        debug_handle_set = set(debug_handle)
-        curr_debug_handle, last_value = debug_handle, value
-
-        # collect any existing keys that overlap with the current key
+    merged: Dict[DebugHandle, Tuple[int, Any]] = {}
+    for debug_handle, (instruction_id, debug_data) in intermediate_outputs.items():
+        curr_debug_handle, last_value = debug_handle, (instruction_id, debug_data)
+        # Collect any existing keys that overlap with the current key
         to_remove = []
         for existing_debug_handle, existing_value in merged.items():
-            if debug_handle_set.intersection(set(existing_debug_handle)):
-                # abosrb their ints
-                debug_handle_set |= set(existing_debug_handle)
-                if existing_debug_handle[-1] > curr_debug_handle[-1]:
-                    curr_debug_handle, last_value = (
-                        existing_debug_handle,
-                        existing_value,
+            if any(item in existing_debug_handle for item in debug_handle):
+                # Keep the value with the highest instruction_id
+                # Also merge the debug handles higher instruction_id
+                if existing_value[0] < instruction_id:
+                    curr_debug_handle = _merge_runtime_debug_handles(
+                        existing_debug_handle, curr_debug_handle
                     )
+                else:
+                    curr_debug_handle = _merge_runtime_debug_handles(
+                        curr_debug_handle, existing_debug_handle
+                    )
+                    last_value = existing_value
                 to_remove.append(existing_debug_handle)
-
-        # remove all the keys that overlap with the current key
+        # Remove all the keys that overlap with the current key
         for debug_handle in to_remove:
             merged.pop(debug_handle)
-
-        # add the current key to the merged one
-        new_debug_handle = tuple(sorted(debug_handle_set))
-        merged[new_debug_handle] = last_value
-
-    # Sort the merged debug handles in ascending order based on their last element
-    # TODO: Consider adding more logic to align the order with the execution order
-    return dict(sorted(merged.items(), key=lambda item: item[0][-1]))
+        # Add the current key to the merged one
+        merged[curr_debug_handle] = last_value
+    return merged
 
 
 def _debug_handles_have_overlap(
@@ -688,12 +718,6 @@ def map_runtime_aot_intermediate_outputs(
         Dict[Tuple[DebugHandle, Any], Tuple[DebugHandle, Any]] - Mapping
         from runtime intermediate output to AOT intermediate output
     """
-    # Merge overlapping debug handles
-    aot_intermediate_outputs = merge_overlapping_debug_handles(aot_intermediate_outputs)
-    runtime_intermediate_outputs = merge_overlapping_debug_handles(
-        runtime_intermediate_outputs
-    )
-
     # Create a graph(nodes and edges) of overlapping(between aot and runtime) debug handles
     nodes, edges = _create_debug_handle_overlap_graph(
         aot_intermediate_outputs, runtime_intermediate_outputs
@@ -732,6 +756,19 @@ def map_runtime_aot_intermediate_outputs(
             # runtime follow the same format as aot, so it's safe to convert to tuple
             if isinstance(runtime_intermediate_output, list):
                 runtime_intermediate_output = tuple(runtime_intermediate_output)
+
+            # Currently, runtime_intermediate_output logs all delegate call arguments.
+            # Process here to extract only the outputs.
+            if isinstance(aot_intermediate_output, tuple):
+                # If both are sequences, slice runtime_intermediate_output to match the length of aot_intermediate_output
+                if isinstance(runtime_intermediate_output, tuple):
+                    runtime_intermediate_output = runtime_intermediate_output[
+                        -len(aot_intermediate_output) :
+                    ]
+            # If aot_intermediate_output is not a sequence but runtime_intermediate_output is, get the last element
+            elif isinstance(runtime_intermediate_output, tuple):
+                runtime_intermediate_output = runtime_intermediate_output[-1]
+
             # Create a mapping between runtime and aot
             aot_runtime_mapping[
                 (aot_combined_debug_handle, aot_intermediate_output)
@@ -749,32 +786,29 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
     This function handles the following types of input:
     - Scalar (int or float): Converts to a tensor with a single element.
     - Tensor: Converts to a float64 tensor on CPU.
-    - Sequence of Tensors: Stacks the tensors into a single float64 tensor on CPU.
     The resulting tensor is detached, moved to CPU, and cast to torch.float64.
     Parameters:
-    input_data (Any): The input data to be converted to a tensor. It can be a scalar,
-                      a tensor, or a list of tensors.
+    input_data (Any): The input data to be converted to a tensor. It can be a scalar
+                      or a tensor.
     Returns:
     torch.Tensor: A tensor on CPU with dtype torch.float64.
-    Raises:
-    ValueError: If the input_data cannot be converted to a tensor.
+    Raises error if the input is not a scalar or a tensor
     """
+    # Assert that the input is not a Sequence
+    assert not isinstance(input_data, Sequence)
     try:
-        # Check if the input is a Sequence of tensors
-        if isinstance(input_data, Sequence):
-            input_tensor = torch.stack([convert_to_float_tensor(a) for a in input_data])
         # Try to convert the input to a tensor
-        else:
-            input_tensor = torch.as_tensor(input_data, dtype=torch.float64)
+        input_tensor = torch.as_tensor(input_data, dtype=torch.float64)
     except Exception as e:
         raise ValueError(
             f"Cannot convert value of type {type(input_data)} to a tensor: {e}"
         )
-    input_tensor = input_tensor.detach().cpu().double()
 
+    input_tensor = input_tensor.detach().cpu().double()
     # Convert NaN to 0.0
     if torch.isnan(input_tensor).any():
         input_tensor = torch.nan_to_num(input_tensor)
+
     return input_tensor
 
 
@@ -824,3 +858,33 @@ def find_op_names(
             result.append(op_name)
 
     return result
+
+
+def compare_intermediate_outputs(a: Any, b: Any, comparator) -> List[float]:
+    """
+    Compare two outputs, handling both sequence and non-sequence cases,
+    and return a list of comparison results.
+    Parameters:
+    a: The first intermediate output to compare.
+    b: The second intermediate output to compare.
+    comparator: A comparator object with a `compare` method.
+    Returns:
+    List[float]: A list of comparison results.
+    Raises:
+    ValueError: If one input is a sequence and the other is not, or if sequences have different lengths.
+    """
+    is_a_sequence = isinstance(a, Sequence)
+    is_b_sequence = isinstance(b, Sequence)
+    if is_a_sequence and is_b_sequence:
+        # Ensure both sequences have the same length
+        if len(a) != len(b):
+            raise ValueError("Sequences must have the same length for comparison.")
+
+        # Compare each element in the sequences and return the list of results
+        return [comparator.compare(x, y) for x, y in zip(a, b)]
+    elif not is_a_sequence and not is_b_sequence:
+        # Compare non-sequence items and return the result in a list
+        return [comparator.compare(a, b)]
+    else:
+        # Raise an error if one is a sequence and the other is not
+        raise ValueError("Both inputs must be sequences or both must be non-sequences.")
