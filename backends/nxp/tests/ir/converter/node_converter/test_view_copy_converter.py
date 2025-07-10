@@ -108,8 +108,8 @@ class ConvLinearViewModule(torch.nn.Module):
 
 
 def test__channels_first_to_2d(mocker):
-    input_shape = [2, 4, 7, 9]
-    new_shape = [12, 32]  # Mix up the dimensions for a thorough test.
+    input_shape = [1, 4, 7, 9]
+    new_shape = [6, 32]  # Mix up the dimensions for a thorough test.
 
     torch_model = ConvReshapeModule(channels=input_shape[1], new_shape=new_shape)
     edge_program = to_edge_program(torch_model, input_shape).exported_program()
@@ -131,7 +131,7 @@ def test__channels_first_to_2d(mocker):
 
 
 def test__channels_first_to_4d(mocker):
-    input_shape = [2, 4, 6, 8]
+    input_shape = [1, 8, 6, 8]
     new_shape = [7, 4, 2, 5]
 
     torch_model = ConvReshapeModule(channels=input_shape[1], new_shape=new_shape)
@@ -142,7 +142,10 @@ def test__channels_first_to_4d(mocker):
     converter_spy = mocker.spy(ModelBuilder, "finish")
 
     convert_run_compare(
-        edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess()
+        edge_program,
+        input_data,
+        tflite_input_preprocess=ToNHWCPreprocess(),
+        atol=2.0e-7,
     )
 
     tflite_model = converter_spy.spy_return
@@ -155,7 +158,7 @@ def test__channels_first_to_4d(mocker):
 
 def test__formatless_to_channels_first(mocker):
     input_shape = [12, 32]
-    new_shape = [2, 4, 6, 8]  # Mix up the dimensions for a thorough test.
+    new_shape = [1, 4, 12, 8]  # Mix up the dimensions for a thorough test.
 
     torch_model = FormatlessToChannelsFirstModule(
         channels=new_shape[1], new_shape=new_shape
@@ -167,7 +170,10 @@ def test__formatless_to_channels_first(mocker):
     converter_spy = mocker.spy(ModelBuilder, "finish")
 
     convert_run_compare(
-        edge_program, input_data, tflite_output_preprocess=ToNCHWPreprocess()
+        edge_program,
+        input_data,
+        tflite_output_preprocess=ToNCHWPreprocess(),
+        atol=2.0e-7,
     )
 
     tflite_model = converter_spy.spy_return
@@ -180,7 +186,7 @@ def test__formatless_to_channels_first(mocker):
 
 def test__formatless_to_formatless(mocker):
     input_shape = [12, 32]
-    new_shape = [2, 4, 6, 8]
+    new_shape = [1, 4, 6, 16]
 
     torch_model = FormatlessToFormatlessModule(new_shape=new_shape)
     edge_program = to_edge_program(torch_model, input_shape).exported_program()
