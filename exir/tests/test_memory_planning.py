@@ -664,6 +664,47 @@ class TestMisc(unittest.TestCase):
             .val.allocation_info.memory_offset_high,
         )
 
+    def test_mutable_buffers_infinite_lifespan(self) -> None:
+        class Simple(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.state.index_put_(
+                    [
+                        torch.tensor([0]),
+                    ],
+                    x,
+                )
+                y = x + self.state
+                z = x * y
+                return z
+
+        model = Simple()
+        inputs = (torch.ones(1),)
+
+        et = to_edge(export(model, inputs, strict=True)).to_executorch(
+            ExecutorchBackendConfig(
+                emit_mutable_buffer_names=True, run_reinplace_pass=True
+            )
+        )
+
+        serialized_state = et.executorch_program.execution_plan[0].values[0].val
+        self.assertEqual(
+            serialized_state.extra_tensor_info.fully_qualified_name, "state"
+        )
+        memory_base = serialized_state.allocation_info.memory_offset_low
+        memory_size = memory_base + 4  # 4 bytes for a single float
+        for value in et.executorch_program.execution_plan[0].values[1:]:
+            val = value.val
+            if hasattr(val, "allocation_info") and val.allocation_info is not None:
+                not_overlapping = (
+                    val.allocation_info.memory_offset_low < memory_base
+                    or val.allocation_info.memory_offset_low >= memory_size
+                )
+                self.assertTrue(not_overlapping)
+
     def test_constants_not_memory_planned(self) -> None:
         class Simple(torch.nn.Module):
             def __init__(self) -> None:
