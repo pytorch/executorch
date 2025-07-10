@@ -33,4 +33,3 @@ class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
   size_t used_;
   size_t peak_used_;
 };
-
