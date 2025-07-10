@@ -80,23 +80,11 @@ void add_dequantize_per_tensor_node(
     const ValueRef& quant_min,
     const ValueRef& quant_max,
     const ValueRef& output) {
-  const bool is_tensor_scale_zp =
-      graph.val_is_tensor(scale) && graph.val_is_tensor(zero_point);
-
   std::string kernel_name("dequantize_per_tensor");
-  if (is_tensor_scale_zp) {
-    kernel_name += "_tensor";
-  }
   add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(output));
 
-  float scale_val = 1.0;
-  int zero_point_val = 0;
-  if (!is_tensor_scale_zp) {
-    scale_val = static_cast<float>(graph.get_double(scale));
-    zero_point_val = static_cast<int>(graph.get_int(zero_point));
-  }
   int quant_min_val = static_cast<int>(graph.get_int(quant_min));
   int quant_max_val = static_cast<int>(graph.get_int(quant_max));
 
@@ -115,31 +103,15 @@ void add_dequantize_per_tensor_node(
         graph.logical_limits_ubo(input), graph.logical_limits_ubo(output)};
   }
 
-  if (is_tensor_scale_zp) {
-    push_constants = {
-        PushConstantDataInfo(&quant_min_val, sizeof(int)),
-        PushConstantDataInfo(&quant_max_val, sizeof(int)),
-    };
-  } else {
-    push_constants = {
-        PushConstantDataInfo(&scale_val, sizeof(float)),
-        PushConstantDataInfo(&zero_point_val, sizeof(int)),
-        PushConstantDataInfo(&quant_min_val, sizeof(int)),
-        PushConstantDataInfo(&quant_max_val, sizeof(int)),
-    };
-  }
+  push_constants = {
+      PushConstantDataInfo(&quant_min_val, sizeof(int)),
+      PushConstantDataInfo(&quant_max_val, sizeof(int)),
+  };
 
   vkapi::SpecVarList spec_vars = {
       graph.hashed_layout_of(output),
       graph.hashed_layout_of(input),
   };
-
-  std::vector<ArgGroup> inputs_and_outputs = {
-      {output, vkapi::kWrite}, {input, vkapi::kRead}};
-  if (is_tensor_scale_zp) {
-    inputs_and_outputs.emplace_back(
-        ArgGroup{{scale, zero_point}, vkapi::kRead});
-  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -147,7 +119,9 @@ void add_dequantize_per_tensor_node(
       default_pick_global_wg_size,
       default_pick_local_wg_size,
       // Inputs and Outputs
-      inputs_and_outputs,
+      {{output, vkapi::kWrite},
+       {input, vkapi::kRead},
+       {{scale, zero_point}, vkapi::kRead}},
       // Shader param buffers
       param_ubos,
       // Push Constants
@@ -535,9 +509,6 @@ void dequantize_per_channel_impl(
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(
-      quantized_decomposed.dequantize_per_tensor.default,
-      dequantize_per_tensor_impl);
   VK_REGISTER_OP(
       quantized_decomposed.dequantize_per_tensor.tensor,
       dequantize_per_tensor_impl);

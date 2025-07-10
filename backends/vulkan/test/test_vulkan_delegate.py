@@ -46,6 +46,9 @@ def lower_module(
     if dynamic_shapes is not None:
         compile_options["require_dynamic_shapes"] = True
 
+    # Enable downcast_64_bit by default to handle float64/int64 tensors
+    compile_options["downcast_64_bit"] = True
+
     edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
