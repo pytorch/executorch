@@ -537,10 +537,10 @@ they are interested in working with via our tooling.</p>
 </div>
 <dl class="py function">
 <dt class="sig sig-object py" id="executorch.devtools.etrecord._etrecord.generate_etrecord">
-<span class="sig-prename descclassname"><span class="pre">executorch.devtools.etrecord._etrecord.</span></span><span class="sig-name descname"><span class="pre">generate_etrecord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">et_record</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edge_dialect_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">executorch_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">export_modules</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/devtools/etrecord/_etrecord.html#generate_etrecord"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.devtools.etrecord._etrecord.generate_etrecord" title="Permalink to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.etrecord._etrecord.</span></span><span class="sig-name descname"><span class="pre">generate_etrecord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">et_record</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edge_dialect_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">executorch_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exported_program</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extra_recorded_export_modules</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/devtools/etrecord/_etrecord.html#generate_etrecord"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.devtools.etrecord._etrecord.generate_etrecord" title="Permalink to this definition">¶</a></dt>
 <dd><p>Generates an <cite>ETRecord</cite> from the given objects, serializes it and saves it to the given path.
 The objects that will be serialized to an <cite>ETRecord</cite> are all the graph modules present
-in the <cite>export_modules</cite> dict, the graph module present in the edge dialect program object,
+in the <cite>extra_recorded_export_modules</cite> dict, the graph module present in the edge dialect program object,
 and also the graph module present in the ExecuTorch program object, which
 is the closest graph module representation of what is eventually run on the device.
 In addition to all the graph modules, we also serialize the program buffer, which the users
@@ -552,7 +552,8 @@ for Developer Tools usage.</p>
 <li><p><strong>et_record</strong> – Path to where the <cite>ETRecord</cite> file will be saved to.</p></li>
 <li><p><strong>edge_dialect_program</strong> – <cite>EdgeProgramManager</cite> for this model returned by the call to to_edge()</p></li>
 <li><p><strong>executorch_program</strong> – The ExecuTorch program for this model returned by the call to <cite>to_executorch()</cite> or the <cite>BundledProgram</cite> of this model</p></li>
-<li><p><strong>[</strong><strong>Optional</strong><strong>]</strong> (<em>export_modules</em>) – <strong>Should be ignored by OSS users</strong>. A dictionary of graph modules with the key being the user provided name and the
+<li><p><strong>exported_program</strong> – Optional graph module for this model returned by the call to <cite>torch.export</cite> from nn.Module.</p></li>
+<li><p><strong>[</strong><strong>Optional</strong><strong>]</strong> (<em>extra_recorded_export_modules</em>) – <strong>Should be ignored by OSS users</strong>. A dictionary of graph modules with the key being the user provided name and the
 value being the corresponding exported module. The exported graph modules can be either the
 output of <cite>torch.export()</cite> or <cite>exir.to_edge()</cite>.</p></li>
 </ul>
