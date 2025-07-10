@@ -27,14 +27,10 @@ ${layout_declare_tensor(B, "w", "t_out", OUT_DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "buffer")}
 
 $if MODE == "per_tensor":
-  $if SHAPE == "tensor":
-    ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
-    ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
 
   layout(push_constant) uniform restrict Block {
-    $if SHAPE == "scalar":
-      float scale;
-      int zero_point;
     int quant_min;
     int quant_max;
   };
@@ -147,10 +143,7 @@ void quantize_per_tensor() {
   const int in_bufi = tidx_to_bufi(out_tidx, t_in_strides);
 
   IN_T value = t_in[in_bufi];
-  $if SHAPE == "scalar":
-    OUT_T qvalue = quantize_val(value, scale, zero_point);
-  $if SHAPE == "tensor":
-    OUT_T qvalue = quantize_val(value, t_scale[0], t_zero_point[0]);
+  OUT_T qvalue = quantize_val(value, t_scale[0], t_zero_point[0]);
 
   t_out[out_bufi] = qvalue;
 }
