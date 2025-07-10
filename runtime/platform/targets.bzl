@@ -45,6 +45,7 @@ def define_common_targets():
             "ovr_config//os:android": ["default/android.cpp"],
             "DEFAULT": _select_pal({
                 "minimal": ["default/minimal.cpp"],
+                "arm_zephyr": ["default/arm_zephyr.hpp"],
                 "posix": ["default/posix.cpp"],
         })}),
         deps = [
