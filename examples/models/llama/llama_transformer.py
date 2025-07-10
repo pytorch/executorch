@@ -18,6 +18,7 @@ from executorch.examples.models.llama.attention import (
     ForwardOptions,
 )
 
+from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
@@ -255,7 +256,67 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
     layers = torch.nn.ModuleList()
     cls = ATTENTION_REGISTRY[model_args.attention_type]
     for layer_id in range(model_args.n_layers):
-        attention = cls(model_args, layer_id, rope)
+        wq = (
+            LoRALinear(
+                in_dim=model_args.dim,
+                out_dim=model_args.n_heads * model_args.head_dim,
+                rank=model_args.r,
+                alpha=model_args.lora_alpha,
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if model_args.target_modules is not None
+            and "q_proj" in model_args.target_modules
+            else None
+        )
+
+        wk = (
+            LoRALinear(
+                in_dim=model_args.dim,
+                out_dim=model_args.n_kv_heads * model_args.head_dim,
+                rank=model_args.r,
+                alpha=model_args.lora_alpha,
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if model_args.target_modules is not None
+            and "k_proj" in model_args.target_modules
+            else None
+        )
+
+        wv = (
+            LoRALinear(
+                in_dim=model_args.dim,
+                out_dim=model_args.n_kv_heads * model_args.head_dim,
+                rank=model_args.r,
+                alpha=model_args.lora_alpha,
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if model_args.target_modules is not None
+            else None
+        )
+
+        wo = (
+            LoRALinear(
+                in_dim=model_args.n_kv_heads * model_args.head_dim,
+                out_dim=model_args.dim,
+                rank=model_args.r,
+                alpha=model_args.lora_alpha,
+                dropout=0.0,
+                use_bias=model_args.attention_qkv_bias,
+            )
+            if model_args.target_modules is not None
+            and "output_proj" in model_args.target_modules
+            else None
+        )
+        if model_args.attention_type == "static":
+            # Static attention constructs ModuleLists for qkvo and
+            # populates them with MHA attention layers; do not pass in
+            # wq, wk, wv, wo.
+            attention = cls(model_args, layer_id, rope)
+        else:
+            attention = cls(model_args, layer_id, rope, wq, wk, wv, wo)
         transformer_block = TransformerBlock(model_args, attention)
         layers.append(transformer_block)
 
