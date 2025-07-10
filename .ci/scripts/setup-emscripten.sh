@@ -1,12 +1,6 @@
 
 set -ex
 
-install_nodejs() {
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-    \. "$HOME/.nvm/nvm.sh"
-    nvm install 22
-}
-
 install_emscripten() {
     git clone https://github.com/emscripten-core/emsdk.git
     pushd emsdk || return
@@ -16,5 +10,4 @@ install_emscripten() {
     popd || return
 }
 
-install_nodejs
 install_emscripten

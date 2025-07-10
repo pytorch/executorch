@@ -23,7 +23,7 @@ test_build_wasm() {
     rm -rf "${model_dir_name}"
 
     echo 'Running wasm build test'
-    node ${build_dir}/executor_runner.js --model_path="${model_export_name}"
+    $EMSDK_NODE ${build_dir}/executor_runner.js --model_path="${model_export_name}"
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]];

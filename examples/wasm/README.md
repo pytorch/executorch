@@ -2,16 +2,9 @@
 
 This guide describes how to build ExecuTorch for WebAssembly (Wasm).
 
-## Directory Structure
-
-```
-examples/wasm
-└── README.md                         # This file
-```
-
 ## Prerequisites
 
-- [emscripten](https://emscripten.org/docs/getting_started/Tutorial.html)
+- [Emscripten](https://emscripten.org/docs/getting_started/Tutorial.html)
 
 ## Generate Models
 
@@ -55,7 +48,7 @@ If you need to rebuild `executor_runner` after modifying the contents of `./mode
 cmake --build cmake-out-wasm -j32 --target executor_runner --clean-first
 ```
 
-4. Run the model with Node.js (automatically installed with Emscripten).
+4. Run the model with Node.js. Emscripten should come preinstalled with a compatible version of Node.js. If you have an incompatible version of Node.js installed, you can use the Emscripten-provided version by running `$EMSDK_NODE` instead of `node`.
 
 ```bash
 # Run the tool on the generated model.
