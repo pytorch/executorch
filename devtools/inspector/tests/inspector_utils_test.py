@@ -10,8 +10,9 @@ import tempfile
 import unittest
 from typing import Dict, Tuple
 
-import torch
+import executorch.exir.tests.models as models
 
+import torch
 from executorch.devtools import generate_etrecord, parse_etrecord
 
 from executorch.devtools.debug_format.base_schema import (
@@ -41,9 +42,13 @@ from executorch.devtools.inspector._inspector_utils import (
     map_runtime_aot_intermediate_outputs,
     merge_runtime_overlapping_debug_handles,
     NodeFilter,
+    propagate_back_debug_handle,
     TimeScale,
 )
 from executorch.devtools.inspector.numerical_comparator import L1Comparator
+from executorch.exir import to_edge
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
+from torch.export import export
 
 
 class TestInspectorUtils(unittest.TestCase):
@@ -582,6 +587,113 @@ class TestInspectorUtils(unittest.TestCase):
         b = 1.0
         with self.assertRaises(ValueError):
             compare_intermediate_outputs(a, b, L1Comparator())
+
+    def test_equip_debug_handle_to_export_program_success(self):
+        """Test that propagate_back_debug_handle returns True and properly equips debug handles."""
+        # Create a test model
+        model = models.FeedForwardBlock(5, 10)
+        inputs = (torch.rand(5, 5),)
+
+        # Export the model
+        exported_program = export(model, inputs)
+        export_graph_id = id(exported_program.graph)
+
+        # Convert to edge dialect
+        edge_dialect_program = to_edge(exported_program).exported_program()
+
+        # Call propagate_back_debug_handle
+        result = propagate_back_debug_handle(
+            exported_program, export_graph_id, edge_dialect_program
+        )
+
+        self.assertTrue(result)
+
+        # Check that debug handles are properly equipped in the exported program
+        exported_program_debug_handles = []
+        for node in exported_program.graph.nodes:
+            if node.op not in ("placeholder", "output"):
+                self.assertIn(DEBUG_HANDLE_KEY, node.meta)
+                self.assertIsNotNone(node.meta[DEBUG_HANDLE_KEY])
+                exported_program_debug_handles.append(node.meta[DEBUG_HANDLE_KEY])
+
+        edge_dialect_program_debug_handles = []
+        for node in edge_dialect_program.graph.nodes:
+            if node.op not in ("placeholder", "output"):
+                self.assertIn(DEBUG_HANDLE_KEY, node.meta)
+                self.assertIsNotNone(node.meta[DEBUG_HANDLE_KEY])
+                edge_dialect_program_debug_handles.append(node.meta[DEBUG_HANDLE_KEY])
+
+        # The 0th operator in the exported program (layer_norm) has been decomposed into 0th and 1st ops in edge dialect graph (native_layer_norm and getitem)
+        # So they should have the same debug handle
+        self.assertEqual(
+            exported_program_debug_handles[0], edge_dialect_program_debug_handles[0]
+        )
+        self.assertEqual(
+            exported_program_debug_handles[0], edge_dialect_program_debug_handles[1]
+        )
+
+    def test_equip_debug_handle_to_export_program_failure(self):
+        """Test that propagate_back_debug_handle returns False when there's a mismatch."""
+        # Create a test model
+        model = models.FeedForwardBlock(5, 10)
+        inputs = (torch.rand(5, 5),)
+
+        exported_program = export(model, inputs)
+        edge_dialect_program = to_edge(exported_program).exported_program()
+
+        # Create a different exported program (reexport) to cause mismatch
+        reexported_program = export(model, inputs)
+        reexport_graph_id = id(reexported_program.graph)
+
+        # Call propagate_back_debug_handle with mismatched programs
+        # This should return False because the reexported program has different node identifiers
+        result = propagate_back_debug_handle(
+            reexported_program, reexport_graph_id, edge_dialect_program
+        )
+
+        # Check that it returns False due to mismatch
+        self.assertFalse(result)
+
+    def test_equip_debug_handle_to_export_program_op_to_be_removed_in_to_edge(self):
+        """Test that propagate_back_debug_handle returns True and properly equips debug handles when an op is removed in to_edge"""
+
+        class M(torch.nn.Module):
+            """
+            Simple model with ops that will be removed in to_edge
+            """
+
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                x = x + 1
+                x = x.to(x.dtype)
+                x = x + 1
+                return x
+
+        inputs = (torch.rand(5, 5),)
+        exported_program = torch.export.export(M(), inputs)
+        export_graph_id = id(exported_program.graph)
+        edge_dialect_program = to_edge(exported_program).exported_program()
+
+        self.assertTrue(
+            propagate_back_debug_handle(
+                exported_program, export_graph_id, edge_dialect_program
+            )
+        )
+
+        # only two add ops in the exported program will keep in edge dialect program, so the debug handles for removed op will be three
+        debug_handle_for_removed_node = 3
+
+        for node in exported_program.graph.nodes:
+            if node.name == "add":
+                self.assertEqual(node.meta[DEBUG_HANDLE_KEY], 1)
+            elif node.name == "add_1":
+                self.assertEqual(node.meta[DEBUG_HANDLE_KEY], 2)
+            elif node.op not in ("placeholder", "output"):
+                self.assertEqual(
+                    node.meta[DEBUG_HANDLE_KEY], debug_handle_for_removed_node
+                )
 
 
 def gen_mock_operator_graph_with_expected_map() -> (
