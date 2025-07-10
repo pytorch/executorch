@@ -424,6 +424,12 @@ class ComputeGraph final {
   // Scalar Value Extraction
   //
 
+  bool is_scalar(const ValueRef idx) const {
+    const Value& value = values_.at(idx);
+    return value.isInt() || value.isDouble() || value.isBool() ||
+        value.isNone();
+  }
+
   template <typename T>
   T extract_scalar(const ValueRef idx) {
     Value& value = values_.at(idx);
@@ -678,6 +684,10 @@ class ComputeGraph final {
   vkapi::BufferBindInfo get_or_create_int_param_buffer(
       const ValueRef idx,
       const int32_t default_value);
+
+  int32_t get_or_create_int(const ValueRef idx);
+
+  int32_t get_or_create_int(const ValueRef idx, const int32_t default_value);
 
   void set_symint(const ValueRef idx, const int32_t val);
 
