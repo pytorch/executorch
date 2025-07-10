@@ -623,6 +623,74 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(count_after, 0)
         self.assertTrue(torch.allclose(prog.exported_program().module()(x), f(x)))
 
+    def test_compile_other_broken_ops(self) -> None:
+        class ExportableLoop(nn.Module):
+            def __init__(self, hidden_size, out_channels):
+                super().__init__()
+                self.hidden_size = hidden_size
+                self.B = nn.Parameter(torch.randn(hidden_size, 1))  # (H, in_channels)
+                self.C = nn.Parameter(
+                    torch.randn(out_channels, hidden_size)
+                )  # (C_out, H)
+                A = torch.randn(2, hidden_size)
+                self.A_real = nn.Parameter(A[0].clone())
+                self.A_imag = nn.Parameter(A[1].clone())
+
+            def update_state(self, h, x_t):
+                # h: [B, 2, H], x_t: [B, H]
+                hr, hi = h[:, 0, :], h[:, 1, :]  # [B, H]
+                hrn = hr * self.A_real - hi * self.A_imag + x_t  # [B, H]
+                hin = hi * self.A_real + hr * self.A_imag  # [B, H]
+                hn = torch.stack([hrn, hin], dim=1)  # [B, 2, H]
+                return hn, hrn
+
+            def forward(self, u):
+                # u: [B, 1, T]
+                x = torch.matmul(self.B, u)  # (B, H, T)
+                B, H, T = x.shape
+
+                h = torch.zeros(B, 2, H, device=x.device, dtype=x.dtype)  # [B, 2, H]
+                h_accum = torch.zeros(
+                    B, H, T, device=x.device, dtype=x.dtype
+                )  # [B, H, T]
+                i = torch.tensor(0, device=x.device, dtype=torch.int64)
+                one = torch.tensor(1, device=x.device, dtype=torch.int64)
+
+                def cond(i, h, h_accum):
+                    return i < T
+
+                def body(i, h, h_accum):
+                    x_t = x.index_select(-1, i.unsqueeze(0)).squeeze(
+                        -1
+                    )  # ✅ safe for export
+                    h, hr = self.update_state(h, x_t)  # h: [B, 2, H], hr: [B, H]
+                    h_accum = h_accum.index_copy(
+                        -1, i.unsqueeze(0), hr.unsqueeze(-1)
+                    )  # [B, H, T]
+                    i_next = i + one
+                    return i_next, h, h_accum
+
+                _, h, h_accum = torch._higher_order_ops.while_loop(
+                    cond, body, (i, h, h_accum)
+                )
+                y = torch.matmul(self.C, h_accum).transpose(0, 1)  # (B, C_out, T)
+                return y
+
+        # Instantiate and export
+        model = ExportableLoop(hidden_size=128, out_channels=10)
+        inp = torch.randn(1, 1, 32)  # (B, in_channels=1, T=32)
+        exported = export(model, (inp,))
+        prog = to_edge(exported)
+        gm = prog.exported_program().graph_module
+        count_after = 0
+        for node in gm.graph.nodes:
+            if (
+                node.target == torch.ops.aten.squeeze.dims
+                or node.target == torch.ops.aten.select.int
+            ):
+                count_after += 1
+        self.assertEqual(count_after, 0)
+
     def test_convert_symb_ops(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:

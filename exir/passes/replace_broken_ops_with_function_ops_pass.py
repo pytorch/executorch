@@ -14,6 +14,7 @@ from executorch.exir.pass_base import ExportPass
 from torch._ops import OpOverload
 
 
+# TODO: Is there a better way to do this this mapping then just manually listing.
 _NON_FUNCTIONAL_OPS_TO_FUNCTIONAL_OPS: Dict[OpOverload, OpOverload] = {
     torch.ops.aten._unsafe_view.default: torch.ops.aten.view_copy.default,
     torch.ops.aten.t.default: torch.ops.aten.t_copy.default,
@@ -23,6 +24,9 @@ _NON_FUNCTIONAL_OPS_TO_FUNCTIONAL_OPS: Dict[OpOverload, OpOverload] = {
     torch.ops.aten.squeeze.default: torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.unsqueeze.default: torch.ops.aten.unsqueeze_copy.default,
     torch.ops.aten.slice.Tensor: torch.ops.aten.slice_copy.Tensor,
+    torch.ops.aten.select.int: torch.ops.aten.select_copy.int,
+    torch.ops.aten.squeeze.dims: torch.ops.aten.squeeze_copy.dims,
+    torch.ops.aten.squeeze.dim: torch.ops.aten.squeeze_copy.dim,
 }
 
 
