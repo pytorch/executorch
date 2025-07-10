@@ -18,8 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-models-macos:
-    name: test-models-macos
+  test-models-macos-cpu:
+    name: test-models-macos-cpu
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
@@ -37,6 +37,31 @@ jobs:
             backend: portable
           - model: mv3
             backend: portable
+      fail-fast: false
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=cmake
+        BACKEND=${{ matrix.backend }}
+
+        bash .ci/scripts/setup-conda.sh
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+        # Build and test executorch
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+
+  test-models-macos-coreml:
+    name: test-models-macos-coreml
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      matrix: 
+        model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, mobilebert, mv3, resnet50, vit, w2l]
+        backend: [coreml-test] # Just "coreml" tests AOT only. "coreml-test" tests both AOT and runtime.. Sigh...
       fail-fast: false
     with:
       runner: macos-m1-stable
@@ -567,8 +592,8 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
-  test-apple-model:
-    name: test-apple-model
+  test-models-macos-mps:
+    name: test-models-macos-mps
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       fail-fast: false
@@ -585,16 +610,10 @@ jobs:
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
-        echo "Finishing installing coreml."
 
-        # Build and test coreml model
+        # Build and test models on mps
         MODELS=(mv3 ic4 resnet50 edsr mobilebert w2l)
         for MODEL_NAME in "${MODELS[@]}"; do
-          echo "::group::Exporting coreml model: $MODEL_NAME"
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "coreml"
-          echo "::endgroup::"
-
           echo "::group::Exporting mps model: $MODEL_NAME"
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "mps"
           echo "::endgroup::"

@@ -91,10 +91,11 @@ test_model() {
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi
-  STRICT="--no-strict"
+  STRICT="--strict"
   if [[ "${MODEL_NAME}" == "llava" ]]; then
     # Install requirements for llava
     bash examples/models/llava/install_requirements.sh
+    STRICT="--no-strict"
   fi
   if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
       # Install requirements for export_llama
