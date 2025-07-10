@@ -64,8 +64,6 @@
 		306A71512DC1DC3D00936B1F /* pre_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A71472DC1DC3D00936B1F /* pre_tokenizer.cpp */; };
 		306A71522DC1DC3D00936B1F /* token_decoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A714B2DC1DC3D00936B1F /* token_decoder.cpp */; };
 		3072D5232DC3EA280083FC83 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3072D5222DC3EA280083FC83 /* Constants.swift */; };
-		F24909E32E206FD2001E5B69 /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AB2CEC5CEC00C7113B /* kernels_portable */; };
-		F24909E42E206FD2001E5B69 /* kernels_portable_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */; };
 		F24909E82E207004001E5B69 /* normalizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F24909E72E207004001E5B69 /* normalizer.cpp */; };
 		F292B0752D88B0C200BE6839 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B06F2D88B0C200BE6839 /* tiktoken.cpp */; };
 		F292B0762D88B0C200BE6839 /* llama2c_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B06C2D88B0C200BE6839 /* llama2c_tokenizer.cpp */; };
