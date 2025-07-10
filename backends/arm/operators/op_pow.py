@@ -14,6 +14,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -41,12 +42,13 @@ class PowVisitor_080_MI(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        if inputs[0].dtype not in [ts.DType.FP32, ts.DType.FP16]:
-            raise ValueError(
-                f"All inputs need to be FP32 or FP16. Got {inputs[0].dtype}"
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.FP16, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         tosa_graph.addOperator(
             ts.TosaOp.Op().POW,
@@ -80,12 +82,13 @@ class PowVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        if inputs[0].dtype not in [ts.DType.FP32, ts.DType.FP16]:
-            raise ValueError(
-                f"All inputs need to be FP32 or FP16. Got {inputs[0].dtype}"
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.FP16, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         tosa_graph.addOperator(
             ts.TosaOp.Op().POW,

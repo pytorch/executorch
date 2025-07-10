@@ -1,3 +1,7 @@
+load(
+    "@fbsource//tools/build_defs:default_platform_defs.bzl",
+    "ANDROID",
+)
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
@@ -29,10 +33,13 @@ def define_common_targets():
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/backends/qualcomm/runtime:runtime",
             "//pytorch/tokenizers:llama2c_tokenizer",
+            "//pytorch/tokenizers:regex_lookahead",
+            "//pytorch/tokenizers:tiktoken",
         ],
         external_deps = [
             "gflags",
         ],
+        platforms = [ANDROID],
         **get_oss_build_kwargs()
     )
 
@@ -51,5 +58,6 @@ def define_common_targets():
         external_deps = [
             "gflags",
         ],
+        platforms = [ANDROID],
         **get_oss_build_kwargs()
     )

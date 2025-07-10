@@ -111,8 +111,8 @@ Error NeuronExecuTorchDelegate::execute(
     return Error::InvalidState;
   };
 
-  auto allocator = dynamic_cast<torch::executor::neuron::BufferAllocator*>(
-      context.get_temp_allocator());
+  auto allocator =
+      dynamic_cast<neuron::BufferAllocator*>(context.get_temp_allocator());
   size_t inputCount = mInputSizes.size(), outputCount = mOutputSizes.size();
 
   for (int i = 0; i < inputCount; i++) {

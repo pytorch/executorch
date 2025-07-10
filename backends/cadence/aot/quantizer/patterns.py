@@ -15,7 +15,7 @@ from executorch.backends.cadence.aot.quantizer.utils import get_bias_qparams
 
 from torch import fx
 from torch._ops import OpOverload
-from torch.ao.quantization.quantizer import (
+from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     SharedQuantizationSpec,
 )

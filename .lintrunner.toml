@@ -76,6 +76,7 @@ exclude_patterns = [
     'examples/demo-apps/apple_ios/**',
     'examples/demo-apps/react-native/rnllama/ios/**',
     'extension/apple/**',
+    'extension/llm/apple/**',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
@@ -271,6 +272,10 @@ exclude_patterns = [
     'examples/**',
     'exir/verification/bindings.cpp',
     'extension/**',
+    # Uses properly-gated (ET_USE_PYTORCH_HEADERS) ATen include.
+    'kernels/portable/cpu/util/elementwise_util.h',
+    'kernels/portable/cpu/util/math_util.h',
+    'kernels/portable/cpu/util/vectorized_math.h',
     'kernels/optimized/**',
     'runtime/core/exec_aten/**',
     # Want to be able to keep c10 in sync with PyTorch core.
@@ -384,6 +389,11 @@ code = "TORCH_AO_IMPORT"
 include_patterns = ["**/*.py"]
 exclude_patterns = [
     "third-party/**",
+    # TODO: remove exceptions as we migrate
+    # backends
+    "exir/tests/test_memory_planning.py",
+    "exir/backend/test/demos/test_xnnpack_qnnpack.py",
+    "backends/xnnpack/test/test_xnnpack_utils.py",
 ]
 
 command = [
@@ -392,7 +402,7 @@ command = [
   "lintrunner_adapters",
   "run",
   "grep_linter",
-  "--pattern=\\bfrom torch\\.ao\\.quantization\\.(?:quantize_pt2e)(?:\\.[A-Za-z0-9_]+)*\\b",
+  "--pattern=\\bfrom torch\\.ao\\.quantization\\.(?:quantizer|observer|quantize_pt2e|pt2e)(?:\\.[A-Za-z0-9_]+)*\\b",
   "--linter-name=TorchAOImport",
   "--error-name=Prohibited torch.ao.quantization import",
   """--error-description=\

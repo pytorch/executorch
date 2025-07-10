@@ -4,6 +4,7 @@
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
+ * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
  */
 
 #include <gflags/gflags.h>
@@ -40,6 +41,16 @@ DEFINE_int32(
     cpu_threads,
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
+
+DEFINE_int32(
+    num_bos,
+    0,
+    "Number of BOS tokens to prepend to the prompt. Defaults to 0. If > 0, the prompt will be prepended with BOS tokens. This is useful for models that expect one or more BOS token at the start.");
+
+DEFINE_int32(
+    num_eos,
+    0,
+    "Number of EOS tokens to append to the prompt. Defaults to 0. If > 0, the prompt will be appended with EOS tokens. This is useful for models that expect one or more EOS token at the end.");
 
 DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
@@ -80,18 +91,29 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-  example::Runner runner(model_path, tokenizer_path, data_path);
+  std::unique_ptr<::executorch::extension::llm::TextLLMRunner> runner =
+      example::create_llama_runner(model_path, tokenizer_path, data_path);
+
+  if (runner == nullptr) {
+    ET_LOG(Error, "Failed to create llama runner");
+    return 1;
+  }
 
   if (warmup) {
-    // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-    runner.warmup(prompt, /*max_new_tokens=*/seq_len);
+    auto error = runner->warmup(prompt, /*max_new_tokens=*/seq_len);
+    if (error != executorch::runtime::Error::Ok) {
+      ET_LOG(Error, "Failed to warmup llama runner");
+      return 1;
+    }
   }
   // generate
   executorch::extension::llm::GenerationConfig config{
       .seq_len = seq_len, .temperature = temperature};
-  // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-  runner.generate(prompt, config);
+  auto error = runner->generate(prompt, config);
+  if (error != executorch::runtime::Error::Ok) {
+    ET_LOG(Error, "Failed to warmup llama runner");
+    return 1;
+  }
 
   return 0;
 }

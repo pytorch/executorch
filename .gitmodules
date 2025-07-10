@@ -67,3 +67,6 @@
 [submodule "shim"]
 	path = shim
 	url = https://github.com/facebook/buck2-shims-meta
+[submodule "third-party/json"]
+	path = third-party/json
+	url = https://github.com/nlohmann/json.git

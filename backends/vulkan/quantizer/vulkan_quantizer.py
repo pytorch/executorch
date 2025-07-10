@@ -16,11 +16,14 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     _convert_scalars_to_attrs,
     OP_TO_ANNOTATOR,
     propagate_annotation,
-    QuantizationConfig,
 )
-from torch.ao.quantization.observer import PerChannelMinMaxObserver
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
 from torch.fx import Node
+from torchao.quantization.pt2e import PerChannelMinMaxObserver
+from torchao.quantization.pt2e.quantizer import (
+    QuantizationConfig,
+    QuantizationSpec,
+    Quantizer,
+)
 
 
 __all__ = [

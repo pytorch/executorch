@@ -49,7 +49,6 @@ if $STEPWISE_BUILD; then
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=OFF \
         -DPYTHON_EXECUTABLE=python3 \
         -DEXECUTORCH_NNLIB_OPT=ON \
-        -DEXECUTORCH_BUILD_GFLAGS=ON \
         -DHAVE_FNMATCH_H=OFF \
         -Bcmake-out/backends/cadence \
         backends/cadence

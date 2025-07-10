@@ -13,9 +13,15 @@ CUSTOM_EDGE_OPS = [
     "hardswish.default",
     "linear.default",
     "maximum.default",
+    "multihead_attention.default",
     "adaptive_avg_pool2d.default",
     "bitwise_right_shift.Tensor",
     "bitwise_left_shift.Tensor",
+    "native_group_norm.default",
+    "unbind.int",
+    "unflatten.int",
+    "_native_batch_norm_legit_no_training.default",
+    "_native_batch_norm_legit.no_stats",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 
@@ -43,7 +49,6 @@ def get_op_name_map():
         op = op.removeprefix("_")
         op = op.removesuffix("_copy")
         op = op.removesuffix("_with_indices")
-        op = op.removesuffix("_no_training")
         overload = overload.lower()
 
         if overload == "default":

@@ -205,7 +205,8 @@ class Transformer(nn.Module):
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
-            h = h[:, -1, :]
+            pos = attn_options.get("last_valid_token_pos", -1)
+            h = h[:, pos, :]
 
         h = self.norm(h)
 
@@ -266,13 +267,7 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
             )
             if model_args.target_modules is not None
             and "q_proj" in model_args.target_modules
-            else (
-                torch.nn.Linear(
-                    model_args.dim,
-                    model_args.n_heads * model_args.head_dim,
-                    bias=model_args.attention_qkv_bias,
-                )
-            )
+            else None
         )
 
         wk = (
@@ -286,14 +281,9 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
             )
             if model_args.target_modules is not None
             and "k_proj" in model_args.target_modules
-            else (
-                torch.nn.Linear(
-                    model_args.dim,
-                    model_args.n_kv_heads * model_args.head_dim,
-                    bias=model_args.attention_qkv_bias,
-                )
-            )
+            else None
         )
+
         wv = (
             LoRALinear(
                 in_dim=model_args.dim,
@@ -304,14 +294,7 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
                 use_bias=model_args.attention_qkv_bias,
             )
             if model_args.target_modules is not None
-            and "v_proj" in model_args.target_modules
-            else (
-                torch.nn.Linear(
-                    model_args.dim,
-                    model_args.n_kv_heads * model_args.head_dim,
-                    bias=model_args.attention_qkv_bias,
-                )
-            )
+            else None
         )
 
         wo = (
@@ -325,13 +308,15 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
             )
             if model_args.target_modules is not None
             and "output_proj" in model_args.target_modules
-            else (
-                torch.nn.Linear(
-                    model_args.n_heads * model_args.head_dim, model_args.dim, bias=False
-                )
-            )
+            else None
         )
-        attention = cls(model_args, layer_id, rope, wq, wk, wv, wo)
+        if model_args.attention_type == "static":
+            # Static attention constructs ModuleLists for qkvo and
+            # populates them with MHA attention layers; do not pass in
+            # wq, wk, wv, wo.
+            attention = cls(model_args, layer_id, rope)
+        else:
+            attention = cls(model_args, layer_id, rope, wq, wk, wv, wo)
         transformer_block = TransformerBlock(model_args, attention)
         layers.append(transformer_block)
 

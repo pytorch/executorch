@@ -11,7 +11,7 @@ import math
 import typing
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import cast, DefaultDict, Iterable, Optional, Sequence
+from typing import Callable, cast, DefaultDict, Iterable, Optional, Sequence, TypeAlias
 
 import torch
 import torch.fx
@@ -350,14 +350,28 @@ class GenerateCatNopConstraints(PassBase):
     def is_cat_along_outermost_dim(
         self, graph_module: torch.fx.GraphModule, cat_node: torch.fx.Node
     ) -> bool:
+        assert len(cat_node.args) > 0
+        cat_tensors = cat_node.args[0]
+        if not isinstance(cat_tensors, Sequence) or not all(
+            isinstance(t, torch.fx.Node) for t in cat_tensors
+        ):
+            raise ValueError("cat_tensors must be a sequence of torch.fx.Node objects.")
+
+        if len(cat_node.args) > 1:
+            cat_dim = cat_node.args[1]
+        else:
+            cat_dim = cat_node.kwargs.get("dim", 0)
+        if not isinstance(cat_dim, int):
+            raise ValueError("cat_dim must be an integer.")
+
         # If the cat op has default dim, then the concat dim is 0
-        if len(cat_node.args) == 1 or cat_node.args[1] == 0:
+        if len(cat_tensors) == 1 or cat_dim == 0:
             return True
-        # Get the concatenation dimension and concatenated tensors
-        (cat_tensors, cat_dim) = cast(
-            tuple[Sequence[torch.fx.Node], int], cat_node.args
-        )
+
+        # Make sure all dimes before cat_dim are 1.
         for tensor in cat_tensors:
+            if not isinstance(tensor, torch.fx.Node):
+                continue
             shape = get_shape(graph_module, tensor)
             if shape is None or not all(dim == 1 for dim in shape[0:cat_dim]):
                 return False
@@ -559,23 +573,34 @@ class GenerateSliceAndSelectNopConstraints(PassBase):
         graph_module.recompile()
 
 
+ConstraintsGenPass: TypeAlias = Callable[
+    [MemConstraints],
+    Callable[[torch.fx.GraphModule], Optional[PassResult]],
+]
+
+
 # The class to generate all the constraints that will be passed on to the memory
 # planning algorithm.
 class GenerateMemConstraints:
     def __init__(
         self,
         mem_constraints: MemConstraints,
-        additional_constraint_gen_passes: list | None = None,
+        additional_constraint_gen_passes: Sequence[ConstraintsGenPass] | None = None,
     ) -> None:
-        self.mem_constraints = mem_constraints
-        self.additional_constraint_gen_passes = additional_constraint_gen_passes or []
+        self.mem_constraints: MemConstraints = mem_constraints
+        self.additional_constraint_gen_passes: Sequence[ConstraintsGenPass] = (
+            additional_constraint_gen_passes or []
+        )
 
     def __call__(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        constraint_gen_passes: list = [
-            GenerateMemoryViewConstraints,
-            GenerateSliceAndSelectNopConstraints,
-            GenerateCatNopConstraints,
-        ] + self.additional_constraint_gen_passes
+        constraint_gen_passes: Sequence[ConstraintsGenPass] = cast(
+            list[ConstraintsGenPass],
+            [
+                GenerateMemoryViewConstraints,
+                GenerateSliceAndSelectNopConstraints,
+                GenerateCatNopConstraints,
+            ],
+        ) + list(self.additional_constraint_gen_passes)
         # Create a filter using the opt level in mem_constraints, and filter
         # the relevant passes.
         pass_filter = create_cadence_pass_filter(self.mem_constraints.opt_level)
@@ -588,6 +613,7 @@ class GenerateMemConstraints:
                         typing.Callable[[torch.fx.GraphModule], Optional[PassResult]],
                     ]
                 ],
+                # pyre-ignore[6]: Incompatible parameter type.
                 list(filter(pass_filter, constraint_gen_passes)),
             )
         ]

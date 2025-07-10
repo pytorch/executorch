@@ -19,6 +19,7 @@ class ForwardOptions(TypedDict, total=False):
     freqs_sin_override: Optional[torch.Tensor]
     in_cache_state: Optional[Any]
     out_cache_state: Optional[Any]
+    last_valid_token_pos: Optional[torch.LongTensor]
 
 
 class Attention(nn.Module, ABC):
@@ -398,6 +399,7 @@ class AttentionMHA(Attention):
         )
 
         self.layer_id = layer_id
+
         self.rope = rope
 
         causal_mask = torch.tril(
