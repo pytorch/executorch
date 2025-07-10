@@ -23,7 +23,7 @@ The example below demonstrates the lowering processs of a MobileNet V2 model fro
 ```python
 import torch
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
-from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.ethosu import EthosUPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
