@@ -17,29 +17,29 @@ Here is a basic example for exporting Qwen 3, although please refer to the Llama
 Export 0.6b to XNNPack, quantized with 8da4w:
 ```
 python -m extension.llm.export.export_llm \
-  --config examples/models/qwen3/config/qwen3_xnnpack_q8da4w.yaml
+  --config examples/models/qwen3/config/qwen3_xnnpack_q8da4w.yaml \
   +base.model_class="qwen3_0_6b" \
   +base.params="examples/models/qwen3/config/0_6b_config.json" \
-  +export.output_name="qwen3_0_6b.pte" \
+  +export.output_name="qwen3_0_6b.pte"
 
 ```
 
 Export 1.7b to XNNPack, quantized with 8da4w:
 ```
 python -m extension.llm.export.export_llm \
-  --config examples/models/qwen3/config/qwen3_xnnpack_q8da4w.yaml
+  --config examples/models/qwen3/config/qwen3_xnnpack_q8da4w.yaml \
   +base.model_class="qwen3_1_7b" \
   +base.params="examples/models/qwen3/config/1_7b_config.json" \
-  +export.output_name="qwen3_1_7b.pte" \
+  +export.output_name="qwen3_1_7b.pte"
 ```
 
 Export 4b to XNNPack, quantized with 8da4w:
 ```
 python -m extension.llm.export.export_llm \
-  --config examples/models/qwen3/config/qwen3_xnnpack_q8da4w.yaml
+  --config examples/models/qwen3/config/qwen3_xnnpack_q8da4w.yaml \
   +base.model_class="qwen3_4b" \
   +base.params="examples/models/qwen3/config/4b_config.json" \
-  +export.output_name="qwen3_4b.pte" \
+  +export.output_name="qwen3_4b.pte"
 ```
 
 ### Example run

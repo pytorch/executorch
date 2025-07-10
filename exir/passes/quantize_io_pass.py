@@ -145,11 +145,8 @@ def quantize_output(exported_program, output_index):
     output quantization.
     """
     graph = exported_program.graph_module.graph
-    outputs = [n for n in graph.nodes if n.op == "output"]
-    if len(outputs) != 1:
-        raise NotImplementedError("Only 1 output node is supported")
 
-    output_node = outputs[0]
+    output_node = graph.output_node()
     output_list = list(output_node.args[0])
     if output_index >= len(output_list):
         raise ValueError(

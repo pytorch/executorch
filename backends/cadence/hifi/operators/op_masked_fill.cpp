@@ -29,7 +29,7 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-Tensor& masked_fill_scalar_out(
+Tensor& masked_fill_Scalar_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& mask,

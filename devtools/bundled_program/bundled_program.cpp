@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -344,6 +345,116 @@ ET_NODISCARD Error load_bundled_input(
           method.get_event_tracer(), testset_idx);
 
   return Error::Ok;
+}
+
+ET_NODISCARD ErrorStats compute_method_output_error_stats(
+    Method& method,
+    SerializedBundledProgram* bundled_program_ptr,
+    size_t testset_idx) {
+  if (!bundled_program_flatbuffer::BundledProgramBufferHasIdentifier(
+          bundled_program_ptr)) {
+    // The input buffer should be a bundled program.
+    return {Error::InvalidArgument, 0, 0, 0, 0};
+  }
+
+  auto method_test = get_method_test_suite(
+      bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr),
+      method);
+
+  if (!method_test.ok()) {
+    return {method_test.error(), 0, 0, 0, 0};
+  }
+
+  auto test_cases = method_test.get()->test_cases();
+
+  if (testset_idx >= test_cases->size()) {
+    return {Error::InvalidArgument, 0, 0, 0, 0};
+  }
+  auto bundled_expected_outputs =
+      test_cases->Get(static_cast<flatbuffers::uoffset_t>(testset_idx))
+          ->expected_outputs();
+
+  if (bundled_expected_outputs->size() == 0) {
+    ET_LOG(
+        Error,
+        "No bundled expected outputs, so we can't verify the method outputs.");
+    return {Error::InvalidArgument, 0, 0, 0, 0};
+  }
+
+  // abs_err = (a - b).abs()
+  // relative_err = (a - b).abs() / torch.maximum(torch.tensor(1e-8),
+  // torch.maximum(a.abs(), b.abs()))
+  double sum_abs = 0.0, max_abs = 0.0;
+  double sum_rel = 0.0, max_rel = 0.0;
+  // Make sure divider is bigger then eps=1e-8f to behave better around 0 values
+  const double eps = 1e-8f;
+
+  int64_t total_elems = 0;
+
+  for (size_t output_idx = 0; output_idx < method.outputs_size();
+       output_idx++) {
+    auto bundled_expected_output =
+        bundled_expected_outputs->GetMutableObject(output_idx);
+    auto method_output = method.get_output(output_idx);
+    switch (bundled_expected_output->val_type()) {
+      case bundled_program_flatbuffer::ValueUnion::Tensor: {
+        auto bundled_expected_output_tensor =
+            static_cast<bundled_program_flatbuffer::Tensor*>(
+                bundled_expected_output->mutable_val());
+        const auto method_output_tensor = method_output.toTensor();
+
+#ifdef USE_ATEN_LIB
+        Tensor expected = tensor_like(bundled_expected_output_tensor);
+#else // !USE_ATEN_LIB
+        TensorImpl impl = impl_like(bundled_expected_output_tensor);
+        Tensor expected = Tensor(&impl);
+#endif
+        // sanity check
+        int64_t nelem = expected.numel();
+        if (method_output_tensor.numel() != nelem) {
+          ET_LOG(Error, "Tensor size mismatch");
+          return {Error::InvalidArgument, 0, 0, 0, 0};
+        }
+
+        // we assume float32 here; adapt for other dtypes as needed
+        const float* e_data = expected.data_ptr<float>();
+        const float* a_data = method_output_tensor.data_ptr<float>();
+
+        for (int64_t k = 0; k < nelem; ++k) {
+          double abs_err = std::abs(a_data[k] - e_data[k]);
+          double relative_divider =
+              std::max(std::abs(a_data[k]), std::abs(e_data[k]));
+          relative_divider = std::max(relative_divider, eps);
+          double relative_err = abs_err / relative_divider;
+
+          sum_abs += abs_err;
+          max_abs = std::max(max_abs, abs_err);
+          sum_rel += relative_err;
+          max_rel = std::max(max_rel, relative_err);
+        }
+        total_elems += nelem;
+        break;
+      }
+      default: {
+        ET_LOG(
+            Error,
+            "Data type %hhd not supported",
+            static_cast<uint8_t>(bundled_expected_output->val_type()));
+        return {Error::NotSupported, 0, 0, 0, 0};
+        break; // Never reached
+      }
+    }
+  }
+
+  if (total_elems == 0) {
+    return {Error::Ok, 0, 0, 0, 0};
+  }
+  return {
+      Error::Ok,
+      sum_abs / total_elems,
+      max_abs,
+      sum_rel / total_elems,
+      max_rel};
 }
 
 ET_NODISCARD Error verify_method_outputs(

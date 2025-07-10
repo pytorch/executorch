@@ -652,9 +652,7 @@ def _get_aten_to_edge_passes(config: EdgeCompileConfig):
     # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
     # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
 
-    pre_op_replace_passes = base_pre_op_replace_passes + (
-        [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
-    )
+    pre_op_replace_passes = base_pre_op_replace_passes + [RemoveMixedTypeOperators()]
 
     post_op_replace_passes = base_post_op_replace_passes
 

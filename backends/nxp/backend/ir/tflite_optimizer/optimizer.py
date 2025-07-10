@@ -54,9 +54,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_tra
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.remove_unused_tensors_and_buffers import (
     RemoveUnusedTensorsAndBuffers,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.replace_average_pool_before_fully_connected_with_sum import (
-    ReplaceAveragePoolBeforeFullyConnectedWithSum,
-)
 
 
 class Optimization(Enum):
@@ -83,7 +80,6 @@ class Optimization(Enum):
 
     MOVE_ACTIVATION_BEFORE_CONCAT = 15
     COMBINE_HARD_SIGMOID_AND_MUL_INTO_HARD_SWISH = 16
-    REPLACE_AVERAGE_POOL_BEFORE_FULLY_CONNECTED_WITH_SUM = 17
 
 
 class Optimizer:
@@ -162,9 +158,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.COMBINE_HARD_SIGMOID_AND_MUL_INTO_HARD_SWISH: CombineHardSigmoidAndMulIntoHardSwish(
-                builder, conversion_config
-            ),
-            Optimization.REPLACE_AVERAGE_POOL_BEFORE_FULLY_CONNECTED_WITH_SUM: ReplaceAveragePoolBeforeFullyConnectedWithSum(
                 builder, conversion_config
             ),
         }

@@ -861,10 +861,6 @@ class SPVGenerator:
 
             # Construct generated file name
             gen_out_path = os.path.join(output_dir, f"{src_file_name}.{out_file_ext}")
-            # Construct path of cached generated file
-            cached_gen_out_path = os.path.join(
-                cache_dir, f"{src_file_name}.{out_file_ext}"
-            )
 
             # Execute codegen to generate the output file
             with codecs.open(src_file_fullpath, "r", encoding="utf-8") as input_file:
@@ -874,10 +870,6 @@ class SPVGenerator:
 
             with codecs.open(gen_out_path, "w", encoding="utf-8") as output_file:
                 output_file.write(output_text)
-
-            if cache_dir is not None:
-                # Store the generated file in the cache for SPIR-V compilation
-                shutil.copyfile(gen_out_path, cached_gen_out_path)
 
         def compile_spirv(shader_paths_pair):
             # Extract components from the input tuple
@@ -959,7 +951,10 @@ class SPVGenerator:
                     else:
                         raise RuntimeError(f"{err_msg_base} {e.stderr}") from e
 
+                # If compilation was successful, store the source GLSL file and the
+                # compiled SPIR-V file in the cache for future comparison.
                 if cache_dir is not None:
+                    shutil.copyfile(gen_out_path, cached_gen_out_path)
                     shutil.copyfile(spv_out_path, cached_spv_out_path)
 
             return (spv_out_path, gen_out_path)

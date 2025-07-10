@@ -8,7 +8,12 @@ from typing import Optional, Tuple
 
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
-from executorch.backends.xnnpack.utils.quant_utils import is_dynamic_qdq
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_dynamic_qdq,
+    is_tagged_as_implicit_q_dq,
+    tag_as_implicit_q_dq,
+)
 from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
@@ -144,7 +149,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
                 args=(copy,) + q_params,
             )
-            q.meta = copy.meta
+            q.meta = copy.meta.copy()
 
         with graph_module.graph.inserting_after(q):
             dq = self.create_call_function_node(
@@ -152,9 +157,24 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
                 args=(q,) + q_params,
             )
-            dq.meta = q.meta
+            dq.meta = q.meta.copy()
 
-            after.replace_input_with(before, dq)
+            # Always tag q as implicit
+            tag_as_implicit_q_dq(q)
+
+            # Tag relevant q/ dq nodes
+            # Ex: Original: G = conv -> q1 (Tag) -> dq1 (No Tag) -> output
+            #     Insert (copy q dq pattern), G = conv -> q1 -> dq1 -> (copy q2 dq2)-> output
+            #     if dq1 is not tagged as implicit, then tag dq2 and swap the dq1 and dq2 to simulate
+            #        the pattern: G = conv -> q1 (Tag) -> (dq2 (Tag) copy q2 (Tag))-> dq1 (No Tag) -> output
+
+            if is_dequant(before) and is_tagged_as_implicit_q_dq(before):
+                tag_as_implicit_q_dq(dq)
+            if is_dequant(before):
+                tag_as_implicit_q_dq(before)
+
+            before.replace_all_uses_with(dq)
+            copy.replace_input_with(dq, before)
 
     def insert_dq_copy_q(
         self,
@@ -170,7 +190,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
                 args=(before,) + q_params,
             )
-            dq.meta = before.meta
+            dq.meta = before.meta.copy()
 
         with graph_module.graph.inserting_after(copy):
             q = self.create_call_function_node(
@@ -178,7 +198,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
                 args=(copy,) + q_params,
             )
-            q.meta = copy.meta
+            q.meta = copy.meta.copy()
+
+            # Always tag q/dq as implicit
+            tag_as_implicit_q_dq(dq)
+            tag_as_implicit_q_dq(q)
 
             copy.replace_input_with(before, dq)
             after.replace_input_with(before, q)

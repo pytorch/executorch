@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+from executorch.backends.test.harness.stages.stage import StageType
 from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
@@ -17,6 +18,11 @@ from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
     OpSequencesAddConv2d,
 )
 from executorch.backends.xnnpack.test.tester import Quantize, RunPasses, Tester
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_quant,
+    is_tagged_as_implicit_q_dq,
+)
 
 
 class TestChannelsLastTaggedReshapePass(unittest.TestCase):
@@ -382,3 +388,76 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
 
         x_cl = x.to(memory_format=torch.channels_last)
         self.run_tester(self.ThreeOutputsModelModule.eval(), (x_cl,))
+
+    class ConvQDQModule(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 16, 3, padding=1)
+
+        def forward(self, x):
+            return self.conv(x)
+
+    def _check_implicit_q_dq_tagging(
+        self, graph_module: torch.fx.GraphModule, expected_tagging: list[bool]
+    ):
+        q_dq_nodes = []
+        for node in graph_module.graph.nodes:
+            if is_quant(node) or is_dequant(node):
+                q_dq_nodes.append(node)
+
+        # Check that we have the expected number of nodes
+        self.assertEqual(
+            len(q_dq_nodes),
+            len(expected_tagging),
+            f"Expected {len(expected_tagging)} q/dq nodes but found {len(q_dq_nodes)}",
+        )
+
+        actual_tagging = []
+        for node in q_dq_nodes:
+            is_tagged = is_tagged_as_implicit_q_dq(node)
+            actual_tagging.append(is_tagged)
+
+        self.assertEqual(
+            actual_tagging,
+            expected_tagging,
+            f"Q/DQ node tagging mismatch. Expected: {expected_tagging}, Actual: {actual_tagging}",
+        )
+
+    def test_q_dq_nodes_around_copy_are_tagged(self):
+        # Create a model with conv operation
+        model = self.ConvQDQModule().eval()
+        input_tensor = torch.randn(1, 3, 8, 8)
+
+        tester = (
+            Tester(model, (input_tensor,))
+            .quantize()
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check(
+                [
+                    self.dequant_name,
+                    self.quant_name,
+                    self.dequant_name,
+                    self.to_copy_name,
+                    self.quant_name,
+                    self.dequant_name,
+                    self.conv_name,
+                    self.quant_name,
+                    self.dequant_name,
+                    self.to_copy_name,
+                    self.quant_name,
+                    self.dequant_name,
+                ]
+            )
+        )
+
+        artifact = tester.get_artifact(StageType.RUN_PASSES)
+        graph_module = artifact.exported_program().graph_module
+
+        # Check implicit q/dq tagging
+        expected_tagging = [False, False, True, True, False, False, True, True, False]
+        self._check_implicit_q_dq_tagging(graph_module, expected_tagging)
+
+        # Compare outputs
+        tester.run_method_and_compare_outputs()

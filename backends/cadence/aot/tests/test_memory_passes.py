@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import logging
 import math
 import unittest
 from typing import cast, List, Optional, Sequence
@@ -39,6 +40,15 @@ from torch.fx import GraphModule
 
 
 class TestMemPlanningPasses(unittest.TestCase):
+    def setUp(self) -> None:
+        logging.basicConfig(
+            format="%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
+            datefmt="%Y-%m-%d:%H:%M:%S",
+            level=logging.getLevelName(logging.INFO),
+            force=True,
+        )
+        return super().setUp()
+
     def test_calculate_peak_memory_pass(self) -> None:
         class PeakMemoryTestModel(torch.nn.Module):
             def __init__(self, input_dim: int, hidden_dim: int, output_dim: int):

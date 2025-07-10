@@ -42,6 +42,7 @@ from executorch.devtools.etdump.schema_flatcc import (
 from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
     calculate_time_scale_factor,
+    compare_intermediate_outputs,
     create_debug_handle_to_op_node_mapping,
     DebugHandle,
     display_or_print_df,
@@ -59,6 +60,7 @@ from executorch.devtools.inspector._inspector_utils import (
     is_debug_output,
     is_inference_output_equal,
     map_runtime_aot_intermediate_outputs,
+    merge_runtime_overlapping_debug_handles,
     ProgramOutput,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TimeScale,
@@ -658,7 +660,7 @@ class Event:
 
     def _associate_with_op_graph_nodes(
         self,
-        debug_handle_to_op_node_map: Dict[int, OperatorNode],
+        debug_handle_to_op_node_map: Dict[int, List[OperatorNode]],
     ) -> None:
         """
         Helper function to populate the stack_traces, module_hierarchy and op_types attributes
@@ -676,14 +678,21 @@ class Event:
             debug_handles = [debug_handles]
 
         for handle in debug_handles:
-            node = debug_handle_to_op_node_map.get(handle)
-            # Attach node metadata including stack traces, module hierarchy and op_types to this event
-            if node is not None and (metadata := node.metadata) is not None:
-                self.stack_traces[node.name] = metadata.get("stack_trace")
-                self.module_hierarchy[node.name] = metadata.get("nn_module_stack")
-                if node.op:
-                    # TODO: consider having this as a dict from node.name -> node.op
-                    self.op_types += [node.op]
+            nodes = debug_handle_to_op_node_map.get(handle, None)
+            if nodes is None:
+                continue
+
+            for node in nodes:
+                # Attach node metadata including stack traces, module hierarchy and op_types to this event
+                if node is not None and (metadata := node.metadata) is not None:
+                    if node.name not in self.stack_traces:
+                        self.stack_traces[node.name] = metadata.get("stack_trace")
+                        self.module_hierarchy[node.name] = metadata.get(
+                            "nn_module_stack"
+                        )
+                    if node.op:
+                        # TODO: consider having this as a dict from node.name -> node.op
+                        self.op_types += [node.op]
 
 
 @dataclass
@@ -1200,6 +1209,8 @@ class Inspector:
                         event.debug_data,
                     )
                     debug_handle_to_op_name[debug_handle] = event.name
+
+        merge_runtime_overlapping_debug_handles(debug_handle_to_output)
         return {
             k: v[1] for k, v in debug_handle_to_output.items()
         }, debug_handle_to_op_name
@@ -1379,7 +1390,7 @@ class Inspector:
         )
         if len(aot_intermediate_outputs) == 0 or len(aot_debug_handle_to_op_name) == 0:
             raise ValueError(
-                "calculate_numerical_gap error: The aot debug information is required but not populated"
+                "Missing etrecord or missing representative inputs within etrecord, both of which are required for calculating numerical gap"
             )
         # The runtime_op_names will be used later to map runtime debug_handle to op_name
         runtime_intermediate_outputs, runtime_debug_handle_to_op_name = (
@@ -1415,8 +1426,8 @@ class Inspector:
                         runtime_debug_handle, runtime_debug_handle_to_op_name
                     ),
                     "runtime_intermediate_output": runtime_intermediate_output,
-                    "gap": comparator.compare(
-                        aot_intermediate_output, runtime_intermediate_output
+                    "gap": compare_intermediate_outputs(
+                        aot_intermediate_output, runtime_intermediate_output, comparator
                     ),
                 }
             )

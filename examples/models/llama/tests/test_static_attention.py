@@ -1,4 +1,5 @@
 import unittest
+from collections import defaultdict
 
 import torch
 from executorch.examples.models.llama.attention import AttentionMHA
@@ -164,15 +165,7 @@ class StaticAttentionTest(unittest.TestCase):
         test_with_style("shift_pointer")
         test_with_style("smart_mask")
 
-    def test_within_transformer(self):
-        config = ModelArgs(
-            dim=64,
-            n_heads=4,
-            n_kv_heads=2,
-            max_seq_len=24,
-            n_layers=4,
-            vocab_size=128,
-        )
+    def _get_test_transformers(self, config):
         mha_transformer = construct_transformer(config).eval()
 
         config.attention_type = "static"
@@ -183,6 +176,18 @@ class StaticAttentionTest(unittest.TestCase):
         ):
             static_layer.attention.load_weights_from_attention_mha(mha_layer.attention)
 
+        return mha_transformer, static_transformer
+
+    def test_within_transformer(self):
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            max_seq_len=24,
+            n_layers=4,
+            vocab_size=128,
+        )
+        mha_transformer, static_transformer = self._get_test_transformers(config)
         x = torch.randint(config.vocab_size, (1, config.max_seq_len))
         expected = mha_transformer(x)
 
@@ -204,3 +209,52 @@ class StaticAttentionTest(unittest.TestCase):
 
         test_with_style("shift_pointer")
         test_with_style("smart_mask")
+
+    def test_lookahead_decode(self):
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            max_seq_len=128,
+            n_layers=4,
+            vocab_size=128,
+            generate_full_logits=True,
+        )
+        _, static_transformer = self._get_test_transformers(config)
+
+        input_len = 32
+        cache_len = config.max_seq_len - input_len
+        prefill_input = torch.randint(config.vocab_size, (input_len,))
+        ref_mgr = StaticAttentionIOManager(config, input_len, cache_len)
+        lookahead_mgr = StaticAttentionIOManager(config, input_len, cache_len)
+
+        next_tok = (
+            ref_mgr.prefill(static_transformer, prefill_input.tolist())[0][-1]
+            .argmax()
+            .item()
+        )
+        ref_output = ref_mgr.decode(static_transformer, next_tok, 50)
+
+        ngram_size = 3
+        window_size = 8
+        n_verifications = 8
+        ngram_caches = defaultdict(
+            lambda: StaticAttentionIOManager.NGramCache(n_verifications)
+        )
+        for _ in range(2):  # run twice, first run will populates the cache
+            lookahead_mgr.reset()
+            next_tok = (
+                lookahead_mgr.prefill(static_transformer, prefill_input.tolist())[0][-1]
+                .argmax()
+                .item()
+            )
+            lookahead_output = lookahead_mgr.lookahead_decode(
+                static_transformer,
+                next_tok,
+                50,
+                ngram_size=ngram_size,
+                window_size=window_size,
+                n_verifications=n_verifications,
+                ngram_caches=ngram_caches,
+            )
+            self.assertEqual(lookahead_output[: len(ref_output)], ref_output)

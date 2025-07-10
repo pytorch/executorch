@@ -50,13 +50,3 @@ class TestSNRComparator(unittest.TestCase):
         expected = 10 * math.log10(37.25 / 17.0)
         result = self.snr_comparator.compare(a, b)
         self.assertAlmostEqual(result, expected)
-
-    def test_list_of_tensors(self):
-        # original_power = mean(4, 16, 25, 4]) = 12.25
-        # error = a - b = [1, 2, 2, -3] squared = [1, 4, 4, 9] mean = 18/4 = 4.5
-        # SNR = 10 * log10(37.25/17.0)
-        a = [torch.tensor([2, 4]), torch.tensor([5, 2])]
-        b = [torch.tensor([1, 2]), torch.tensor([3, 5])]
-        expected = 10 * math.log10(12.25 / 4.5)
-        result = self.snr_comparator.compare(a, b)
-        self.assertAlmostEqual(result, expected)

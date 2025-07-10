@@ -27,6 +27,8 @@ target_compile_options(neuron_backend PRIVATE "-frtti" "-fexceptions")
 target_link_libraries(neuron_backend
     PRIVATE
     executorch_core
+    portable_ops_lib
+    portable_kernels
     android
     log
 )
