@@ -87,11 +87,13 @@ ExecuTorch provides support for:
 - [Custom ATen Kernel](kernel-library-custom-aten-kernel)
 - [Selective Build](kernel-library-selective-build)
 #### Working with LLMs
-- [Llama](llm/llama.md)
-- [Llama on Android](llm/llama-demo-android.md)
-- [Llama on iOS](llm/llama-demo-ios.md)
-- [Llama on Android via Qualcomm backend](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
-- [Intro to LLMs in Executorch](llm/getting-started.md)
+- [Getting Started](llm/getting-started.md)
+- [Exporting LLMs with export_llm](llm/export-llm.md)
+- [Exporting custom LLMs](llm/export-custom-llm.md)
+- [Running with C++](llm/run-with-c-plus-plus.md)
+- [Running on Android (XNNPack)](llm/llama-demo-android.md)
+- [Running on Android (QNN)](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
+- [Running on iOS](llm/llama-demo-ios.md)
 #### Backend Development
 - [Delegates Integration](backend-delegates-integration)
 - [XNNPACK Reference](backend-delegates-xnnpack-reference)
@@ -239,11 +241,13 @@ kernel-library-selective-build
 :caption: Working with LLMs
 :hidden:
 
-Llama <llm/llama>
-Llama on Android <llm/llama-demo-android>
-Llama on iOS <llm/llama-demo-ios>
-Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
-Intro to LLMs in Executorch <llm/getting-started>
+Getting Started <llm/getting-started>
+Exporting LLMs with export_llm <llm/export-llm>
+Exporting custom LLMs <llm/export-custom-llm>
+Running with C++ <llm/run-with-c-plus-plus>
+Running on Android <XNNPack> <llm/llama-demo-android>
+Running on Android <QNN> <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
+Running on iOS <llm/llama-demo-ios>
 ```
 
 ```{toctree}
