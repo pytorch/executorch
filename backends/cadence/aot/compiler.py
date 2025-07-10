@@ -210,6 +210,21 @@ def quantize_pt2(
     return program
 
 
+TO_EDGE_OP_EXCEPTION_LIST: list[torch._ops.OpOverload] = [
+    torch.ops.aten._linalg_det.default,
+    torch.ops.aten._linalg_svd.default,
+    torch.ops.aten._native_batch_norm_legit_functional.default,
+    torch.ops.aten.linear.default,
+    torch.ops.aten.linalg_vector_norm.default,
+    torch.ops.aten.unfold.default,
+    torch.ops.aten.angle.default,
+    torch.ops.aten.rms_norm.default,
+]
+TO_EDGE_PRESERVE_OPS: tuple[torch._ops.OpOverload, ...] = (
+    torch.ops.aten.rms_norm.default,
+)
+
+
 def _lower_ep_to_edge(
     expo_program: ExportedProgram,
     dump_graphs: bool = False,
@@ -226,20 +241,11 @@ def _lower_ep_to_edge(
         compile_config=EdgeCompileConfig(
             _skip_dim_order=True,
             # Allow specific non-core aten ops in the IR.
-            _core_aten_ops_exception_list=[
-                torch.ops.aten._linalg_det.default,
-                torch.ops.aten._linalg_svd.default,
-                torch.ops.aten._native_batch_norm_legit_functional.default,
-                torch.ops.aten.linear.default,
-                torch.ops.aten.linalg_vector_norm.default,
-                torch.ops.aten.unfold.default,
-                torch.ops.aten.angle.default,
-                torch.ops.aten.rms_norm.default,
-            ]
+            _core_aten_ops_exception_list=TO_EDGE_OP_EXCEPTION_LIST
             + (core_aten_exceptions or []),
         ),
         constant_methods=constant_methods,
-        preserve_ops=(torch.ops.aten.rms_norm.default,),
+        preserve_ops=TO_EDGE_PRESERVE_OPS,
     )
 
     if dump_graphs:
