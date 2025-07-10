@@ -274,6 +274,28 @@ def register_quantization_op(features: OpFeatures):
 
 @update_features(
     [
+        exir_ops.edge.torchao.quantize_affine.default,
+        exir_ops.edge.torchao.dequantize_affine.default,
+        exir_ops.edge.torchao.choose_qparams_affine.default,
+    ]
+)
+def register_torchao_quantization_op(features: OpFeatures):
+    # TorchAO quantization operators - default to per-tensor behavior
+    # Same features as standard quantization ops
+    features.texture_impl = TextureImplFeatures(
+        uses_axis_map=True,
+        valid_packed_dims={
+            PackedDim.WIDTH,
+        },
+    )
+    features.buffer_impl = True
+    features.resize_fn = True
+    features.optimal_storage = VkStorageType.BUFFER
+    return features
+
+
+@update_features(
+    [
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.minimum.default,
