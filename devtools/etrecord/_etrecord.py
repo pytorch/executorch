@@ -244,7 +244,7 @@ def generate_etrecord(
     export_graph_id = 0
 
     if exported_program is not None:
-        # If multiple exported programs are provided, only saved forward method
+        # If multiple exported programs are provided, only save forward method
         if isinstance(exported_program, dict) and "forward" in exported_program:
             exported_program = exported_program["forward"]
 
