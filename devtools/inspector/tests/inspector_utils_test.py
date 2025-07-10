@@ -29,6 +29,7 @@ from executorch.devtools.inspector._inspector_utils import (
     calculate_mse,
     calculate_snr,
     calculate_time_scale_factor,
+    compare_intermediate_outputs,
     convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
@@ -38,10 +39,11 @@ from executorch.devtools.inspector._inspector_utils import (
     get_aot_debug_handle_to_op_name_mapping,
     is_inference_output_equal,
     map_runtime_aot_intermediate_outputs,
-    merge_overlapping_debug_handles,
+    merge_runtime_overlapping_debug_handles,
     NodeFilter,
     TimeScale,
 )
+from executorch.devtools.inspector.numerical_comparator import L1Comparator
 
 
 class TestInspectorUtils(unittest.TestCase):
@@ -226,44 +228,50 @@ class TestInspectorUtils(unittest.TestCase):
     def test_merge_overlapping_debug_handles_basic(self):
         big_tensor = torch.rand(100, 100)
         intermediate_outputs = {
-            (1, 2, 3): "val1",
-            (2, 3, 4, 5): "val2",
-            (6, 7, 8): "val3",
-            (10, 11): "val4",
-            (11, 12): big_tensor,
+            (1, 2, 3): (1, "val1"),
+            (2, 3, 4, 5): (2, "val2"),
+            (6, 7, 8): (3, "val3"),
+            (10, 11): (4, "val4"),
+            (11, 12): (5, big_tensor),
         }
         # basic merge behavior
-        intermediate_outputs = merge_overlapping_debug_handles(intermediate_outputs)
+        intermediate_outputs = merge_runtime_overlapping_debug_handles(
+            intermediate_outputs
+        )
         expected_intermediate_outputs = {
-            (1, 2, 3, 4, 5): "val2",
-            (6, 7, 8): "val3",
-            (10, 11, 12): big_tensor,
+            (1, 2, 3, 4, 5): (2, "val2"),
+            (6, 7, 8): (3, "val3"),
+            (10, 11, 12): (5, big_tensor),
         }
-
         self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
-        self.assertIs(expected_intermediate_outputs[(10, 11, 12)], big_tensor)
+        self.assertIs(expected_intermediate_outputs[(10, 11, 12)][1], big_tensor)
 
     def test_merge_overlapping_debug_handles_non_continuous(self):
-        tensor1 = (torch.randn(3, 4),)
-        tensor2 = (torch.randn(2, 3),)
-        tensor3 = (torch.randn(4, 5),)
-        tensor4 = (torch.randn(6, 7),)
-        tensor5 = (torch.randn(8, 9),)
+        tensor1 = torch.randn(3, 4)
+        tensor2 = torch.randn(2, 3)
+        tensor3 = torch.randn(4, 5)
+        tensor4 = torch.randn(6, 7)
+        tensor5 = torch.randn(8, 9)
         intermediate_outputs = {
-            (1, 10): tensor1,
-            (2, 5): tensor2,
-            (1, 7, 9): tensor3,
-            (11, 13): tensor4,
-            (11, 15): tensor5,
+            (1, 10): (1, tensor1),
+            (2, 5): (2, tensor2),
+            (1, 7, 9): (3, tensor3),
+            (11, 13): (4, tensor4),
+            (11, 15): (5, tensor5),
         }
-        intermediate_outputs = merge_overlapping_debug_handles(intermediate_outputs)
+        intermediate_outputs = merge_runtime_overlapping_debug_handles(
+            intermediate_outputs
+        )
         expected_intermediate_outputs = {
-            (2, 5): tensor2,
-            (1, 7, 9, 10): tensor1,
-            (11, 13, 15): tensor5,
+            (2, 5): (2, tensor2),
+            (10, 1, 7, 9): (3, tensor3),
+            (13, 11, 15): (5, tensor5),
         }
 
-        self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
+        for key in expected_intermediate_outputs:
+            expected_value = expected_intermediate_outputs[key][1]
+            actual_value = intermediate_outputs[key][1]
+            self.assertTrue(torch.allclose(expected_value, actual_value))
 
     def test_map_runtime_aot_intermediate_outputs_empty_inputs(self):
         # When the inputs are empty, the output should also be empty
@@ -420,19 +428,10 @@ class TestInspectorUtils(unittest.TestCase):
         )
         self.assertEqual(actual_output2.device.type, "cpu")
 
-        # List of tensors -> stacked tensor float32 CPU
+        # List of tensors -> AssertionError
         t_list = [torch.tensor([1, 2]), torch.tensor([2, 3]), torch.tensor([3, 4])]
-        actual_output3 = convert_to_float_tensor(t_list)
-        self.assertIsInstance(actual_output3, torch.Tensor)
-        self.assertEqual(actual_output3.dtype, torch.float64)
-        self.assertEqual(tuple(actual_output3.shape), (3, 2))
-        self.assertTrue(
-            torch.allclose(
-                actual_output3,
-                torch.tensor([[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]], dtype=torch.float64),
-            )
-        )
-        self.assertEqual(actual_output3.device.type, "cpu")
+        with self.assertRaises(AssertionError):
+            convert_to_float_tensor(t_list)
 
     def test_convert_input_to_tensor_non_convertible_raises(self):
         class X:
@@ -566,6 +565,24 @@ class TestInspectorUtils(unittest.TestCase):
             find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2"]
         )
 
+    def test_compare_intermediate_outputs_sequences(self):
+        a = [1.0, 2.0, 3.0]
+        b = [1.0, 2.5, 3.5]
+        result = compare_intermediate_outputs(a, b, L1Comparator())
+        self.assertEqual(result, [0.0, 0.5, 0.5])
+
+    def test_compare_intermediate_outputs_diff_len_sequences(self):
+        a = [1.0, 2.0]
+        b = [1.0, 2.0, 3.0]
+        with self.assertRaises(ValueError):
+            compare_intermediate_outputs(a, b, L1Comparator())
+
+    def test_compare_intermediate_outputs_sequence_and_non_sequence(self):
+        a = [1.0, 2.0]
+        b = 1.0
+        with self.assertRaises(ValueError):
+            compare_intermediate_outputs(a, b, L1Comparator())
+
 
 def gen_mock_operator_graph_with_expected_map() -> (
     Tuple[OperatorGraph, Dict[int, OperatorNode]]
@@ -583,7 +600,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_relu",
         },
     )
-    mapping[111] = node_fused_conv_relu
+    mapping[111] = [
+        node_fused_conv_relu,
+    ]
     node_sin = OperatorNode(
         "sin",
         [node_fused_conv_relu],
@@ -594,7 +613,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_sin",
         },
     )
-    mapping[222] = node_sin
+    mapping[222] = [
+        node_sin,
+    ]
     node_cos = OperatorNode(
         "cos",
         [node_sin],
@@ -605,7 +626,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_cos",
         },
     )
-    mapping[333] = node_cos
+    mapping[333] = [
+        node_cos,
+    ]
     node_div = OperatorNode(
         "div",
         [node_cos],
@@ -616,7 +639,9 @@ def gen_mock_operator_graph_with_expected_map() -> (
             "nn_module_stack": "module_hierarchy_div",
         },
     )
-    mapping[444] = node_div
+    mapping[444] = [
+        node_div,
+    ]
     node_output = ValueNode("output", [node_div])
     return (
         OperatorGraph(
