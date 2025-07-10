@@ -60,6 +60,7 @@ from executorch.devtools.inspector._inspector_utils import (
     is_debug_output,
     is_inference_output_equal,
     map_runtime_aot_intermediate_outputs,
+    merge_runtime_overlapping_debug_handles,
     ProgramOutput,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TimeScale,
@@ -1208,6 +1209,8 @@ class Inspector:
                         event.debug_data,
                     )
                     debug_handle_to_op_name[debug_handle] = event.name
+
+        merge_runtime_overlapping_debug_handles(debug_handle_to_output)
         return {
             k: v[1] for k, v in debug_handle_to_output.items()
         }, debug_handle_to_op_name
@@ -1387,7 +1390,7 @@ class Inspector:
         )
         if len(aot_intermediate_outputs) == 0 or len(aot_debug_handle_to_op_name) == 0:
             raise ValueError(
-                "calculate_numerical_gap error: The aot debug information is required but not populated"
+                "Missing etrecord or missing representative inputs within etrecord, both of which are required for calculating numerical gap"
             )
         # The runtime_op_names will be used later to map runtime debug_handle to op_name
         runtime_intermediate_outputs, runtime_debug_handle_to_op_name = (
