@@ -116,6 +116,7 @@ endif()
 if(EXECUTORCH_BUILD_TORCHAO)
   # Currently only enable this on Arm-based Macs
   if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set(TORCHAO_BUILD_ATEN_OPS OFF)
     set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
     set(TORCHAO_BUILD_CPU_AARCH64 ON)
     set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
@@ -154,7 +155,7 @@ endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
+  set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   if(TARGET kleidiai)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
@@ -208,18 +209,16 @@ if(ANDROID)
 endif()
 
 add_executable(llama_main ${_srcs})
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  if(APPLE)
-    target_link_options(llama_main PRIVATE "LINKER:-dead_strip")
-  else()
-    target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(llama_main)
+  if(NOT APPLE)
+    target_link_options(llama_main PRIVATE "LINKER:-s")
   endif()
 endif()
 
 target_include_directories(
   llama_main
   PUBLIC ${_common_include_directories}
-         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})

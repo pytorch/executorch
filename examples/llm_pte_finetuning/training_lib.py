@@ -106,10 +106,6 @@ def eval_model(
         token_size = tokens.shape[1]
         labels_size = labels.shape[1]
 
-        tokens, labels = batch["tokens"], batch["labels"]
-        token_size = tokens.shape[1]
-        labels_size = labels.shape[1]
-
         # Fixed length for now. We need to resize as the input shapes
         # should be the same passed as examples to the export function.
         if token_size > max_seq_len:

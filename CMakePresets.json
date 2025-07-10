@@ -43,7 +43,7 @@
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/macos.cmake",
         "PLATFORM": "MAC_ARM64",
-        "DEPLOYMENT_TARGET": "10.15"
+        "DEPLOYMENT_TARGET": "12.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -86,12 +86,26 @@
       }
     },
     {
+      "name": "linux",
+      "displayName": "Build everything buildable on Linux",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Linux",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/linux.cmake"
+      },
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Linux"
+      }
+    },
+    {
       "name": "pybind",
       "displayName": "Build pybindings exported in the wheel",
       "inherits": ["common"],
       "cacheVariables": {
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/pybind.cmake",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "10.15"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
       },
       "condition": {
         "type": "inList",
@@ -107,7 +121,7 @@
         ],
         "cacheVariables": {
             "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/llm.cmake",
-            "CMAKE_OSX_DEPLOYMENT_TARGET": "10.15"
+            "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
         },
         "condition": {
             "type": "inList",
@@ -117,6 +131,17 @@
                 "Linux",
                 "Windows"
             ]
+        }
+    },
+    {
+        "name": "zephyr",
+        "displayName": "Build everything buildable on Zephyr RTOS",
+        "inherits": [
+            "common"
+        ],
+        "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/zephyr.cmake",
+            "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake"
         }
     }
   ]

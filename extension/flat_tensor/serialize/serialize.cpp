@@ -68,47 +68,46 @@ runtime::Error save_ptd(
   // Create flatbuffer
   flatbuffers::FlatBufferBuilder builder;
 
-  std::vector<flatbuffers::Offset<::flat_tensor_flatbuffer::TensorMetadata>>
-      tensors;
+  std::vector<flatbuffers::Offset<::flat_tensor_flatbuffer::NamedData>>
+      named_data;
   std::vector<flatbuffers::Offset<::flat_tensor_flatbuffer::DataSegment>>
-      buffers;
+      segments;
 
   // Write the tensors.
   size_t total_segment_size = 0;
-  size_t i = tensor_map.size();
+  uint32_t i = 0;
   for (const auto& [name, tensor] : tensor_map) {
-    auto name_offset = builder.CreateString(name);
-    // Write the tensor metadata.
-    auto tensor_metadata = ::flat_tensor_flatbuffer::CreateTensorMetadata(
-        builder,
-        name_offset,
+    auto key = builder.CreateString(name);
+    // Write the tensor layouts.
+    auto tensor_layout = ::flat_tensor_flatbuffer::CreateTensorLayout(
+        /*_fbb*=*/builder,
+        /*scalar_type=*/
         static_cast<executorch_flatbuffer::ScalarType>(tensor.scalar_type()),
+        /*sizes=*/
         builder.CreateVector(tensor.sizes().data(), tensor.sizes().size()),
+        /*dim_order=*/
         builder.CreateVector(
-            tensor.dim_order().data(), tensor.dim_order().size()),
-        0, // segment index
-        total_segment_size);
+            tensor.dim_order().data(), tensor.dim_order().size()));
 
-    tensors.push_back(tensor_metadata);
-    // Don't pad last entry.
-    if (i != 1) {
-      // Precalculate the size of the data blob.
-      total_segment_size += aligned_size(tensor.nbytes(), tensor_alignment);
-    } else {
-      total_segment_size += tensor.nbytes();
-    }
-    i--;
+    named_data.push_back(::flat_tensor_flatbuffer::CreateNamedData(
+        /*_fbb=*/builder,
+        /*key=*/key,
+        /*segment_index=*/i,
+        /*tensor_layout=*/tensor_layout));
+
+    segments.push_back(::flat_tensor_flatbuffer::CreateDataSegment(
+        /*_fbb=*/builder,
+        /*offset=*/total_segment_size,
+        /*size=*/tensor.nbytes()));
+    total_segment_size += aligned_size(tensor.nbytes(), tensor_alignment);
+    i++;
   }
-  // Only have one segment
-  buffers.push_back(::flat_tensor_flatbuffer::CreateDataSegment(
-      builder, 0, total_segment_size));
 
   auto flat_tensor = CreateFlatTensor(
-      builder,
-      kSchemaVersion,
-      tensor_alignment,
-      builder.CreateVector(tensors),
-      builder.CreateVector(buffers));
+      /*_fbb=*/builder,
+      /*version=*/kSchemaVersion,
+      /*segments=*/builder.CreateVector(segments),
+      /*named_data=*/builder.CreateVector(named_data));
   builder.Finish(flat_tensor, ::flat_tensor_flatbuffer::FlatTensorIdentifier());
   // Our flatbuffer is created now.
 
@@ -133,10 +132,10 @@ runtime::Error save_ptd(
       *reinterpret_cast<uint32_t*>(builder.GetBufferPointer());
   uint32_t new_offset = current_offset + padded_header_size;
 
-  // Write flatbuffer offset to root table
+  // Write flatbuffer offset to root table.
   out.write(reinterpret_cast<const char*>(&new_offset), sizeof(new_offset));
 
-  // Write flatbuffer magic bytes
+  // Write flatbuffer magic bytes.
   out.write(
       reinterpret_cast<const char*>(builder.GetBufferPointer()) +
           sizeof(new_offset),

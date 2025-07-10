@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
@@ -70,6 +71,80 @@ void resize_linear_qga4w_node(
   out->virtual_resize(new_out_sizes);
 }
 
+/**
+ * Determines if the cooperative algorithm should be used based on input tensor
+ * dimensions. Apply the coop algorithm for gemv cases, i.e. mat1 is avector as
+ * as opposed to a matrix.
+ */
+bool should_use_coop_algorithm(ComputeGraph* graph, const ValueRef& mat1) {
+  return graph->size_at<uint32_t>(-2, mat1) == 1;
+}
+
+vkapi::ShaderInfo pick_linear_qga4w_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mat1 = args.at(1).refs.at(0);
+  const ValueRef mat2 = args.at(1).refs.at(1);
+
+  const bool use_coop_algorithm = should_use_coop_algorithm(graph, mat1);
+
+  std::string kernel_name = "linear_qga4w";
+  if (use_coop_algorithm) {
+    kernel_name += "_coop";
+  } else {
+    kernel_name += "_tiled";
+  }
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(mat1));
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(mat2));
+  add_dtype_suffix(kernel_name, graph->dtype_of(out));
+
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
+
+utils::uvec3 linear_qga4w_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+
+  const bool use_coop_algorithm =
+      shader.kernel_name.find("_coop") != std::string::npos;
+
+  utils::uvec3 global_wg_size = graph->logical_limits_of(out);
+  global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
+
+  if (!use_coop_algorithm) {
+    global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(3));
+  }
+
+  return global_wg_size;
+}
+
+utils::uvec3 linear_qga4w_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)args;
+  (void)resize_args;
+  const bool use_coop_algorithm =
+      shader.kernel_name.find("_coop") != std::string::npos;
+
+  if (use_coop_algorithm) {
+    return {8, 1, 8};
+  } else {
+    return graph->create_local_wg_size(global_workgroup_size);
+  }
+}
+
 void add_linear_qga4w_node(
     ComputeGraph& graph,
     const ValueRef mat1,
@@ -82,45 +157,16 @@ void add_linear_qga4w_node(
 
   const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);
 
-  bool use_coop_algorithm = false;
-  // Apply the coop algorithm for gemv cases, i.e. mat1 is a vector as opposed
-  // to a matrix.
-  if (graph.size_at<uint32_t>(-2, mat1) == 1) {
-    use_coop_algorithm = true;
-  }
-
   ValueRef mat2 =
       prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
 
   ValueRef scales_and_zeros = prepack_standard_hw_transposed(
       graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
-
-  std::string kernel_name = "linear_qga4w";
-  if (use_coop_algorithm) {
-    kernel_name += "_coop";
-  } else {
-    kernel_name += "_tiled";
-  }
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(mat2));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
-  utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
-
-  if (use_coop_algorithm) {
-    local_wg_size = {8, 1, 8};
-  } else {
-    global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(3));
-  }
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      local_wg_size,
+      pick_linear_qga4w_shader,
+      linear_qga4w_global_wg_size,
+      linear_qga4w_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2, scales_and_zeros}, vkapi::kRead}},
       // Shader params buffers

@@ -121,6 +121,12 @@ float32_scalar_cond = Where(
     scalar_condition,
 )
 
+int32_scalar_cond = Where(
+    1,
+    torch.int32,
+    scalar_condition,
+)
+
 test_modules_common = {
     "two_dim_tensor_cond": lambda: two_dim_tensor_cond,
     "three_dim_tensor_cond": lambda: three_dim_tensor_cond,
@@ -134,6 +140,7 @@ test_modules_MI = {
     **test_modules_common,
     "float32_tensor_cond_tuple_dtype": lambda: float32_tensor_cond_tuple_dtype,
     "float32_tensor_cond_tuple_dtype_bool": lambda: float32_tensor_cond_tuple_dtype_bool,
+    "int32_scalar_cond": lambda: int32_scalar_cond,
 }
 
 test_modules_BI = {

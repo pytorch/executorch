@@ -4,20 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+# pyre-strict
 
 
 import unittest
-from typing import cast, Tuple
+from typing import cast, List, Tuple
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
-import torch.nn as nn
-from executorch.backends.cadence.aot.compiler import export_to_edge
 from executorch.backends.cadence.aot.fuse_ops import FuseQuantDequantToRequantizePass
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 
-from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
+from executorch.backends.cadence.aot.pass_utils import count_node
 from executorch.backends.cadence.aot.remove_ops import (
     RemoveAliasCopyOpPass,
     RemoveBranchedQuantDequant,
@@ -36,21 +34,22 @@ from executorch.backends.cadence.aot.remove_ops import (
     RemoveZeroSizedCatArgsPass,
     RemoveZeroSizedConstantPadNd,
 )
+from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.exir.dialects._ops import ops as exir_ops
-from parameterized.parameterized import parameterized
 from pyre_extensions import none_throws
 
 from torch.fx.passes.infra.pass_base import PassResult
 
 
 class TestRemoveOpsPasses(unittest.TestCase):
-    @parameterized.expand(
+
+    @expand(
         [
             [(1, 2, 3)],
         ]
     )
     @torch.no_grad()
-    def test_remove_to_ops(self, shape: Tuple[int]):
+    def test_remove_to_ops(self, shape: Tuple[int]) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
         x = builder.call_operator(
@@ -71,7 +70,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(7, 6, 5)],
             [(7, 6)],
@@ -79,7 +78,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
         ]
     )
     @torch.no_grad()
-    def test_remove_nop_add_op_pass(self, shape: Tuple[int]):
+    def test_remove_nop_add_op_pass(self, shape: Tuple[int]) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
         zeros = builder.call_operator(
@@ -103,7 +102,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(7, 6, 5)],
             [(7, 6)],
@@ -111,7 +110,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
         ]
     )
     @torch.no_grad()
-    def test_remove_nop_mul_op_pass(self, shape: Tuple[int]):
+    def test_remove_nop_mul_op_pass(self, shape: Tuple[int]) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
         zeros = builder.call_operator(
@@ -135,13 +134,13 @@ class TestRemoveOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(1, 2, 3)],
         ]
     )
     @torch.no_grad()
-    def test_remove_alias_copy(self, shape: Tuple[int]):
+    def test_remove_alias_copy(self, shape: Tuple[int]) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
         alias = builder.call_operator(
@@ -157,13 +156,13 @@ class TestRemoveOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(1, 2, 3)],
         ]
     )
     @torch.no_grad()
-    def test_remove_detach_copy(self, shape: Tuple[int]):
+    def test_remove_detach_copy(self, shape: Tuple[int]) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
         detach = builder.call_operator(
@@ -179,7 +178,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(1, 2, 3), (0, 0)],
         ]
@@ -187,7 +186,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_remove_zero_sized_constant_pad_nd(
         self, shape: Tuple[int], padding: Tuple[int]
-    ):
+    ) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
         pad = builder.call_operator(
@@ -203,7 +202,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             0,
         )
 
-    def test_remove_expand(self):
+    def test_remove_expand(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn([2, 3, 5], dtype=torch.float32))
         expand = builder.call_operator(
@@ -218,7 +217,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.expand_copy.default), 0
         )
 
-    def test_remove_zero_arg_cat(self):
+    def test_remove_zero_arg_cat(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn([1, 0, 3, 5], dtype=torch.float32))
         y = builder.placeholder("y", torch.randn([2, 0, 3, 5], dtype=torch.float32))
@@ -234,18 +233,19 @@ class TestRemoveOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.cat.default), 0
         )
 
-    def test_remove_clone(self):
+    def test_remove_clone(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn([3, 5], dtype=torch.float32))
         clone = builder.call_operator(op=exir_ops.edge.aten.clone.default, args=(x,))
         builder.output([clone])
         original = builder.get_graph_module()
-        graph_after_passes = RemoveCloneOpPass()(original).graph_module
+        p = RemoveCloneOpPass()
+        graph_after_passes = cast(PassResult, p(original)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, torch.ops.aten.clone.default), 0
         )
 
-    def test_remove_contiguous(self):
+    def test_remove_contiguous(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn([3, 5], dtype=torch.float32))
         contiguous = builder.call_operator(
@@ -253,19 +253,20 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         builder.output([contiguous])
         original = builder.get_graph_module()
-        graph_after_passes = RemoveContiguousOpPass()(original).graph_module
+        p = RemoveContiguousOpPass()
+        graph_after_passes = cast(PassResult, p(original)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, torch.ops.aten.contiguous.default), 0
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(3, 5), [3, 5]],
             [(1,), [-1]],
         ]
     )
     @torch.no_grad()
-    def test_remove_nop_view(self, shape, new_shape):
+    def test_remove_nop_view(self, shape: Tuple[int], new_shape: List[int]) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
         view = builder.call_operator(
@@ -280,7 +281,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default), 0
         )
 
-    def test_remove_nop_slice(self):
+    def test_remove_nop_slice(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(3, 5, dtype=torch.float32))
         slice_ = builder.call_operator(
@@ -301,7 +302,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.slice_copy.Tensor), 0
         )
 
-    def test_remove_nop_select_before_view(self):
+    def test_remove_nop_select_before_view(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 5, 6, dtype=torch.float32))
         select = builder.call_operator(
@@ -325,7 +326,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.select_copy.int), 0
         )
 
-    def test_remove_nop_select_before_add(self):
+    def test_remove_nop_select_before_add(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 5, 6, dtype=torch.float32))
         y = builder.placeholder("y", torch.randn(1, 5, 6, dtype=torch.float32))
@@ -347,7 +348,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.select_copy.int), 0
         )
 
-    def test_remove_nop_select_before_mul(self):
+    def test_remove_nop_select_before_mul(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 5, 6, dtype=torch.float32))
         y = builder.placeholder("y", torch.randn(1, 5, 6, dtype=torch.float32))
@@ -369,7 +370,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.select_copy.int), 0
         )
 
-    def test_remove_nop_select_before_div(self):
+    def test_remove_nop_select_before_div(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 5, 6, dtype=torch.float32))
         y = builder.placeholder("y", torch.randn(1, 5, 6, dtype=torch.float32))
@@ -391,7 +392,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.select_copy.int), 0
         )
 
-    def test_remove_nop_quant_dequant(self):
+    def test_remove_nop_quant_dequant(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(8, 8))
         q0 = builder.call_operator(
@@ -443,90 +444,97 @@ class TestRemoveOpsPasses(unittest.TestCase):
             1,
         )
 
-    def test_remove_nop_aten_linalg_vector_norm(self):
-        class LinalgVectorNorm(torch.nn.Module):
-            def forward(self, x: torch.Tensor):
-                return torch.linalg.vector_norm(x, 2, [0, 1], True)
-
-        model = LinalgVectorNorm()
-        x = torch.randn([1, 1, 128])
-        inputs = (x,)
-
-        graph_module = (
-            export_to_edge(
-                model,
-                inputs,
-            )
-            .exported_program()
-            .graph_module
+    def test_remove_nop_aten_linalg_vector_norm(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 1, 128, dtype=torch.float32))
+        linalg_vector_norm = builder.call_operator(
+            op=exir_ops.edge.aten.linalg_vector_norm.default, args=(x, 2, [0, 1], True)
         )
-
-        graph_module = none_throws(
-            RemoveNopLinalgVectorNormOpPass()(graph_module)
+        builder.output([linalg_vector_norm])
+        original = builder.get_graph_module()
+        graph_after_passes = none_throws(
+            RemoveNopLinalgVectorNormOpPass()(original)
         ).graph_module
-
-        # Expect the linalg_vector_norm op to be removed by the pass
         self.assertEqual(
-            count_node(graph_module, exir_ops.edge.aten.linalg_vector_norm.default),
+            count_node(
+                graph_after_passes, exir_ops.edge.aten.linalg_vector_norm.default
+            ),
             0,
         )
 
     def test_remove_permutes_around_elemwise_ops_add(self) -> None:
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.conv = nn.Conv2d(8, 8, 1, bias=False)
-
-            def forward(self, x):
-                x = self.conv(x)
-                x = torch.permute(x, [0, 3, 1, 2])
-                x = torch.add(x, x)
-                x = torch.permute(x, [0, 2, 3, 1])
-                x = self.conv(x)
-                return x
-
-        inputs = (torch.randn(1, 8, 4, 4),)
-        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 8, 4, 4, dtype=torch.float32))
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(permute, permute)
+        )
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(add, [0, 2, 3, 1])
+        )
+        builder.output([permute])
+        original = builder.get_graph_module()
         p = RemovePermutesAroundElementwiseOps()
-        graph_module = cast(PassResult, p(graph_module)).graph_module
-
+        graph_after_passes = cast(PassResult, p(original)).graph_module
         self.assertEqual(
-            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 0
+            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default), 0
+        )
+
+    def test_keep_permutes_around_elemwise_ops_add(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 8, 4, 4, dtype=torch.float32))
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [2, 1, 0, 3])
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(permute, permute)
+        )
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(add, [0, 1, 3, 2])
+        )
+        builder.output([permute])
+        original = builder.get_graph_module()
+        p = RemovePermutesAroundElementwiseOps()
+        graph_after_passes = cast(PassResult, p(original)).graph_module
+        # Ensure no permutes were removed, since the dimensions don't fit the expected pattern
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default), 2
         )
 
     def test_remove_permutes_around_elemwise_ops_add_mean(self) -> None:
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.conv2d = nn.Conv2d(8, 8, 1)
-
-            def forward(self, x, y):
-                x = self.conv2d(x)
-                y = self.conv2d(y)
-                x = torch.permute(x, [0, 3, 1, 2])
-                y = torch.permute(y, [0, 3, 1, 2])
-                z = torch.add(x, y)
-                z = torch.mean(z, dim=[-1, -3], keepdim=True)
-                z = torch.permute(z, [0, 2, 3, 1])
-                z = self.conv2d(z)
-                return z
-
-        inputs = (torch.randn(1, 8, 4, 4), torch.randn(1, 8, 4, 4))
-        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
-        p = RemovePermutesAroundElementwiseOps()
-        graph_module = cast(PassResult, p(graph_module)).graph_module
-
-        self.assertEqual(
-            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 8, 4, 4, dtype=torch.float32))
+        y = builder.placeholder("y", torch.randn(1, 8, 4, 4, dtype=torch.float32))
+        permute_x = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
         )
-
-        # verify that mean was updated correctly
-        mean = [
+        permute_y = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(y, [0, 3, 1, 2])
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(permute_x, permute_y)
+        )
+        mean = builder.call_operator(
+            op=exir_ops.edge.aten.mean.dim, args=(add, [3, 1], True)
+        )
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(mean, [0, 2, 3, 1])
+        )
+        builder.output([permute])
+        original = builder.get_graph_module()
+        p = RemovePermutesAroundElementwiseOps()
+        graph_after_passes = cast(PassResult, p(original)).graph_module
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        mean_op = [
             n
-            for n in graph_module.graph.nodes
+            for n in graph_after_passes.graph.nodes
             if n.target == exir_ops.edge.aten.mean.dim
         ][0]
-        self.assertEqual(mean.args[1], [2, 3])
+        self.assertEqual(mean_op.args[1], [2, 3])
 
     def test_remove_permutes_around_elemwise_ops_slice(self) -> None:
         builder = GraphBuilder()
@@ -544,86 +552,125 @@ class TestRemoveOpsPasses(unittest.TestCase):
             args=(slice_copy, [0, 3, 1, 2]),
         )
         builder.output([output])
-        graph_module = builder.get_graph_module()
+        original = builder.get_graph_module()
 
         p = RemovePermutesAroundElementwiseOps()
-        graph_module = cast(PassResult, p(graph_module)).graph_module
+        graph_after_passes = cast(PassResult, p(original)).graph_module
 
         # No permutes should remain.
         self.assertEqual(
-            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 0
+            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default), 0
         )
 
         # Verify that slice dimension was updated correctly.
-        slices = graph_module.graph.find_nodes(
+        slices = graph_after_passes.graph.find_nodes(
             op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
         )
         self.assertEqual(len(slices), 1)
         self.assertEqual(slices[0].args[1], 2)
 
     def test_remove_permutes_around_elemwise_ops_mul(self) -> None:
-        class M(torch.nn.Module):
-            def forward(self, x, y):
-                x = torch.slice_copy(x, 0, 0, 1)
-                x = torch.permute(x, [0, 3, 1, 2])
-                y = torch.permute(y, [0, 3, 1, 2])
-                x = torch.ops.quantized_decomposed.dequantize_per_tensor(
-                    x, 1.5, 0, 0, 255, torch.uint8
-                )
-                z = x * y
-                z = torch.ops.quantized_decomposed.quantize_per_tensor(
-                    z, 2.5, 0, 0, 255, torch.uint8
-                )
-                z = torch.permute(z, [0, 2, 3, 1])
-                z = torch.unsqueeze_copy(z, 0)
-                return z
-
-        inputs = (torch.randn(2, 4, 4, 8), torch.randn(2, 4, 4, 8))
-        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
-
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 4, 4, 8))
+        y = builder.placeholder("y", torch.randn(2, 4, 4, 8))
+        sliced_x = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 0, 0, 1),
+        )
+        permuted_x = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(sliced_x, [0, 3, 1, 2]),
+        )
+        permuted_y = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(y, [0, 3, 1, 2]),
+        )
+        dequantized_x = builder.call_operator(
+            op=exir_ops.edge.cadence.dequantize_per_tensor.default,
+            args=(permuted_x, 1.5, 0, 0, 255, torch.uint8),
+        )
+        z = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(dequantized_x, permuted_y)
+        )
+        quantized_z = builder.call_operator(
+            op=exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(z, 2.5, 0, 0, 255, torch.uint8),
+        )
+        permuted_z = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(quantized_z, [0, 2, 3, 1]),
+        )
+        output = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default,
+            args=(permuted_z, 0),
+        )
+        builder.output([output])
+        original = builder.get_graph_module()
         p = RemovePermutesAroundElementwiseOps()
-        graph_module = cast(PassResult, p(graph_module)).graph_module
-
+        graph_after_passes = cast(PassResult, p(original)).graph_module
         self.assertEqual(
-            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 0
+            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default), 0
         )
 
     def test_remove_permutes_around_elemwise_ops_double_permutes(self) -> None:
-        class M(torch.nn.Module):
-            def forward(self, x, y):
-                x = torch.slice_copy(x, 0, 0, 1)
-                x = torch.permute(x, [0, 3, 1, 2])
-                x = torch.permute(x, [0, 3, 1, 2])
-                x = torch.ops.quantized_decomposed.dequantize_per_tensor(
-                    x, 1.5, 0, 0, 255, torch.uint8
-                )
-                y = torch.permute(y, [0, 3, 1, 2])
-                y = torch.ops.quantized_decomposed.dequantize_per_tensor(
-                    y, 1.5, 0, 0, 255, torch.uint8
-                )
-                z = torch.cat((x, y), 1)
-                z = torch.ops.quantized_decomposed.quantize_per_tensor(
-                    z, 2.5, 0, 0, 255, torch.uint8
-                )
-                z = torch.permute(z, [0, 2, 3, 1])
-                z = torch.permute(z, [0, 2, 3, 1])
-                z = torch.unsqueeze_copy(z, 0)
-                return z
-
-        inputs = (torch.randn(2, 4, 4, 8), torch.randn(1, 8, 4, 4))
-        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 4, 4, 8))
+        y = builder.placeholder("y", torch.randn(1, 8, 4, 4))
+        sliced_x = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 0, 0, 1),
+        )
+        permuted_x = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(sliced_x, [0, 3, 1, 2]),
+        )
+        permuted_x = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(permuted_x, [0, 3, 1, 2]),
+        )
+        dequantized_x = builder.call_operator(
+            op=exir_ops.edge.cadence.dequantize_per_tensor.default,
+            args=(permuted_x, 1.5, 0, 0, 255, torch.uint8),
+        )
+        permuted_y = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(y, [0, 3, 1, 2]),
+        )
+        dequantized_y = builder.call_operator(
+            op=exir_ops.edge.cadence.dequantize_per_tensor.default,
+            args=(permuted_y, 1.5, 0, 0, 255, torch.uint8),
+        )
+        z = builder.call_operator(
+            op=exir_ops.edge.aten.cat.default, args=((dequantized_x, dequantized_y), 1)
+        )
+        quantized_z = builder.call_operator(
+            op=exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(z, 2.5, 0, 0, 255, torch.uint8),
+        )
+        permuted_z = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(quantized_z, [0, 2, 3, 1]),
+        )
+        permuted_z = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(permuted_z, [0, 2, 3, 1]),
+        )
+        output = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default,
+            args=(permuted_z, 0),
+        )
+        builder.output([output])
+        original = builder.get_graph_module()
         p = RemovePermutesAroundElementwiseOps()
-        graph_module = cast(PassResult, p(graph_module)).graph_module
-
+        graph_after_passes = cast(PassResult, p(original)).graph_module
         # Expect 2 permutes to remain, one on input x and one on output z
         self.assertEqual(
-            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 2
+            count_node(graph_after_passes, exir_ops.edge.aten.permute_copy.default), 2
         )
-
         # verify that cat was updated correctly
         cat = [
             n
-            for n in graph_module.graph.nodes
+            for n in graph_after_passes.graph.nodes
             if n.target == exir_ops.edge.aten.cat.default
         ][0]
         self.assertEqual(cat.args[1], 3)
@@ -692,111 +739,99 @@ class TestRemoveOpsPasses(unittest.TestCase):
             count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 4
         )
 
-    def test_remove_permutes_around_elemwise_ops_noop(self) -> None:
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.conv = nn.Conv2d(8, 8, 1, bias=False)
-
-            def forward(self, x):
-                x = self.conv(x)
-                x = torch.permute(x, [2, 1, 0, 3])
-                x = torch.add(x, x)
-                x = torch.permute(x, [0, 1, 3, 2])
-                x = self.conv(x)
-                return x
-
-        inputs = (torch.randn(1, 8, 4, 4),)
-        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
-        p = RemovePermutesAroundElementwiseOps()
-        graph_module = cast(PassResult, p(graph_module)).graph_module
-
-        # Ensure no permutes were removed, since the dimensions don't fit the expected pattern
+    def test_remove_dequant_on_branch(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 8, 4, 6))
+        x = builder.call_operator(op=exir_ops.edge.aten.abs.default, args=(x,))
+        x0 = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 1.2, 3, 0, 127, torch.int8),
+        )
+        x1_output = builder.call_operator(op=exir_ops.edge.aten.abs.default, args=(x0,))
+        y0 = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x0, 1.2, 3, 0, 127, torch.int8),
+        )
+        y1_output = builder.call_operator(
+            op=exir_ops.edge.aten.view.default,
+            args=(y0, [-1]),
+        )
+        builder.output([x1_output, y1_output])
+        original = builder.get_graph_module()
+        graph_after_passes = cast(
+            PassResult, RemoveBranchedQuantDequant()(original)
+        ).graph_module
         self.assertEqual(
-            count_node(graph_module, exir_ops.edge.aten.permute_copy.default), 2
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            ),
+            1,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.abs.default), 2
         )
 
-    def test_remove_dequant_on_branch(self):
-        class M(torch.nn.Module):
-            def forward(self, x):
-                x = torch.abs(x)
-                x0 = torch.ops.quantized_decomposed.quantize_per_tensor(
-                    x, 1.2, 3, 0, 127, torch.int8
-                )
-                x1 = torch.abs(x0)
-                y0 = torch.ops.quantized_decomposed.dequantize_per_tensor(
-                    x0, 1.2, 3, 0, 127, torch.int8
-                )
-                y1 = y0.view(-1)
-                return x1, y1
-
-        inputs = torch.rand(1, 8, 4, 6)
-        model = M()
-        graph_module = export_to_edge(model, (inputs,)).exported_program().graph_module
-
-        graph_module = RemoveBranchedQuantDequant()(graph_module).graph_module
-        self.assertTrue(
-            op_counts_match(
-                graph_module,
-                expected_op_counts={
-                    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: 1,
-                    # we expect the pass to remove the dequantize node
-                    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 0,
-                    exir_ops.edge.aten.abs.default: 2,
-                },
-            )
+    def test_remove_cat_from_slice_copy(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 4))
+        y = builder.placeholder("y", torch.randn(2, 4))
+        z = builder.call_operator(op=exir_ops.edge.aten.cat.default, args=((x, y), 0))
+        output = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(z, 0, 0, 1),
+        )
+        builder.output([output])
+        original = builder.get_graph_module()
+        graph_after_passes = cast(
+            PassResult, RemoveCatFromSliceCopyPass()(original)
+        ).graph_module
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.cat.default), 0
         )
 
-    def test_remove_cat_from_slice_copy_all_removal(self) -> None:
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                x1 = torch.cat((x, y), 0)  # (2, 4)
-                return torch.slice_copy(x1, dim=0, start=0, end=1)
-
-        inputs = tuple(torch.randn(2, 4) for _ in range(2))
-        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
-        p = RemoveCatFromSliceCopyPass()
-        graph_module = cast(PassResult, p(graph_module)).graph_module
-
-        # Ensure both cat nodes were removed
-        self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 0)
-
-    def test_remove_cat_from_slice_copy_no_removal(self) -> None:
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                x1 = torch.cat((x, y), 0)  # (2, 4)
-                return torch.slice_copy(x1, dim=0, start=0, end=3)
-
-        inputs = tuple(torch.randn(2, 4) for _ in range(2))
-        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
-        p = RemoveCatFromSliceCopyPass()
-        graph_module = cast(PassResult, p(graph_module)).graph_module
-
-        # Ensure both cat nodes were removed
-        self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 1)
+    def test_keep_cat_from_slice_copy(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 4))
+        y = builder.placeholder("y", torch.randn(2, 4))
+        z = builder.call_operator(op=exir_ops.edge.aten.cat.default, args=((x, y), 0))
+        output = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(z, 0, 0, 3),
+        )
+        builder.output([output])
+        original = builder.get_graph_module()
+        graph_after_passes = cast(
+            PassResult, RemoveCatFromSliceCopyPass()(original)
+        ).graph_module
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.cat.default), 1
+        )
 
     def test_remove_cat_from_slice_copy_zero_range(self) -> None:
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                x1 = torch.cat((x, y), 0)  # (2, 4)
-                return torch.slice_copy(x1, dim=0, start=0, end=0)
-
-        inputs = tuple(torch.randn(2, 4) for _ in range(2))
-        graph_module = export_to_edge(M(), inputs).exported_program().graph_module
-        p = RemoveCatFromSliceCopyPass()
-        graph_module = cast(PassResult, p(graph_module)).graph_module
-
-        # Ensure both cat nodes were removed
-        self.assertEqual(count_node(graph_module, exir_ops.edge.aten.cat.default), 0)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 4))
+        y = builder.placeholder("y", torch.randn(2, 4))
+        z = builder.call_operator(op=exir_ops.edge.aten.cat.default, args=((x, y), 0))
+        output = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(z, 0, 0, 0),
+        )
+        builder.output([output])
+        original = builder.get_graph_module()
+        graph_after_passes = cast(
+            PassResult, RemoveCatFromSliceCopyPass()(original)
+        ).graph_module
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.cat.default), 0
+        )
 
     def test_remove_cat_from_slice_copy_second_input(self) -> None:
         builder = GraphBuilder()
@@ -808,7 +843,7 @@ class TestRemoveOpsPasses(unittest.TestCase):
         )
         slice_copy = builder.call_operator(
             op=exir_ops.edge.aten.slice_copy.Tensor,
-            args=(cat, 1, 5, 7, 1),
+            args=(cat, 1, 5, 7, 1),  # dim start end step
         )
         builder.output([slice_copy])
         graph_module = builder.get_graph_module()

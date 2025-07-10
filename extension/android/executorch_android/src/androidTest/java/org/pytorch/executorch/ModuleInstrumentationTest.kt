@@ -23,6 +23,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.pytorch.executorch.TestFileUtils.getTestFilePath
 
 /** Unit tests for [Module]. */
 @RunWith(AndroidJUnit4::class)
@@ -173,12 +174,5 @@ class ModuleInstrumentationTest {
         private const val INVALID_STATE = 0x2
         private const val INVALID_ARGUMENT = 0x12
         private const val ACCESS_FAILED = 0x22
-
-        private fun getTestFilePath(fileName: String): String {
-            return InstrumentationRegistry.getInstrumentation()
-                .targetContext
-                .externalCacheDir
-                .toString() + fileName
-        }
     }
 }

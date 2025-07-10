@@ -224,7 +224,7 @@ EventTracerEntry ETDumpGen::start_profiling(
     prof_entry.chain_id = chain_id;
     prof_entry.debug_handle = debug_handle;
   }
-  prof_entry.start_time = et_pal_current_ticks();
+  prof_entry.start_time = runtime::pal_current_ticks();
   return prof_entry;
 }
 
@@ -246,7 +246,7 @@ EventTracerEntry ETDumpGen::start_profiling_delegate(
   prof_entry.event_id = delegate_debug_index == kUnsetDelegateDebugIntId
       ? create_string_entry(name)
       : delegate_debug_index;
-  prof_entry.start_time = et_pal_current_ticks();
+  prof_entry.start_time = runtime::pal_current_ticks();
   return prof_entry;
 }
 
@@ -254,7 +254,7 @@ void ETDumpGen::end_profiling_delegate(
     EventTracerEntry event_tracer_entry,
     const void* metadata,
     size_t metadata_len) {
-  et_timestamp_t end_time = et_pal_current_ticks();
+  et_timestamp_t end_time = runtime::pal_current_ticks();
   check_ready_to_add_events();
 
   // Start building the ProfileEvent entry.
@@ -469,7 +469,7 @@ Result<bool> ETDumpGen::log_intermediate_output_delegate_helper(
 }
 
 void ETDumpGen::end_profiling(EventTracerEntry prof_entry) {
-  et_timestamp_t end_time = et_pal_current_ticks();
+  et_timestamp_t end_time = runtime::pal_current_ticks();
   ET_CHECK_MSG(
       prof_entry.delegate_event_id_type == DelegateDebugIdType::kNone,
       "Delegate events must use end_profiling_delegate to mark the end of a delegate profiling event.");

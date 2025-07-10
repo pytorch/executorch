@@ -17,6 +17,7 @@ from executorch.backends.transforms.utils import get_param_tensor, is_param_node
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 #################
 ## linear_qcnw ##
@@ -224,6 +225,8 @@ class FuseQuantizedOpsTransform(ExportPass):
                 )
 
         graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
+        dead_code_elimination_pass(graph_module)
 
+        # Re-trace the graph since new nodes were (potentially) inserted
+        graph_module = super().call(graph_module).graph_module
         return PassResult(graph_module, True)

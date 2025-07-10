@@ -20,6 +20,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import build_rescale, build_rescale_v0_80
@@ -50,16 +51,13 @@ class BMMVisitor_0_80(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        # aten.bmm maps directly to MATMUL
-        # NOTE: For now, only INT8 & FP32 is supported
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
-        for input in inputs:
-            if input.dtype not in supported_dtypes:
-                raise TypeError(
-                    f'IO data type needs to be {supported_dtypes}, got "{input.dtype}"'
-                )
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         # aten.bmm maps directly to MATMUL
 
@@ -67,8 +65,8 @@ class BMMVisitor_0_80(NodeVisitor):
         # for a later rescale.
         if inputs[0].dtype == ts.DType.INT8:
             input_qparams = get_input_qparams(node)
-            input0_zp = input_qparams[0].zp
-            input1_zp = input_qparams[1].zp
+            input0_zp = input_qparams[0].get_zp_per_tensor()
+            input1_zp = input_qparams[1].get_zp_per_tensor()
             bmm_result = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
             bmm_output_name = bmm_result.name
         else:
@@ -90,8 +88,8 @@ class BMMVisitor_0_80(NodeVisitor):
         if output.dtype == ts.DType.INT8:
             output_qparams = get_output_qparams(node)[0]
             final_output_scale = (
-                input_qparams[0].scale * input_qparams[1].scale  # type: ignore[possibly-undefined]  # pyre-ignore[61]
-            ) / output_qparams.scale
+                input_qparams[0].get_scale_per_tensor() * input_qparams[1].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore[61]
+            ) / output_qparams.get_scale_per_tensor()
 
             build_rescale_v0_80(
                 tosa_fb=tosa_graph,
@@ -100,8 +98,8 @@ class BMMVisitor_0_80(NodeVisitor):
                 input_node=bmm_result,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=output_qparams.zp,
+                input_zp=[0],
+                output_zp=[output_qparams.get_zp_per_tensor()],
                 is_double_round=False,
             )
 
@@ -129,27 +127,23 @@ class BMMVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         # aten.bmm maps directly to MATMUL
-        # NOTE: For now, only INT8 & FP32 is supported
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
-        for input in inputs:
-            if input.dtype not in supported_dtypes:
-                raise TypeError(
-                    f'IO data type needs to be {supported_dtypes}, got "{input.dtype}"'
-                )
-
-        # aten.bmm maps directly to MATMUL
-        # NOTE: For now, only INT8 & FP32 is supported
 
         # For INT8, we need to get the zero points and add an intermediate tensor
         # for a later rescale.
 
         if inputs[0].dtype == ts.DType.INT8:
             input_qparams = get_input_qparams(node)
-            input0_zp = input_qparams[0].zp
-            input1_zp = input_qparams[1].zp
+            input0_zp = input_qparams[0].get_zp_per_tensor()
+            input1_zp = input_qparams[1].get_zp_per_tensor()
             bmm_result = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
             bmm_output_name = bmm_result.name
         else:
@@ -175,8 +169,8 @@ class BMMVisitor(NodeVisitor):
         if output.dtype == ts.DType.INT8:
             output_qparams = get_output_qparams(node)[0]
             final_output_scale = (
-                input_qparams[0].scale * input_qparams[1].scale  # type: ignore[possibly-undefined]  # pyre-ignore[61]
-            ) / output_qparams.scale
+                input_qparams[0].get_scale_per_tensor() * input_qparams[1].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore[61]
+            ) / output_qparams.get_scale_per_tensor()
 
             build_rescale(
                 tosa_fb=tosa_graph,
@@ -185,7 +179,7 @@ class BMMVisitor(NodeVisitor):
                 input_node=bmm_result,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=output_qparams.zp,
+                input_zp=[0],
+                output_zp=[output_qparams.get_zp_per_tensor()],
                 rounding_mode=RoundingMode.SINGLE_ROUND,
             )

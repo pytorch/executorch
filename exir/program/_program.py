@@ -58,6 +58,7 @@ from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
+from executorch.exir.passes.reinplace import reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
     RemoveGraphAssertsPass,
     RemoveNonCoreAtenOpGraphAssertsPass,
@@ -193,7 +194,7 @@ def _get_updated_graph_signature(
         )
         i += 1
 
-    output_node = list(new_gm.graph.nodes)[-1]
+    output_node = new_gm.graph.output_node()
     assert output_node.op == "output"
 
     new_output_specs = []
@@ -651,9 +652,7 @@ def _get_aten_to_edge_passes(config: EdgeCompileConfig):
     # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
     # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
 
-    pre_op_replace_passes = base_pre_op_replace_passes + (
-        [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
-    )
+    pre_op_replace_passes = base_pre_op_replace_passes + [RemoveMixedTypeOperators()]
 
     post_op_replace_passes = base_post_op_replace_passes
 
@@ -1017,6 +1016,13 @@ def _sanity_check_graph_for_non_decomp_ops(
 def _remove_invalid_ops_for_not_decompose(
     ops_to_not_decompose: List[torch._ops.OpOverload],
 ) -> List[torch._ops.OpOverload]:
+    _logged_warnings = set()
+
+    def log_warning(warn_str):
+        if warn_str not in _logged_warnings:
+            logging.warn(warn_str)
+            _logged_warnings.add(warn_str)
+
     # To address https://github.com/pytorch/executorch/issues/8781
     def keep(op):
         # Explicit allow list
@@ -1034,18 +1040,18 @@ def _remove_invalid_ops_for_not_decompose(
         schema = op._schema
         native_schema = _pybind_schema_to_native_schema(schema)
         if native_schema is None:
-            logging.warn(
+            log_warning(
                 f"Torchgen is not able to parse the schema of {op._schema}.  This is not fatal."
             )
         else:
             if native_schema.is_mutable:
-                logging.warn(
+                log_warning(
                     f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is mutable."
                 )
                 return False
 
             if native_schema.aliased_return_names() != [None]:
-                logging.warn(
+                log_warning(
                     f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
                 )
                 return False
@@ -1067,7 +1073,7 @@ def _remove_invalid_ops_for_not_decompose(
             torch.ops.aten.unbind.int,
             torch.ops.aten.split_with_sizes.default,
         ]:
-            logging.warn(
+            log_warning(
                 f"Op {op} was requested for preservation by partitioner.  This request is ignored because it is in a blocklist."
             )
             return False
@@ -1556,6 +1562,8 @@ class EdgeProgramManager:
                         " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
                     )
                 program = quant_fusion_and_const_prop_pass(program)
+            if config.run_reinplace_pass:
+                program = reinplace_pass(program)
             program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)

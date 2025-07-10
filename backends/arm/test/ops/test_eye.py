@@ -71,6 +71,7 @@ def test_eye_tosa_BI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", EyeAdd.test_data)
+@common.XfailIfNoCorstone300
 def test_eye_u55_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = EthosU55PipelineBI[input_t](
@@ -84,6 +85,7 @@ def test_eye_u55_BI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", EyeAdd.test_data)
+@common.XfailIfNoCorstone320
 def test_eye_u85_BI(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = EthosU85PipelineBI[input_t](

@@ -20,6 +20,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -53,6 +54,11 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
         kernel_size_list = inputs[1].special
         stride_size_list = inputs[2].special
 
+        if len(inputs) > 4:
+            ceil_mode = bool(inputs[4].number)
+        else:
+            ceil_mode = False
+
         try:
             pad_size_list = inputs[3].special
             pad_size_list = [
@@ -70,12 +76,14 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
             kernel_size_list[0],
             stride_size_list[0],
             pad_size_list[1],
+            ceil_mode,
         )
         pad_size_list[3] = adjust_pooling_pad_if_needed(
             input_tensor.shape[3],
             kernel_size_list[1],
             stride_size_list[1],
             pad_size_list[3],
+            ceil_mode,
         )
 
         attr = ts.TosaSerializerAttribute()
@@ -104,23 +112,19 @@ class AvgPool2dVisitor_0_80_BI(NodeVisitor):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        validate_num_inputs(self.target, inputs, [3, 4, 6])
-        validate_same_dtype(self.target, [inputs[0], output])
-
-        supported_dtypes = [ts.DType.INT8]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f"IO data type needs to be one of {supported_dtypes}, got "
-                f'"{inputs[0].dtype}"'
-            )
+        validate_num_inputs(self.target, inputs, [3, 4, 5, 6, 7])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target, [inputs[0], output], ts.DType.INT8, output.tosa_spec
+        )
 
         accumulator_type = ts.DType.INT32
 
         input_qargs = get_input_qparams(node)
-        input_zp = input_qargs[0].zp
+        input_zp = input_qargs[0].get_zp_per_tensor()
 
         output_qargs = get_output_qparams(node)
-        output_zp = output_qargs[0].zp
+        output_zp = output_qargs[0].get_zp_per_tensor()
 
         self._build_generic_avgpool2d(
             node, tosa_graph, inputs, output, input_zp, output_zp, accumulator_type
@@ -144,15 +148,14 @@ class AvgPool2dVisitor_0_80_MI(AvgPool2dVisitor_0_80_BI):
     ) -> None:
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        validate_num_inputs(self.target, inputs, [3, 4, 6])
-        validate_same_dtype(self.target, [inputs[0], output])
-
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f"IO data type needs to be one of {supported_dtypes}, got "
-                f'"{inputs[0].dtype}"'
-            )
+        validate_num_inputs(self.target, inputs, [3, 4, 5, 6, 7])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         if inputs[0].dtype == ts.DType.INT8:
             super().define_node(node, tosa_graph, inputs, output)
@@ -196,6 +199,11 @@ class AvgPool2dVisitor(NodeVisitor):
         kernel_size_list = inputs[1].special
         stride_size_list = inputs[2].special
 
+        if len(inputs) > 4:
+            ceil_mode = bool(inputs[4].number)
+        else:
+            ceil_mode = False
+
         try:
             pad_size_list = inputs[3].special
             pad_size_list = [
@@ -213,12 +221,14 @@ class AvgPool2dVisitor(NodeVisitor):
             kernel_size_list[0],
             stride_size_list[0],
             pad_size_list[1],
+            ceil_mode,
         )
         pad_size_list[3] = adjust_pooling_pad_if_needed(
             input_tensor.shape[3],
             kernel_size_list[1],
             stride_size_list[1],
             pad_size_list[3],
+            ceil_mode,
         )
 
         attr = ts.TosaSerializerAttribute()
@@ -251,23 +261,19 @@ class AvgPool2dVisitor(NodeVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts  # type: ignore
 
-        validate_num_inputs(self.target, inputs, [3, 4, 6])
-        validate_same_dtype(self.target, [inputs[0], output])
-
-        supported_dtypes = [ts.DType.INT8]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f"IO data type needs to be one of {supported_dtypes}, got "
-                f'"{inputs[0].dtype}"'
-            )
+        validate_num_inputs(self.target, inputs, [3, 4, 5, 6, 7])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target, [inputs[0], output], ts.DType.INT8, output.tosa_spec
+        )
 
         accumulator_type = ts.DType.INT32
 
         input_qargs = get_input_qparams(node)
-        input_zp = input_qargs[0].zp
+        input_zp = input_qargs[0].get_zp_per_tensor()
 
         output_qargs = get_output_qparams(node)
-        output_zp = output_qargs[0].zp
+        output_zp = output_qargs[0].get_zp_per_tensor()
 
         self._build_generic_avgpool2d(
             node, tosa_graph, inputs, output, input_zp, output_zp, accumulator_type
@@ -294,15 +300,14 @@ class AvgPool2dVisitor_FP(AvgPool2dVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts  # type: ignore
 
-        validate_num_inputs(self.target, inputs, [3, 4, 6])
-        validate_same_dtype(self.target, [inputs[0], output])
-
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP32]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f"IO data type needs to be one of {supported_dtypes}, got "
-                f'"{inputs[0].dtype}"'
-            )
+        validate_num_inputs(self.target, inputs, [3, 4, 5, 6, 7])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         if inputs[0].dtype == ts.DType.INT8:
             super().define_node(node, tosa_graph, inputs, output)

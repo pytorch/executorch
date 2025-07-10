@@ -13,6 +13,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -39,13 +40,10 @@ class LogVisitor_0_80_MI(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
-            raise ValueError(
-                f"Input and output for {self.target} need to be FP32, got input_dtype: "
-                f"{inputs[0].dtype} and output_dtype: {output.dtype}"
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+        )
 
         tosa_graph.addOperator(ts.TosaOp.Op().LOG, [inputs[0].name], [output.name])
 
@@ -70,12 +68,9 @@ class LogVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        if inputs[0].dtype != ts.DType.FP32 or output.dtype != ts.DType.FP32:
-            raise ValueError(
-                f"Input and output for {self.target} need to be FP32, got input_dtype: "
-                f"{inputs[0].dtype} and output_dtype: {output.dtype}"
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+        )
 
         tosa_graph.addOperator(ts.TosaOp.Op().LOG, [inputs[0].name], [output.name])

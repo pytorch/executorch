@@ -50,6 +50,7 @@ def define_common_targets():
             ],
             exported_headers = [
                 "BinaryLogicalOpTest.h",
+                "ScalarOverflowTestMacros.h",
                 "UnaryUfuncRealHBBF16ToFloatHBF16Test.h",
             ],
             visibility = [
@@ -276,7 +277,7 @@ def define_common_targets():
     _common_op_test("op_native_group_norm_test", ["aten", "portable"])
     _common_op_test("op_native_layer_norm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_ne_test", ["aten", "portable"])
-    _common_op_test("op_neg_test", ["aten", "portable", "optimized"])
+    _common_op_test("op_neg_test", ["aten", "portable"])
     _common_op_test("op_nonzero_test", ["aten", "portable"])
     _common_op_test("op_ones_test", ["aten", "portable"])
     _common_op_test("op_pdist_forward_test", ["aten", "portable"])
@@ -285,6 +286,8 @@ def define_common_targets():
     _common_op_test("op_pixel_unshuffle_test", ["aten", "portable"])
     _common_op_test("op_pow_test", ["aten", "portable"])
     _common_op_test("op_prod_test", ["aten", "portable"])
+    _common_op_test("op_rand_test", ["aten", "portable"])
+    _common_op_test("op_randn_test", ["aten", "portable"])
     _common_op_test("op_reciprocal_test", ["aten", "portable"])
     _common_op_test("op_relu_test", ["aten", "portable"])
     _common_op_test("op_remainder_test", ["aten", "portable"])
@@ -305,7 +308,7 @@ def define_common_targets():
     _common_op_test("op_scatter_add_test", ["aten", "portable"])
     _common_op_test("op_select_scatter_test", ["aten", "portable"])
     _common_op_test("op_select_copy_test", ["aten", "portable"])
-    _common_op_test("op_sigmoid_test", ["aten", "portable", "optimized"])
+    _common_op_test("op_sigmoid_test", ["aten", "portable"])
     _common_op_test("op_sign_test", ["aten", "portable"])
     _common_op_test("op_sin_test", ["aten", "portable"])
     _common_op_test("op_sinh_test", ["aten", "portable"])

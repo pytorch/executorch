@@ -18,6 +18,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 
 from executorch.backends.arm.tosa_mapping import TosaArg
@@ -88,8 +89,16 @@ class ClampVisitor_080_BI(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        import tosa_tools.v0_80.serializer.tosa_serializer as ts
+
         validate_num_inputs(self.target, inputs, [2, 3])
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8],
+            output.tosa_spec,
+        )
 
         min_int8, max_int8 = self._get_min_max_arguments(
             node,
@@ -130,7 +139,13 @@ class ClampVisitor_080_MI(ClampVisitor_080_BI):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [2, 3])
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         if inputs[0].dtype == ts.DType.INT8:
             # Call the inherited define_node for handling integers
@@ -197,7 +212,10 @@ class ClampVisitor_INT(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [2, 3])
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target, [inputs[0], output], [ts.DType.INT8], output.tosa_spec
+        )
 
         # NOTE: Quantization of the min/max arguments is handled by QuantizeOperatorArguments
         min_int8, max_int8 = self._get_min_max_arguments(
@@ -240,7 +258,13 @@ class ClampVisitor_FP(ClampVisitor_INT):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, [2, 3])
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.FP16, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         min_fp32, max_fp32 = self._get_min_max_arguments(
             node,

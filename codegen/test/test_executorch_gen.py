@@ -11,15 +11,15 @@ import tempfile
 import unittest
 
 import yaml
-
-from executorch.codegen.model import ETKernelIndex, ETKernelKey
-from torchgen.gen import LineLoader
-from torchgen.gen_executorch import (
+from executorch.codegen.gen import (
     ComputeCodegenUnboxedKernels,
     gen_functions_declarations,
     parse_yaml_files,
     translate_native_yaml,
 )
+
+from executorch.codegen.model import ETKernelIndex, ETKernelKey
+from torchgen.gen import LineLoader
 from torchgen.model import (
     BackendIndex,
     BackendMetadata,
