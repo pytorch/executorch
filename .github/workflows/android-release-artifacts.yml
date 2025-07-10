@@ -47,7 +47,7 @@ jobs:
     name: build-aar
     needs: check-if-aar-exists
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     secrets: inherit
     permissions:
       id-token: write
