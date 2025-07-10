@@ -89,6 +89,24 @@ class LinearReshapeModule(torch.nn.Module):
         return x
 
 
+class ConvLinearViewModule(torch.nn.Module):
+    def __init__(self, channels: int, channels_view_out: int):
+        super().__init__()
+        self.conv = nn.Conv2d(channels, channels, 3, 2)
+        self.linear = nn.Linear(channels_view_out, 32, bias=True)
+        self.channels_view_out = channels_view_out
+        self.avg_pool = nn.AvgPool2d(1)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.relu(x)
+        x = self.avg_pool(x)
+        x = x.view(-1, self.channels_view_out)
+        x = self.linear(x)
+        return x
+
+
 def test__channels_first_to_2d(mocker):
     input_shape = [2, 4, 7, 9]
     new_shape = [12, 32]  # Mix up the dimensions for a thorough test.
@@ -205,19 +223,20 @@ def test_view_copy_w_linear_quant_conversion(mocker, input_shape, new_shape):
 
 
 @pytest.mark.parametrize(
-    "input_shape, new_shape",
+    "input_shape, channels_view_out",
     [
-        pytest.param((1, 4, 16, 16), (50, 18), id="4D, batch_size=1"),
-        pytest.param((10, 4, 16, 16), (500, 18), id="4D, , batch_size=10"),
+        pytest.param((1, 4, 16, 16), 196, id="4D"),
     ],
 )
-@pytest.mark.skip(reason="Neutron Converter does not fully convert for NPU")
-def test_view_copy_w_conv_quant_conversion(mocker, input_shape, new_shape):
+def test_view_w_conv_linear_quant_conversion(mocker, input_shape, channels_view_out):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
     _ = to_quantized_edge_program(
-        ConvReshapeModule(channels=input_shape[1], new_shape=new_shape), input_shape
+        ConvLinearViewModule(
+            channels=input_shape[1], channels_view_out=channels_view_out
+        ),
+        input_shape,
     )
 
     # Capture generated model
