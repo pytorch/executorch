@@ -44,7 +44,7 @@ from executorch.devtools.inspector._inspector import (
     TimeScale,
 )
 from executorch.devtools.inspector.tests.inspector_test_utils import (
-    check_if_debug_handle_to_op_name_match,
+    check_if_debug_handle_to_op_names_match,
     check_if_final_outputs_match,
     model_registry,
 )
@@ -522,7 +522,7 @@ class TestInspector(unittest.TestCase):
                     _representative_inputs=aten_model.example_inputs[0],
                 )
                 inspector_instance._etrecord = etrecord
-                aot_intermediate_outputs, aot_debug_handle_to_op_name = (
+                aot_intermediate_outputs, aot_debug_handle_to_op_names = (
                     inspector_instance._get_aot_intermediate_outputs_and_op_names()
                 )
                 self.assertTrue(
@@ -530,9 +530,10 @@ class TestInspector(unittest.TestCase):
                         "ConvLinearModel", aot_intermediate_outputs
                     )
                 )
+
                 self.assertTrue(
-                    check_if_debug_handle_to_op_name_match(
-                        "ConvLinearModel", aot_debug_handle_to_op_name
+                    check_if_debug_handle_to_op_names_match(
+                        "ConvLinearModel", aot_debug_handle_to_op_names
                     )
                 )
 
@@ -584,14 +585,14 @@ class TestInspector(unittest.TestCase):
             self.assertTrue(
                 torch.allclose(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
             )
-            self.assertEqual(op_names[(4,)], "op_3")
+            self.assertEqual(op_names[(4,)], ["op_3"])
 
             # Check that keys (5,) to (8,) are in the dictionary and have values of the correct size
             for key in range(5, 9):
                 self.assertIn((key,), runtime_outputs)
                 self.assertIn((key,), op_names)
                 self.assertEqual(runtime_outputs[(key,)][0].size(0), RAW_DATA_SIZE)
-                self.assertEqual(op_names[(key,)], f"op_{key-1}")
+                self.assertEqual(op_names[(key,)], [f"op_{key-1}"])
 
     def test_calculate_numeric_gap(self):
         # Create a context manager to patch functions called by Inspector.__init__
