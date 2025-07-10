@@ -46,7 +46,7 @@ from executorch.devtools.inspector._inspector_utils import (
     TimeScale,
 )
 from executorch.devtools.inspector.numerical_comparator import L1Comparator
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import to_edge
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from torch.export import export
 

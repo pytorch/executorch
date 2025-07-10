@@ -958,6 +958,8 @@ def propagate_back_debug_handle(
             node.meta[DEBUG_HANDLE_KEY] = debug_handle_for_removed_node
 
     bfs_trace_with_node_process(exported_program.graph_module, _find_n_match_node)
+
+    # if any node in the edge dialect program has no corresponding node in the exported program, match failed
     if n_matched_node != len(export_graph_node_id_to_debug_handle):
         return False
 
