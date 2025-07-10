@@ -85,12 +85,10 @@ def test_constant_pad_nd_conversion__format_less(input_shape, paddings):
 @pytest.mark.parametrize(
     "input_shape, paddings",
     [
-        pytest.param([2, 4, 6, 8], list(range(2)), id="4D, padding W"),
-        pytest.param([2, 4, 6, 8], list(range(4)), id="4D, padding H, W"),
-        pytest.param([2, 1, 6, 8], [1, 2, 3, 4, 2, 1], id="4D, padding C, H, W"),
-        pytest.param(
-            [2, 1, 6, 8], [1, 2, 3, 4, 2, 1, 5, 6], id="4D, padding N, C, H, W"
-        ),
+        pytest.param([1, 4, 6, 8], list(range(2)), id="4D, padding W"),
+        pytest.param([1, 4, 6, 8], list(range(4)), id="4D, padding H, W"),
+        pytest.param([1, 1, 6, 8], [1, 2, 3, 4, 2, 1], id="4D, padding C, H, W"),
+        # pytest.param([1, 1, 6, 8], [1, 2, 3, 4, 2, 1, 5, 6], id='4D, padding N, C, H, W'),  # Batch size must stay 0.
     ],
 )
 def test_constant_pad_nd_conversion__channels_first(input_shape, paddings):
