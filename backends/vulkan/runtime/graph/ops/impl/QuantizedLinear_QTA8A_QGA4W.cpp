@@ -213,7 +213,7 @@ void add_linear_qta8a_qga4w_node(
       weight_scales_data,
       weight_zeros_data,
       out);
-  const uint32_t group_size_val = graph.extract_scalar<int64_t>(group_size);
+  const uint32_t group_size_val = graph.extract_scalar<int32_t>(group_size);
 
   ValueRef mat2 =
       prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
