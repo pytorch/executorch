@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 namespace vkcompute {
@@ -32,6 +32,7 @@ utils::uvec3 quantize_per_channel_global_wg_size(
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  (void)shader;
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
 
@@ -46,6 +47,7 @@ utils::uvec3 quantize_per_channel_local_wg_size(
     const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  (void)shader;
   (void)args;
   (void)resize_args;
 
@@ -452,7 +454,7 @@ void quantize_per_channel_impl(
   // Normalize axis
   int axis_val = static_cast<int>(graph.get_int(axis));
   const auto input_sizes = graph.sizes_of(input);
-  int ndim = graph.dim_of(input);
+  int64_t ndim = graph.dim_of(input);
   if (axis_val < 0) {
     axis_val += ndim;
   }
