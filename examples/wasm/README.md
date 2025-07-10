@@ -2,6 +2,18 @@
 
 This guide describes how to build ExecuTorch for WebAssembly (Wasm).
 
+## Quick Start
+
+To quickly test the build, you can run the following commands
+
+```bash
+cd executorch # To the top level dir
+
+source .ci/scripts/setup-emscripten.sh # Install Emscripten and set up the environment variables
+
+bash examples/wasm/test_build_wasm.sh # Run the test build script
+```
+
 ## Prerequisites
 
 - [Emscripten](https://emscripten.org/docs/getting_started/Tutorial.html)
@@ -62,3 +74,24 @@ python3 -m http.server --directory cmake-out-wasm
 ```
 
 The page will be available at http://localhost:8000/executor_runner.html.
+
+## Common Issues
+
+### CompileError: WebAssembly.instantiate() [...] failed: expected table index 0...
+
+This seems to be an issue with Node.js v16. Emscripten should come preinstalled with a compatible version of Node.js. You can use the Emscripten-provided version by running `$EMSDK_NODE` instead of `node`.
+
+```bash
+echo $EMSDK_NODE
+.../emsdk/node/22.16.0_64bit/bin/node # example output
+```
+
+### Failed to open [...]: No such file or directory (44)
+
+The file may not have been present while building the Wasm binary. You can rebuild with the following command
+
+```bash
+cmake --build cmake-out-wasm -j32 --target executor_runner --clean-first
+```
+
+The path may also be incorrect. The files in the `WASM_MODEL_DIR` are placed into the root directory of the virtual file system, so you would use `--model_path mv2.pte` instead of `--model_path models/mv2.pte`, for example.

@@ -727,6 +727,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 
+  # Automatically set when using `emcmake cmake` for Wasm build.
   if(EMSCRIPTEN)
     # Directory of model pte files to embed in the wasm binary.
     if(NOT DEFINED WASM_MODEL_DIR)
