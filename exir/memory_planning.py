@@ -301,7 +301,11 @@ def _is_inplace_node(node: torch.fx.Node) -> bool:
 
 
 def update_tensor_lifetime(
-    node: torch.fx.Node, spec: TensorSpec, node_idx: int
+    node: torch.fx.Node,
+    spec: TensorSpec,
+    node_idx: int,
+    max_node_idx: int,
+    gs: Optional[ExportGraphSignature] = None,
 ) -> None:
     r"""
     Update the lifetime of the tensor to cover node_idx. A tensor's lifetime
@@ -317,7 +321,12 @@ def update_tensor_lifetime(
         start = 0
     else:
         start = node_idx if start is None or start > node_idx else start
-    end = node_idx if end is None or end < node_idx else end
+
+    if node.op == "placeholder" and _is_mutable_buffer(node, gs):
+        # mutable buffers are never freed
+        end = max_node_idx
+    else:
+        end = node_idx if end is None or end < node_idx else end
     spec.lifetime = [start, end]
 
 
@@ -497,7 +506,7 @@ def update_all_tensors_lifetime(
     Set the lifetime for all the tensors encountered in the Fx graph.
     """
     specs = set()
-
+    max_node_idx = len(graph_module.graph.nodes) - 1
     for node_idx, node in enumerate(graph_module.graph.nodes):
         for spec in collect_specs_from_nodes(
             filter_nodes(itertools.chain([node], node.args, node.kwargs.values())),
@@ -509,7 +518,7 @@ def update_all_tensors_lifetime(
             do_assertion=False,
             ignore_dynamic_unbound_tensor=False,
         ):
-            update_tensor_lifetime(node, spec, node_idx)
+            update_tensor_lifetime(node, spec, node_idx, max_node_idx, graph_signature)
             specs.add(spec)
     return specs
 
