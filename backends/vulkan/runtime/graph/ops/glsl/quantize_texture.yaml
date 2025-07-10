@@ -3,7 +3,6 @@ quantize_texture:
     IN_DTYPE: float
     OUT_DTYPE: int32
     MODE: per_tensor
-    SHAPE: tensor
   generate_variant_forall:
     IN_DTYPE:
       - VALUE: half
@@ -15,9 +14,6 @@ quantize_texture:
       - VALUE: int32
   shader_variants:
     - NAME: quantize_per_tensor_texture3d
-      MODE: per_tensor
-      SHAPE: scalar
-    - NAME: quantize_per_tensor_tensor_texture3d
       MODE: per_tensor
     - NAME: quantize_per_token_texture3d
       MODE: per_token

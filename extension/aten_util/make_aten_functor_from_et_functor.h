@@ -154,51 +154,41 @@ struct type_convert<
   at::Tensor converted_;
 };
 
-// Optionals: ETen to ATen.
-template <class F, class T>
-struct type_convert<torch::executor::optional<F>, std::optional<T>> final {
- public:
-  torch::executor::optional<F> val;
-  std::unique_ptr<struct type_convert<F, T>> convert_struct;
-  explicit type_convert(torch::executor::optional<F> value) : val(value) {}
-  std::optional<T> call() {
-    if (val.has_value()) {
-      convert_struct = std::make_unique<struct type_convert<F, T>>(
-          type_convert<F, T>(val.value()));
-      return std::optional<T>(convert_struct->call());
-    } else {
-      return std::optional<T>();
-    }
-  }
-};
-
-// Specific specialization for optional tensor conversion:
-// std::optional<at::Tensor> to
-// std::optional<executorch::runtime::etensor::Tensor>
-template <>
+// Optionals: ATen to ETen.
+template <class AOptional, class EOptional>
 struct type_convert<
-    const std::optional<at::Tensor>&,
-    const std::optional<torch::executor::Tensor>&>
+    AOptional,
+    EOptional,
+    std::enable_if_t<
+        std::is_same_v<
+            typename remove_const_ref<AOptional>::type,
+            std::optional<
+                typename remove_const_ref<AOptional>::type::value_type>> &&
+        std::is_same_v<
+            typename remove_const_ref<EOptional>::type,
+            torch::executor::optional<
+                typename remove_const_ref<EOptional>::type::value_type>>>>
     final {
  public:
-  const std::optional<at::Tensor>& val;
-  std::unique_ptr<
-      struct type_convert<const at::Tensor&, const torch::executor::Tensor&>>
+  typename remove_const_ref<AOptional>::type val;
+  std::unique_ptr<struct type_convert<
+      typename remove_const_ref<AOptional>::type::value_type,
+      typename remove_const_ref<EOptional>::type::value_type>>
       convert_struct;
-  explicit type_convert(const std::optional<at::Tensor>& value) : val(value) {}
-  const std::optional<torch::executor::Tensor>& call() {
-    static std::optional<torch::executor::Tensor> result;
+  explicit type_convert(AOptional value) : val(value) {}
+  typename remove_const_ref<EOptional>::type call() {
     if (val.has_value()) {
       convert_struct = std::make_unique<struct type_convert<
-          const at::Tensor&,
-          const torch::executor::Tensor&>>(
-          type_convert<const at::Tensor&, const torch::executor::Tensor&>(
+          typename remove_const_ref<AOptional>::type::value_type,
+          typename remove_const_ref<EOptional>::type::value_type>>(
+          type_convert<
+              typename remove_const_ref<AOptional>::type::value_type,
+              typename remove_const_ref<EOptional>::type::value_type>(
               val.value()));
-      result = std::optional<torch::executor::Tensor>(convert_struct->call());
+      return typename remove_const_ref<EOptional>::type(convert_struct->call());
     } else {
-      result = std::optional<torch::executor::Tensor>();
+      return typename remove_const_ref<EOptional>::type();
     }
-    return result;
   }
 };
 
