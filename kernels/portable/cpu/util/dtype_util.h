@@ -73,6 +73,16 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_intb(const Tensor& t) {
 }
 
 template <typename CTYPE_COMPUTE, const char* op_name>
+load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_bool(const Tensor& t) {
+  ET_CHECK_MSG(
+      t.scalar_type() == ScalarType::Bool,
+      "Unhandled dtype %s for %s",
+      ::executorch::runtime::toString(t.scalar_type()),
+      op_name);
+  return internal::load_and_convert<CTYPE_COMPUTE, bool>;
+}
+
+template <typename CTYPE_COMPUTE, const char* op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_bool_or_byte(
     const Tensor& t) {
   CTYPE_COMPUTE (*result)(const void*) = nullptr;
@@ -166,6 +176,17 @@ store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn_intb(
 }
 
 template <typename CTYPE_COMPUTE, const char* op_name>
+store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn_bool(
+    const Tensor& t) {
+  ET_CHECK_MSG(
+      t.scalar_type() == ScalarType::Bool,
+      "Unhandled dtype %s for %s",
+      ::executorch::runtime::toString(t.scalar_type()),
+      op_name);
+  return internal::convert_and_store<bool, CTYPE_COMPUTE>;
+}
+
+template <typename CTYPE_COMPUTE, const char* op_name>
 store_compute_to_tensor_fn<CTYPE_COMPUTE>
 get_store_compute_to_tensor_fn_bool_or_byte(const Tensor& t) {
   void (*result)(CTYPE_COMPUTE, void*) = nullptr;
@@ -219,6 +240,7 @@ enum class SupportedTensorDtypes {
   REALHBF16,
   FLOATHBF16,
   INTB,
+  BOOL,
   BOOL_OR_BYTE,
   // DEPRECATED: not likely to be correct; use SAME_AS_COMMON.
   SAME_AS_COMPUTE,
@@ -240,6 +262,8 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_impl(
       return get_load_to_compute_fn_realhbf16<CTYPE_COMPUTE, op_name>(t);
     case SupportedTensorDtypes::INTB:
       return get_load_to_compute_fn_intb<CTYPE_COMPUTE, op_name>(t);
+    case SupportedTensorDtypes::BOOL:
+      return get_load_to_compute_fn_bool<CTYPE_COMPUTE, op_name>(t);
     case SupportedTensorDtypes::BOOL_OR_BYTE:
       return get_load_to_compute_fn_bool_or_byte<CTYPE_COMPUTE, op_name>(t);
     case SupportedTensorDtypes::SAME_AS_COMPUTE:
@@ -271,6 +295,8 @@ store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn(
           t);
     case SupportedTensorDtypes::INTB:
       return get_store_compute_to_tensor_fn_intb<CTYPE_COMPUTE, op_name>(t);
+    case SupportedTensorDtypes::BOOL:
+      return get_store_compute_to_tensor_fn_bool<CTYPE_COMPUTE, op_name>(t);
     case SupportedTensorDtypes::BOOL_OR_BYTE:
       return get_store_compute_to_tensor_fn_bool_or_byte<
           CTYPE_COMPUTE,
@@ -318,12 +344,14 @@ bool check_tensor_dtype(
     const ScalarType compute_type);
 
 /// Return the one output type we are willing to emit specialized code
-/// to handle, given a compute type of CTYPE_COMMON and supported
+/// to handle, given a compute type of CTYPE_COMPUTE and supported
 /// output types of out_dtypes.
 template <typename CTYPE_COMPUTE>
 inline constexpr ScalarType specialized_output_scalar_type(
     SupportedTensorDtypes out_dtypes) {
   switch (out_dtypes) {
+    case SupportedTensorDtypes::BOOL:
+      return ScalarType::Bool;
     case SupportedTensorDtypes::BOOL_OR_BYTE:
       return ScalarType::Bool;
     case SupportedTensorDtypes::REALHBBF16:

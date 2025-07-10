@@ -89,12 +89,46 @@ def get_tosa_compile_spec_unbuilt(
     return compile_spec_builder
 
 
+def get_vgf_compile_spec(
+    tosa_spec: str | TosaSpecification,
+    compiler_flags: Optional[str] = "",
+    custom_path=None,
+) -> list[CompileSpec]:
+    """
+    Default compile spec for VGF tests.
+    """
+    return get_vgf_compile_spec_unbuilt(tosa_spec, compiler_flags, custom_path).build()
+
+
+def get_vgf_compile_spec_unbuilt(
+    tosa_spec: str | TosaSpecification,
+    compiler_flags: Optional[str] = "",
+    custom_path=None,
+) -> ArmCompileSpecBuilder:
+    """Get the ArmCompileSpecBuilder for the default VGF tests, to modify
+    the compile spec before calling .build() to finalize it.
+    """
+    if not custom_path:
+        custom_path = maybe_get_tosa_collate_path()
+
+    if custom_path is not None:
+        os.makedirs(custom_path, exist_ok=True)
+    compile_spec_builder = (
+        ArmCompileSpecBuilder()
+        .vgf_compile_spec(tosa_spec, compiler_flags)
+        .dump_intermediate_artifacts_to(custom_path)
+    )
+
+    return compile_spec_builder
+
+
 def get_u55_compile_spec(
     macs: int = 128,
     system_config: str = "Ethos_U55_High_End_Embedded",
     memory_mode: str = "Shared_Sram",
     extra_flags: str = "--debug-force-regor --output-format=raw",
     custom_path: Optional[str] = None,
+    config: Optional[str] = "Arm/vela.ini",
 ) -> list[CompileSpec]:
     """
     Compile spec for Ethos-U55.
@@ -105,6 +139,7 @@ def get_u55_compile_spec(
         memory_mode=memory_mode,
         extra_flags=extra_flags,
         custom_path=custom_path,
+        config=config,
     ).build()
 
 
@@ -114,6 +149,7 @@ def get_u85_compile_spec(
     memory_mode="Shared_Sram",
     extra_flags="--output-format=raw",
     custom_path=None,
+    config: Optional[str] = "Arm/vela.ini",
 ) -> list[CompileSpec]:
     """
     Compile spec for Ethos-U85.
@@ -124,6 +160,7 @@ def get_u85_compile_spec(
         memory_mode=memory_mode,
         extra_flags=extra_flags,
         custom_path=custom_path,
+        config=config,
     ).build()
 
 
@@ -133,6 +170,7 @@ def get_u55_compile_spec_unbuilt(
     memory_mode: str,
     extra_flags: str,
     custom_path: Optional[str],
+    config: Optional[str],
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -151,6 +189,7 @@ def get_u55_compile_spec_unbuilt(
             system_config=system_config,
             memory_mode=memory_mode,
             extra_flags=extra_flags,
+            config_ini=config,
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
@@ -163,6 +202,7 @@ def get_u85_compile_spec_unbuilt(
     memory_mode: str,
     extra_flags: str,
     custom_path: Optional[str],
+    config: Optional[str],
 ) -> list[CompileSpec]:
     """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -180,29 +220,11 @@ def get_u85_compile_spec_unbuilt(
             system_config=system_config,
             memory_mode=memory_mode,
             extra_flags=extra_flags,
+            config_ini=config,
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
     return compile_spec  # type: ignore[return-value]
-
-
-SkipIfNoCorstone300 = pytest.mark.skipif(
-    not corstone300_installed() or not arm_executor_runner_exists("corstone-300"),
-    reason="Did not find Corstone-300 FVP or executor_runner on path",
-)
-"""
-TO BE DEPRECATED - Use XfailIfNoCorstone300 instead
-Skips a test if Corsone300 FVP is not installed, or if the executor runner is not built
-"""
-
-SkipIfNoCorstone320 = pytest.mark.skipif(
-    not corstone320_installed() or not arm_executor_runner_exists("corstone-320"),
-    reason="Did not find Corstone-320 FVP or executor_runner on path",
-)
-"""
-TO BE DEPRECATED - Use XfailIfNoCorstone320 instead
-Skips a test if Corsone320 FVP is not installed, or if the executor runner is not built
-"""
 
 
 XfailIfNoCorstone300 = pytest.mark.xfail(

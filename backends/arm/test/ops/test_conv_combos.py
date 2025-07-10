@@ -36,6 +36,11 @@ class ComboBlockBottleneckResidual(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_add_Tensor",
     ]
 
+    test_data_BI = {
+        "per_channel_quant=True": True,
+        "per_channel_quant=False": False,
+    }
+
     def __init__(self):
         super().__init__()
         # (t, c, n, s) = (6, 96, 1, 1)
@@ -114,6 +119,18 @@ class ComboConvBatchnormRelu6(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
     ]
 
+    test_data_MI = {
+        "affine=True": True,
+        "affine=False": False,
+    }
+
+    test_data_BI = {
+        "affine=True,per_channel_quant=True": (True, True),
+        "affine=True,per_channel_quant=False": (True, False),
+        "affine=False,per_channel_quant=True": (False, True),
+        "affine=False,per_channel_quant=False": (False, False),
+    }
+
     def __init__(self, affine: bool):
         super().__init__()
         self.conv2d = torch.nn.Conv2d(
@@ -142,12 +159,20 @@ class ComboConvRelu6(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
     ]
 
-    test_data = {
+    test_data_MI = {
         "combo_conv_relu_2_x_4d": lambda: (2 * torch.randn(1, 3, 256, 256),),
         "combo_conv_relu_0_5_x_4d": lambda: (0.5 * torch.randn(1, 3, 256, 256),),
         "combo_conv_relu_4d": lambda: (torch.randn(1, 3, 256, 256),),
         "combo_conv_relu_neg_0_5_x_4d": lambda: (-0.5 * torch.randn(1, 3, 256, 256),),
         "combo_conv_relu_neg_2_x_4d": lambda: (-2 * torch.randn(1, 3, 256, 256),),
+    }
+
+    # Generate a new test set paired with per_channel_quant=True/False.
+    test_data_BI = {
+        # test_name: (input, per_channel_quant)
+        f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
+        for (k, v) in test_data_MI.items()
+        for q in [True, False]
     }
 
     def __init__(self):
@@ -169,11 +194,19 @@ class ComboConvAvgPool2d(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default",
     ]
 
-    test_data = {
+    test_data_MI = {
         "combo_conv_avgpool_20_x_4d": lambda: (20 * torch.randn(1, 3, 64, 32),),
         "combo_conv_avgpool_4d": lambda: (torch.randn(1, 3, 100, 200),),
         "combo_conv_avgpool_5_x_4d_randn": lambda: (5 * torch.randn(1, 3, 256, 256),),
         "combo_conv_avgpool_2_x_4d": lambda: (torch.rand(1, 3, 512, 128),),
+    }
+
+    # Generate a new test set paired with per_channel_quant=True/False.
+    test_data_BI = {
+        # test_name: (input, per_channel_quant)
+        f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
+        for (k, v) in test_data_MI.items()
+        for q in [True, False]
     }
 
     def __init__(self):
@@ -196,7 +229,6 @@ class ComboConvAvgPool2d(torch.nn.Module):
 
 def test_convolution_2d_tosa_MI_meandim():
     model = ComboConv2dMeandim()
-
     pipeline = TosaPipelineMI[input_t1](
         model,
         model.get_inputs(),
@@ -246,11 +278,11 @@ def test_convolution_2d_u85_BI_meandim():
 ##############################
 ## Conv + batch norm + relu ##
 ##############################
-affine_params = {"affine": True, "_no_affine": False}
 
 
-@common.parametrize("affine", affine_params)
-def test_convolution_2d_tosa_MI_batchnorm_relu6(affine):
+@common.parametrize("test_data", ComboConvBatchnormRelu6.test_data_MI)
+def test_convolution_2d_tosa_MI_batchnorm_relu6(test_data):
+    affine = test_data
     model = ComboConvBatchnormRelu6(affine)
     pipeline = TosaPipelineMI[input_t1](
         model,
@@ -262,21 +294,25 @@ def test_convolution_2d_tosa_MI_batchnorm_relu6(affine):
 
 
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
-@common.parametrize("affine", affine_params)
-def test_convolution_2d_tosa_BI_batchnorm_relu6(affine):
+@common.parametrize("test_data", ComboConvBatchnormRelu6.test_data_BI)
+def test_convolution_2d_tosa_BI_batchnorm_relu6(test_data):
+    affine, per_channel_quantization = test_data
     model = ComboConvBatchnormRelu6(affine)
     pipeline = TosaPipelineBI[input_t1](
         model,
         model.get_inputs(),
         aten_op=[],
         exir_op=ComboConvBatchnormRelu6.edge_op_list,
+        per_channel_quantization=per_channel_quantization,
+        qtol=1,
     )
     pipeline.run()
 
 
-@common.parametrize("affine", affine_params)
+@common.parametrize("test_data", ComboConvBatchnormRelu6.test_data_BI)
 @common.XfailIfNoCorstone300
-def test_convolution_2d_u55_BI_batchnorm_relu6(affine):
+def test_convolution_2d_u55_BI_batchnorm_relu6(test_data):
+    affine, per_channel_quantization = test_data
     model = ComboConvBatchnormRelu6(affine)
     pipeline = EthosU55PipelineBI[input_t1](
         model,
@@ -284,13 +320,15 @@ def test_convolution_2d_u55_BI_batchnorm_relu6(affine):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
 
-@common.parametrize("affine", affine_params)
+@common.parametrize("test_data", ComboConvBatchnormRelu6.test_data_BI)
 @common.XfailIfNoCorstone320
-def test_convolution_2d_u85_BI_batchnorm_relu6(affine):
+def test_convolution_2d_u85_BI_batchnorm_relu6(test_data):
+    affine, per_channel_quantization = test_data
     model = ComboConvBatchnormRelu6(affine)
     pipeline = EthosU85PipelineBI[input_t1](
         model,
@@ -298,6 +336,7 @@ def test_convolution_2d_u85_BI_batchnorm_relu6(affine):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
@@ -307,8 +346,8 @@ def test_convolution_2d_u85_BI_batchnorm_relu6(affine):
 ##################
 
 
-@common.parametrize("test_data", ComboConvRelu6.test_data)
-def test_convolution_2d_tosa_MI_relu6(test_data: torch.Tensor):
+@common.parametrize("test_data", ComboConvRelu6.test_data_MI)
+def test_convolution_2d_tosa_MI_relu6(test_data):
     model = ComboConvRelu6()
     pipeline = TosaPipelineMI[input_t1](
         model,
@@ -320,42 +359,48 @@ def test_convolution_2d_tosa_MI_relu6(test_data: torch.Tensor):
 
 
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
-@common.parametrize("test_data", ComboConvRelu6.test_data)
-def test_convolution_2d_tosa_BI_relu6(test_data: torch.Tensor):
+@common.parametrize("test_data", ComboConvRelu6.test_data_BI)
+def test_convolution_2d_tosa_BI_relu6(test_data):
+    input, per_channel_quantization = test_data()
     model = ComboConvRelu6()
     pipeline = TosaPipelineBI[input_t1](
         model,
-        test_data(),
+        input,
         aten_op=[],
         exir_op=ComboConvRelu6.edge_op_list,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", ComboConvRelu6.test_data)
+@common.parametrize("test_data", ComboConvRelu6.test_data_BI)
 @common.XfailIfNoCorstone300
-def test_convolution_2d_u55_BI_relu6(test_data: torch.Tensor):
+def test_convolution_2d_u55_BI_relu6(test_data):
+    input, per_channel_quantization = test_data()
     model = ComboConvRelu6()
     pipeline = EthosU55PipelineBI[input_t1](
         model,
-        test_data(),
+        input,
         aten_ops=[],
         exir_ops=ComboConvRelu6.edge_op_list,
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", ComboConvRelu6.test_data)
+@common.parametrize("test_data", ComboConvRelu6.test_data_BI)
 @common.XfailIfNoCorstone320
-def test_convolution_2d_u85_BI_relu6(test_data: torch.Tensor):
+def test_convolution_2d_u85_BI_relu6(test_data):
+    input, per_channel_quantization = test_data()
     model = ComboConvRelu6()
     pipeline = EthosU85PipelineBI[input_t1](
         model,
-        test_data(),
+        input,
         aten_ops=[],
         exir_ops=ComboConvRelu6.edge_op_list,
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
@@ -374,21 +419,26 @@ def test_convolution_2d_tosa_MI_block_bottleneck():
     pipeline.run()
 
 
+@common.parametrize("test_data", ComboBlockBottleneckResidual.test_data_BI)
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
-def test_convolution_2d_tosa_BI_block_bottleneck():
+def test_convolution_2d_tosa_BI_block_bottleneck(test_data):
+    per_channel_quantization = test_data
     model = ComboBlockBottleneckResidual()
     pipeline = TosaPipelineBI[input_t1](
         model,
         model.get_inputs(),
         aten_op=[],
         exir_op=ComboBlockBottleneckResidual.edge_op_list,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.change_args("run_method_and_compare_outputs", model.get_inputs(), qtol=1)
     pipeline.run()
 
 
+@common.parametrize("test_data", ComboBlockBottleneckResidual.test_data_BI)
 @common.XfailIfNoCorstone300
-def test_convolution_2d_u55_BI_block_bottleneck():
+def test_convolution_2d_u55_BI_block_bottleneck(test_data):
+    per_channel_quantization = test_data
     model = ComboBlockBottleneckResidual()
     pipeline = EthosU55PipelineBI[input_t1](
         model,
@@ -396,12 +446,15 @@ def test_convolution_2d_u55_BI_block_bottleneck():
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
 
+@common.parametrize("test_data", ComboBlockBottleneckResidual.test_data_BI)
 @common.XfailIfNoCorstone320
-def test_convolution_2d_u85_BI_block_bottleneck():
+def test_convolution_2d_u85_BI_block_bottleneck(test_data):
+    per_channel_quantization = test_data
     model = ComboBlockBottleneckResidual()
     pipeline = EthosU85PipelineBI[input_t1](
         model,
@@ -409,6 +462,7 @@ def test_convolution_2d_u85_BI_block_bottleneck():
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
@@ -418,8 +472,8 @@ def test_convolution_2d_u85_BI_block_bottleneck():
 ######################
 
 
-@common.parametrize("test_data", ComboConvAvgPool2d.test_data)
-def test_convolution_2d_tosa_MI_avgpool2d(test_data: torch.Tensor):
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data_MI)
+def test_convolution_2d_tosa_MI_avgpool2d(test_data):
     model = ComboConvAvgPool2d()
     pipeline = TosaPipelineMI[input_t1](
         model,
@@ -431,41 +485,47 @@ def test_convolution_2d_tosa_MI_avgpool2d(test_data: torch.Tensor):
 
 
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
-@common.parametrize("test_data", ComboConvAvgPool2d.test_data)
-def test_convolution_2d_tosa_BI_avgpool2d(test_data: torch.Tensor):
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data_BI)
+def test_convolution_2d_tosa_BI_avgpool2d(test_data):
+    input, per_channel_quantization = test_data()
     model = ComboConvAvgPool2d()
     pipeline = TosaPipelineBI[input_t1](
         model,
-        test_data(),
+        input,
         aten_op=[],
         exir_op=ComboConvAvgPool2d.edge_op_list,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", ComboConvAvgPool2d.test_data)
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data_BI)
 @common.XfailIfNoCorstone300
-def test_convolution_2d_u55_BI_avgpool2d(test_data: torch.Tensor):
+def test_convolution_2d_u55_BI_avgpool2d(test_data):
+    input, per_channel_quantization = test_data()
     model = ComboConvAvgPool2d()
     pipeline = EthosU55PipelineBI[input_t1](
         model,
-        test_data(),
+        input,
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", ComboConvAvgPool2d.test_data)
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data_BI)
 @common.XfailIfNoCorstone320
-def test_convolution_2d_u85_BI_avgpool2d(test_data: torch.Tensor):
+def test_convolution_2d_u85_BI_avgpool2d(test_data):
+    input, per_channel_quantization = test_data()
     model = ComboConvAvgPool2d()
     pipeline = EthosU85PipelineBI[input_t1](
         model,
-        test_data(),
+        input,
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()

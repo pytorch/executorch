@@ -44,13 +44,13 @@ def get_vec_deps():
                 "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:iphoneos": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:macos-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:android-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "DEFAULT": [],
         })
@@ -69,15 +69,14 @@ def get_vec_cxx_preprocessor_flags():
     return preprocessor_flags
 
 def get_vec_fbcode_preprocessor_flags():
-    preprocessor_flags = [
-        "-DCPU_CAPABILITY_AVX2",
-    ]
+    preprocessor_flags = select({
+        "ovr_config//cpu/x86:avx2": [
+            "-DCPU_CAPABILITY_AVX2",
+        ],
+        "DEFAULT": [],
+    })
     return preprocessor_flags
 
-# Currently, having a dependency on fbsource//third-party/sleef:sleef may cause
-# duplicate symbol errors when linking fbcode targets in opt mode that also
-# depend on ATen. This is because ATen accesses sleef via the third-party folder
-# in caffe2 (caffe2/third-party//sleef:sleef).
 # TODO(ssjia): Enable -DCPU_CAPABILITY_AVX2 in fbcode, which requires sleef.
 def define_libs():
     runtime.cxx_library(
@@ -104,7 +103,7 @@ def define_libs():
                 (
                     DEVSERVER_PLATFORM_REGEX,
                     [
-                        "fbsource//third-party/sleef:sleef_arm",
+                        "fbsource//third-party/sleef:sleef",
                     ],
                 ),
             ],
@@ -113,7 +112,7 @@ def define_libs():
             (
                 "^android-arm64.*$",
                 [
-                    "fbsource//third-party/sleef:sleef_arm",
+                    "fbsource//third-party/sleef:sleef",
                 ],
             ),
         ],

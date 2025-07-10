@@ -48,8 +48,7 @@ Tensor& elu_out(
         CTYPE,
         op_name,
         utils::SupportedTensorDtypes::SAME_AS_COMMON>(
-        [negcoef, math_scale, math_input_scale](const auto x) {
-          // TODO: rewrite this to be vectorization-capable.
+        [negcoef, math_scale, math_input_scale](const CTYPE x) {
           return MathT(x) <= MathT(0)
               ? std::expm1(MathT(x) * math_input_scale) * negcoef
               : MathT(x) * math_scale;

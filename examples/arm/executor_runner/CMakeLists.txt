@@ -11,6 +11,8 @@ option(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_METHOD_
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
 option(ET_ATOL "Set atol to use for BundleIO testing" OFF)
 option(ET_RTOL "Set rtol to use for BundleIO testing" OFF)
+option(ET_DUMP_INPUT "Dump input in log" OFF)
+option(ET_DUMP_OUTPUT "Dump output in log" ON)
 option(FETCH_ETHOS_U_CONTENT "Fetch ethos_u dependencies instead of relying on pre-downloads" ON)
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
@@ -52,11 +54,11 @@ if(FETCH_ETHOS_U_CONTENT)
   file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
 
   include(FetchContent)
-  set(ethos_u_base_rev "25.02")
+  set(ethos_u_base_tag "25.05")
   FetchContent_Declare(
     ethos_u
     GIT_REPOSITORY https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
-    GIT_TAG ${ethos_u_base_rev}
+    GIT_TAG ${ethos_u_base_tag}
     SOURCE_DIR ${ETHOS_SDK_PATH}
     BINARY_DIR ${ETHOS_SDK_PATH}
     SUBBUILD_DIR ${ETHOS_SDK_PATH}/../ethos_u-subbuild
@@ -65,17 +67,31 @@ if(FETCH_ETHOS_U_CONTENT)
 
   FetchContent_MakeAvailable(ethos_u)
 
+  # Patch manifest to remove unused projects.
+  set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
+  set(ethos_u_base_rev "24950bd4381b6c51db0349a229f8ba86b8e1093f")
+  execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH} ${ethos_u_base_rev} ${patch_dir}"
+    WORKING_DIRECTORY ${ET_DIR_PATH}
+    COMMAND_ECHO STDOUT
+  )
+
   # Get ethos_u externals only if core_platform folder does not already exist.
   if(NOT EXISTS "${ETHOS_SDK_PATH}/core_platform")
-    execute_process(COMMAND ${PYTHON_EXECUTABLE} fetch_externals.py -c ${ethos_u_base_rev}.json fetch
+    execute_process(COMMAND ${PYTHON_EXECUTABLE} fetch_externals.py -c ${ethos_u_base_tag}.json fetch
                     WORKING_DIRECTORY ${ETHOS_SDK_PATH}
                     COMMAND_ECHO STDOUT
     )
   endif()
 
+  # Patch core_software to remove unused projects.
+  set(core_software_base_rev "55904c3da73c876c6d6c58290938ae217a8b94bd")
+  execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_software ${core_software_base_rev} ${patch_dir}"
+    WORKING_DIRECTORY ${ET_DIR_PATH}
+    COMMAND_ECHO STDOUT
+  )
+
   # Always patch the core_platform repo since this is fast enough.
   set(core_platform_base_rev "1916a9c984819c35b19c9e5c4c80d47e4e866420")
-  set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
   execute_process(COMMAND bash -c "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
     WORKING_DIRECTORY ${ET_DIR_PATH}
     COMMAND_ECHO STDOUT
@@ -648,6 +664,14 @@ endif()
 
 if(ET_RTOL)
   target_compile_definitions(arm_executor_runner PUBLIC ET_RTOL=${ET_RTOL})
+endif()
+
+if(ET_DUMP_INPUT)
+  target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_INPUT)
+endif()
+
+if(ET_DUMP_OUTPUT)
+  target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_OUTPUT)
 endif()
 
 # Fixup compilation of retarget.c

@@ -46,6 +46,16 @@ _DYNAMIC_OPS = {
     "dequantize_per_token.default",
 }
 
+IS_IMPLICIT_Q_DQ_TAG = "IS_IMPLICIT_Q_DQ_TAG"
+
+
+def tag_as_implicit_q_dq(node: torch.fx.Node) -> None:
+    node.meta[IS_IMPLICIT_Q_DQ_TAG] = True
+
+
+def is_tagged_as_implicit_q_dq(node: torch.fx.Node) -> bool:
+    return node.meta.get(IS_IMPLICIT_Q_DQ_TAG, False)
+
 
 def is_dynamic_qdq(node: torch.fx.Node) -> bool:
     # check has dynamic qdq name
@@ -222,9 +232,6 @@ def extract_qdq_affine_op_args_for_decomposed_ops(node: torch.fx.Node):
 
     # add target_dtype_node after quant_min/quant_max
     args.append(target_dtype)
-    # zero_point_domain
-    if len(node.args) > 7 and node.args[7] != "INT":
-        return None, None
 
     if is_per_channel_group(node):
         block_sizes = cast(list[int], node.args[1])

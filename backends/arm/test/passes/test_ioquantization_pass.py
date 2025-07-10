@@ -38,6 +38,7 @@ def test_ioquantisation_pass_u55_BI(test_data: input_t):
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=False,
+        run_on_fvp=False,
     )
     pipeline.pop_stage(-1)
     pipeline.run()

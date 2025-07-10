@@ -40,6 +40,8 @@ class DispatchNode : public ExecuteNode {
 
   ~DispatchNode() override = default;
 
+  void prepare_pipelines(ComputeGraph* graph) override;
+
   void encode(ComputeGraph* graph) override;
 
  protected:
@@ -49,6 +51,12 @@ class DispatchNode : public ExecuteNode {
   const vkapi::ParamsBindList params_;
   const vkapi::SpecVarList spec_vars_;
   const std::vector<PushConstantDataInfo> push_constants_;
+
+  // For push constants
+  std::array<uint8_t, kMaxPushConstantSize> push_constants_data_{};
+  uint32_t push_constants_offset_ = 0;
+
+  void write_push_constant_data();
 
  public:
   operator bool() const {

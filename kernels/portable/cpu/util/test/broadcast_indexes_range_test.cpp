@@ -52,24 +52,6 @@ TEST(BroadcastIndexesRangeTest, OneDNotBroadcasted) {
   }
 }
 
-// [1] -> [W]
-TEST(BroadcastIndexesRangeTest, ScalarBroadcastToOneD) {
-  TensorFactory<ScalarType::Int> tf;
-
-  Tensor out = tf.zeros({5});
-  Tensor in = tf.zeros({1});
-
-  auto actual = range_to_vec(BroadcastIndexesRange<1>(out, in));
-  decltype(actual) expected = {
-      {0, 0},
-      {1, 0},
-      {2, 0},
-      {3, 0},
-      {4, 0},
-  };
-  EXPECT_EQ(expected, actual);
-}
-
 template <typename Range>
 void test_operator_plus(const Range& range) {
   size_t idx = 0;

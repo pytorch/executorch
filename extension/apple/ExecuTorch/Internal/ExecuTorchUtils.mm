@@ -13,23 +13,22 @@ using namespace aten;
 using namespace runtime;
 
 ScalarType deduceType(NSNumber *number) {
+  ET_CHECK(number);
   auto type = [number objCType][0];
   type = (type >= 'A' && type <= 'Z') ? type + ('a' - 'A') : type;
-  if (type == 'c') {
-    return ScalarType::Byte;
-  } else if (type == 's') {
-    return ScalarType::Short;
-  } else if (type == 'i') {
-    return ScalarType::Int;
-  } else if (type == 'q' || type == 'l') {
-    return ScalarType::Long;
-  } else if (type == 'f') {
-    return ScalarType::Float;
-  } else if (type == 'd') {
-    return ScalarType::Double;
+  switch(type) {
+    case 'c': return ScalarType::Byte;
+    case 's': return ScalarType::Short;
+    case 'i': return ScalarType::Int;
+    case 'q':
+    case 'l': return ScalarType::Long;
+    case 'f': return ScalarType::Float;
+    case 'd': return ScalarType::Double;
+    default: {
+      ET_CHECK_MSG(false, "Unsupported type: %c", type);
+      return ScalarType::Undefined;
+    }
   }
-  ET_CHECK_MSG(false, "Unsupported type: %c", type);
-  return ScalarType::Undefined;
 }
 
 } // namespace executorch::extension::utils

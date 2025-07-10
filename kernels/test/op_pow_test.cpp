@@ -54,6 +54,19 @@ TEST_F(OpPowTest, TensorTensorSanityCheck) {
   EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16, 16, 16, 16}));
 }
 
+TEST_F(OpPowTest, TensorTensorSanityCheckLargerNoBroadcasting) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor self = tf.full({18}, 2);
+  Tensor exp = tf.full({18}, 4);
+  Tensor out = tf.zeros({18});
+  Tensor out_expected = tf.full({18}, 16);
+
+  Tensor ret = op_pow_tensor_tensor_out(self, exp, out);
+
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(out_expected, out);
+}
+
 TEST_F(OpPowTest, TensorTensorSanityCheck2) {
   TensorFactory<ScalarType::Float> tf1;
   TensorFactory<ScalarType::Int> tf2;

@@ -292,6 +292,16 @@ class XNNCeiling(XNNNode1x1):
 
 
 @dataclass
+class XNNExp(XNNNode1x1):
+    pass
+
+
+@dataclass
+class XNNGelu(XNNNode1x1):
+    pass
+
+
+@dataclass
 class XNNHardswish(XNNNode1x1):
     pass
 
@@ -311,6 +321,11 @@ class XNNLeakyReLU:
 
 @dataclass
 class XNNLog(XNNNode1x1):
+    pass
+
+
+@dataclass
+class XNNTanh(XNNNode1x1):
     pass
 
 
@@ -385,6 +400,8 @@ XNodeUnion = Union[
     XNNBatchMatrixMultiply,
     XNNReciprocalSquareRoot,
     XNNLog,
+    XNNGelu,
+    XNNTanh,
 ]
 
 
@@ -413,12 +430,23 @@ class XNNDatatype(IntEnum):
     xnn_datatype_qcint4 = 8
     xnn_datatype_qdint8 = 9
     xnn_datatype_qbint4 = 10
+    xnn_datatype_qpint8 = 11
+    xnn_datatype_int32 = 12
+    xnn_datatype_pfp32 = 13
+    xnn_datatype_bf16 = 14
 
 
 @dataclass
 class PerChannelQuant:
     scale: List[float]
     channel_dim: int
+    scale_buffer_idx: int = -1
+    num_scales: int = -1
+
+
+@dataclass
+class Buffer:
+    storage: bytes
 
 
 @dataclass
@@ -426,6 +454,9 @@ class PerChannelGroupQuant:
     scale: List[float]
     channel_dim: int
     group_size: int = 1
+    scale_bf16: Optional[List[float]] = None
+    scale_buffer_idx: int = -1
+    num_scales: int = -1
 
 
 @dataclass
