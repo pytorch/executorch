@@ -634,7 +634,7 @@ jobs:
         gh pr checkout 93
         ${CONDA_RUN} python install_dev.py --skip_override_torch
         popd
-        pip list
+        ${CONDA_RUN} pip list
         echo "::endgroup::"
 
         MODELS=(smollm llama3)
