@@ -140,3 +140,36 @@ TEST_F(SharedPtrDataLoaderTest, OutOfBoundsLoadFails) {
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }
+
+// Unit test to check that SharedPtrDataLoader::load_into copies the correct data.
+TEST(SharedPtrDataLoaderTest, LoadIntoCopiesCorrectData) {
+  std::vector<uint8_t> source_data = {10, 20, 30, 40, 50};
+
+  // Wrap the source data in a shared_ptr without taking ownership.
+  auto data_ptr = std::shared_ptr<void>(source_data.data(), [](void*) {});
+  SharedPtrDataLoader loader(data_ptr, source_data.size());
+
+  uint8_t buffer[3] = {0};
+
+  // Load 3 bytes starting from offset 1 (expecting values 20, 30, 40).
+  auto err = loader.load_into(1, 3, DataLoader::SegmentInfo{}, buffer);
+
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(buffer[0], 20);
+  EXPECT_EQ(buffer[1], 30);
+  EXPECT_EQ(buffer[2], 40);
+}
+
+// Unit test to verify that SharedPtrDataLoader::load_into handles out-of-bounds requests.
+TEST(SharedPtrDataLoaderTest, LoadIntoRejectsOutOfBoundsAccess) {
+  std::vector<uint8_t> source_data = {10, 20, 30, 40, 50};
+  auto data_ptr = std::shared_ptr<void>(source_data.data(), [](void*) {});
+  SharedPtrDataLoader loader(data_ptr, source_data.size());
+
+  uint8_t buffer[3] = {0};
+
+  // This should fail because offset + size = 4 + 3 = 7 > 5 (size of data).
+  auto err = loader.load_into(4, 3, DataLoader::SegmentInfo{}, buffer);
+
+  EXPECT_EQ(err, Error::InvalidArgument);
+}
