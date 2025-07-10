@@ -180,8 +180,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F24909E42E206FD2001E5B69 /* kernels_portable_debug in Frameworks */,
-				F24909E32E206FD2001E5B69 /* kernels_portable in Frameworks */,
 				03CF43962CEC5CEC00C7113B /* backend_coreml in Frameworks */,
 				03CF43982CEC5CEC00C7113B /* backend_coreml_debug in Frameworks */,
 				03CF439A2CEC5CEC00C7113B /* backend_mps in Frameworks */,
