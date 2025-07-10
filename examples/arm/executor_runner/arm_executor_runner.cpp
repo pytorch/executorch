@@ -21,7 +21,6 @@
 
 #include "arm_memory_allocator.h"
 #include "arm_perf_monitor.h"
-#include "arm_memory_allocator.h"
 
 #if defined(ET_BUNDLE_IO)
 #include <executorch/devtools/bundled_program/bundled_program.h>
