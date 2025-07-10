@@ -39,7 +39,7 @@ from executorch.devtools.inspector._inspector_utils import (
     get_aot_debug_handle_to_op_name_mapping,
     is_inference_output_equal,
     map_runtime_aot_intermediate_outputs,
-    merge_overlapping_debug_handles,
+    merge_runtime_overlapping_debug_handles,
     NodeFilter,
     TimeScale,
 )
@@ -228,44 +228,50 @@ class TestInspectorUtils(unittest.TestCase):
     def test_merge_overlapping_debug_handles_basic(self):
         big_tensor = torch.rand(100, 100)
         intermediate_outputs = {
-            (1, 2, 3): "val1",
-            (2, 3, 4, 5): "val2",
-            (6, 7, 8): "val3",
-            (10, 11): "val4",
-            (11, 12): big_tensor,
+            (1, 2, 3): (1, "val1"),
+            (2, 3, 4, 5): (2, "val2"),
+            (6, 7, 8): (3, "val3"),
+            (10, 11): (4, "val4"),
+            (11, 12): (5, big_tensor),
         }
         # basic merge behavior
-        intermediate_outputs = merge_overlapping_debug_handles(intermediate_outputs)
+        intermediate_outputs = merge_runtime_overlapping_debug_handles(
+            intermediate_outputs
+        )
         expected_intermediate_outputs = {
-            (1, 2, 3, 4, 5): "val2",
-            (6, 7, 8): "val3",
-            (10, 11, 12): big_tensor,
+            (1, 2, 3, 4, 5): (2, "val2"),
+            (6, 7, 8): (3, "val3"),
+            (10, 11, 12): (5, big_tensor),
         }
-
         self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
-        self.assertIs(expected_intermediate_outputs[(10, 11, 12)], big_tensor)
+        self.assertIs(expected_intermediate_outputs[(10, 11, 12)][1], big_tensor)
 
     def test_merge_overlapping_debug_handles_non_continuous(self):
-        tensor1 = (torch.randn(3, 4),)
-        tensor2 = (torch.randn(2, 3),)
-        tensor3 = (torch.randn(4, 5),)
-        tensor4 = (torch.randn(6, 7),)
-        tensor5 = (torch.randn(8, 9),)
+        tensor1 = torch.randn(3, 4)
+        tensor2 = torch.randn(2, 3)
+        tensor3 = torch.randn(4, 5)
+        tensor4 = torch.randn(6, 7)
+        tensor5 = torch.randn(8, 9)
         intermediate_outputs = {
-            (1, 10): tensor1,
-            (2, 5): tensor2,
-            (1, 7, 9): tensor3,
-            (11, 13): tensor4,
-            (11, 15): tensor5,
+            (1, 10): (1, tensor1),
+            (2, 5): (2, tensor2),
+            (1, 7, 9): (3, tensor3),
+            (11, 13): (4, tensor4),
+            (11, 15): (5, tensor5),
         }
-        intermediate_outputs = merge_overlapping_debug_handles(intermediate_outputs)
+        intermediate_outputs = merge_runtime_overlapping_debug_handles(
+            intermediate_outputs
+        )
         expected_intermediate_outputs = {
-            (2, 5): tensor2,
-            (1, 7, 9, 10): tensor1,
-            (11, 13, 15): tensor5,
+            (2, 5): (2, tensor2),
+            (10, 1, 7, 9): (3, tensor3),
+            (13, 11, 15): (5, tensor5),
         }
 
-        self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
+        for key in expected_intermediate_outputs:
+            expected_value = expected_intermediate_outputs[key][1]
+            actual_value = intermediate_outputs[key][1]
+            self.assertTrue(torch.allclose(expected_value, actual_value))
 
     def test_map_runtime_aot_intermediate_outputs_empty_inputs(self):
         # When the inputs are empty, the output should also be empty

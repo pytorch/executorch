@@ -46,6 +46,7 @@ except ImportError:
 class ETRecordReservedFileNames(StrEnum):
     ETRECORD_IDENTIFIER = "ETRECORD_V0"
     EXPORTED_PROGRAM = "exported_program"
+    EXPORT_GRAPH_ID = "export_graph_id"
     EDGE_DIALECT_EXPORTED_PROGRAM = "edge_dialect_exported_program"
     ET_DIALECT_GRAPH_MODULE = "et_dialect_graph_module"
     DEBUG_HANDLE_MAP_NAME = "debug_handle_map"
@@ -57,6 +58,7 @@ class ETRecordReservedFileNames(StrEnum):
 @dataclass
 class ETRecord:
     exported_program: Optional[ExportedProgram] = None
+    export_graph_id: Optional[int] = None
     edge_dialect_program: Optional[ExportedProgram] = None
     graph_map: Optional[Dict[str, ExportedProgram]] = None
     _debug_handle_map: Optional[Dict[int, Union[int, List[int]]]] = None
@@ -238,12 +240,16 @@ def generate_etrecord(
     # is an etrecord when it's used later in the Developer Tools.
     etrecord_zip.writestr(ETRecordReservedFileNames.ETRECORD_IDENTIFIER, "")
 
+    # Calculate export_graph_id before modifying exported_program
+    export_graph_id = 0
+
     if exported_program is not None:
         # If multiple exported programs are provided, only saved forward method
         if isinstance(exported_program, dict) and "forward" in exported_program:
             exported_program = exported_program["forward"]
 
         if isinstance(exported_program, ExportedProgram):
+            export_graph_id = id(exported_program.graph)
             _handle_exported_program(
                 etrecord_zip,
                 ETRecordReservedFileNames.EXPORTED_PROGRAM,
@@ -308,6 +314,11 @@ def generate_etrecord(
         json.dumps(executorch_program.delegate_map),
     )
 
+    etrecord_zip.writestr(
+        ETRecordReservedFileNames.EXPORT_GRAPH_ID,
+        json.dumps(export_graph_id),
+    )
+
 
 def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
     """
@@ -344,6 +355,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
     edge_dialect_program = None
     reference_outputs = None
     representative_inputs = None
+    export_graph_id = 0
 
     serialized_exported_program_files = set()
     serialized_state_dict_files = set()
@@ -388,6 +400,10 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
             representative_inputs = pickle.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.REPRESENTATIVE_INPUTS)
             )
+        elif entry == ETRecordReservedFileNames.EXPORT_GRAPH_ID:
+            export_graph_id = json.loads(
+                etrecord_zip.read(ETRecordReservedFileNames.EXPORT_GRAPH_ID)
+            )
         else:
             if entry.endswith("state_dict"):
                 serialized_state_dict_files.add(entry)
@@ -421,4 +437,5 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
         _delegate_map=delegate_map,
         _reference_outputs=reference_outputs,
         _representative_inputs=representative_inputs,
+        export_graph_id=export_graph_id,
     )

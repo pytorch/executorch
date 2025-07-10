@@ -206,6 +206,7 @@ class TestETRecord(unittest.TestCase):
         """Test that exported program can be recorded and parsed back correctly."""
         captured_output, edge_output, et_output = self.get_test_model()
         original_exported_program = captured_output.exported_program
+        expected_graph_id = id(original_exported_program.graph)
 
         with tempfile.TemporaryDirectory() as tmpdirname:
             # Generate ETRecord with exported program
@@ -236,11 +237,15 @@ class TestETRecord(unittest.TestCase):
                 json.loads(json.dumps(et_output.debug_handle_map)),
             )
 
+            # Validate that export_graph_id matches the expected value
+            self.assertEqual(etrecord.export_graph_id, expected_graph_id)
+
     def test_etrecord_generation_with_exported_program_dict(self):
         """Test that exported program dictionary can be recorded and parsed back correctly."""
         captured_output, edge_output, et_output = self.get_test_model()
         original_exported_program = captured_output.exported_program
         exported_program_dict = {"forward": original_exported_program}
+        expected_graph_id = id(original_exported_program.graph)
 
         with tempfile.TemporaryDirectory() as tmpdirname:
             # Generate ETRecord with exported program dictionary
@@ -270,3 +275,6 @@ class TestETRecord(unittest.TestCase):
                 etrecord._debug_handle_map,
                 json.loads(json.dumps(et_output.debug_handle_map)),
             )
+
+            # Validate that export_graph_id matches the expected value
+            self.assertEqual(etrecord.export_graph_id, expected_graph_id)
