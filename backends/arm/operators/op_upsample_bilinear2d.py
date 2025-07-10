@@ -15,6 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import build_rescale, build_rescale_v0_80
@@ -41,7 +42,13 @@ class UpsampleBilinear2dVisitor_0_80(NodeVisitor):
         from tosa_tools.v0_80.tosa.ResizeMode import ResizeMode  # type: ignore
 
         validate_num_inputs(self.target, inputs, 4)
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         if inputs[0].shape is None or output.shape is None:
             raise ValueError("Only static shapes are supported")
@@ -49,15 +56,18 @@ class UpsampleBilinear2dVisitor_0_80(NodeVisitor):
         input_dtype = inputs[0].dtype
 
         # tosa_shape output is NHWC, take HW
-        input_size_yx = torch.tensor(
-            tosa_shape(inputs[0].shape, inputs[0].dim_order)[1:3]
-        )
-        # Ignore scale and size parameters, directly use the output size as
-        # we only support static shapes currently
-        output_size_yx = torch.tensor(tosa_shape(output.shape, output.dim_order)[1:3])
+        input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[
+            1:3
+        ]
+        output_size_yx = tuple([output.shape[dim] for dim in output.dim_order])[1:3]
 
+        # Get align_corners value from the node arguments.
+        align_corners = bool(node.args[2])
         scale_n_yx, scale_d_yx, offset_yx, border_yx = get_resize_parameters(
-            input_size_yx, output_size_yx, ResizeMode.NEAREST, align_corners=True
+            input_size_yx,
+            output_size_yx,
+            ResizeMode.NEAREST,
+            align_corners=align_corners,
         )
 
         def in_int16_range(x):
@@ -100,8 +110,8 @@ class UpsampleBilinear2dVisitor_0_80(NodeVisitor):
                 input_node=intermediate,
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=0,
+                input_zp=[0],
+                output_zp=[0],
                 is_double_round=False,
             )
         else:
@@ -131,7 +141,13 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         from tosa.RoundingMode import RoundingMode  # type: ignore
 
         validate_num_inputs(self.target, inputs, 4)
-        validate_same_dtype(self.target, [inputs[0], output])
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         if inputs[0].shape is None or output.shape is None:
             raise ValueError("Only static shapes are supported")
@@ -139,15 +155,18 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         input_dtype = inputs[0].dtype
 
         # tosa_shape output is NHWC, take HW
-        input_size_yx = torch.tensor(
-            tosa_shape(inputs[0].shape, inputs[0].dim_order)[1:3]
-        )
-        # Ignore scale and size parameters, directly use the output size as
-        # we only support static shapes currently
-        output_size_yx = torch.tensor(tosa_shape(output.shape, output.dim_order)[1:3])
+        input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[
+            1:3
+        ]
+        output_size_yx = tuple([output.shape[dim] for dim in output.dim_order])[1:3]
 
+        # Get align_corners value from the node arguments.
+        align_corners = bool(node.args[2])
         scale_n_yx, scale_d_yx, offset_yx, border_yx = get_resize_parameters(
-            input_size_yx, output_size_yx, ResizeMode.NEAREST, align_corners=True
+            input_size_yx,
+            output_size_yx,
+            ResizeMode.NEAREST,
+            align_corners=align_corners,
         )
 
         def in_int16_range(x):
@@ -213,8 +232,8 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
                 input_node=intermediate,
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=0,
+                input_zp=[0],
+                output_zp=[0],
                 rounding_mode=RoundingMode.SINGLE_ROUND,
             )
         else:

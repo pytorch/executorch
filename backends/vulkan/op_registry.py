@@ -230,6 +230,14 @@ def update_features(aten_op):
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         # Symbolic integer ops
         torch.ops.aten.sym_size.int,
+        operator.add,
+        operator.lt,
+        operator.gt,
+        operator.ge,
+        operator.le,
+        # Guard and assert ops
+        torch.ops.aten._assert_scalar.default,
+        torch.ops.aten.sym_constrain_range_for_size.default,
     ]
 )
 def register_ephemeral_op(features: OpFeatures):
@@ -500,7 +508,12 @@ def register_sdpa_with_kv_cache_op(features: OpFeatures):
     return features
 
 
-@update_features(["llama::update_cache", "llama::custom_sdpa"])
+@update_features(
+    [
+        "llama::update_cache",
+        "llama::custom_sdpa",
+    ]
+)
 def register_sdpa_ops(features: OpFeatures):
     features.resize_fn = False
     features.buffer_impl = False
@@ -520,12 +533,61 @@ def register_rotary_emb_op(features: OpFeatures):
     return features
 
 
-@update_features(exir_ops.edge.aten.view_copy.default)
-def register_view_op(features: OpFeatures):
+@update_features(
+    [
+        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.permute.default,
+        exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.view_copy.default,
+    ]
+)
+def register_view_ops(features: OpFeatures):
     features.texture_impl = TextureImplFeatures(
         valid_packed_dims=all_packed_dims,
     )
     features.resize_fn = True
+    return features
+
+
+# Fully featured transfer operators (i.e. operators that copy data from the input
+# tensor(s) to the output tensor(s)), which have memory layout agnostic implementations
+# for both texture and buffer storage types.
+@update_features(exir_ops.edge.aten.cat.default)
+def register_cat_op(features: OpFeatures):
+    features.texture_impl = TextureImplFeatures(
+        valid_packed_dims=all_packed_dims,
+    )
+    features.buffer_impl = True
+    features.resize_fn = True
+
+    def check_cat_node(node: torch.fx.Node) -> bool:
+        inputs = node.args[0]
+        if isinstance(inputs, (list, tuple)) and len(inputs) <= 3:
+            return True
+
+        return False
+
+    features.check_node_fn = check_cat_node
+
+    return features
+
+
+# Fully featured transfer operators (i.e. operators that copy data from the input
+# tensor(s) to the output tensor(s)), which have memory layout agnostic implementations
+# for both texture and buffer storage types.
+@update_features(
+    [
+        exir_ops.edge.aten.select_copy.int,
+        exir_ops.edge.aten.slice_copy.Tensor,
+    ]
+)
+def register_transfer_ops(features: OpFeatures):
+    features.texture_impl = TextureImplFeatures(
+        valid_packed_dims=all_packed_dims,
+    )
+    features.buffer_impl = True
+    features.resize_fn = True
+
     return features
 
 
@@ -538,10 +600,8 @@ def register_view_op(features: OpFeatures):
         # Indexing and lookup
         exir_ops.edge.aten.flip.default,
         exir_ops.edge.aten.index_select.default,
-        exir_ops.edge.aten.select_copy.int,
         # Tensor creation
         exir_ops.edge.aten.arange.start_step,
-        exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.full_like.default,
@@ -564,14 +624,10 @@ def register_ported_op(features: OpFeatures):
 # Ops ported from PyTorch Vulkan backend. These ops are in a separate registry becasue they support all packed dimensions
 @update_features(
     [
-        # Indexing and lookup
-        exir_ops.edge.aten.slice_copy.Tensor,
         # Shape Manipulation
         exir_ops.edge.aten.squeeze_copy.dims,
         exir_ops.edge.aten.unsqueeze_copy.default,
-        exir_ops.edge.aten.permute_copy.default,
         # Tensor combination
-        exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
         exir_ops.edge.aten.split.Tensor,
@@ -596,6 +652,32 @@ def register_ported_ops_with_prepacking(features: OpFeatures):
         valid_packed_dims={PackedDim.CHANNELS},
     )
     features.handles_own_prepacking = True
+    return features
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.native_group_norm.default,
+    ]
+)
+def register_native_group_norm(features: OpFeatures):
+    features.texture_impl = TextureImplFeatures(
+        valid_packed_dims={PackedDim.CHANNELS},
+    )
+    features.handles_own_prepacking = True
+
+    features.optimal_storage = [
+        VkStorageType.TEXTURE_3D,
+        VkStorageType.BUFFER,
+        VkStorageType.BUFFER,
+    ]
+
+    features.optimal_layout = [
+        VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+        VkMemoryLayout.TENSOR_WIDTH_PACKED,
+        VkMemoryLayout.TENSOR_WIDTH_PACKED,
+    ]
+
     return features
 
 

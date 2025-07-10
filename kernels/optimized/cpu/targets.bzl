@@ -42,9 +42,16 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "binary_ops",
+        srcs = ["binary_ops.cpp"],
         exported_headers = ["binary_ops.h"],
         visibility = ["//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS",],
-        exported_deps = ["//executorch/runtime/core:core"],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/optimized:libvec",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
     )
 
     runtime.cxx_library(
@@ -60,6 +67,7 @@ def define_common_targets():
         exported_headers = ["moments_utils.h"],
         visibility = ["//executorch/kernels/optimized/...", "@EXECUTORCH_CLIENTS",],
         exported_deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/kernels/optimized:libvec",
             "//executorch/kernels/optimized:libutils",
         ],

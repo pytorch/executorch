@@ -150,7 +150,7 @@ Tensor& quantize_per_tensor_out(
     break;
 
   switch (input.scalar_type()) {
-    ET_FORALL_FLOAT_TYPES(CALCULATE_FLOAT_TYPE);
+    ET_FORALL_FLOATH_TYPES(CALCULATE_FLOAT_TYPE);
     default:
       ET_CHECK_MSG(
           false,
@@ -294,9 +294,8 @@ Tensor& quantize_per_channel_out(
   const double* scale_data = scale.const_data_ptr<double>();
   const int64_t* zero_point_data = zero_point.const_data_ptr<int64_t>();
 
-  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>
-      optional_dim_list{
-          executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+  std::optional<executorch::aten::ArrayRef<int64_t>> optional_dim_list{
+      executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
 
   // Actual quantization logic
   // input, out are the input and output tensors
@@ -347,7 +346,7 @@ Tensor& quantize_per_channel_out(
     break;
 
   switch (input.scalar_type()) {
-    ET_FORALL_FLOAT_TYPES(CALCULATE_FLOAT_TYPE);
+    ET_FORALL_FLOATH_TYPES(CALCULATE_FLOAT_TYPE);
     default:
       ET_CHECK_MSG(
           false,

@@ -24,10 +24,10 @@
 namespace vkcompute {
 namespace api {
 
-Context::Context(size_t adapter_i, const ContextConfig& config)
+Context::Context(vkapi::Adapter* adapter, const ContextConfig& config)
     : config_(config),
       // Important handles
-      adapter_p_(vkapi::runtime()->get_adapter_p(adapter_i)),
+      adapter_p_(adapter),
       device_(adapter_p_->device_handle()),
       queue_(adapter_p_->request_queue()),
       // Resource pools
@@ -256,7 +256,7 @@ Context* context() {
           query_pool_config,
       };
 
-      return new Context(vkapi::runtime()->default_adapter_i(), config);
+      return new Context(vkapi::runtime()->get_adapter_p(), config);
     } catch (...) {
     }
 

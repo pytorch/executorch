@@ -8,8 +8,10 @@
 
 import math
 import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, IO, List, Mapping, Optional, Tuple, TypeAlias, Union
+from typing import Any, Dict, IO, List, Mapping, Optional, Tuple, TypeAlias, Union
 
 import executorch.devtools.etdump.schema_flatcc as flatcc
 
@@ -52,6 +54,8 @@ EXCLUDED_COLUMNS_WHEN_PRINTING = [
 ]
 EXCLUDED_EVENTS_WHEN_PRINTING = {"OPERATOR_CALL"}
 
+EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT = {"OPERATOR_CALL"}
+
 
 class TimeScale(Enum):
     NS = "ns"
@@ -68,6 +72,49 @@ TIME_SCALE_DICT = {
     TimeScale.S: 1,
     TimeScale.CYCLES: 1,
 }
+
+DebugHandle: TypeAlias = Tuple[int, ...]
+
+
+class NodeSource(Enum):
+    AOT = 1
+    RUNTIME = 2
+
+
+@dataclass
+class NodeData:
+    """
+    Each node in the graph is an instance of NodeData, which contains:
+    - source: A string indicating the origin of the node (either FROM_AOT or FROM_RUNTIME).
+    - debug_handle: A tuple representing the unique identifier for the output.
+    - output: The actual output data associated with the debug handle.
+    """
+
+    source: NodeSource
+    debug_handle: tuple[int]
+    output: Any
+
+
+class NodeFilter:
+    """
+    A class used to filter nodes based on extensible criteria.
+    Attributes:
+        metadata_key (str): The key to look for in the node's metadata.
+        op_type (str): The operation code to match.
+        exclude_ops (List[str]): A list of operations to exclude from the filter.
+    """
+
+    def __init__(self, metadata_key: str, op_type: str, exclude_ops: List[str] = None):
+        self.metadata_key = metadata_key
+        self.op_type = op_type
+        self.exclude_ops = exclude_ops
+
+    def matches(self, node: torch.fx.Node) -> bool:
+        return (
+            node.meta.get(self.metadata_key) is not None
+            and node.op == self.op_type
+            and all(exclude_name not in node.name for exclude_name in self.exclude_ops)
+        )
 
 
 def calculate_time_scale_factor(
@@ -256,14 +303,23 @@ def gen_graphs_from_etrecord(
     return op_graph_map
 
 
+# One debug handle should only be associated with one node. We are in the middle of migrating debug handle generation
+# from graph after to_edge to graph after torch.export, one every debug handle in exported graph may be associated with multiple nodes in to_edge
+# graph. After fully migration, we should bring the bring type as well as the #node check back.
+#
+# Before migration: returned Dict for 1 debug handle to 1 node in to_edge graph
+# During migration: returned Dict for 1 debug handle to multiple nodes in to_edge graph
+# After migration: returned Dict for 1 debug handle to 1 node in exported graph
+#
+# TODO(gasoonjia): recover the return type to Dict[int, List[OperatorNode], reenable the #node check.
 def create_debug_handle_to_op_node_mapping(
     op_graph: OperatorGraph,
-) -> Dict[int, OperatorNode]:
+) -> Dict[int, List[OperatorNode]]:
     """
     Recursive function to traverse all the operator graph nodes of input op_graph and build a mapping
     from each debug handle to the operator node that contains the debug handle in its metadata.
     """
-    debug_handle_to_op_node_map: Dict[int, OperatorNode] = {}
+    debug_handle_to_op_node_map: Dict[int, List[OperatorNode]] = {}
 
     # Recursively searches through the metadata of nodes
     def _extract_debug_handles(graph: OperatorGraph):
@@ -273,14 +329,13 @@ def create_debug_handle_to_op_node_mapping(
             if isinstance(element, OperatorNode) and element.metadata is not None:
                 metadata = element.metadata
                 debug_handle = metadata.get("debug_handle")
-                if debug_handle is not None:
-                    existing_entry = debug_handle_to_op_node_map.get(debug_handle)
-                    if existing_entry is not None:
-                        raise ValueError(
-                            f"Duplicated debug handle {str(debug_handle)} shared between {element.name} and {existing_entry.name}. "
-                            "No two op nodes of the same graph should have the same debug handle."
-                        )
-                    debug_handle_to_op_node_map[debug_handle] = element
+                if debug_handle is None:
+                    continue
+
+                if debug_handle not in debug_handle_to_op_node_map:
+                    debug_handle_to_op_node_map[debug_handle] = []
+
+                debug_handle_to_op_node_map[debug_handle].append(element)
 
     # Start traversing
     _extract_debug_handles(op_graph)
@@ -481,3 +536,355 @@ def compare_results(
                 print("\n")
 
     return results
+
+
+def _merge_runtime_debug_handles(
+    debug_handle1: DebugHandle, debug_handle2: DebugHandle
+) -> DebugHandle:
+    """
+    Merge two DebugHandles by removing elements from debug_handle1 that are also present in debug_handle2,
+    while preserving the relative order of elements in both modified debug_handle1 and debug_handle2.
+    All elements from the modified debug_handle1 will appear before any elements from debug_handle2.
+    """
+
+    # Initialize a list to store unique elements in order
+    unique_ordered_list = []
+
+    # Initialize a set to track elements that have already been seen
+    seen = set(debug_handle2)
+
+    for item in debug_handle1:
+        # If the element has not been seen before, add it to the list and mark it as seen
+        if item not in seen:
+            unique_ordered_list.append(item)
+
+    for item in debug_handle2:
+        unique_ordered_list.append(item)
+    return tuple(unique_ordered_list)
+
+
+def merge_runtime_overlapping_debug_handles(
+    intermediate_outputs: Dict[DebugHandle, Tuple[int, Any]]
+) -> Dict[DebugHandle, Tuple[int, Any]]:
+    """
+    Merges runtimes with overlapping debug handles into a single key in the dict.
+
+    For each debug handle, this function checks for overlaps with existing keys.
+    If overlaps are found, it combines the overlapping keys into a single key by taking
+    the union of their elements while maintaining the order. The order is preserved such that
+    higher instruction_id appears after the debug_handle with lower instruction_id.
+
+    The value associated with the merged key is determined by the debug handle with the highest instruction id.
+    """
+    if len(intermediate_outputs) == 0:
+        return {}
+    merged: Dict[DebugHandle, Tuple[int, Any]] = {}
+    for debug_handle, (instruction_id, debug_data) in intermediate_outputs.items():
+        curr_debug_handle, last_value = debug_handle, (instruction_id, debug_data)
+        # Collect any existing keys that overlap with the current key
+        to_remove = []
+        for existing_debug_handle, existing_value in merged.items():
+            if any(item in existing_debug_handle for item in debug_handle):
+                # Keep the value with the highest instruction_id
+                # Also merge the debug handles higher instruction_id
+                if existing_value[0] < instruction_id:
+                    curr_debug_handle = _merge_runtime_debug_handles(
+                        existing_debug_handle, curr_debug_handle
+                    )
+                else:
+                    curr_debug_handle = _merge_runtime_debug_handles(
+                        curr_debug_handle, existing_debug_handle
+                    )
+                    last_value = existing_value
+                to_remove.append(existing_debug_handle)
+        # Remove all the keys that overlap with the current key
+        for debug_handle in to_remove:
+            merged.pop(debug_handle)
+        # Add the current key to the merged one
+        merged[curr_debug_handle] = last_value
+    return merged
+
+
+def _debug_handles_have_overlap(
+    debug_handle: DebugHandle, target_debug_handle: DebugHandle
+) -> bool:
+    """
+    Check if the debug handle and the target runtime debug handle have any overlap.
+    """
+    aot_set = set(debug_handle)
+    runtime_set = set(target_debug_handle)
+    return len(aot_set.intersection(runtime_set)) > 0
+
+
+def _combine_debug_handles(debug_handles: List[DebugHandle]) -> DebugHandle:
+    """Combine multiple debug handles into one debug handle"""
+    combined_debug_handles_set = set()
+    for debug_handle in debug_handles:
+        combined_debug_handles_set.update(set(debug_handle))
+    return tuple(sorted(combined_debug_handles_set))
+
+
+def _combine_overlapped_intermediate_outputs(
+    nodes: List[Tuple[DebugHandle, Any]]
+) -> Tuple[DebugHandle, Any]:
+    """Combine multiple overlapped intermediate outputs into one with combined debug_handles and last output"""
+    debug_handles = [debug_handle for debug_handle, _ in nodes]
+    outputs = [output for _, output in nodes]
+    combined_debug_handle = _combine_debug_handles(debug_handles)
+    output = outputs[-1]  # Pick the last one
+    return combined_debug_handle, output
+
+
+def _create_debug_handle_overlap_graph(
+    aot_intermediate_outputs: Dict[DebugHandle, Any],
+    runtime_intermediate_outputs: Dict[DebugHandle, Any],
+) -> Tuple[List[NodeData], Dict[int, List[int]]]:
+    """
+    Create a graph representing overlapping debug handles between AOT and runtime outputs.
+
+    Edges in the graph are represented as a dictionary where:
+    - The key is the index of a node in the nodes list.
+    - The value is a list of indices of nodes that have overlapping debug handles with the key node.
+
+    Returns:
+    - A tuple containing:
+      - A list of NodeData instances representing the nodes in the graph.
+      - A dictionary representing the edges, where each key-value pair indicates connected nodes due to overlapping debug handles.
+    """
+    nodes = []
+    for debug_handle, output in aot_intermediate_outputs.items():
+        nodes.append(NodeData(NodeSource.AOT, debug_handle, output))
+    for debug_handle, output in runtime_intermediate_outputs.items():
+        nodes.append(NodeData(NodeSource.RUNTIME, debug_handle, output))
+
+    edges = {i: [] for i in range(len(nodes))}
+    for i in range(len(nodes)):
+        for j in range(i + 1, len(nodes)):
+            node_i = nodes[i]
+            node_j = nodes[j]
+            # Only connect nodes from different sources(aot vs runtime) that overlap
+            if node_i.source != node_j.source and _debug_handles_have_overlap(
+                node_i.debug_handle, node_j.debug_handle
+            ):
+                edges[i].append(j)
+                edges[j].append(i)
+    return (nodes, edges)
+
+
+def _find_connected_components(
+    nodes: List[NodeData], edges: Dict[int, List[int]]
+) -> List[List[int]]:
+    """
+    Find groups of connected nodes in a graph using DFS.
+    Parameters:
+    - nodes: A list of nodes in the graph.
+    - edges: A dictionary where each key is a node index, and the value is a list
+      of indices of connected nodes.
+    Returns:
+    - A list of connected components, each represented as a list of node indices.
+    """
+    visited = [False] * len(nodes)
+    connected_components = []
+
+    def dfs(node_id, component):
+        visited[node_id] = True
+        component.append(node_id)
+        # Iterate over all neighbors of the current node
+        for neighbor_node_id in edges[node_id]:
+            # If a neighbor has not been visited yet, recursively visit it
+            if not visited[neighbor_node_id]:
+                dfs(neighbor_node_id, component)
+
+    # Perform DFS on all nodes to find connected components
+    for i in range(len(nodes)):
+        # If a node has not been visited yet, start a new DFS from it
+        if not visited[i]:
+            component = []
+            dfs(i, component)
+            # After visiting all reachable nodes, add the current component to the list
+            connected_components.append(component)
+    return connected_components
+
+
+def map_runtime_aot_intermediate_outputs(
+    aot_intermediate_outputs: Dict[DebugHandle, Any],
+    runtime_intermediate_outputs: Dict[DebugHandle, Any],
+) -> Dict[Tuple[DebugHandle, Any], Tuple[DebugHandle, Any]]:
+    """
+    Map the runtime intermediate outputs to the AOT intermediate outputs
+    by finding overlapping debug handles and combining them into a single debug_handle
+
+    Returns:
+        Dict[Tuple[DebugHandle, Any], Tuple[DebugHandle, Any]] - Mapping
+        from runtime intermediate output to AOT intermediate output
+    """
+    # Create a graph(nodes and edges) of overlapping(between aot and runtime) debug handles
+    nodes, edges = _create_debug_handle_overlap_graph(
+        aot_intermediate_outputs, runtime_intermediate_outputs
+    )
+    # Find connected(between aot and runtime) components
+    connected_components = _find_connected_components(nodes, edges)
+
+    aot_runtime_mapping = {}
+    for comp in connected_components:
+        # Separate nodes into AOT and runtime lists based on their source,
+        # each list is combined into a single element and mapped to each other.
+        aot_list = [
+            (nodes[node_id].debug_handle, nodes[node_id].output)
+            for node_id in comp
+            if nodes[node_id].source == NodeSource.AOT
+        ]
+        runtime_list = [
+            (nodes[node_id].debug_handle, nodes[node_id].output)
+            for node_id in comp
+            if nodes[node_id].source == NodeSource.RUNTIME
+        ]
+
+        # Map only if both AOT and runtime data are present.
+        if len(aot_list) != 0 and len(runtime_list) != 0:
+            # Combine aot debug handles into a single key
+            aot_combined_debug_handle, aot_intermediate_output = (
+                _combine_overlapped_intermediate_outputs(aot_list)
+            )
+            # Combine runtime debug handles into a single key
+            runtime_combined_debug_handle, runtime_intermediate_output = (
+                _combine_overlapped_intermediate_outputs(runtime_list)
+            )
+            # List can't be used as a key, so convert to tuple
+            if isinstance(aot_intermediate_output, list):
+                aot_intermediate_output = tuple(aot_intermediate_output)
+            # runtime follow the same format as aot, so it's safe to convert to tuple
+            if isinstance(runtime_intermediate_output, list):
+                runtime_intermediate_output = tuple(runtime_intermediate_output)
+
+            # Currently, runtime_intermediate_output logs all delegate call arguments.
+            # Process here to extract only the outputs.
+            if isinstance(aot_intermediate_output, tuple):
+                # If both are sequences, slice runtime_intermediate_output to match the length of aot_intermediate_output
+                if isinstance(runtime_intermediate_output, tuple):
+                    runtime_intermediate_output = runtime_intermediate_output[
+                        -len(aot_intermediate_output) :
+                    ]
+            # If aot_intermediate_output is not a sequence but runtime_intermediate_output is, get the last element
+            elif isinstance(runtime_intermediate_output, tuple):
+                runtime_intermediate_output = runtime_intermediate_output[-1]
+
+            # Create a mapping between runtime and aot
+            aot_runtime_mapping[
+                (aot_combined_debug_handle, aot_intermediate_output)
+            ] = (
+                runtime_combined_debug_handle,
+                runtime_intermediate_output,
+            )
+
+    return aot_runtime_mapping
+
+
+def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
+    """
+    Convert input_data into a torch.Tensor on CPU with dtype torch.float64.
+    This function handles the following types of input:
+    - Scalar (int or float): Converts to a tensor with a single element.
+    - Tensor: Converts to a float64 tensor on CPU.
+    The resulting tensor is detached, moved to CPU, and cast to torch.float64.
+    Parameters:
+    input_data (Any): The input data to be converted to a tensor. It can be a scalar
+                      or a tensor.
+    Returns:
+    torch.Tensor: A tensor on CPU with dtype torch.float64.
+    Raises error if the input is not a scalar or a tensor
+    """
+    # Assert that the input is not a Sequence
+    assert not isinstance(input_data, Sequence)
+    try:
+        # Try to convert the input to a tensor
+        input_tensor = torch.as_tensor(input_data, dtype=torch.float64)
+    except Exception as e:
+        raise ValueError(
+            f"Cannot convert value of type {type(input_data)} to a tensor: {e}"
+        )
+
+    input_tensor = input_tensor.detach().cpu().double()
+    # Convert NaN to 0.0
+    if torch.isnan(input_tensor).any():
+        input_tensor = torch.nan_to_num(input_tensor)
+
+    return input_tensor
+
+
+def get_aot_debug_handle_to_op_name_mapping(
+    graph_module: torch.fx.GraphModule,
+) -> Dict[DebugHandle, str]:
+    """
+    Get a mapping from debug handle to operator name from the ETRecord edge_dialect_program's graph module.
+    Parameters:
+    graph_module (torch.fx.GraphModule): The graph module to get the mapping from.
+    Returns:
+    Dict[DebugHandle, str]: A dictionary mapping debug handles to operator names.
+    """
+    node_filters = [
+        NodeFilter("debug_handle", "call_function", exclude_ops=["getitem"])
+    ]
+
+    debug_handle_to_op_name = {}
+    for node in graph_module.graph.nodes:
+        if all(filter.matches(node) for filter in node_filters):
+            debug_handle = node.meta["debug_handle"]
+            # Convert the debug handle to a tuple to use as a dictionary key
+            key = (
+                (debug_handle,)
+                if isinstance(debug_handle, int)
+                else tuple(debug_handle)
+            )
+            debug_handle_to_op_name[key] = node.name
+    return debug_handle_to_op_name
+
+
+def find_op_names(
+    target_debug_handle: DebugHandle,
+    debug_handle_to_op_name: Dict[DebugHandle, str],
+) -> List[str]:
+    """
+    Record the operator names only if their debug handles are part of the target debug handle.
+    The debug handles in `debug_handle_to_op_name` have undergone merging and remain unchanged,
+    and this function identifies operations corresponding to these transformed handles.
+    """
+    dh_set = set(target_debug_handle)
+    result = []
+
+    for key_tuple, op_name in debug_handle_to_op_name.items():
+        # Check if key is a subset of the target_debug_handle
+        if set(key_tuple).issubset(dh_set):
+            result.append(op_name)
+
+    return result
+
+
+def compare_intermediate_outputs(a: Any, b: Any, comparator) -> List[float]:
+    """
+    Compare two outputs, handling both sequence and non-sequence cases,
+    and return a list of comparison results.
+    Parameters:
+    a: The first intermediate output to compare.
+    b: The second intermediate output to compare.
+    comparator: A comparator object with a `compare` method.
+    Returns:
+    List[float]: A list of comparison results.
+    Raises:
+    ValueError: If one input is a sequence and the other is not, or if sequences have different lengths.
+    """
+    is_a_sequence = isinstance(a, Sequence)
+    is_b_sequence = isinstance(b, Sequence)
+    if is_a_sequence and is_b_sequence:
+        # Ensure both sequences have the same length
+        if len(a) != len(b):
+            raise ValueError("Sequences must have the same length for comparison.")
+
+        # Compare each element in the sequences and return the list of results
+        return [comparator.compare(x, y) for x, y in zip(a, b)]
+    elif not is_a_sequence and not is_b_sequence:
+        # Compare non-sequence items and return the result in a list
+        return [comparator.compare(a, b)]
+    else:
+        # Raise an error if one is a sequence and the other is not
+        raise ValueError("Both inputs must be sequences or both must be non-sequences.")

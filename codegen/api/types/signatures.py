@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torchgen.api.cpp as aten_cpp
-from executorch.codegen.api.types.types import contextArg
+
+from .types import contextArg
 
 
 if TYPE_CHECKING:
@@ -73,4 +74,4 @@ class ExecutorchCppSignature:
         )
 
 
-from executorch.codegen.api import et_cpp
+from .. import et_cpp

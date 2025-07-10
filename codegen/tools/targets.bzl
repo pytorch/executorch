@@ -15,10 +15,11 @@ def define_common_targets(is_fbcode = False):
         visibility = [
             "//executorch/...",
         ],
-        external_deps = ["torchgen"],
-        deps = select({
+        deps = [
+            "//executorch/codegen:gen_lib",
+        ] + select({
             "DEFAULT": [],
-            "ovr_config//os:linux": [] if runtime.is_oss else ["//executorch/codegen/tools/fb:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
+            "ovr_config//os:linux": [] if runtime.is_oss else ["//executorch/codegen/tools:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
         }),
     )
 
@@ -28,7 +29,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             ":gen_oplist_lib",
         ],
-        preload_deps = [] if runtime.is_oss else ["//executorch/codegen/tools/fb:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
+        preload_deps = [] if runtime.is_oss else ["//executorch/codegen/tools:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
         package_style = "inplace",
         visibility = [
             "//executorch/...",
@@ -154,6 +155,29 @@ def define_common_targets(is_fbcode = False):
         _is_external_target = True,
     )
 
+    if not runtime.is_oss:
+        runtime.cxx_python_extension(
+            name = "selective_build",
+            srcs = [
+                "selective_build.cpp",
+            ],
+            base_module = "executorch.codegen.tools",
+            types = ["selective_build.pyi"],
+            preprocessor_flags = [
+                "-DEXECUTORCH_PYTHON_MODULE_NAME=selective_build",
+            ],
+            deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/schema:program",
+            ],
+            external_deps = [
+                "pybind11",
+            ],
+            use_static_deps = True,
+            visibility = ["//executorch/codegen/..."],
+        )
+
+
     # TODO(larryliu0820): This is a hack to only run these two on fbcode. These targets depends on exir which is only available in fbcode.
     if not runtime.is_oss and is_fbcode:
         runtime.python_binary(
@@ -188,4 +212,22 @@ def define_common_targets(is_fbcode = False):
                 ":gen_oplist_lib",
                 "//libfb/py:parutil",
             ],
+        )
+
+        runtime.python_test(
+            name = "test_selective_build",
+            srcs = [
+                "test/test_selective_build.py",
+            ],
+            package_style = "inplace",
+            visibility = [
+                "PUBLIC",
+            ],
+            deps = [
+                ":selective_build",
+                "fbsource//third-party/pypi/expecttest:expecttest",
+                "//caffe2:torch",
+                "//executorch/exir:lib",
+            ],
+            _is_external_target = True,
         )

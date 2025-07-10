@@ -144,6 +144,19 @@ def nodes_not_connected_in_gm(
     return True
 
 
+# Returns the position of the first entry of a node of a given kind in the graph.
+def get_node_pos(
+    graph_module: torch.fx.GraphModule,
+    target: torch.fx.Node,
+) -> int:
+    pos = 0
+    for node in graph_module.graph.nodes:
+        if node.target == target:
+            return pos
+        pos += 1
+    return -1
+
+
 # Returns true if there is no instance of a node with target succ_target
 # positioned immediately after a node with target pred_target in the graph
 def nodes_not_adjacent_in_gm(

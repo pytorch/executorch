@@ -37,13 +37,13 @@ def get_vec_deps():
         # various ovr_configs are not available in oss
         deps = select({
             "ovr_config//os:iphoneos-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:macos-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "ovr_config//os:android-arm64": [
-                "fbsource//third-party/sleef:sleef_arm",
+                "fbsource//third-party/sleef:sleef",
             ] if not runtime.is_oss else [],
             "DEFAULT": [],
         })
@@ -111,10 +111,6 @@ def get_preprocessor_flags():
     return preprocessor_flags
 
 
-# Currently, having a dependency on fbsource//third-party/sleef:sleef may cause
-# duplicate symbol errors when linking fbcode targets in opt mode that also
-# depend on ATen. This is because ATen accesses sleef via the third-party folder
-# in caffe2 (caffe2/third-party//sleef:sleef).
 # TODO(ssjia): Enable -DCPU_CAPABILITY_AVX2 in fbcode, which requires sleef.
 def define_libs(is_fbcode=False):
     runtime.cxx_library(
@@ -127,6 +123,9 @@ def define_libs(is_fbcode=False):
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
         cxx_platform_deps = select({
             "DEFAULT": [
@@ -141,7 +140,7 @@ def define_libs(is_fbcode=False):
                 (
                     DEVSERVER_PLATFORM_REGEX,
                     [
-                        "fbsource//third-party/sleef:sleef_arm",
+                        "fbsource//third-party/sleef:sleef",
                     ],
                 ),
             ],
@@ -150,7 +149,7 @@ def define_libs(is_fbcode=False):
             (
                 "^android-arm64.*$",
                 [
-                    "fbsource//third-party/sleef:sleef_arm",
+                    "fbsource//third-party/sleef:sleef",
                 ],
             ),
         ],

@@ -1,5 +1,0 @@
-module ExecuTorch {
-  umbrella header "ExecuTorch/ExecuTorch.h"
-
-  export *
-}

@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from copy import deepcopy
 from typing import Any, Optional, Set
 
 import executorch.backends.vulkan.utils as utils
@@ -22,6 +21,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.tensor import TensorSpec
 
 logger: logging.Logger = logging.getLogger("")
 logger.setLevel(logging.INFO)
@@ -52,7 +52,7 @@ def insert_transition_node(
             (arg,),
         )
         clone_node.meta["val"] = arg.meta["val"]
-        clone_node.meta["spec"] = deepcopy(arg.meta["spec"])
+        clone_node.meta["spec"] = TensorSpec.from_tensor(clone_node.meta["val"])
         clone_node.meta["spec"].const = False
         set_memory_metadata(clone_node, storage, layout)
         arg.replace_all_uses_with(clone_node, lambda x, y=node: x == y)
@@ -91,7 +91,7 @@ class TagMemoryMetaPass(ExportPass):
         self.default_layout: VkMemoryLayout = default_memory_layout
         self.texture_limits = texture_limits
 
-    def propose_node_storage(
+    def propose_node_storage(  # noqa: C901
         self,
         node: torch.fx.Node,
     ) -> Optional[VkStorageType]:
@@ -138,15 +138,23 @@ class TagMemoryMetaPass(ExportPass):
         for arg in node.args:
             if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
                 storage = utils.get_node_storage_type(arg)
+                # Some operators which return multiple output tensors may specify a
+                # different storage type for each output. In this case, the storage type
+                # for the first output is used.
+                if isinstance(storage, (list, tuple)):
+                    storage = storage[0]
                 if storage is not None and storage in valid_storage_types:
                     return storage
 
         # If no storage type has been resolved yet, assume the optimal storage type of
         # the first opinionated user. This search is recursive.
         for user in node.users:
-            optimal_storage = self.propose_node_storage(user)
-            if optimal_storage is not None:
-                return optimal_storage
+            storage = self.propose_node_storage(user)
+            # See above
+            if isinstance(storage, (list, tuple)):
+                storage = storage[0]
+            if storage is not None:
+                return storage
 
         if self.default_storage in valid_storage_types:
             return self.default_storage
@@ -179,15 +187,23 @@ class TagMemoryMetaPass(ExportPass):
         for arg in node.args:
             if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
                 layout = utils.get_node_memory_layout(arg)
+                # Some operators which return multiple output tensors may specify a
+                # different memory layout for each output. In this case, the storage
+                # type for the first output is used.
+                if isinstance(layout, (list, tuple)):
+                    layout = layout[0]
                 if layout is not None and layout in valid_layouts:
                     return layout
 
-        # If no storage type has been resolved yet, assume the optimal storage type of
-        # the first opinionated user. This search is recursive.
+        # If no memory layout has been resolved yet, assume the optimal layout of the
+        # first opinionated user. This search is recursive.
         for user in node.users:
-            optimal_storage = self.propose_node_layout(user, storage)
-            if optimal_storage is not None:
-                return optimal_storage
+            layout = self.propose_node_layout(user, storage)
+            # See above comment
+            if isinstance(layout, (list, tuple)):
+                layout = layout[0]
+            if layout is not None:
+                return layout
 
         # As a last resort, return the default storage type that should be used.
         if self.default_layout in valid_layouts:

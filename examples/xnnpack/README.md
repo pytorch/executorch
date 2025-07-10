@@ -24,7 +24,7 @@ The following command will produce a floating-point XNNPACK delegated model `mv2
 python3 -m examples.xnnpack.aot_compiler --model_name="mv2" --delegate
 ```
 
-Once we have the model binary (pte) file, then let's run it with ExecuTorch runtime using the `xnn_executor_runner`. With cmake, you first configure your cmake with the following:
+Once we have the model binary (pte) file, then let's run it with ExecuTorch runtime using the `executor_runner`. With cmake, you first configure your cmake with the following:
 
 ```bash
 # cd to the root of executorch repo
@@ -38,6 +38,7 @@ mkdir cmake-out
 cmake \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -56,7 +57,7 @@ cmake --build cmake-out -j9 --target install --config Release
 Now finally you should be able to run this model with the following command
 
 ```bash
-./cmake-out/backends/xnnpack/xnn_executor_runner --model_path ./mv2_xnnpack_fp32.pte
+./cmake-out/executor_runner --model_path ./mv2_xnnpack_fp32.pte
 ```
 
 ## Quantization
@@ -80,7 +81,7 @@ python3 -m examples.xnnpack.quantization.example --help
 ```
 
 ## Running the XNNPACK Model with CMake
-After exporting the XNNPACK Delegated model, we can now try running it with example inputs using CMake. We can build and use the xnn_executor_runner, which is a sample wrapper for the ExecuTorch Runtime and XNNPACK Backend. We first begin by configuring the CMake build like such:
+After exporting the XNNPACK Delegated model, we can now try running it with example inputs using CMake. We can build and use the executor_runner, which is a sample wrapper for the ExecuTorch Runtime. The XNNPACK Backend is enabled via the compilation flag `-DEXECUTORCH_BUILD_XNNPACK=ON`. We first begin by configuring the CMake build like such:
 ```bash
 # cd to the root of executorch repo
 cd executorch
@@ -107,9 +108,9 @@ Then you can build the runtime componenets with
 cmake --build cmake-out -j9 --target install --config Release
 ```
 
-Now you should be able to find the executable built at `./cmake-out/backends/xnnpack/xnn_executor_runner` you can run the executable with the model you generated as such
+Now you should be able to find the executable built at `./cmake-out/executor_runner` you can run the executable with the model you generated as such
 ```bash
-./cmake-out/backends/xnnpack/xnn_executor_runner --model_path=./mv2_quantized.pte
+./cmake-out/executor_runner --model_path=./mv2_quantized.pte
 ```
 
 ## Delegating a Quantized Model

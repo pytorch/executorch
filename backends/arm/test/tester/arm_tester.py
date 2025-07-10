@@ -10,7 +10,18 @@ import logging
 import os
 from collections import Counter
 from pprint import pformat
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
@@ -25,6 +36,7 @@ from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_ethosu,
     is_tosa,
+    is_vgf,
 )
 from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
 from executorch.backends.arm.quantizer import (
@@ -50,6 +62,9 @@ from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 from executorch.backends.arm.tosa_specification import TosaSpecification
 
+from executorch.backends.arm.vgf_partitioner import VgfPartitioner
+
+from executorch.backends.test.harness.stages import Stage, StageType
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
 
@@ -70,6 +85,7 @@ from executorch.exir.backend.operator_support import (
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_manager import PassType
 from executorch.exir.program._program import (
     _copy_module,
     _update_exported_program_graph_module,
@@ -142,9 +158,13 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
         constant_methods: Optional[Dict[str, Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
         super().__init__(partitioners, edge_compile_config)
         self.constant_methods = constant_methods
+        self.transform_passes = transform_passes
 
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
@@ -154,6 +174,7 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
             artifact_to_run,
+            transform_passes=self.transform_passes,
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
             constant_methods=self.constant_methods,
@@ -242,9 +263,12 @@ class RunPasses(tester.RunPasses):
         super().run(artifact, inputs)
 
 
-class InitialModel(tester.Stage):
+class InitialModel(Stage):
     def __init__(self, model: torch.nn.Module):
         self.model = model
+
+    def stage_type(self) -> StageType:
+        return StageType.INITIAL_MODEL
 
     def run(self, artifact, inputs=None) -> None:
         pass
@@ -273,6 +297,9 @@ class ArmTester(Tester):
         tosa_ref_model_path: str | None = None,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         constant_methods: Optional[Dict[str, Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
         """
         Args:
@@ -281,19 +308,23 @@ class ArmTester(Tester):
             compile_spec (List[CompileSpec]): The compile spec to use
         """
 
+        self.transform_passes = transform_passes
         self.constant_methods = constant_methods
         self.compile_spec = compile_spec
         super().__init__(model, example_inputs, dynamic_shapes)
-        self.pipeline[self.stage_name(InitialModel)] = [
-            self.stage_name(tester.Quantize),
-            self.stage_name(tester.Export),
+        self.pipeline[StageType.INITIAL_MODEL] = [
+            StageType.QUANTIZE,
+            StageType.EXPORT,
         ]
 
         # Initial model needs to be set as a *possible* but not yet added Stage, therefore add None entry.
-        self.stages[self.stage_name(InitialModel)] = None
+        self.stages[StageType.INITIAL_MODEL] = None
         self._run_stage(InitialModel(self.original_module))
 
-    def quantize(self, quantize_stage: Optional[tester.Quantize] = None):
+    def quantize(
+        self,
+        quantize_stage: Optional[tester.Quantize] = None,
+    ):
         if quantize_stage is None:
             quantizer = None
             if is_tosa(self.compile_spec):
@@ -303,7 +334,7 @@ class ArmTester(Tester):
                 quantizer = EthosUQuantizer(self.compile_spec)
             quantize_stage = tester.Quantize(
                 quantizer,
-                get_symmetric_quantization_config(is_per_channel=False),
+                get_symmetric_quantization_config(),
             )
         return super().quantize(quantize_stage)
 
@@ -339,6 +370,9 @@ class ArmTester(Tester):
         additional_checks: Optional[
             List[Union[DontPartition | DontPartitionModule | DontPartitionName]]
         ] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
         if to_edge_and_lower_stage is None:
             if partitioners is None:
@@ -353,6 +387,11 @@ class ArmTester(Tester):
                         compile_spec=self.compile_spec,
                         additional_checks=additional_checks,
                     )
+                elif is_vgf(self.compile_spec):
+                    arm_partitioner = VgfPartitioner(
+                        compile_spec=self.compile_spec,
+                        additional_checks=additional_checks,
+                    )
                 else:
                     raise ValueError("compile spec doesn't target any Arm Partitioner")
                 partitioners = [arm_partitioner]
@@ -360,6 +399,7 @@ class ArmTester(Tester):
                 partitioners,
                 edge_compile_config,
                 constant_methods=self.constant_methods,
+                transform_passes=self.transform_passes,
             )
         else:
             if partitioners is not None:
@@ -385,7 +425,7 @@ class ArmTester(Tester):
         return super().serialize(serialize_stage)
 
     def is_quantized(self) -> bool:
-        return self.stages[self.stage_name(tester.Quantize)] is not None
+        return self.stages[StageType.QUANTIZE] is not None
 
     def run_method_and_compare_outputs(
         self,
@@ -414,18 +454,16 @@ class ArmTester(Tester):
         """
 
         if not run_eager_mode:
-            edge_stage = self.stages[self.stage_name(tester.ToEdge)]
+            edge_stage = self.stages[StageType.TO_EDGE]
             if edge_stage is None:
-                edge_stage = self.stages[
-                    self.stage_name(tester.ToEdgeTransformAndLower)
-                ]
+                edge_stage = self.stages[StageType.TO_EDGE_TRANSFORM_AND_LOWER]
             assert (
                 edge_stage is not None
             ), "To compare outputs, at least the ToEdge or ToEdgeTransformAndLower stage needs to be run."
         else:
             # Run models in eager mode. We do this when we want to check that the passes
             # are numerically accurate and the exported graph is correct.
-            export_stage = self.stages[self.stage_name(tester.Export)]
+            export_stage = self.stages[StageType.EXPORT]
             assert (
                 export_stage is not None
             ), "To compare outputs in eager mode, the model must be at Export stage"
@@ -435,11 +473,11 @@ class ArmTester(Tester):
         is_quantized = self.is_quantized()
 
         if is_quantized:
-            reference_stage = self.stages[self.stage_name(tester.Quantize)]
+            reference_stage = self.stages[StageType.QUANTIZE]
         else:
-            reference_stage = self.stages[self.stage_name(InitialModel)]
+            reference_stage = self.stages[StageType.INITIAL_MODEL]
 
-        exported_program = self.stages[self.stage_name(tester.Export)].artifact
+        exported_program = self.stages[StageType.EXPORT].artifact
         output_nodes = get_output_nodes(exported_program)
 
         output_qparams = get_output_quantization_params(output_nodes)
@@ -449,7 +487,7 @@ class ArmTester(Tester):
             quantization_scales.append(getattr(output_qparams[node], "scale", None))
 
         logger.info(
-            f"Comparing Stage '{self.stage_name(test_stage)}' with Stage '{self.stage_name(reference_stage)}'"
+            f"Comparing Stage '{test_stage.stage_type()}' with Stage '{reference_stage.stage_type()}'"
         )
 
         # Loop inputs and compare reference stage with the compared stage.
@@ -466,7 +504,6 @@ class ArmTester(Tester):
             reference_outputs, _ = pytree.tree_flatten(
                 reference_stage.run_artifact(reference_input)
             )
-
             if run_eager_mode:
                 # Run exported module directly
                 test_outputs, _ = pytree.tree_flatten(
@@ -479,6 +516,10 @@ class ArmTester(Tester):
                 test_outputs, _ = pytree.tree_flatten(
                     test_stage.run_artifact(reference_input)
                 )
+
+            logger.info(f"\n      Input: {reference_input}")
+            logger.info(f"\n Ref output: {reference_outputs}")
+            logger.info(f"\nTest output: {test_outputs}")
 
             for reference_output, test_output, quantization_scale in zip(
                 reference_outputs, test_outputs, quantization_scales
@@ -500,14 +541,12 @@ class ArmTester(Tester):
             stage = self.cur
         artifact = self.get_artifact(stage)
         if (
-            self.cur == self.stage_name(tester.ToEdge)
-            or self.cur == self.stage_name(Partition)
-            or self.cur == self.stage_name(ToEdgeTransformAndLower)
+            self.cur == StageType.TO_EDGE
+            or self.cur == StageType.PARTITION
+            or self.cur == StageType.TO_EDGE_TRANSFORM_AND_LOWER
         ):
             graph = artifact.exported_program().graph
-        elif self.cur == self.stage_name(tester.Export) or self.cur == self.stage_name(
-            tester.Quantize
-        ):
+        elif self.cur == StageType.EXPORT or self.cur == StageType.QUANTIZE:
             graph = artifact.graph
         else:
             raise RuntimeError(
@@ -528,13 +567,13 @@ class ArmTester(Tester):
         Returns self for daisy-chaining.
         """
         line = "#" * 10
-        to_print = f"{line} {self.cur.capitalize()} Operator Distribution {line}\n"
+        to_print = f"{line} {self.cur} Operator Distribution {line}\n"
 
         if (
             self.cur
             in (
-                self.stage_name(tester.Partition),
-                self.stage_name(ToEdgeTransformAndLower),
+                StageType.PARTITION,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             )
             and print_table
         ):
@@ -574,9 +613,7 @@ class ArmTester(Tester):
         """
 
         line = "#" * 10
-        to_print = (
-            f"{line} {self.cur.capitalize()} Placeholder Dtype Distribution {line}\n"
-        )
+        to_print = f"{line} {self.cur} Placeholder Dtype Distribution {line}\n"
 
         graph = self.get_graph(self.cur)
         tosa_spec = get_tosa_spec(self.compile_spec)
@@ -625,7 +662,7 @@ class ArmTester(Tester):
             stage = self.cur
         # We need to clone the artifact in order to ensure that the state_dict is preserved after passes are run.
         artifact = self.get_artifact(stage)
-        if self.cur == self.stage_name(tester.Export):
+        if self.cur == StageType.EXPORT:
             new_gm = ArmPassManager(get_tosa_spec(self.compile_spec)).transform_for_annotation_pipeline(  # type: ignore[arg-type]
                 graph_module=artifact.graph_module
             )
@@ -667,8 +704,8 @@ class ArmTester(Tester):
             for callback in error_callbacks:
                 callback(
                     self,
-                    reference_output,
                     stage_output,
+                    reference_output,
                     quantization_scale=None,
                     atol=1e-03,
                     rtol=1e-03,
