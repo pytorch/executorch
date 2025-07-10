@@ -66,9 +66,6 @@ def trace(
     # Make the model inference mode by calling model.eval()
     model.eval()
 
-    # Prevent mkldnn decompositions
-    torch._C._set_mkldnn_enabled(False)
-
     # Get default decompositions
     decomp_table = torch.export.default_decompositions()
 
