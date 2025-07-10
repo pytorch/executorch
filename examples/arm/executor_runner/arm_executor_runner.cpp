@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "arm_perf_monitor.h"
+#include "arm_memory_allocator.h"
 
 #if defined(ET_BUNDLE_IO)
 #include <executorch/devtools/bundled_program/bundled_program.h>
@@ -286,58 +287,6 @@ class Box {
   const T* ptr() const {
     return reinterpret_cast<const T*>(mem);
   }
-};
-
-// Setup our own allocator that can show some extra stuff like used and free
-// memory info
-class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
- public:
-  ArmMemoryAllocator(uint32_t size, uint8_t* base_address)
-      : MemoryAllocator(size, base_address), used_(0), peak_used_(0) {}
-
-  void* allocate(size_t size, size_t alignment = kDefaultAlignment) override {
-    void* ret = executorch::runtime::MemoryAllocator::allocate(size, alignment);
-    if (ret != nullptr) {
-      // Align with the same code as in MemoryAllocator::allocate() to keep
-      // used_ "in sync" As alignment is expected to be power of 2 (checked by
-      // MemoryAllocator::allocate()) we can check it the lower bits
-      // (same as alignment - 1) is zero or not.
-      if ((size & (alignment - 1)) == 0) {
-        // Already aligned.
-        used_ += size;
-      } else {
-        used_ = (used_ | (alignment - 1)) + 1 + size;
-      }
-      if (used_ > peak_used_)
-        peak_used_ = used_;
-    }
-    return ret;
-  }
-
-  // Returns the used size of the allocator's memory buffer.
-  size_t used_size() const {
-    return used_;
-  }
-
-  // Returns the peak memory usage of the allocator's memory buffer
-  // Peak usage is useful when doing multiple allocations & resets
-  size_t peak_used() const {
-    return peak_used_;
-  }
-
-  // Returns the free size of the allocator's memory buffer.
-  size_t free_size() const {
-    return executorch::runtime::MemoryAllocator::size() - used_;
-  }
-
-  void reset() {
-    executorch::runtime::MemoryAllocator::reset();
-    used_ = 0;
-  }
-
- private:
-  size_t used_;
-  size_t peak_used_;
 };
 
 Result<BufferCleanup> prepare_input_tensors(
