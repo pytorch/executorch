@@ -57,24 +57,12 @@ ivec4 read_texel(ivec4 tidx) {
 
   ivec4 out_tex = ivec4(0);
 
-  if (packed_dim == 0) {
-    int buf_index = buf_indices[0];
-    [[unroll]] for (int i = 0; i < 4; ++i, ++buf_index) {
-      if (tidx[packed_dim] + i < sizes[packed_dim]) {
-        const int in_texel = nchw_in[buf_index >> 2];
-        int extracted_val = (in_texel >> (8 * (buf_index & 3))) & mask;
-        extracted_val = extend_sign(extracted_val);
-        out_tex[i] = extracted_val;
-      }
-    }
-  } else {
-    [[unroll]] for (int i = 0; i < 4; ++i) {
-      if (tidx[packed_dim] + i < sizes[packed_dim]) {
-        const int in_texel = nchw_in[buf_indices[i] >> 2];
-        int extracted_val = (in_texel >> (8 * (buf_indices[i] & 3))) & mask;
-        extracted_val = extend_sign(extracted_val);
-        out_tex[i] = extracted_val;
-      }
+  [[unroll]] for (int i = 0; i < 4; ++i) {
+    if (tidx[packed_dim] + i < sizes[packed_dim]) {
+      const int in_texel = nchw_in[buf_indices[i] >> 2];
+      int extracted_val = (in_texel >> (8 * (buf_indices[i] & 3))) & mask;
+      extracted_val = extend_sign(extracted_val);
+      out_tex[i] = extracted_val;
     }
   }
 
