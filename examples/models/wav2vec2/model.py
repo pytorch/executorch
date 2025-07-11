@@ -7,7 +7,7 @@
 import logging
 
 import torch
-from transformers import Wav2Vec2Model
+from transformers import Wav2Vec2Model as HFWav2Vec2Model
 
 from ..model_base import EagerModelBase
 
@@ -17,7 +17,7 @@ class Wav2Vec2Wrapper(torch.nn.Module):
 
     def __init__(self, model_name="facebook/wav2vec2-base-960h"):
         super().__init__()
-        self.wav2vec2 = Wav2Vec2Model.from_pretrained(model_name)
+        self.wav2vec2 = HFWav2Vec2Model.from_pretrained(model_name)
         self.wav2vec2.eval()
 
     def forward(self, input_values):

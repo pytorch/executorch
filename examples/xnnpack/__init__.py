@@ -52,6 +52,16 @@ MODEL_NAME_TO_OPTIONS = {
     "albert": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
     "trocr_handwritten": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
     "wav2vec2": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
+    "clip": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
+    "sentence_transformers": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
+    "distilbert_qa": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
+    "real_esrgan": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
+    "audio_spectrogram_transformer": XNNPACKOptions(
+        QuantType.DYNAMIC_PER_CHANNEL, True
+    ),
+    "roberta_sentiment": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
+    # Computer Vision Models
+    "depth_anything_v2": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
 }
 
 
