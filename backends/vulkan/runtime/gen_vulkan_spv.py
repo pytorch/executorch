@@ -877,6 +877,8 @@ class SPVGenerator:
             src_file_name = shader_paths_pair[0]
             # path of template file used for codegen
             src_file_fullpath = shader_paths_pair[1][0]
+            # args used for codegen
+            codegen_params = shader_paths_pair[1][1]
 
             # Assume that generated files will have the same file extension as the
             # source template file.
@@ -917,6 +919,7 @@ class SPVGenerator:
                         shutil.copyfile(cached_spv_out_path, spv_out_path)
                         return (spv_out_path, gen_out_path)
 
+            vk_version = codegen_params.get("VK_VERSION", "1.1")
             # Only proceed if a GLSL compiler was specified
             if self.glslc_path is not None:
                 cmd_base = [
@@ -925,7 +928,7 @@ class SPVGenerator:
                     gen_out_path,
                     "-o",
                     spv_out_path,
-                    "--target-env=vulkan1.1",
+                    "--target-env=vulkan{}".format(vk_version),
                     "-Werror",
                 ] + [
                     arg

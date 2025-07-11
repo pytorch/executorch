@@ -180,7 +180,7 @@ sed -i '' '1i\
 ' \
 "$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
 "$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h" \
-"$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch/standalone/macros/Export.h"
+"$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Export.h"
 
 cp -r $HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_ABSOLUTE_PATH/"
 cp -r $HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch "$HEADERS_ABSOLUTE_PATH/"
