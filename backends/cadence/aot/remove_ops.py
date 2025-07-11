@@ -707,6 +707,117 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return cast(list[int], permute_node.kwargs["dim"])
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
+class RemoveSqueezeUnsqueezeAroundElementwiseOps(ExportPass):
+    """
+    Looks for subgraphs of the form:
+    unsqueeze -> [op] -> squeeze
+    and removes the unsqueeze and squeeze nodes by reshaping the intermediate ops. Only
+    handles simple chain of ops as intermediate for now.
+
+    The pass works on view ops instead of unsqueeze and squeeze directly, thus it
+    should be run after the squeeze/unsqueeze->view lowering.
+    """
+
+    intermediate_ops: set[EdgeOpOverload] = {
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.cadence.quantize_per_tensor.default,
+        exir_ops.edge.cadence.dequantize_per_tensor.default,
+        # Ops that require special handling:
+        exir_ops.edge.aten.slice_copy.Tensor,
+    }
+
+    def find_unsqueeze_dim(self, view_node: Node) -> Optional[int]:
+        """
+        Return the unsqueeze dim if the given view_copy op unsqueezes the input tensor,
+        if not return None.
+        """
+        input_node = cast(Node, get_arg(view_node, 0, "input"))
+        input_shape = input_node.meta["val"].shape
+        output_shape = view_node.meta["val"].shape
+        if len(output_shape) != len(input_shape) + 1:
+            return None
+        for dim in range(len(output_shape)):
+            if output_shape == input_shape[:dim] + (1,) + input_shape[dim:]:
+                return dim
+        return None
+
+    def find_ancestor_squeeze(self, node: Node, squeeze_dim: int) -> Optional[Node]:
+        """
+        Traverse up from the given node until finding a squeeze node with the given
+        squeeze_dim. If no such node is found, return None.
+        """
+        while True:
+            # Only handle simple chains for now
+            if len(node.users) != 1:
+                return None
+            if node.target in self.intermediate_ops:
+                node = cast(Node, get_arg(node, 0, "input"))
+            elif node.target == exir_ops.edge.aten.view_copy.default:
+                input_node = cast(Node, get_arg(node, 0, "input"))
+                input_shape = input_node.meta["val"].shape
+                output_shape = node.meta["val"].shape
+                # Check if the node is a squeeze op.
+                if (
+                    len(input_shape) != len(output_shape) + 1
+                    or input_shape
+                    != output_shape[:squeeze_dim] + (1,) + output_shape[squeeze_dim:]
+                ):
+                    return None
+                return node
+            else:
+                return None
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        changed = False
+
+        # Traverse the graph looking for unsqueeze-like view ops.
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.view_copy.default
+        ):
+            unsqueeze_dim = self.find_unsqueeze_dim(node)
+            if unsqueeze_dim is None:
+                continue
+
+            input_node = cast(Node, get_arg(node, 0, "input"))
+            squeeze_node = self.find_ancestor_squeeze(input_node, unsqueeze_dim)
+            if squeeze_node is None:
+                continue
+
+            # Chain is found. Remove view ops and update the intermediate ops traversing
+            # the chain.
+            assert len(squeeze_node.users) == 1
+            node = next(iter(squeeze_node.users))
+
+            # Skip first view_copy.
+            squeeze_node.replace_all_uses_with(
+                cast(Node, get_arg(squeeze_node, 0, "input"))
+            )
+
+            # Go down the chain and update the intermediate ops if needed.
+            while node.target != exir_ops.edge.aten.view_copy.default:
+                if node.target == exir_ops.edge.aten.slice_copy.Tensor:
+                    slice_dim = cast(int, get_arg(node, 1, "dim", default=0))
+                    if slice_dim < 0:
+                        slice_dim += len(node.meta["val"].shape)
+                    if slice_dim >= unsqueeze_dim:
+                        set_arg(node, 1, "dim", slice_dim + 1)
+                assert len(node.users) == 1
+                node = next(iter(node.users))
+
+            # Skip final view_copy.
+            node.replace_all_uses_with(cast(Node, get_arg(node, 0, "input")))
+
+            changed = True
+
+        if changed:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+
+        return PassResult(graph_module, changed)
+
+
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveBranchedQuantDequant(ExportPass):
     """
