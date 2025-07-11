@@ -35,7 +35,16 @@ from executorch.devtools.etdump.schema_flatcc import (
 from executorch.devtools.etdump.serialize import deserialize_from_etdump_flatcc
 from executorch.devtools.etrecord import ETRecord
 
+from executorch.exir.debug_handle_utils import (
+    DEBUG_HANDLE_KEY,
+    get_greatest_ancestor_node_identifier,
+)
+
+from executorch.exir.graph_module import bfs_trace_with_node_process
+
 from tabulate import tabulate
+
+from torch.export import ExportedProgram
 
 FORWARD = "forward"
 EDGE_DIALECT_GRAPH_KEY = "edge_dialect_graph_module"
@@ -888,3 +897,71 @@ def compare_intermediate_outputs(a: Any, b: Any, comparator) -> List[float]:
     else:
         # Raise an error if one is a sequence and the other is not
         raise ValueError("Both inputs must be sequences or both must be non-sequences.")
+
+
+def propagate_back_debug_handle(
+    exported_program: ExportedProgram,
+    exported_program_graph_id: int,
+    edge_dialect_program: ExportedProgram,
+) -> bool:
+    """
+    Propagate debug handle from edge dialect program back to the exported program while maintain the correctness
+    of operator tracing.
+
+    e.g.
+    export program: op1 -> op2 -> op3
+    edge dialect program: op1_0 -> op3_0 -> op3_1
+    where op1_0 is from op1, op3_0 and op3_1 are from op3, op2 is removed by to_edge pipeline (e.g. RemoveNoopPass).
+
+    Then debug handle of op1 should be same as op1_0, and debug handle of op3 should be same as op3_0 and op3_1.
+    The debug handle of op2 will be a non-existing debug handle in edge dialect program for further skipping.
+
+    Return: True if:
+        a. every debug handle in the edge dialect program has a corresponding node in the exported program
+        b. the exported program is the greatest ancestor of the edge dialect program
+
+    Otherwise, return False.
+    """
+
+    # 1. set up a mapping from debug handle to identifier of export program's node
+    # using edge dialect program nodes' debug handles and from_node info
+    export_graph_node_id_to_debug_handle = {
+        get_greatest_ancestor_node_identifier(node): node.meta[DEBUG_HANDLE_KEY]
+        for node in edge_dialect_program.graph.nodes
+        if node.op not in ("placeholder", "output")
+    }
+
+    # 2. equip debug handle to the exported program's nodes using the mapping
+    # number of nodes in the exported program that have matched entry in export_graph_node_id_to_debug_handle
+    n_matched_node = 0
+
+    # debug handle for the node in the exported program but not in the edge dialect program
+    debug_handle_for_removed_node = (
+        max(export_graph_node_id_to_debug_handle.values()) + 1
+    )
+
+    def _find_n_match_node(node: torch.fx.Node) -> None:
+        nonlocal n_matched_node
+        if node.name in ("output", "placeholder"):
+            return
+        node_id = f"{node.name}.{exported_program_graph_id}"
+        if node_id in export_graph_node_id_to_debug_handle:
+            n_matched_node += 1
+
+    def _equip_debug_handle(node: torch.fx.Node) -> None:
+        if node.name in ("output", "placeholder"):
+            return
+        node_id = f"{node.name}.{exported_program_graph_id}"
+        if node_id in export_graph_node_id_to_debug_handle:
+            node.meta[DEBUG_HANDLE_KEY] = export_graph_node_id_to_debug_handle[node_id]
+        else:
+            node.meta[DEBUG_HANDLE_KEY] = debug_handle_for_removed_node
+
+    bfs_trace_with_node_process(exported_program.graph_module, _find_n_match_node)
+
+    # if any node in the edge dialect program has no corresponding node in the exported program, match failed
+    if n_matched_node != len(export_graph_node_id_to_debug_handle):
+        return False
+
+    bfs_trace_with_node_process(exported_program.graph_module, _equip_debug_handle)
+    return True
