@@ -26,6 +26,8 @@
 cmake_minimum_required(VERSION 3.19)
 include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
 
+include(${CMAKE_CURRENT_LIST_DIR}/Utils.cmake)
+
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
 set(EXECUTORCH_LIBRARIES)
@@ -164,6 +166,7 @@ if(TARGET optimized_native_cpu_ops_lib)
     PROPERTIES INTERFACE_LINK_LIBRARIES
                "optimized_kernels;${_maybe_optimized_portable_kernels_lib}"
   )
+  target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 endif()
 if(TARGET extension_threadpool)
   target_compile_definitions(extension_threadpool INTERFACE ET_USE_THREADPOOL)

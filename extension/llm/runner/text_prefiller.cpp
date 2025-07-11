@@ -19,10 +19,12 @@ namespace llm {
 TextPrefiller::TextPrefiller(
     TextDecoderRunner* text_decoder_runner,
     bool use_kv_cache,
+    bool use_cache_positions,
     bool enable_parallel_prefill,
     int64_t max_seq_len)
     : text_decoder_runner_(text_decoder_runner),
       use_kv_cache_(use_kv_cache),
+      use_cache_positions_(use_cache_positions),
       enable_parallel_prefill_(enable_parallel_prefill),
       max_seq_len_(max_seq_len > 0 ? max_seq_len : 128) {}
 

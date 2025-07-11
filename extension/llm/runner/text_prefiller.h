@@ -21,7 +21,8 @@ class ET_EXPERIMENTAL TextPrefiller {
  public:
   TextPrefiller(
       TextDecoderRunner* text_decoder_runner,
-      bool use_kv_cache_,
+      bool use_kv_cache,
+      bool use_cache_positions,
       bool enable_parallel_prefill,
       int64_t max_seq_len = 128);
 
@@ -75,6 +76,7 @@ class ET_EXPERIMENTAL TextPrefiller {
    */
   TextDecoderRunner* text_decoder_runner_;
   bool use_kv_cache_;
+  bool use_cache_positions_;
   bool enable_parallel_prefill_;
   int64_t max_seq_len_;
 };

@@ -506,3 +506,90 @@ TEST_F(TensorPtrMakerTest, CreateRandnTensorWithIntType) {
     EXPECT_EQ(val, 0);
   }
 }
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithDefaultStartAndStep) {
+  auto tensor = arange(5);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<float>()[i];
+    EXPECT_EQ(val, static_cast<float>(i));
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithStartEndStep) {
+  auto tensor = arange(2, 10, 2);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 4); // (10-2)/2 = 4 elements
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<float>()[i];
+    EXPECT_EQ(val, static_cast<float>(2 + i * 2));
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithNegativeStep) {
+  auto tensor = arange(5, 0, -1);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<float>()[i];
+    EXPECT_EQ(val, static_cast<float>(5 - i));
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithIntType) {
+  auto tensor = arange(0, 5, 1, executorch::aten::ScalarType::Int);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Int);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<int32_t>()[i];
+    EXPECT_EQ(val, i);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithLongType) {
+  auto tensor = arange(0, 5, 1, executorch::aten::ScalarType::Long);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 5);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Long);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<int64_t>()[i];
+    EXPECT_EQ(val, static_cast<int64_t>(i));
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithDoubleType) {
+  auto tensor = arange(0.5, 5.5, 0.5, executorch::aten::ScalarType::Double);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 10); // (5.5-0.5)/0.5 = 10 elements
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Double);
+
+  for (auto i = 0; i < tensor->numel(); ++i) {
+    auto val = tensor->const_data_ptr<double>()[i];
+    EXPECT_DOUBLE_EQ(val, 0.5 + i * 0.5);
+  }
+}
+
+TEST_F(TensorPtrMakerTest, CreateArangeTensorWithEmptyRange) {
+  // End < start with positive step should give empty tensor
+  auto tensor = arange(5, 0, 1);
+
+  EXPECT_EQ(tensor->dim(), 1);
+  EXPECT_EQ(tensor->size(0), 0);
+  EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Float);
+}

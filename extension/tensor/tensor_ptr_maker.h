@@ -683,5 +683,41 @@ inline TensorPtr randint(
   return randint_strided(low, high, std::move(sizes), {}, type, dynamism);
 }
 
+/**
+ * Creates a 2-D tensor (sizes=[1, max]) with values from `start` to `end`
+ * (exclusive) with step size `step`.
+ *
+ * @param start The starting value of the sequence.
+ * @param end The ending value of the sequence (exclusive).
+ * @param step The step size between values in the sequence.
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+TensorPtr arange(
+    executorch::aten::Scalar start,
+    executorch::aten::Scalar end,
+    executorch::aten::Scalar step = 1,
+    executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
+    executorch::aten::TensorShapeDynamism dynamism =
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND);
+
+/**
+ * Creates a 2-D tensor (sizes=[1, max]) with values from 0 to `end` (exclusive)
+ * with step size 1.
+ *
+ * @param end The ending value of the sequence (exclusive).
+ * @param type The scalar type of the tensor elements.
+ * @param dynamism Specifies whether the tensor's shape is static or dynamic.
+ * @return A TensorPtr instance managing the newly created Tensor.
+ */
+inline TensorPtr arange(
+    executorch::aten::Scalar end,
+    executorch::aten::ScalarType type = executorch::aten::ScalarType::Float,
+    executorch::aten::TensorShapeDynamism dynamism =
+        executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  return arange(0, end, 1, type, dynamism);
+}
+
 } // namespace extension
 } // namespace executorch
