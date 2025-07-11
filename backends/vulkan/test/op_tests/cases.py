@@ -763,6 +763,21 @@ def get_full_inputs():
     return test_suite
 
 
+@register_test_suite("aten.scalar_tensor.default")
+def get_scalar_tensor_inputs():
+    test_suite = VkTestSuite(
+        [
+            (42.0,),
+            (3.14,),
+            (2.72,),
+            (0.0,),
+            (-1.0,),
+            (100.0,),
+        ]
+    )
+    return test_suite
+
+
 @register_test_suite(
     [
         "aten.zeros.default",
