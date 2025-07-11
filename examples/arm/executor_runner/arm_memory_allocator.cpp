@@ -9,9 +9,7 @@
 ArmMemoryAllocator::ArmMemoryAllocator(uint32_t size, uint8_t* base_address)
     : MemoryAllocator(size, base_address), used_(0), peak_used_(0) {}
 
-void* ArmMemoryAllocator::allocate(
-    size_t size,
-    size_t alignment = kDefaultAlignment) override {
+void* ArmMemoryAllocator::allocate(size_t size, size_t alignment) {
   void* ret = executorch::runtime::MemoryAllocator::allocate(size, alignment);
   if (ret != nullptr) {
     // Align with the same code as in MemoryAllocator::allocate() to keep
