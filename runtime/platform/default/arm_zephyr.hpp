@@ -41,7 +41,7 @@ void et_pal_emit_log_message(
       message);
 }
 
-void* et_pal_allocate(ET_UNUSED size_t size) {
+void* et_pal_allocate(size_t size) {
     return k_malloc(size);
 }
 
