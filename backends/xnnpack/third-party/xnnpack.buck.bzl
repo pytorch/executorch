@@ -4,8 +4,8 @@ load(
     "OPERATOR_SRCS",
     "SUBGRAPH_SRCS",
     "TABLE_SRCS",
-    "XNNPACK_SRCS",
     "get_xnnpack_headers",
+    "get_ukernel_config_srcs",
     "prod_srcs_for_arch_wrapper",
 )
 
@@ -1070,7 +1070,7 @@ def define_xnnpack():
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "XNNPACK",
-        srcs = XNNPACK_SRCS + LOGGING_SRCS + [
+        srcs = get_ukernel_config_srcs() + LOGGING_SRCS + [
             "XNNPACK/src/init.c",
             "XNNPACK/src/params.c",
             "XNNPACK/src/configs/hardware-config.c",
@@ -1100,7 +1100,16 @@ def define_xnnpack():
             # "-DXNN_ENABLE_DWCONV_MULTIPLASS=1",
             "-DXNN_ENABLE_ARM_I8MM=1",
             "-DXNN_ENABLE_ARM_FP16_VECTOR=1",
-            "-DXNN_ENABLE_AVX512BF16=0"
+            "-DXNN_ENABLE_AVX512BF16=1"
+            "-DXNN_ENABLE_AVX512F=1",
+            "-DXNN_ENABLE_AVX512SKX=1",
+            "-DXNN_ENABLE_AVX512VNNI=1",
+            "-DXNN_ENABLE_AVX512VNNIGFNI=1",
+            "-DXNN_ENABLE_AVX512AMX=1",
+            "-DXNN_ENABLE_AVX512VBMI=1",
+            "-DXNN_ENABLE_AVX512FP16=1",
+            "-DXNN_ENABLE_AVXVNNIINT8=1",
+            "-DXNN_ENABLE_AVX256VNNIGFNI=1",
         ],
         visibility = ["PUBLIC"],
         exported_deps = COMMON_XNNPACK_DEPS + [
