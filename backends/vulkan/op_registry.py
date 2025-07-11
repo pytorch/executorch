@@ -281,6 +281,11 @@ def register_quantization_op(features: OpFeatures):
         exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.div.Tensor_mode,
         exir_ops.edge.aten.pow.Tensor_Tensor,
+        exir_ops.edge.aten.eq.Tensor,
+        exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.gt.Tensor,
+        exir_ops.edge.aten.ge.Tensor,
     ]
 )
 def register_binary_op(features: OpFeatures):
