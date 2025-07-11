@@ -489,17 +489,6 @@ at::Tensor quantize_per_channel_reference_impl(
 }
 
 // Forward declaration of implementation functions
-void test_vulkan_quantize_per_tensor_impl(
-    const std::vector<int>& input_sizes,
-    float scale,
-    int zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    at::ScalarType in_dtype,
-    at::ScalarType dtype,
-    const vkcompute::utils::StorageType in_storage,
-    const vkcompute::utils::StorageType out_storage);
-
 void test_vulkan_quantize_per_token_impl(
     const std::vector<int>& input_sizes,
     const std::vector<float>& scales,
@@ -533,46 +522,6 @@ void test_vulkan_quantize_per_tensor_tensor_impl(
     at::ScalarType dtype,
     const vkcompute::utils::StorageType in_storage,
     const vkcompute::utils::StorageType out_storage);
-
-// Wrapper function to test both buffer and texture storage types
-void test_vulkan_quantize_per_tensor(
-    const std::vector<int>& input_sizes,
-    float scale,
-    int zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    at::ScalarType in_dtype = at::kFloat,
-    at::ScalarType dtype = at::kInt) {
-  // Test with buffer storage
-  test_vulkan_quantize_per_tensor_impl(
-      input_sizes,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      in_dtype,
-      dtype,
-      vkcompute::utils::kBuffer,
-      vkcompute::utils::kBuffer);
-
-  // If the in_dtype is a double, convert to float for texture implementation
-  // since they don't support 64bit as inputs
-  if (in_dtype == at::kDouble) {
-    in_dtype = at::kFloat;
-  }
-
-  // Test with texture storage
-  test_vulkan_quantize_per_tensor_impl(
-      input_sizes,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      in_dtype,
-      dtype,
-      vkcompute::utils::kTexture3D,
-      vkcompute::utils::kTexture3D);
-}
 
 // Wrapper function to test both buffer and texture storage types
 void test_vulkan_quantize_per_token(
