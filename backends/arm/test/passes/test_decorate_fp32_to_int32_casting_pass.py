@@ -6,7 +6,7 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.arm.test import common, conftest
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
@@ -55,6 +55,7 @@ def test_decorate_fp32_to_int32_casting_tosa_MI(test_data: Tuple):
         (test_tensor,),
         aten_op=[],
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
