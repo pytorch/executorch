@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Using ExecuTorch with C++ &mdash; ExecuTorch main documentation</title>
+  <title>.ptd file format &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Runtime Integration" href="using-executorch-runtime-integration.html" />
-    <link rel="prev" title="Using ExecuTorch on iOS" href="using-executorch-ios.html" />
+    <link rel="next" title="Export API Reference" href="export-to-executorch-api-reference.html" />
+    <link rel="prev" title=".pte file format" href="pte-file-format.html" />
 
 
   <!-- Google Tag Manager -->
@@ -326,12 +326,12 @@
 <li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Usage</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
@@ -369,7 +369,7 @@
 <li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
@@ -378,7 +378,7 @@
 <li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
 <li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -469,13 +469,13 @@
       </li>
 
         
-      <li>Using ExecuTorch with C++</li>
+      <li><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/using-executorch-cpp.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/ptd-file-format.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -507,75 +507,152 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="using-executorch-with-c">
-<h1>Using ExecuTorch with C++<a class="headerlink" href="#using-executorch-with-c" title="Permalink to this heading">¶</a></h1>
-<p>In order to support a wide variety of devices, from high-end mobile phones down to tiny embedded systems, ExecuTorch provides an API surface with a high degree of customizability. The C++ APIs expose advanced configuration options, such as controlling memory allocation, placement, and data loading. To meet the needs of both application and embedded programming, ExecuTorch provides a low-level, highly-customizable core set of APIs, and set of high-level extensions, which abstract away many of the low-level details that are not relevant for mobile application programming.</p>
-<div class="section" id="high-level-apis">
-<h2>High-Level APIs<a class="headerlink" href="#high-level-apis" title="Permalink to this heading">¶</a></h2>
-<p>The C++ <code class="docutils literal notranslate"><span class="pre">Module</span></code> class provides the high-level interface to load and execute a model from C++. It is responsible for loading the .pte file, configuring memory allocation and placement, and running the model. The Module constructor takes a file path and provides a simplified <code class="docutils literal notranslate"><span class="pre">forward()</span></code> method to run the model.</p>
-<p>In addition the Module class, the tensor extension provides an encapsulated interface to define and manage tensor memory. It provides the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> class, which is a “fat” smart pointer. It provides ownership over the tensor  data and metadata, such as size and strides. The <code class="docutils literal notranslate"><span class="pre">make_tensor_ptr</span></code> and <code class="docutils literal notranslate"><span class="pre">from_blob</span></code> methods, defined in <code class="docutils literal notranslate"><span class="pre">tensor.h</span></code>, provide owning and non-owning tensor creation APIs, respectively.</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/tensor/tensor.h&gt;</span>
-
-<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="o">::</span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
-
-<span class="c1">// Load the model.</span>
-<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">);</span>
-
-<span class="c1">// Create an input tensor.</span>
-<span class="kt">float</span><span class="w"> </span><span class="n">input</span><span class="p">[</span><span class="mi">1</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="p">];</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">from_blob</span><span class="p">(</span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="p">});</span>
-
-<span class="c1">// Perform an inference.</span>
-<span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">tensor</span><span class="p">);</span>
-
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
-<span class="w">  </span><span class="c1">// Retrieve the output data.</span>
-<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">output</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">result</span><span class="o">-&gt;</span><span class="n">at</span><span class="p">(</span><span class="mi">0</span><span class="p">).</span><span class="n">toTensor</span><span class="p">().</span><span class="n">const_data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="p">}</span>
+  <div class="section" id="ptd-file-format">
+<h1><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format<a class="headerlink" href="#ptd-file-format" title="Permalink to this heading">¶</a></h1>
+<p>ExecuTorch <code class="docutils literal notranslate"><span class="pre">.ptd</span></code> files are serialized as modified binary flatbuffer
+files with data segments appended. They provide a way to store named data using
+the FlatTensor format. Named data can be tensors or opaque blob data (usually for backends that do not expose data format).</p>
+<p>Code related to the PTD file format is in the <code class="docutils literal notranslate"><span class="pre">//executorch/extension/flat_tensor/</span></code> directory.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>             ┌───────────────────────────────────┐
+             │Standard flatbuffer header         │
+             ├───────────────────────────────────┤
+             │ExecuTorch extended header         │
+             ├───────────────────────────────────┤
+             │Flatbuffer-serialized metadata     │
+             │(FlatTensor)                       │
+             │                                   │
+          ┌─ ├───────────────────────────────────┤
+          │  │Padding                            │
+          │  ├───────────────────────────────────┤
+          │  │Data segment                       │
+          │  │                                   │
+          │  │                                   │
+          │  ├───────────────────────────────────┤
+          │  │Padding                            │
+   Blobs ─┤  ├───────────────────────────────────┤
+          │  │Data segment                       │
+          │  │                                   │
+          │  │                                   │
+          │  ├───────────────────────────────────┤
+          │  │Padding                            │
+          │  ├───────────────────────────────────┤
+          │  │...                                │
+          └─ └───────────────────────────────────┘
 </pre></div>
 </div>
-<p>For more information on the Module class, see <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Running an ExecuTorch Model Using the Module Extension in C++</span></a>. For information on high-level tensor APIs, see <a class="reference internal" href="extension-tensor.html"><span class="doc std std-doc">Managing Tensor Memory in C++</span></a>.</p>
-<p>For complete examples of building and running a C++ application using the Module API, refer to our <a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/cpp">examples GitHub repository</a>.</p>
+<div class="section" id="compatibility">
+<h2>Compatibility<a class="headerlink" href="#compatibility" title="Permalink to this heading">¶</a></h2>
+<p>PTD files are designed for storing named data that can be loaded by ExecuTorch
+models.</p>
 </div>
-<div class="section" id="low-level-apis">
-<h2>Low-Level APIs<a class="headerlink" href="#low-level-apis" title="Permalink to this heading">¶</a></h2>
-<p>Running a model using the low-level runtime APIs allows for a high-degree of control over memory allocation, placement, and loading. This allows for advanced use cases, such as placing allocations in specific memory banks or loading a model without a file system. For an end to end example using the low-level runtime APIs, see <a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">Running an ExecuTorch Model in C++ Tutorial</span></a>.</p>
-</div>
-<div class="section" id="building-with-cmake">
-<h2>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Permalink to this heading">¶</a></h2>
-<p>ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_MODULE</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_TENSOR</span></code> CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> target as a CMake dependency, along with <code class="docutils literal notranslate"><span class="pre">extension_module_static</span></code> and <code class="docutils literal notranslate"><span class="pre">extension_tensor</span></code>, if desired.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
-<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
-<span class="o">...</span>
-<span class="n">target_link_libraries</span><span class="p">(</span>
-    <span class="n">my_target</span>
-    <span class="n">PRIVATE</span> <span class="n">executorch</span>
-    <span class="n">extension_module_static</span>
-    <span class="n">extension_tensor</span>
-    <span class="n">optimized_native_cpu_ops_lib</span>
-    <span class="n">xnnpack_backend</span><span class="p">)</span>
+<div class="section" id="headers">
+<h2>Headers<a class="headerlink" href="#headers" title="Permalink to this heading">¶</a></h2>
+<p>PTD files can be recognized by the magic string at byte offset 4, beginning with <code class="docutils literal notranslate"><span class="pre">FT</span></code>
+and followed by two ASCII decimal digits (file identifier from the FlatBuffers schema).</p>
+<p>PTD files have an extended header at byte offset 8, recognized by the magic string
+<code class="docutils literal notranslate"><span class="pre">FH01</span></code>. This header includes the size and offset information for both the
+flatbuffer-serialized metadata and the data segments that follow.</p>
+<p>Note that this header is ExecuTorch-specific, but even when present it does not
+upset most flatbuffer-parsing code (apart from the rarely-used
+<code class="docutils literal notranslate"><span class="pre">GetBufferStartFromRootPointer()</span></code>).</p>
+<p>All numbers are little-endian, regardless of the host system.</p>
+<p>Header layout:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="p">[</span><span class="mf">0..3</span><span class="p">]</span> <span class="n">uint32_t</span> <span class="n">byte</span> <span class="n">offset</span> <span class="n">to</span> <span class="n">the</span> <span class="n">beginning</span> <span class="n">of</span> <span class="n">the</span> <span class="n">flatbuffer</span> <span class="n">root</span> <span class="n">table</span><span class="o">.</span>
+<span class="p">[</span><span class="mf">4..7</span><span class="p">]</span> <span class="n">File</span> <span class="n">magic</span> <span class="nb">bytes</span><span class="p">:</span> <span class="s2">&quot;FT&quot;</span> <span class="n">followed</span> <span class="n">by</span> <span class="n">two</span> <span class="n">ASCII</span> <span class="n">decimal</span> <span class="n">digits</span><span class="o">.</span> <span class="n">The</span> <span class="n">digits</span>
+       <span class="n">correspond</span> <span class="n">to</span> <span class="n">the</span> <span class="n">FlatBuffers</span> <span class="n">file</span> <span class="n">identifier</span><span class="o">.</span>
+<span class="n">Extended</span> <span class="n">header</span> <span class="p">(</span><span class="n">always</span> <span class="n">present</span><span class="p">):</span>
+<span class="o">|</span>  <span class="p">[</span><span class="mf">8..11</span><span class="p">]</span> <span class="n">Extended</span> <span class="n">header</span> <span class="n">magic</span> <span class="nb">bytes</span><span class="p">:</span> <span class="s2">&quot;FH01&quot;</span> <span class="o">-</span> <span class="n">FlatTensor</span> <span class="n">Header</span> <span class="n">version</span> <span class="mf">01.</span>
+<span class="o">|</span> <span class="p">[</span><span class="mf">12..15</span><span class="p">]</span> <span class="n">uint32_t</span> <span class="n">size</span> <span class="n">of</span> <span class="n">this</span> <span class="n">extended</span> <span class="n">header</span> <span class="ow">in</span> <span class="nb">bytes</span><span class="p">,</span> <span class="n">including</span> <span class="n">the</span> <span class="n">magic</span>
+<span class="o">|</span>          <span class="n">header</span> <span class="ow">and</span> <span class="n">this</span> <span class="n">size</span> <span class="n">field</span><span class="o">.</span> <span class="n">Currently</span> <span class="n">fixed</span> <span class="n">at</span> <span class="mi">40</span> <span class="nb">bytes</span><span class="o">.</span>
+<span class="o">|</span> <span class="p">[</span><span class="mf">16..23</span><span class="p">]</span> <span class="n">uint64_t</span> <span class="n">offset</span> <span class="p">(</span><span class="kn">from</span><span class="w"> </span><span class="nn">byte</span> <span class="n">offset</span> <span class="n">zero</span><span class="p">)</span> <span class="n">to</span> <span class="n">the</span> <span class="n">start</span> <span class="n">of</span> <span class="n">the</span>
+<span class="o">|</span>          <span class="n">flatbuffer</span> <span class="n">data</span><span class="o">.</span>
+<span class="o">|</span> <span class="p">[</span><span class="mf">24..31</span><span class="p">]</span> <span class="n">uint64_t</span> <span class="n">size</span> <span class="n">of</span> <span class="n">the</span> <span class="n">flatbuffer</span><span class="o">-</span><span class="n">encoded</span> <span class="n">tensor</span> <span class="n">metadata</span> <span class="ow">in</span> <span class="nb">bytes</span><span class="o">.</span>
+<span class="o">|</span> <span class="p">[</span><span class="mf">32..39</span><span class="p">]</span> <span class="n">uint64_t</span> <span class="n">offset</span> <span class="p">(</span><span class="kn">from</span><span class="w"> </span><span class="nn">byte</span> <span class="n">offset</span> <span class="n">zero</span><span class="p">)</span> <span class="n">to</span> <span class="n">the</span> <span class="n">start</span> <span class="n">of</span> <span class="n">the</span> <span class="n">first</span>
+<span class="o">|</span>          <span class="n">data</span> <span class="n">segment</span><span class="o">.</span>
+<span class="o">|</span> <span class="p">[</span><span class="mf">40..47</span><span class="p">]</span> <span class="n">uint64_t</span> <span class="n">total</span> <span class="n">size</span> <span class="n">of</span> <span class="nb">all</span> <span class="n">data</span> <span class="n">segments</span> <span class="ow">in</span> <span class="nb">bytes</span><span class="o">.</span>
+<span class="n">End</span> <span class="n">of</span> <span class="n">extended</span> <span class="n">header</span><span class="o">.</span>
 </pre></div>
 </div>
-<p>See <a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building from Source</span></a> for more information on the CMake build process.</p>
-</div>
-<div class="section" id="reference-runners">
-<h2>Reference Runners<a class="headerlink" href="#reference-runners" title="Permalink to this heading">¶</a></h2>
-<p>The ExecuTorch repository includes several reference runners, which are simple programs that load and execute a .pte file, typically with random inputs. These can be used to sanity check model execution on a development platform and as a code reference for runtime integration.</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> target is built by default when building with CMake. It can be invoked as follows:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">executor_runner</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">path</span><span class="o">/</span><span class="n">to</span><span class="o">/</span><span class="n">model</span><span class="o">.</span><span class="n">pte</span>
+<p>Example:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>        <span class="n">Offset</span> <span class="n">to</span> <span class="n">flatbuffer</span> <span class="n">root</span> <span class="p">(</span><span class="mh">0x44</span><span class="p">)</span>
+        <span class="o">|</span>            <span class="n">File</span> <span class="n">magic</span> <span class="p">(</span><span class="s2">&quot;FT01&quot;</span><span class="p">)</span>
+        <span class="o">|</span>            <span class="o">|</span>            <span class="n">Extended</span> <span class="n">header</span> <span class="n">magic</span> <span class="p">(</span><span class="s2">&quot;FH01&quot;</span><span class="p">)</span>
+        <span class="o">|</span>            <span class="o">|</span>            <span class="o">|</span>            <span class="n">Extended</span> <span class="n">header</span> <span class="n">size</span> <span class="p">(</span><span class="mh">0x28</span><span class="p">)</span>
+        <span class="n">vvvvvvvvvvv</span>  <span class="n">vvvvvvvvvvv</span>  <span class="n">vvvvvvvvvvv</span>  <span class="n">vvvvvvvvvvv</span>
+<span class="mh">0x0000</span>  <span class="mi">44</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">46</span> <span class="mi">54</span> <span class="mi">30</span> <span class="mi">31</span>  <span class="mi">46</span> <span class="mi">48</span> <span class="mi">30</span> <span class="mi">31</span>  <span class="mi">28</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>
+<span class="mh">0x0010</span>  <span class="mi">30</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">00</span> <span class="mi">01</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>
+<span class="mh">0x0020</span>  <span class="mi">30</span> <span class="mi">01</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">20</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>
+        <span class="o">^^^^^^^^^^^^^^^^^^^^^^^^</span>  <span class="o">^^^^^^^^^^^^^^^^^^^^^^^^</span>
+        <span class="o">|</span>                         <span class="o">|</span> <span class="n">Flatbuffer</span> <span class="n">size</span> <span class="p">(</span><span class="mh">0x100</span><span class="p">)</span>
+        <span class="o">|</span>                         <span class="o">|</span> <span class="n">Segment</span> <span class="n">data</span> <span class="n">size</span> <span class="p">(</span><span class="mh">0x20</span><span class="p">)</span>
+        <span class="n">Segment</span> <span class="n">base</span> <span class="n">offset</span> <span class="p">(</span><span class="mh">0x130</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>The runner source code can be found in the ExecuTorch repo under <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp">examples/portable/executor_runner.cpp</a>. Some backends, such as CoreML, have dedicated runners to showcase backend and platform-specific functionality. See <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/apple/coreml">examples/apple/coreml</a> and the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples">examples</a> directory for more information.</p>
+<p>Note: this example comes from inspecting the ModuleAddMul.ptd file.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="o">-</span><span class="n">m</span> <span class="n">test</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">export_program</span> <span class="o">--</span><span class="n">modules</span> <span class="s2">&quot;ModuleAddMul&quot;</span> <span class="o">--</span><span class="n">external</span><span class="o">-</span><span class="n">constants</span> <span class="o">--</span><span class="n">outdir</span> <span class="o">.</span>
+
+<span class="n">xxd</span> <span class="o">-</span><span class="n">l</span> <span class="mi">64</span> <span class="n">ModuleAddMulProgram</span><span class="o">.</span><span class="n">ptd</span>
+</pre></div>
 </div>
-<div class="section" id="next-steps">
-<h2>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="flattensor">
+<h2>FlatTensor<a class="headerlink" href="#flattensor" title="Permalink to this heading">¶</a></h2>
+<p>See <code class="docutils literal notranslate"><span class="pre">//executorch/extension/flat_tensor/serialize/flat_tensor.fbs</span></code> for the
+FlatTensor flatbuffer schema.</p>
+<p>The flatbuffer-encoded metadata follows the headers and contains:</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a> for documentation on the available C++ runtime APIs.</p></li>
-<li><p><a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Running an ExecuTorch Model Using the Module Extension in C++</span></a> for information on the high-level Module API.</p></li>
-<li><p><a class="reference internal" href="extension-tensor.html"><span class="doc std std-doc">Managing Tensor Memory in C++</span></a> for information on high-level tensor APIs.</p></li>
-<li><p><a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">Running an ExecuTorch Model in C++ Tutorial</span></a> for information on the low-level runtime APIs.</p></li>
-<li><p><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building from Source</span></a> for information on CMake build integration.</p></li>
+<li><p><strong>Schema version</strong>: Version information for compatibility.</p></li>
+<li><p><strong>Data segments</strong>: List of segment descriptors with offset and size information.</p></li>
+<li><p><strong>Named data</strong>: List of named data entries, each containing:</p>
+<ul>
+<li><p><strong>Key</strong>: String identifier for the data blob.</p></li>
+<li><p><strong>Segment index</strong>: Reference to the data segment containing the blob.</p></li>
+<li><p><strong>Tensor layout</strong>: Optional metadata including scalar type, sizes and dim order, if the data segment contains a tensor.</p></li>
+</ul>
+</li>
+</ul>
+<div class="section" id="tensor-layout">
+<h3>Tensor Layout<a class="headerlink" href="#tensor-layout" title="Permalink to this heading">¶</a></h3>
+<p>If a data segment contains a canonical tensor, it may have associated layout information:</p>
+<ul class="simple">
+<li><p><strong>Scalar type</strong>: Data type (float32, int32, etc.) using ExecutorTorch scalar types.</p></li>
+<li><p><strong>Sizes</strong>: Dimensions of the tensor.</p></li>
+<li><p><strong>Dim order</strong>: Memory layout order specifying how dimensions are arranged in memory.</p></li>
+</ul>
+</div>
+</div>
+<div class="section" id="data-segments">
+<h2>Data segments<a class="headerlink" href="#data-segments" title="Permalink to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">FlatTensor.segments</span></code> list in the metadata contains offset and size
+information about each data segment. Offsets in this list are relative to
+the segment base offset specified in the extended header.</p>
+<p>Each segment contains:</p>
+<ul class="simple">
+<li><p><strong>Offset</strong>: Relative offset from the segment base offset.</p></li>
+<li><p><strong>Size</strong>: Size of the valid data in bytes (may be followed by padding).</p></li>
+</ul>
+</div>
+<div class="section" id="named-data-access">
+<h2>Named data access<a class="headerlink" href="#named-data-access" title="Permalink to this heading">¶</a></h2>
+<p>Tensors are accessed by string keys through the <code class="docutils literal notranslate"><span class="pre">named_data</span></code> list. Each entry
+maps a string key to:</p>
+<ol class="arabic simple">
+<li><p>A segment index pointing to the raw data.</p></li>
+<li><p>Optional tensor layout metadata, if the data segment contains a tensor.</p></li>
+</ol>
+<p>This design allows:</p>
+<ul class="simple">
+<li><p>Multiple named data blobs to reference the same data segment.</p></li>
+<li><p>Access to tensor layout data without loading the entire blob.</p></li>
+</ul>
+</div>
+<div class="section" id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Permalink to this heading">¶</a></h2>
+<p>PTD files are used to store data outside of the PTE file. Some use-cases:</p>
+<ul class="simple">
+<li><p>On-device training: checkpointing for model weights.</p></li>
+<li><p>Deduplication: sharing model weights between multiple executable PTE files.</p></li>
+<li><p>Flexible deployment: allow async updates between program and data.</p></li>
 </ul>
 </div>
 </div>
@@ -588,10 +665,10 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="using-executorch-runtime-integration.html" class="btn btn-neutral float-right" title="Runtime Integration" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="export-to-executorch-api-reference.html" class="btn btn-neutral float-right" title="Export API Reference" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="using-executorch-ios.html" class="btn btn-neutral" title="Using ExecuTorch on iOS" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="pte-file-format.html" class="btn btn-neutral" title=".pte file format" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -625,12 +702,16 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Using ExecuTorch with C++</a><ul>
-<li><a class="reference internal" href="#high-level-apis">High-Level APIs</a></li>
-<li><a class="reference internal" href="#low-level-apis">Low-Level APIs</a></li>
-<li><a class="reference internal" href="#building-with-cmake">Building with CMake</a></li>
-<li><a class="reference internal" href="#reference-runners">Reference Runners</a></li>
-<li><a class="reference internal" href="#next-steps">Next Steps</a></li>
+<li><a class="reference internal" href="#"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a><ul>
+<li><a class="reference internal" href="#compatibility">Compatibility</a></li>
+<li><a class="reference internal" href="#headers">Headers</a></li>
+<li><a class="reference internal" href="#flattensor">FlatTensor</a><ul>
+<li><a class="reference internal" href="#tensor-layout">Tensor Layout</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#data-segments">Data segments</a></li>
+<li><a class="reference internal" href="#named-data-access">Named data access</a></li>
+<li><a class="reference internal" href="#usage">Usage</a></li>
 </ul>
 </li>
 </ul>
