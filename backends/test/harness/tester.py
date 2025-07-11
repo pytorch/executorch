@@ -361,6 +361,7 @@ class Tester:
                     ref,
                     atol=atol,
                     rtol=rtol,
+                    equal_nan=True,
                 ), (
                     f"Output {i} does not match reference output.\n"
                     f"\tGiven atol: {atol}, rtol: {rtol}.\n"
