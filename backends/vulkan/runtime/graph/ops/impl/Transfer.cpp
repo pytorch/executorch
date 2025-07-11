@@ -46,8 +46,9 @@ void add_transfer_copy_node(
     int32_t step_ref;
   } transfer_params{static_cast<int32_t>(dim_whcn), 0, 0};
 
-  const bool param_is_scalar = graph.is_scalar(index_or_start_ref) &&
-      (transfer_type == TransferType::SELECT || graph.is_scalar(step_ref));
+  const bool param_is_scalar = graph.is_scalar_or_none(index_or_start_ref) &&
+      (transfer_type == TransferType::SELECT ||
+       graph.is_scalar_or_none(step_ref));
 
   vkapi::ParamsBindList param_buffers;
   if (!param_is_scalar) {
@@ -61,9 +62,9 @@ void add_transfer_copy_node(
     }
   } else {
     transfer_params.index_or_start_ref =
-        graph.get_or_create_int(index_or_start_ref, 0);
+        graph.extract_scalar_or<int32_t>(index_or_start_ref, 0);
     if (transfer_type != TransferType::SELECT) {
-      transfer_params.step_ref = graph.get_or_create_int(step_ref, 1);
+      transfer_params.step_ref = graph.extract_scalar_or<int32_t>(step_ref, 1);
     }
   }
 
