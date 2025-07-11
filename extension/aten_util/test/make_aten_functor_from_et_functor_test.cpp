@@ -424,10 +424,12 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_ArrayRefOptional) {
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
   // Test const optional scalar conversion
-  const std::optional<int64_t> const_optional_at_in = std::optional<int64_t>(42);
+  const std::optional<int64_t> const_optional_at_in =
+      std::optional<int64_t>(42);
   auto const_optional_et =
-      type_convert<const std::optional<int64_t>, torch::executor::optional<int64_t>>(
-          const_optional_at_in)
+      type_convert<
+          const std::optional<int64_t>,
+          torch::executor::optional<int64_t>>(const_optional_at_in)
           .call();
   EXPECT_TRUE(const_optional_et.has_value());
   EXPECT_EQ(const_optional_et.value(), 42);
@@ -442,10 +444,12 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
   EXPECT_EQ(optional_et_from_ref.value(), 24);
 
   // Test const optional scalar reference conversion
-  const std::optional<int64_t> const_optional_at_ref_in = std::optional<int64_t>(84);
+  const std::optional<int64_t> const_optional_at_ref_in =
+      std::optional<int64_t>(84);
   auto const_optional_et_from_ref =
-      type_convert<const std::optional<int64_t>&, torch::executor::optional<int64_t>>(
-          const_optional_at_ref_in)
+      type_convert<
+          const std::optional<int64_t>&,
+          torch::executor::optional<int64_t>>(const_optional_at_ref_in)
           .call();
   EXPECT_TRUE(const_optional_et_from_ref.has_value());
   EXPECT_EQ(const_optional_et_from_ref.value(), 84);
@@ -453,10 +457,10 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
   // Test const optional tensor conversion
   const std::optional<at::Tensor> const_optional_tensor_at_in =
       std::optional<at::Tensor>(torch::tensor({5}));
-  auto const_optional_tensor_converter =
-      type_convert<
-          const std::optional<at::Tensor>,
-          torch::executor::optional<torch::executor::Tensor>>(const_optional_tensor_at_in);
+  auto const_optional_tensor_converter = type_convert<
+      const std::optional<at::Tensor>,
+      torch::executor::optional<torch::executor::Tensor>>(
+      const_optional_tensor_at_in);
   auto const_optional_tensor_et = const_optional_tensor_converter.call();
   EXPECT_TRUE(const_optional_tensor_et.has_value());
   EXPECT_EQ(const_optional_tensor_et.value().const_data_ptr<int64_t>()[0], 5);
@@ -464,38 +468,45 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
   // Test optional tensor reference conversion
   std::optional<at::Tensor> optional_tensor_at_ref_in =
       std::optional<at::Tensor>(torch::tensor({7}));
-  auto optional_tensor_converter_from_ref =
-      type_convert<
-          std::optional<at::Tensor>&,
-          torch::executor::optional<torch::executor::Tensor>>(optional_tensor_at_ref_in);
+  auto optional_tensor_converter_from_ref = type_convert<
+      std::optional<at::Tensor>&,
+      torch::executor::optional<torch::executor::Tensor>>(
+      optional_tensor_at_ref_in);
   auto optional_tensor_et_from_ref = optional_tensor_converter_from_ref.call();
   EXPECT_TRUE(optional_tensor_et_from_ref.has_value());
-  EXPECT_EQ(optional_tensor_et_from_ref.value().const_data_ptr<int64_t>()[0], 7);
+  EXPECT_EQ(
+      optional_tensor_et_from_ref.value().const_data_ptr<int64_t>()[0], 7);
 
   // Test const optional tensor reference conversion
   const std::optional<at::Tensor> const_optional_tensor_at_ref_in =
       std::optional<at::Tensor>(torch::tensor({9}));
-  auto const_optional_tensor_converter_from_ref =
-      type_convert<
-          const std::optional<at::Tensor>&,
-          torch::executor::optional<torch::executor::Tensor>>(const_optional_tensor_at_ref_in);
-  auto const_optional_tensor_et_from_ref = const_optional_tensor_converter_from_ref.call();
+  auto const_optional_tensor_converter_from_ref = type_convert<
+      const std::optional<at::Tensor>&,
+      torch::executor::optional<torch::executor::Tensor>>(
+      const_optional_tensor_at_ref_in);
+  auto const_optional_tensor_et_from_ref =
+      const_optional_tensor_converter_from_ref.call();
   EXPECT_TRUE(const_optional_tensor_et_from_ref.has_value());
-  EXPECT_EQ(const_optional_tensor_et_from_ref.value().const_data_ptr<int64_t>()[0], 9);
+  EXPECT_EQ(
+      const_optional_tensor_et_from_ref.value().const_data_ptr<int64_t>()[0],
+      9);
 
   // Test empty const optional conversions
   const std::optional<int64_t> empty_const_optional_at_in = std::nullopt;
   auto empty_const_optional_et =
-      type_convert<const std::optional<int64_t>, torch::executor::optional<int64_t>>(
-          empty_const_optional_at_in)
+      type_convert<
+          const std::optional<int64_t>,
+          torch::executor::optional<int64_t>>(empty_const_optional_at_in)
           .call();
   EXPECT_FALSE(empty_const_optional_et.has_value());
 
-  const std::optional<at::Tensor> empty_const_optional_tensor_at_in = std::nullopt;
+  const std::optional<at::Tensor> empty_const_optional_tensor_at_in =
+      std::nullopt;
   auto empty_const_optional_tensor_et =
       type_convert<
           const std::optional<at::Tensor>,
-          torch::executor::optional<torch::executor::Tensor>>(empty_const_optional_tensor_at_in)
+          torch::executor::optional<torch::executor::Tensor>>(
+          empty_const_optional_tensor_at_in)
           .call();
   EXPECT_FALSE(empty_const_optional_tensor_et.has_value());
 }
