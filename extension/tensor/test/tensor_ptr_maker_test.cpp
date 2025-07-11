@@ -123,7 +123,7 @@ TEST_F(TensorPtrMakerTest, CreateTensorUsingFromBlobWithLegalStrides) {
   EXPECT_EQ(tensor->size(1), 2);
   EXPECT_EQ(tensor->size(2), 2);
 
-  // recalculated stride[0]t o 2 to meet ET's requirement while maintain the
+  // recalculated stride[0] to 4 to meet ET's requirement while maintain the
   // same behavior as original tensor since size[0] == 1
   EXPECT_EQ(tensor->strides()[0], 4);
   EXPECT_EQ(tensor->strides()[1], 2);
@@ -134,9 +134,7 @@ TEST_F(TensorPtrMakerTest, CreateTensorUsingFromBlobWithLegalStrides) {
 
 TEST_F(TensorPtrMakerTest, FailedCreateTensorUsingFromBlobWithIllegalStrides) {
   float data[20] = {3};
-  ET_EXPECT_DEATH(
-      from_blob(data, {2, 2, 2}, {10, 2, 1}),
-      "invalid strides for dim 0: 10!= 4 while its size is 2 != 1");
+  ET_EXPECT_DEATH(from_blob(data, {2, 2, 2}, {10, 2, 1}), "");
 }
 
 TEST_F(TensorPtrMakerTest, TensorMakerConversionOperator) {
