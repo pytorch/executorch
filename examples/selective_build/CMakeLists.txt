@@ -123,10 +123,10 @@ gen_selected_ops(
 )
 
 generate_bindings_for_kernels(
-  LIB_NAME 
-  "select_build_lib" 
+  LIB_NAME
+  "select_build_lib"
   FUNCTIONS_YAML
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml 
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
   CUSTOM_OPS_YAML
   "${_custom_ops_yaml}"
   DTYPE_SELECTIVE_BUILD
@@ -134,11 +134,11 @@ generate_bindings_for_kernels(
 )
 
 gen_operators_lib(
-  LIB_NAME 
-  "select_build_lib" 
-  KERNEL_LIBS 
-  ${_kernel_lib} 
-  DEPS 
+  LIB_NAME
+  "select_build_lib"
+  KERNEL_LIBS
+  ${_kernel_lib}
+  DEPS
   executorch_core
   DTYPE_SELECTIVE_BUILD
   "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
@@ -151,8 +151,8 @@ list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 # link to
 #
 add_executable(selective_build_test ${_executor_runner__srcs})
-if(CMAKE_BUILD_TYPE EQUAL "Release")
-  target_link_options(selective_build_test PRIVATE "LINKER:--gc-sections")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(selective_build_test)
 endif()
 target_link_libraries(
   selective_build_test PRIVATE executorch_core gflags select_build_lib

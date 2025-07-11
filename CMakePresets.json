@@ -104,6 +104,17 @@
                 "Windows"
             ]
         }
+    },
+    {
+        "name": "zephyr",
+        "displayName": "Build everything buildable on Zephyr RTOS",
+        "inherits": [
+            "common"
+        ],
+        "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/zephyr.cmake",
+            "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake"
+        }
     }
   ]
 }

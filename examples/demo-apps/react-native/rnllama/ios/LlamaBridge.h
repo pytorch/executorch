@@ -1,9 +1,9 @@
 #ifndef LLaMABridge_h
 #define LLaMABridge_h
 
+#import <LLaMARunner/LLaMARunner.h>
 #import <React/RCTBridgeModule.h>
 #import <React/RCTEventEmitter.h>
-#import "LLaMARunner.h"
 
 NS_ASSUME_NONNULL_BEGIN
 

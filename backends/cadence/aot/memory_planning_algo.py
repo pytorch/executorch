@@ -5,16 +5,16 @@
 import logging
 import math
 from abc import ABC, abstractmethod
-from typing import Callable, Optional
+from typing import Optional, Sequence
 
 import torch
 from executorch.backends.cadence.aot.memory_constraints import (
+    ConstraintsGenPass,
     GenerateMemConstraints,
     MemConstraints,
 )
 from executorch.backends.cadence.aot.utils import MemoryConfig
 from executorch.exir.memory_planning import Verifier
-from executorch.exir.pass_base import PassResult
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
 
@@ -68,18 +68,13 @@ class MemoryPlanningAlgo(ABC):
         self,
         memory_config: MemoryConfig,
         placement_constraints: MemConstraints,
-        additional_constraint_gen_passes: Optional[
-            list[
-                Callable[
-                    [MemConstraints],
-                    Callable[[torch.fx.GraphModule], Optional[PassResult]],
-                ]
-            ]
-        ] = None,
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
     ) -> None:
-        self.memory_config = memory_config
-        self.placement_constraints = placement_constraints
-        self.additional_constraint_gen_passes = additional_constraint_gen_passes
+        self.memory_config: MemoryConfig = memory_config
+        self.placement_constraints: MemConstraints = placement_constraints
+        self.additional_constraint_gen_passes: Optional[
+            Sequence[ConstraintsGenPass]
+        ] = additional_constraint_gen_passes
 
     def get_num_memories(self) -> int:
         """Get num memories indexed from 1..N, compatible with EXIR's spec.mem_id."""
@@ -102,10 +97,14 @@ class MemoryPlanningAlgo(ABC):
         )(graph_module)
 
     def is_valid_placement(self, spec: TensorSpec) -> bool:
-        return get_aligned_offset(
+        """Returns true if the spec can be placed at the given memory id."""
+        end_of_allocation = get_aligned_offset(
             spec.mem_offset + spec.allocated_memory,
             self.get_alignment(spec.mem_id),
-        ) <= self.get_size(spec.mem_id)
+        )
+        return end_of_allocation <= self.get_size(
+            spec.mem_id
+        ) and not self.placement_constraints.is_mem_id_in_blocklist(spec, spec.mem_id)
 
     @abstractmethod
     def plan(
@@ -133,10 +132,7 @@ class MemoryPlanningAlgo(ABC):
         # First plan the memory allocation for specs without relative constraints.
         specs_without_relative_constraints = set(
             filter(
-                lambda spec: not self.placement_constraints.skipped_spec(spec)
-                and not self.placement_constraints.is_mem_id_in_blocklist(
-                    spec, spec.mem_id
-                ),
+                lambda spec: not self.placement_constraints.skipped_spec(spec),
                 specs,
             )
         )

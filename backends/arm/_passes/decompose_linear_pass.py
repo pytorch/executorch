@@ -88,6 +88,7 @@ class DecomposeLinearPass(ArmPass):
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(conv, list(output_shape)),
                     kwargs={},
+                    from_node=node,
                 )
 
             node.replace_all_uses_with(output)

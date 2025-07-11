@@ -60,7 +60,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   add_link_options("-flto=auto")
 endif()
 
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   # strip symbols
   add_link_options("-s")
 
@@ -259,7 +259,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     pybind11_strip(PyQnnWrapperAdaptor)
   endif()
 
-  if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     # need to allow exceptions in pybind
     set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
                                 -fexceptions

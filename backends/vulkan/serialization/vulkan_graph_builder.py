@@ -20,6 +20,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
 from executorch.backends.vulkan.utils import (
     is_constant,
     is_get_attr_node,
+    is_mutable_buffer_node,
     is_param_node,
     is_symint_node,
 )
@@ -382,6 +383,11 @@ class VkGraphBuilder:
                     "the output node is being serialized before its corresponding "
                     "internal node which is not allowed."
                 )
+            # Mutable buffers outputs are not included as an output to the
+            # delegate call. Skip marking them as an output.
+            if is_mutable_buffer_node(out_node, self.program):
+                continue
+
             self.output_ids.append(self.node_to_value_ids[out_node])
 
     def process_node(self, node: Node, call_node_debug_hdl: int) -> None:

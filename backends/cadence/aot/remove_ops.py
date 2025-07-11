@@ -779,17 +779,17 @@ class RemoveCatFromSliceCopyPass(ExportPass):
         for slice_copy_node in graph_module.graph.find_nodes(
             op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
         ):
-            cat_node = cast(Node, get_arg(slice_copy_node, 0, "input"))
-            slice_dim = cast(int, get_arg(slice_copy_node, 1, "dim", default=0))
-            start_idx = cast(int, get_arg(slice_copy_node, 2, "start", default=None))
-            end_idx = cast(int, get_arg(slice_copy_node, 3, "end", default=None))
-            step = cast(int, get_arg(slice_copy_node, 4, "step", default=1))
+            cat_node = cast(Node, get_arg(slice_copy_node, "input"))
+            slice_dim = cast(int, get_arg(slice_copy_node, "dim"))
+            start_idx = cast(int, get_arg(slice_copy_node, "start"))
+            end_idx = cast(int, get_arg(slice_copy_node, "end"))
+            step = cast(int, get_arg(slice_copy_node, "step"))
 
             if cat_node.target != exir_ops.edge.aten.cat.default or step != 1:
                 continue
 
             # Make sure cat and slice happens on the same dimension.
-            cat_dim = cast(Node, get_arg(cat_node, 1, "dim", default=0))
+            cat_dim = cast(Node, get_arg(cat_node, "dim"))
             if cat_dim != slice_dim:
                 continue
 
@@ -805,14 +805,14 @@ class RemoveCatFromSliceCopyPass(ExportPass):
                 end_idx += cat_output_shape[cat_dim]
 
             offset = 0
-            for cat_input_node in cast(List[Node], get_arg(cat_node, 0, "tensors")):
+            for cat_input_node in cast(List[Node], get_arg(cat_node, "tensors")):
                 cat_input_shape = cat_input_node.meta["val"].shape
 
                 # Check if the slice range overlaps with the cat input range.
                 if offset <= start_idx and end_idx <= offset + cat_input_shape[cat_dim]:
                     slice_copy_node.replace_input_with(cat_node, cat_input_node)
-                    set_arg(slice_copy_node, 2, "start", start_idx - offset)
-                    set_arg(slice_copy_node, 3, "end", end_idx - offset)
+                    set_arg(slice_copy_node, "start", start_idx - offset)
+                    set_arg(slice_copy_node, "end", end_idx - offset)
                     break
 
                 offset += cat_input_shape[cat_dim]

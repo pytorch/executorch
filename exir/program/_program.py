@@ -58,6 +58,7 @@ from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
+from executorch.exir.passes.reinplace import reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
     RemoveGraphAssertsPass,
     RemoveNonCoreAtenOpGraphAssertsPass,
@@ -193,7 +194,7 @@ def _get_updated_graph_signature(
         )
         i += 1
 
-    output_node = list(new_gm.graph.nodes)[-1]
+    output_node = new_gm.graph.output_node()
     assert output_node.op == "output"
 
     new_output_specs = []
@@ -651,9 +652,7 @@ def _get_aten_to_edge_passes(config: EdgeCompileConfig):
     # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
     # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
 
-    pre_op_replace_passes = base_pre_op_replace_passes + (
-        [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
-    )
+    pre_op_replace_passes = base_pre_op_replace_passes + [RemoveMixedTypeOperators()]
 
     post_op_replace_passes = base_post_op_replace_passes
 
@@ -1563,6 +1562,8 @@ class EdgeProgramManager:
                         " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
                     )
                 program = quant_fusion_and_const_prop_pass(program)
+            if config.run_reinplace_pass:
+                program = reinplace_pass(program)
             program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)

@@ -147,7 +147,7 @@ The following packages should be linked in your app target `LLaMA` (left side, L
 - backend_coreml
 - backend_mps
 - backend_xnnpack
-- kernels_custom
+- kernels_llm
 - kernels_optimized
 - kernels_portable
 - kernels_quantized

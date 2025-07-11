@@ -46,6 +46,16 @@ _DYNAMIC_OPS = {
     "dequantize_per_token.default",
 }
 
+IS_IMPLICIT_Q_DQ_TAG = "IS_IMPLICIT_Q_DQ_TAG"
+
+
+def tag_as_implicit_q_dq(node: torch.fx.Node) -> None:
+    node.meta[IS_IMPLICIT_Q_DQ_TAG] = True
+
+
+def is_tagged_as_implicit_q_dq(node: torch.fx.Node) -> bool:
+    return node.meta.get(IS_IMPLICIT_Q_DQ_TAG, False)
+
 
 def is_dynamic_qdq(node: torch.fx.Node) -> bool:
     # check has dynamic qdq name

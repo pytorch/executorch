@@ -88,7 +88,7 @@ target_include_directories(
 
 # Custom ops that are needed to run the test model.
 add_library(
-  custom_ops "op_quantized_linear_out.cpp" "op_quantized_layer_norm.cpp" "quantized_matmul_out.cpp"
+  custom_ops "op_quantized_linear_out.cpp" "op_quantized_layer_norm.cpp" "op_quantized_matmul_out.cpp"
              "op_quantize_per_tensor.cpp" "op_quantized_relu_out.cpp" "op_dequantize_per_tensor.cpp"
              "op_quantized_conv_out.cpp" "op_quantized_fully_connected_out"
 )

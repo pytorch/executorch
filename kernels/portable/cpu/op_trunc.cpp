@@ -14,9 +14,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& trunc_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realhbf16(std::trunc, ctx, in, out);
-}
+DEFINE_UNARY_UFUNC_REALHBF16(trunc_out, std::trunc)
 
 } // namespace native
 } // namespace executor

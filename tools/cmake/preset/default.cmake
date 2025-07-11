@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(_is_build_type_release ON)
   set(_is_build_type_debug OFF)
 else()
@@ -65,12 +65,12 @@ define_overridable_option(
   BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_KERNELS_CUSTOM
+  EXECUTORCH_BUILD_KERNELS_LLM
   "Build the custom kernels"
   BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT
+  EXECUTORCH_BUILD_KERNELS_LLM_AOT
   "Build the custom ops lib for AOT"
   BOOL OFF
 )
@@ -307,17 +307,17 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON
-    EXECUTORCH_BUILD_KERNELS_CUSTOM
+    EXECUTORCH_BUILD_KERNELS_LLM
   REQUIRES
     EXECUTORCH_BUILD_KERNELS_OPTIMIZED
 )
 
 check_required_options_on(
   IF_ON
-    EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT
+    EXECUTORCH_BUILD_KERNELS_LLM_AOT
   REQUIRES
     EXECUTORCH_BUILD_EXTENSION_TENSOR
-    EXECUTORCH_BUILD_KERNELS_CUSTOM
+    EXECUTORCH_BUILD_KERNELS_LLM
 )
 
 check_required_options_on(

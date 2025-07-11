@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/test/utils/DeathTest.h>
 
 using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
@@ -111,6 +112,29 @@ TEST_F(TensorPtrMakerTest, CreateTensorUsingFromBlobWithStrides) {
   EXPECT_EQ(tensor->strides()[2], 1);
   EXPECT_EQ(tensor->const_data_ptr<float>(), data);
   EXPECT_EQ(tensor->const_data_ptr<float>()[0], 3);
+}
+
+TEST_F(TensorPtrMakerTest, CreateTensorUsingFromBlobWithLegalStrides) {
+  float data[20] = {3};
+  auto tensor = from_blob(data, {1, 2, 2}, {10, 2, 1});
+
+  EXPECT_EQ(tensor->dim(), 3);
+  EXPECT_EQ(tensor->size(0), 1);
+  EXPECT_EQ(tensor->size(1), 2);
+  EXPECT_EQ(tensor->size(2), 2);
+
+  // recalculated stride[0] to 4 to meet ET's requirement while maintain the
+  // same behavior as original tensor since size[0] == 1
+  EXPECT_EQ(tensor->strides()[0], 4);
+  EXPECT_EQ(tensor->strides()[1], 2);
+  EXPECT_EQ(tensor->strides()[2], 1);
+  EXPECT_EQ(tensor->const_data_ptr<float>(), data);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[0], 3);
+}
+
+TEST_F(TensorPtrMakerTest, FailedCreateTensorUsingFromBlobWithIllegalStrides) {
+  float data[20] = {3};
+  ET_EXPECT_DEATH(from_blob(data, {2, 2, 2}, {10, 2, 1}), "");
 }
 
 TEST_F(TensorPtrMakerTest, TensorMakerConversionOperator) {
