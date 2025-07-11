@@ -6,6 +6,11 @@
 
 from typing import Dict
 
+from executorch.exir.debug_handle_utils import (
+    DEBUG_HANDLE_KEY,
+    FROM_NODE_KEY,
+    get_greatest_ancestor_node_identifier,
+)
 from executorch.exir.graph_module import bfs_trace_with_node_process
 from executorch.exir.pass_base import ExportPass
 from torch.export import ExportedProgram
@@ -21,26 +26,7 @@ class DebugHandleGeneratorPass(ExportPass):
         greatest ancestor node in the export flow.
         """
 
-        FROM_NODE_KEY = "from_node"
-        DEBUG_HANDLE_KEY = "debug_handle"
-
         source_node_id_to_debug_handle: Dict[str, int] = {}
-
-        def _get_greatest_ancestor_node_identifier(node: Node) -> str:
-            """Get the identifier of the greatest ancestor node of the given node.
-
-            The identifier is the concatenation of the node name and graph id of the
-            greatest ancestor node, where the graph id is the unique id for every graph
-            module in the export flow and node name is unique within the same graph module.
-            """
-
-            node_source = node.meta[FROM_NODE_KEY]
-            node_source = node_source[-1]
-
-            while len(node_source.from_node) > 0:
-                node_source = node_source.from_node[-1]
-
-            return node_source.name + str(node_source.graph_id)
 
         def _extract_debug_handles_from_node(node: Node) -> None:
             """
@@ -56,7 +42,7 @@ class DebugHandleGeneratorPass(ExportPass):
                 FROM_NODE_KEY in node.meta
             ), f"Node {node} does not have meta key {FROM_NODE_KEY}"
 
-            greatest_ancestor_node_id = _get_greatest_ancestor_node_identifier(node)
+            greatest_ancestor_node_id = get_greatest_ancestor_node_identifier(node)
 
             debug_handle = (
                 len(source_node_id_to_debug_handle) + 1
