@@ -145,6 +145,12 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
   )
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_training.cpp jni/log.cpp)
+  list(APPEND link_libraries extension_training)
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_TRAINING=1)
+endif()
+
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
   list(APPEND link_libraries llama_runner llava_runner)
