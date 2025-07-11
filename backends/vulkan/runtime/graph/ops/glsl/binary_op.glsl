@@ -10,17 +10,35 @@
 
 #define PRECISION ${PRECISION}
 
+// Binary comparison ops require that the output is boolean and not the same as input.
+$IS_COMPARISON_OP = (any([name in VARIANT_NAME for name in ["binary_eq",  "binary_lt", "binary_le", "binary_gt", "binary_ge"]]))
+
+#define NAME ${VARIANT_NAME}
+
 #define VEC4_T ${texel_type(DTYPE)}
-#define T ${buffer_scalar_type(DTYPE)}
+$if IS_COMPARISON_OP:
+  #define T ${buffer_scalar_type("uint8")}
+  #define VEC4_OUT_T ${texel_type("uint8")}
+$else:
+  #define T ${buffer_scalar_type(DTYPE)}
+  #define VEC4_OUT_T VEC4_T
 
 #define op(X, Y, A) ${OPERATOR}
 
 ${define_active_storage_type(STORAGE)}
 ${define_required_extensions(DTYPE)}
 
+
+$if IS_COMPARISON_OP:
+  ${define_required_extensions("uint8")}
+
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+$if IS_COMPARISON_OP:
+  ${layout_declare_tensor(B, "w", "t_out", "uint8", STORAGE)}
+$else:
+  ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_other", DTYPE, STORAGE)}
 
@@ -121,7 +139,7 @@ void main() {
   write_texel_lpos(
     t_out,
     lpos,
-    VEC4_T(op(in_texel, other_texel, alpha)),
+    VEC4_OUT_T(op(in_texel, other_texel, alpha)),
     out_axis_map);
 }
 

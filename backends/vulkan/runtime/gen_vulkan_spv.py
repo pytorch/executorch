@@ -728,9 +728,16 @@ class SPVGenerator:
                 )
 
                 for variant in params_dict["shader_variants"]:
+                    default_iterated_params_names = set(
+                        default_iterated_params.keys()
+                        if default_iterated_params is not None
+                        else {}
+                    )
                     variant_params_names = set(variant.keys())
+
                     invalid_keys = (
                         variant_params_names
+                        - default_iterated_params_names
                         - params_names
                         - {"generate_variant_forall"}
                     )
@@ -758,6 +765,7 @@ class SPVGenerator:
                                     variant_name = f"{variant_name}_{param_value[1]}"
 
                             default_params_copy["NAME"] = variant_name
+                            default_params_copy["VARIANT_NAME"] = variant["NAME"]
 
                             self.shader_template_params[template_name].append(
                                 default_params_copy
