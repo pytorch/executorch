@@ -455,7 +455,7 @@ class TestInspectorUtils(unittest.TestCase):
         )
         node.meta["debug_handle"] = 1
         debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(graph_module)
-        expected_result = {(1,): "op1"}
+        expected_result = {(1,): ["op1"]}
         self.assertEqual(debug_handle_to_op_name, expected_result)
 
     def test_get_aot_debug_handle_to_op_name_mapping_multiple_debug_handles(self):
@@ -474,8 +474,8 @@ class TestInspectorUtils(unittest.TestCase):
             (
                 1,
                 2,
-            ): "op1",
-            (3,): "op2",
+            ): ["op1"],
+            (3,): ["op2"],
         }
         self.assertEqual(debug_handle_to_op_name, expected_result)
 
@@ -555,19 +555,41 @@ class TestInspectorUtils(unittest.TestCase):
 
     def test_find_op_names_empty_debug_handle(self):
         debug_handle = ()
-        debug_handle_to_op_name = {(1, 2): "op1", (3, 4): "op2"}
+        debug_handle_to_op_name = {(1, 2): ["op1"], (3, 4): ["op2"]}
         self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
 
     def test_find_op_names_no_matching_handles(self):
         debug_handle = (1, 2)
-        debug_handle_to_op_name = {(3, 4): "op1", (5, 6): "op2"}
+        debug_handle_to_op_name = {(3, 4): ["op1"], (5, 6): ["op2"]}
         self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
 
     def test_find_op_names_matching_handles(self):
         debug_handle = (1, 2, 3)
-        debug_handle_to_op_name = {(1, 2): "op1", (2, 3): "op2", (4, 5, 6): "op3"}
+        debug_handle_to_op_name = {(1, 2): ["op1"], (2, 3): ["op2"], (4, 5, 6): ["op3"]}
         self.assertEqual(
             find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2"]
+        )
+
+    def test_find_op_names_multiple_ops_single_handle(self):
+        """Test when a single debug handle maps to multiple operator names"""
+        debug_handle = (1, 2, 3)
+        debug_handle_to_op_name = {(1, 2): ["op1", "op2", "op3"], (4, 5): ["op4"]}
+        self.assertEqual(
+            find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2", "op3"]
+        )
+
+    def test_find_op_names_mixed_single_and_multiple_ops(self):
+        """Test mix of handles with single and multiple operator names"""
+        debug_handle = (1, 2, 3, 4, 5)
+        debug_handle_to_op_name = {
+            (1, 2): ["op1"],
+            (3,): ["op2", "op3"],
+            (4,): ["op4"],
+            (5,): ["op5", "op6", "op7"],  # Multiple ops
+        }
+        self.assertEqual(
+            find_op_names(debug_handle, debug_handle_to_op_name),
+            ["op1", "op2", "op3", "op4", "op5", "op6", "op7"],
         )
 
     def test_compare_intermediate_outputs_sequences(self):
