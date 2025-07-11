@@ -685,8 +685,6 @@ class ComputeGraph final {
       const ValueRef idx,
       const int32_t default_value);
 
-  int32_t get_or_create_int(const ValueRef idx);
-
   int32_t get_or_create_int(const ValueRef idx, const int32_t default_value);
 
   void set_symint(const ValueRef idx, const int32_t val);
