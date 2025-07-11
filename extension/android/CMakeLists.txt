@@ -61,7 +61,10 @@ set_target_properties(fbjni PROPERTIES
 )
 
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
-target_link_options_shared_lib(executorch)
+
+find_package(executorch CONFIG REQUIRED)
+# target_link_options_shared_lib(executorch) is now handled by executorch-config.cmake
+
 
 add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
 
