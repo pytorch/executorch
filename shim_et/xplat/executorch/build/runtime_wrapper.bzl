@@ -329,8 +329,15 @@ def _python_binary(*args, **kwargs):
     _patch_kwargs_common(kwargs)
     env.python_binary(*args, **kwargs)
 
+def _patch_kwargs_python_test(kwargs):
+    # This option is not available in OSS buck but is required for dynamic
+    # test generation in fbsource.
+    kwargs.pop("supports_static_listing", None)
+
+    return _patch_kwargs_common(kwargs)
+
 def _python_test(*args, **kwargs):
-    _patch_kwargs_common(kwargs)
+    _patch_kwargs_python_test(kwargs)
     env.python_test(*args, **kwargs)
 
 def get_oss_build_kwargs():
