@@ -27,10 +27,10 @@ class VkDataType(IntEnum):
     UINT8 = 1
     INT8 = 2
     INT32 = 3
-    INT64 = 4
-    FLOAT16 = 5
-    FLOAT32 = 6
-    FLOAT64 = 7
+    FLOAT16 = 4
+    FLOAT32 = 5
+    FLOAT64 = 6
+    INT64 = 7
 
 
 class VkStorageType(IntEnum):

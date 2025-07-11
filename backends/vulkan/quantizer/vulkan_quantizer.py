@@ -18,10 +18,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     propagate_annotation,
 )
 from torch.fx import Node
-from torchao.quantization.pt2e import (
-    PerChannelMinMaxObserver,
-    PlaceholderObserver,
-)
+from torchao.quantization.pt2e import PerChannelMinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     QuantizationConfig,
     QuantizationSpec,
@@ -80,38 +77,6 @@ def get_linear_weight_only_qcs_xnn_qconfig(quant_bits: int) -> QuantizationConfi
     )
 
 
-@functools.lru_cache
-def get_dynamic_activation_qconfig(
-    weight_bits: int = 4,
-    act_qmin: int = -128,
-    act_qmax: int = 127,
-) -> QuantizationConfig:
-    """
-    Return a QuantizationConfig for dynamic activation quantization with 4-bit weights.
-    This is compatible with Vulkan backend's quantized_decomposed operators.
-    """
-    # Dynamic activation quantization spec
-    act_quantization_spec = QuantizationSpec(
-        dtype=torch.int8,
-        quant_min=act_qmin,
-        quant_max=act_qmax,
-        qscheme=torch.per_tensor_affine,
-        is_dynamic=True,
-        observer_or_fake_quant_ctr=PlaceholderObserver,
-    )
-
-    # Weight quantization spec (per-channel symmetric)
-    weight_qspec = get_linear_weight_qcs_qspec(weight_bits)
-
-    return QuantizationConfig(
-        input_activation=act_quantization_spec,
-        output_activation=None,
-        weight=weight_qspec,
-        bias=None,
-        is_qat=False,
-    )
-
-
 _SUPPORTED_OPS = [
     "linear",
 ]
@@ -134,15 +99,12 @@ class VulkanQuantizer(Quantizer):
         return _convert_scalars_to_attrs(model)
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        # Support both static and dynamic quantization
-        if self.global_config and self.global_config.input_activation and self.global_config.input_activation.is_dynamic:
-            model = self._annotate_for_dynamic_quantization_config(model)
-        else:
-            model = self._annotate_for_static_quantization_config(model)
+        # currently only support static quant on Vulkan
+        model = self._annotate_for_static_quantization_config(model)
         propagate_annotation(model)
         return model
 
-    def _annotate_all_patterns(
+    def _annotate_all_static_patterns(
         self,
         model: torch.fx.GraphModule,
         quantization_config: Optional[QuantizationConfig],
@@ -158,16 +120,7 @@ class VulkanQuantizer(Quantizer):
     def _annotate_for_static_quantization_config(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
-        self._annotate_all_patterns(
-            model,
-            self.global_config,
-        )
-        return model
-
-    def _annotate_for_dynamic_quantization_config(
-        self, model: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
-        self._annotate_all_patterns(
+        self._annotate_all_static_patterns(
             model,
             self.global_config,
         )

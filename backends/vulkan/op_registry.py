@@ -291,6 +291,38 @@ def register_torchao_quantization_op(features: OpFeatures):
     features.buffer_impl = True
     features.resize_fn = True
     features.optimal_storage = VkStorageType.BUFFER
+
+    def check_torchao_quantization_node(node: torch.fx.Node) -> bool:
+        # Only per-tensor quantization is supported by the Vulkan backend.
+        if len(node.args) < 2:
+            return False
+
+        block_size = node.args[1]
+
+        if not isinstance(block_size, (list, tuple)):
+            return False
+
+        input_arg = node.args[0]
+        if not isinstance(input_arg, torch.fx.Node):
+            return False
+
+        input_tensor = input_arg.meta.get("val", None)
+        if not isinstance(input_tensor, FakeTensor):
+            return False
+
+        input_shape = list(input_tensor.shape)
+
+        if len(block_size) != len(input_shape):
+            return False
+
+        # Check if block_size matches input_shape exactly (per-tensor quantization)
+        for i in range(len(block_size)):
+            if block_size[i] != input_shape[i]:
+                return False
+
+        return True
+
+    features.check_node_fn = check_torchao_quantization_node
     return features
 
 
@@ -303,6 +335,11 @@ def register_torchao_quantization_op(features: OpFeatures):
         exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.div.Tensor_mode,
         exir_ops.edge.aten.pow.Tensor_Tensor,
+        exir_ops.edge.aten.eq.Tensor,
+        exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.gt.Tensor,
+        exir_ops.edge.aten.ge.Tensor,
     ]
 )
 def register_binary_op(features: OpFeatures):

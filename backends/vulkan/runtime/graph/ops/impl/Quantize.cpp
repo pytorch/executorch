@@ -485,7 +485,8 @@ void quantize_affine_impl(
     const std::vector<ValueRef>& args) {
   int arg_idx = 0;
   const ValueRef input = args[arg_idx++];
-  const ValueRef block_size = args[arg_idx++]; // SymInt[] - ignored for per-tensor
+  const ValueRef block_size =
+      args[arg_idx++]; // SymInt[] - ignored for per-tensor
   const ValueRef scale = args[arg_idx++];
   const ValueRef zero_point = args[arg_idx++];
   const ValueRef output_dtype = args[arg_idx++];
@@ -494,7 +495,6 @@ void quantize_affine_impl(
   const ValueRef output = args[arg_idx++];
 
   // Suppress unused variable warnings
-  (void)block_size;
   (void)output_dtype;
 
   // Check tensor types
@@ -506,6 +506,15 @@ void quantize_affine_impl(
       graph.dtype_of(input) == vkapi::kDouble ||
       graph.dtype_of(input) == vkapi::kFloat ||
       graph.dtype_of(input) == vkapi::kHalf);
+
+  // Check if this is per-tensor quantization (only supported granularity)
+  // block_size should equal input tensor dimensions for per-tensor quantization
+  const auto input_sizes = graph.sizes_of(input);
+  const auto block_size_list = graph.get_int_list(block_size);
+  VK_CHECK_COND(block_size_list->size() == input_sizes.size());
+  for (size_t i = 0; i < input_sizes.size(); i++) {
+    VK_CHECK_COND((*block_size_list)[i] == input_sizes[i]);
+  }
 
   // Default to per-tensor quantization for TorchAO affine ops
   add_quantize_per_tensor_node(

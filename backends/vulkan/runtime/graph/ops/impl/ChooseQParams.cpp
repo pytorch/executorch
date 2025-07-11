@@ -371,7 +371,8 @@ void choose_qparams_affine_impl(
   int arg_idx = 0;
   const ValueRef input = args[arg_idx++];
   const ValueRef mapping_type = args[arg_idx++]; // str - ignored for per-tensor
-  const ValueRef block_size = args[arg_idx++]; // SymInt[] - ignored for per-tensor
+  const ValueRef block_size =
+      args[arg_idx++]; // SymInt[] - ignored for per-tensor
   const ValueRef target_dtype = args[arg_idx++];
   const ValueRef quant_min = args[arg_idx++];
   const ValueRef quant_max = args[arg_idx++];
@@ -382,7 +383,6 @@ void choose_qparams_affine_impl(
 
   // Suppress unused variable warnings
   (void)mapping_type;
-  (void)block_size;
   (void)target_dtype;
   (void)scale_dtype;
   (void)zero_point_dtype;
@@ -414,12 +414,22 @@ void choose_qparams_affine_impl(
       graph.dtype_of(zero_point_out) == vkapi::kInt ||
       graph.dtype_of(zero_point_out) == vkapi::kFloat);
 
+  // Check if this is per-tensor quantization (only supported granularity)
+  // block_size should equal input tensor dimensions for per-tensor quantization
+  const auto input_sizes = graph.sizes_of(input);
+  const auto block_size_list = graph.get_int_list(block_size);
+  VK_CHECK_COND(block_size_list->size() == input_sizes.size());
+  for (size_t i = 0; i < input_sizes.size(); i++) {
+    VK_CHECK_COND((*block_size_list)[i] == input_sizes[i]);
+  }
+
   // Check that texture storage is width packed
   if (!graph.is_buffer_storage(input)) {
     VK_CHECK_COND(graph.packed_dim_of(input) == WHCN::kWidthDim);
   }
 
-  // Default to per-tensor quantization parameter calculation for TorchAO affine ops
+  // Default to per-tensor quantization parameter calculation for TorchAO affine
+  // ops
   add_choose_qparams_tensor_node(
       graph, input, quant_min, quant_max, eps, scale_out, zero_point_out);
 }
@@ -432,7 +442,8 @@ REGISTER_OPERATORS {
       choose_qparams_per_token_asymmetric_impl);
 
   // TorchAO affine choose_qparams operators
-  VK_REGISTER_OP(torchao.choose_qparams_affine.default, choose_qparams_affine_impl);
+  VK_REGISTER_OP(
+      torchao.choose_qparams_affine.default, choose_qparams_affine_impl);
 }
 
 } // namespace vkcompute
