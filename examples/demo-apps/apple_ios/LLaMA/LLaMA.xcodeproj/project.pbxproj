@@ -30,8 +30,8 @@
 		03CF439E2CEC5CEC00C7113B /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF439D2CEC5CEC00C7113B /* backend_xnnpack */; };
 		03CF43A02CEC5CEC00C7113B /* backend_xnnpack_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF439F2CEC5CEC00C7113B /* backend_xnnpack_debug */; };
 		03CF43A22CEC5CEC00C7113B /* executorch_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A12CEC5CEC00C7113B /* executorch_debug */; };
-		03CF43A42CEC5CEC00C7113B /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A32CEC5CEC00C7113B /* kernels_custom */; };
-		03CF43A62CEC5CEC00C7113B /* kernels_custom_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */; };
+		03CF43A42CEC5CEC00C7113B /* kernels_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A32CEC5CEC00C7113B /* kernels_llm */; };
+		03CF43A62CEC5CEC00C7113B /* kernels_llm_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A52CEC5CEC00C7113B /* kernels_llm_debug */; };
 		03CF43A82CEC5CEC00C7113B /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A72CEC5CEC00C7113B /* kernels_optimized */; };
 		03CF43AA2CEC5CEC00C7113B /* kernels_optimized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A92CEC5CEC00C7113B /* kernels_optimized_debug */; };
 		03CF43B02CEC5CEC00C7113B /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AF2CEC5CEC00C7113B /* kernels_quantized */; };
@@ -187,8 +187,8 @@
 				03CF439E2CEC5CEC00C7113B /* backend_xnnpack in Frameworks */,
 				03CF43A02CEC5CEC00C7113B /* backend_xnnpack_debug in Frameworks */,
 				03CF43A22CEC5CEC00C7113B /* executorch_debug in Frameworks */,
-				03CF43A42CEC5CEC00C7113B /* kernels_custom in Frameworks */,
-				03CF43A62CEC5CEC00C7113B /* kernels_custom_debug in Frameworks */,
+				03CF43A42CEC5CEC00C7113B /* kernels_llm in Frameworks */,
+				03CF43A62CEC5CEC00C7113B /* kernels_llm_debug in Frameworks */,
 				03CF43A82CEC5CEC00C7113B /* kernels_optimized in Frameworks */,
 				03CF43AA2CEC5CEC00C7113B /* kernels_optimized_debug in Frameworks */,
 				03CF43B02CEC5CEC00C7113B /* kernels_quantized in Frameworks */,
@@ -484,8 +484,8 @@
 				03CF439D2CEC5CEC00C7113B /* backend_xnnpack */,
 				03CF439F2CEC5CEC00C7113B /* backend_xnnpack_debug */,
 				03CF43A12CEC5CEC00C7113B /* executorch_debug */,
-				03CF43A32CEC5CEC00C7113B /* kernels_custom */,
-				03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */,
+				03CF43A32CEC5CEC00C7113B /* kernels_llm */,
+				03CF43A52CEC5CEC00C7113B /* kernels_llm_debug */,
 				03CF43A72CEC5CEC00C7113B /* kernels_optimized */,
 				03CF43A92CEC5CEC00C7113B /* kernels_optimized_debug */,
 				03CF43AF2CEC5CEC00C7113B /* kernels_quantized */,
@@ -952,7 +952,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = "swiftpm-0.8.0.20250702";
+				branch = "swiftpm-0.8.0.20250711";
 				kind = branch;
 			};
 		};
@@ -994,15 +994,15 @@
 			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = executorch_debug;
 		};
-		03CF43A32CEC5CEC00C7113B /* kernels_custom */ = {
+		03CF43A32CEC5CEC00C7113B /* kernels_llm */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_custom;
+			productName = kernels_llm;
 		};
-		03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */ = {
+		03CF43A52CEC5CEC00C7113B /* kernels_llm_debug */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_custom_debug;
+			productName = kernels_llm_debug;
 		};
 		03CF43A72CEC5CEC00C7113B /* kernels_optimized */ = {
 			isa = XCSwiftPackageProductDependency;
