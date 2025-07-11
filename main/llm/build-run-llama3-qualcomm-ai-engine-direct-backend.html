@@ -585,7 +585,7 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model<span class="w"> </span>-p<span c
 <span class="w">    </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_CUSTOM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_LLM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-Bcmake-android-out<span class="w"> </span>.
 
 cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
@@ -602,7 +602,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<sp
 <span class="w">        </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">        </span>-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">        </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DEXECUTORCH_BUILD_KERNELS_CUSTOM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-DEXECUTORCH_BUILD_KERNELS_LLM<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">        </span>-Bcmake-android-out/examples/models/llama<span class="w"> </span>examples/models/llama
 
 <span class="w">    </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/examples/models/llama<span class="w"> </span>-j16<span class="w"> </span>--config<span class="w"> </span>Release
