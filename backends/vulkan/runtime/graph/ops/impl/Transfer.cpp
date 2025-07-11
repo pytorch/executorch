@@ -81,11 +81,10 @@ void add_transfer_copy_node(
   }
 
   if (param_is_scalar) {
-    push_constants.emplace_back(
-        PushConstantDataInfo(&transfer_params, sizeof(transfer_params)));
+    push_constants.emplace_back(&transfer_params, sizeof(transfer_params));
   } else {
-    push_constants.emplace_back(PushConstantDataInfo(
-        &transfer_params.dim, sizeof(transfer_params.dim)));
+    push_constants.emplace_back(
+        &transfer_params.dim, sizeof(transfer_params.dim));
   }
 
   vkapi::SpecVarList spec_vars = {
