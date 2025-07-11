@@ -302,7 +302,7 @@ jobs:
           exit 1
         fi
 
- test-arm-ootb-linux:
+  test-arm-ootb-linux:
     name: test-arm-ootb-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
