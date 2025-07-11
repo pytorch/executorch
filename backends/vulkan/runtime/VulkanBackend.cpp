@@ -549,6 +549,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       EValue** args) const override {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");
 
+    // Add a comment
+
     ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
 
     const size_t num_inputs = compute_graph->inputs().size();
