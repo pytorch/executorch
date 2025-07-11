@@ -1127,7 +1127,6 @@ class CadenceFuseOpsInGraph:
         FuseCascadedTransposeOrPermuteOps,
         FuseCascadedViewOps,
         FuseQuantDequantToRequantizePass,
-        FuseMulTensorIntoQuantPass,
         FuseMulTensorIntoDequantPass,
         FuseMulScalarIntoDequantPass,
         FuseFullThenReshapePass,
