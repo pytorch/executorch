@@ -17,6 +17,7 @@ from executorch.backends.cadence.aot.memory_planning_algo import (
     ConstraintsGenPass,
     get_aligned_offset,
     MemoryPlanningAlgo,
+    MemoryPlanningAlgoFailure,
     MemoryPlanningState,
 )
 from executorch.backends.cadence.aot.utils import MemoryConfig
@@ -90,7 +91,7 @@ class PositionBasedGreedyWithHierarchy(MemoryPlanningAlgo):
         ):
             self.plan_spec(spec, state)
             if not state.is_placed(spec):
-                raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
+                raise MemoryPlanningAlgoFailure(f"Cannot fit {spec} {spec.allocated_memory=} in any memory hierarchy for {self.memory_config}")
 
         return state
 
@@ -162,7 +163,7 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
         ):
             self.plan_spec(spec, state)
             if not state.is_placed(spec):
-                raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
+                raise MemoryPlanningAlgoFailure(f"Cannot fit {spec} in any memory hierarchy for {self.memory_config}")
 
         logging.debug(
             f"greedy by size for offset calculation with hierarchy returns bufsizes: {state.bufsizes}"
