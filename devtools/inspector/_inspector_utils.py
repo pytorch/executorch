@@ -37,6 +37,7 @@ from executorch.devtools.etrecord import ETRecord
 
 from executorch.exir.debug_handle_utils import (
     DEBUG_HANDLE_KEY,
+    UNSET_DEBUG_HANDLE,
     get_greatest_ancestor_node_identifier,
 )
 
@@ -914,7 +915,7 @@ def propagate_back_debug_handle(
     where op1_0 is from op1, op3_0 and op3_1 are from op3, op2 is removed by to_edge pipeline (e.g. RemoveNoopPass).
 
     Then debug handle of op1 should be same as op1_0, and debug handle of op3 should be same as op3_0 and op3_1.
-    The debug handle of op2 will be a non-existing debug handle in edge dialect program for further skipping.
+    The debug handle of op2 will be UNSET_DEBUG_HANDLE for further skipping.
 
     Return: True if:
         a. every debug handle in the edge dialect program has a corresponding node in the exported program
@@ -935,11 +936,6 @@ def propagate_back_debug_handle(
     # number of nodes in the exported program that have matched entry in export_graph_node_id_to_debug_handle
     n_matched_node = 0
 
-    # debug handle for the node in the exported program but not in the edge dialect program
-    debug_handle_for_removed_node = (
-        max(export_graph_node_id_to_debug_handle.values()) + 1
-    )
-
     def _find_n_match_node(node: torch.fx.Node) -> None:
         nonlocal n_matched_node
         if node.name in ("output", "placeholder"):
@@ -955,7 +951,7 @@ def propagate_back_debug_handle(
         if node_id in export_graph_node_id_to_debug_handle:
             node.meta[DEBUG_HANDLE_KEY] = export_graph_node_id_to_debug_handle[node_id]
         else:
-            node.meta[DEBUG_HANDLE_KEY] = debug_handle_for_removed_node
+            node.meta[DEBUG_HANDLE_KEY] = UNSET_DEBUG_HANDLE
 
     bfs_trace_with_node_process(exported_program.graph_module, _find_n_match_node)
 
