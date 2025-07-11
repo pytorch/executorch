@@ -677,7 +677,7 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_LLM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops)
 endif()
@@ -704,7 +704,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
-  if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+  if(EXECUTORCH_BUILD_KERNELS_LLM)
     list(APPEND _executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
   endif()
 
