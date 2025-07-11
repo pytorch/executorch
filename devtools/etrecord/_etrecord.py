@@ -45,6 +45,8 @@ except ImportError:
 
 class ETRecordReservedFileNames(StrEnum):
     ETRECORD_IDENTIFIER = "ETRECORD_V0"
+    EXPORTED_PROGRAM = "exported_program"
+    EXPORT_GRAPH_ID = "export_graph_id"
     EDGE_DIALECT_EXPORTED_PROGRAM = "edge_dialect_exported_program"
     ET_DIALECT_GRAPH_MODULE = "et_dialect_graph_module"
     DEBUG_HANDLE_MAP_NAME = "debug_handle_map"
@@ -55,6 +57,8 @@ class ETRecordReservedFileNames(StrEnum):
 
 @dataclass
 class ETRecord:
+    exported_program: Optional[ExportedProgram] = None
+    export_graph_id: Optional[int] = None
     edge_dialect_program: Optional[ExportedProgram] = None
     graph_map: Optional[Dict[str, ExportedProgram]] = None
     _debug_handle_map: Optional[Dict[int, Union[int, List[int]]]] = None
@@ -71,17 +75,20 @@ def _handle_exported_program(
     assert isinstance(ep, ExportedProgram)
     serialized_artifact = serialize(ep)
     assert isinstance(serialized_artifact.exported_program, bytes)
+
+    method_name = f"/{method_name}" if method_name != "" else ""
+
     etrecord_zip.writestr(
-        f"{module_name}/{method_name}", serialized_artifact.exported_program
+        f"{module_name}{method_name}", serialized_artifact.exported_program
     )
     etrecord_zip.writestr(
-        f"{module_name}/{method_name}_state_dict", serialized_artifact.state_dict
+        f"{module_name}{method_name}_state_dict", serialized_artifact.state_dict
     )
     etrecord_zip.writestr(
-        f"{module_name}/{method_name}_constants", serialized_artifact.constants
+        f"{module_name}{method_name}_constants", serialized_artifact.constants
     )
     etrecord_zip.writestr(
-        f"{module_name}/{method_name}_example_inputs",
+        f"{module_name}{method_name}_example_inputs",
         serialized_artifact.example_inputs,
     )
 
@@ -188,7 +195,10 @@ def generate_etrecord(
         ExecutorchProgramManager,
         BundledProgram,
     ],
-    export_modules: Optional[
+    exported_program: Optional[
+        Union[ExportedProgram, Dict[str, ExportedProgram]]
+    ] = None,
+    extra_recorded_export_modules: Optional[
         Dict[
             str,
             Union[
@@ -202,7 +212,7 @@ def generate_etrecord(
     """
     Generates an `ETRecord` from the given objects, serializes it and saves it to the given path.
     The objects that will be serialized to an `ETRecord` are all the graph modules present
-    in the `export_modules` dict, the graph module present in the edge dialect program object,
+    in the `extra_recorded_export_modules` dict, the graph module present in the edge dialect program object,
     and also the graph module present in the ExecuTorch program object, which
     is the closest graph module representation of what is eventually run on the device.
     In addition to all the graph modules, we also serialize the program buffer, which the users
@@ -213,7 +223,8 @@ def generate_etrecord(
         et_record: Path to where the `ETRecord` file will be saved to.
         edge_dialect_program: `EdgeProgramManager` for this model returned by the call to to_edge()
         executorch_program: The ExecuTorch program for this model returned by the call to `to_executorch()` or the `BundledProgram` of this model
-        export_modules [Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the
+        exported_program: Optional graph module for this model returned by the call to `torch.export` from nn.Module.
+        extra_recorded_export_modules [Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the
             value being the corresponding exported module. The exported graph modules can be either the
             output of `torch.export()` or `exir.to_edge()`.
 
@@ -229,15 +240,32 @@ def generate_etrecord(
     # is an etrecord when it's used later in the Developer Tools.
     etrecord_zip.writestr(ETRecordReservedFileNames.ETRECORD_IDENTIFIER, "")
 
-    if export_modules is not None:
-        for module_name, export_module in export_modules.items():
+    # Calculate export_graph_id before modifying exported_program
+    export_graph_id = 0
+
+    if exported_program is not None:
+        # If multiple exported programs are provided, only save forward method
+        if isinstance(exported_program, dict) and "forward" in exported_program:
+            exported_program = exported_program["forward"]
+
+        if isinstance(exported_program, ExportedProgram):
+            export_graph_id = id(exported_program.graph)
+            _handle_exported_program(
+                etrecord_zip,
+                ETRecordReservedFileNames.EXPORTED_PROGRAM,
+                "",
+                exported_program,
+            )
+
+    if extra_recorded_export_modules is not None:
+        for module_name, export_module in extra_recorded_export_modules.items():
             contains_reserved_name = any(
                 reserved_name in module_name
                 for reserved_name in ETRecordReservedFileNames
             )
             if contains_reserved_name:
                 raise RuntimeError(
-                    f"The name {module_name} provided in the export_modules dict is a reserved name in the ETRecord namespace."
+                    f"The name {module_name} provided in the extra_recorded_export_modules dict is a reserved name in the ETRecord namespace."
                 )
             _handle_export_module(etrecord_zip, export_module, module_name)
 
@@ -286,6 +314,11 @@ def generate_etrecord(
         json.dumps(executorch_program.delegate_map),
     )
 
+    etrecord_zip.writestr(
+        ETRecordReservedFileNames.EXPORT_GRAPH_ID,
+        json.dumps(export_graph_id),
+    )
+
 
 def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
     """
@@ -318,9 +351,11 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
     graph_map: Dict[str, ExportedProgram] = {}
     debug_handle_map = None
     delegate_map = None
+    exported_program = None
     edge_dialect_program = None
     reference_outputs = None
     representative_inputs = None
+    export_graph_id = 0
 
     serialized_exported_program_files = set()
     serialized_state_dict_files = set()
@@ -347,6 +382,14 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
                 etrecord_zip.read(f"{entry}_example_inputs"),
             )
             edge_dialect_program = deserialize(serialized_artifact)
+        elif entry == ETRecordReservedFileNames.EXPORTED_PROGRAM:
+            serialized_artifact = SerializedArtifact(
+                etrecord_zip.read(ETRecordReservedFileNames.EXPORTED_PROGRAM),
+                etrecord_zip.read(f"{entry}_state_dict"),
+                etrecord_zip.read(f"{entry}_constants"),
+                etrecord_zip.read(f"{entry}_example_inputs"),
+            )
+            exported_program = deserialize(serialized_artifact)
         elif entry == ETRecordReservedFileNames.REFERENCE_OUTPUTS:
             # @lint-ignore PYTHONPICKLEISBAD
             reference_outputs = pickle.loads(
@@ -356,6 +399,10 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
             # @lint-ignore PYTHONPICKLEISBAD
             representative_inputs = pickle.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.REPRESENTATIVE_INPUTS)
+            )
+        elif entry == ETRecordReservedFileNames.EXPORT_GRAPH_ID:
+            export_graph_id = json.loads(
+                etrecord_zip.read(ETRecordReservedFileNames.EXPORT_GRAPH_ID)
             )
         else:
             if entry.endswith("state_dict"):
@@ -383,10 +430,12 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
         graph_map[serialized_file] = deserialize(serialized_artifact)
 
     return ETRecord(
+        exported_program=exported_program,
         edge_dialect_program=edge_dialect_program,
         graph_map=graph_map,
         _debug_handle_map=debug_handle_map,
         _delegate_map=delegate_map,
         _reference_outputs=reference_outputs,
         _representative_inputs=representative_inputs,
+        export_graph_id=export_graph_id,
     )

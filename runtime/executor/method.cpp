@@ -271,6 +271,8 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
         static_cast<int8_t>(cond_val.scalar_type()));
 
     const bool* cond_data = cond_val.const_data_ptr<bool>();
+    ET_CHECK_OR_RETURN_ERROR(
+        cond_data != nullptr, InvalidState, "Tensor data is null");
     for (size_t i = 0; i < static_cast<size_t>(cond_val.numel()); i++) {
       if (!cond_data[i]) {
         return false;

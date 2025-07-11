@@ -490,7 +490,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-install(FILES tools/cmake/executorch-config.cmake
+install(FILES tools/cmake/Utils.cmake tools/cmake/executorch-config.cmake
         DESTINATION lib/cmake/ExecuTorch
 )
 
@@ -730,6 +730,10 @@ endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
+endif()
+
+if(EXECUTORCH_BUILD_ANDROID_JNI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
 include(Test.cmake)
