@@ -9,6 +9,7 @@
 #include <executorch/extension/android/jni/jni_layer_constants.h>
 #include <executorch/extension/android/jni/log.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/flat_tensor/serialize/serialize.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/extension/training/module/training_module.h>
 #include <executorch/extension/training/optimizer/sgd.h>
@@ -210,6 +211,37 @@ class ExecuTorchTrainingJni
     return gradients;
   }
 
+  facebook::jni::local_ref<facebook::jni::JByteBuffer> exportWeights(
+      facebook::jni::alias_ref<jstring> methodName) {
+    auto method = methodName->toStdString();
+    auto result = module_->named_parameters(method);
+    if (!result.ok()) {
+      facebook::jni::throwNewJavaException(
+          "java/lang/Exception",
+          "Getting named parameters for method %s failed with status 0x%" PRIx32,
+          method.c_str(),
+          static_cast<error_code_t>(result.error()));
+    }
+    std::map<std::string, executorch::aten::Tensor> tensorMap;
+    for (auto& [layer, tensor] : result.get()) {
+      tensorMap.emplace(std::string(layer), tensor);
+    }
+    std::ostringstream oss;
+    auto saveError = executorch::extension::flat_tensor::save_ptd(
+        oss, tensorMap, 16 /* tensor_alignment */);
+
+    if (saveError != executorch::runtime::Error::Ok) {
+      facebook::jni::throwNewJavaException(
+          "java/lang/Exception",
+          "Saving parameters for method %s failed with status 0x%" PRIx32,
+          method.c_str(),
+          static_cast<error_code_t>(saveError));
+    }
+    std::string exportedWeights = oss.str();
+    return facebook::jni::JByteBuffer::wrapBytes(
+        (uint8_t*)exportedWeights.data(), exportedWeights.size());
+  }
+
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchTrainingJni::initHybrid),
@@ -220,6 +252,8 @@ class ExecuTorchTrainingJni
             "namedParametersNative", ExecuTorchTrainingJni::namedParameters),
         makeNativeMethod(
             "namedGradientsNative", ExecuTorchTrainingJni::namedGradients),
+        makeNativeMethod(
+            "exportWeightsNative", ExecuTorchTrainingJni::exportWeights),
     });
   }
 };

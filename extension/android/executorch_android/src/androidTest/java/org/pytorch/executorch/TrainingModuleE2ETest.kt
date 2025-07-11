@@ -11,17 +11,18 @@ import android.Manifest
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
+import kotlin.random.Random
+import kotlin.test.assertContains
 import org.apache.commons.io.FileUtils
 import org.junit.Assert
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
-import kotlin.random.Random
-import kotlin.test.assertContains
 
 /** Unit tests for [TrainingModule]. */
 @RunWith(AndroidJUnit4::class)
@@ -39,12 +40,12 @@ class TrainingModuleE2ETest {
         val pteFile = File(getTestFilePath(pteFilePath))
         val pteInputStream = javaClass.getResourceAsStream(pteFilePath)
         FileUtils.copyInputStreamToFile(pteInputStream, pteFile)
-        pteInputStream.close()
+        pteInputStream?.close()
 
         val ptdFile = File(getTestFilePath(ptdFilePath))
         val ptdInputStream = javaClass.getResourceAsStream(ptdFilePath)
         FileUtils.copyInputStreamToFile(ptdInputStream, ptdFile)
-        ptdInputStream.close()
+        ptdInputStream?.close()
 
         val module = TrainingModule.load(getTestFilePath(pteFilePath), getTestFilePath(ptdFilePath))
         val params = module.namedParameters("forward")
@@ -55,19 +56,20 @@ class TrainingModuleE2ETest {
         assertContains(params, LIN2_WEIGHT)
         assertContains(params, LIN2_BIAS)
 
-        val sgd = SGD.create(params, 0.5);
-        val dataset = listOf<Tensor>(
-            Tensor.fromBlob(floatArrayOf(1.0f, 1.0f), longArrayOf(1, 2)),
-            Tensor.fromBlob(longArrayOf(0), longArrayOf(1)),
-            Tensor.fromBlob(floatArrayOf(0.0f, 0.0f), longArrayOf(1, 2)),
-            Tensor.fromBlob(longArrayOf(0), longArrayOf(1)),
-            Tensor.fromBlob(floatArrayOf(1.0f, 0.0f), longArrayOf(1, 2)),
-            Tensor.fromBlob(longArrayOf(1), longArrayOf(1)),
-            Tensor.fromBlob(floatArrayOf(0.0f, 1.0f), longArrayOf(1, 2)),
-            Tensor.fromBlob(longArrayOf(1), longArrayOf(1)),
-        )
+        val sgd = SGD.create(params, 0.5)
+        val dataset =
+            listOf<Tensor>(
+                Tensor.fromBlob(floatArrayOf(1.0f, 1.0f), longArrayOf(1, 2)),
+                Tensor.fromBlob(longArrayOf(0), longArrayOf(1)),
+                Tensor.fromBlob(floatArrayOf(0.0f, 0.0f), longArrayOf(1, 2)),
+                Tensor.fromBlob(longArrayOf(0), longArrayOf(1)),
+                Tensor.fromBlob(floatArrayOf(1.0f, 0.0f), longArrayOf(1, 2)),
+                Tensor.fromBlob(longArrayOf(1), longArrayOf(1)),
+                Tensor.fromBlob(floatArrayOf(0.0f, 1.0f), longArrayOf(1, 2)),
+                Tensor.fromBlob(longArrayOf(1), longArrayOf(1)),
+            )
 
-        val numEpochs = 5000;
+        val numEpochs = 5000
         var finalLoss = Float.MAX_VALUE
 
         for (i in 0 until numEpochs) {
@@ -75,7 +77,8 @@ class TrainingModuleE2ETest {
             val targetDex = inputDex + 1
             val input = dataset.get(inputDex)
             val target = dataset.get(targetDex)
-            val out = module.executeForwardBackward("forward", EValue.from(input), EValue.from(target))
+            val out =
+                module.executeForwardBackward("forward", EValue.from(input), EValue.from(target))
             val gradients = module.namedGradients("forward")
 
             if (i == 0) {
@@ -96,7 +99,9 @@ class TrainingModuleE2ETest {
                         input.getDataAsFloatArray()[0],
                         input.getDataAsFloatArray()[1],
                         out[1].toTensor().getDataAsLongArray()[0],
-                        target.getDataAsLongArray()[0]));
+                        target.getDataAsLongArray()[0],
+                    ),
+                )
             }
 
             sgd.step(gradients)
@@ -106,6 +111,34 @@ class TrainingModuleE2ETest {
             }
         }
         Assert.assertTrue(finalLoss < 0.1f)
+
+        // Check training performance continuity when exporting and loading from PTD checkpoint.
+        val checkpoint = module.exportWeights("forward")
+        val bytes = ByteArray(checkpoint.remaining())
+        checkpoint.duplicate().get(bytes)
+
+        val ptdCheckpointFilePath = "/xor_checkpoint.ptd"
+        val ptdCheckpointFile = File(getTestFilePath(ptdCheckpointFilePath))
+        val checkpointInputStream = ByteArrayInputStream(bytes)
+        FileUtils.copyInputStreamToFile(checkpointInputStream, ptdCheckpointFile)
+        checkpointInputStream.close()
+
+        val trainedModule =
+            TrainingModule.load(
+                getTestFilePath(pteFilePath),
+                getTestFilePath(ptdCheckpointFilePath),
+            )
+        for (inputDex in 0..(dataset.size - 1) step 2) {
+            val targetDex = inputDex + 1
+            val out =
+                trainedModule.executeForwardBackward(
+                    "forward",
+                    EValue.from(dataset.get(inputDex)),
+                    EValue.from(dataset.get(targetDex)),
+                )
+            val outLoss = out[0].toTensor().dataAsFloatArray[0]
+            Assert.assertTrue(outLoss < 0.1f)
+        }
     }
 
     @Test
@@ -116,9 +149,9 @@ class TrainingModuleE2ETest {
         val pteFile = File(getTestFilePath(pteFilePath))
         val pteInputStream = javaClass.getResourceAsStream(pteFilePath)
         FileUtils.copyInputStreamToFile(pteInputStream, pteFile)
-        pteInputStream.close()
+        pteInputStream?.close()
 
-        val module = TrainingModule.load(getTestFilePath(pteFilePath));
+        val module = TrainingModule.load(getTestFilePath(pteFilePath))
         val params = module.namedParameters("forward")
 
         Assert.assertEquals(4, params.size)
@@ -127,19 +160,20 @@ class TrainingModuleE2ETest {
         assertContains(params, LIN2_WEIGHT)
         assertContains(params, LIN2_BIAS)
 
-        val sgd = SGD.create(params, 0.5);
-        val dataset = listOf<Tensor>(
-            Tensor.fromBlob(floatArrayOf(1.0f, 1.0f), longArrayOf(1, 2)),
-            Tensor.fromBlob(longArrayOf(0), longArrayOf(1)),
-            Tensor.fromBlob(floatArrayOf(0.0f, 0.0f), longArrayOf(1, 2)),
-            Tensor.fromBlob(longArrayOf(0), longArrayOf(1)),
-            Tensor.fromBlob(floatArrayOf(1.0f, 0.0f), longArrayOf(1, 2)),
-            Tensor.fromBlob(longArrayOf(1), longArrayOf(1)),
-            Tensor.fromBlob(floatArrayOf(0.0f, 1.0f), longArrayOf(1, 2)),
-            Tensor.fromBlob(longArrayOf(1), longArrayOf(1)),
-        )
+        val sgd = SGD.create(params, 0.5)
+        val dataset =
+            listOf<Tensor>(
+                Tensor.fromBlob(floatArrayOf(1.0f, 1.0f), longArrayOf(1, 2)),
+                Tensor.fromBlob(longArrayOf(0), longArrayOf(1)),
+                Tensor.fromBlob(floatArrayOf(0.0f, 0.0f), longArrayOf(1, 2)),
+                Tensor.fromBlob(longArrayOf(0), longArrayOf(1)),
+                Tensor.fromBlob(floatArrayOf(1.0f, 0.0f), longArrayOf(1, 2)),
+                Tensor.fromBlob(longArrayOf(1), longArrayOf(1)),
+                Tensor.fromBlob(floatArrayOf(0.0f, 1.0f), longArrayOf(1, 2)),
+                Tensor.fromBlob(longArrayOf(1), longArrayOf(1)),
+            )
 
-        val numEpochs = 5000;
+        val numEpochs = 5000
         var finalLoss = Float.MAX_VALUE
 
         for (i in 0 until numEpochs) {
@@ -147,7 +181,8 @@ class TrainingModuleE2ETest {
             val targetDex = inputDex + 1
             val input = dataset.get(inputDex)
             val target = dataset.get(targetDex)
-            val out = module.executeForwardBackward("forward", EValue.from(input), EValue.from(target))
+            val out =
+                module.executeForwardBackward("forward", EValue.from(input), EValue.from(target))
             val gradients = module.namedGradients("forward")
 
             if (i == 0) {
@@ -168,7 +203,9 @@ class TrainingModuleE2ETest {
                         input.getDataAsFloatArray()[0],
                         input.getDataAsFloatArray()[1],
                         out[1].toTensor().getDataAsLongArray()[0],
-                        target.getDataAsLongArray()[0]));
+                        target.getDataAsLongArray()[0],
+                    ),
+                )
             }
 
             sgd.step(gradients)
@@ -178,30 +215,39 @@ class TrainingModuleE2ETest {
             }
         }
         Assert.assertTrue(finalLoss < 0.1f)
+        module.exportWeights("forward")
     }
 
     @Test
     @Throws(IOException::class)
     fun testMissingPteFile() {
-        val exception = Assert.assertThrows(RuntimeException::class.java) {
-            TrainingModule.load(getTestFilePath(MISSING_PTE_NAME))
-        }
-        Assert.assertEquals(exception.message, "Cannot load model path!! " + getTestFilePath(MISSING_PTE_NAME))
+        val exception =
+            Assert.assertThrows(RuntimeException::class.java) {
+                TrainingModule.load(getTestFilePath(MISSING_PTE_NAME))
+            }
+        Assert.assertEquals(
+            exception.message,
+            "Cannot load model path!! " + getTestFilePath(MISSING_PTE_NAME),
+        )
     }
 
     @Test
     @Throws(IOException::class)
     fun testMissingPtdFile() {
-        val exception = Assert.assertThrows(RuntimeException::class.java) {
-            val pteFilePath = "/xor.pte"
-            val pteFile = File(getTestFilePath(pteFilePath))
-            val pteInputStream = javaClass.getResourceAsStream(pteFilePath)
-            FileUtils.copyInputStreamToFile(pteInputStream, pteFile)
-            pteInputStream.close()
+        val exception =
+            Assert.assertThrows(RuntimeException::class.java) {
+                val pteFilePath = "/xor.pte"
+                val pteFile = File(getTestFilePath(pteFilePath))
+                val pteInputStream = javaClass.getResourceAsStream(pteFilePath)
+                FileUtils.copyInputStreamToFile(pteInputStream, pteFile)
+                pteInputStream?.close()
 
-            TrainingModule.load(getTestFilePath(pteFilePath), getTestFilePath(MISSING_PTD_NAME))
-        }
-        Assert.assertEquals(exception.message, "Cannot load data path!! " + getTestFilePath(MISSING_PTD_NAME))
+                TrainingModule.load(getTestFilePath(pteFilePath), getTestFilePath(MISSING_PTD_NAME))
+            }
+        Assert.assertEquals(
+            exception.message,
+            "Cannot load data path!! " + getTestFilePath(MISSING_PTD_NAME),
+        )
     }
 
     companion object {

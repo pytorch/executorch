@@ -14,6 +14,7 @@ import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import org.pytorch.executorch.annotations.Experimental;
@@ -116,4 +117,21 @@ public class TrainingModule {
 
   @DoNotStrip
   private native Map<String, Tensor> namedGradientsNative(String methodName);
+
+  /**
+   * Exports the parameters of the specified method as a buffer that can be saved as a PTD file.
+   *
+   * @param methodName name of the ExecuTorch module method to export weights from.
+   * @return buffer that contains the weights of the specified method
+   */
+  public ByteBuffer exportWeights(String methodName) {
+    if (!mHybridData.isValid()) {
+      Log.e("ExecuTorch", "Attempt to use a destroyed module");
+      return ByteBuffer.allocateDirect(0);
+    }
+    return exportWeightsNative(methodName);
+  }
+
+  @DoNotStrip
+  private native ByteBuffer exportWeightsNative(String methodName);
 }
