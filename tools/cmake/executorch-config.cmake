@@ -24,6 +24,7 @@
 # the contract of exposing these CMake variables.
 
 cmake_minimum_required(VERSION 3.19)
+include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
@@ -108,7 +109,11 @@ foreach(lib ${lib_list})
             If needed rebuild with the proper options in CMakeLists.txt"
     )
   else()
-    if("${lib}" STREQUAL "extension_module" AND (NOT CMAKE_TOOLCHAIN_IOS))
+    if("${lib}" STREQUAL "extension_module"
+       AND (NOT CMAKE_TOOLCHAIN_IOS
+            AND NOT CMAKE_TOOLCHAIN_ANDROID
+            AND NOT APPLE)
+    )
       add_library(${lib} SHARED IMPORTED)
     else()
       # Building a share library on iOS requires code signing, so it's easier to
@@ -149,7 +154,9 @@ if(TARGET coremldelegate)
 endif()
 
 if(TARGET etdump)
-  set_target_properties(etdump PROPERTIES INTERFACE_LINK_LIBRARIES "flatccrt;executorch")
+  set_target_properties(
+    etdump PROPERTIES INTERFACE_LINK_LIBRARIES "flatccrt;executorch"
+  )
 endif()
 
 if(TARGET optimized_native_cpu_ops_lib)
@@ -164,6 +171,13 @@ if(TARGET optimized_native_cpu_ops_lib)
                "optimized_kernels;${_maybe_optimized_portable_kernels_lib}"
   )
 endif()
+if(TARGET extension_module)
+  set_target_properties(
+    extension_module
+    PROPERTIES INTERFACE_LINK_LIBRARIES
+               "executorch_core;extension_data_loader;extension_flat_tensor"
+  )
+endif()
 if(TARGET extension_threadpool)
   target_compile_definitions(extension_threadpool INTERFACE ET_USE_THREADPOOL)
   set_target_properties(
@@ -171,3 +185,17 @@ if(TARGET extension_threadpool)
                                     "cpuinfo;pthreadpool"
   )
 endif()
+
+set(shared_lib_list
+  # executorch -- size tests fail due to regression if we include this and I'm not sure it's needed.
+  optimized_native_cpu_ops_lib
+  portable_ops_lib
+  quantized_ops_lib
+  xnnpack_backend
+  vulkan_backend
+  quantized_ops_aot_lib)
+foreach(lib ${shared_lib_list})
+  if(TARGET ${lib})
+    target_link_options_shared_lib(${lib})
+  endif()
+endforeach()
