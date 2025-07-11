@@ -585,7 +585,10 @@ void test_vulkan_dequantize_per_tensor_impl(
   const ValueRef r_out = graph.add_tensor(
       input.sizes().vec(), from_at_scalartype(out_dtype), out_storage);
 
-  VK_GET_OP_FN("dequantize_per_tensor.default")
+  const ValueRef r_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(out_dtype));
+
+  VK_GET_OP_FN("quantized_decomposed.dequantize_per_tensor.default")
   (graph,
    {
        r_input.value,
@@ -593,6 +596,8 @@ void test_vulkan_dequantize_per_tensor_impl(
        r_zero_point,
        r_quant_min,
        r_quant_max,
+       r_dtype,
+       r_dtype,
        r_out,
    });
 
@@ -1046,7 +1051,10 @@ void test_vulkan_dequantize_per_token_impl(
   const ValueRef r_out = graph.add_tensor(
       input.sizes().vec(), from_at_scalartype(out_dtype), out_storage);
 
-  VK_GET_OP_FN("dequantize_per_token.default")
+  const ValueRef r_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(out_dtype));
+
+  VK_GET_OP_FN("quantized_decomposed.dequantize_per_token.default")
   (graph,
    {
        r_input.value,
@@ -1054,6 +1062,8 @@ void test_vulkan_dequantize_per_token_impl(
        r_zero_point.value,
        r_quant_min,
        r_quant_max,
+       r_dtype,
+       r_dtype,
        r_out,
    });
 
