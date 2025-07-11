@@ -69,9 +69,9 @@ let products = deliverables([
       "c++",
     ],
   ],
-  "kernels_custom": [
-    "sha256": "__SHA256_kernels_custom__",
-    "sha256" + debug_suffix: "__SHA256_kernels_custom_debug__",
+  "kernels_llm": [
+    "sha256": "__SHA256_kernels_llm__",
+    "sha256" + debug_suffix: "__SHA256_kernels_llm_debug__",
   ],
   "kernels_optimized": [
     "sha256": "__SHA256_kernels_optimized__",
