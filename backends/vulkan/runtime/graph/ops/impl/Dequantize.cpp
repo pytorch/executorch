@@ -85,8 +85,6 @@ void add_dequantize_per_tensor_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(output));
 
-  float scale_val = static_cast<float>(graph.get_double(scale));
-  int zero_point_val = static_cast<int>(graph.get_int(zero_point));
   int quant_min_val = static_cast<int>(graph.get_int(quant_min));
   int quant_max_val = static_cast<int>(graph.get_int(quant_max));
 
@@ -100,22 +98,15 @@ void add_dequantize_per_tensor_node(
         graph.strides_ubo(input),
         graph.sizes_ubo(output),
         graph.strides_ubo(output)};
-    push_constants = {
-        PushConstantDataInfo(&scale_val, sizeof(float)),
-        PushConstantDataInfo(&zero_point_val, sizeof(int)),
-        PushConstantDataInfo(&quant_min_val, sizeof(int)),
-        PushConstantDataInfo(&quant_max_val, sizeof(int)),
-    };
   } else {
     param_ubos = {
         graph.logical_limits_ubo(input), graph.logical_limits_ubo(output)};
-    push_constants = {
-        PushConstantDataInfo(&scale_val, sizeof(float)),
-        PushConstantDataInfo(&zero_point_val, sizeof(int)),
-        PushConstantDataInfo(&quant_min_val, sizeof(int)),
-        PushConstantDataInfo(&quant_max_val, sizeof(int)),
-    };
   }
+
+  push_constants = {
+      PushConstantDataInfo(&quant_min_val, sizeof(int)),
+      PushConstantDataInfo(&quant_max_val, sizeof(int)),
+  };
 
   vkapi::SpecVarList spec_vars = {
       graph.hashed_layout_of(output),
@@ -128,7 +119,9 @@ void add_dequantize_per_tensor_node(
       default_pick_global_wg_size,
       default_pick_local_wg_size,
       // Inputs and Outputs
-      {{output, vkapi::kWrite}, {input, vkapi::kRead}},
+      {{output, vkapi::kWrite},
+       {input, vkapi::kRead},
+       {{scale, zero_point}, vkapi::kRead}},
       // Shader param buffers
       param_ubos,
       // Push Constants
@@ -517,7 +510,7 @@ void dequantize_per_channel_impl(
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(
-      quantized_decomposed.dequantize_per_tensor.default,
+      quantized_decomposed.dequantize_per_tensor.tensor,
       dequantize_per_tensor_impl);
   VK_REGISTER_OP(
       quantized_decomposed.dequantize_per_token.default,
