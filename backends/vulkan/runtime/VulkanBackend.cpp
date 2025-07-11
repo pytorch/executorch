@@ -83,10 +83,14 @@ vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
       return vkapi::kChar;
     case vkgraph::VkDataType::INT32:
       return vkapi::kInt;
+    case vkgraph::VkDataType::INT64:
+      return vkapi::kLong;
     case vkgraph::VkDataType::FLOAT16:
       return vkapi::kHalf;
     case vkgraph::VkDataType::FLOAT32:
       return vkapi::kFloat;
+    case vkgraph::VkDataType::FLOAT64:
+      return vkapi::kDouble;
   }
 }
 

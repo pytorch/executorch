@@ -45,9 +45,11 @@ class VkGraphBuilder:
         self,
         program: ExportedProgram,
         delegate_mapping_builder: DelegateMappingBuilder,
+        downcast_64_bit: bool = True,
     ) -> None:
         self.program = program
         self.delegate_mapping_builder = delegate_mapping_builder
+        self.downcast_64_bit = downcast_64_bit
         self.chain = []
         self.values = []
         self.input_ids = []
@@ -72,13 +74,14 @@ class VkGraphBuilder:
             return vk_graph_schema.VkDataType.INT8
         elif torch_dtype == torch.int32:
             return vk_graph_schema.VkDataType.INT32
+        elif torch_dtype == torch.int64:
+            return vk_graph_schema.VkDataType.INT64
         elif torch_dtype == torch.float16:
             return vk_graph_schema.VkDataType.FLOAT16
         elif torch_dtype == torch.float32:
             return vk_graph_schema.VkDataType.FLOAT32
-        # Narrowing conversion for index tensor produced by max_poolNd_with_indices.
-        elif torch_dtype == torch.int64:
-            return vk_graph_schema.VkDataType.INT32
+        elif torch_dtype == torch.float64:
+            return vk_graph_schema.VkDataType.FLOAT64
         else:
             raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
 
@@ -201,11 +204,20 @@ class VkGraphBuilder:
             # pyre-ignore[16]
             memory_layout = spec.vk_memory_layout
 
+        # Apply downcast logic before getting VK datatype
+        effective_dtype = spec.dtype
+        if self.downcast_64_bit and spec.dtype == torch.float64:
+            effective_dtype = torch.float32
+        elif self.downcast_64_bit and spec.dtype == torch.int64:
+            effective_dtype = torch.int32
+
+        datatype = self.get_vk_datatype(effective_dtype)
+
         new_id = len(self.values)
         self.values.append(
             vk_graph_schema.VkValue(
                 value=vk_graph_schema.VkTensor(
-                    datatype=self.get_vk_datatype(spec.dtype),
+                    datatype=datatype,
                     dims=spec.shape,
                     constant_id=constant_id,
                     mem_obj_id=mem_obj_id,
