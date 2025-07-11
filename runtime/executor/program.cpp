@@ -219,6 +219,9 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   } else {
     // The constant data is stored inside the flatbuffer, so this program does
     // not contain a separate segment for it.
+    ET_LOG(
+        Error,
+        "!!PLEASE REGENERATE YOUR PTE FILE!! This branch is deprecated as of ExecuTorch 0.7. Regenerate your PTE to ensure newer versions of the ExecuTorch runtime can support it. See the ExecuTorch deprecation policy at: https://docs.pytorch.org/executorch/stable/api-life-cycle.html#deprecation-policy. Contact the PyTorch Edge team if you have any questions.");
     return Program(
         loader,
         segment_base_offset,
