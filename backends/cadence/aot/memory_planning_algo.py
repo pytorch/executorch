@@ -18,6 +18,9 @@ from executorch.exir.memory_planning import Verifier
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
 
+class MemoryPlanningAlgoFailure(Exception):
+    pass
+
 
 def get_aligned_offset(pre_aligned_offset: int, alignment: int) -> int:
     return int(math.ceil(pre_aligned_offset / alignment) * alignment)
