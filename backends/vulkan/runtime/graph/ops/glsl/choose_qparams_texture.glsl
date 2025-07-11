@@ -30,6 +30,7 @@ $if MODE == "per_tensor":
   layout(push_constant) uniform restrict Block {
     int quant_min;
     int quant_max;
+    float eps;
   };
 $else:
   layout(push_constant) uniform restrict Block {
@@ -234,7 +235,7 @@ void choose_qparams_per_tensor() {
 
     float scale_val;
     int zero_point_val;
-    calculate_scale_and_zero_point(global_min, global_max, quant_min, quant_max, scale_val, zero_point_val);
+    calculate_scale_and_zero_point(global_min, global_max, quant_min, quant_max, eps, scale_val, zero_point_val);
 
     write_texel(t_scale, ivec3(0, 0, 0), vec4(scale_val, 0.0, 0.0, 0.0));
     write_texel(t_zero_point, ivec3(0, 0, 0), ivec4(zero_point_val, 0, 0, 0));
@@ -372,7 +373,7 @@ void choose_qparams_per_token() {
 
       float scale_val;
       int zero_point_val;
-      calculate_scale_and_zero_point(token_min, token_max, quant_min, quant_max, scale_val, zero_point_val);
+      calculate_scale_and_zero_point(token_min, token_max, quant_min, quant_max, 1e-5, scale_val, zero_point_val);
 
       // Convert token_id to 3D coordinates for output texture
       // Assuming output tensors have the same layout as input but with different dimensions
