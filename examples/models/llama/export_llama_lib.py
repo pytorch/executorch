@@ -107,6 +107,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "qwen3_0_6b",
     "qwen3_1_7b",
     "qwen3_4b",
+    "gemma3_1b",
     "phi_4_mini",
     "smollm2",
 ]
@@ -118,6 +119,7 @@ HUGGING_FACE_REPO_IDS = {
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
+    "gemma3_1b": "google/gemma-3-1b-it",
 }
 
 
@@ -607,6 +609,10 @@ def export_llama(
             )
         elif model_name == "smollm2":
             from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
+                convert_weights,
+            )
+        elif model_name.startswith("gemma3"):
+            from executorch.examples.models.gemma3 import (  # pyre-ignore[21]
                 convert_weights,
             )
         else:

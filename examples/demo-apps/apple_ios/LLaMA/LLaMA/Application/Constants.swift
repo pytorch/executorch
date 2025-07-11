@@ -26,5 +26,14 @@ You are a helpful assistant.
     
     public static let llama3PromptTemplate = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>%@<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
     
-public static let phi4PromptTemplate = "<|user|>%@<|end|><|assistant|>"
+    public static let phi4PromptTemplate = "<|user|>%@<|end|><|assistant|>"
+    
+    public static let gemma3PromptTemplate = """
+<bos><start_of_turn>user
+
+
+%@<end_of_turn>
+<start_of_turn>model
+
+"""
 }
