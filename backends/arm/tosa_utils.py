@@ -103,9 +103,11 @@ def dbg_fail(
     dbg_node(node, graph_module)
 
 
-def getNodeArgs(node: Node, tosa_spec: TosaSpecification) -> list[TosaArg]:
+def getNodeArgs(node: Node, tosa_spec: TosaSpecification) -> list[TosaArg | None]:
     try:
-        return [TosaArg(arg, tosa_spec) for arg in node.args]
+        return [
+            TosaArg(arg, tosa_spec) if arg is not None else None for arg in node.args
+        ]
     except ValueError as e:
         raise ValueError(f"Failed processing args to op:\n{node}") from e
 
