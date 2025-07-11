@@ -109,7 +109,11 @@ foreach(lib ${lib_list})
             If needed rebuild with the proper options in CMakeLists.txt"
     )
   else()
-    if("${lib}" STREQUAL "extension_module" AND (NOT CMAKE_TOOLCHAIN_IOS))
+    if("${lib}" STREQUAL "extension_module"
+       AND (NOT CMAKE_TOOLCHAIN_IOS
+            AND NOT CMAKE_TOOLCHAIN_ANDROID
+            AND NOT APPLE)
+    )
       add_library(${lib} SHARED IMPORTED)
     else()
       # Building a share library on iOS requires code signing, so it's easier to
@@ -150,7 +154,9 @@ if(TARGET coremldelegate)
 endif()
 
 if(TARGET etdump)
-  set_target_properties(etdump PROPERTIES INTERFACE_LINK_LIBRARIES "flatccrt;executorch")
+  set_target_properties(
+    etdump PROPERTIES INTERFACE_LINK_LIBRARIES "flatccrt;executorch"
+  )
 endif()
 
 if(TARGET optimized_native_cpu_ops_lib)
@@ -163,6 +169,13 @@ if(TARGET optimized_native_cpu_ops_lib)
     optimized_native_cpu_ops_lib
     PROPERTIES INTERFACE_LINK_LIBRARIES
                "optimized_kernels;${_maybe_optimized_portable_kernels_lib}"
+  )
+endif()
+if(TARGET extension_module)
+  set_target_properties(
+    extension_module
+    PROPERTIES INTERFACE_LINK_LIBRARIES
+               "executorch_core;extension_data_loader;extension_flat_tensor"
   )
 endif()
 if(TARGET extension_threadpool)
