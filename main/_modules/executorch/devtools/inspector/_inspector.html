@@ -1664,7 +1664,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_aot_intermediate_outputs_and_op_names</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Capture intermediate outputs only if _representative_inputs are provided</span>
 <span class="sd">        when using bundled program to create the etrecord</span>
@@ -1685,13 +1685,13 @@
     <span class="c1"># TODO: Make it more extensible to further merge overlapping debug handles</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_runtime_intermediate_outputs_and_op_names</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Retrieve the runtime intermediate outputs(debug handles and intermediate values mappings)</span>
 <span class="sd">        from the event blocks, along with the corresponding debug handles and op names mapping.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">debug_handle_to_output</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="n">debug_handle_to_op_name</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">debug_handle_to_op_names</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
                 <span class="c1"># Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax</span>
@@ -1713,12 +1713,13 @@
                         <span class="n">event</span><span class="o">.</span><span class="n">_instruction_id</span><span class="p">,</span>
                         <span class="n">event</span><span class="o">.</span><span class="n">debug_data</span><span class="p">,</span>
                     <span class="p">)</span>
-                    <span class="n">debug_handle_to_op_name</span><span class="p">[</span><span class="n">debug_handle</span><span class="p">]</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span>
+                    <span class="c1"># TODO: One debug handle can be associated with multiple op names</span>
+                    <span class="n">debug_handle_to_op_names</span><span class="p">[</span><span class="n">debug_handle</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
 
         <span class="n">merge_runtime_overlapping_debug_handles</span><span class="p">(</span><span class="n">debug_handle_to_output</span><span class="p">)</span>
         <span class="k">return</span> <span class="p">{</span>
             <span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">debug_handle_to_output</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-        <span class="p">},</span> <span class="n">debug_handle_to_op_name</span>
+        <span class="p">},</span> <span class="n">debug_handle_to_op_names</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">to_dataframe</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -1890,15 +1891,15 @@
 <span class="sd">            pd.DataFrame: A DataFrame listing corresponding operator outputs from</span>
 <span class="sd">                          both stages and their computed numerical gaps.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">aot_intermediate_outputs</span><span class="p">,</span> <span class="n">aot_debug_handle_to_op_name</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">aot_intermediate_outputs</span><span class="p">,</span> <span class="n">aot_debug_handle_to_op_names</span> <span class="o">=</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_get_aot_intermediate_outputs_and_op_names</span><span class="p">()</span>
         <span class="p">)</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_intermediate_outputs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_debug_handle_to_op_name</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_intermediate_outputs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_debug_handle_to_op_names</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="s2">&quot;Missing etrecord or missing representative inputs within etrecord, both of which are required for calculating numerical gap&quot;</span>
             <span class="p">)</span>
         <span class="c1"># The runtime_op_names will be used later to map runtime debug_handle to op_name</span>
-        <span class="n">runtime_intermediate_outputs</span><span class="p">,</span> <span class="n">runtime_debug_handle_to_op_name</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">runtime_intermediate_outputs</span><span class="p">,</span> <span class="n">runtime_debug_handle_to_op_names</span> <span class="o">=</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_get_runtime_intermediate_outputs_and_op_names</span><span class="p">()</span>
         <span class="p">)</span>
         <span class="n">mapping</span> <span class="o">=</span> <span class="n">map_runtime_aot_intermediate_outputs</span><span class="p">(</span>
@@ -1924,11 +1925,11 @@
             <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                 <span class="p">{</span>
                     <span class="s2">&quot;aot_ops&quot;</span><span class="p">:</span> <span class="n">find_op_names</span><span class="p">(</span>
-                        <span class="n">aot_debug_handle</span><span class="p">,</span> <span class="n">aot_debug_handle_to_op_name</span>
+                        <span class="n">aot_debug_handle</span><span class="p">,</span> <span class="n">aot_debug_handle_to_op_names</span>
                     <span class="p">),</span>
                     <span class="s2">&quot;aot_intermediate_output&quot;</span><span class="p">:</span> <span class="n">aot_intermediate_output</span><span class="p">,</span>
                     <span class="s2">&quot;runtime_ops&quot;</span><span class="p">:</span> <span class="n">find_op_names</span><span class="p">(</span>
-                        <span class="n">runtime_debug_handle</span><span class="p">,</span> <span class="n">runtime_debug_handle_to_op_name</span>
+                        <span class="n">runtime_debug_handle</span><span class="p">,</span> <span class="n">runtime_debug_handle_to_op_names</span>
                     <span class="p">),</span>
                     <span class="s2">&quot;runtime_intermediate_output&quot;</span><span class="p">:</span> <span class="n">runtime_intermediate_output</span><span class="p">,</span>
                     <span class="s2">&quot;gap&quot;</span><span class="p">:</span> <span class="n">compare_intermediate_outputs</span><span class="p">(</span>
