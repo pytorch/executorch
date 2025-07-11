@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import Any, Callable, cast, List, Optional
+from typing import Any, Callable, cast, List, Optional, Type
 
 import torch
 import torch.fx
@@ -76,7 +76,7 @@ class FinalizePipeline(ExportPass):
 Argument = Any  # pyre-ignore
 
 
-def get_passes_in_default_order() -> List[ExportPass]:
+def get_passes_in_default_order() -> list[Type[ExportPass]]:
     passes = [
         InitializePipeline,
         RemoveRedundantOps.passes,
