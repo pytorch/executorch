@@ -9,6 +9,7 @@ from torch.fx import Node
 FROM_NODE_KEY = "from_node"
 DEBUG_HANDLE_KEY = "debug_handle"
 
+UNSET_DEBUG_HANDLE = 0
 
 def get_greatest_ancestor_node_identifier(node: Node) -> str:
     """Get the identifier of the greatest ancestor node of the given node.

@@ -47,7 +47,7 @@ from executorch.devtools.inspector._inspector_utils import (
 )
 from executorch.devtools.inspector.numerical_comparator import L1Comparator
 from executorch.exir import to_edge
-from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY, UNSET_DEBUG_HANDLE
 from torch.export import export
 
 
@@ -682,8 +682,7 @@ class TestInspectorUtils(unittest.TestCase):
             )
         )
 
-        # only two add ops in the exported program will keep in edge dialect program, so the debug handles for removed op will be three
-        debug_handle_for_removed_node = 3
+        n_removed_nodes = 0
 
         for node in exported_program.graph.nodes:
             if node.name == "add":
@@ -691,10 +690,12 @@ class TestInspectorUtils(unittest.TestCase):
             elif node.name == "add_1":
                 self.assertEqual(node.meta[DEBUG_HANDLE_KEY], 2)
             elif node.op not in ("placeholder", "output"):
+                n_removed_nodes += 1
                 self.assertEqual(
-                    node.meta[DEBUG_HANDLE_KEY], debug_handle_for_removed_node
+                    node.meta[DEBUG_HANDLE_KEY], UNSET_DEBUG_HANDLE
                 )
 
+        self.assertEqual(n_removed_nodes, 2)
 
 def gen_mock_operator_graph_with_expected_map() -> (
     Tuple[OperatorGraph, Dict[int, OperatorNode]]
