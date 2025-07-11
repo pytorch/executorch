@@ -485,6 +485,8 @@
 				03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */,
 				03CF43A72CEC5CEC00C7113B /* kernels_optimized */,
 				03CF43A92CEC5CEC00C7113B /* kernels_optimized_debug */,
+				03CF43AB2CEC5CEC00C7113B /* kernels_portable */,
+				03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */,
 				03CF43AF2CEC5CEC00C7113B /* kernels_quantized */,
 				03CF43B12CEC5CEC00C7113B /* kernels_quantized_debug */,
 			);
@@ -1009,6 +1011,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = kernels_optimized_debug;
+		};
+		03CF43AB2CEC5CEC00C7113B /* kernels_portable */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_portable;
+		};
+		03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_portable_debug;
 		};
 		03CF43AF2CEC5CEC00C7113B /* kernels_quantized */ = {
 			isa = XCSwiftPackageProductDependency;
