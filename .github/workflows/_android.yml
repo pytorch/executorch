@@ -35,6 +35,7 @@ jobs:
 
         # Build LLM Demo for Android
         export BUILD_AAR_DIR=aar-out
+        export EXECUTORCH_BUILD_EXTENSION_LLM=ON
         mkdir -p $BUILD_AAR_DIR
         bash scripts/build_android_library.sh
         cp ${BUILD_AAR_DIR}/executorch.aar $ARTIFACTS_DIR_NAME
