@@ -144,7 +144,7 @@ class VulkanBackend(BackendDetails):
         default_memory_layout = compile_options.get(
             "memory_layout_override", VkMemoryLayout.TENSOR_WIDTH_PACKED
         )
-        downcast_64_bit = compile_options.get("downcast_64_bit", False)
+        downcast_64_bit = compile_options.get("downcast_64_bit", True)
 
         program = unsafe_remove_auto_functionalized_pass(program)
 
