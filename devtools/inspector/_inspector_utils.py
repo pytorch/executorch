@@ -35,7 +35,16 @@ from executorch.devtools.etdump.schema_flatcc import (
 from executorch.devtools.etdump.serialize import deserialize_from_etdump_flatcc
 from executorch.devtools.etrecord import ETRecord
 
+from executorch.exir.debug_handle_utils import (
+    DEBUG_HANDLE_KEY,
+    get_greatest_ancestor_node_identifier,
+)
+
+from executorch.exir.graph_module import bfs_trace_with_node_process
+
 from tabulate import tabulate
+
+from torch.export import ExportedProgram
 
 FORWARD = "forward"
 EDGE_DIALECT_GRAPH_KEY = "edge_dialect_graph_module"
@@ -814,13 +823,13 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
 
 def get_aot_debug_handle_to_op_name_mapping(
     graph_module: torch.fx.GraphModule,
-) -> Dict[DebugHandle, str]:
+) -> Dict[DebugHandle, List[str]]:
     """
     Get a mapping from debug handle to operator name from the ETRecord edge_dialect_program's graph module.
     Parameters:
     graph_module (torch.fx.GraphModule): The graph module to get the mapping from.
     Returns:
-    Dict[DebugHandle, str]: A dictionary mapping debug handles to operator names.
+    Dict[DebugHandle, List[str]]: A dictionary mapping debug handles to operator names.
     """
     node_filters = [
         NodeFilter("debug_handle", "call_function", exclude_ops=["getitem"])
@@ -836,26 +845,29 @@ def get_aot_debug_handle_to_op_name_mapping(
                 if isinstance(debug_handle, int)
                 else tuple(debug_handle)
             )
-            debug_handle_to_op_name[key] = node.name
+            if key in debug_handle_to_op_name:
+                debug_handle_to_op_name[key].append(node.name)
+            else:
+                debug_handle_to_op_name[key] = [node.name]
     return debug_handle_to_op_name
 
 
 def find_op_names(
     target_debug_handle: DebugHandle,
-    debug_handle_to_op_name: Dict[DebugHandle, str],
+    debug_handle_to_op_names: Dict[DebugHandle, List[str]],
 ) -> List[str]:
     """
     Record the operator names only if their debug handles are part of the target debug handle.
-    The debug handles in `debug_handle_to_op_name` have undergone merging and remain unchanged,
+    The debug handles in `debug_handle_to_op_names` have undergone merging and remain unchanged,
     and this function identifies operations corresponding to these transformed handles.
     """
     dh_set = set(target_debug_handle)
     result = []
 
-    for key_tuple, op_name in debug_handle_to_op_name.items():
+    for key_tuple, op_name in debug_handle_to_op_names.items():
         # Check if key is a subset of the target_debug_handle
         if set(key_tuple).issubset(dh_set):
-            result.append(op_name)
+            result.extend(op_name)
 
     return result
 
@@ -888,3 +900,71 @@ def compare_intermediate_outputs(a: Any, b: Any, comparator) -> List[float]:
     else:
         # Raise an error if one is a sequence and the other is not
         raise ValueError("Both inputs must be sequences or both must be non-sequences.")
+
+
+def propagate_back_debug_handle(
+    exported_program: ExportedProgram,
+    exported_program_graph_id: int,
+    edge_dialect_program: ExportedProgram,
+) -> bool:
+    """
+    Propagate debug handle from edge dialect program back to the exported program while maintain the correctness
+    of operator tracing.
+
+    e.g.
+    export program: op1 -> op2 -> op3
+    edge dialect program: op1_0 -> op3_0 -> op3_1
+    where op1_0 is from op1, op3_0 and op3_1 are from op3, op2 is removed by to_edge pipeline (e.g. RemoveNoopPass).
+
+    Then debug handle of op1 should be same as op1_0, and debug handle of op3 should be same as op3_0 and op3_1.
+    The debug handle of op2 will be a non-existing debug handle in edge dialect program for further skipping.
+
+    Return: True if:
+        a. every debug handle in the edge dialect program has a corresponding node in the exported program
+        b. the exported program is the greatest ancestor of the edge dialect program
+
+    Otherwise, return False.
+    """
+
+    # 1. set up a mapping from debug handle to identifier of export program's node
+    # using edge dialect program nodes' debug handles and from_node info
+    export_graph_node_id_to_debug_handle = {
+        get_greatest_ancestor_node_identifier(node): node.meta[DEBUG_HANDLE_KEY]
+        for node in edge_dialect_program.graph.nodes
+        if node.op not in ("placeholder", "output")
+    }
+
+    # 2. equip debug handle to the exported program's nodes using the mapping
+    # number of nodes in the exported program that have matched entry in export_graph_node_id_to_debug_handle
+    n_matched_node = 0
+
+    # debug handle for the node in the exported program but not in the edge dialect program
+    debug_handle_for_removed_node = (
+        max(export_graph_node_id_to_debug_handle.values()) + 1
+    )
+
+    def _find_n_match_node(node: torch.fx.Node) -> None:
+        nonlocal n_matched_node
+        if node.name in ("output", "placeholder"):
+            return
+        node_id = f"{node.name}.{exported_program_graph_id}"
+        if node_id in export_graph_node_id_to_debug_handle:
+            n_matched_node += 1
+
+    def _equip_debug_handle(node: torch.fx.Node) -> None:
+        if node.name in ("output", "placeholder"):
+            return
+        node_id = f"{node.name}.{exported_program_graph_id}"
+        if node_id in export_graph_node_id_to_debug_handle:
+            node.meta[DEBUG_HANDLE_KEY] = export_graph_node_id_to_debug_handle[node_id]
+        else:
+            node.meta[DEBUG_HANDLE_KEY] = debug_handle_for_removed_node
+
+    bfs_trace_with_node_process(exported_program.graph_module, _find_n_match_node)
+
+    # if any node in the edge dialect program has no corresponding node in the exported program, match failed
+    if n_matched_node != len(export_graph_node_id_to_debug_handle):
+        return False
+
+    bfs_trace_with_node_process(exported_program.graph_module, _equip_debug_handle)
+    return True
