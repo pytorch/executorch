@@ -125,7 +125,7 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                "//executorch/runtime/core/portable_type/c10/torch/standalone:torch_standalone_headers",
+                "//executorch/runtime/core/portable_type/c10/torch/headeronly:torch_headeronly",
             ] + select({
                 "DEFAULT": [],
                 # Half-inl.h depends on vec_half.h from ATen, but only when building for x86.
