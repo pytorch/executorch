@@ -587,17 +587,6 @@ at::Tensor dequantize_per_channel_reference_impl(
 }
 
 // Forward declaration of implementation functions
-void test_vulkan_dequantize_per_tensor_impl(
-    const std::vector<int>& input_sizes,
-    float scale,
-    int zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    at::ScalarType dtype,
-    at::ScalarType out_dtype,
-    const vkcompute::utils::StorageType in_storage,
-    const vkcompute::utils::StorageType out_storage);
-
 void test_vulkan_dequantize_per_token_impl(
     const std::vector<int>& input_sizes,
     const std::vector<float>& scales,
@@ -631,46 +620,6 @@ void test_vulkan_dequantize_per_tensor_tensor_impl(
     at::ScalarType out_dtype,
     const vkcompute::utils::StorageType in_storage,
     const vkcompute::utils::StorageType out_storage);
-
-// Wrapper function to test both buffer and texture storage types
-void test_vulkan_dequantize_per_tensor(
-    const std::vector<int>& input_sizes,
-    float scale,
-    int zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    at::ScalarType dtype,
-    at::ScalarType out_dtype) {
-  // Test with buffer storage
-  test_vulkan_dequantize_per_tensor_impl(
-      input_sizes,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      dtype,
-      out_dtype,
-      vkcompute::utils::kBuffer,
-      vkcompute::utils::kBuffer);
-
-  // Telling the system to expect a float instead of a double
-  // since the shader can only return 32bit anyways
-  if (out_dtype == at::kDouble) {
-    out_dtype = at::kFloat;
-  }
-
-  // Test with texture storage
-  test_vulkan_dequantize_per_tensor_impl(
-      input_sizes,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      dtype,
-      out_dtype,
-      vkcompute::utils::kTexture3D,
-      vkcompute::utils::kTexture3D);
-}
 
 // Wrapper function to test both buffer and texture storage types
 void test_vulkan_dequantize_per_token(
