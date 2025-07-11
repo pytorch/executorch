@@ -12,7 +12,7 @@ would cause all headers in that directory to be includeable with
 `runtime/core/portable_type/complex.h`, which would shadow the C99
 `complex.h` standard header.
 
-`torch/standalone` has been added as an extra "even more bottom of
+`torch/headeronly` has been added as an extra "even more bottom of
 stack" directory in PyTorch, so we have to add it to our sync
 here. The extra "stutter" c10 directory causing `c10/torch/standlone`
 is unfortunately awkward; perhaps we can rename the top-level
