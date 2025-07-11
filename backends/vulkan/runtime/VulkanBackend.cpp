@@ -550,6 +550,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");
 
     // Add a comment
+    // Add another comment
 
     ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
 
