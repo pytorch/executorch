@@ -51,6 +51,7 @@ from .decompose_softmax_unstable_pass import DecomposeSoftmaxUnstablePass  # noq
 from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
 from .decompose_sum_pass import DecomposeSumPass  # noqa
 from .decompose_var_pass import DecomposeVarPass  # noqa
+from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeOperatorArguments,

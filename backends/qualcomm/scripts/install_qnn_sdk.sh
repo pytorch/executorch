@@ -21,7 +21,7 @@ setup_android_ndk() {
         return
     fi
 
-    NDK_VERSION="r25c"
+    NDK_VERSION="r26c"
     NDK_INSTALL_DIR="/tmp/android-ndk"
 
     if [ -d "${NDK_INSTALL_DIR}/ndk" ]; then
@@ -92,7 +92,7 @@ install_qnn() {
 
 setup_libcpp() {
   clang_version=$1
-  LLVM_VERSION="12.0.0"
+  LLVM_VERSION="14.0.0"
   INSTALL_DIR="/usr/local/libcxx-${LLVM_VERSION}"
 
   # Check if libc++ is already installed

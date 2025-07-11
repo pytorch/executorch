@@ -861,10 +861,6 @@ class SPVGenerator:
 
             # Construct generated file name
             gen_out_path = os.path.join(output_dir, f"{src_file_name}.{out_file_ext}")
-            # Construct path of cached generated file
-            cached_gen_out_path = os.path.join(
-                cache_dir, f"{src_file_name}.{out_file_ext}"
-            )
 
             # Execute codegen to generate the output file
             with codecs.open(src_file_fullpath, "r", encoding="utf-8") as input_file:
@@ -875,16 +871,14 @@ class SPVGenerator:
             with codecs.open(gen_out_path, "w", encoding="utf-8") as output_file:
                 output_file.write(output_text)
 
-            if cache_dir is not None:
-                # Store the generated file in the cache for SPIR-V compilation
-                shutil.copyfile(gen_out_path, cached_gen_out_path)
-
         def compile_spirv(shader_paths_pair):
             # Extract components from the input tuple
             # name of generated .glsl, .glslh, or .h
             src_file_name = shader_paths_pair[0]
             # path of template file used for codegen
             src_file_fullpath = shader_paths_pair[1][0]
+            # args used for codegen
+            codegen_params = shader_paths_pair[1][1]
 
             # Assume that generated files will have the same file extension as the
             # source template file.
@@ -925,6 +919,7 @@ class SPVGenerator:
                         shutil.copyfile(cached_spv_out_path, spv_out_path)
                         return (spv_out_path, gen_out_path)
 
+            vk_version = codegen_params.get("VK_VERSION", "1.1")
             # Only proceed if a GLSL compiler was specified
             if self.glslc_path is not None:
                 cmd_base = [
@@ -933,7 +928,7 @@ class SPVGenerator:
                     gen_out_path,
                     "-o",
                     spv_out_path,
-                    "--target-env=vulkan1.1",
+                    "--target-env=vulkan{}".format(vk_version),
                     "-Werror",
                 ] + [
                     arg
@@ -959,7 +954,10 @@ class SPVGenerator:
                     else:
                         raise RuntimeError(f"{err_msg_base} {e.stderr}") from e
 
+                # If compilation was successful, store the source GLSL file and the
+                # compiled SPIR-V file in the cache for future comparison.
                 if cache_dir is not None:
+                    shutil.copyfile(gen_out_path, cached_gen_out_path)
                     shutil.copyfile(spv_out_path, cached_spv_out_path)
 
             return (spv_out_path, gen_out_path)
