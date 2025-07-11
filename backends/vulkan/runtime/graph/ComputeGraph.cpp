@@ -549,15 +549,6 @@ vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
   }
 }
 
-int32_t ComputeGraph::get_or_create_int(
-    const ValueRef idx,
-    const int32_t default_val) {
-  if (values_.at(idx).isNone()) {
-    return default_val;
-  }
-  return extract_scalar<int32_t>(idx);
-}
-
 void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
   get_symint(idx)->set(val);
 }
