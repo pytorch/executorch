@@ -45,7 +45,7 @@ class VkGraphBuilder:
         self,
         program: ExportedProgram,
         delegate_mapping_builder: DelegateMappingBuilder,
-        downcast_64_bit: bool = False,
+        downcast_64_bit: bool = True,
     ) -> None:
         self.program = program
         self.delegate_mapping_builder = delegate_mapping_builder
