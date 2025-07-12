@@ -424,6 +424,12 @@ class ComputeGraph final {
   // Scalar Value Extraction
   //
 
+  bool is_scalar_or_none(const ValueRef idx) const {
+    const Value& value = values_.at(idx);
+    return value.isInt() || value.isDouble() || value.isBool() ||
+        value.isNone();
+  }
+
   template <typename T>
   T extract_scalar(const ValueRef idx) {
     Value& value = values_.at(idx);
@@ -437,6 +443,15 @@ class ComputeGraph final {
       return static_cast<T>(value.toBool());
     }
     VK_THROW("Cannot extract scalar from Value with type ", value.type());
+  }
+
+  template <typename T>
+  T extract_scalar_or(const ValueRef idx, const T default_value) {
+    Value& value = values_.at(idx);
+    if (value.isNone()) {
+      return default_value;
+    }
+    return extract_scalar<T>(idx);
   }
 
   template <typename T>
