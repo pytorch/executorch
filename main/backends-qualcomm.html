@@ -555,8 +555,19 @@ Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found <a class
 <h3>Host OS<a class="headerlink" href="#host-os" title="Permalink to this heading">¶</a></h3>
 <p>The Linux host operating system that QNN Backend is verified with is Ubuntu 22.04 LTS x64
 at the moment of updating this tutorial.
+In addition, it is also confirmed to work on Windows Subsystem for Linux (WSL) with Ubuntu 22.04.
 Usually, we verified the backend on the same OS version which QNN is verified with.
 The version is documented in QNN SDK.</p>
+<div class="section" id="windows-wsl-setup">
+<h4>Windows (WSL) Setup<a class="headerlink" href="#windows-wsl-setup" title="Permalink to this heading">¶</a></h4>
+<p>To install Ubuntu 22.04 on WSL, run the following command in PowerShell or Windows Terminal:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>wsl<span class="w"> </span>--install<span class="w"> </span>-d<span class="w"> </span>ubuntu<span class="w"> </span><span class="m">22</span>.04
+</pre></div>
+</div>
+<p>This command will install WSL and set up Ubuntu 22.04 as the default Linux distribution.</p>
+<p>For more details and troubleshooting, refer to the official Microsoft WSL installation guide:
+👉 <a class="reference external" href="https://learn.microsoft.com/en-us/windows/wsl/install">Install WSL | Microsoft Learn</a></p>
+</div>
 </div>
 <div class="section" id="hardware">
 <h3>Hardware:<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
@@ -914,7 +925,10 @@ issue on ExecuTorch repo and tag use <code class="docutils literal notranslate">
 <li><a class="reference internal" href="#">Qualcomm AI Engine Backend</a><ul>
 <li><a class="reference internal" href="#what-s-qualcomm-ai-engine-direct">What’s Qualcomm AI Engine Direct?</a></li>
 <li><a class="reference internal" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul>
-<li><a class="reference internal" href="#host-os">Host OS</a></li>
+<li><a class="reference internal" href="#host-os">Host OS</a><ul>
+<li><a class="reference internal" href="#windows-wsl-setup">Windows (WSL) Setup</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#hardware">Hardware:</a></li>
 <li><a class="reference internal" href="#software">Software:</a></li>
 </ul>
