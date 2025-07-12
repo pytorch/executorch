@@ -14,11 +14,13 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/runtime/platform/defualt/arm_baremetal.hpp>
 #include <stdio.h>
 #include <unistd.h>
 #include <memory>
 #include <vector>
 
+#include "arm_memory_allocator.h"
 #include "arm_perf_monitor.h"
 
 #if defined(ET_BUNDLE_IO)
@@ -160,73 +162,6 @@ unsigned char* ethosu_fast_scratch = dedicated_sram;
 }
 #endif
 
-void et_pal_init(void) {
-  // Enable ARM PMU Clock
-  ARM_PMU_Enable();
-  DCB->DEMCR |= DCB_DEMCR_TRCENA_Msk; // Trace enable
-  ARM_PMU_CYCCNT_Reset();
-  ARM_PMU_CNTR_Enable(PMU_CNTENSET_CCNTR_ENABLE_Msk);
-}
-
-/**
- * Implementation of the et_pal_<funcs>()
- *
- * This functions are hardware adaption type of functions for things like
- * time/logging/memory allocation that could call your RTOS or need to to
- * be implemnted in some way.
- */
-
-ET_NORETURN void et_pal_abort(void) {
-#if !defined(SEMIHOSTING)
-  __builtin_trap();
-#else
-  _exit(-1);
-#endif
-}
-
-et_timestamp_t et_pal_current_ticks(void) {
-  return ARM_PMU_Get_CCNTR();
-}
-
-et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
-  // Since we don't know the CPU freq for your target and justs cycles in the
-  // FVP for et_pal_current_ticks() we return a conversion ratio of 1
-  return {1, 1};
-}
-
-/**
- * Emit a log message via platform output (serial port, console, etc).
- */
-void et_pal_emit_log_message(
-    ET_UNUSED et_timestamp_t timestamp,
-    et_pal_log_level_t level,
-    const char* filename,
-    ET_UNUSED const char* function,
-    size_t line,
-    const char* message,
-    ET_UNUSED size_t length) {
-  fprintf(
-      stderr,
-      "%c [executorch:%s:%zu %s()] %s\n",
-      level,
-      filename,
-      line,
-      function,
-      message);
-}
-
-/**
- * Dynamic memory allocators intended to be used by temp_allocator
- * to implement malloc()/free() type of allocations.
- * Currenyly not used.
- */
-
-void* et_pal_allocate(ET_UNUSED size_t size) {
-  return nullptr;
-}
-
-void et_pal_free(ET_UNUSED void* ptr) {}
-
 namespace {
 
 /// Lightweight heapless container that constructs and stores a T in-place.
@@ -286,58 +221,6 @@ class Box {
   const T* ptr() const {
     return reinterpret_cast<const T*>(mem);
   }
-};
-
-// Setup our own allocator that can show some extra stuff like used and free
-// memory info
-class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
- public:
-  ArmMemoryAllocator(uint32_t size, uint8_t* base_address)
-      : MemoryAllocator(size, base_address), used_(0), peak_used_(0) {}
-
-  void* allocate(size_t size, size_t alignment = kDefaultAlignment) override {
-    void* ret = executorch::runtime::MemoryAllocator::allocate(size, alignment);
-    if (ret != nullptr) {
-      // Align with the same code as in MemoryAllocator::allocate() to keep
-      // used_ "in sync" As alignment is expected to be power of 2 (checked by
-      // MemoryAllocator::allocate()) we can check it the lower bits
-      // (same as alignment - 1) is zero or not.
-      if ((size & (alignment - 1)) == 0) {
-        // Already aligned.
-        used_ += size;
-      } else {
-        used_ = (used_ | (alignment - 1)) + 1 + size;
-      }
-      if (used_ > peak_used_)
-        peak_used_ = used_;
-    }
-    return ret;
-  }
-
-  // Returns the used size of the allocator's memory buffer.
-  size_t used_size() const {
-    return used_;
-  }
-
-  // Returns the peak memory usage of the allocator's memory buffer
-  // Peak usage is useful when doing multiple allocations & resets
-  size_t peak_used() const {
-    return peak_used_;
-  }
-
-  // Returns the free size of the allocator's memory buffer.
-  size_t free_size() const {
-    return executorch::runtime::MemoryAllocator::size() - used_;
-  }
-
-  void reset() {
-    executorch::runtime::MemoryAllocator::reset();
-    used_ = 0;
-  }
-
- private:
-  size_t used_;
-  size_t peak_used_;
 };
 
 Result<BufferCleanup> prepare_input_tensors(
