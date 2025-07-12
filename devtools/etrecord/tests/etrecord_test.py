@@ -100,12 +100,13 @@ class TestETRecord(unittest.TestCase):
                 tmpdirname + "/etrecord.bin",
                 edge_output,
                 et_output,
-                {
+                extra_recorded_export_modules={
                     "aten_dialect_output": captured_output,
                 },
             )
 
             etrecord = parse_etrecord(tmpdirname + "/etrecord.bin")
+
             self.check_graph_closeness(
                 etrecord.graph_map["aten_dialect_output/forward"],
                 captured_output.exported_program.graph_module,
@@ -184,7 +185,7 @@ class TestETRecord(unittest.TestCase):
                     tmpdirname + "/etrecord.bin",
                     edge_output,
                     et_output,
-                    {"fail_test_case": et_output},
+                    extra_recorded_export_modules={"fail_test_case": et_output},
                 )
 
     def test_etrecord_reserved_name(self):
@@ -196,5 +197,84 @@ class TestETRecord(unittest.TestCase):
                         tmpdirname + "/etrecord.bin",
                         edge_output,
                         et_output,
-                        {reserved_name: captured_output.exported_program.graph_module},
+                        extra_recorded_export_modules={
+                            reserved_name: captured_output.exported_program.graph_module
+                        },
                     )
+
+    def test_etrecord_generation_with_exported_program(self):
+        """Test that exported program can be recorded and parsed back correctly."""
+        captured_output, edge_output, et_output = self.get_test_model()
+        original_exported_program = captured_output.exported_program
+        expected_graph_id = id(original_exported_program.graph)
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            # Generate ETRecord with exported program
+            generate_etrecord(
+                tmpdirname + "/etrecord.bin",
+                edge_output,
+                et_output,
+                exported_program=original_exported_program,
+            )
+
+            # Parse ETRecord back
+            etrecord = parse_etrecord(tmpdirname + "/etrecord.bin")
+
+            # Validate that the parsed exported program matches the original
+            self.assertIsNotNone(etrecord.exported_program)
+            self.check_graph_closeness(
+                etrecord.exported_program,
+                original_exported_program.graph_module,
+            )
+
+            # Validate other components are still present
+            self.check_graph_closeness(
+                etrecord.edge_dialect_program,
+                edge_output.exported_program.graph_module,
+            )
+            self.assertEqual(
+                etrecord._debug_handle_map,
+                json.loads(json.dumps(et_output.debug_handle_map)),
+            )
+
+            # Validate that export_graph_id matches the expected value
+            self.assertEqual(etrecord.export_graph_id, expected_graph_id)
+
+    def test_etrecord_generation_with_exported_program_dict(self):
+        """Test that exported program dictionary can be recorded and parsed back correctly."""
+        captured_output, edge_output, et_output = self.get_test_model()
+        original_exported_program = captured_output.exported_program
+        exported_program_dict = {"forward": original_exported_program}
+        expected_graph_id = id(original_exported_program.graph)
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            # Generate ETRecord with exported program dictionary
+            generate_etrecord(
+                tmpdirname + "/etrecord.bin",
+                edge_output,
+                et_output,
+                exported_program=exported_program_dict,
+            )
+
+            # Parse ETRecord back
+            etrecord = parse_etrecord(tmpdirname + "/etrecord.bin")
+
+            # Validate that the parsed exported program matches the original
+            self.assertIsNotNone(etrecord.exported_program)
+            self.check_graph_closeness(
+                etrecord.exported_program,
+                original_exported_program.graph_module,
+            )
+
+            # Validate other components are still present
+            self.check_graph_closeness(
+                etrecord.edge_dialect_program,
+                edge_output.exported_program.graph_module,
+            )
+            self.assertEqual(
+                etrecord._debug_handle_map,
+                json.loads(json.dumps(et_output.debug_handle_map)),
+            )
+
+            # Validate that export_graph_id matches the expected value
+            self.assertEqual(etrecord.export_graph_id, expected_graph_id)

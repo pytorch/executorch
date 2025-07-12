@@ -361,6 +361,7 @@ class Tester:
                     ref,
                     atol=atol,
                     rtol=rtol,
+                    equal_nan=True,
                 ), (
                     f"Output {i} does not match reference output.\n"
                     f"\tGiven atol: {atol}, rtol: {rtol}.\n"
@@ -416,12 +417,7 @@ class Tester:
         """
 
         # Locate the output node.
-        output_node = None
-        for node in program.graph.nodes:
-            if node.op == "output":
-                output_node = node
-                break
-        assert output_node is not None
+        output_node = program.graph.output_node()
 
         # Look for a dequantization node in the output node args. Returned values are found in the first
         # argument of the output node.

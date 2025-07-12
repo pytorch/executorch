@@ -20,6 +20,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 from torchao.quantization.pt2e import FixedQParamsObserver, MinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
     QuantizationAnnotation,
     QuantizationSpec,
     SharedQuantizationSpec,
@@ -213,6 +215,24 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
             _annotated=True,
         )
 
+    def annotate_rms_norm(node: Node, quantization_config: QuantizationConfig) -> None:
+        act_node = node.args[0]
+        weight_node = node.args[2]
+
+        # TODO current only support 16a16w
+        annotate_input_qspec_map(
+            node,
+            act_node,
+            quantization_config.input_activation,
+        )
+
+        annotate_input_qspec_map(
+            node,
+            weight_node,
+            quantization_config.input_activation,
+        )
+        annotate_output_qspec(node, quantization_config.output_activation)
+
     def annotate_single_in_single_out(
         node: Node, quantization_config: QuantizationConfig
     ) -> None:
@@ -224,6 +244,40 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+    def annotate_single_in_share_out(
+        node: Node, quantization_config: QuantizationConfig
+    ) -> None:
+
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_qspec_map[input_act] = quantization_config.input_activation
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=SharedQuantizationSpec((input_act, node)),
+            _annotated=True,
+        )
+
+    def annotate_stack(node: Node, quantization_config: QuantizationConfig) -> None:
+        input_nodes = node.args[0]
+
+        first_input_node = input_nodes[0]
+        input_qspec_map = {}
+        input_qspec_map[first_input_node] = quantization_config.input_activation
+        share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+            (first_input_node, node)
+        )
+
+        for input_node in input_nodes[1:]:
+            if input_node not in input_qspec_map:
+                input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=share_qparams_with_input_act0_qspec,
             _annotated=True,
         )
 
@@ -246,6 +300,15 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
                 torch.ops.aten.reshape.default,
             ]:
                 annotate_single_in_single_out(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target == torch.ops.aten.stack.default:
+                annotate_stack(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target == torch.ops.aten.flatten.using_ints:
+                annotate_single_in_share_out(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target == torch.ops.aten.rms_norm.default:
+                annotate_rms_norm(node, quantization_config_8a8w)
                 node = node.args[0]
             elif node.target == torch.ops.aten.cat.default:
                 annotate_cat(node, quantization_config_8a8w)

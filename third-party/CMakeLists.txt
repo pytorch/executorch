@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 add_subdirectory(json)
 add_subdirectory(gflags)
 
@@ -86,6 +87,7 @@ ExternalProject_Add(
              -DFLATCC_REFLECTION=OFF
              -DFLATCC_DEBUG_CLANG_SANITIZE=OFF
              -DFLATCC_INSTALL=ON
+             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_POSITION_INDEPENDENT_CODE=ON
              -DCMAKE_TOOLCHAIN_FILE=

@@ -26,6 +26,7 @@ pip-out/
 *.model
 tokenizer.json
 *.pte
+*.ptd
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
 
