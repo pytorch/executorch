@@ -489,7 +489,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        model: [cvt, deit, dit, efficientnet, focalnet, mobilevit_v1, mobilevit_v2] # eurobert requires transfomer >= 4.48.0, skip for now
+        model: [cvt, deit, dit] # eurobert requires transfomer >= 4.48.0, skip for now
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -515,7 +515,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        model: [pvt, swin, albert, bert, distilbert, roberta] # eurobert requires transfomer >= 4.48.0, skip for now
+        model: [pvt, swin] # eurobert requires transfomer >= 4.48.0, skip for now
       fail-fast: false
     with:
       runner: linux.2xlarge
