@@ -9,7 +9,7 @@ set -eu
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
-toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+toolchain=arm-none-eabi-gcc
 setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
@@ -46,6 +46,7 @@ help() {
     echo "  --output=<FOLDER>               Output folder Default: <MODEL>/<MODEL>_<TARGET INFO>.pte"
     echo "  --et_build_root=<FOLDER>        Build output root folder to use, defaults to ${et_build_root}"
     echo "  --ethosu_tools_dir=<FOLDER>     Path to your Ethos-U tools dir if you not using default: ${ethosu_tools_dir}"
+    echo "  --toolchain=<TOOLCHAIN>         Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc"
     exit 0
 }
 
@@ -63,10 +64,22 @@ for arg in "$@"; do
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --ethosu_tools_dir=*) ethosu_tools_dir="${arg#*=}";;
+      --toolchain=*) toolchain="${arg#*=}";;
       *)
       ;;
     esac
 done
+
+if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
+    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
+    toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+else
+    echo "Error: Invalid toolchain selection, provided: ${tolchain}"
+    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
+    exit 1;
+fi
+toolchain_cmake=$(realpath ${toolchain_cmake})
 
 # Source the tools
 # This should be prepared by the setup.sh
@@ -116,7 +129,7 @@ else
     target_cpu=cortex-m85
 fi
 echo "--------------------------------------------------------------------------------"
-echo "Build Arm Baremetal executor_runner for ${target} with ${pte_file} using ${system_config} ${memory_mode} ${extra_build_flags} to '${output_folder}/cmake-out'"
+echo "Build Arm ${toolchain/-gcc/} executor_runner for ${target} with ${pte_file} using ${system_config} ${memory_mode} ${extra_build_flags} to '${output_folder}/cmake-out'"
 echo "--------------------------------------------------------------------------------"
 
 cd ${et_root_dir}/examples/arm/executor_runner
@@ -130,7 +143,6 @@ if [ "$build_with_etdump" = true ] ; then
 fi
 
 echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${extra_build_flags}"
-
 cmake \
     -DCMAKE_BUILD_TYPE=${build_type}            \
     -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}   \
@@ -152,8 +164,8 @@ echo "[${BASH_SOURCE[0]}] Configured CMAKE"
 
 cmake --build ${output_folder}/cmake-out -j$(nproc) -- arm_executor_runner
 
-echo "[${BASH_SOURCE[0]}] Generated baremetal elf file:"
+echo "[${BASH_SOURCE[0]}] Generated ${toolchain} elf file:"
 find ${output_folder}/cmake-out -name "arm_executor_runner"
-echo "executable_text: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $1}') bytes"
-echo "executable_data: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $2}') bytes"
-echo "executable_bss:  $(find ${output_folder}/cmake-out -name arm_executor_runner -exec arm-none-eabi-size {} \; | grep -v filename | awk '{print $3}') bytes"
+echo "executable_text: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec ${toolchain/-gcc/-size} {} \; | grep -v filename | awk '{print $1}') bytes"
+echo "executable_data: $(find ${output_folder}/cmake-out -name arm_executor_runner -exec ${toolchain/-gcc/-size} {} \; | grep -v filename | awk '{print $2}') bytes"
+echo "executable_bss:  $(find ${output_folder}/cmake-out -name arm_executor_runner -exec ${toolchain/-gcc/-size} {} \; | grep -v filename | awk '{print $3}') bytes"

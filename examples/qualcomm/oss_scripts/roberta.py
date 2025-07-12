@@ -6,7 +6,6 @@
 
 import getpass
 import json
-import logging
 import os
 from multiprocessing.connection import Client
 
@@ -39,29 +38,16 @@ def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     os.makedirs(args.artifact, exist_ok=True)
+    data_size = 100
 
     tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
-    data_size = 100
-    if args.ci:
-        random_ids = torch.randint(low=0, high=100, size=(1, 100), dtype=torch.int32)
-        attention_mask = torch.ones((1, 100), dtype=torch.float32)
-        inputs = [
-            (
-                random_ids,
-                attention_mask,
-            )
-        ]
-        logging.warning(
-            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
-        )
-    else:
-        inputs, targets, input_list = get_masked_language_model_dataset(
-            args.dataset, tokenizer, data_size
-        )
+    inputs, targets, input_list = get_masked_language_model_dataset(
+        args.dataset, tokenizer, data_size
+    )
 
     # Get the Roberta model.
     model = get_instance(args)
-    pte_filename = "roberta_qnn_q16"
+    pte_filename = "roberta_qnn"
 
     # lower to QNN
     passes_job = get_capture_program_passes()
@@ -151,7 +137,7 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts and output by this example. Default ./Roberta_qnn",
-        default="./roberta",
+        default="./Roberta_qnn",
         type=str,
     )
     parser.add_argument(
@@ -163,7 +149,7 @@ if __name__ == "__main__":
             "for https://www.kaggle.com/datasets/mikeortman/wikipedia-sentences"
         ),
         type=str,
-        required=False,
+        required=True,
     )
 
     args = parser.parse_args()
