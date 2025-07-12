@@ -800,3 +800,6 @@ jobs:
 
         # Run pytest
         PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
+        
+        # Run aot example: 
+        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh
