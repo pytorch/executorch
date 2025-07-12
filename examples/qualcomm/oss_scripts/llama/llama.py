@@ -63,6 +63,14 @@ from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.range_setting_pt2e import (
+    reverse_quantize_module_swap,
+    WrappedLlamaModel,
+    compute_scales,
+    set_scales,
+    make_custom_quantizer
+)
+
 from executorch.examples.qualcomm.utils import (
     make_output_dir,
     make_quantizer,
@@ -380,15 +388,9 @@ class SingleLlama:
 
         return quant_io_type
 
-    def quantize(self, quant_dtype, args, tokenizer, custom_annotations=()):
+    def quantize(self, quant_dtype, args, tokenizer, custom_annotations=(), scales_state_dict=None):
         self.quant_dtype = quant_dtype
-        quantizer = make_quantizer(
-            quant_dtype=quant_dtype,
-            per_channel_conv=True,
-            per_channel_linear=True,
-            act_observer=MinMaxObserver,
-        )
-        quantizer.add_custom_quant_annotations(custom_annotations)
+        quantizer = make_custom_quantizer(quant_dtype, args.range_setting, custom_annotations)
 
         self.has_quant_io = True
         fx_graph_module = None
@@ -418,6 +420,10 @@ class SingleLlama:
             kv_updater=args.kv_updater,
             use_i64_token=args.embedding_quantize is not None,
         )
+
+        if scales_state_dict:
+            # scales_state_dict = torch.load("scales_state_dict.pth")
+            set_scales(fx_graph_module, scales_state_dict)
 
         self.llama_graph_module = convert_pt2e(fx_graph_module)
 
@@ -597,6 +603,18 @@ def compile(args, pte_filename, tokenizer):
     end_load_ts = time.time()
     logging.info(f"Time for loading checkpoint: {end_load_ts - start_ts}")
 
+    scales_state_dict = dict()
+    if args.range_setting == "mse_with_act_loss":
+        model = llama_instance_list[0]
+        model.to(torch.float)
+        tokens, atten_mask = model.get_example_inputs(use_kv_cache=False)
+        atten_mask.to(torch.float)
+        wrapped_model = WrappedLlamaModel(
+            model, atten_mask, model.use_kv_cache, args.max_seq_len, args.device
+        )
+        scales_state_dict = compute_scales(wrapped_model, tokens, 1600) # want to use different tokens for calibration!
+        reverse_quantize_module_swap(wrapped_model)
+
     for llama_instance in llama_instance_list:
         for layer in llama_instance.layers:
             if getattr(layer.attention, "prepare_sha", None):
@@ -658,6 +676,7 @@ def compile(args, pte_filename, tokenizer):
                 args=args,
                 tokenizer=tokenizer,
                 custom_annotations=custom_annotations,
+                scales_state_dict=scales_state_dict,
             )
             # If hybrid and lookahead mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
             if i == 0 and args.model_mode in ["hybrid", "lookahead"]:
@@ -1060,6 +1079,12 @@ def _build_parser():
         help="Represents the maximum number of speculations or candidate n-grams that the algorithm considers in each step for verification. It balances the trade-off between computation efficiency and exploring more possibilities.",
         default=8,
         type=int,
+    )
+
+    parser.add_argument(
+        "--range_setting",
+        help="Choose which range setting method for weight quantization (e.g. mse_weight_only or mse_with_act_loss). If not specified, defaults to minmax",
+        type=str,
     )
 
     parser.add_argument("-v", "--verbose", action="store_true")
