@@ -50,6 +50,7 @@ android {
             path "../../../CMakeLists.txt"
         }
     }
+    ndkPath "/opt/ndk/"
 }
 
 task copyTestRes(type: Exec) {
