@@ -344,6 +344,7 @@ targets = [
     "vgf",
     "TOSA-0.80+BI",
     "TOSA-1.0+INT",
+    "TOSA-1.0+FP",
 ]
 
 
