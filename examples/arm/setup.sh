@@ -112,6 +112,11 @@ function check_options() {
                 skip_vela_setup=1
                 shift
                 ;;
+            --setup-test-dependency)
+                echo "Installing test dependency..."
+                source $et_dir/backends/arm/scripts/install_models_for_test.sh
+                exit 0
+                ;;
             --help)
                 print_usage "$@"
                 exit 0

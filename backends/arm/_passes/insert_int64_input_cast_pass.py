@@ -20,8 +20,14 @@ logger.setLevel(logging.WARNING)
 
 class InsertCastForOpsWithInt64InputPass(ExportPass):
 
-    aten_ops = (torch.ops.aten.embedding.default,)
-    edge_ops = (exir_ops.edge.aten.embedding.default,)
+    aten_ops = (
+        torch.ops.aten.embedding.default,
+        torch.ops.aten.slice_copy.Tensor,
+    )
+    edge_ops = (
+        exir_ops.edge.aten.embedding.default,
+        exir_ops.edge.aten.slice_copy.Tensor,
+    )
 
     def get_decomposition(self, op):
         if op in self.edge_ops:
@@ -60,35 +66,59 @@ class InsertCastForOpsWithInt64InputPass(ExportPass):
                 continue
 
             args = node.args
-            weights = args[0]
-            indices = args[1]
 
-            valid_for_insert = False
             if node.target in (
                 exir_ops.edge.aten.embedding.default,
                 torch.ops.aten.embedding.default,
             ):
+                weights = args[0]
+                indices = args[1]
                 valid_for_insert = self._check_aten_embedding_within_int32(
                     weights, indices, node
                 )
 
-            if valid_for_insert:
+                if valid_for_insert:
+                    to_copy_op = self.get_decomposition(node.target)
+                    with graph.inserting_before(node):
+                        cast_before = create_node(
+                            graph,
+                            to_copy_op,
+                            args=(indices,),
+                            kwargs={
+                                "dtype": torch.int32,
+                                "memory_format": torch.preserve_format,
+                            },
+                        )
+                        node.replace_input_with(indices, cast_before)
+
+                    modified_graph = True
+
+            elif node.target in (
+                exir_ops.edge.aten.slice_copy.Tensor,
+                torch.ops.aten.slice_copy.Tensor,
+            ):
+                # MLETORCH-829: Add range check for slice_copy
+                input_tensor = args[0]
+                fake_tensor = input_tensor.meta["val"]
+                if fake_tensor.dtype != torch.int64:
+                    continue
+
                 to_copy_op = self.get_decomposition(node.target)
                 with graph.inserting_before(node):
                     cast_before = create_node(
                         graph,
                         to_copy_op,
-                        args=(indices,),
+                        args=(input_tensor,),
                         kwargs={
                             "dtype": torch.int32,
                             "memory_format": torch.preserve_format,
                         },
                     )
-                    node.replace_input_with(indices, cast_before)
+                    node.replace_input_with(input_tensor, cast_before)
 
                 modified_graph = True
 
         if modified_graph:
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified_graph)
