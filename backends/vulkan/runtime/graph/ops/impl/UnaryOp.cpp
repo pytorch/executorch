@@ -43,7 +43,15 @@ void add_unary_op_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
-  const utils::vec2 min_max = {min, max};
+  vkapi::ParamsBindList ubos({});
+  if (graph.is_buffer_storage(out)) {
+    ubos.append({graph.numel_ubo(out)});
+  } else {
+    ubos.append({graph.logical_limits_ubo(out)});
+  }
+  ubos.append(
+      {graph.create_params_buffer(min), graph.create_params_buffer(max)});
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
@@ -52,14 +60,9 @@ void add_unary_op_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
-      {},
+      ubos,
       // Push Constants
-      {
-          graph.is_buffer_storage(out) ? graph.numel_pc_of(out)
-                                       : graph.logical_limits_pc_of(out),
-          PushConstantDataInfo(&min_max, sizeof(min_max)),
-      },
-      // pcs,
+      {},
       // Specialization Constants
       {},
       // Resize Args
