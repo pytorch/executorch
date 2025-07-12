@@ -90,6 +90,9 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama)
 # build qnn_mimi_decoder_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/moshi)
 
+# build qnn_t5_runner for t5
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/t5)
+
 # build qnn_whisper_runner for whisper
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/whisper)
 
