@@ -111,6 +111,33 @@ void gemm(
     const executorch::aten::BFloat16 *b, int64_t ldb,
     const executorch::aten::BFloat16 beta,
     executorch::aten::BFloat16 *c, int64_t ldc);
+
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const executorch::aten::complex<double> alpha,
+    const executorch::aten::complex<double> *a, int64_t lda,
+    const executorch::aten::complex<double> *b, int64_t ldb,
+    const executorch::aten::complex<double> beta,
+    executorch::aten::complex<double> *c, int64_t ldc);
+
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const executorch::aten::complex<float> alpha,
+    const executorch::aten::complex<float> *a, int64_t lda,
+    const executorch::aten::complex<float> *b, int64_t ldb,
+    const executorch::aten::complex<float> beta,
+    executorch::aten::complex<float> *c, int64_t ldc);
+
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const executorch::aten::complex<executorch::aten::Half> alpha,
+    const executorch::aten::complex<executorch::aten::Half> *a, int64_t lda,
+    const executorch::aten::complex<executorch::aten::Half> *b, int64_t ldb,
+    const executorch::aten::complex<executorch::aten::Half> beta,
+    executorch::aten::complex<executorch::aten::Half> *c, int64_t ldc);
 // clang-format on
 
 // clang-format off

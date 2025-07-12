@@ -15,6 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 
 from executorch.backends.arm.tosa_mapping import TosaArg
@@ -43,11 +44,14 @@ def unary_operator_factory_0_80(unary_target: str, tosa_op):
             import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
 
             validate_num_inputs(self.target, inputs, 1)
-            validate_same_dtype(self.target, [*inputs, output])
+            validate_same_dtype(self.target, [*inputs, output], ts)
 
-            if self.target in fp_only_ops and not (inputs[0].dtype == ts.DType.FP32):
-                raise ValueError(
-                    "All inputs need to be FP32." f"Got {inputs[0].dtype=}"
+            if self.target in fp_only_ops:
+                validate_valid_dtype(
+                    self.target,
+                    inputs[0],
+                    ts.DType.FP32,
+                    output.tosa_spec,
                 )
 
             tosa_graph.addOperator(tosa_op, [inputs[0].name], [output.name])
@@ -78,11 +82,14 @@ def unary_operator_factory(unary_target: str, tosa_op):
             import serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
 
             validate_num_inputs(self.target, inputs, 1)
-            validate_same_dtype(self.target, [*inputs, output])
+            validate_same_dtype(self.target, [*inputs, output], ts)
 
-            if self.target in fp_only_ops and not (inputs[0].dtype == ts.DType.FP32):
-                raise ValueError(
-                    "All inputs need to be FP32." f"Got {inputs[0].dtype=}"
+            if self.target in fp_only_ops:
+                validate_valid_dtype(
+                    self.target,
+                    inputs[0],
+                    ts.DType.FP32,
+                    output.tosa_spec,
                 )
 
             tosa_graph.addOperator(tosa_op, [inputs[0].name], [output.name])

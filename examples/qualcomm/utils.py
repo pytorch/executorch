@@ -9,6 +9,7 @@
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,12 +20,16 @@ from typing import Callable, List, Optional, Tuple
 import numpy as np
 
 import torch
+import torchao
 from executorch.backends.qualcomm.quantizer.quantizer import (
     ModuleQConfig,
     QnnQuantizer,
     QuantDtype,
 )
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchOpPackageOptions,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -33,7 +38,7 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
-from torch.ao.quantization.observer import MovingAverageMinMaxObserver
+from torchao.quantization.pt2e import MovingAverageMinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
@@ -229,7 +234,7 @@ def ptq_calibrate(captured_model, quantizer, dataset):
 
 def qat_train(ori_model, captured_model, quantizer, dataset):
     data, targets = dataset
-    annotated_model = torch.ao.quantization.move_exported_model_to_train(
+    annotated_model = torchao.quantization.pt2e.move_exported_model_to_train(
         prepare_qat_pt2e(captured_model, quantizer)
     )
     optimizer = torch.optim.SGD(annotated_model.parameters(), lr=0.00001)
@@ -238,7 +243,9 @@ def qat_train(ori_model, captured_model, quantizer, dataset):
         print(f"Epoch {i}")
         if i > 3:
             # Freeze quantizer parameters
-            annotated_model.apply(torch.ao.quantization.disable_observer)
+            annotated_model.apply(
+                torchao.quantization.pt2e.fake_quantize.disable_observer
+            )
         if i > 2:
             # Freeze batch norm mean and variance estimates
             annotated_model.apply(torch.nn.intrinsic.qat.freeze_bn_stats)
@@ -250,7 +257,7 @@ def qat_train(ori_model, captured_model, quantizer, dataset):
         optimizer.step()
 
     return convert_pt2e(
-        torch.ao.quantization.move_exported_model_to_eval(annotated_model),
+        torchao.quantization.pt2e.move_exported_model_to_eval(annotated_model),
     )
 
 
@@ -294,6 +301,8 @@ def build_executorch_binary(
     passes_job=None,
     qat_training_data=None,
     online_prepare=False,
+    optrace=False,
+    op_package_options: QnnExecuTorchOpPackageOptions = None,
 ):
     """
     A function to generate an ExecuTorch binary for Qualcomm platforms.
@@ -314,6 +323,9 @@ def build_executorch_binary(
         passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
         qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].
         online_prepare (bool, optional): Compose QNN graph on device if set to True.
+        optrace (bool, optional): Enable optrace mode for performance analysis if set to True.
+        op_package_options: Optional structure to specify op packages
+            loaded and used by the backend.
 
     Returns:
         None: The function writes the output to a specified .pte file.
@@ -325,8 +337,10 @@ def build_executorch_binary(
         soc_model=getattr(QcomChipset, soc_model),
         backend_options=backend_options,
         online_prepare=online_prepare,
+        optrace=optrace,
         shared_buffer=shared_buffer,
         dump_intermediate_outputs=dump_intermediate_outputs,
+        op_package_options=op_package_options,
     )
     if quant_dtype is not None or custom_quantizer is not None:
         captured_model = torch.export.export(model, inputs, strict=False).module()
@@ -382,9 +396,7 @@ def build_executorch_binary(
 
 def make_output_dir(path: str):
     if os.path.exists(path):
-        for f in os.listdir(path):
-            os.remove(os.path.join(path, f))
-        os.removedirs(path)
+        shutil.rmtree(path, ignore_errors=True)
     os.makedirs(path)
 
 
@@ -472,6 +484,68 @@ def get_imagenet_dataset(
         inputs.append((feature,))
         targets.append(target)
         input_list += f"input_{index}_0.raw\n"
+
+    return inputs, targets, input_list
+
+
+def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffle=True):
+    import random
+
+    import transformers
+
+    from torch.utils.data import Dataset
+
+    def get_data_loader():
+        class MaskedSentencesDataset(Dataset):
+            def __init__(self, dataset_path, tokenizer, data_size) -> None:
+                self.data_size = data_size
+                self.dataset = self._get_val_dataset(dataset_path, data_size, tokenizer)
+
+            def _get_val_dataset(self, dataset_path, data_size, tokenizer):
+                data_collator = transformers.DataCollatorForLanguageModeling(
+                    tokenizer=tokenizer
+                )
+                with open(dataset_path, "r") as f:
+                    texts = f.read().split("\n")
+                    texts = [
+                        text for text in random.choices(texts, k=2000) if len(text) > 1
+                    ]
+                    dataset = data_collator([tokenizer(text) for text in texts])
+                return dataset
+
+            def __getitem__(self, idx):
+                return (
+                    self.dataset["input_ids"][idx].to(torch.int32),
+                    self.dataset["attention_mask"][idx].to(torch.float32),
+                    self.dataset["labels"][idx],
+                )
+
+            def __len__(self):
+                return self.data_size
+
+        dataset = MaskedSentencesDataset(dataset_path, tokenizer, data_size)
+        return torch.utils.data.DataLoader(
+            dataset,
+            shuffle=shuffle,
+        )
+
+    # prepare input data
+    inputs, targets, input_list = [], [], ""
+    data_loader = get_data_loader()
+    for _, data in enumerate(data_loader):
+        index = len(inputs)
+        if len(inputs) >= data_size:
+            break
+        input_ids = data[0]
+        attention_mask = data[1]
+        target = data[2][0]
+        indice = [i for i, x in enumerate(target) if x != -100]
+        # continue if no mask annotated
+        if len(indice) == 0:
+            continue
+        inputs.append((input_ids, attention_mask))
+        targets.append(target)
+        input_list += f"input_{index}_0.raw input_{index}_1.raw\n"
 
     return inputs, targets, input_list
 

@@ -6,9 +6,7 @@
 
 cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
 
-if(NOT EXECUTORCH_ROOT)
-  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
-endif()
+project(executorch_jni)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -18,6 +16,7 @@ if(NOT ANDROID)
   message(FATAL_ERROR "This directory is for Android build only")
 endif()
 
+set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -61,6 +60,7 @@ set_target_properties(fbjni PROPERTIES
   IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
 )
 
+set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
 target_link_options_shared_lib(executorch)
 
 add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
@@ -112,7 +112,7 @@ endif()
 
 if(TARGET xnnpack_backend)
   target_link_options_shared_lib(xnnpack_backend)
-  list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo microkernels-prod)
+  list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo xnnpack-microkernels-prod)
 endif()
 
 if(TARGET vulkan_backend)
@@ -120,7 +120,7 @@ if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_LLM)
   list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
@@ -145,18 +145,24 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
   )
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_training.cpp jni/log.cpp)
+  list(APPEND link_libraries extension_training)
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_TRAINING=1)
+endif()
+
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
   list(APPEND link_libraries llama_runner llava_runner)
   target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
   add_subdirectory(
     ${EXECUTORCH_ROOT}/examples/models/llava/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/examples/models/llava/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llava/runner
   )
 
   add_subdirectory(
     ${EXECUTORCH_ROOT}/examples/models/llama/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/examples/models/llama/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama/runner
   )
 
   if(NEURON_BUFFER_ALLOCATOR_LIB)
@@ -191,5 +197,3 @@ target_include_directories(
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
 target_link_libraries(executorch_jni ${link_libraries} log)
-
-set_target_properties(executorch_jni PROPERTIES OUTPUT_NAME executorch)

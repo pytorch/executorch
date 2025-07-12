@@ -10,17 +10,35 @@
 
 #define PRECISION ${PRECISION}
 
+// Binary comparison ops require that the output is boolean and not the same as input.
+$IS_COMPARISON_OP = (any([name in VARIANT_NAME for name in ["binary_eq",  "binary_lt", "binary_le", "binary_gt", "binary_ge"]]))
+
+#define NAME ${VARIANT_NAME}
+
 #define VEC4_T ${texel_type(DTYPE)}
-#define T ${buffer_scalar_type(DTYPE)}
+$if IS_COMPARISON_OP:
+  #define T ${buffer_scalar_type("uint8")}
+  #define VEC4_OUT_T ${texel_type("uint8")}
+$else:
+  #define T ${buffer_scalar_type(DTYPE)}
+  #define VEC4_OUT_T VEC4_T
 
 #define op(X, Y, A) ${OPERATOR}
 
 ${define_active_storage_type(STORAGE)}
 ${define_required_extensions(DTYPE)}
 
+
+$if IS_COMPARISON_OP:
+  ${define_required_extensions("uint8")}
+
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+$if IS_COMPARISON_OP:
+  ${layout_declare_tensor(B, "w", "t_out", "uint8", STORAGE)}
+$else:
+  ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_other", DTYPE, STORAGE)}
 
@@ -48,19 +66,18 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
+
 $if STORAGE == "buffer":
-  ${layout_declare_spec_const(C, "int", "out_packed_dim", "DEFAULT_LAYOUT")}
-  ${layout_declare_spec_const(C, "int", "in_packed_dim", "DEFAULT_LAYOUT")}
-  ${layout_declare_spec_const(C, "int", "other_packed_dim", "DEFAULT_LAYOUT")}
+  const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
 $else:
-  ${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
   const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
   const lowp int packed_dim = unhash_packed_dim(out_layout);
 
-  ${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
   const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
 
-  ${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
   const lowp ivec4 other_axis_map = unhash_axis_map(other_layout);
 
 #ifdef USING_BUFFER
@@ -77,7 +94,7 @@ void main() {
     return;
   }
 
-  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_packed_dim);
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_dim_order);
   const ivec4 in_tidx = min(out_tidx, in_sizes - 1);
   const ivec4 other_tidx = min(out_tidx, other_sizes - 1);
 
@@ -122,7 +139,7 @@ void main() {
   write_texel_lpos(
     t_out,
     lpos,
-    VEC4_T(op(in_texel, other_texel, alpha)),
+    VEC4_OUT_T(op(in_texel, other_texel, alpha)),
     out_axis_map);
 }
 

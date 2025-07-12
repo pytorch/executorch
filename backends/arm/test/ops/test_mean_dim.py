@@ -91,52 +91,52 @@ class MeanDim(torch.nn.Module):
             True,
         ),
         "rank_2_keepdim": lambda: (
-            torch.rand(7, 7),
+            torch.rand(7, 3),
             (0, 1),
             True,
         ),
         "rank_3_keepdim": lambda: (
-            torch.rand(7, 7, 7),
+            torch.rand(5, 7, 3),
             (0, 1, 2),
             True,
         ),
         "rand_1_keepdim": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (1),
             True,
         ),
         "rand_2_keepdim": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (2),
             True,
         ),
         "rand_3_keepdim": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (3),
             True,
         ),
         "rand_12_keepdim": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (1, 2),
             True,
         ),
         "rand_13_keepdim": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (1, 3),
             True,
         ),
         "rand_23_keepdim": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (2, 3),
             True,
         ),
         "rand_123_keepdim": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (1, 2, 3),
             True,
         ),
         "rand_0123_keepdim": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (0, 1, 2, 3),
             True,
         ),
@@ -146,54 +146,59 @@ class MeanDim(torch.nn.Module):
             False,
         ),
         "rank_2": lambda: (
-            torch.rand(7, 7),
+            torch.rand(5, 7),
             (-2, -1),
             False,
         ),
         "rank_3": lambda: (
-            torch.rand(7, 7, 7),
+            torch.rand(5, 7, 3),
             (-3, -2, -1),
             False,
         ),
         "rand_1": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (-3),
             False,
         ),
         "rand_2": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (-2),
             False,
         ),
         "rand_3": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (-1),
             False,
         ),
         "rand_12": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (-3, -2),
             False,
         ),
         "rand_13": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (-3, -1),
             False,
         ),
         "rand_23": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (-2, -1),
             False,
         ),
         "rand_123": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (-3, -2, -1),
             False,
         ),
         "rand_0123": lambda: (
-            torch.rand(1, 7, 7, 7),
+            torch.rand(1, 5, 7, 3),
             (-4, -3, -2, -1),
             False,
+        ),
+        "u55_avg_pool_not_supported": lambda: (
+            torch.rand(1, 1, 1, 257),
+            (0, 1, 2, 3),
+            True,
         ),
     }
     torch_op = "torch.ops.aten.mean.dim"
@@ -241,7 +246,13 @@ def test_mean_dim_u55_BI(test_data):
         [],  # Might be sum, avgpool, or both
         run_on_fvp=True,
         symmetric_io_quantization=True,
-    ).dump_artifact("export")
+    )
+    pipeline.add_stage_after(
+        "export",
+        pipeline.tester.check_not,
+        ["torch.ops.aten.adaptive_avg_pool2d.default"],
+        suffix="avg_pool",
+    )
     pipeline.run()
 
 

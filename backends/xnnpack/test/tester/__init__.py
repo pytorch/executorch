@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# TODO: Be more delibrate on module structure
 from executorch.backends.xnnpack.test.tester.tester import (
     Export,
     Partition,
@@ -13,16 +12,18 @@ from executorch.backends.xnnpack.test.tester.tester import (
     Serialize,
     Tester,
     ToEdge,
+    ToEdgeTransformAndLower,
     ToExecutorch,
 )
 
 __all__ = [
-    Tester,
-    Partition,
-    Quantize,
-    Export,
-    ToEdge,
-    RunPasses,
-    ToExecutorch,
-    Serialize,
+    "Export",
+    "Partition",
+    "Quantize",
+    "RunPasses",
+    "Serialize",
+    "Tester",
+    "ToEdge",
+    "ToEdgeTransformAndLower",
+    "ToExecutorch",
 ]

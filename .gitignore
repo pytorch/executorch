@@ -24,7 +24,9 @@ pip-out/
 # Any exported models and profiling outputs
 *.bin
 *.model
+tokenizer.json
 *.pte
+*.ptd
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
 
@@ -40,6 +42,9 @@ xcuserdata/
 .swiftpm/
 *.xcworkspace/
 *.xcframework/
+
+# clangd
+.cache/
 
 # misc
 /.vscode/

@@ -175,7 +175,6 @@ def test_var_dim_tosa_BI_no_dim(test_data: Tuple):
         (test_data,),
         aten_op=[],
         exir_op=[],
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -190,7 +189,6 @@ def test_var_dim_u55_BI_no_dim(test_data: Tuple):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -205,7 +203,6 @@ def test_var_dim_u85_BI_no_dim(test_data: Tuple):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -231,7 +228,6 @@ def test_var_dim_tosa_BI(test_data: Tuple):
         (test_data,),
         aten_op=[],
         exir_op=[],
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -246,7 +242,6 @@ def test_var_dim_u55_BI(test_data: Tuple):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -261,7 +256,6 @@ def test_var_dim_u85_BI(test_data: Tuple):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -286,7 +280,6 @@ def test_var_dim_tosa_BI_correction(test_data: Tuple):
         (test_data,),
         aten_op=[],
         exir_op=[],
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -301,7 +294,6 @@ def test_var_dim_u55_BI_correction(test_data: Tuple):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -316,6 +308,5 @@ def test_var_dim_u85_BI_correction(test_data: Tuple):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
     pipeline.run()

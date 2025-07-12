@@ -18,9 +18,6 @@ QnnDlcManager::QnnDlcManager(
     : qnn_loaded_backend_(""),
       qnn_context_blob_(qnn_context_blob),
       options_(options) {
-  QNN_EXECUTORCH_LOG_INFO(
-      "QnnDlcManager Get Qnn Context blob bytes %u", qnn_context_blob_.nbytes);
-
   if (options_ == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Fail to create QnnDlcManager, options is nullptr");
@@ -73,7 +70,8 @@ Error QnnDlcManager::Configure() {
       Internal,
       "Fail to configure Qnn backend cache");
   ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
+      backend_params_ptr_->qnn_backend_ptr_->Configure(
+          options_->op_package_options()) == Error::Ok,
       Internal,
       "Fail to configure Qnn backend");
   ET_CHECK_OR_RETURN_ERROR(

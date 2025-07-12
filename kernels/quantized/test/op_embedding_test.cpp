@@ -20,11 +20,11 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
+using std::optional;
 using torch::executor::native::dequantize_per_tensor_out;
 using torch::executor::native::embedding_out;
 using torch::executor::native::quantize_per_tensor_out;
@@ -362,6 +362,41 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath5) {
   Tensor indices = tf_l.make({3}, {0, 2, 1});
 
   Tensor out = tf.zeros({3, 3});
+  ET_EXPECT_DEATH(
+      quantized_embedding_byte_out(
+          qweight,
+          weight_scales,
+          weight_zero_points,
+          quant_min,
+          quant_max,
+          indices,
+          out),
+      "");
+}
+
+TEST(OpQuantizedEmbeddingTest, TestOutOfBoundsIndex) {
+  et_pal_init();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tf_l;
+
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  // Create a weight tensor with 3 rows
+  TensorFactory<ScalarType::Byte> tfo;
+  Tensor qweight =
+      tfo.make({3, 4}, {8, 10, 12, 14, 10, 12, 12, 14, 8, 9, 10, 12});
+
+  // Create weight_scales with the same number of rows
+  Tensor weight_scales = tf.make({3, 1}, {0.5, 1.0, 1.5});
+  Tensor weight_zero_points = tf.make({3, 1}, {1, 5, 7});
+
+  // Create indices with an out-of-bounds index (3, which is >= weight.size(0))
+  Tensor indices = tf_l.make({2}, {1, 3});
+
+  Tensor out = tf.zeros({2, 4});
+
+  // Expect death when accessing an out-of-bounds index
   ET_EXPECT_DEATH(
       quantized_embedding_byte_out(
           qweight,

@@ -656,9 +656,6 @@ class CustomBuild(build):
         # get_python_lib() typically returns the path to site-packages, where
         # all pip packages in the environment are installed.
         cmake_prefix_path = os.environ.get("CMAKE_PREFIX_PATH", get_python_lib())
-        buck2 = os.environ.get(
-            "BUCK2_EXECUTABLE", os.environ.get("BUCK2", os.environ.get("BUCK", ""))
-        )
         # Put the cmake cache under the temp directory, like
         # "pip-out/temp.<plat>/cmake-out".
         pip_build_dir = os.path.join(
@@ -668,7 +665,6 @@ class CustomBuild(build):
         self.mkpath(cmake_cache_dir)
 
         cmake_configuration_args = [
-            f"-DBUCK2={buck2}",
             f"-DPYTHON_EXECUTABLE={sys.executable}",
             # Let cmake calls like `find_package(Torch)` find cmake config files
             # like `TorchConfig.cmake` that are provided by pip packages.
@@ -733,6 +729,7 @@ class CustomBuild(build):
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
             cmake_build_args += ["--target", "portable_lib"]
+            cmake_build_args += ["--target", "selective_build"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_TRAINING"):
             cmake_build_args += ["--target", "_training_lib"]
@@ -740,7 +737,7 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREML"):
             cmake_build_args += ["--target", "executorchcoreml"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT"):
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
 
@@ -795,6 +792,11 @@ setup(
             dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_TRAINING"],
         ),
         BuiltExtension(
+            src="codegen/tools/selective_build.*",
+            modpath="executorch.codegen.tools.selective_build",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+        ),
+        BuiltExtension(
             src="executorchcoreml.*",
             src_dir="backends/apple/coreml",
             modpath="executorch.backends.apple.coreml.executorchcoreml",
@@ -805,14 +807,14 @@ setup(
             src_name="custom_ops_aot_lib",
             dst="executorch/extension/llm/custom_ops/",
             is_dynamic_lib=True,
-            dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT"],
+            dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
         ),
         BuiltFile(
             src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/%BUILD_TYPE%/",
             src_name="quantized_ops_aot_lib",
             dst="executorch/kernels/quantized/",
             is_dynamic_lib=True,
-            dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT"],
+            dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
         ),
     ],
 )

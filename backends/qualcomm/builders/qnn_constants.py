@@ -106,6 +106,11 @@ class OpElementWiseAnd:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAtan:
+    op_name: str = "ElementWiseAtan"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseCeil:
     op_name = "ElementWiseCeil"
 
@@ -128,6 +133,11 @@ class OpElementWiseExp:
 @dataclass(init=False, frozen=True)
 class OpElementWiseEqual:
     op_name: str = "ElementWiseEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseFloor:
+    op_name: str = "ElementWiseFloor"
 
 
 @dataclass(init=False, frozen=True)
@@ -204,6 +214,11 @@ class OpElementWisePower:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseRound:
+    op_name: str = "ElementWiseRound"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseRsqrt:
     op_name: str = "ElementWiseRsqrt"
 
@@ -249,6 +264,12 @@ class OpFullyConnected:
 @dataclass(init=False, frozen=True)
 class OpGather:
     op_name: str = "Gather"
+    param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
+class OpGatherElements:
+    op_name: str = "GatherElements"
     param_axis: str = "axis"
 
 
@@ -400,6 +421,16 @@ class OpReluMinMax:
 @dataclass(init=False, frozen=True)
 class OpReshape:
     op_name: str = "Reshape"
+
+
+@dataclass(init=False, frozen=True)
+class OpResize:
+    op_name: str = "Resize"
+    param_exclude_outside: str = "exclude_outside"
+    param_transformation_mode: str = "transformation_mode"
+    param_interpolation_mode: str = "interpolation_mode"
+    param_nearest_mode: str = "nearest_mode"
+    param_cubic_coeff: str = "cubic_coeff"
 
 
 @dataclass(init=False, frozen=True)

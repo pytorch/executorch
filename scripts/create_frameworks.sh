@@ -123,30 +123,43 @@ create_xcframework() {
     # Create the new .xcframework.
     xcodebuild -create-xcframework "${libraries[@]}" -output "${xcframework}"
 
-    # Copy the .swiftmodule files into the .xcframework if applicable.
+    # Copy the .swiftinterface files into the .xcframework if applicable.
     if [[ -n "$swift_module" ]]; then
-        echo -e "\nCopying Swift module ${swift_module}.swiftmodule into ${xcframework}"
+        echo -e "\nCopying Swift interface ${swift_module}.swiftinterface into ${xcframework}"
         for dir in "${directories[@]}"; do
             local module_source_dir="${dir}/${swift_module}.swiftmodule"
             if [ ! -d "$module_source_dir" ]; then
                 echo "Swiftmodule directory ${module_source_dir} does not exist"
                 exit 1
             fi
-            local swiftmodule_file
-            swiftmodule_file=$(find "$module_source_dir" -maxdepth 1 -type f -name '*.swiftmodule' | head -n1)
-            if [[ -z "$swiftmodule_file" ]]; then
-                echo "No .swiftmodule file found in ${module_source_dir}"
+            local swiftinterface_file
+            swiftinterface_file=$(find "$module_source_dir" -maxdepth 1 \
+                -type f -name '*.swiftinterface' ! -name '*.private.swiftinterface' | head -n1)
+            if [[ -z "$swiftinterface_file" ]]; then
+                echo "No public .swiftinterface file found in ${module_source_dir}"
                 exit 1
             fi
-
-            local dir_suffix
-            dir_suffix=$(echo "$dir" | cut -d'/' -f1 | tr '[:upper:]' '[:lower:]' | sed 's/[\/\.~]/_/g')
-            for slice_path in "${xcframework}/${dir_suffix}-"*; do
-                if [ -d "${slice_path}/Headers" ]; then
-                    echo " - Copying ${swiftmodule_file##*/} to ${slice_path}/Headers/${swift_module}.swiftmodule"
-                    cp "${swiftmodule_file}" "${slice_path}/Headers/${swift_module}.swiftmodule"
-                fi
-            done
+            local base=$(basename "$swiftinterface_file" .swiftinterface)
+            local arch="${base%%-*}"
+            local rest="${base#*-apple-}"
+            local platform_tag
+            local variant
+            if [[ "$rest" == *-simulator ]]; then
+                platform_tag="${rest%-simulator}"
+                variant="-simulator"
+            else
+                platform_tag="$rest"
+                variant=""
+            fi
+            local slice_name="${platform_tag}-${arch}${variant}"
+            local slice_path="${xcframework}/${slice_name}"
+            if [ ! -d "$slice_path" ]; then
+                echo "Warning: slice '${slice_name}' not found in ${xcframework}, skipping"
+                continue
+            fi
+            echo " - Copying ${swift_module}.swiftinterface into slice ${slice_name}"
+            cp "$swiftinterface_file" "${slice_path}/${swift_module}.swiftinterface"
+            ln -sf "../${swift_module}.swiftinterface" "${slice_path}/Headers/${swift_module}.swiftinterface"
         done
     fi
 

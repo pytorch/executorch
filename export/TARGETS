@@ -12,6 +12,7 @@ python_library(
         "//executorch/exir/backend:backend_api",
         "//executorch/exir:pass_manager",
         "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/extension/export_util:export_util",
     ]
 )
 

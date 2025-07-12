@@ -7,9 +7,7 @@ namespace flat_tensor_flatbuffer;
 file_identifier "FT01";
 file_extension "ptd";
 
-table TensorMetadata {
-  // The unique id used to connect the data and program.
-  fully_qualified_name: string;
+table TensorLayout {
   scalar_type: executorch_flatbuffer.ScalarType;
 
   // Size of each dimension.
@@ -27,17 +25,6 @@ table TensorMetadata {
   //   the innermost dimension, then comes "batch", and the outermost dimension
   //   is "row".
   dim_order: [uint8];
-
-  // FlatTensor.segments index that the tensor data is stored in.
-  segment_index: uint32;
-
-  // Tensor offsets are relative to each TensorSegment.
-  // To retrieve a given tensor:
-  // 1. segment_base_offset: from the file header.
-  // 2. segment_offset: segments[segment_index].offset
-  // 3. tensor_offset: the offset within the segment. If there is only one item
-  // in the segment, offset=0.
-  offset: uint64;
 }
 
 // Describes a contiguous piece of data that lives outside of the flatbuffer data,
@@ -62,19 +49,15 @@ table NamedData {
 
   // Index of the segment in FlatTensor.segments.
   segment_index: uint32;
+
+  // Optional: if the underlying data is a tensor, store layout information.
+  tensor_layout: TensorLayout;
 }
 
 // FlatTensor is a flatbuffer-based format for storing and loading tensors.
 table FlatTensor {
   // Schema version.
   version: uint32;
-
-  // Alignment for each tensor in bytes. Offsets of the tensor provided
-  // in TensorMetadata.offset are aligned to tensor_alignment.
-  tensor_alignment: uint32;
-
-  // Tensor information, including metadata and offsets to the raw tensor data.
-  tensors: [TensorMetadata];
 
   // List of data segments that follow the FlatTensor data in this file, sorted by
   // offset. Elements in this schema can refer to these segments by index.

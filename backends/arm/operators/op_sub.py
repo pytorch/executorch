@@ -17,6 +17,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -45,14 +46,13 @@ class SubVisitor_080_BI(NodeVisitor):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        # Handle int8 (quantized) and int32
-        supported_dtypes = [ts.DType.INT8, ts.DType.INT32]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f'IO data type needs to be {supported_dtypes}, got "{inputs[0].dtype}"'
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32],
+            output.tosa_spec,
+        )
 
         scale_back = 1.0
         if inputs[0].dtype == ts.DType.INT8:
@@ -112,22 +112,16 @@ class SubVisitor_080_MI(SubVisitor_080_BI):
         import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
             super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Sub lowering
-            if (
-                inputs[0].dtype != ts.DType.FP32
-                or inputs[1].dtype != ts.DType.FP32
-                or output.dtype != ts.DType.FP32
-            ):
-                raise TypeError(
-                    f"All IO needs to have data type fp32. Got: {inputs[0].dtype}, "
-                    f"input 2: {inputs[1].dtype} and output: {output.dtype}"
-                )
+            validate_valid_dtype(
+                self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+            )
 
             # MI lowering
             tosa_graph.addOperator(
@@ -160,14 +154,13 @@ class SubVisitor_INT(NodeVisitor):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        # Handle int8 (quantized) and int32
-        supported_dtypes = [ts.DType.INT8, ts.DType.INT32]
-        if inputs[0].dtype not in supported_dtypes:
-            raise TypeError(
-                f'IO data type needs to be {supported_dtypes}, got "{inputs[0].dtype}"'
-            )
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32],
+            output.tosa_spec,
+        )
 
         scale_back = 1.0
         if inputs[0].dtype == ts.DType.INT8:
@@ -225,22 +218,16 @@ class SubVisitor_FP(SubVisitor_INT):
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output])
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
             super().define_node(node, tosa_graph, inputs, output)
         else:
             # FP32 Sub lowering
-            if (
-                inputs[0].dtype != ts.DType.FP32
-                or inputs[1].dtype != ts.DType.FP32
-                or output.dtype != ts.DType.FP32
-            ):
-                raise TypeError(
-                    f"All IO needs to have data type fp32. Got: {inputs[0].dtype}, "
-                    f"input 2: {inputs[1].dtype} and output: {output.dtype}"
-                )
+            validate_valid_dtype(
+                self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+            )
 
             # MI lowering
             tosa_graph.addOperator(

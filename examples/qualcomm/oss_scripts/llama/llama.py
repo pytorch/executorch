@@ -11,6 +11,7 @@ import copy
 import getpass
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -81,13 +82,19 @@ from executorch.extension.llm.export.builder import DType
 from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 
-from torch.ao.quantization.observer import MinMaxObserver
+from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 sys.setrecursionlimit(4096)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logging.getLogger().setLevel(logging.INFO)
+
+
+def next_power_of_two(n):
+    if n == 0:
+        return 1
+    return 2 ** math.ceil(math.log2(n))
 
 
 def smart_mask_updater(
@@ -391,7 +398,7 @@ class SingleLlama:
                 self.llama_graph_module, self.inputs, strict=True
             ).module()
 
-            if QuantDtype == QuantDtype.use_16a4w_block:
+            if quant_dtype == QuantDtype.use_16a4w_block:
                 conv_nodes = [
                     n for n in fx_graph_module.graph.nodes if "conv" in n.name
                 ]
@@ -403,7 +410,7 @@ class SingleLlama:
         logging.info("Quantizing the model...")
         calibrate(
             self.get_example_inputs(self.llama_meta["get_use_kv_cache"]),
-            args.prompt,
+            args.prompt[0],
             fx_graph_module,
             tokenizer=tokenizer,
             ar_len=self.llama_meta["get_ar_len"],
@@ -531,6 +538,28 @@ def compile(args, pte_filename, tokenizer):
                     use_i64_token=use_i64_token,
                 )
             )
+        elif args.model_mode == "lookahead":
+            llama_instance_list.append(
+                LlamaModel(
+                    kv_config,
+                    # To get better performance, we round up to the nearest power of 2.
+                    ar_len=next_power_of_two(
+                        (args.window + args.gcap) * (args.ngram - 1)
+                    ),
+                    output_new_cache_only=True,
+                    output_cache=True,
+                    use_i64_token=use_i64_token,
+                )
+            )
+            llama_instance_list.append(
+                LlamaModel(
+                    prefill_config,
+                    ar_len=args.prefill_ar_len,
+                    output_new_cache_only=True,
+                    output_cache=True,
+                    use_i64_token=use_i64_token,
+                )
+            )
         else:
             raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
@@ -562,7 +591,7 @@ def compile(args, pte_filename, tokenizer):
     for llama_instance in llama_instance_list:
         llama_instance.load_state_dict(
             state_dict,
-            strict=False,
+            strict=True,
             assign=True,
         )
     end_load_ts = time.time()
@@ -630,8 +659,8 @@ def compile(args, pte_filename, tokenizer):
                 tokenizer=tokenizer,
                 custom_annotations=custom_annotations,
             )
-            # If hybrid mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
-            if i == 0 and args.model_mode == "hybrid":
+            # If hybrid and lookahead mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
+            if i == 0 and args.model_mode in ["hybrid", "lookahead"]:
                 output_indices = 0
                 for node in llama_instance.llama_graph_module.graph.nodes:
                     if node.op == "output":
@@ -673,7 +702,7 @@ def compile(args, pte_filename, tokenizer):
             shared_buffer=args.shared_buffer,
         )
         quant_attrs = llama_instance_list[0].get_quant_attrs()
-    elif args.model_mode == "hybrid":
+    elif args.model_mode in ["hybrid", "lookahead"]:
         sample_inputs_list = [
             llama_instace.inputs for llama_instace in llama_instance_list
         ]
@@ -692,36 +721,35 @@ def compile(args, pte_filename, tokenizer):
             )
             for graph_name in graph_names
         ]
-
-        # TODO: retire capture_program once we figure out how to extract
-        #       intermediate graph from official lowering API
-        edge_progs = {
-            graph_name: capture_program(
-                module=llama_instance.llama_graph_module,
-                inputs=sample_input,
-                dep_table=llama_instance.dep_table,
-                passes_job=llama_instance.passes_job,
-            ).exported_program
-            for graph_name, llama_instance, sample_input in zip(
-                graph_names, llama_instance_list, sample_inputs_list
-            )
-        }
-        for n in edge_progs[graph_names[0]].graph.nodes:
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            {
+                graph_name: instance.llama_graph_module
+                for graph_name, instance in zip(graph_names, llama_instance_list)
+            },
+            {
+                graph_name: inputs
+                for graph_name, inputs in zip(graph_names, sample_inputs_list)
+            },
+            {
+                graph_name: compiler_spec
+                for graph_name, compiler_spec in zip(graph_names, compiler_specs)
+            },
+            llama_instance_list[1].llama_meta,
+            dep_table={
+                graph_name: instance.dep_table
+                for graph_name, instance in zip(graph_names, llama_instance_list)
+            },
+            passes_job={
+                graph_name: instance.passes_job
+                for graph_name, instance in zip(graph_names, llama_instance_list)
+            },
+            skip_node_op_set={"llama.fallback.default"},
+        )
+        for n in list(edge_prog_mgr._edge_programs.values())[0].graph.nodes:
             if n.op == "output":
                 for node, output_encoding in n.meta[QCOM_QUANT_ATTRS_MAP].items():
                     if node.meta["val"].size() in llama_instance_list[0].io_shape:
                         quant_attrs = output_encoding
-
-        partitioners = {
-            graph_name: QnnPartitioner(
-                compiler_spec, skip_node_op_set={"llama.fallback.default"}
-            )
-            for graph_name, compiler_spec in zip(graph_names, compiler_specs)
-        }
-
-        lowered_ep_dict = to_backend(
-            MethodProgramsPartitionerSpec(edge_progs, partitioners)
-        )
 
         if args.num_sharding > 1:
             # TODO: add arg parser of spill_fill_size since weight-sharing based
@@ -729,7 +757,7 @@ def compile(args, pte_filename, tokenizer):
             pass
 
         if args.verbose:
-            for ep in lowered_ep_dict.values():
+            for ep in edge_prog_mgr._edge_programs.values():
                 print_delegation_info(ep.graph_module)
 
         executorch_config = ExecutorchBackendConfig(
@@ -743,10 +771,7 @@ def compile(args, pte_filename, tokenizer):
             ),
             extract_delegate_segments=True,
         )
-        exec_prog_mgr = EdgeProgramManager(
-            edge_programs=lowered_ep_dict,
-            constant_methods=llama_instance_list[1].llama_meta,
-        ).to_executorch(executorch_config)
+        exec_prog_mgr = edge_prog_mgr.to_executorch(executorch_config)
 
         with open(f"{args.artifact}/{pte_filename}.pte", "wb") as file:
             exec_prog_mgr.write_to_file(file)
@@ -756,13 +781,15 @@ def compile(args, pte_filename, tokenizer):
     return quant_attrs
 
 
-def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
+def inference(args, pte_filename, runtime_tokenizer_path, pre_gen_pte=""):
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
 
     if args.model_mode == "kv":
         eval_mode = 0
     elif args.model_mode == "hybrid":
         eval_mode = 1
+    elif args.model_mode == "lookahead":
+        eval_mode = 2
     else:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
@@ -782,14 +809,13 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
             outputs.append(f.read())
 
     seq_len = args.max_seq_len
+    multi_prompts = " ".join([f'--prompt "{prompt}"' for prompt in args.prompt])
     runner_args = " ".join(
         [
-            f'--prompt "{args.prompt}"',
+            multi_prompts,
             f"--eval_mode {eval_mode}",
             f"--temperature {args.temperature}",
             f"--system_prompt '{args.system_prompt}'",
-            f"--logits_scale {quant_attrs['scale']}",
-            f"--logits_offset {quant_attrs['zero_point']}",
         ]
     )
 
@@ -837,6 +863,9 @@ def inference(args, quant_attrs, pte_filename, runtime_tokenizer_path, pre_gen_p
                 "--output_path outputs/outputs.txt",
                 f"--performance_output_path {performance_output_path}",
                 f"--kv_updater {'SmartMask' if args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
+                f"--window {args.window}",
+                f"--gcap {args.gcap}",
+                f"--ngram {args.ngram}",
                 runner_args,
             ]
         )
@@ -932,9 +961,10 @@ def _build_parser():
 
     parser.add_argument(
         "--prompt",
-        help="User prompts for llama.",
+        help="User prompts for Llama. When multiple prompts are entered, a multi-turn conversation will be initiated. Note that this feature is currently for testing purposes only.",
         required=True,
         type=str,
+        nargs="+",
     )
 
     parser.add_argument(
@@ -975,9 +1005,9 @@ def _build_parser():
 
     parser.add_argument(
         "--model_mode",
-        help="Export and inference kv mode or hybrid mode",
+        help="Export and inference kv mode, hybrid mode, or lookahead decoding mode",
         default="kv",
-        choices=["kv", "hybrid"],
+        choices=["kv", "hybrid", "lookahead"],
         type=str,
     )
 
@@ -990,7 +1020,7 @@ def _build_parser():
 
     parser.add_argument(
         "--prefill_ar_len",
-        help="The auto-regression (AR) length determines the number of tokens to consume and the number of logits to produce. Use this option to process the prompt and generate the key-value (kv) cache, which serves as a prompt processor for hybrid mode.",
+        help="The auto-regression (AR) length determines the number of tokens to consume and the number of logits to produce. Use this option to process the prompt and generate the key-value (kv) cache, which serves as a prompt processor for hybrid and lookahead mode.",
         default=32,
         type=int,
     )
@@ -1011,6 +1041,27 @@ def _build_parser():
         help="Fallback to cpu embedding operator and type of embedding quantization, '<bitwidth>,<groupsize>', e.g., '4,32'.",
     )
 
+    parser.add_argument(
+        "--ngram",
+        help="Represents the size of the n-grams used in the lookahead process.",
+        default=5,
+        type=int,
+    )
+
+    parser.add_argument(
+        "--window",
+        help="Determines how many future tokens the algorithm attempts to predict in each step.",
+        default=8,
+        type=int,
+    )
+
+    parser.add_argument(
+        "--gcap",
+        help="Represents the maximum number of speculations or candidate n-grams that the algorithm considers in each step for verification. It balances the trade-off between computation efficiency and exploring more possibilities.",
+        default=8,
+        type=int,
+    )
+
     parser.add_argument("-v", "--verbose", action="store_true")
 
     return parser
@@ -1018,7 +1069,7 @@ def _build_parser():
 
 def export_llama(args) -> None:
     if args.compile_only and args.pre_gen_pte:
-        exit("Cannot set both compile_only and pre_gen_pte as true")
+        raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
 
     if args.model_mode == "kv":
         pte_filename = "kv_llama_qnn"
@@ -1027,6 +1078,14 @@ def export_llama(args) -> None:
             args.max_seq_len >= args.prefill_ar_len
         ), "Please ensure max_seq_len is >= prefill_ar_len"
         pte_filename = "hybrid_llama_qnn"
+    elif args.model_mode == "lookahead":
+        assert (
+            args.max_seq_len >= args.prefill_ar_len
+        ), "Please ensure max_seq_len is >= prefill_ar_len"
+        assert args.max_seq_len > next_power_of_two(
+            (args.window + args.gcap) * (args.ngram - 1)
+        ), "Please ensure max_seq_len is > next_power_of_two((args.window + args.gcap) * (args.ngram - 1))"
+        pte_filename = "lookahead_llama_qnn"
     else:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
@@ -1054,29 +1113,15 @@ def export_llama(args) -> None:
     elif args.kv_updater == "shift_pointer":
         args.kv_updater = shift_pointer_updater
     else:
-        exit(f"Using an unkown kv update {args.kv_updater}")
+        raise RuntimeError(f"Using an unknown kv update {args.kv_updater}")
 
     if args.pre_gen_pte:
-        quant_attrs = json.load(
-            open(f"{args.pre_gen_pte}/{pte_filename}_quant_attrs.txt")
-        )
-        inference(
-            args, quant_attrs, pte_filename, runtime_tokenizer_path, args.pre_gen_pte
-        )
-        exit(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
+        inference(args, pte_filename, runtime_tokenizer_path, args.pre_gen_pte)
+        print(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
+        return
 
     if args.compile_only:
-        quant_attrs = compile(args, pte_filename, tokenizer)
-        if quant_attrs:
-            json.dump(
-                {
-                    "scale": quant_attrs["scale"],
-                    "zero_point": quant_attrs["zero_point"],
-                },
-                open(f"{args.artifact}/{pte_filename}_quant_attrs.txt", "w"),
-            )
-        else:
-            logging.warning("Quant attributes of the logit is None.")
+        compile(args, pte_filename, tokenizer)
 
         if args.ip and args.port != -1:
             pte_path = f"{args.artifact}/{pte_filename}.pte"
@@ -1089,36 +1134,24 @@ def export_llama(args) -> None:
                         }
                     )
                 )
-        exit(f"Finish compile_only and save to {args.artifact}")
+        print(f"Finish compile_only and save to {args.artifact}")
+        return
 
+    compile(args, pte_filename, tokenizer)
+    inference(args, pte_filename, runtime_tokenizer_path)
+
+
+def main():
+    parser = _build_parser()
+    args = parser.parse_args()
     try:
-        quant_attrs = compile(args, pte_filename, tokenizer)
-        if quant_attrs:
-            logging.info(
-                f"Logit scale: {quant_attrs['scale']}; Logit offset: {quant_attrs['zero_point']}"
-            )
-            json.dump(
-                {
-                    "scale": quant_attrs["scale"],
-                    "zero_point": quant_attrs["zero_point"],
-                },
-                open(f"{args.artifact}/{pte_filename}_quant_attrs.txt", "w"),
-            )
-        else:
-            logging.warning("Quant attributes of the logit is None.")
-        inference(args, quant_attrs, pte_filename, runtime_tokenizer_path)
+        export_llama(args)
     except Exception as e:
         if args.ip and args.port != -1:
             with Client((args.ip, args.port)) as conn:
                 conn.send(json.dumps({"Error": str(e)}))
         else:
             raise Exception(e)
-
-
-def main():
-    parser = _build_parser()
-    args = parser.parse_args()
-    export_llama(args)
 
 
 # flake8: noqa: C901

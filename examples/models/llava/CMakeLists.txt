@@ -107,7 +107,7 @@ endif()
 target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_LLM)
   list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
@@ -130,7 +130,7 @@ endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
+  set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   if(TARGET kleidiai)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
@@ -197,11 +197,10 @@ list(APPEND _common_include_directories ${stb_SOURCE_DIR}
 )
 
 add_executable(llava_main ${_srcs})
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  if(APPLE)
-    target_link_options(llava_main PRIVATE "LINKER:-dead_strip,-s")
-  else()
-    target_link_options(llava_main PRIVATE "LINKER:--gc-sections,-s")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(llava_main)
+  if(NOT APPLE)
+    target_link_options(llava_main PRIVATE "LINKER:-s")
   endif()
 endif()
 

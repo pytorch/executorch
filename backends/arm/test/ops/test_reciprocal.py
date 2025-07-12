@@ -58,7 +58,6 @@ def test_reciprocal_tosa_BI(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_op=[],
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 
@@ -72,7 +71,6 @@ def test_reciprocal_u55_BI(test_data: torch.Tensor):
         aten_op,
         exir_ops=[],
         run_on_fvp=False,
-        symmetric_io_quantization=True,
     )
     pipeline.run()
 

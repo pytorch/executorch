@@ -21,8 +21,11 @@ class QnnMemManager {
  public:
   explicit QnnMemManager(
       const QnnImplementation& implementation,
-      QnnContext* context)
-      : implementation_(implementation), context_(context) {}
+      QnnContext* context,
+      QnnExecuTorchLogLevel log_level)
+      : implementation_(implementation),
+        context_(context),
+        log_level_(log_level) {}
   ~QnnMemManager() {
     DeRegisterMem();
   }
@@ -63,6 +66,7 @@ class QnnMemManager {
 
   const QnnImplementation& implementation_;
   QnnContext* context_;
+  QnnExecuTorchLogLevel log_level_;
   std::unordered_map<Qnn_MemHandle_t, void*> registered_map_;
   std::unordered_map<CustomMemTensorInfo, void*> pre_registered_handles_;
   std::unordered_map<executorch::aten::ScalarType, Qnn_DataType_t>

@@ -10,6 +10,7 @@
 #include <cstring>
 #include <ostream>
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -50,7 +51,7 @@ bool data_is_close(
   if (a == b) {
     return true;
   }
-  for (size_t i = 0; i < numel; i++) {
+  for (const auto i : c10::irange(numel)) {
     const auto ai = a[i];
     const auto bi = b[i];
 
@@ -201,7 +202,7 @@ bool tensor_lists_are_close(
   if (num_tensors_a != num_tensors_b) {
     return false;
   }
-  for (size_t i = 0; i < num_tensors_a; i++) {
+  for (const auto i : c10::irange(num_tensors_a)) {
     if (!tensors_are_close(tensors_a[i], tensors_b[i], rtol, opt_atol)) {
       return false;
     }
@@ -245,7 +246,7 @@ template <typename T>
 std::ostream& print_data(std::ostream& os, const T* data, size_t numel) {
   // TODO(dbort): Make this smarter: show dimensions, listen to strides,
   // break up or truncate data when it's huge
-  for (auto i = 0; i < numel; i++) {
+  for (const auto i : c10::irange(numel)) {
     os << data[i];
     if (i < numel - 1) {
       os << ", ";
@@ -257,7 +258,7 @@ std::ostream& print_data(std::ostream& os, const T* data, size_t numel) {
 template <typename T>
 std::ostream&
 print_data(std::ostream& os, const etensor::complex<T>* data, size_t numel) {
-  for (auto i = 0; i < numel; i++) {
+  for (const auto i : c10::irange(numel)) {
     os << data[i].real_ << " + " << data[i].imag_ << "j";
     if (i < numel - 1) {
       os << ", ";
@@ -276,7 +277,7 @@ template <>
 std::ostream& print_data(std::ostream& os, const uint8_t* data, size_t numel) {
   // TODO(dbort): Make this smarter: show dimensions, listen to strides,
   // break up or truncate data when it's huge
-  for (auto i = 0; i < numel; i++) {
+  for (const auto i : c10::irange(numel)) {
     os << (uint64_t)data[i];
     if (i < numel - 1) {
       os << ", ";
@@ -292,7 +293,7 @@ std::ostream& print_data(std::ostream& os, const uint8_t* data, size_t numel) {
  */
 std::ostream& operator<<(std::ostream& os, const Tensor& t) {
   os << "ETensor(sizes={";
-  for (auto dim = 0; dim < t.dim(); dim++) {
+  for (const auto dim : c10::irange(t.dim())) {
     os << t.size(dim);
     if (dim < t.dim() - 1) {
       os << ", ";
