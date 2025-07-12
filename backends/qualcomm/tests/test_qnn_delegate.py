@@ -1029,6 +1029,26 @@ class TestQNNFloatingPointOperator(TestQNN):
         for module, sample_input in zip(modules, sample_inputs):
             self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_slice_scatter(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [SliceScatter(dim=0, start=3, end=5, step=1)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.zeros(8, 8), torch.ones(2, 8),)],
+            },
+            {
+                QCOM_MODULE: [SliceScatter(dim=1, start=2, end=6, step=2)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [((torch.zeros(8, 8), torch.ones(8, 2),))],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
     def test_qnn_backend_stack(self):
         module = Stack()  # noqa: F405
         sample_input = (
@@ -1136,6 +1156,13 @@ class TestQNNFloatingPointModel(TestQNN):
     def test_qnn_backend_argmin_view_squeeze_conv2d(self):
         module = ArgminViewSqueezeConv2D()  # noqa: F405
         sample_input = (torch.randn(32), torch.randn(32, 3, 32, 32))
+        self.lower_module_and_test_output(module, sample_input)
+    
+    def test_qnn_backend_causal_mask(self):
+        module = CausalMask()  # noqa: F405
+        sample_input = (
+            torch.rand((1,1,1,128))<0.5,
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_chunk_add(self):
@@ -2426,6 +2453,27 @@ class TestQNNQuantizedOperator(TestQNN):
             module = self.get_qdq_module(module, sample_input)
             self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_slice_scatter(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [SliceScatter(dim=0, start=3, end=5, step=1)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.zeros(8, 8), torch.ones(2, 8),)],
+            },
+            {
+                QCOM_MODULE: [SliceScatter(dim=1, start=2, end=6, step=2)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [((torch.zeros(8, 8), torch.ones(8, 2),))],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
     def test_qnn_backend_softmax(self):
         modules = [Softmax(dim=1), Softmax(dim=-1)]  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
@@ -2545,6 +2593,14 @@ class TestQNNQuantizedModel(TestQNN):
     def test_qnn_backend_argmin_view_squeeze_conv2d(self):
         module = ArgminViewSqueezeConv2D()  # noqa: F405
         sample_input = (torch.randn(32), torch.randn(32, 3, 32, 32))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_causal_mask(self):
+        module = CausalMask()  # noqa: F405
+        sample_input = (
+            torch.rand((1,1,1,128))<0.5,
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
