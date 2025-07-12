@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +8,8 @@
 # pyre-unsafe
 
 import copy
+import os
+import tempfile
 import unittest
 from typing import Any, Dict
 
@@ -651,6 +654,48 @@ class TestProgramManagers(unittest.TestCase):
             ):
                 num_non_decomposed_aten_ops += 1
         return num_non_decomposed_aten_ops
+
+    def test_dump_delegate_data(self):
+        manager = to_edge(get_exported_programs(), get_config_methods()).to_executorch()
+
+        delegate_segments = getattr(manager._emitter_output, "delegate_segments", None)
+        if not delegate_segments:
+            self.skipTest("No delegate segments present in this configuration.")
+
+        method, segments = next(iter(delegate_segments.items()))
+        delegate_id = next(iter(segments.keys()))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "delegate_dump")
+            ext = ".bin"
+            manager.dump_delegate_data(file_path, ext, delegate_id)
+            output_file = file_path + ext
+            self.assertTrue(
+                os.path.isfile(output_file), f"Expected {output_file} to exist."
+            )
+            with open(output_file, "rb") as f:
+                blob = f.read()
+            self.assertGreater(len(blob), 0, "Delegate dump file should not be empty.")
+
+        if len(delegate_segments) == 1 and len(segments) == 1:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                file_path = os.path.join(tmpdir, "delegate_dump2")
+                manager.dump_delegate_data(file_path, ext)
+                self.assertTrue(os.path.isfile(file_path + ext))
+
+    def test_dump_delegate_data_invalid(self):
+        manager = to_edge(get_exported_programs(), get_config_methods()).to_executorch()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "invalid_delegate")
+            ext = ".bin"
+
+            with self.assertRaises(RuntimeError):
+                manager.dump_delegate_data(
+                    file_path,
+                    ext,
+                    delegate_id="not_a_real_delegate",
+                )
 
     def _test_model_with_non_decomp_partitioner(self, model: torch.nn.Module):
         # This is the pre-dispatch export that we will be switching to primarily
