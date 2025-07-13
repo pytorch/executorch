@@ -78,11 +78,6 @@ set(lib_list
     extension_threadpool
     extension_training
     xnnpack_backend
-    # Start XNNPACK Lib Deps
-    XNNPACK
-    xnnpack-microkernels-prod
-    kleidiai
-    # End XNNPACK Lib Deps
     cpuinfo
     pthreadpool
     vulkan_backend
@@ -150,7 +145,9 @@ if(TARGET coremldelegate)
 endif()
 
 if(TARGET etdump)
-  set_target_properties(etdump PROPERTIES INTERFACE_LINK_LIBRARIES "flatccrt;executorch")
+  set_target_properties(
+    etdump PROPERTIES INTERFACE_LINK_LIBRARIES "flatccrt;executorch"
+  )
 endif()
 
 if(TARGET optimized_native_cpu_ops_lib)
@@ -174,13 +171,11 @@ if(TARGET extension_threadpool)
 endif()
 
 set(shared_lib_list
-  # executorch -- size tests fail due to regression if we include this and I'm not sure it's needed.
-  optimized_native_cpu_ops_lib
-  portable_ops_lib
-  quantized_ops_lib
-  xnnpack_backend
-  vulkan_backend
-  quantized_ops_aot_lib)
+    # executorch -- size tests fail due to regression if we include this and I'm
+    # not sure it's needed.
+    optimized_native_cpu_ops_lib portable_ops_lib quantized_ops_lib
+    xnnpack_backend vulkan_backend quantized_ops_aot_lib
+)
 foreach(lib ${shared_lib_list})
   if(TARGET ${lib})
     target_link_options_shared_lib(${lib})
