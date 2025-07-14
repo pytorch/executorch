@@ -508,6 +508,56 @@ void dequantize_per_channel_impl(
       graph, input, scale, zero_point, axis, quant_min, quant_max, output);
 }
 
+void dequantize_affine_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef input = args[arg_idx++];
+  const ValueRef block_size =
+      args[arg_idx++]; // SymInt[] - ignored for per-tensor
+  const ValueRef scale = args[arg_idx++];
+  const ValueRef zero_point = args[arg_idx++];
+  const ValueRef input_dtype = args[arg_idx++];
+  const ValueRef quant_min = args[arg_idx++];
+  const ValueRef quant_max = args[arg_idx++];
+  const ValueRef output_dtype = args[arg_idx++];
+  const ValueRef output = args[arg_idx++];
+
+  // Suppress unused variable warnings
+  (void)input_dtype;
+  (void)output_dtype;
+
+  // Check tensor types
+  VK_CHECK_COND(graph.val_is_tensor(input));
+  VK_CHECK_COND(graph.val_is_tensor(output));
+
+  // Verify input is an integer type
+  VK_CHECK_COND(
+      graph.dtype_of(input) == vkapi::kByte ||
+      graph.dtype_of(input) == vkapi::kChar ||
+      graph.dtype_of(input) == vkapi::kShort ||
+      graph.dtype_of(input) == vkapi::kInt);
+
+  // Verify output is a floating point type
+  VK_CHECK_COND(
+      graph.dtype_of(output) == vkapi::kHalf ||
+      graph.dtype_of(output) == vkapi::kFloat ||
+      graph.dtype_of(output) == vkapi::kDouble);
+
+  // Check if this is per-tensor quantization (only supported granularity)
+  // block_size should equal input tensor dimensions for per-tensor quantization
+  const auto input_sizes = graph.sizes_of(input);
+  const auto block_size_list = graph.get_int_list(block_size);
+  VK_CHECK_COND(block_size_list->size() == input_sizes.size());
+  for (size_t i = 0; i < input_sizes.size(); i++) {
+    VK_CHECK_COND((*block_size_list)[i] == input_sizes[i]);
+  }
+
+  // Default to per-tensor dequantization for TorchAO affine ops
+  add_dequantize_per_tensor_node(
+      graph, input, scale, zero_point, quant_min, quant_max, output);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(
       quantized_decomposed.dequantize_per_tensor.tensor,
@@ -518,6 +568,9 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(
       quantized_decomposed.dequantize_per_channel.default,
       dequantize_per_channel_impl);
+
+  // TorchAO affine dequantization operators
+  VK_REGISTER_OP(torchao.dequantize_affine.default, dequantize_affine_impl);
 }
 
 } // namespace vkcompute
