@@ -92,6 +92,16 @@ class Context final {
     return queue_.handle;
   }
 
+  // Device Metadata
+
+  inline bool device_is_adreno() const {
+    return adapter_p_->device_type() == vkapi::DeviceType::ADRENO;
+  }
+
+  inline bool device_name_contains(const char* substr) const {
+    return adapter_p_->device_name().find(substr) != std::string::npos;
+  }
+
   // Device Caches
 
   inline vkapi::ShaderLayoutCache& shader_layout_cache() {

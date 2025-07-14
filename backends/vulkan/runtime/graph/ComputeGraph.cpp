@@ -15,6 +15,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
+#include <iostream>
+
 namespace vkcompute {
 
 //
@@ -145,6 +147,15 @@ ComputeGraph::ComputeGraph(GraphConfig config)
   execute_descriptor_counts_.descriptor_combined_sampler_count = 0;
   execute_descriptor_counts_.descriptor_storage_image_count = 0;
 
+#define MB (1024.0 * 1024.0)
+  // If certain graph config variables are not specified, then set them
+  // automatically.
+  if (config_.prepack_threshold_nbytes == 0) {
+    config_.prepack_threshold_nbytes = 20 * MB;
+    config_.prepack_initial_threshold_nbytes = 20 * MB;
+  }
+#undef MB
+
   context_->set_cmd(/*reusable = */ true);
 }
 
@@ -210,11 +221,6 @@ utils::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
     return utils::kWidthPacked;
   }
   return utils::kChannelsPacked;
-}
-
-bool ComputeGraph::device_name_contains(const char* substr) {
-  return context_->adapter_ptr()->device_name().find(substr) !=
-      std::string::npos;
 }
 
 void ComputeGraph::check_no_active_value_ptrs() {
@@ -750,6 +756,15 @@ void ComputeGraph::prepare_pipelines() {
       vkapi::ComputePipelineCache::Hasher>();
 }
 
+void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
+  vkapi::VulkanFence fence = context_->fences().get_fence();
+  context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
+  fence.wait();
+  context_->fences().return_fence(fence);
+
+  context_->flush();
+}
+
 void ComputeGraph::encode_prepack() {
   for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
     node->encode(this);
@@ -764,6 +779,28 @@ void ComputeGraph::prepack() const {
   context_->fences().return_fence(fence);
 
   context_->flush();
+}
+
+void ComputeGraph::run_prepack() {
+  int i = 0;
+  bool submitted = false;
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    // Do not trigger on the first or last prepack node.
+    const bool not_terminal = i != 0 && i != (prepack_nodes_.size() - 1);
+    size_t threshold = submitted ? config_.prepack_threshold_nbytes
+                                 : config_.prepack_initial_threshold_nbytes;
+    if (not_terminal && staging_nbytes_in_cmd_ > threshold) {
+      submit_current_cmd_and_wait(/*final_use=*/true);
+      staging_nbytes_in_cmd_ = 0;
+      context_->set_cmd();
+      submitted = true;
+    }
+
+    node->encode(this);
+    i++;
+  }
+  submit_current_cmd_and_wait(/*final_use=*/true);
+  staging_nbytes_in_cmd_ = 0;
 }
 
 void ComputeGraph::encode_execute() {

@@ -194,6 +194,10 @@ class ComputeGraph final {
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
 
+  // Represents the amount of staging buffer data that will be copied if the
+  // current Context's command buffer is submitted now.
+  size_t staging_nbytes_in_cmd_ = 0;
+
  public:
   //
   // Accessors
@@ -512,14 +516,17 @@ class ComputeGraph final {
   utils::GPUMemoryLayout suggested_memory_layout(
       const std::vector<int64_t>& sizes);
 
-  inline bool device_is_adreno() {
-    return context_->adapter_ptr()->device_type() == vkapi::DeviceType::ADRENO;
-  }
-  const std::string& device_name() {
-    return context()->adapter_ptr()->device_name();
+  inline bool device_is_adreno() const {
+    return context_->device_is_adreno();
   }
 
-  bool device_name_contains(const char* substr);
+  const std::string& device_name() const {
+    return context_->adapter_ptr()->device_name();
+  }
+
+  inline bool device_name_contains(const char* substr) const {
+    return context_->device_name_contains(substr);
+  }
 
   //
   // Graph Building
@@ -812,12 +819,33 @@ class ComputeGraph final {
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
   void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
 
+ protected:
+  // Command Buffer Management
+
+  /*
+   * Submits the current command buffer in the Context to the GPU for execution,
+   * and wait for it to complete before returning. This function will also flush
+   * the Context after execution.
+   */
+  void submit_current_cmd_and_wait(const bool final_use = false);
+
+ public:
   //
   // Graph Prepacking
   //
 
+  inline void update_staging_nbytes_in_cmd(const size_t staging_bytes) {
+    staging_nbytes_in_cmd_ += staging_bytes;
+  }
+
   void encode_prepack();
   void prepack() const;
+
+  /*
+   * Executes prepacking operations to transfer model weight data from the CPU
+   * to GPU.
+   */
+  void run_prepack();
 
   //
   // Graph Execution

@@ -100,62 +100,63 @@ inline std::string stats_to_json_string(const Stats& stats) {
 
 inline void print_report(const Stats& stats) {
   printf("PyTorchObserver %s\n", stats_to_json_string(stats).c_str());
+  printf("\n");
 
-  ET_LOG(
-      Info,
+  printf(
       "\tPrompt Tokens: %" PRIu64 "    Generated Tokens: %" PRIu64,
       stats.num_prompt_tokens,
       stats.num_generated_tokens);
+  printf("\n");
 
-  ET_LOG(
-      Info,
+  printf(
       "\tModel Load Time:\t\t%f (seconds)",
       ((double)(stats.model_load_end_ms - stats.model_load_start_ms) /
        stats.SCALING_FACTOR_UNITS_PER_SECOND));
+  printf("\n");
   double inference_time_ms =
       (double)(stats.inference_end_ms - stats.inference_start_ms);
-  ET_LOG(
-      Info,
+  printf(
       "\tTotal inference time:\t\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
       inference_time_ms / stats.SCALING_FACTOR_UNITS_PER_SECOND,
 
       (stats.num_generated_tokens) /
           (double)(stats.inference_end_ms - stats.inference_start_ms) *
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
+  printf("\n");
   double prompt_eval_time =
       (double)(stats.prompt_eval_end_ms - stats.inference_start_ms);
-  ET_LOG(
-      Info,
+  printf(
       "\t\tPrompt evaluation:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
       prompt_eval_time / stats.SCALING_FACTOR_UNITS_PER_SECOND,
       (stats.num_prompt_tokens) / prompt_eval_time *
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
+  printf("\n");
 
   double eval_time =
       (double)(stats.inference_end_ms - stats.prompt_eval_end_ms);
-  ET_LOG(
-      Info,
+  printf(
       "\t\tGenerated %" PRIu64
       " tokens:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
       stats.num_generated_tokens,
       eval_time / stats.SCALING_FACTOR_UNITS_PER_SECOND,
       stats.num_generated_tokens / eval_time *
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
+  printf("\n");
 
   // Time to first token is measured from the start of inference, excluding
   // model load time.
-  ET_LOG(
-      Info,
+  printf(
       "\tTime to first generated token:\t%f (seconds)",
       ((double)(stats.first_token_ms - stats.inference_start_ms) /
        stats.SCALING_FACTOR_UNITS_PER_SECOND));
+  printf("\n");
 
-  ET_LOG(
-      Info,
+  printf(
       "\tSampling time over %" PRIu64 " tokens:\t%f (seconds)",
       stats.num_prompt_tokens + stats.num_generated_tokens,
       (double)stats.aggregate_sampling_time_ms /
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
+  printf("\n");
 }
 
 } // namespace llm
