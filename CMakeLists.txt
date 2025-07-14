@@ -220,26 +220,8 @@ endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   # --- pthreadpool
-  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
-      ${CMAKE_POSITION_INDEPENDENT_CODE}
-  )
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
-  set(PTHREADPOOL_BUILD_TESTS
-      OFF
-      CACHE BOOL ""
-  )
-  set(PTHREADPOOL_BUILD_BENCHMARKS
-      OFF
-      CACHE BOOL ""
-  )
-  set(PTHREADPOOL_LIBRARY_TYPE
-      "static"
-      CACHE STRING ""
-  )
-  set(PTHREADPOOL_ALLOW_DEPRECATED_API
-      ON
-      CACHE BOOL ""
+  set(PTHREADPOOL_SOURCE_DIR
+      "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/pthreadpool"
   )
   if(APPLE)
     set(PTHREADPOOL_SYNC_PRIMITIVE
@@ -247,10 +229,40 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
         CACHE STRING ""
     )
   endif()
-  add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
-  set(CMAKE_POSITION_INDEPENDENT_CODE
-      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  include(ExternalProject)
+  set(PTHREADPOOL_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/pthreadpool")
+  set(PTHREADPOOL_LIBRARY
+      "${PTHREADPOOL_BINARY_DIR}/install/lib/libpthreadpool.a"
   )
+  get_extra_cmake_args_for_external_project(PTHREADPOOL_EXTRA_CMAKE_ARGS)
+  ExternalProject_Add(
+    pthreadpoolExternalProject
+    SOURCE_DIR "${PTHREADPOOL_SOURCE_DIR}"
+    BINARY_DIR "${PTHREADPOOL_BINARY_DIR}"
+    INSTALL_DIR "${PTHREADPOOL_BINARY_DIR}/install"
+    BUILD_BYPRODUCTS "${PTHREADPOOL_LIBRARY}"
+    CMAKE_ARGS ${PTHREADPOOL_EXTRA_CMAKE_ARGS}
+               -D
+               PTHREADPOOL_BUILD_TESTS=OFF
+               -D
+               PTHREADPOOL_BUILD_BENCHMARKS=OFF
+               -D
+               PTHREADPOOL_LIBRARY_TYPE=static
+               -D
+               PTHREADPOOL_ALLOW_DEPRECATED_API=ON
+               -D
+               PTHREADPOOL_SYNC_PRIMITVE=${PTHREADPOOL_SYNC_PRIMITIVE}
+               -D
+               CMAKE_POSITION_INDEPENDENT_CODE=ON
+               -D
+               CMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+  )
+  add_library(pthreadpool STATIC IMPORTED)
+  set_property(
+    TARGET pthreadpool PROPERTY IMPORTED_LOCATION "${PTHREADPOOL_LIBRARY}"
+  )
+  add_dependencies(pthreadpool pthreadpoolExternalProject)
+  install(FILES ${PTHREADPOOL_LIBRARY} DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
@@ -737,7 +749,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     endif()
 
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+    target_link_options(
+      executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file
+      "${WASM_MODEL_DIR}@/"
+    )
   endif()
 endif()
 
