@@ -112,8 +112,8 @@ class TrainingModuleE2ETest {
         }
         Assert.assertTrue(finalLoss < 0.1f)
 
-        // Check training performance continuity when exporting and loading from PTD checkpoint.
-        val checkpoint = module.exportWeights("forward")
+        // Check training performance continuity when saving and loading from PTD checkpoint.
+        val checkpoint = TrainingModule.savePtd(module.namedParameters("forward"))
         val bytes = ByteArray(checkpoint.remaining())
         checkpoint.duplicate().get(bytes)
 
@@ -215,7 +215,7 @@ class TrainingModuleE2ETest {
             }
         }
         Assert.assertTrue(finalLoss < 0.1f)
-        module.exportWeights("forward")
+        TrainingModule.savePtd(module.namedParameters("forward"))
     }
 
     @Test

@@ -119,19 +119,15 @@ public class TrainingModule {
   private native Map<String, Tensor> namedGradientsNative(String methodName);
 
   /**
-   * Exports the parameters of the specified method as a buffer that can be saved as a PTD file.
+   * Exports a map of tensors as a buffer that can be saved as a PTD file.
    *
-   * @param methodName name of the ExecuTorch module method to export weights from.
-   * @return buffer that contains the weights of the specified method
+   * @param tensorMap map of tensor names to tensors to export to buffer.
+   * @return buffer that contains the tensors in the PTD format.
    */
-  public ByteBuffer exportWeights(String methodName) {
-    if (!mHybridData.isValid()) {
-      Log.e("ExecuTorch", "Attempt to use a destroyed module");
-      return ByteBuffer.allocateDirect(0);
-    }
-    return exportWeightsNative(methodName);
+  public static ByteBuffer savePtd(Map<String, Tensor> tensorMap) {
+    return savePtdNative(tensorMap);
   }
 
   @DoNotStrip
-  private native ByteBuffer exportWeightsNative(String methodName);
+  private static native ByteBuffer savePtdNative(Map<String, Tensor> tensorMap);
 }
