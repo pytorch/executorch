@@ -89,7 +89,7 @@ class TestIntermediateOutputCapturer(unittest.TestCase):
                     aten_model_graph_id,
                     edge_program_manager.exported_program(),
                 )
-                assert ret == True
+                assert ret is True
 
                 self._capture_intermediate_outputs_and_check(
                     input_tensor,
