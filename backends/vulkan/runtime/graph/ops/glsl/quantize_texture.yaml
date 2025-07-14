@@ -17,3 +17,5 @@ quantize_texture:
       MODE: per_tensor
     - NAME: quantize_per_token_texture3d
       MODE: per_token
+    - NAME: quantize_per_channel_texture3d
+      MODE: per_channel
