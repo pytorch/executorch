@@ -90,7 +90,7 @@ def get_capture_program_passes():
         (I64toI32, True),
         (LayoutTransform, True),
         (RecomposePixelUnshuffle, True),
-        (RecomposeRmsNorm, False),
+        (RecomposeRmsNorm, True),
         (Remove0DTensor, True),
         (RemoveRedundancy, True),
         (TagQuantIO, False),
@@ -188,6 +188,7 @@ class QnnPassManager(PassManager):
         self.add_pass(RemoveRedundancy(quantization_capture=True))
         self.add_pass(ReduceDynamicRange())
         self.add_pass(RecomposePixelUnshuffle(quantization_capture=True))
+        self.add_pass(RecomposeRmsNorm(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())

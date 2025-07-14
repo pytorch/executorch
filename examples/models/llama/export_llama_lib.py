@@ -977,7 +977,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
         dep_table = get_passes_dependency_for_capture_program()
         passes_job[AnnotateStack][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[ConvertBmmToMatmul][QCOM_PASS_ACTIVATE_KEY] = True
-        passes_job[RecomposeRmsNorm][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
             "get_quant_io_dtype_fn"
@@ -1410,14 +1409,14 @@ def _get_source_transforms(  # noqa
                     transforms.append(get_model_with_r1_r2(optimized_rotation_path))
                 transforms.append(replace_attention_to_attention_sha)
                 transforms.append(replace_causal_mask)
-                transforms.append(replace_rms_norm_with_native_rms_norm)
+                # transforms.append(replace_rms_norm_with_native_rms_norm)
                 # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
             else:
                 transforms.append(replace_kv_cache_with_simple_kv_cache)
                 transforms.append(replace_sdpa_with_flex_sdpa)
                 transforms.append(replace_causal_mask)
-                transforms.append(replace_rms_norm_with_native_rms_norm)
+                # transforms.append(replace_rms_norm_with_native_rms_norm)
                 if optimized_rotation_path:
                     transforms.append(fuse_layer_norms)
                     transforms.append(get_model_with_r1_r2(optimized_rotation_path))

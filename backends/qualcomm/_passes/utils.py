@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict
+from typing import Callable, Dict, List
 
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
@@ -121,3 +121,68 @@ def is_float_tensor(node: torch.fx.Node) -> bool:
     if "val" not in node.meta or not isinstance(node.meta["val"], FakeTensor):
         return False
     return node.meta["val"].dtype == torch.float32
+
+def _find_pattern(node: torch.fx.Node, pattern: List[Callable[[torch.fx.Node], bool] | str], from_args: bool=True, max_wildcard_life: int=3, verbose: bool=False):
+    '''Implement wildcard pattern matching
+        - node: fx.Node
+        - pattern: predicate list, can contain followings
+            Callable(fx.node): predicate
+            '*': wildcard
+        - from_args: if True find from node.args, otherwise from node.users
+        - max_wildcard_life: max number of skips for wildcard
+
+    If not matched, return None.
+    Otherwise, return list of matched node list, which is the same length as pattern
+    '''
+    def _is_node(node): return isinstance(node, torch.fx.Node)
+    def _pred(node, pat): return isinstance(pat, Callable) and pat(node)
+    def _next(node):
+        if from_args:
+            yield from [i for i in node.args if _is_node(i)]
+        else:
+            yield from [i for i in node.users]
+
+    asterisk = '*'
+
+    def _probe(cur, hist, pat_idx, asterisk_life_count=max_wildcard_life, verbose=verbose):
+        if pat_idx == len(pattern):
+            assert len(hist) == len(pattern)
+            if  list(hist) not in matched:
+                matched.append(list(hist))
+            return
+        if verbose:
+            print(f"cur:{cur}, idx:{pat_idx}, life={asterisk_life_count}, pattern:{pattern[pat_idx]} hist={hist}")
+        if _pred(cur, pattern[pat_idx]):
+            hist.append(cur)
+            for child in _next(cur):
+                _probe(child, hist, pat_idx+1)
+            hist.pop(-1)
+        elif pattern[pat_idx] == asterisk and asterisk_life_count>0:
+            # 3 cases: ignore/consume/keep asterisk
+            # 1, Ignore asterisk
+            hist.append(None)
+            _probe(cur, hist, pat_idx+1)
+            hist.pop(-1)
+
+            # 2. Consume asterisk
+            hist.append(None)
+            for child in _next(cur):
+                _probe(child, hist, pat_idx+1)
+            hist.pop(-1)
+
+            # 3. keep asterisk and skip to next node
+            for child in _next(cur):
+                _probe(child, hist, pat_idx, asterisk_life_count-1)
+
+    matched = []
+    _probe(node, [], 0)
+    return matched if matched else None
+
+
+def find_patterns(node, patterns, **kwargs):
+    assert isinstance(patterns, list) and isinstance(patterns[0], list)
+    results = []
+    for pattern in patterns:
+        result = _find_pattern(node, pattern, **kwargs)
+        results.append(result)
+    return results

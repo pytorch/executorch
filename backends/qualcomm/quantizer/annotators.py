@@ -127,7 +127,6 @@ def annotate_single_in_share_out(
             _annotated=True,
         )
 
-
 def annotate_single_in(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
@@ -161,6 +160,11 @@ def annotate_single_in_single_out(
             output_qspec=quantization_config.output_activation,
             _annotated=True,
         )
+
+
+@register_annotator([torch.ops.aten.to.dtype])
+def annotate_to_dtype(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.atan.default])
