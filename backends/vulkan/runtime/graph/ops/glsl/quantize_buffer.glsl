@@ -42,6 +42,16 @@ $if MODE == "per_token":
     int quant_min;
     int quant_max;
   };
+$if MODE == "per_channel":
+  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+
+  layout(push_constant) uniform restrict Block {
+    int axis;
+    int num_channels;
+    int quant_min;
+    int quant_max;
+  };
 
 ${layout_declare_ubo(B, "int", "out_numel")}
 ${layout_declare_ubo(B, "ivec4", "t_in_sizes")}
@@ -137,7 +147,7 @@ void quantize_per_tensor() {
   t_out[out_bufi] = qvalue;
 }
 
-#else
+#elif defined(per_token)
 
 void quantize_per_token() {
   const int out_bufi = int(gl_GlobalInvocationID.x);
@@ -168,6 +178,45 @@ void quantize_per_token() {
   token_idx = min(token_idx, num_tokens - 1);
 
   OUT_T qvalue = quantize_val(value, t_scale[token_idx], t_zero_point[token_idx]);
+
+  t_out[out_bufi] = qvalue;
+}
+
+#else // per_channel
+
+void quantize_per_channel() {
+  const int out_bufi = int(gl_GlobalInvocationID.x);
+
+  if (out_bufi >= out_numel) {
+    return;
+  }
+
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, t_out_strides, out_dim_order);
+  const int in_bufi = tidx_to_bufi(out_tidx, t_in_strides);
+
+  IN_T value = t_in[in_bufi];
+
+  // Calculate channel index based on the quantization axis (already converted to WHCN)
+  // The axis parameter is now in WHCN coordinate system:
+  // axis 0 -> W dimension (tidx.x)
+  // axis 1 -> H dimension (tidx.y)
+  // axis 2 -> C dimension (tidx.z)
+  // axis 3 -> N dimension (tidx.w)
+  int channel_idx = 0;
+
+  if (axis == 0) {
+    channel_idx = out_tidx.x;
+  } else if (axis == 1) {
+    channel_idx = out_tidx.y;
+  } else if (axis == 2) {
+    channel_idx = out_tidx.z;
+  } else if (axis == 3) {
+    channel_idx = out_tidx.w;
+  }
+
+  channel_idx = min(channel_idx, num_channels - 1);
+
+  OUT_T qvalue = quantize_val(value, t_scale[channel_idx], t_zero_point[channel_idx]);
 
   t_out[out_bufi] = qvalue;
 }
