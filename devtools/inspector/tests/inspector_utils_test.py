@@ -455,7 +455,7 @@ class TestInspectorUtils(unittest.TestCase):
         )
         node.meta["debug_handle"] = 1
         debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(graph_module)
-        expected_result = {(1,): "op1"}
+        expected_result = {(1,): ["op1"]}
         self.assertEqual(debug_handle_to_op_name, expected_result)
 
     def test_get_aot_debug_handle_to_op_name_mapping_multiple_debug_handles(self):
@@ -474,8 +474,8 @@ class TestInspectorUtils(unittest.TestCase):
             (
                 1,
                 2,
-            ): "op1",
-            (3,): "op2",
+            ): ["op1"],
+            (3,): ["op2"],
         }
         self.assertEqual(debug_handle_to_op_name, expected_result)
 
@@ -555,19 +555,41 @@ class TestInspectorUtils(unittest.TestCase):
 
     def test_find_op_names_empty_debug_handle(self):
         debug_handle = ()
-        debug_handle_to_op_name = {(1, 2): "op1", (3, 4): "op2"}
+        debug_handle_to_op_name = {(1, 2): ["op1"], (3, 4): ["op2"]}
         self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
 
     def test_find_op_names_no_matching_handles(self):
         debug_handle = (1, 2)
-        debug_handle_to_op_name = {(3, 4): "op1", (5, 6): "op2"}
+        debug_handle_to_op_name = {(3, 4): ["op1"], (5, 6): ["op2"]}
         self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
 
     def test_find_op_names_matching_handles(self):
         debug_handle = (1, 2, 3)
-        debug_handle_to_op_name = {(1, 2): "op1", (2, 3): "op2", (4, 5, 6): "op3"}
+        debug_handle_to_op_name = {(1, 2): ["op1"], (2, 3): ["op2"], (4, 5, 6): ["op3"]}
         self.assertEqual(
             find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2"]
+        )
+
+    def test_find_op_names_multiple_ops_single_handle(self):
+        """Test when a single debug handle maps to multiple operator names"""
+        debug_handle = (1, 2, 3)
+        debug_handle_to_op_name = {(1, 2): ["op1", "op2", "op3"], (4, 5): ["op4"]}
+        self.assertEqual(
+            find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2", "op3"]
+        )
+
+    def test_find_op_names_mixed_single_and_multiple_ops(self):
+        """Test mix of handles with single and multiple operator names"""
+        debug_handle = (1, 2, 3, 4, 5)
+        debug_handle_to_op_name = {
+            (1, 2): ["op1"],
+            (3,): ["op2", "op3"],
+            (4,): ["op4"],
+            (5,): ["op5", "op6", "op7"],  # Multiple ops
+        }
+        self.assertEqual(
+            find_op_names(debug_handle, debug_handle_to_op_name),
+            ["op1", "op2", "op3", "op4", "op5", "op6", "op7"],
         )
 
     def test_compare_intermediate_outputs_sequences(self):
@@ -588,6 +610,9 @@ class TestInspectorUtils(unittest.TestCase):
         with self.assertRaises(ValueError):
             compare_intermediate_outputs(a, b, L1Comparator())
 
+    @unittest.skip(
+        "TODO: enable the test after required feature has been built in pytorch core nightly version"
+    )
     def test_equip_debug_handle_to_export_program_success(self):
         """Test that propagate_back_debug_handle returns True and properly equips debug handles."""
         # Create a test model
@@ -654,6 +679,9 @@ class TestInspectorUtils(unittest.TestCase):
         # Check that it returns False due to mismatch
         self.assertFalse(result)
 
+    @unittest.skip(
+        "TODO: enable the test after required feature has been built in pytorch core nightly version"
+    )
     def test_equip_debug_handle_to_export_program_op_to_be_removed_in_to_edge(self):
         """Test that propagate_back_debug_handle returns True and properly equips debug handles when an op is removed in to_edge"""
 
@@ -691,11 +719,10 @@ class TestInspectorUtils(unittest.TestCase):
                 self.assertEqual(node.meta[DEBUG_HANDLE_KEY], 2)
             elif node.op not in ("placeholder", "output"):
                 n_removed_nodes += 1
-                self.assertEqual(
-                    node.meta[DEBUG_HANDLE_KEY], UNSET_DEBUG_HANDLE
-                )
+                self.assertEqual(node.meta[DEBUG_HANDLE_KEY], UNSET_DEBUG_HANDLE)
 
         self.assertEqual(n_removed_nodes, 2)
+
 
 def gen_mock_operator_graph_with_expected_map() -> (
     Tuple[OperatorGraph, Dict[int, OperatorNode]]

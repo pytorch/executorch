@@ -37,8 +37,8 @@ from executorch.devtools.etrecord import ETRecord
 
 from executorch.exir.debug_handle_utils import (
     DEBUG_HANDLE_KEY,
-    UNSET_DEBUG_HANDLE,
     get_greatest_ancestor_node_identifier,
+    UNSET_DEBUG_HANDLE,
 )
 
 from executorch.exir.graph_module import bfs_trace_with_node_process
@@ -824,13 +824,13 @@ def convert_to_float_tensor(input_data: Any) -> torch.Tensor:
 
 def get_aot_debug_handle_to_op_name_mapping(
     graph_module: torch.fx.GraphModule,
-) -> Dict[DebugHandle, str]:
+) -> Dict[DebugHandle, List[str]]:
     """
     Get a mapping from debug handle to operator name from the ETRecord edge_dialect_program's graph module.
     Parameters:
     graph_module (torch.fx.GraphModule): The graph module to get the mapping from.
     Returns:
-    Dict[DebugHandle, str]: A dictionary mapping debug handles to operator names.
+    Dict[DebugHandle, List[str]]: A dictionary mapping debug handles to operator names.
     """
     node_filters = [
         NodeFilter("debug_handle", "call_function", exclude_ops=["getitem"])
@@ -846,26 +846,29 @@ def get_aot_debug_handle_to_op_name_mapping(
                 if isinstance(debug_handle, int)
                 else tuple(debug_handle)
             )
-            debug_handle_to_op_name[key] = node.name
+            if key in debug_handle_to_op_name:
+                debug_handle_to_op_name[key].append(node.name)
+            else:
+                debug_handle_to_op_name[key] = [node.name]
     return debug_handle_to_op_name
 
 
 def find_op_names(
     target_debug_handle: DebugHandle,
-    debug_handle_to_op_name: Dict[DebugHandle, str],
+    debug_handle_to_op_names: Dict[DebugHandle, List[str]],
 ) -> List[str]:
     """
     Record the operator names only if their debug handles are part of the target debug handle.
-    The debug handles in `debug_handle_to_op_name` have undergone merging and remain unchanged,
+    The debug handles in `debug_handle_to_op_names` have undergone merging and remain unchanged,
     and this function identifies operations corresponding to these transformed handles.
     """
     dh_set = set(target_debug_handle)
     result = []
 
-    for key_tuple, op_name in debug_handle_to_op_name.items():
+    for key_tuple, op_name in debug_handle_to_op_names.items():
         # Check if key is a subset of the target_debug_handle
         if set(key_tuple).issubset(dh_set):
-            result.append(op_name)
+            result.extend(op_name)
 
     return result
 
