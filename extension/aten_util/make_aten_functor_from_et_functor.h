@@ -155,19 +155,39 @@ struct type_convert<
 };
 
 // Optionals: ATen to ETen.
-template <class F, class T>
-struct type_convert<std::optional<F>, torch::executor::optional<T>> final {
+template <class AOptional, class EOptional>
+struct type_convert<
+    AOptional,
+    EOptional,
+    std::enable_if_t<
+        std::is_same_v<
+            typename remove_const_ref<AOptional>::type,
+            std::optional<
+                typename remove_const_ref<AOptional>::type::value_type>> &&
+        std::is_same_v<
+            typename remove_const_ref<EOptional>::type,
+            torch::executor::optional<
+                typename remove_const_ref<EOptional>::type::value_type>>>>
+    final {
  public:
-  std::optional<F> val;
-  std::unique_ptr<struct type_convert<F, T>> convert_struct;
-  explicit type_convert(std::optional<F> value) : val(value) {}
-  torch::executor::optional<T> call() {
+  typename remove_const_ref<AOptional>::type val;
+  std::unique_ptr<struct type_convert<
+      typename remove_const_ref<AOptional>::type::value_type,
+      typename remove_const_ref<EOptional>::type::value_type>>
+      convert_struct;
+  explicit type_convert(AOptional value) : val(value) {}
+  typename remove_const_ref<EOptional>::type call() {
     if (val.has_value()) {
-      convert_struct = std::make_unique<struct type_convert<F, T>>(
-          type_convert<F, T>(val.value()));
-      return torch::executor::optional<T>(convert_struct->call());
+      convert_struct = std::make_unique<struct type_convert<
+          typename remove_const_ref<AOptional>::type::value_type,
+          typename remove_const_ref<EOptional>::type::value_type>>(
+          type_convert<
+              typename remove_const_ref<AOptional>::type::value_type,
+              typename remove_const_ref<EOptional>::type::value_type>(
+              val.value()));
+      return typename remove_const_ref<EOptional>::type(convert_struct->call());
     } else {
-      return torch::executor::optional<T>();
+      return typename remove_const_ref<EOptional>::type();
     }
   }
 };
