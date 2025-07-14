@@ -490,7 +490,7 @@ void test_vulkan_quantize_per_tensor_impl(
   ValueRef staging_out = graph.set_output_tensor(r_out);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 
@@ -849,7 +849,7 @@ void test_vulkan_quantize_per_token_impl(
   ValueRef staging_out = graph.set_output_tensor(r_out);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 

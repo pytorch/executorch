@@ -838,14 +838,11 @@ class ComputeGraph final {
     staging_nbytes_in_cmd_ += staging_bytes;
   }
 
-  void encode_prepack();
-  void prepack() const;
-
   /*
    * Executes prepacking operations to transfer model weight data from the CPU
    * to GPU.
    */
-  void run_prepack();
+  void prepack();
 
   //
   // Graph Execution
