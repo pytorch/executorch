@@ -400,6 +400,9 @@ class HardswishConfig(GenericNodePartitionerConfig):
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
 
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.hardswish.default
+
 
 class LeakyReLUConfig(GenericNodePartitionerConfig):
     target_name = "leaky_relu.default"

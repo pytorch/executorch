@@ -75,6 +75,7 @@ ExecuTorch provides support for:
 - [Platform Abstraction Layer](runtime-platform-abstraction-layer)
 #### Portable C++ Programming
 - [PTE File Format](pte-file-format)
+- [PTD File Format](ptd-file-format)
 #### API Reference
 - [Export to Executorch API Reference](export-to-executorch-api-reference)
 - [Executorch Runtime API Reference](executorch-runtime-api-reference)
@@ -196,6 +197,7 @@ runtime-backend-delegate-implementation-and-linking
 runtime-platform-abstraction-layer
 portable-cpp-programming
 pte-file-format
+ptd-file-format
 ```
 
 ```{toctree}

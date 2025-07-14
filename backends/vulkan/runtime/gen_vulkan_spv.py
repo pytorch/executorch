@@ -728,9 +728,16 @@ class SPVGenerator:
                 )
 
                 for variant in params_dict["shader_variants"]:
+                    default_iterated_params_names = set(
+                        default_iterated_params.keys()
+                        if default_iterated_params is not None
+                        else {}
+                    )
                     variant_params_names = set(variant.keys())
+
                     invalid_keys = (
                         variant_params_names
+                        - default_iterated_params_names
                         - params_names
                         - {"generate_variant_forall"}
                     )
@@ -758,6 +765,7 @@ class SPVGenerator:
                                     variant_name = f"{variant_name}_{param_value[1]}"
 
                             default_params_copy["NAME"] = variant_name
+                            default_params_copy["VARIANT_NAME"] = variant["NAME"]
 
                             self.shader_template_params[template_name].append(
                                 default_params_copy
@@ -877,6 +885,8 @@ class SPVGenerator:
             src_file_name = shader_paths_pair[0]
             # path of template file used for codegen
             src_file_fullpath = shader_paths_pair[1][0]
+            # args used for codegen
+            codegen_params = shader_paths_pair[1][1]
 
             # Assume that generated files will have the same file extension as the
             # source template file.
@@ -917,6 +927,7 @@ class SPVGenerator:
                         shutil.copyfile(cached_spv_out_path, spv_out_path)
                         return (spv_out_path, gen_out_path)
 
+            vk_version = codegen_params.get("VK_VERSION", "1.1")
             # Only proceed if a GLSL compiler was specified
             if self.glslc_path is not None:
                 cmd_base = [
@@ -925,7 +936,7 @@ class SPVGenerator:
                     gen_out_path,
                     "-o",
                     spv_out_path,
-                    "--target-env=vulkan1.1",
+                    "--target-env=vulkan{}".format(vk_version),
                     "-Werror",
                 ] + [
                     arg

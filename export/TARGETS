@@ -24,6 +24,7 @@ python_library(
     deps = [
         ":recipe",
         "//executorch/runtime:runtime",
+        ":recipe_registry"
     ]
 )
 
@@ -35,5 +36,30 @@ python_library(
     deps = [
         ":export",
         ":recipe",
+        ":recipe_registry",
+        ":recipe_provider"
     ],
+)
+
+
+python_library(
+    name = "recipe_registry",
+    srcs = [
+        "recipe_registry.py",
+    ],
+    deps = [
+        ":recipe",
+        ":recipe_provider"
+    ],
+)
+
+
+python_library(
+    name = "recipe_provider",
+    srcs = [
+        "recipe_provider.py",
+    ],
+    deps = [
+        ":recipe",
+    ]
 )

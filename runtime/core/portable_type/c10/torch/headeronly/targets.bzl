@@ -8,7 +8,7 @@ def define_common_targets():
     """
 
     runtime.cxx_library(
-        name = "torch_standalone_headers",
+        name = "torch_headeronly",
         exported_headers = glob(["**/*.h"]),
-        header_namespace = "torch/standalone",
+        header_namespace = "torch/headeronly",
     )

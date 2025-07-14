@@ -91,7 +91,7 @@ binary using the Android NDK toolchain.
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_BUILD_VULKAN=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-android-out && \
   cmake --build cmake-android-out -j16 --target install)
@@ -102,7 +102,7 @@ binary using the Android NDK toolchain.
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=$ANDROID_ABI \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-android-out/examples/models/llama && \
