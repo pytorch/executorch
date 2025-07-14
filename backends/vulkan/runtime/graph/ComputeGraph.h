@@ -516,17 +516,14 @@ class ComputeGraph final {
   utils::GPUMemoryLayout suggested_memory_layout(
       const std::vector<int64_t>& sizes);
 
-  inline bool device_is_adreno() const {
-    return context_->device_is_adreno();
+  inline bool device_is_adreno() {
+    return context_->adapter_ptr()->device_type() == vkapi::DeviceType::ADRENO;
+  }
+  const std::string& device_name() {
+    return context()->adapter_ptr()->device_name();
   }
 
-  const std::string& device_name() const {
-    return context_->adapter_ptr()->device_name();
-  }
-
-  inline bool device_name_contains(const char* substr) const {
-    return context_->device_name_contains(substr);
-  }
+  bool device_name_contains(const char* substr);
 
   //
   // Graph Building
