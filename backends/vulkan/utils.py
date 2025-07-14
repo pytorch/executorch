@@ -84,6 +84,15 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
     )
 
 
+def is_mutable_buffer_node(
+    node: torch.fx.Node, exported_program: ExportedProgram
+) -> bool:
+    if node.target not in exported_program.graph_signature.inputs_to_buffers:
+        return False
+    buf = exported_program.graph_signature.inputs_to_buffers[node.target]
+    return buf in exported_program.graph_signature.buffers_to_mutate.values()
+
+
 def is_symint_node(node: torch.fx.Node) -> bool:
     """
     Returns true if the given node produces a SymInt value

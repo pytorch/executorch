@@ -450,6 +450,12 @@ install(
   PATTERN "*.h"
 )
 install(
+  DIRECTORY runtime/executor/
+  DESTINATION include/executorch/runtime/executor
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+install(
   DIRECTORY runtime/kernel/
   DESTINATION include/executorch/runtime/kernel
   FILES_MATCHING
@@ -484,7 +490,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-install(FILES tools/cmake/executorch-config.cmake
+install(FILES tools/cmake/Utils.cmake tools/cmake/executorch-config.cmake
         DESTINATION lib/cmake/ExecuTorch
 )
 
@@ -494,6 +500,10 @@ endif()
 
 if(EXECUTORCH_BUILD_CADENCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cadence)
+endif()
+
+if(EXECUTORCH_BUILD_NXP_NEUTRON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/nxp)
 endif()
 
 if(EXECUTORCH_BUILD_COREML)
@@ -542,6 +552,12 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+  install(
+    DIRECTORY extension/module/
+    DESTINATION include/executorch/extension/module
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
@@ -661,7 +677,7 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_LLM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops)
 endif()
@@ -688,7 +704,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
-  if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+  if(EXECUTORCH_BUILD_KERNELS_LLM)
     list(APPEND _executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
   endif()
 
@@ -705,19 +721,30 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
-  if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    if(APPLE)
-      target_link_options(executor_runner PRIVATE "LINKER:-dead_strip")
-    else()
-      target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
-    endif()
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_options_gc_sections(executor_runner)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+
+  # Automatically set when using `emcmake cmake` for Wasm build.
+  if(EMSCRIPTEN)
+    # Directory of model pte files to embed in the wasm binary.
+    if(NOT DEFINED WASM_MODEL_DIR)
+      set(WASM_MODEL_DIR "${CMAKE_SOURCE_DIR}/models/")
+    endif()
+
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
+endif()
+
+if(EXECUTORCH_BUILD_ANDROID_JNI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
 include(Test.cmake)

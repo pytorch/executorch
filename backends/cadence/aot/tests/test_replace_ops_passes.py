@@ -19,6 +19,7 @@ from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_mat
 from executorch.backends.cadence.aot.replace_ops import (
     ForceChannelLastForConvPass,
     MakeSliceAndCatDimOutermostPass,
+    ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
     ReplaceAddMMWithLinearPass,
     ReplaceAtenApproxGeluWithApproxGeluPass,
     ReplaceAtenConvolutionWithJarvisConvolutionPass,
@@ -1932,7 +1933,106 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
                 graph_after_passes,
                 expected_op_counts={
                     torch.ops.aten.mul.Tensor: 1,
-                    exir_ops.edge.aten.full.default: 1,
+                    torch.ops.aten.full.default: 1,
                 },
             )
+        )
+
+
+class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
+    def _get_adaptive_avg_pool_gm(
+        self, input_shape: Tuple[int, int, int, int], output_shape: Tuple[int, int]
+    ) -> torch.fx.GraphModule:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(*input_shape))
+        adaptive_avg_pool2d = builder.call_operator(
+            exir_ops.edge.aten._adaptive_avg_pool2d.default, (x, output_shape)
+        )
+        builder.output([adaptive_avg_pool2d])
+        return builder.get_graph_module()
+
+    def test_replace_adaptive_avg_pool_with_aten_avg_pool(self) -> None:
+        gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (8, 8))
+        self.assertEqual(
+            len(
+                gm.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.aten._adaptive_avg_pool2d.default,
+                )
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(
+                gm.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.aten.avg_pool2d.default,
+                )
+            ),
+            0,
+        )
+        p = ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass()
+        updated_gm = p.call(gm).graph_module
+        self.assertEqual(
+            len(
+                updated_gm.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.aten._adaptive_avg_pool2d.default,
+                )
+            ),
+            0,
+        )
+        avg_pool2d_nodes = updated_gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.avg_pool2d.default
+        )
+        self.assertEqual(
+            len(avg_pool2d_nodes),
+            1,
+        )
+        avg_pool2d_node = avg_pool2d_nodes[0]
+
+        self.assertEqual(avg_pool2d_node.args[1], [16, 16])  # kernel_size is 16x16
+        self.assertEqual(avg_pool2d_node.args[2], [16, 16])  # stride is 16, 16
+        self.assertEqual(avg_pool2d_node.args[3], [0, 0])  # padding is 0, 0
+        self.assertEqual(avg_pool2d_node.args[4], False)  # ceil_mode is False
+        self.assertEqual(avg_pool2d_node.args[5], True)  # count_include_pad is True
+        self.assertEqual(avg_pool2d_node.args[6], None)  # divisor_override is None
+
+    def test_replace_adaptive_avg_pool_with_aten_avg_pool_irregular(self) -> None:
+        gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (9, 9))
+        self.assertEqual(
+            len(
+                gm.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.aten._adaptive_avg_pool2d.default,
+                )
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(
+                gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.avg_pool2d.default
+                )
+            ),
+            0,
+        )
+        # Shapes are not multiples of each other, so pass will not trigger
+        p = ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass()
+        updated_gm = p.call(gm).graph_module
+        self.assertEqual(
+            len(
+                updated_gm.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.aten._adaptive_avg_pool2d.default,
+                )
+            ),
+            1,
+        )
+        avg_pool2d_nodes = updated_gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.avg_pool2d.default
+        )
+        self.assertEqual(
+            len(avg_pool2d_nodes),
+            0,
         )

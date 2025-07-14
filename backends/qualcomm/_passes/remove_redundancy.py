@@ -29,6 +29,7 @@ class RemoveRedundancy(ExportPass):
             # remove channel_last / contiguous _to_copy if '_skip_dim_order' is set to True
             exir_ops.edge.aten._to_copy.default: self._to_copy_op_condition,
             torch.ops.aten._assert_tensor_metadata.default: self._default_condition,
+            torch.ops.aten._assert_scalar.default: self._default_condition,
         }
         self.redundant_ops_annotation = {
             torch.ops.aten._assert_tensor_metadata.default: self._default_condition,

@@ -44,7 +44,7 @@ from executorch.devtools.inspector._inspector import (
     TimeScale,
 )
 from executorch.devtools.inspector.tests.inspector_test_utils import (
-    check_if_debug_handle_to_op_name_match,
+    check_if_debug_handle_to_op_names_match,
     check_if_final_outputs_match,
     model_registry,
 )
@@ -183,7 +183,11 @@ class TestInspector(unittest.TestCase):
 
         # Call the method that's under testing and verify
         event_with_single_debug_handle._associate_with_op_graph_nodes(
-            {debug_handle: node_0}
+            {
+                debug_handle: [
+                    node_0,
+                ]
+            }
         )
 
         expected_stack_traces = {"node_0": "stack_trace_relu"}
@@ -226,7 +230,14 @@ class TestInspector(unittest.TestCase):
 
         # Call the method that's under testing and verify
         event_with_multiple_debug_handles._associate_with_op_graph_nodes(
-            {debug_handles[0]: node_0, debug_handles[1]: node_1}
+            {
+                debug_handles[0]: [
+                    node_0,
+                ],
+                debug_handles[1]: [
+                    node_1,
+                ],
+            }
         )
 
         expected_stack_traces = {
@@ -316,7 +327,7 @@ class TestInspector(unittest.TestCase):
                     tmpdirname + "/etrecord.bin",
                     edge_output,
                     et_output,
-                    {
+                    extra_recorded_export_modules={
                         "aten_dialect_output": captured_output,
                     },
                 )
@@ -511,7 +522,7 @@ class TestInspector(unittest.TestCase):
                     _representative_inputs=aten_model.example_inputs[0],
                 )
                 inspector_instance._etrecord = etrecord
-                aot_intermediate_outputs, aot_debug_handle_to_op_name = (
+                aot_intermediate_outputs, aot_debug_handle_to_op_names = (
                     inspector_instance._get_aot_intermediate_outputs_and_op_names()
                 )
                 self.assertTrue(
@@ -519,9 +530,10 @@ class TestInspector(unittest.TestCase):
                         "ConvLinearModel", aot_intermediate_outputs
                     )
                 )
+
                 self.assertTrue(
-                    check_if_debug_handle_to_op_name_match(
-                        "ConvLinearModel", aot_debug_handle_to_op_name
+                    check_if_debug_handle_to_op_names_match(
+                        "ConvLinearModel", aot_debug_handle_to_op_names
                     )
                 )
 
@@ -571,16 +583,16 @@ class TestInspector(unittest.TestCase):
             self.assertIn((4,), runtime_outputs)
             self.assertIn((4,), op_names)
             self.assertTrue(
-                torch.equal(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
+                torch.allclose(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
             )
-            self.assertEqual(op_names[(4,)], "op_3")
+            self.assertEqual(op_names[(4,)], ["op_3"])
 
             # Check that keys (5,) to (8,) are in the dictionary and have values of the correct size
             for key in range(5, 9):
                 self.assertIn((key,), runtime_outputs)
                 self.assertIn((key,), op_names)
-                self.assertEqual(len(runtime_outputs[(key,)]), RAW_DATA_SIZE)
-                self.assertEqual(op_names[(key,)], f"op_{key-1}")
+                self.assertEqual(runtime_outputs[(key,)][0].size(0), RAW_DATA_SIZE)
+                self.assertEqual(op_names[(key,)], [f"op_{key-1}"])
 
     def test_calculate_numeric_gap(self):
         # Create a context manager to patch functions called by Inspector.__init__
@@ -636,14 +648,14 @@ class TestInspector(unittest.TestCase):
             for i, row in df.iterrows():
                 # Dummpy key to get the expected aot/runtime internmediate outputs
                 key = (i,)
-                # aot_intermediate_output should equal aot_intermediate_outputs[h]
+                # aot_intermediate_output should equal aot_intermediate_outputs[key]
                 self.assertTrue(
                     torch.allclose(
                         row["aot_intermediate_output"],
                         aot_intermediate_outputs[key],
                     )
                 )
-                # runtime_intermediate_output should equal runtime_intermediate_outputs[h]
+                # runtime_intermediate_output should equal runtime_intermediate_outputs[key]
                 self.assertTrue(
                     torch.allclose(
                         row["runtime_intermediate_output"],
@@ -651,7 +663,7 @@ class TestInspector(unittest.TestCase):
                     )
                 )
                 # gap should equal 3.0
-                self.assertEqual(row["gap"], 3.0)
+                self.assertEqual(row["gap"][0], 3.0)
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]
@@ -659,13 +671,13 @@ class TestInspector(unittest.TestCase):
     def _gen_random_runtime_output(
         self,
     ) -> List[Union[None, List[torch.Tensor], bool, float, int, str, torch.Tensor]]:
-        return list(torch.randn(RAW_DATA_SIZE))
+        return [torch.randn(RAW_DATA_SIZE)]
 
     def _gen_random_events(self) -> List[Event]:
         events = []
         for i in range(2):
             events.append(
-                # OPERATOR_CALL with debug_hanldes/instruction_id 0 and 2
+                # OPERATOR_CALL with debug_handle/instruction_id 0 and 2
                 Event(
                     name="OPERATOR_CALL",
                     op_types=[OP_TYPE],
@@ -676,7 +688,7 @@ class TestInspector(unittest.TestCase):
                 )
             )
             events.append(
-                # op_0/op_1 wiht empty op_types and with debug_hanldes/instruction_id 1 and 3
+                # op_0/op_1 wiht empty op_types and with debug_handle/instruction_id 1 and 3
                 Event(
                     name=f"op_{i}",
                     op_types=[],
@@ -687,7 +699,7 @@ class TestInspector(unittest.TestCase):
                 )
             )
 
-        # op_2 with debug_hanldes/instruction_id 4
+        # op_2 with debug_handle/instruction_id 4
         events.append(
             Event(
                 name="op_2",
@@ -698,7 +710,7 @@ class TestInspector(unittest.TestCase):
                 _instruction_id=4,
             )
         )
-        # op_3 also with debug_hanldes 4 but with instruction_id 5
+        # op_3 also with debug_handle 4 but with instruction_id 5
         events.append(
             Event(
                 name="op_3",
@@ -710,7 +722,7 @@ class TestInspector(unittest.TestCase):
             )
         )
 
-        # op_4 to op_7 with debug_hanldes 5 to 8 and instruction_id 6 to 9
+        # op_4 to op_7 with debug_handle 5 to 8 and instruction_id 6 to 9
         for i in range(4, EVENTS_SIZE - 2):
             events.append(
                 Event(

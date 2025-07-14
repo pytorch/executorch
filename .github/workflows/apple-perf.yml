@@ -72,7 +72,7 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,meta-llama/Llama-3.2-1B,allenai/OLMo-1B-hf' || 'Qwen/Qwen3-0.6B' }}
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,meta-llama/Llama-3.2-1B,allenai/OLMo-1B-hf,google/gemma-3-1b-it' || 'Qwen/Qwen3-0.6B' }}
           CRON_DEFAULT_DEVICES: apple_iphone_15
         run: |
           set -eux
@@ -346,10 +346,11 @@ jobs:
             echo "tokenizer.json is downloaded to $DOWNLOADED_PATH"
 
             # Install optimum-executorch
+            OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
             git clone https://github.com/huggingface/optimum-executorch
             pushd optimum-executorch
             # There is no release yet, for CI stability, always test from the same commit on main
-            git checkout 4c3b18f6cca68c5ccff809131d570062723d7188
+            git checkout $OPTIMUM_ET_COMMIT
             ${CONDA_RUN} python install_dev.py --skip_override_torch
             pip list
 
@@ -358,20 +359,11 @@ jobs:
               "--task" "text-generation"
               "--recipe" "xnnpack"
               "--use_custom_sdpa"
+              "--use_custom_kv_cache"
               "--qlinear"
               "--qembedding"
               "--output_dir" ".."
             )
-
-            # Add conditional arguments based on model
-            case "${HF_MODEL_REPO}" in
-              *"google/gemma-3-1b-it"*)
-                echo "--use_custom_kv_cache can not be used for HybridCache"
-                ;;
-              *)
-                ARGS+=("--use_custom_kv_cache")
-                ;;
-            esac
 
             ${CONDA_RUN} optimum-cli export executorch "${ARGS[@]}"
             popd

@@ -11,6 +11,8 @@ option(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_METHOD_
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
 option(ET_ATOL "Set atol to use for BundleIO testing" OFF)
 option(ET_RTOL "Set rtol to use for BundleIO testing" OFF)
+option(ET_DUMP_INPUT "Dump input in log" OFF)
+option(ET_DUMP_OUTPUT "Dump output in log" ON)
 option(FETCH_ETHOS_U_CONTENT "Fetch ethos_u dependencies instead of relying on pre-downloads" ON)
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
@@ -564,7 +566,7 @@ endif()
 add_executable(arm_executor_runner)
 
 target_sources(
-  arm_executor_runner PRIVATE arm_executor_runner.cpp arm_perf_monitor.cpp
+  arm_executor_runner PRIVATE arm_executor_runner.cpp arm_perf_monitor.cpp arm_memory_allocator.cpp
 )
 
 # Include the target's bare-metal linker script
@@ -662,6 +664,14 @@ endif()
 
 if(ET_RTOL)
   target_compile_definitions(arm_executor_runner PUBLIC ET_RTOL=${ET_RTOL})
+endif()
+
+if(ET_DUMP_INPUT)
+  target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_INPUT)
+endif()
+
+if(ET_DUMP_OUTPUT)
+  target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_OUTPUT)
 endif()
 
 # Fixup compilation of retarget.c

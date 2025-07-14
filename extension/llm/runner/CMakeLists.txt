@@ -56,6 +56,7 @@ add_subdirectory(
 set(runner_deps executorch_core extension_module extension_tensor tokenizers)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
+set_target_properties(extension_llm_runner PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(
   extension_llm_runner
