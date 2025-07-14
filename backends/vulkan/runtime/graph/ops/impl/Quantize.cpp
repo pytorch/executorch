@@ -87,8 +87,6 @@ void add_quantize_per_tensor_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(output));
 
-  float scale_val = static_cast<float>(graph.get_double(scale));
-  int zero_point_val = static_cast<int>(graph.get_int(zero_point));
   int quant_min_val = static_cast<int>(graph.get_int(quant_min));
   int quant_max_val = static_cast<int>(graph.get_int(quant_max));
 
@@ -102,22 +100,15 @@ void add_quantize_per_tensor_node(
         graph.strides_ubo(input),
         graph.sizes_ubo(output),
         graph.strides_ubo(output)};
-    push_constants = {
-        PushConstantDataInfo(&scale_val, sizeof(float)),
-        PushConstantDataInfo(&zero_point_val, sizeof(int)),
-        PushConstantDataInfo(&quant_min_val, sizeof(int)),
-        PushConstantDataInfo(&quant_max_val, sizeof(int)),
-    };
   } else {
     param_ubos = {
         graph.logical_limits_ubo(input), graph.logical_limits_ubo(output)};
-    push_constants = {
-        PushConstantDataInfo(&scale_val, sizeof(float)),
-        PushConstantDataInfo(&zero_point_val, sizeof(int)),
-        PushConstantDataInfo(&quant_min_val, sizeof(int)),
-        PushConstantDataInfo(&quant_max_val, sizeof(int)),
-    };
   }
+
+  push_constants = {
+      PushConstantDataInfo(&quant_min_val, sizeof(int)),
+      PushConstantDataInfo(&quant_max_val, sizeof(int)),
+  };
 
   vkapi::SpecVarList spec_vars = {
       graph.hashed_layout_of(output),
@@ -130,7 +121,9 @@ void add_quantize_per_tensor_node(
       default_pick_global_wg_size,
       default_pick_local_wg_size,
       // Inputs and Outputs
-      {{output, vkapi::kWrite}, {input, vkapi::kRead}},
+      {{output, vkapi::kWrite},
+       {input, vkapi::kRead},
+       {{scale, zero_point}, vkapi::kRead}},
       // Shader param buffers
       param_ubos,
       // Push Constants
@@ -487,15 +480,59 @@ void quantize_per_channel_impl(
       graph, input, scale, zero_point, axis, quant_min, quant_max, output);
 }
 
+void quantize_affine_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef input = args[arg_idx++];
+  const ValueRef block_size =
+      args[arg_idx++]; // SymInt[] - ignored for per-tensor
+  const ValueRef scale = args[arg_idx++];
+  const ValueRef zero_point = args[arg_idx++];
+  const ValueRef output_dtype = args[arg_idx++];
+  const ValueRef quant_min = args[arg_idx++];
+  const ValueRef quant_max = args[arg_idx++];
+  const ValueRef output = args[arg_idx++];
+
+  // Suppress unused variable warnings
+  (void)output_dtype;
+
+  // Check tensor types
+  VK_CHECK_COND(graph.val_is_tensor(input));
+  VK_CHECK_COND(graph.val_is_tensor(output));
+
+  // Verify input is a floating point type
+  VK_CHECK_COND(
+      graph.dtype_of(input) == vkapi::kDouble ||
+      graph.dtype_of(input) == vkapi::kFloat ||
+      graph.dtype_of(input) == vkapi::kHalf);
+
+  // Check if this is per-tensor quantization (only supported granularity)
+  // block_size should equal input tensor dimensions for per-tensor quantization
+  const auto input_sizes = graph.sizes_of(input);
+  const auto block_size_list = graph.get_int_list(block_size);
+  VK_CHECK_COND(block_size_list->size() == input_sizes.size());
+  for (size_t i = 0; i < input_sizes.size(); i++) {
+    VK_CHECK_COND((*block_size_list)[i] == input_sizes[i]);
+  }
+
+  // Default to per-tensor quantization for TorchAO affine ops
+  add_quantize_per_tensor_node(
+      graph, input, scale, zero_point, quant_min, quant_max, output);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(
-      quantized_decomposed.quantize_per_tensor.default,
+      quantized_decomposed.quantize_per_tensor.tensor,
       quantize_per_tensor_impl);
   VK_REGISTER_OP(
       quantized_decomposed.quantize_per_token.default, quantize_per_token_impl);
   VK_REGISTER_OP(
       quantized_decomposed.quantize_per_channel.default,
       quantize_per_channel_impl);
+
+  // TorchAO affine quantization operators
+  VK_REGISTER_OP(torchao.quantize_affine.default, quantize_affine_impl);
 }
 
 } // namespace vkcompute
