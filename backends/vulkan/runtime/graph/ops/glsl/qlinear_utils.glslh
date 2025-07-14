@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#ifndef QUANTIZED_LINEAR_UTILS_H
-#define QUANTIZED_LINEAR_UTILS_H
+#ifndef QLINEAR_UTILS_H
+#define QLINEAR_UTILS_H
 
 /***********************************
  * Packed Weight data read/write functions
@@ -67,4 +67,4 @@ void write_output_texel(const VEC4_T out_texel, const uint n4) {
 
 #endif // BUFFER_IO
 
-#endif // QUANTIZED_LINEAR_UTILS_H
+#endif // QLINEAR_UTILS_H

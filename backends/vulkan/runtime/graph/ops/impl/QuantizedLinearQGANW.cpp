@@ -57,8 +57,8 @@ void resize_linear_qga4w_node(
   std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
   std::vector<int64_t> mat2_sizes = graph->sizes_of(mat2_data);
 
-  const int out_cols = utils::val_at(-2, mat1_sizes);
-  const int out_rows = utils::val_at(-2, mat2_sizes);
+  const int64_t out_cols = utils::val_at(-2, mat1_sizes);
+  const int64_t out_rows = utils::val_at(-2, mat2_sizes);
 
   std::vector<int64_t> new_out_sizes(3);
   if (mat1_sizes.size() == 2) {
