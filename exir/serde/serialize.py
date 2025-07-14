@@ -41,6 +41,7 @@ from executorch.exir.serde.schema import (
 )
 from torch._export.verifier import load_verifier
 from torch.fx.experimental import symbolic_shapes
+from torch.fx.traceback import NodeSource, NodeSourceAction
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -141,7 +142,23 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             debug_handle = node.meta["debug_handle"]
             meta["debug_handle"] = str(debug_handle)
 
+        if "from_node" in node.meta:
+            from_node = node.meta["from_node"]
+            # Serialize from_node as JSON since it's a complex nested structure
+            meta["from_node"] = json.dumps(self._make_from_node_json_acceptable(from_node))
+
         return meta
+
+    def _make_from_node_json_acceptable(self, from_node: Optional[List[NodeSource]]):
+        """
+        Recursively serialize from_node metadata which can be a list of NodeSource objects.
+        """
+        if from_node is None:
+            return None
+
+        json_acceptable_from_node = [node_source.to_dict() for node_source in from_node if isinstance(node_source, NodeSource)]
+
+        return json_acceptable_from_node
 
     def serialize_alloc_inputs(
         self, inputs  # pyre-ignore
@@ -473,7 +490,58 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         if debug_handle := metadata.get("debug_handle"):
             res["debug_handle"] = int(debug_handle)
 
+        if from_node_str := metadata.get("from_node"):
+            res["from_node"] = self._deserialize_from_node(json.loads(from_node_str))
+
         return res
+
+    def _deserialize_from_node(self, from_node_data):
+        """
+        Recursively deserialize from_node metadata from JSON data.
+        """
+        if from_node_data is None:
+            return None
+
+        if isinstance(from_node_data, list):
+            return [self._deserialize_from_node(item) for item in from_node_data]
+
+        if isinstance(from_node_data, dict):
+            # Create a NodeSource object directly without going through the constructor
+            # to avoid issues with graph ID and node creation
+            node_source = NodeSource.__new__(NodeSource)
+
+            # Set the basic attributes
+            node_source.pass_name = from_node_data.get('pass_name', '')
+
+            # Parse action string back to NodeSourceAction enum list
+            action_str = from_node_data.get('action', '')
+            actions = []
+            if action_str:
+                for action_name in action_str.split('+'):
+                    if action_name.upper() == 'CREATE':
+                        actions.append(NodeSourceAction.CREATE)
+                    elif action_name.upper() == 'REPLACE':
+                        actions.append(NodeSourceAction.REPLACE)
+            node_source.action = actions
+
+            # Create the NodeInfo object directly
+            if 'name' in from_node_data and 'target' in from_node_data and 'graph_id' in from_node_data:
+                node_info = NodeSource.NodeInfo(
+                    from_node_data.get('name', ''),
+                    from_node_data.get('target', ''),
+                    from_node_data.get('graph_id', -1)
+                )
+                node_source.node_info = node_info
+            else:
+                node_source.node_info = None
+
+            # Recursively deserialize nested from_node
+            node_source.from_node = self._deserialize_from_node(from_node_data.get('from_node', []))
+
+            return node_source
+
+        # Fallback for primitive types
+        return from_node_data
 
     # pyre-ignore
     def deserialize_alloc_inputs(self, serialized_inputs: List[schema.NamedArgument]):

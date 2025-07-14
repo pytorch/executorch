@@ -92,6 +92,17 @@ class TestETRecord(unittest.TestCase):
                 self.assertEqual(
                     node_a.meta.get("debug_handle"), node_b.meta.get("debug_handle")
                 )
+                from_node_a = node_a.meta.get("from_node")
+                from_node_b = node_b.meta.get("from_node")
+
+                if from_node_a is None:
+                    self.assertIsNone(from_node_b)
+                else:
+                    self.assertIsNotNone(from_node_b)
+                    for node_source_a, node_source_b in zip(from_node_a, from_node_b):
+                        self.assertEqual(
+                            node_source_a.to_dict(), node_source_b.to_dict()
+                        )
 
     def test_etrecord_generation(self):
         captured_output, edge_output, et_output = self.get_test_model()
