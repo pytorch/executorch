@@ -15,8 +15,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
-#include <iostream>
-
 namespace vkcompute {
 
 //
@@ -221,6 +219,11 @@ utils::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
     return utils::kWidthPacked;
   }
   return utils::kChannelsPacked;
+}
+
+bool ComputeGraph::device_name_contains(const char* substr) {
+  return context_->adapter_ptr()->device_name().find(substr) !=
+      std::string::npos;
 }
 
 void ComputeGraph::check_no_active_value_ptrs() {
