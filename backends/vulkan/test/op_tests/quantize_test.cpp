@@ -58,6 +58,15 @@ Tensor& quantize_per_channel_out(
     ScalarType dtype,
     Tensor& out);
 
+Tensor& quantize_per_tensor_tensor_args_out(
+    const Tensor& input,
+    const Tensor& scale,
+    const Tensor& zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out);
+
 // Wrapper function for quantize_per_tensor_out without context
 Tensor& quantize_per_tensor_out_no_context(
     const Tensor& input,
@@ -96,6 +105,19 @@ Tensor& quantize_per_channel_out_no_context(
     Tensor& out) {
   return torch::executor::native::quantize_per_channel_out(
       input, scale, zero_point, axis, quant_min, quant_max, dtype, out);
+}
+
+// Wrapper function for quantize_per_tensor_tensor_args_out without context
+Tensor& quantize_per_tensor_tensor_args_out_no_context(
+    const Tensor& input,
+    const Tensor& scale,
+    const Tensor& zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  return torch::executor::native::quantize_per_tensor_tensor_args_out(
+      input, scale, zero_point, quant_min, quant_max, dtype, out);
 }
 
 // ATen wrapper for quantize_per_tensor
@@ -144,6 +166,22 @@ at::Tensor quantize_per_channel_aten(
 
   WRAP_TO_ATEN(quantize_per_channel_out_no_context, 7)
   (input, scale, zero_point, axis, quant_min, quant_max, et_dtype, out);
+  return out;
+}
+
+// ATen wrapper for quantize_per_tensor with tensor args
+at::Tensor quantize_per_tensor_tensor_args_aten(
+    const at::Tensor& input,
+    const at::Tensor& scale,
+    const at::Tensor& zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    at::ScalarType dtype) {
+  auto out = at::empty_like(input, dtype);
+  ScalarType et_dtype = at_scalartype_to_et_scalartype(dtype);
+
+  WRAP_TO_ATEN(quantize_per_tensor_tensor_args_out_no_context, 6)
+  (input, scale, zero_point, quant_min, quant_max, et_dtype, out);
   return out;
 }
 
@@ -451,17 +489,6 @@ at::Tensor quantize_per_channel_reference_impl(
 }
 
 // Forward declaration of implementation functions
-void test_vulkan_quantize_per_tensor_impl(
-    const std::vector<int>& input_sizes,
-    float scale,
-    int zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    at::ScalarType in_dtype,
-    at::ScalarType dtype,
-    const vkcompute::utils::StorageType in_storage,
-    const vkcompute::utils::StorageType out_storage);
-
 void test_vulkan_quantize_per_token_impl(
     const std::vector<int>& input_sizes,
     const std::vector<float>& scales,
@@ -485,45 +512,16 @@ void test_vulkan_quantize_per_channel_impl(
     const vkcompute::utils::StorageType in_storage,
     const vkcompute::utils::StorageType out_storage);
 
-// Wrapper function to test both buffer and texture storage types
-void test_vulkan_quantize_per_tensor(
+void test_vulkan_quantize_per_tensor_tensor_impl(
     const std::vector<int>& input_sizes,
     float scale,
     int zero_point,
     int64_t quant_min,
     int64_t quant_max,
-    at::ScalarType in_dtype = at::kFloat,
-    at::ScalarType dtype = at::kInt) {
-  // Test with buffer storage
-  test_vulkan_quantize_per_tensor_impl(
-      input_sizes,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      in_dtype,
-      dtype,
-      vkcompute::utils::kBuffer,
-      vkcompute::utils::kBuffer);
-
-  // If the in_dtype is a double, convert to float for texture implementation
-  // since they don't support 64bit as inputs
-  if (in_dtype == at::kDouble) {
-    in_dtype = at::kFloat;
-  }
-
-  // Test with texture storage
-  test_vulkan_quantize_per_tensor_impl(
-      input_sizes,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      in_dtype,
-      dtype,
-      vkcompute::utils::kTexture3D,
-      vkcompute::utils::kTexture3D);
-}
+    at::ScalarType in_dtype,
+    at::ScalarType dtype,
+    const vkcompute::utils::StorageType in_storage,
+    const vkcompute::utils::StorageType out_storage);
 
 // Wrapper function to test both buffer and texture storage types
 void test_vulkan_quantize_per_token(
@@ -557,6 +555,88 @@ void test_vulkan_quantize_per_token(
       input_sizes,
       scales,
       zero_points,
+      quant_min,
+      quant_max,
+      in_dtype,
+      dtype,
+      vkcompute::utils::kTexture3D,
+      vkcompute::utils::kTexture3D);
+}
+
+// Wrapper function to test both buffer and texture storage types
+void test_vulkan_quantize_per_channel(
+    const std::vector<int>& input_sizes,
+    const std::vector<float>& scales,
+    const std::vector<int>& zero_points,
+    int64_t axis,
+    int64_t quant_min,
+    int64_t quant_max,
+    at::ScalarType in_dtype = at::kFloat,
+    at::ScalarType dtype = at::kInt) {
+  // Test with buffer storage
+  test_vulkan_quantize_per_channel_impl(
+      input_sizes,
+      scales,
+      zero_points,
+      axis,
+      quant_min,
+      quant_max,
+      in_dtype,
+      dtype,
+      vkcompute::utils::kBuffer,
+      vkcompute::utils::kBuffer);
+
+  // If the in_dtype is a double, convert to float for texture implementation
+  // since they don't support 64bit as inputs
+  if (in_dtype == at::kDouble) {
+    in_dtype = at::kFloat;
+  }
+
+  test_vulkan_quantize_per_channel_impl(
+      input_sizes,
+      scales,
+      zero_points,
+      axis,
+      quant_min,
+      quant_max,
+      in_dtype,
+      dtype,
+      vkcompute::utils::kTexture3D,
+      vkcompute::utils::kTexture3D);
+}
+
+// Wrapper function to test both buffer and texture storage types
+void test_vulkan_quantize_per_tensor_tensor(
+    const std::vector<int>& input_sizes,
+    float scale,
+    int zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    at::ScalarType in_dtype = at::kFloat,
+    at::ScalarType dtype = at::kInt) {
+  // Test with buffer storage
+  test_vulkan_quantize_per_tensor_tensor_impl(
+      input_sizes,
+      scale,
+      zero_point,
+      quant_min,
+      quant_max,
+      in_dtype,
+      dtype,
+      vkcompute::utils::kBuffer,
+      vkcompute::utils::kBuffer);
+
+  // If the in_dtype is a double, convert to float for texture implementation
+  // since they don't support 64bit as inputs
+  if (in_dtype == at::kDouble) {
+    in_dtype = at::kFloat;
+  }
+
+  // Test with texture storage
+  test_vulkan_quantize_per_tensor_tensor_impl(
+      input_sizes,
+      scale,
+      zero_point,
       quant_min,
       quant_max,
       in_dtype,
@@ -667,114 +747,6 @@ void test_reference_quantize_per_tensor(
   ASSERT_TRUE(output_correct);
 }
 
-void test_vulkan_quantize_per_tensor_impl(
-    const std::vector<int>& input_sizes,
-    float scale,
-    int zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    at::ScalarType in_dtype = at::kFloat,
-    at::ScalarType dtype = at::kInt,
-    const vkcompute::utils::StorageType in_storage =
-        vkcompute::utils::kTexture3D,
-    const vkcompute::utils::StorageType out_storage =
-        vkcompute::utils::kTexture3D) {
-  check_quantize_args(quant_min, quant_max, dtype);
-  std::vector<int64_t> input_sizes_int64(
-      input_sizes.begin(), input_sizes.end());
-  at::Tensor input =
-      at::rand(input_sizes_int64, at::device(at::kCPU).dtype(in_dtype));
-
-  scale = scale < eps ? eps : scale;
-
-  // Get reference output
-  at::Tensor reference_out = torch::executor::native::quantize_per_tensor_aten(
-      input, scale, zero_point, quant_min, quant_max, dtype);
-
-  // Build Vulkan quantize_per_tensor graph
-  using namespace vkcompute;
-
-  GraphConfig config;
-  config.set_storage_type_override(in_storage);
-  ComputeGraph graph(config);
-
-  IOValueRef r_input = graph.add_input_tensor(
-      input.sizes().vec(), from_at_scalartype(input.scalar_type()), in_storage);
-
-  const ValueRef r_scale = graph.add_scalar<double>(scale);
-  const ValueRef r_zero_point = graph.add_scalar<int64_t>(zero_point);
-  const ValueRef r_quant_min = graph.add_scalar<int64_t>(quant_min);
-  const ValueRef r_quant_max = graph.add_scalar<int64_t>(quant_max);
-
-  const ValueRef r_out = graph.add_tensor(
-      input.sizes().vec(), from_at_scalartype(dtype), out_storage);
-
-  const ValueRef r_dtype =
-      graph.add_scalar<int64_t>(static_cast<int64_t>(dtype));
-
-  VK_GET_OP_FN("quantized_decomposed.quantize_per_tensor.default")
-  (graph,
-   {
-       r_input.value,
-       r_scale,
-       r_zero_point,
-       r_quant_min,
-       r_quant_max,
-       r_dtype,
-       r_out,
-   });
-
-  ValueRef staging_out = graph.set_output_tensor(r_out);
-
-  graph.prepare();
-  graph.encode_prepack();
-  graph.prepack();
-  graph.encode_execute();
-
-  // Run Vulkan quantize_per_tensor
-  graph.copy_into_staging(
-      r_input.staging, input.const_data_ptr(), input.numel());
-
-  graph.execute();
-
-  at::Tensor vk_out = at::empty_like(reference_out).contiguous();
-  graph.copy_from_staging(
-      staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
-
-  // Compare outputs
-  // For quantized types, we need to compare the actual integer values
-  at::Tensor reference_int = reference_out.to(at::kInt);
-  at::Tensor vk_int = vk_out.to(at::kInt);
-
-  // Tolerance is 1 to address rounding errors and fp math differences between
-  // CPU/GPU
-  const bool output_correct =
-      at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
-  if (!output_correct) {
-    at::Tensor diffs = at::abs(reference_int - vk_int);
-
-    std::cout << "\n"
-              << "Failed with parameters: " << std::endl;
-    std::cout << "  scale: " << scale << std::endl;
-    std::cout << "  zero_point: " << zero_point << std::endl;
-    std::cout << "  quant_min: " << quant_min << std::endl;
-    std::cout << "  quant_max: " << quant_max << std::endl;
-    std::cout << "  storage type: "
-              << (in_storage == vkcompute::utils::kBuffer ? "buffer"
-                                                          : "texture")
-              << std::endl;
-
-    std::cout << "input:" << std::endl;
-    std::cout << input << std::endl;
-    std::cout << "reference:" << std::endl;
-    std::cout << reference_int << std::endl;
-    std::cout << "vulkan:" << std::endl;
-    std::cout << vk_int << std::endl;
-  }
-
-  ASSERT_TRUE(output_correct);
-}
-
 TEST(
     VulkanQuantizePerTensorTest,
     test_reference_quantize_per_tensor_float_to_int8) {
@@ -827,103 +799,9 @@ TEST(
       at::kInt);
 }
 
-TEST(
-    VulkanQuantizePerTensorTest,
-    test_vulkan_quantize_per_tensor_float_to_uint8) {
-  if (!vkcompute::api::context()
-           ->adapter_ptr()
-           ->has_full_int8_buffers_support()) {
-    GTEST_SKIP();
-  }
-  test_vulkan_quantize_per_tensor(
-      {5, 3, 2, 4}, // input sizes
-      0.01, // scale
-      1, // zero_point
-      0, // quant_min
-      255, // quant_max
-      at::kFloat,
-      at::kByte);
-}
-
-TEST(
-    VulkanQuantizePerTensorTest,
-    test_vulkan_quantize_per_tensor_float_to_int8) {
-  if (!vkcompute::api::context()
-           ->adapter_ptr()
-           ->has_full_int8_buffers_support()) {
-    GTEST_SKIP();
-  }
-  test_vulkan_quantize_per_tensor(
-      {5, 3, 2, 4}, // input sizes
-      0.01, // scale
-      1, // zero_point
-      -128, // quant_min
-      127, // quant_max
-      at::kFloat,
-      at::kChar);
-}
-
-TEST(
-    VulkanQuantizePerTensorTest,
-    test_vulkan_quantize_per_tensor_float_to_int32) {
-  test_vulkan_quantize_per_tensor(
-      {5, 3, 2, 4}, // input sizes
-      0.01, // scale
-      1, // zero_point
-      -2147483648, // quant_min
-      2147483647, // quant_max
-      at::kFloat,
-      at::kInt);
-}
-
-TEST(
-    VulkanQuantizePerTensorTest,
-    test_vulkan_quantize_per_tensor_float_to_int32_small_scale) {
-  test_vulkan_quantize_per_tensor(
-      {2, 8, 1, 3}, // input sizes
-      0.0, // scale
-      20, // zero_point
-      -2147483648, // quant_min
-      2147483647, // quant_max
-      at::kFloat,
-      at::kInt);
-}
-
-TEST(
-    VulkanQuantizePerTensorTest,
-    test_vulkan_quantize_per_tensor_half_to_int8) {
-  if (!vkcompute::api::context()
-           ->adapter_ptr()
-           ->has_full_float16_buffers_support()) {
-    GTEST_SKIP();
-  }
-  test_vulkan_quantize_per_tensor(
-      {2, 3}, // input sizes
-      0.01, // scale
-      1, // zero_point
-      -128, // quant_min
-      127, // quant_max
-      at::kHalf, // input dtype
-      at::kChar); // output dtype
-}
-
-TEST(
-    VulkanQuantizePerTensorTest,
-    test_vulkan_quantize_per_tensor_double_to_int8) {
-  if (!vkcompute::api::context()
-           ->adapter_ptr()
-           ->has_full_int8_buffers_support()) {
-    GTEST_SKIP();
-  }
-  test_vulkan_quantize_per_tensor(
-      {2, 3}, // input sizes
-      0.01, // scale
-      1, // zero_point
-      -128, // quant_min
-      127, // quant_max
-      at::kDouble, // input dtype
-      at::kChar); // output dtype
-}
+// No Vulkan tests for quantized_decomposed.quantize_per_tensor.default
+// because it is not going to be implemented in Vulkan since we will
+// be handling any future calls to this op via the export stage
 
 void test_reference_quantize_per_token(
     const std::vector<int>& input_sizes,
@@ -2127,4 +2005,231 @@ TEST(
       255, // quant_max
       at::kDouble,
       at::kByte);
+}
+
+void test_vulkan_quantize_per_tensor_tensor_impl(
+    const std::vector<int>& input_sizes,
+    float scale,
+    int zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    at::ScalarType in_dtype = at::kFloat,
+    at::ScalarType dtype = at::kInt,
+    const vkcompute::utils::StorageType in_storage =
+        vkcompute::utils::kTexture3D,
+    const vkcompute::utils::StorageType out_storage =
+        vkcompute::utils::kTexture3D) {
+  check_quantize_args(quant_min, quant_max, dtype);
+  std::vector<int64_t> input_sizes_int64(
+      input_sizes.begin(), input_sizes.end());
+  at::Tensor input =
+      at::rand(input_sizes_int64, at::device(at::kCPU).dtype(in_dtype));
+
+  scale = scale < eps ? eps : scale;
+
+  // Create scale and zero_point as tensors (single element tensors)
+  at::Tensor scale_tensor =
+      at::tensor({scale}, at::device(at::kCPU).dtype(at::kDouble));
+  at::Tensor zero_point_tensor =
+      at::tensor({zero_point}, at::device(at::kCPU).dtype(at::kLong));
+
+  // Get reference output using tensor variant
+  at::Tensor reference_out =
+      torch::executor::native::quantize_per_tensor_tensor_args_aten(
+          input, scale_tensor, zero_point_tensor, quant_min, quant_max, dtype);
+
+  // Build Vulkan quantize_per_tensor.tensor graph
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(in_storage);
+  ComputeGraph graph(config);
+
+  IOValueRef r_input = graph.add_input_tensor(
+      input.sizes().vec(), from_at_scalartype(input.scalar_type()), in_storage);
+
+  // Add scale and zero_point as tensor inputs (buffer storage, width packed)
+  IOValueRef r_scale = graph.add_input_tensor(
+      scale_tensor.sizes().vec(),
+      vkapi::kFloat,
+      utils::kBuffer,
+      utils::kWidthPacked);
+  IOValueRef r_zero_point = graph.add_input_tensor(
+      zero_point_tensor.sizes().vec(),
+      vkapi::kInt,
+      utils::kBuffer,
+      utils::kWidthPacked);
+
+  const ValueRef r_quant_min = graph.add_scalar<int64_t>(quant_min);
+  const ValueRef r_quant_max = graph.add_scalar<int64_t>(quant_max);
+
+  const ValueRef r_out = graph.add_tensor(
+      input.sizes().vec(), from_at_scalartype(dtype), out_storage);
+
+  const ValueRef r_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(dtype));
+
+  VK_GET_OP_FN("quantized_decomposed.quantize_per_tensor.tensor")
+  (graph,
+   {
+       r_input.value,
+       r_scale.value,
+       r_zero_point.value,
+       r_quant_min,
+       r_quant_max,
+       r_dtype,
+       r_out,
+   });
+
+  ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  // Run Vulkan quantize_per_tensor.tensor
+  graph.copy_into_staging(
+      r_input.staging, input.const_data_ptr(), input.numel());
+
+  // Convert scale tensor to float and copy to GPU
+  at::Tensor scale_float = scale_tensor.to(at::kFloat);
+  graph.copy_into_staging(
+      r_scale.staging, scale_float.const_data_ptr(), scale_float.numel());
+
+  // Convert zero_point tensor to int and copy to GPU
+  at::Tensor zero_point_int = zero_point_tensor.to(at::kInt);
+  graph.copy_into_staging(
+      r_zero_point.staging,
+      zero_point_int.const_data_ptr(),
+      zero_point_int.numel());
+
+  graph.execute();
+
+  at::Tensor vk_out = at::empty_like(reference_out).contiguous();
+  graph.copy_from_staging(
+      staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
+
+  // Compare outputs
+  // For quantized types, we need to compare the actual integer values
+  at::Tensor reference_int = reference_out.to(at::kInt);
+  at::Tensor vk_int = vk_out.to(at::kInt);
+
+  // Tolerance is 1 to address rounding errors and fp math differences between
+  // CPU/GPU
+  const bool output_correct =
+      at::allclose(reference_int, vk_int, /*rtol=*/1, /*atol=*/1);
+  if (!output_correct) {
+    at::Tensor diffs = at::abs(reference_int - vk_int);
+
+    std::cout << "\n"
+              << "Failed with parameters: " << std::endl;
+    std::cout << "  scale: " << scale << std::endl;
+    std::cout << "  zero_point: " << zero_point << std::endl;
+    std::cout << "  quant_min: " << quant_min << std::endl;
+    std::cout << "  quant_max: " << quant_max << std::endl;
+    std::cout << "  storage type: "
+              << (in_storage == vkcompute::utils::kBuffer ? "buffer"
+                                                          : "texture")
+              << std::endl;
+
+    std::cout << "input:" << std::endl;
+    std::cout << input << std::endl;
+    std::cout << "reference:" << std::endl;
+    std::cout << reference_int << std::endl;
+    std::cout << "vulkan:" << std::endl;
+    std::cout << vk_int << std::endl;
+  }
+
+  ASSERT_TRUE(output_correct);
+}
+
+TEST(
+    VulkanQuantizePerTensorTensorTest,
+    test_vulkan_quantize_per_tensor_tensor_float_to_int8) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_quantize_per_tensor_tensor(
+      {2, 3, 4}, // input sizes
+      0.01, // scale
+      1, // zero_point
+      -128, // quant_min
+      127, // quant_max
+      at::kFloat, // input dtype
+      at::kChar); // output dtype
+}
+
+TEST(
+    VulkanQuantizePerTensorTensorTest,
+    test_vulkan_quantize_per_tensor_tensor_float_to_uint8) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_quantize_per_tensor_tensor(
+      {2, 3, 4, 12}, // input sizes
+      0.1, // scale
+      5, // zero_point
+      0, // quant_min
+      255, // quant_max
+      at::kFloat, // input dtype
+      at::kByte); // output dtype
+}
+
+TEST(
+    VulkanQuantizePerTensorTensorTest,
+    test_vulkan_quantize_per_tensor_tensor_float_to_int32) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_quantize_per_tensor_tensor(
+      {2, 3}, // input sizes
+      0.01, // scale
+      12, // zero_point
+      std::numeric_limits<int32_t>::min(), // quant_min
+      std::numeric_limits<int32_t>::max(), // quant_max
+      at::kFloat, // input dtype
+      at::kInt); // output dtype
+}
+
+TEST(
+    VulkanQuantizePerTensorTensorTest,
+    test_vulkan_quantize_per_tensor_tensor_half_to_uint8) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_quantize_per_tensor_tensor(
+      {3, 4}, // input sizes
+      0.3, // scale
+      2, // zero_point
+      0, // quant_min
+      255, // quant_max
+      at::kHalf, // input dtype
+      at::kByte); // output dtype
+}
+
+TEST(
+    VulkanQuantizePerTensorTensorTest,
+    test_vulkan_quantize_per_tensor_tensor_double_to_int8) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_vulkan_quantize_per_tensor_tensor(
+      {2, 3, 4}, // input sizes
+      0.03, // scale
+      -2, // zero_point
+      -128, // quant_min
+      127, // quant_max
+      at::kDouble, // input dtype
+      at::kChar); // output dtype
 }
