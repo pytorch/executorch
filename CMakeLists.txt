@@ -112,11 +112,12 @@ set(CMAKE_SKIP_BUILD_RPATH OFF)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 # Automatically add all linked folders that are NOT in the build directory to
 # the rpath (per library?)
-# TODO: Doesn't work for us right now because we are
-# not installing .so's into the correct locations. For example we have
-# libcustom_ops_aot_lib.so depending on _portable_lib.so, which was eventually
-# put under <site-packages>/executorch/extension/pybindings/ but this rpath is
-# not automatically added because at build time it seems `portable_lib` is being
+#
+# TODO: Doesn't work for us right now because we are not installing .so's into
+# the correct locations. For example we have libcustom_ops_aot_lib.so depending
+# on _portable_lib.so, which was eventually put under
+# <site-packages>/executorch/extension/pybindings/ but this rpath is not
+# automatically added because at build time it seems `portable_lib` is being
 # built under the same directory, so no extra rpath is being added. To properly
 # fix this we need to install `portable_lib` into the correct path.
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
@@ -321,8 +322,9 @@ if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
            " -fprofile-instr-generate -fcoverage-mapping"
     )
   else()
-    message(FATAL_ERROR
-            "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
+    message(
+      FATAL_ERROR
+        "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
     )
   endif()
 endif()
@@ -633,8 +635,8 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here otherwise
-    # uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
+    # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
     list(APPEND _dep_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   endif()
 
@@ -726,6 +728,17 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+
+  # Automatically set when using `emcmake cmake` for Wasm build.
+  if(EMSCRIPTEN)
+    # Directory of model pte files to embed in the wasm binary.
+    if(NOT DEFINED WASM_MODEL_DIR)
+      set(WASM_MODEL_DIR "${CMAKE_SOURCE_DIR}/models/")
+    endif()
+
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
