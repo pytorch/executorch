@@ -7,6 +7,7 @@
 set_overridable_option(EXECUTORCH_ENABLE_LOGGING ON)
 set_overridable_option(EXECUTORCH_LOG_LEVEL Info)
 set_overridable_option(EXECUTORCH_BUILD_TESTING OFF)
+set_overridable_option(EXECUTORCH_PAL_DEFAULT android)
 
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
