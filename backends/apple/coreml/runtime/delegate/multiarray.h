@@ -84,6 +84,11 @@ public:
         /// Returns `true` if the memory layout is packed otherwise `false`.
         bool is_packed() const noexcept;
 
+        // Resizes memory layout
+        // New shape must be the same dimension and no larger than current shape in all dimensions
+        // New format is contiguous
+        void resize(const std::vector<size_t>& shape);
+
     private:
         DataType dataType_;
         std::vector<size_t> shape_;
@@ -125,6 +130,8 @@ public:
         T* ptr = static_cast<T*>(data(index));
         *ptr = value;
     }
+
+    void resize(const std::vector<size_t>& shape) { layout_.resize(shape); }
 
 private:
     void* data(const std::vector<size_t>& indices) const noexcept;

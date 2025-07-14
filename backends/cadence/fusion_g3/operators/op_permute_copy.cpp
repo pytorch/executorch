@@ -89,6 +89,7 @@ Tensor& permute_copy_out(
 
   int inp_shape[kTensorDimensionLimit];
   int out_shape[kTensorDimensionLimit];
+  int permute_vec[kTensorDimensionLimit];
 
   /* input shapes and output shapes */
   for (auto i = 0; i < in_size.size(); i++) {
@@ -99,7 +100,6 @@ Tensor& permute_copy_out(
     out_shape[i] = out_size[i];
   }
 
-  int permute_vec[in.dim()];
   for (int i = 0; i < in.dim(); i++) {
     permute_vec[i] = (int)dims[i];
   }
@@ -112,7 +112,8 @@ Tensor& permute_copy_out(
        (out.scalar_type() == ScalarType::Char) ||
        (out.scalar_type() == ScalarType::UInt32) ||
        (out.scalar_type() == ScalarType::UInt16) ||
-       (out.scalar_type() == ScalarType::Byte)) &&
+       (out.scalar_type() == ScalarType::Byte) ||
+       (out.scalar_type() == ScalarType::Float)) &&
       (in.dim() <= 5)) {
     XT_KERNEL_CHECK(
         ctx,

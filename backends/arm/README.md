@@ -80,28 +80,10 @@ test                            #  Root test folder
 Some example commands to run these tests follow. Run a single test:
 
 ```
-python -m unittest backends.arm.test.ops.test_add.TestSimpleAdd -k test_add2_tosa_BI
-```
-
-or with pytest
-
-```
 pytest -c /dev/null -v -n auto backends/arm/test/ops/test_add.py -k test_add2_tosa_BI
 ```
 
-Or all tests in "TestSimpleAdd":
-
-```
-python -m unittest backends.arm.test.ops.test_add.TestSimpleAdd
-```
-
 Or discover and run many tests:
-
-```
-python -m unittest discover -s backends/arm/test/ops/
-```
-
-or with pytest
 
 ```
 pytest -c /dev/null -v -n auto backends/arm/test/ops/
@@ -119,7 +101,7 @@ backends/arm/test/setup_testing.sh
 The you can run the tests with
 
 ```
-pytest -c /dev/null -v -n auto backends/arm/test --arm_run_corstoneFVP
+pytest -c /dev/null -v -n auto backends/arm/test
 ```
 
 ## Passes
@@ -205,3 +187,9 @@ It is possible to control the compilation flow to aid in development and debug o
 Configuration of the EthosUBackend export flow is controlled by CompileSpec information (essentially used as compilation flags) to determine which of these outputs is produced. In particular this allows for use of the tosa_reference_model to run intermediate output to check for correctness and quantization accuracy without a full loop via hardware implemntation.
 
 As this is in active development see the EthosUBackend for accurate information on [compilation flags](https://github.com/pytorch/executorch/blob/29f6dc9353e90951ed3fae3c57ae416de0520067/backends/arm/arm_backend.py#L319-L324)
+
+## Model specific and optional passes
+The current TOSA version does not support int64. For LLMs for example LLama, often aten.emedding is the first operator and it requires int64 indicies.
+In order to lower this to TOSA and int64->int32 cast need to be injected. This pass need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter. See example in: backends/arm/test/models/test_llama.py.
+By doing this aten.embedding will be decomposed into to aten.index_select which can handle int32 indices.
+Note that this additional step is only needed for pure float models. With quantization this is automatically handled during annotation before the export stage.

@@ -9,7 +9,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpElementWiseSelect, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -25,7 +26,7 @@ class Where(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        conditional_input_node = node.args[0]
+        conditional_input_node = self.get_node(node.args[0])
         conditional_input_tensor = self.get_tensor(conditional_input_node, node)
         conditional_input_tensor_wrapper = self.define_tensor(
             conditional_input_node,
@@ -35,7 +36,7 @@ class Where(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        true_input_node = node.args[1]
+        true_input_node = self.get_node(node.args[1])
         true_input_tensor = self.get_tensor(true_input_node, node)
         true_input_tensor_wrapper = self.define_tensor(
             true_input_node,
@@ -45,7 +46,7 @@ class Where(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        false_input_node = node.args[2]
+        false_input_node = self.get_node(node.args[2])
         false_input_tensor = self.get_tensor(false_input_node, node)
         false_input_tensor_wrapper = self.define_tensor(
             false_input_node,

@@ -118,17 +118,22 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
                qcir::QuantizeType::BW_SCALE_OFFSET},
               {QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
                qcir::QuantizeType::BW_AXIS_SCALE_OFFSET},
+              {QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION,
+               qcir::QuantizeType::BLOCKWISE_EXPANSION},
               {QNN_QUANTIZATION_ENCODING_UNDEFINED,
                qcir::QuantizeType::UNDEFINED},
           };
 
   int32_t axis = 0;
-  uint32_t bitwidth = 0;
+  uint32_t bitwidth = 0, num_blocks_per_axis = 0;
   auto param = QNN_TENSOR_VER_PTR(tensor)->quantizeParams;
   auto quant_type = type_map.at(param.quantizationEncoding);
   std::vector<qcir::ScaleOffset> data;
+  std::vector<uint8_t> block_scale;
   std::vector<float> scales;
   std::vector<int32_t> offsets;
+  qcir::BlockScaleStorageType block_scale_storage_type =
+      qcir::BlockScaleStorageType::BITWIDTH_SCALE_STORAGE_8;
   switch (quant_type) {
     case qcir::QuantizeType::SCALE_OFFSET: {
       data.emplace_back(qcir::ScaleOffset(
@@ -160,6 +165,28 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
         offsets.push_back(param.bwAxisScaleOffsetEncoding.offsets[i]);
       }
     } break;
+    case qcir::QuantizeType::BLOCKWISE_EXPANSION: {
+      bitwidth = param.blockwiseExpansion->blockScaleBitwidth;
+      axis = param.blockwiseExpansion->axis;
+      uint num_channels = QNN_TENSOR_VER_PTR(tensor)->dimensions[axis];
+      for (uint i = 0; i < num_channels; ++i) {
+        data.emplace_back(qcir::ScaleOffset(
+            param.blockwiseExpansion->scaleOffsets[i].scale,
+            param.blockwiseExpansion->scaleOffsets[i].offset));
+      }
+      num_blocks_per_axis = param.blockwiseExpansion->numBlocksPerAxis;
+      uint multiplier = 1;
+      if (param.blockwiseExpansion->blockScaleStorageType ==
+          QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_16) {
+        multiplier = 2;
+        block_scale_storage_type =
+            qcir::BlockScaleStorageType::BITWIDTH_SCALE_STORAGE_16;
+      }
+      uint total_bytes = num_channels * num_blocks_per_axis * multiplier;
+      block_scale = std::vector<uint8_t>(
+          param.blockwiseExpansion->blocksScale8,
+          param.blockwiseExpansion->blocksScale8 + total_bytes);
+    } break;
     default:
       // encodings are not required if lowering with floating point precision
       break;
@@ -172,7 +199,10 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
       axis,
       &scales,
       &offsets,
-      &data);
+      &data,
+      num_blocks_per_axis,
+      block_scale_storage_type,
+      &block_scale);
 }
 
 Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor) {
@@ -192,9 +222,14 @@ Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor) {
                QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET},
               {qcir::QuantizeType::BW_AXIS_SCALE_OFFSET,
                QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET},
+              {qcir::QuantizeType::BLOCKWISE_EXPANSION,
+               QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION},
               {qcir::QuantizeType::UNDEFINED,
                QNN_QUANTIZATION_ENCODING_UNDEFINED},
           };
+  // Qnn_BlockwiseExpansion_t is a pointer type in Qnn_QuantizeParams_t
+  // need a bookkeeper for guarding life cycle
+  static std::vector<std::unique_ptr<Qnn_BlockwiseExpansion_t>> block_param;
 
   Qnn_QuantizeParams_t p = QNN_QUANTIZE_PARAMS_INIT;
   auto param = tensor->qparam();
@@ -225,6 +260,30 @@ Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor) {
           const_cast<float*>(param->scales()->data());
       p.bwAxisScaleOffsetEncoding.offsets =
           const_cast<int32_t*>(param->offsets()->data());
+    } break;
+    case QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION: {
+      block_param.emplace_back(std::make_unique<Qnn_BlockwiseExpansion_t>());
+      p.blockwiseExpansion = block_param.back().get();
+      p.blockwiseExpansion->axis = param->axis();
+      p.blockwiseExpansion->scaleOffsets = reinterpret_cast<Qnn_ScaleOffset_t*>(
+          const_cast<uint8_t*>(param->data()->Data()));
+      p.blockwiseExpansion->numBlocksPerAxis = param->num_blocks_per_axis();
+      switch (param->block_scale_storage_type()) {
+        case qcir::BlockScaleStorageType::BITWIDTH_SCALE_STORAGE_8:
+          p.blockwiseExpansion->blockScaleStorageType =
+              QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_8;
+          break;
+        case qcir::BlockScaleStorageType::BITWIDTH_SCALE_STORAGE_16:
+          p.blockwiseExpansion->blockScaleStorageType =
+              QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_16;
+          break;
+        default:
+          p.blockwiseExpansion->blockScaleStorageType =
+              QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_UNDEFINED;
+          break;
+      }
+      p.blockwiseExpansion->blocksScale8 =
+          const_cast<uint8_t*>(param->block_scale()->Data());
     } break;
     default:
       // encodings are not required if lowering with floating point precision

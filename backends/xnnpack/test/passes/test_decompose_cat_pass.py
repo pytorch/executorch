@@ -16,6 +16,9 @@ class TestDecomposeCatPass(unittest.TestCase):
     PassStage = RunPasses([DecomposeConcatenate])
     cat_name = "executorch_exir_dialects_edge__ops_aten_cat_default"
 
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Cat(torch.nn.Module):
         def forward(self, *args):
             xs = [*args]

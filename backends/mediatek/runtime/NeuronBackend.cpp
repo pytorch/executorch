@@ -68,8 +68,12 @@ Result<DelegateHandle*> NeuronBackend::init(
       processed->size());
 
   MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
-  NeuronExecuTorchDelegate* delegate = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-      runtime_allocator, NeuronExecuTorchDelegate);
+  NeuronExecuTorchDelegate* delegate =
+      runtime_allocator->allocateInstance<NeuronExecuTorchDelegate>();
+  if (delegate == nullptr) {
+    return Error::MemoryAllocationFailed;
+  }
+
   new (delegate) NeuronExecuTorchDelegate();
 
   if (delegate == nullptr) {
@@ -107,8 +111,8 @@ Error NeuronExecuTorchDelegate::execute(
     return Error::InvalidState;
   };
 
-  auto allocator = dynamic_cast<torch::executor::neuron::BufferAllocator*>(
-      context.get_temp_allocator());
+  auto allocator =
+      dynamic_cast<neuron::BufferAllocator*>(context.get_temp_allocator());
   size_t inputCount = mInputSizes.size(), outputCount = mOutputSizes.size();
 
   for (int i = 0; i < inputCount; i++) {

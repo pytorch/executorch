@@ -14,9 +14,9 @@ Qualcomm AI Engine Direct is also referred to as QNN in the source and documenta
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
-* [Introduction to ExecuTorch](./intro-how-it-works.md)
-* [Getting Started](./getting-started.md)
-* [Building ExecuTorch with CMake](./using-executorch-building-from-source.md)
+* [Introduction to ExecuTorch](intro-how-it-works.md)
+* [Getting Started](getting-started.md)
+* [Building ExecuTorch with CMake](using-executorch-building-from-source.md)
 :::
 ::::
 
@@ -38,15 +38,33 @@ Currently, this ExecuTorch Backend can delegate AI computations to Hexagon proce
 
 The Linux host operating system that QNN Backend is verified with is Ubuntu 22.04 LTS x64
 at the moment of updating this tutorial.
+In addition, it is also confirmed to work on Windows Subsystem for Linux (WSL) with Ubuntu 22.04.
 Usually, we verified the backend on the same OS version which QNN is verified with.
 The version is documented in QNN SDK.
 
+#### Windows (WSL) Setup
+To install Ubuntu 22.04 on WSL, run the following command in PowerShell or Windows Terminal:
+``` bash
+wsl --install -d ubuntu 22.04
+```
+This command will install WSL and set up Ubuntu 22.04 as the default Linux distribution.
+
+For more details and troubleshooting, refer to the official Microsoft WSL installation guide:
+👉 [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
+
 ### Hardware:
 You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:
+ - SA8295
  - SM8450 (Snapdragon 8 Gen 1)
  - SM8475 (Snapdragon 8 Gen 1+)
  - SM8550 (Snapdragon 8 Gen 2)
  - SM8650 (Snapdragon 8 Gen 3)
+ - SM8750 (Snapdragon 8 Elite)
+ - SSG2115P
+ - SSG2125P
+ - SXR1230P
+ - SXR2230P
+ - SXR2330P
 
 This example is verified with SM8550 and SM8450.
 
@@ -136,8 +154,7 @@ cmake .. \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
   -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
   -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-  -DPYTHON_EXECUTABLE=python3 \
-  -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF
+  -DPYTHON_EXECUTABLE=python3
 
 # nproc is used to detect the number of available CPU.
 # If it is not applicable, please feel free to use the number you want.
@@ -175,7 +192,7 @@ cmake .. \
     -DPYTHON_EXECUTABLE=python3 \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
-    -DANDROID_NATIVE_API_LEVEL=23
+    -DANDROID_PLATFORM=android-30
 
 # nproc is used to detect the number of available CPU.
 # If it is not applicable, please feel free to use the number you want.
@@ -184,7 +201,7 @@ cmake --build $PWD --target install -j$(nproc)
 cmake ../examples/qualcomm \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
-    -DANDROID_NATIVE_API_LEVEL=23 \
+    -DANDROID_PLATFORM=android-30 \
     -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
     -DPYTHON_EXECUTABLE=python3 \
@@ -343,11 +360,6 @@ After the above command, pre-processed inputs and outputs are put in `$EXECUTORC
 The command-line arguments are written in [utils.py](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/utils.py#L139).
 The model, inputs, and output location are passed to `qnn_executorch_runner` by `--model_path`, `--input_list_path`, and `--output_folder_path`.
 
-
-### Running a model via ExecuTorch's android demo-app
-
-An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
-`examples`. Please refer to android demo app [tutorial](demo-apps-android.md).
 
 ## Supported model list
 

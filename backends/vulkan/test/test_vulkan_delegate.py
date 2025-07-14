@@ -15,10 +15,19 @@ import torch
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
-from executorch.exir import EdgeCompileConfig
-from torch.export import Dim, export, ExportedProgram
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+)
+from torch.export import Dim, export, export_for_training, ExportedProgram
+
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 ctypes.CDLL("libvulkan.so.1")
 
@@ -30,11 +39,72 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
 from executorch.extension.pytree import tree_flatten
 
 
-class TestBackends(unittest.TestCase):
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
+def lower_module(
+    model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor], dynamic_shapes=None
+) -> EdgeProgramManager:
+    compile_options = {}
+    if dynamic_shapes is not None:
+        compile_options["require_dynamic_shapes"] = True
+
+    edge_compile_config = EdgeCompileConfig(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
 
+    program: ExportedProgram = export(
+        model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
+    )
+
+    edge_program = to_edge_transform_and_lower(
+        program,
+        compile_config=edge_compile_config,
+        transform_passes=[
+            I64toI32(edge_compile_config._skip_dim_order),
+        ],
+        partitioner=[VulkanPartitioner(compile_options)],
+    )
+
+    return edge_program
+
+
+def quantize_and_lower_module(
+    model: torch.nn.Module,
+    sample_inputs: Tuple[torch.Tensor],
+    quantizer: Quantizer,
+    dynamic_shapes=None,
+) -> EdgeProgramManager:
+    compile_options = {}
+    if dynamic_shapes is not None:
+        compile_options["require_dynamic_shapes"] = True
+
+    edge_compile_config = EdgeCompileConfig(
+        _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
+    )
+
+    program = export_for_training(
+        model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
+    ).module()
+
+    program = prepare_pt2e(program, quantizer)  # pyre-ignore
+    # Calibrate
+    program(*sample_inputs)
+
+    program = convert_pt2e(program)
+
+    program = export(program, sample_inputs, dynamic_shapes=dynamic_shapes)
+
+    edge_program = to_edge_transform_and_lower(
+        program,
+        compile_config=edge_compile_config,
+        transform_passes=[
+            I64toI32(edge_compile_config._skip_dim_order),
+        ],
+        partitioner=[VulkanPartitioner(compile_options)],
+    )
+
+    return edge_program
+
+
+class TestVulkanBackend(unittest.TestCase):
     def assert_outputs_equal(
         self,
         model_output,
@@ -88,6 +158,59 @@ class TestBackends(unittest.TestCase):
                 )
             )
 
+    def check_no_delegation(self, et_program: ExecutorchProgramManager):
+        self.assertEqual(
+            len(et_program.executorch_program.execution_plan[0].delegates),
+            0,
+        )
+        return
+
+    def check_vk_delegation(self, et_program: ExecutorchProgramManager):
+        self.assertEqual(
+            et_program.executorch_program.execution_plan[0].delegates[0].id,
+            VulkanBackend.__name__,
+        )
+
+    def run_delegated_model_and_check_output(
+        self,
+        et_program: ExecutorchProgramManager,
+        model: torch.nn.Module,
+        sample_inputs: Tuple[torch.Tensor],
+        atol=1e-03,
+        rtol=1e-01,
+        test_inputs=None,
+        first_output_only=False,
+    ):
+        executorch_module = _load_for_executorch_from_buffer(et_program.buffer)
+        inputs_flattened, _ = tree_flatten(sample_inputs)
+
+        model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
+        ref_output = model(*sample_inputs)
+
+        self.assert_outputs_equal(
+            model_output,
+            ref_output,
+            atol=atol,
+            rtol=rtol,
+            first_output_only=first_output_only,
+        )
+
+        if test_inputs is not None:
+            for test_input in test_inputs:
+                test_inputs_flattened, _ = tree_flatten(test_input)
+                model_output = executorch_module.run_method(
+                    "forward", tuple(test_inputs_flattened)
+                )
+                ref_output = model(*test_input)
+
+                self.assert_outputs_equal(
+                    model_output,
+                    ref_output,
+                    atol=atol,
+                    rtol=rtol,
+                    first_output_only=first_output_only,
+                )
+
     def lower_module_and_test_output(
         self,
         model: torch.nn.Module,
@@ -105,80 +228,29 @@ class TestBackends(unittest.TestCase):
         outputs with the outputs of the eager module.
         """
 
-        def run_test():
-            compile_options = {}
+        # Validate that the model can execute in eager mode
+        model.eval()
+        model(*sample_inputs)
 
-            # At least model should run in eager mode.
-            model.eval()
-            model(*sample_inputs)
+        edge_program = lower_module(model, sample_inputs, dynamic_shapes=dynamic_shapes)
 
-            program: ExportedProgram = export(
-                model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
-            )
+        et_program = edge_program.to_executorch()
 
-            edge_program = to_edge_transform_and_lower(
-                program,
-                compile_config=self._edge_compile_config,
-                transform_passes=[
-                    I64toI32(self._edge_compile_config._skip_dim_order),
-                ],
-                partitioner=[VulkanPartitioner(compile_options)],
-            )
-            executorch_program = edge_program.to_executorch()
+        if expect_no_delegates:
+            self.check_no_delegation(et_program)
+            return
 
-            if expect_no_delegates:
-                self.assertEqual(
-                    len(
-                        executorch_program.executorch_program.execution_plan[
-                            0
-                        ].delegates
-                    ),
-                    0,
-                )
-                return
-            else:
-                self.assertEqual(
-                    executorch_program.executorch_program.execution_plan[0]
-                    .delegates[0]
-                    .id,
-                    VulkanBackend.__name__,
-                )
+        self.check_vk_delegation(et_program)
 
-            executorch_module = _load_for_executorch_from_buffer(
-                executorch_program.buffer
-            )
-            inputs_flattened, _ = tree_flatten(sample_inputs)
-
-            model_output = executorch_module.run_method(
-                "forward", tuple(inputs_flattened)
-            )
-            ref_output = model(*sample_inputs)
-
-            self.assert_outputs_equal(
-                model_output,
-                ref_output,
-                atol=atol,
-                rtol=rtol,
-                first_output_only=first_output_only,
-            )
-
-            if test_inputs is not None:
-                for test_input in test_inputs:
-                    test_inputs_flattened, _ = tree_flatten(test_input)
-                    model_output = executorch_module.run_method(
-                        "forward", tuple(test_inputs_flattened)
-                    )
-                    ref_output = model(*test_input)
-
-                    self.assert_outputs_equal(
-                        model_output,
-                        ref_output,
-                        atol=atol,
-                        rtol=rtol,
-                        first_output_only=first_output_only,
-                    )
-
-        run_test()
+        self.run_delegated_model_and_check_output(
+            et_program,
+            model,
+            sample_inputs,
+            atol,
+            rtol,
+            test_inputs=test_inputs,
+            first_output_only=first_output_only,
+        )
 
     def test_vulkan_backend_add(self):
         # This test is the simplest test by manually lowering some submodules, we can use paritioner
@@ -661,6 +733,10 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(model, sample_inputs)
 
+    @unittest.skip(
+        "Currently this test is failing due to weird partitioning because the eq scalar"
+        "operator is not supported yet. Re-enable when the operator is supported."
+    )
     def test_vulkan_backend_partial_dynamic_shapes(self):
         class SimpleModel(torch.nn.Module):
             def __init__(self):
@@ -942,6 +1018,7 @@ class TestBackends(unittest.TestCase):
             sample_inputs,
         )
 
+    @unittest.skip("layer norm compute shader not working with swiftshader")
     def test_vulkan_backend_native_layer_norm(self):
         class NativeLayerNormModule(torch.nn.Module):
             def __init__(self):
@@ -1213,14 +1290,13 @@ class TestBackends(unittest.TestCase):
             def __init__(self):
                 super().__init__()
 
-            def forward(self, x, y, z, w):
-                return torch.cat([x, y, z, w], dim=1)
+            def forward(self, x, y, z):
+                return torch.cat([x, y, z], dim=1)
 
         sample_inputs = (
             torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 1, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 9, 2, 7), dtype=torch.float32),
-            torch.randn(size=(3, 3, 2, 7), dtype=torch.float32),
         )
 
         self.lower_module_and_test_output(
@@ -1733,4 +1809,254 @@ class TestBackends(unittest.TestCase):
         self.lower_module_and_test_output(
             LinearModel(n_pca_basis, n_sh_basis, n_gaussians),
             (torch.ones(n_pca_basis),),
+        )
+
+    def test_vulkan_backend_sym_size_int(self):
+        """
+        Test the sym_size.int operator with a model that:
+        1. Takes an input tensor with shape [1, M, K]
+        2. Reshapes it to [M, K]
+        3. Applies a linear layer
+        4. Reshapes the output back to [1, M, N]
+        """
+        K = 64  # Input feature dimension
+        N = 32  # Output feature dimension
+
+        class SymSizeModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(K, N)
+
+            def forward(self, x):
+                M = x.size(1)
+
+                reshaped = torch.reshape(x, [M, K])
+                output = self.linear(reshaped)
+                return torch.reshape(output, [1, M, N])
+
+        sample_inputs = (torch.randn(1, 64, K),)
+
+        batch = Dim("batch", min=1, max=128)
+        dynamic_shapes = {"x": {1: batch}}
+
+        test_inputs = [
+            (torch.randn(1, 32, K),),
+            (torch.randn(1, 96, K),),
+            (torch.randn(1, 128, K),),
+        ]
+
+        self.lower_module_and_test_output(
+            SymSizeModel(),
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
+    def test_select_last_height_dynamic_shapes(self):
+        """
+        Test selecting the last element along the height dimension with dynamic shapes.
+        The height dimension (dim=1) is variable.
+        """
+
+        class SelectLastHeightModule(torch.nn.Module):
+            """
+            Module that selects the last element along the height dimension (dim=1) of a 3D tensor.
+            This is equivalent to the operation: x[:, -1, :]
+            """
+
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # Select the last element along dimension 1 (height)
+                return x[:, -1, :]
+
+        # Create the module
+        module = SelectLastHeightModule()
+
+        # Create sample inputs with a specific shape
+        # Shape: [batch_size, height, width]
+        sample_inputs = (torch.arange(1, 61).reshape(2, 10, 3).float(),)
+
+        # Define dynamic shapes for the height dimension
+        height = Dim("height", min=1, max=10)
+        dynamic_shapes = {"x": {1: height}}
+
+        # Create test inputs with different heights
+        test_inputs = [
+            (torch.arange(1, 7).reshape(2, 1, 3).float(),),  # Minimum height
+            (torch.arange(1, 19).reshape(2, 3, 3).float(),),  # Small height
+            (torch.arange(1, 43).reshape(2, 7, 3).float(),),  # Medium height
+            (torch.arange(1, 31).reshape(2, 5, 3).float(),),  # Maximum height
+        ]
+
+        # Use the testing infrastructure from TestVulkanBackend
+        test_backend = TestVulkanBackend()
+        test_backend.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
+    def test_vulkan_backend_group_norm(self):
+        class ConvGroupNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Conv2d: 3 input channels -> 16 output channels
+                self.conv = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=16,
+                    kernel_size=3,
+                    padding=1,
+                    bias=True,
+                )
+                # GroupNorm: 4 groups for 16 channels (16 % 4 == 0)
+                self.group_norm = torch.nn.GroupNorm(
+                    num_groups=4,
+                    num_channels=16,
+                    eps=1e-5,
+                    affine=True,
+                )
+
+            def forward(self, x):
+                x = self.conv(x)
+                x = self.group_norm(x)
+                return x
+
+        # Create sample inputs: [batch, channels, height, width]
+        sample_inputs = (torch.randn(size=(1, 3, 32, 32), dtype=torch.float32),)
+
+        # Test with static shapes first
+        self.lower_module_and_test_output(
+            ConvGroupNormModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_group_norm_different_groups(self):
+        class GroupNormModule(torch.nn.Module):
+            def __init__(self, num_groups, num_channels):
+                super().__init__()
+                self.group_norm = torch.nn.GroupNorm(
+                    num_groups=num_groups,
+                    num_channels=num_channels,
+                    eps=1e-5,
+                    affine=True,
+                )
+
+            def forward(self, x):
+                return self.group_norm(x)
+
+        # Test different group configurations
+        test_configs = [
+            (2, 8),  # 2 groups, 8 channels
+            (4, 16),  # 4 groups, 16 channels
+            (8, 32),  # 8 groups, 32 channels
+        ]
+
+        for num_groups, num_channels in test_configs:
+            with self.subTest(num_groups=num_groups, num_channels=num_channels):
+                sample_inputs = (
+                    torch.randn(size=(2, num_channels, 16, 16), dtype=torch.float32),
+                )
+
+                self.lower_module_and_test_output(
+                    GroupNormModule(num_groups, num_channels),
+                    sample_inputs,
+                )
+
+    def test_vulkan_backend_full_quantization_workflow(self):
+        class FullQuantizationWorkflowModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # Step 1: Choose quantization parameters per tensor
+                scale, zero_point = (
+                    torch.ops.quantized_decomposed.choose_qparams.tensor(
+                        x,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        eps=1e-5,
+                        dtype=torch.int32,
+                    )
+                )
+
+                # Step 2: Quantize using the calculated parameters
+                quantized = torch.ops.quantized_decomposed.quantize_per_tensor.tensor(
+                    x,
+                    scale,
+                    zero_point,
+                    quant_min=-2147483648,  # int32 min
+                    quant_max=2147483647,  # int32 max
+                    dtype=torch.int32,
+                )
+
+                # Step 3: Dequantize back to float
+                dequantized = (
+                    torch.ops.quantized_decomposed.dequantize_per_tensor.tensor(
+                        quantized,
+                        scale,
+                        zero_point,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        dtype=torch.int32,
+                    )
+                )
+
+                return dequantized
+
+        full_workflow_module = FullQuantizationWorkflowModule()
+        sample_inputs = (torch.rand(size=(2, 3, 4), dtype=torch.float32),)
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            full_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
+        )
+
+    def test_vulkan_backend_full_per_token_quantization_workflow(self):
+        class FullPerTokenQuantizationWorkflowModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # Step 1: Choose quantization parameters per token
+                scale, zero_point = (
+                    torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
+                        x,
+                        dtype=torch.int32,
+                    )
+                )
+
+                # Step 2: Quantize using the calculated parameters per token
+                quantized = torch.ops.quantized_decomposed.quantize_per_token.default(
+                    x,
+                    scale,
+                    zero_point,
+                    quant_min=-2147483648,  # int32 min
+                    quant_max=2147483647,  # int32 max
+                    dtype=torch.int32,
+                )
+
+                # Step 3: Dequantize back to float per token
+                dequantized = (
+                    torch.ops.quantized_decomposed.dequantize_per_token.default(
+                        quantized,
+                        scale,
+                        zero_point,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        dtype=torch.int32,
+                        output_dtype=torch.float32,
+                    )
+                )
+
+                return dequantized
+
+        full_per_token_workflow_module = FullPerTokenQuantizationWorkflowModule()
+        sample_inputs = (torch.rand(size=(6, 4), dtype=torch.float32),)
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            full_per_token_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
         )

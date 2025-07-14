@@ -62,6 +62,9 @@ class DecomposeScaledDotProductAttention(ExportPass):
 
                     # Copy node from decompose graph module
                     for decomposed_node in decomposed_module.graph.nodes:
+                        node.meta["nn_module_stack"] = decomposed_node.meta.get(
+                            "nn_module_stack"
+                        )
                         if decomposed_node.op == "placeholder":
                             continue
 

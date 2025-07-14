@@ -15,8 +15,8 @@
 #include <executorch/runtime/executor/method_meta.h>
 
 using executorch::runtime::Error;
-using executorch::runtime::Method;
-using executorch::runtime::TensorInfo;
+using executorch::runtime::aten::Method;
+using executorch::runtime::aten::TensorInfo;
 
 namespace executorch {
 namespace extension {

@@ -130,4 +130,20 @@ void verify_copy(const std::vector<size_t>& shape,
     [self verifyDataCopyWithShape:shape srcStrides:srcStrides dstStrides:dstStrides];
 }
 
+- (void)testResize {
+    std::vector<size_t> shape = {3, 1, 2, 5};
+    std::vector<ssize_t> strides = {1*2*5, 2*5, 5, 1};
+    std::vector<uint8_t> storage;
+    std::vector<size_t> newShape = {3, 1, 1, 1};
+    
+    auto array = make_multi_array_and_fill<int>(shape, strides, storage);
+    for (size_t i = 0; i < array.layout().rank(); ++i) {
+        XCTAssertEqual(array.layout().shape()[i], shape[i]);
+    }
+    array.resize(newShape);
+    for (size_t i = 0; i < array.layout().rank(); ++i) {
+        XCTAssertEqual(array.layout().shape()[i], newShape[i]);
+    }
+}
+
 @end

@@ -46,7 +46,7 @@ function patch_repo() {
     local patch_dir="${3}/$name"
 
     echo -e "[${FUNCNAME[0]}] Patching ${name} repo_dir:${repo_dir} base_rev:${base_rev} patch_dir:${patch_dir}"
-    cd $repo_dir
+    pushd $repo_dir
     git fetch
     git reset --hard ${base_rev}
 
@@ -54,4 +54,5 @@ function patch_repo() {
         git am -3 ${patch_dir}/*.patch
 
     echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir.\n"
+    popd
 }

@@ -6,7 +6,10 @@
 from typing import Sequence
 
 import torch
-from executorch.backends.qualcomm.quantizer.annotators import QUANT_ANNOTATION_KEY
+from executorch.backends.qualcomm.quantizer.annotators import (
+    _is_float_tensor,
+    QUANT_ANNOTATION_KEY,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a8w_qnn_ptq_config,
     get_8a8w_qnn_ptq_config,
@@ -14,13 +17,76 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     QuantizationConfig,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.ao.quantization.observer import FixedQParamsObserver, MinMaxObserver
-from torch.ao.quantization.quantizer import (
+from torch.fx import Node
+from torchao.quantization.pt2e import FixedQParamsObserver, MinMaxObserver
+from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
     QuantizationAnnotation,
     QuantizationSpec,
     SharedQuantizationSpec,
 )
-from torch.fx import Node
+
+
+def annotate_eurobert(gm: torch.fx.GraphModule):
+    """
+    QNN does not support int32 -> signed 16bit quant
+    We need to first annotate this to_fp node as 8bit quant, so it will perform requantize
+    Final graph should look like: int32 -> convert -> cast -> matmul.args[1]
+
+    """
+    quantization_config_8a8w = get_8a8w_qnn_ptq_config()
+    for node in gm.graph.nodes:
+        # A little tricky here. This matmul node is wrapped inside a submodule after 1st torch.export.
+        # There are actually 2 'to' op that is redundant.
+        # It will look like: int64 -> to_fp -> to_fp -> matmul.args[1]
+        # Draw out the graph after the 1st export will help visualize the submodule.
+
+        if node.target == torch.ops.aten.matmul.default and node.args[1].args[0].args[
+            0
+        ].meta["val"].dtype in [torch.int64, torch.int32]:
+            to_node = node.args[1]
+            input_qspec_map = {}
+            assert isinstance(to_node, Node)
+            input_spec = quantization_config_8a8w.input_activation
+            input_qspec_map[to_node] = input_spec
+            to_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=quantization_config_8a8w.output_activation,
+                _annotated=True,
+            )
+
+
+def annotate_mimi_decoder(gm: torch.fx.GraphModule):
+    """
+    The 1st transpose conv in mimi decoder is really sensitive to scale/offset in 16a8w, which causes execution failure.
+    Annotate 1st transpose conv as 8a8w to prevent execution failure.
+    """
+    quantization_config_8a8w = get_8a8w_qnn_ptq_config()
+    for node in gm.graph.nodes:
+        if not _is_float_tensor(node):
+            continue
+        elif node.target == torch.ops.aten.conv_transpose1d.default:
+            input_qspec_map = {}
+            input_act = node.args[0]
+            assert isinstance(input_act, Node)
+            input_spec = quantization_config_8a8w.input_activation
+            input_qspec_map[input_act] = input_spec
+
+            weight = node.args[1]
+            assert isinstance(weight, Node)
+            input_qspec_map[weight] = quantization_config_8a8w.weight
+
+            if len(node.args) > 2 and isinstance(node.args[2], Node):
+                bias = node.args[2]
+                input_qspec_map[bias] = quantization_config_8a8w.bias
+
+            node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=quantization_config_8a8w.output_activation,
+                _annotated=True,
+            )
+            break
 
 
 def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
@@ -149,6 +215,24 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
             _annotated=True,
         )
 
+    def annotate_rms_norm(node: Node, quantization_config: QuantizationConfig) -> None:
+        act_node = node.args[0]
+        weight_node = node.args[2]
+
+        # TODO current only support 16a16w
+        annotate_input_qspec_map(
+            node,
+            act_node,
+            quantization_config.input_activation,
+        )
+
+        annotate_input_qspec_map(
+            node,
+            weight_node,
+            quantization_config.input_activation,
+        )
+        annotate_output_qspec(node, quantization_config.output_activation)
+
     def annotate_single_in_single_out(
         node: Node, quantization_config: QuantizationConfig
     ) -> None:
@@ -163,13 +247,47 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
             _annotated=True,
         )
 
+    def annotate_single_in_share_out(
+        node: Node, quantization_config: QuantizationConfig
+    ) -> None:
+
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_qspec_map[input_act] = quantization_config.input_activation
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=SharedQuantizationSpec((input_act, node)),
+            _annotated=True,
+        )
+
+    def annotate_stack(node: Node, quantization_config: QuantizationConfig) -> None:
+        input_nodes = node.args[0]
+
+        first_input_node = input_nodes[0]
+        input_qspec_map = {}
+        input_qspec_map[first_input_node] = quantization_config.input_activation
+        share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+            (first_input_node, node)
+        )
+
+        for input_node in input_nodes[1:]:
+            if input_node not in input_qspec_map:
+                input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
+
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=share_qparams_with_input_act0_qspec,
+            _annotated=True,
+        )
+
     def annotate_matmul_input1(node: Node):
         quantization_config_8a8w = get_8a8w_qnn_ptq_config(
             act_symmetric=True, act_observer=MinMaxObserver
         )
         quantization_config_8a4w_per_channel = get_ptq_per_channel_quant_config(
             act_dtype=torch.uint8,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
             act_observer=MinMaxObserver,
             act_symmetric=True,
         )
@@ -182,6 +300,15 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
                 torch.ops.aten.reshape.default,
             ]:
                 annotate_single_in_single_out(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target == torch.ops.aten.stack.default:
+                annotate_stack(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target == torch.ops.aten.flatten.using_ints:
+                annotate_single_in_share_out(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target == torch.ops.aten.rms_norm.default:
+                annotate_rms_norm(node, quantization_config_8a8w)
                 node = node.args[0]
             elif node.target == torch.ops.aten.cat.default:
                 annotate_cat(node, quantization_config_8a8w)
@@ -228,14 +355,15 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
         )
 
     def annotate_index_put(node: Node, quantization_config: QuantizationConfig) -> None:
-        input = node.args[0]
+        # Avoid annotating the input node because mutable buffers will be folded during the convert_pt2e process.
         value = node.args[2]
+
         input_qspec_map = {}
-        input_qspec_map[input] = quantization_config.input_activation
-        input_qspec_map[value] = SharedQuantizationSpec((input, node))
+        input_qspec_map[value] = quantization_config.input_activation
+
         node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
-            output_qspec=SharedQuantizationSpec((input, node)),
+            output_qspec=SharedQuantizationSpec((value, node)),
             _annotated=True,
         )
 

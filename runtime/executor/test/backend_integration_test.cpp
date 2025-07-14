@@ -289,7 +289,7 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
     ASSERT_EQ(StubBackend::register_singleton(), Error::Ok);
 
     // Paths to the test program files.
-    program_path_ = std::getenv("ET_MODULE_ADD_MUL_PATH");
+    program_path_ = std::getenv("ET_MODULE_ADD_MUL_DELEGATED_PATH");
     ASSERT_FALSE(program_path_.empty());
     program_nosegments_path_ = std::getenv("ET_MODULE_ADD_MUL_NOSEGMENTS_PATH");
     ASSERT_FALSE(program_nosegments_path_.empty());
@@ -345,6 +345,37 @@ TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method_res = program->load_method("forward", &mmm.get());
   EXPECT_EQ(method_res.error(), Error::Ok);
+}
+
+TEST_P(BackendIntegrationTest, GetBackendNamesSuccess) {
+  // Load the program from file.
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Get method metadata for the "forward" method.
+  auto method_meta = program->method_meta("forward");
+
+  // Ensure the StubBackend is used.
+  EXPECT_TRUE(method_meta->uses_backend(StubBackend::kName));
+
+  // Retrieve the number of backends.
+  const size_t num_backends = method_meta->num_backends();
+  EXPECT_GT(num_backends, 0u);
+
+  // Iterate through each backend and verify its name.
+  for (size_t i = 0; i < num_backends; ++i) {
+    auto backend_name_result = method_meta->get_backend_name(i);
+    ASSERT_TRUE(backend_name_result.ok());
+    const char* name = backend_name_result.get();
+    // For this test, we expect that the only backend is StubBackend.
+    EXPECT_STREQ(name, StubBackend::kName);
+  }
+  // Check that an out-of-range index returns an error.
+  auto out_of_range_result = method_meta->get_backend_name(num_backends);
+  EXPECT_FALSE(out_of_range_result.ok());
 }
 
 TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
@@ -625,8 +656,8 @@ class DelegateDataAlignmentTest : public ::testing::TestWithParam<bool> {
       // The delegate data inline alignment used by the -da1024 file.
       return 1024;
     } else {
-      // A small alignment that's compatible with any realistic alignment.
-      return 4;
+      // Minimum alignment expected by program.cpp.
+      return alignof(std::max_align_t);
     }
   }
 

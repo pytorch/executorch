@@ -518,6 +518,7 @@ class TestEventBlock(unittest.TestCase):
                     delegate_debug_metadatas if is_delegated else []
                 ),
                 _instruction_id=event_signature.instruction_id,
+                _start_time=[0, 0, 0],
             )
             self.assertEqual(event, expected_event)
 

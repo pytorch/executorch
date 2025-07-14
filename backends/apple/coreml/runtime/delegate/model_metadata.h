@@ -10,7 +10,7 @@
 #import <string>
 #import <vector>
 
-#import <serde_json.h>
+#import "serde_json.h"
 
 namespace executorchcoreml {
 

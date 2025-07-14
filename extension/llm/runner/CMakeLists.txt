@@ -20,8 +20,8 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -43,13 +43,27 @@ target_include_directories(
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
-set(runner_deps executorch extension_data_loader extension_module
-                extension_tensor
+# add tokenizers
+set(SUPPORT_REGEX_LOOKAHEAD ON)
+# llama/runner/CMakeLists.txt builds a shared library libllama_runner.so that
+# transitively depends on tokenizers. Need to build tokenizers with -fPIC.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers
+  ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/tokenizers
 )
+
+set(runner_deps executorch_core extension_module extension_tensor tokenizers)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
+set_target_properties(extension_llm_runner PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(
-  extension_llm_runner INTERFACE ${_common_include_directories}
-                                 ${EXECUTORCH_ROOT}
+  extension_llm_runner
+  INTERFACE ${_common_include_directories}
+            ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
+
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()

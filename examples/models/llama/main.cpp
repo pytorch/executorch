@@ -4,6 +4,7 @@
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
+ * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
  */
 
 #include <gflags/gflags.h>
@@ -19,6 +20,8 @@ DEFINE_string(
     model_path,
     "llama2.pte",
     "Model serialized in flatbuffer format.");
+
+DEFINE_string(data_path, "", "Data file for the model.");
 
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
@@ -39,6 +42,16 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+DEFINE_int32(
+    num_bos,
+    0,
+    "Number of BOS tokens to prepend to the prompt. Defaults to 0. If > 0, the prompt will be prepended with BOS tokens. This is useful for models that expect one or more BOS token at the start.");
+
+DEFINE_int32(
+    num_eos,
+    0,
+    "Number of EOS tokens to append to the prompt. Defaults to 0. If > 0, the prompt will be appended with EOS tokens. This is useful for models that expect one or more EOS token at the end.");
+
 DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
 int32_t main(int32_t argc, char** argv) {
@@ -49,11 +62,16 @@ int32_t main(int32_t argc, char** argv) {
   // and users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = FLAGS_model_path.c_str();
 
+  std::optional<std::string> data_path = std::nullopt;
+  if (!FLAGS_data_path.empty()) {
+    data_path = FLAGS_data_path.c_str();
+  }
+
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
 
   const char* prompt = FLAGS_prompt.c_str();
 
-  double temperature = FLAGS_temperature;
+  float temperature = FLAGS_temperature;
 
   int32_t seq_len = FLAGS_seq_len;
 
@@ -73,13 +91,29 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  example::Runner runner(model_path, tokenizer_path, temperature);
+  std::unique_ptr<::executorch::extension::llm::TextLLMRunner> runner =
+      example::create_llama_runner(model_path, tokenizer_path, data_path);
+
+  if (runner == nullptr) {
+    ET_LOG(Error, "Failed to create llama runner");
+    return 1;
+  }
 
   if (warmup) {
-    runner.warmup(prompt, seq_len);
+    auto error = runner->warmup(prompt, /*max_new_tokens=*/seq_len);
+    if (error != executorch::runtime::Error::Ok) {
+      ET_LOG(Error, "Failed to warmup llama runner");
+      return 1;
+    }
   }
   // generate
-  runner.generate(prompt, seq_len);
+  executorch::extension::llm::GenerationConfig config{
+      .seq_len = seq_len, .temperature = temperature};
+  auto error = runner->generate(prompt, config);
+  if (error != executorch::runtime::Error::Ok) {
+    ET_LOG(Error, "Failed to warmup llama runner");
+    return 1;
+  }
 
   return 0;
 }

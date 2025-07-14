@@ -4,7 +4,7 @@ This tutorial demonstrates how to export Llama 3 8B Instruct for Qualcomm AI Eng
 
 ## Prerequisites
 
-- Set up your ExecuTorch repo and environment if you haven’t done so by following [the Setting up ExecuTorch](../getting-started-setup.md) to set up the repo and dev environment.
+- Set up your ExecuTorch repo and environment if you haven’t done so by following [the Setting up ExecuTorch](../getting-started-setup.rst) to set up the repo and dev environment.
 - Read [the Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend page](../backends-qualcomm.md) to understand how to export and run a model with Qualcomm AI Engine Direct Backend on Qualcomm device.
 - Follow [the README for executorch llama](https://github.com/pytorch/executorch/tree/main/examples/models/llama) to know how to run a llama model on mobile via ExecuTorch.
 - A Qualcomm device with 16GB RAM
@@ -58,7 +58,7 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <pat
         -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+        -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
         -Bcmake-android-out .
 
     cmake --build cmake-android-out -j16 --target install --config Release
@@ -73,7 +73,7 @@ llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <pat
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+        -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
         -Bcmake-android-out/examples/models/llama examples/models/llama
 
     cmake --build cmake-android-out/examples/models/llama -j16 --config Release

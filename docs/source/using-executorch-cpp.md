@@ -32,13 +32,15 @@ if (result.ok()) {
 
 For more information on the Module class, see [Running an ExecuTorch Model Using the Module Extension in C++](extension-module.md). For information on high-level tensor APIs, see [Managing Tensor Memory in C++](extension-tensor.md).
 
+For complete examples of building and running a C++ application using the Module API, refer to our [examples GitHub repository](https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/cpp).
+
 ## Low-Level APIs
 
 Running a model using the low-level runtime APIs allows for a high-degree of control over memory allocation, placement, and loading. This allows for advanced use cases, such as placing allocations in specific memory banks or loading a model without a file system. For an end to end example using the low-level runtime APIs, see [Running an ExecuTorch Model in C++ Tutorial](running-a-model-cpp-tutorial.md).
 
 ## Building with CMake
 
-ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `executorch_module_static` and `executorch_tensor`, if desired.
+ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `extension_module_static` and `extension_tensor`, if desired.
 
 ```
 # CMakeLists.txt
@@ -47,8 +49,8 @@ add_subdirectory("executorch")
 target_link_libraries(
     my_target
     PRIVATE executorch
-    executorch_module_static
-    executorch_tensor
+    extension_module_static
+    extension_tensor
     optimized_native_cpu_ops_lib
     xnnpack_backend)
 ```

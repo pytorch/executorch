@@ -43,7 +43,6 @@ class EdgeCompileConfig:
     _core_aten_ops_exception_list: List[torch._ops.OpOverload] = field(
         default_factory=list
     )
-    _skip_type_promotion: bool = False
     # TODO(gasoonjia): remove this
     _skip_dim_order: bool = False
 
@@ -97,3 +96,14 @@ class ExecutorchBackendConfig:
     # If set to true, all trainable weights will be stored in a separate file,
     # external to the PTE file.
     external_mutable_weights: bool = False
+
+    # If set to true, all mutable buffers will have their fully qualified names
+    # serialized in the PTE file. Its value is ignored if mutable buffers are not
+    # memory planned as the names must be serialized in that case.
+    emit_mutable_buffer_names: bool = False
+
+    # If set to true, we run quant fusion and constant propagation passes
+    do_quant_fusion_and_const_prop: bool = False
+
+    # Experimental: If set to true, we run a pass to reinplace ops in the graph.
+    run_reinplace_pass: bool = False

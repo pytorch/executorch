@@ -1,6 +1,6 @@
 # Building and Running ExecuTorch with the Vulkan Backend
 
-The [ExecuTorch Vulkan Delegate](./native-delegates-executorch-vulkan-delegate.md)
+The [ExecuTorch Vulkan Delegate](../../../docs/source/native-delegates-executorch-vulkan-delegate.md)
 is a native GPU delegate for ExecuTorch.
 
 <!----This will show a grid card on the page----->
@@ -12,8 +12,8 @@ is a native GPU delegate for ExecuTorch.
 :::
 :::{grid-item-card}  Prerequisites:
 :class-card: card-prerequisites
-* Follow [**Setting up ExecuTorch**](./getting-started-setup.md)
-* It is also recommended that you read through [**ExecuTorch Vulkan Delegate**](./native-delegates-executorch-vulkan-delegate.md) and follow the example in that page
+* Follow [**Setting up ExecuTorch**](../../../docs/source/getting-started-setup.rst)
+* It is also recommended that you read through [**ExecuTorch Vulkan Delegate**](../../../docs/source/native-delegates-executorch-vulkan-delegate.md) and follow the example in that page
 :::
 ::::
 
@@ -59,7 +59,7 @@ partially lower the Llama model to Vulkan.
 # The files will usually be downloaded to ~/.llama
 python -m examples.models.llama.export_llama \
   --disable_dynamic_shape --vulkan -kv --use_sdpa_with_kv_cache -d fp32 \
-  --model "llama3_2" \ 
+  --model "llama3_2" \
   -c ~/.llama/checkpoints/Llama3.2-1B/consolidated.00.pth \
   -p ~/.llama/checkpoints/Llama3.2-1B/params.json \
   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
@@ -91,7 +91,7 @@ binary using the Android NDK toolchain.
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_BUILD_VULKAN=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-android-out && \
   cmake --build cmake-android-out -j16 --target install)
@@ -102,7 +102,7 @@ binary using the Android NDK toolchain.
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=$ANDROID_ABI \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-android-out/examples/models/llama && \

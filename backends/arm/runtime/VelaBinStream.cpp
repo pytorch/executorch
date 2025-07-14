@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Arm Limited and/or its affiliates.
+ * Copyright 2023, 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -31,11 +31,11 @@ bool vela_bin_validate(const char* data, int size) {
   // Check 16 byte alignment
   bool valid = true;
   if ((uintptr_t)data != next_mul_16((uintptr_t)data)) {
-    ET_LOG(Error, "Vela bin ptr not aligned to 16 bytes: %p", (void*)data);
+    ET_LOG(Error, "Vela bin ptr not aligned to 16 bytes: %p", data);
     valid = false;
   }
   if ((uintptr_t)foot != next_mul_16((uintptr_t)foot)) {
-    ET_LOG(Error, "End of vela bin not aligned to 16 bytes: %p", (void*)foot);
+    ET_LOG(Error, "End of vela bin not aligned to 16 bytes: %p", foot);
     valid = false;
   }
   // Check header and footer blocks are the right format
@@ -55,12 +55,13 @@ bool vela_bin_read(const char* data, VelaHandles* handles, int size) {
   const char* ptr = data;
 
   while (ptr - data < size) {
-    VelaBinBlock* b = (VelaBinBlock*)ptr;
+    VelaBinBlock* b = reinterpret_cast<VelaBinBlock*>(const_cast<char*>(ptr));
     ptr += sizeof(VelaBinBlock) + next_mul_16(b->size);
 
     if (!strncmp(b->name, "vela_bin_stream", strlen("vela_bin_stream"))) {
       // expect vela_bin_stream first
-      if ((char*)b != (char*)data)
+      if (reinterpret_cast<char*>(b) !=
+          reinterpret_cast<char*>(const_cast<char*>(data)))
         return false;
     } else if (!strncmp(b->name, "cmd_data", strlen("cmd_data"))) {
       // This driver magic header confirms a valid command stream in binary
@@ -71,13 +72,14 @@ bool vela_bin_read(const char* data, VelaHandles* handles, int size) {
     } else if (!strncmp(b->name, "weight_data", strlen("weight_data"))) {
       handles->weight_data = b->data;
       handles->weight_data_size = b->size;
-    } else if (!strncmp(b->name, "scratch_data", strlen("scratch_data"))) {
-      handles->scratch_data = b->data;
-      handles->scratch_data_size = b->size;
+    } else if (!strncmp(b->name, "scratch_size", strlen("scratch_size"))) {
+      const uint32_t* scratch_size_ptr =
+          reinterpret_cast<const uint32_t*>(b->data);
+      handles->scratch_data_size = *scratch_size_ptr;
     } else if (!strncmp(b->name, "inputs", strlen("inputs"))) {
-      handles->inputs = (VelaIOs*)b->data;
+      handles->inputs = reinterpret_cast<VelaIOs*>(b->data);
     } else if (!strncmp(b->name, "outputs", strlen("outputs"))) {
-      handles->outputs = (VelaIOs*)b->data;
+      handles->outputs = reinterpret_cast<VelaIOs*>(b->data);
     } else if (!strncmp(
                    b->name, "vela_end_stream", strlen("vela_end_stream"))) {
       // expect vela_end_stream last

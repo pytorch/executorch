@@ -10,12 +10,9 @@ from pathlib import Path
 
 from typing import List, Optional
 
-import executorchcoreml
-
+from executorch.backends.apple.coreml import executorchcoreml
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
-
 from executorch.exir._serialize._program import deserialize_pte_binary
-
 from executorch.exir.schema import (
     BackendDelegate,
     BackendDelegateDataReference,

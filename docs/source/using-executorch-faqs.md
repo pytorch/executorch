@@ -18,7 +18,7 @@ if you are using Ubuntu, or use an equivalent install command.
 
 ### Missing out variants: { _ }
 
-The model likely contains torch custom operators. Custom ops need an Executorch implementation and need to be loaded at export time. See the [ExecuTorch Custom Ops Documentation](https://pytorch.org/executorch/main/kernel-library-custom-aten-kernel.html#apis) for details on how to do this.
+The model likely contains torch custom operators. Custom ops need an Executorch implementation and need to be loaded at export time. See the [ExecuTorch Custom Ops Documentation](kernel-library-custom-aten-kernel.md#apis) for details on how to do this.
 
 ### RuntimeError: PyTorch convert function for op _ not implemented
 
@@ -32,7 +32,7 @@ ExecuTorch error codes are defined in [executorch/core/runtime/error.h](https://
 
 If building the runtime from source, ensure that the build is done in release mode. For CMake builds, this can be done by passing `-DCMAKE_BUILD_TYPE=Release`.
 
-Ensure the model is delegated. If not targeting a specific accelerator, use the XNNPACK delegate for CPU performance. Undelegated operators will typically fall back to the ExecuTorch portable library, which is designed as a fallback, and is not intended for performance sensitive operators. To target XNNPACK, pass an `XnnpackPartitioner` to `to_edge_transform_and_lower`. See [Building and Running ExecuTorch with XNNPACK Backend](https://pytorch.org/executorch/main/tutorial-xnnpack-delegate-lowering.html) for more information.
+Ensure the model is delegated. If not targeting a specific accelerator, use the XNNPACK delegate for CPU performance. Undelegated operators will typically fall back to the ExecuTorch portable library, which is designed as a fallback, and is not intended for performance sensitive operators. To target XNNPACK, pass an `XnnpackPartitioner` to `to_edge_transform_and_lower`. See [Building and Running ExecuTorch with XNNPACK Backend](tutorial-xnnpack-delegate-lowering.md) for more information.
 
 Thread count can have a significant impact on CPU performance. The optimal thread count may depend on the model and application. By default, ExecuTorch will currently use as many threads as there are cores. Consider setting the thread count to cores / 2, or just set to 4 on mobile CPUs.
 
@@ -41,11 +41,11 @@ Thread count can be set with the following function. Ensure this is done prior t
 ::executorch::extension::threadpool::get_threadpool()->_unsafe_reset_threadpool(num_threads);
 ```
 
-For a deeper investgiation into model performance, ExecuTorch supports operator-level performance profiling. See [Using the ExecuTorch Developer Tools to Profile a Model](https://pytorch.org/executorch/main/tutorials/devtools-integration-tutorial.html) for more information.
+For a deeper investgiation into model performance, ExecuTorch supports operator-level performance profiling. See [Using the ExecuTorch Developer Tools to Profile a Model](devtools-integration-tutorial.md) for more information.
 
 ### Missing Logs
 
-ExecuTorch provides hooks to route runtime logs. By default, logs are sent to stdout/stderr, but users can override `et_pal_emit_log_message` to route logs to a custom destination. The Android and iOS extensions also provide out-of-box log routing to the appropriate platform logs. See [Runtime Platform Abstraction Layer (PAL)](https://pytorch.org/executorch/main/runtime-platform-abstraction-layer.html) for more information.
+ExecuTorch provides hooks to route runtime logs. By default, logs are sent to stdout/stderr, but users can override `et_pal_emit_log_message` to route logs to a custom destination. The Android and iOS extensions also provide out-of-box log routing to the appropriate platform logs. See [Runtime Platform Abstraction Layer (PAL)](runtime-platform-abstraction-layer.md) for more information.
 
 ### Error setting input: 0x10 / Attempted to resize a bounded tensor...
 

@@ -19,7 +19,7 @@ _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly ins
 
 elf_file=""
 target="ethos-u55-128"
-timeout="240"
+timeout="600"
 
 help() {
     echo "Usage: $(basename $0) [options]"
@@ -65,7 +65,7 @@ hash ${fvp_model} \
 num_macs=$(echo ${target} | cut -d - -f 3)
 
 echo "--------------------------------------------------------------------------------"
-echo "Running ${elf_file} for ${target} run with FVP:${fvp_model} num_macs:${num_macs}"
+echo "Running ${elf_file} for ${target} run with FVP:${fvp_model} num_macs:${num_macs} timeout:${timeout}"
 echo "WARNING: Corstone FVP is not cycle accurate and should NOT be used to determine valid runtime"
 echo "--------------------------------------------------------------------------------"
 

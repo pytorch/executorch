@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 namespace executorch {
@@ -81,11 +80,10 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
   return Error::Ok;
 }
 
-Error QnnBackendCache::Configure() {
+Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
   if (qnn_context_blob_.buffer == nullptr) {
+    graph_names_ = graph_names;
     state_ = SERIALIZE;
-    // use aot_graph_name if we're lowering graph on host side
-    graph_names_.push_back(aot_graph_name_);
     QNN_EXECUTORCH_LOG_INFO("Caching: Caching is in SAVE MODE.");
     return Error::Ok;
   }
@@ -130,24 +128,8 @@ Error QnnBackendCache::Configure() {
       qnn_context_blob_.nbytes);
 
   if (status == Error::Internal) {
-    auto [status, qcir_fbs_size, _, qcir_fbs_ptr, __] =
-        QnnQcirCustomProtocol().DeserializeQcirCustomBuffer(
-            qnn_context_blob_.buffer);
-    if (status == Error::Ok) {
-      // online prepare or first stage of multi graph
-      state_ = ONLINE_PREPARE;
-      auto context = qcir::GetContext(qcir_fbs_ptr);
-      for (const auto& graph : *context->graphs()) {
-        graph_names_.emplace_back(graph->name()->str());
-      }
-      return Error::Ok;
-    }
-
-    QNN_EXECUTORCH_LOG_ERROR(
-        "Failed to parse QNN Graph Info. The cache "
-        "might be broken. Please consider to re-generate the "
-        "cache.");
-    InvalidateCache();
+    // online prepare
+    state_ = ONLINE_PREPARE;
   }
   return Error::Ok;
 }

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
 
 project(executorch_jni)
 
@@ -17,7 +17,7 @@ if(NOT ANDROID)
 endif()
 
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 if(NOT ANDROID_PLATFORM)
@@ -61,10 +61,9 @@ set_target_properties(fbjni PROPERTIES
 )
 
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
-find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
-add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp)
+add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
 
 set(link_libraries)
 list(
@@ -72,6 +71,7 @@ list(
   link_libraries
   executorch
   extension_data_loader
+  extension_flat_tensor
   extension_module
   extension_runner_util
   extension_tensor
@@ -79,15 +79,21 @@ list(
   fbjni
 )
 
+if(EXECUTORCH_ANDROID_PROFILING)
+  list(
+    APPEND
+    link_libraries
+    etdump
+    flatccrt
+  )
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_ANDROID_PROFILING=1)
+endif()
+
 if(TARGET optimized_native_cpu_ops_lib)
   list(
     APPEND
     link_libraries
     optimized_native_cpu_ops_lib
-    optimized_kernels
-    portable_kernels
-    cpublas
-    eigen_blas
   )
   target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
@@ -106,7 +112,7 @@ endif()
 
 if(TARGET xnnpack_backend)
   target_link_options_shared_lib(xnnpack_backend)
-  list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo microkernels-prod)
+  list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo xnnpack-microkernels-prod)
 endif()
 
 if(TARGET vulkan_backend)
@@ -114,17 +120,11 @@ if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/extension/llm/custom_ops
-    ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/custom_ops
-  )
-  list(APPEND link_libraries custom_ops)
-  target_link_options_shared_lib(custom_ops)
+if(EXECUTORCH_BUILD_KERNELS_LLM)
+  list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
 if(TARGET pthreadpool)
-  target_compile_definitions(executorch_jni PRIVATE ET_USE_THREADPOOL=1)
   target_include_directories(
     executorch_jni
     PUBLIC
@@ -143,6 +143,12 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
     executorch_jni -Wl,--whole-archive ${EXECUTORCH_JNI_CUSTOM_LIBRARY}
     -Wl,--no-whole-archive
   )
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_training.cpp jni/log.cpp)
+  list(APPEND link_libraries extension_training)
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_TRAINING=1)
 endif()
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)

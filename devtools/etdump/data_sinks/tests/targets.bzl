@@ -1,5 +1,17 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def define_data_sink_test(data_sink_name):
+    runtime.cxx_test(
+        name = data_sink_name + "_test",
+        srcs = [
+            data_sink_name + "_test.cpp",
+        ],
+        deps = [
+            "//executorch/devtools/etdump/data_sinks:" + data_sink_name,
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+        ],
+    )
+
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
 
@@ -7,14 +19,5 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-
-    runtime.cxx_test(
-        name = "buffer_data_sink_test",
-        srcs = [
-            "buffer_data_sink_test.cpp",
-        ],
-        deps = [
-            "//executorch/devtools/etdump/data_sinks:buffer_data_sink",
-            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
-        ],
-    )
+    define_data_sink_test("buffer_data_sink")
+    define_data_sink_test("file_data_sink")

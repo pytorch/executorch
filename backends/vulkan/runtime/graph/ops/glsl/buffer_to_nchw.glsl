@@ -12,9 +12,17 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(0, "w", "nchw_buf", DTYPE, STORAGE)}
 ${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
-${layout_declare_ubo(2, "ivec4", "in_sizes")}
-${layout_declare_ubo(3, "ivec4", "in_strides")}
-${layout_declare_ubo(4, "int", "numel")}
+
+$if USE_PUSH_CONST:
+  layout(push_constant) uniform restrict Block {
+    ivec4 in_sizes;
+    ivec4 in_strides;
+    int numel;
+  };
+$else:
+  ${layout_declare_ubo(2, "ivec4", "in_sizes")}
+  ${layout_declare_ubo(3, "ivec4", "in_strides")}
+  ${layout_declare_ubo(4, "int", "numel")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 

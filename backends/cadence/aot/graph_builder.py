@@ -96,6 +96,11 @@ class GraphBuilder(ExportPass):
     ) -> PassResult:
         return ExportPass().call(graph_module)
 
+    def call_getitem(
+        self, value: ProxyValue, key: int, meta: Optional[NodeMetadata] = None
+    ) -> ProxyValue:
+        return super().call_getitem(value, key, meta or NodeMetadata({}))
+
     def _fx(
         self,
         kind: str,

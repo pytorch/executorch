@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,7 +9,7 @@ import binascii
 import os
 from argparse import ArgumentParser, ArgumentTypeError
 
-# Also see: https://git.mlplatform.org/ml/ethos-u/ml-embedded-evaluation-kit.git/tree/scripts/py/gen_model_cpp.py
+# Also see: https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit/-/blob/main/scripts/py/gen_model_cpp.py?ref_type=heads
 
 bytes_per_line = 32
 hex_digits_per_line = bytes_per_line * 2

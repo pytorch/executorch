@@ -5,8 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from copy import deepcopy
-from typing import Set
+from typing import Any, Optional, Set
 
 import executorch.backends.vulkan.utils as utils
 
@@ -22,6 +21,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.tensor import TensorSpec
 
 logger: logging.Logger = logging.getLogger("")
 logger.setLevel(logging.INFO)
@@ -52,7 +52,7 @@ def insert_transition_node(
             (arg,),
         )
         clone_node.meta["val"] = arg.meta["val"]
-        clone_node.meta["spec"] = deepcopy(arg.meta["spec"])
+        clone_node.meta["spec"] = TensorSpec.from_tensor(clone_node.meta["val"])
         clone_node.meta["spec"].const = False
         set_memory_metadata(clone_node, storage, layout)
         arg.replace_all_uses_with(clone_node, lambda x, y=node: x == y)
@@ -91,10 +91,10 @@ class TagMemoryMetaPass(ExportPass):
         self.default_layout: VkMemoryLayout = default_memory_layout
         self.texture_limits = texture_limits
 
-    def propose_node_storage(
+    def propose_node_storage(  # noqa: C901
         self,
         node: torch.fx.Node,
-    ) -> VkStorageType:
+    ) -> Optional[VkStorageType]:
         """
         Uses the operator registry to determine the storage type that should be used for
         a given node. The storage type is determined with the following priorities:
@@ -114,6 +114,9 @@ class TagMemoryMetaPass(ExportPass):
            opinionated user can be found, then proceed to the last step.
         4. Use the default storage type setting.
         """
+        if not utils.is_tensor_node(node):
+            return None
+
         # The node may have an input/output tensor that is too big to be stored in a
         # texture. In this case, buffer storage must be used. Note that the partitioner
         # has already checked for the fact that buffer storage is supported by the
@@ -135,15 +138,23 @@ class TagMemoryMetaPass(ExportPass):
         for arg in node.args:
             if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
                 storage = utils.get_node_storage_type(arg)
+                # Some operators which return multiple output tensors may specify a
+                # different storage type for each output. In this case, the storage type
+                # for the first output is used.
+                if isinstance(storage, (list, tuple)):
+                    storage = storage[0]
                 if storage is not None and storage in valid_storage_types:
                     return storage
 
         # If no storage type has been resolved yet, assume the optimal storage type of
         # the first opinionated user. This search is recursive.
         for user in node.users:
-            optimal_storage = self.propose_node_storage(user)
-            if optimal_storage is not None:
-                return optimal_storage
+            storage = self.propose_node_storage(user)
+            # See above
+            if isinstance(storage, (list, tuple)):
+                storage = storage[0]
+            if storage is not None:
+                return storage
 
         if self.default_storage in valid_storage_types:
             return self.default_storage
@@ -154,12 +165,15 @@ class TagMemoryMetaPass(ExportPass):
         self,
         node: torch.fx.Node,
         storage: VkStorageType,
-    ) -> VkMemoryLayout:
+    ) -> Optional[VkMemoryLayout]:
         """
         Performs the same steps as propose_node_storage, but detects the memory layout
         that should be used for the specific storage type. The same prioritization logic
         is applied.
         """
+        if not utils.is_tensor_node(node):
+            return None
+
         valid_layouts: Set[VkMemoryLayout] = utils.all_memory_layouts
         # pyre-ignore
         if has_impl(node.target):
@@ -173,15 +187,23 @@ class TagMemoryMetaPass(ExportPass):
         for arg in node.args:
             if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
                 layout = utils.get_node_memory_layout(arg)
+                # Some operators which return multiple output tensors may specify a
+                # different memory layout for each output. In this case, the storage
+                # type for the first output is used.
+                if isinstance(layout, (list, tuple)):
+                    layout = layout[0]
                 if layout is not None and layout in valid_layouts:
                     return layout
 
-        # If no storage type has been resolved yet, assume the optimal storage type of
-        # the first opinionated user. This search is recursive.
+        # If no memory layout has been resolved yet, assume the optimal layout of the
+        # first opinionated user. This search is recursive.
         for user in node.users:
-            optimal_storage = self.propose_node_layout(user, storage)
-            if optimal_storage is not None:
-                return optimal_storage
+            layout = self.propose_node_layout(user, storage)
+            # See above comment
+            if isinstance(layout, (list, tuple)):
+                layout = layout[0]
+            if layout is not None:
+                return layout
 
         # As a last resort, return the default storage type that should be used.
         if self.default_layout in valid_layouts:
@@ -190,20 +212,24 @@ class TagMemoryMetaPass(ExportPass):
             return next(iter(valid_layouts))
 
     def should_annotate(self, node) -> bool:
-        if not isinstance(node, torch.fx.Node):
-            return False
+        if isinstance(node, torch.fx.Node):
+            if not utils.is_tensor_node(node):
+                return False
 
-        if not utils.is_tensor_node(node):
-            return False
+            # Storage type and memory layout for tensorref will be determined at runtime
+            # so there's no use in setting those attributes ahead of time.
+            if node.meta.get("vkdg_tensorref", False):
+                return False
 
-        # Storage type and memory layout for tensorref will be determined at runtime
-        # so there's no use in setting those attributes ahead of time.
-        if node.meta.get("vkdg_tensorref", False):
-            return False
-
-        # Skip annotating output node. The output tensors should be annotated by the
-        # time the output node is observed.
-        if node.op == "output":
+            # Skip annotating output node. The output tensors should be annotated by the
+            # time the output node is observed.
+            if node.op == "output":
+                return False
+        elif isinstance(node, (list, tuple)):
+            return all(
+                isinstance(n, torch.fx.Node) and self.should_annotate(n) for n in node
+            )
+        else:
             return False
 
         return True
@@ -214,6 +240,70 @@ class TagMemoryMetaPass(ExportPass):
         # difficult to predict what storage type and memory layout should be used at the
         # time the prepack node is observed.
         return node.target == exir_ops.edge.et_vk.prepack.default
+
+    def set_or_transition_arg_node(
+        self,
+        i: int,
+        arg: torch.fx.Node,
+        node: torch.fx.Node,
+        graph_module: torch.fx.GraphModule,
+        dirty: bool,
+    ) -> bool:
+        assert isinstance(arg, torch.fx.Node)
+
+        storage = utils.get_node_storage_type(node)
+        assert storage is not None
+        layout = utils.get_node_memory_layout(node)
+        assert layout is not None
+
+        arg_storage = utils.get_node_storage_type(arg)
+        arg_layout = utils.get_node_memory_layout(arg)
+
+        if arg_storage is None:
+            utils.set_node_spec_attr(arg, "vk_storage_type", storage)
+            arg_storage = storage
+        if arg_layout is None:
+            utils.set_node_spec_attr(arg, "vk_memory_layout", layout)
+            arg_layout = layout
+
+        if arg_storage == storage and arg_layout == layout:
+            return False
+
+        if not dirty:
+            logger.info(
+                f"[Vulkan Delegate] Inserting transition(s) for {node.format_node()}:"
+            )
+
+        insert_transition_node(graph_module, node, arg, storage, layout)
+
+        logger.info(
+            f"   args {i} ({arg}): ({arg_storage}, {arg_layout}) -> ({storage}, {layout})"
+        )
+
+        return True
+
+    def set_or_transition_arg(
+        self,
+        i: int,
+        arg: Any,
+        node: torch.fx.Node,
+        graph_module: torch.fx.GraphModule,
+        dirty: bool,
+    ) -> bool:
+        if isinstance(arg, torch.fx.Node):
+            return self.set_or_transition_arg_node(i, arg, node, graph_module, dirty)
+        elif isinstance(arg, (list, tuple)):
+            need_transition = False
+            for arg_node in arg:
+                need_transition = (
+                    self.set_or_transition_arg_node(
+                        i, arg_node, node, graph_module, need_transition
+                    )
+                    or need_transition
+                )
+            return need_transition
+        else:
+            return False
 
     # noqa
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -226,36 +316,16 @@ class TagMemoryMetaPass(ExportPass):
 
             set_memory_metadata(node, storage, layout)
 
-            inserting_transitions_for_node = False
+            need_transition = False
             for i, arg in enumerate(node.args):
                 if not self.should_annotate(arg):
                     continue
 
-                assert isinstance(arg, torch.fx.Node)
-
-                arg_storage = utils.get_node_storage_type(arg)
-                arg_layout = utils.get_node_memory_layout(arg)
-
-                if arg_storage is None:
-                    utils.set_node_spec_attr(arg, "vk_storage_type", storage)
-                    arg_storage = storage
-                if arg_layout is None:
-                    utils.set_node_spec_attr(arg, "vk_memory_layout", layout)
-                    arg_layout = layout
-
-                if arg_storage == storage and arg_layout == layout:
-                    continue
-
-                if not inserting_transitions_for_node:
-                    inserting_transitions_for_node = True
-                    logger.info(
-                        f"[Vulkan Delegate] Inserting transition(s) for {node.format_node()}:"
+                need_transition = (
+                    self.set_or_transition_arg(
+                        i, arg, node, graph_module, need_transition
                     )
-
-                insert_transition_node(graph_module, node, arg, storage, layout)
-
-                logger.info(
-                    f"   args {i} ({arg}): ({arg_storage}, {arg_layout}) -> ({storage}, {layout})"
+                    or need_transition
                 )
 
         return PassResult(graph_module, True)

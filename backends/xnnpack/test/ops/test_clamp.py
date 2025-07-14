@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestClamp(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Clamp(torch.nn.Module):
         def __init__(self, min_val=None, max_val=None):
             super().__init__()

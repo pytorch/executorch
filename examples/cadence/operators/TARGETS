@@ -1,5 +1,0 @@
-load("targets.bzl", "define_common_targets")
-
-oncall("odai_jarvis")
-
-define_common_targets()

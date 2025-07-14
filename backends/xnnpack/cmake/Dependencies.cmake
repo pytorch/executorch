@@ -10,69 +10,86 @@ set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
 
 # --- XNNPACK
 
-# Setting this global PIC flag for all XNNPACK targets. This is needed for
-# Object libraries within XNNPACK which must be PIC to successfully link this
-# static libXNNPACK
-set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
-    ${CMAKE_POSITION_INDEPENDENT_CODE}
-)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
 set(XNNPACK_SOURCE_DIR "${THIRD_PARTY_ROOT}/XNNPACK")
 set(XNNPACK_INCLUDE_DIR "${XNNPACK_SOURCE_DIR}/include")
-set(XNNPACK_LIBRARY_TYPE
-    "static"
-    CACHE STRING ""
+
+include(ExternalProject)
+set(XNNPACK_STATIC_LIB
+    "${CMAKE_CURRENT_BINARY_DIR}/XNNPACK/install/lib/libXNNPACK.a"
 )
-set(XNNPACK_BUILD_BENCHMARKS
-    OFF
-    CACHE BOOL ""
+set(XNNPACK_MICROKERNELS_STATIC_LIB
+    "${CMAKE_CURRENT_BINARY_DIR}/XNNPACK/install/lib/libxnnpack-microkernels-prod.a"
+  )
+get_extra_cmake_args_for_external_project(XNNPACK_EXTRA_CMAKE_ARGS)
+ExternalProject_Add(
+  XNNPACKExternalProject
+  SOURCE_DIR ${XNNPACK_SOURCE_DIR}
+  # Not 100% clear on these locations
+  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/XNNPACK
+  INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/XNNPACK/install/
+  INSTALL_BYPRODUCTS ${XNNPACK_STATIC_LIB} ${XNNPACK_MICROKERNELS_STATIC_LIB}
+  CMAKE_ARGS
+    ${XNNPACK_EXTRA_CMAKE_ARGS}
+    -D
+    XNNPACK_LIBRARY_TYPE=static
+    -D
+    XNNPACK_BUILD_BENCHMARKS=OFF
+    -D
+    XNNPACK_BUILD_TESTS=OFF
+    -D
+    XNNPACK_ENABLE_AVXVNNI=OFF
+    # Work around observed failure:
+    # https://github.com/pytorch/executorch/pull/10362#issuecomment-2906391232
+    -D
+    XNNPACK_ENABLE_AVX512VNNIGFNI=OFF
+    -D
+    ENABLE_XNNPACK_WEIGHTS_CACHE=${EXECUTORCH_XNNPACK_ENABLE_WEIGHT_CACHE}
+    -D
+    ENABLE_XNNPACK_SHARED_WORKSPACE=${EXECUTORCH_XNNPACK_SHARED_WORKSPACE}
+    -D
+    XNNPACK_ENABLE_KLEIDIAI=${EXECUTORCH_XNNPACK_ENABLE_KLEIDIAI}
+    -D
+    CMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    -D
+    XNNPACK_BUILD_ALL_MICROKERNELS=OFF
+    -D
+    CMAKE_POSITION_INDEPENDENT_CODE=ON
 )
-set(XNNPACK_BUILD_TESTS
-    OFF
-    CACHE BOOL ""
+
+add_library(XNNPACK STATIC IMPORTED GLOBAL)
+# TODO: this probably doesn't work on Windows.
+set_property(TARGET XNNPACK PROPERTY IMPORTED_LOCATION ${XNNPACK_STATIC_LIB})
+
+add_dependencies(XNNPACK XNNPACKExternalProject)
+
+add_library(xnnpack-microkernels-prod STATIC IMPORTED GLOBAL)
+set_property(
+  TARGET xnnpack-microkernels-prod PROPERTY IMPORTED_LOCATION
+                                            ${XNNPACK_MICROKERNELS_STATIC_LIB}
 )
-set(XNNPACK_ENABLE_AVXVNNI
-    OFF
-    CACHE BOOL ""
+add_dependencies(xnnpack-microkernels-prod XNNPACKExternalProject)
+
+set_target_properties(
+  XNNPACK PROPERTIES INTERFACE_LINK_LIBRARIES xnnpack-microkernels-prod
+)
+
+install(FILES ${XNNPACK_STATIC_LIB} ${XNNPACK_MICROKERNELS_STATIC_LIB}
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
 if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
-    set(XNNPACK_ENABLE_KLEIDIAI
-        ON
-        CACHE BOOL ""
-    )
-else()
-    set(XNNPACK_ENABLE_KLEIDIAI
-        OFF
-        CACHE BOOL ""
-    )
-endif()
-
-
-set(XNNPACK_BUILD_ALL_MICROKERNELS
-    OFF
-    CACHE BOOL ""
-)
-add_subdirectory("${XNNPACK_SOURCE_DIR}")
-include_directories(SYSTEM ${XNNPACK_INCLUDE_DIR})
-list(APPEND xnnpack_third_party XNNPACK)
-install(TARGETS microkernels-prod
-    EXPORT ExecuTorchTargets
+  add_library(kleidiai SHARED IMPORTED)
+  find_library(
+    KLEIDIAI_LIBRARY kleidiai
+    PATHS "${CMAKE_CURRENT_BINARY_DIR}/XNNPACK/kleidiai-source"
+  )
+  if(not KLEIDIAI_LIBRARY)
+    message(FATAL_ERROR "Can't find KleidiAI")
+  endif()
+  install(
+    TARGETS kleidiai
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-
-
-if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
-    install(TARGETS kleidiai
-        EXPORT ExecuTorchTargets
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
 endif()
-
-# Revert PIC Flag to what it originally was
-set(CMAKE_POSITION_INDEPENDENT_CODE
-    ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
-)

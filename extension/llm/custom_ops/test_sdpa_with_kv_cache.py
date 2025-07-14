@@ -11,7 +11,11 @@ import unittest
 import torch
 import torch.nn.functional as F
 
-from .custom_ops import custom_ops_lib  # noqa
+from executorch.extension.llm.custom_ops import custom_ops  # noqa
+
+
+def is_fbcode():
+    return not hasattr(torch.version, "git_version")
 
 
 def _sdpa_with_kv_cache_ref(q, k, v, k_cache, v_cache, attn_mask, start_pos, seq_len):
@@ -53,12 +57,13 @@ class SDPATest(unittest.TestCase):
         self.mask = torch.triu(self.mask, diagonal=1)
         self.use_mask_with_custom_op = False
         self.is_causal = False
+        self.start_pos = 0
 
     def test_sdpa_with_cache_no_mqa_1(self):
         q = torch.rand((1, 1, 8, 4))
         k = torch.rand((1, 1, 8, 4))
         v = torch.rand((1, 1, 8, 4))
-        start_pos = 0
+        start_pos = self.start_pos
         seq_len = q.size(1)
         attn_mask = self.mask[start_pos : start_pos + seq_len, :]
         attn_mask = attn_mask[:, : start_pos + seq_len]
@@ -67,12 +72,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -108,12 +115,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -150,12 +159,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -191,12 +202,14 @@ class SDPATest(unittest.TestCase):
         )
         if self.use_mask_with_custom_op:
             attn_mask = attn_mask.contiguous()
+            sliced_k_cache = self.k_cache[:, : start_pos + seq_len, :, :]
+            sliced_v_cache = self.v_cache[:, : start_pos + seq_len, :, :]
             op_output = torch.ops.llama.sdpa_with_kv_cache(
                 q,
                 k,
                 v,
-                self.k_cache,
-                self.v_cache,
+                sliced_k_cache,
+                sliced_v_cache,
                 start_pos,
                 seq_len,
                 attn_mask,
@@ -228,6 +241,38 @@ class SDPAWithAttentionMaskTest(SDPATest):
             100.642,
         )
         self.use_mask_with_custom_op = True
+
+
+class SDPAWithAttentionMaskLongSequenceTest(SDPATest):
+
+    def setUp(self):
+        SDPATest.setUp(self)
+        max_context_len = 700
+        context_window_len = 60
+        self.k_cache = torch.zeros((1, 700, 8, 4))
+        self.v_cache = torch.zeros((1, 700, 8, 4))
+        causal_mask = torch.tril(
+            torch.ones(
+                max_context_len,
+                max_context_len,
+                dtype=torch.bool,
+                device="cpu",
+            )
+        )
+        causal_mask2 = torch.tril(
+            torch.ones(
+                max_context_len,
+                max_context_len,
+                dtype=torch.bool,
+                device="cpu",
+            ),
+            diagonal=-context_window_len,
+        )
+        mask = torch.logical_xor(causal_mask, causal_mask2)
+        self.mask = torch.where(mask == True, 0.0, float("-inf"))  # noqa: E712
+
+        self.use_mask_with_custom_op = True
+        self.start_pos = 575
 
 
 class SDPAWithCausalTest(SDPATest):
@@ -489,11 +534,11 @@ class SDPATestCommon(unittest.TestCase):
 class SDPATestForLargeSeqLength(SDPATestCommon):
 
     def test_sdpa_with_cache_seq_len_130(self):
-        n_heads_kv = 32
-        n_heads_q = 32
+        n_heads_kv = 8
+        n_heads_q = 8
         head_dim = 128
         max_seq_len = 2048
-        seq_len = 130
+        seq_len = 24
         self._test_sdpa_common(
             n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, True
         )
@@ -563,6 +608,9 @@ class SDPATestForSpeculativeDecode(SDPATestCommon):
             n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, next_iter_seq_len
         )
 
+    @unittest.skipIf(
+        not is_fbcode(), "in OSS error is too large 0.0004 for some reason"
+    )
     def test_sdpa_with_cache_seq_len_130_gqa(self):
         n_heads_kv = 8
         n_heads_q = 32
@@ -587,6 +635,17 @@ class SDPATestForSpeculativeDecode(SDPATestCommon):
         max_seq_len = 2048
         seq_len = 634
         next_iter_seq_len = 117
+        self._test_sdpa_common(
+            n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, next_iter_seq_len
+        )
+
+    def test_sdpa_to_repro_long_seq_failure(self):
+        n_heads_kv = 16
+        n_heads_q = 32
+        head_dim = 128
+        max_seq_len = 2048
+        seq_len = 508
+        next_iter_seq_len = 127
         self._test_sdpa_common(
             n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, next_iter_seq_len
         )

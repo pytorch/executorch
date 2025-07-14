@@ -61,6 +61,10 @@ def define_common_targets():
         name = "all_quantized_ops",
         ops_schema_yaml_target = ":quantized.yaml",
         define_static_targets = True,
+        visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     # On Windows we can only compile these two ops currently, so adding a

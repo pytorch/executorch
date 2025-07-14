@@ -7,7 +7,8 @@
             "op_fast_hadamard_transform_test.cpp"
         ],
         "additional_libs": [
-            "custom_ops"
+            "custom_ops",
+            "dumb_fht"
         ]
     },
     {
@@ -44,7 +45,6 @@
     {
         "directory": "extension/pytree/test",
         "sources": [
-            "function_ref_test.cpp",
             "test_pytree.cpp"
         ]
     },
@@ -59,14 +59,13 @@
         ]
     },
     {
-        "directory": "kernels/portable/cpu/util/test",
+        "directory": "extension/threadpool/test",
         "sources": [
-            "broadcast_test.cpp",
-            "reduce_test.cpp"
+            "thread_parallel_test.cpp",
+            "threadpool_test.cpp"
         ],
         "additional_libs": [
-            "portable_kernels",
-            "portable_ops_lib"
+            "extension_threadpool"
         ]
     },
     {
@@ -84,14 +83,15 @@
     {
         "directory": "runtime/core/test",
         "sources": [
-            "span_test.cpp",
+            "array_ref_test.cpp",
             "error_handling_test.cpp",
+            "evalue_test.cpp",
             "event_tracer_test.cpp",
             "freeable_buffer_test.cpp",
-            "array_ref_test.cpp",
-            "memory_allocator_test.cpp",
+            "function_ref_test.cpp",
             "hierarchical_allocator_test.cpp",
-            "evalue_test.cpp"
+            "memory_allocator_test.cpp",
+            "span_test.cpp"
         ]
     },
     {

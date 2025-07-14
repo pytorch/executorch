@@ -43,8 +43,11 @@ class MPSBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    auto executor = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        context.get_runtime_allocator(), mps::delegate::MPSExecutor);
+    auto executor = context.get_runtime_allocator()->allocateInstance<mps::delegate::MPSExecutor>();
+    if (executor == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     // NOTE: Since we use placement new and since this type is not trivially
     // destructible, we must call the destructor manually in destroy().
     new (executor) mps::delegate::MPSExecutor;

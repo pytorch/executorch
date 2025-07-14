@@ -12,7 +12,7 @@ from executorch.backends.vulkan.test.op_tests.utils.gen_computegraph import (
 from executorch.backends.vulkan.test.op_tests.utils.gen_correctness_base import (
     CorrectnessTestGen,
 )
-from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
+from executorch.backends.vulkan.test.op_tests.utils.test_suite import VkTestSuite
 
 from torchgen.model import NativeFunction
 
@@ -72,10 +72,12 @@ BENCHMARK_REGISTER_F(GeneratedOpBenchmark_{op_name}, {case_name})->Threads(1)->A
 
 
 class VkBenchmarkGen(CorrectnessTestGen):
-    def __init__(self, op_reg_name: str, f: NativeFunction, inputs: TestSuite):
+    def __init__(self, op_reg_name: str, f: NativeFunction, inputs: VkTestSuite):
         super().__init__(f, inputs)
         self.op_reg_name = op_reg_name
-        self.generator = ComputeGraphGen(self.op_reg_name, self.f, self.suite_def)
+        self.generator = ComputeGraphGen(
+            self.op_reg_name, self.f, self.suite_def, inputs.force_io
+        )
 
     def gen_call_benchmark(self, prepack=False) -> str:
         test_str = f"benchmark_{self.op_name}("
@@ -175,6 +177,8 @@ using TensorOptions = at::TensorOptions;
 
 vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {{
   switch (at_scalartype) {{
+    case c10::kDouble:
+      return vkapi::kDouble;
     case c10::kFloat:
       return vkapi::kFloat;
     case c10::kHalf:
@@ -185,9 +189,20 @@ vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {{
       return vkapi::kInt;
     case c10::kChar:
       return vkapi::kChar;
+    case c10::kBool:
+      return vkapi::kBool;
     default:
       VK_THROW("Unsupported at::ScalarType!");
   }}
+}}
+
+at::Tensor make_casted_randint_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    int low = 0,
+    int high = 10) {{
+
+  return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
 }}
 
 at::Tensor make_rand_tensor(
@@ -197,7 +212,7 @@ at::Tensor make_rand_tensor(
     float high = 1.0) {{
   if (high == 1.0 && low == 0.0)
     return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
-    
+
   if (dtype == at::kChar)
     return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
 
@@ -226,7 +241,7 @@ at::Tensor make_seq_tensor(
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
+at::Tensor make_index_tensor_1d(std::vector<int64_t> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{static_cast<int64_t>(indices.size())}};
 
@@ -234,7 +249,7 @@ at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
   return at::from_blob(indices.data(), sizes, dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor(std::vector<std::vector<int64_t>> indices) {{
+at::Tensor make_index_tensor_2d(std::vector<std::vector<int64_t>> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{
     static_cast<int64_t>(indices.size()),
@@ -250,7 +265,7 @@ at::Tensor make_index_tensor(std::vector<std::vector<int64_t>> indices) {{
   return at::from_blob(acc.data(), sizes, dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor(std::vector<std::vector<std::vector<int64_t>>> indices) {{
+at::Tensor make_index_tensor_3d(std::vector<std::vector<std::vector<int64_t>>> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{
     static_cast<int64_t>(indices.size()),

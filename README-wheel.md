@@ -10,32 +10,21 @@ The `executorch` pip package is in beta.
 
 The prebuilt `executorch.runtime` module included in this package provides a way
 to run ExecuTorch `.pte` files, with some restrictions:
-* Only [core ATen
-  operators](https://pytorch.org/executorch/stable/ir-ops-set-definition.html)
-  are linked into the prebuilt module
-* Only the [XNNPACK backend
-  delegate](https://pytorch.org/executorch/main/native-delegates-executorch-xnnpack-delegate.html)
-  is linked into the prebuilt module.
-* \[macOS only] [Core ML](https://pytorch.org/executorch/main/build-run-coreml.html)
-  and [MPS](https://pytorch.org/executorch/main/build-run-mps.html) backend
-  delegates are also linked into the prebuilt module.
+* Only [core ATen operators](docs/source/ir-ops-set-definition.md) are linked into the prebuilt module
+* Only the [XNNPACK backend delegate](docs/source/backends-xnnpack.md) is linked into the prebuilt module.
+* \[macOS only] [Core ML](docs/source/backends-coreml.md) and [MPS](docs/source/backends-mps.md) backend
+  are also linked into the prebuilt module.
 
-Please visit the [ExecuTorch website](https://pytorch.org/executorch/) for
+Please visit the [ExecuTorch website](https://pytorch.org/executorch) for
 tutorials and documentation. Here are some starting points:
-* [Getting
-  Started](https://pytorch.org/executorch/stable/getting-started-setup.html)
+* [Getting Started](https://pytorch.org/executorch/main/getting-started-setup)
   * Set up the ExecuTorch environment and run PyTorch models locally.
-* [Working with
-  local LLMs](https://pytorch.org/executorch/stable/llm/getting-started.html)
+* [Working with local LLMs](docs/source/llm/getting-started.md)
   * Learn how to use ExecuTorch to export and accelerate a large-language model
     from scratch.
-* [Exporting to
-  ExecuTorch](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial.html)
+* [Exporting to ExecuTorch](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial)
   * Learn the fundamentals of exporting a PyTorch `nn.Module` to ExecuTorch, and
     optimizing its performance using quantization and hardware delegation.
-* Running LLaMA on
-  [iOS](https://pytorch.org/executorch/stable/llm/llama-demo-ios.html) and
-  [Android](https://pytorch.org/executorch/stable/llm/llama-demo-android.html)
-  devices.
+* Running LLaMA on [iOS](docs/source/llm/llama-demo-ios.md) and [Android](docs/source/llm/llama-demo-android.md) devices.
   * Build and run LLaMA in a demo mobile app, and learn how to integrate models
     with your own apps.

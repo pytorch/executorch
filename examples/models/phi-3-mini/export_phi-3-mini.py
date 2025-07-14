@@ -20,8 +20,8 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
 )
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import to_edge
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export_for_training
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from transformers import Phi3ForCausalLM
 
@@ -65,7 +65,7 @@ def export(args) -> None:
         xnnpack_quantizer.set_global(xnnpack_quant_config)
 
         model = export_for_training(
-            model, example_inputs, dynamic_shapes=dynamic_shapes
+            model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
         ).module()
         model = prepare_pt2e(model, xnnpack_quantizer)  # pyre-fixme[6]
         model(*example_inputs)

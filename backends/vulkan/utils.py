@@ -14,6 +14,10 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkStorageType,
 )
 
+from executorch.exir.backend.canonical_partitioners.config_partitioner import (
+    format_target_name,
+)
+
 from executorch.exir.tensor import TensorSpec
 
 from torch._export.utils import is_buffer, is_param
@@ -22,9 +26,42 @@ from torch._subclasses.fake_tensor import FakeTensor
 
 from torch.export import ExportedProgram
 
+from torch.export.exported_program import InputKind
+from torch.export.graph_signature import TensorArgument
+
+_DQ_OPS = {
+    "dequantize_per_tensor.tensor",
+    "dequantize_per_tensor.default",
+    "dequantize_per_channel.default",
+    "dequantize_per_channel_group.default",
+    "dequantize_per_token.default",
+    "dequantize_affine.default",
+}
+
 ##
 ## Node type determination
 ##
+
+
+def is_dequant_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return node_name in _DQ_OPS
+
+
+def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return node_name == "dequantize_per_channel.default"
+
+
+def is_linear_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return node_name == "linear.default"
 
 
 def is_get_attr_node(node: torch.fx.Node) -> bool:
@@ -47,6 +84,15 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
     )
 
 
+def is_mutable_buffer_node(
+    node: torch.fx.Node, exported_program: ExportedProgram
+) -> bool:
+    if node.target not in exported_program.graph_signature.inputs_to_buffers:
+        return False
+    buf = exported_program.graph_signature.inputs_to_buffers[node.target]
+    return buf in exported_program.graph_signature.buffers_to_mutate.values()
+
+
 def is_symint_node(node: torch.fx.Node) -> bool:
     """
     Returns true if the given node produces a SymInt value
@@ -64,10 +110,6 @@ def is_tensor_node(node: torch.fx.Node) -> bool:
     """
     Returns true if the given node produces a tensor value, or a collection of tensor values
     """
-    # All nodes with tensor values are tagged by the SpecPropPass transform
-    if "spec" in node.meta:
-        return True
-
     if "val" not in node.meta:
         return False
 
@@ -231,9 +273,19 @@ def set_node_spec_attr(node: torch.fx.Node, attr: str, value):
     if isinstance(spec, TensorSpec):
         setattr(spec, attr, value)
     elif isinstance(spec, (list, tuple)):
-        for s in spec:
-            assert isinstance(s, TensorSpec)
-            setattr(s, attr, value)
+        # Special case if value is a list/tuple of the same length as the
+        # collection of tensors in the node. In this case, treat the value list
+        # as a list of values to set indivudually for each tensor in the node
+        if isinstance(value, (list, tuple)) and len(spec) == len(value):
+            assert len(spec) == len(value)
+            for s, v in zip(spec, value):
+                assert isinstance(s, TensorSpec)
+                setattr(s, attr, v)
+        # Otherwise, set the attribute to value for all tensors in the list
+        else:
+            for s in spec:
+                assert isinstance(s, TensorSpec)
+                setattr(s, attr, value)
     else:
         raise RuntimeError(f"Cannot set attr for spec of type {type(spec)}")
 
@@ -258,3 +310,35 @@ def get_node_storage_type(node: torch.fx.Node) -> Optional[VkStorageType]:
 
 def get_node_memory_layout(node: torch.fx.Node) -> Optional[VkMemoryLayout]:
     return get_node_spec_attr(node, "vk_memory_layout")
+
+
+##
+## Misc
+##
+
+
+def update_program_state_dict(
+    program: ExportedProgram,
+    buffer_name: str,
+    updated_tensor: torch.Tensor,
+) -> None:
+    target_name = None
+    # Iterate over all the tensors in the graph signature, and find
+    # the one corresponding to the parameter/buffer name
+    for input_ in program.graph_signature.input_specs:
+        if (
+            input_.kind in (InputKind.BUFFER, InputKind.PARAMETER)
+            and isinstance(input_.arg, TensorArgument)
+            and input_.arg.name == buffer_name
+        ):
+            target_name = input_.target
+            break
+
+    # Assert that we found the parameter/buffer
+    assert (
+        target_name is not None
+    ), f"could not find {buffer_name} in source program signature"
+    assert target_name in program.state_dict, f"could not find {target_name}"
+
+    # Finally, overwrite the current tensor with updated tensor
+    program.state_dict[target_name] = updated_tensor

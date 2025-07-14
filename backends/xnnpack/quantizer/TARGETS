@@ -5,6 +5,7 @@ python_library(
     srcs = ["xnnpack_quantizer.py"],
     deps = [
         ":xnnpack_quantizer_utils",
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//caffe2:torch",
         "//executorch/exir:lib",
     ],
@@ -16,5 +17,6 @@ python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
     ],
 )

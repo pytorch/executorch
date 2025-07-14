@@ -37,11 +37,11 @@ You can export and run the original Llama 2 7B model.
 
 3. Export model and generate `.pte` file:
     ```
-    python -m examples.models.llama.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
+    python -m extension.llm.export.export_llm base.checkpoint=<checkpoint.pth> base.params=<params.json> model.use_kv_cache=True model.use_sdpa_with_kv_cache=True backend.xnnpack.enabled=True quantization.qmode="8da4w" quantization.group_size=128 model.dtype_override="fp32"
     ```
 4. Create tokenizer.bin.
     ```
-    python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
+    python -m pytorch_tokenizers.tools.llama2c.convert -t <tokenizer.model> -o tokenizer.bin
     ```
 
     Pass the converted `tokenizer.bin` file instead of `tokenizer.model` for subsequent steps.

@@ -26,5 +26,6 @@
 } > xnnpack_constants.py
 
 echo UINT32_MAX = 4294967295 >> xnnpack_constants.py
+echo UINT64_MAX = 18446744073709551615 >> xnnpack_constants.py
 awk '/^#define\s+XNN_/ { print $2,"=",$3} ' "$1"/include/xnnpack.h >> xnnpack_constants.py
 if ! grep -qc "^XNN_" xnnpack_constants.py; then false; fi

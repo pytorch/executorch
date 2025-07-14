@@ -10,16 +10,16 @@ import torch
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 
-from torch.ao.quantization.quantizer import QuantizationAnnotation
-from torch.ao.quantization.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
-)
-
 from torch.export import export_for_training
 from torch.fx import Graph, Node
 from torch.fx.passes.utils.matcher_with_name_node_map_utils import (
     SubgraphMatcherWithNameNodeMap,
+)
+
+from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec as _annotate_output_qspec,
+    QuantizationAnnotation,
 )
 
 from .qconfig import QuantizationConfig
@@ -44,7 +44,6 @@ def annotate(graph: Graph, quant_config: QuantizationConfig) -> None:
 
 
 def register_annotator(ops: List[OpOverload]):
-
     def decorator(annotator_fn: Callable):
         for op in ops:
             OP_TO_ANNOTATOR[op] = annotator_fn
@@ -109,7 +108,7 @@ def _annotate_fused_activation_pattern(
             torch.ops.aten.linear.default,
         ]:
             weight_node = producer_node.args[1]
-            _annotate_input_qspec_map(
+            annotate_input_qspec_map(
                 producer_node,
                 weight_node,
                 quant_config.weight,
@@ -147,7 +146,6 @@ def _annotate_fused_activation_pattern(
 
 
 def _annotate_rmsnorm_pattern(graph: Graph, quant_config: QuantizationConfig) -> None:
-
     class ExecuTorchPattern(torch.nn.Module):
         def forward(self, x):
             norm = x * torch.rsqrt((x * x).mean(-1, keepdim=True) + 1e-6)
@@ -159,7 +157,9 @@ def _annotate_rmsnorm_pattern(graph: Graph, quant_config: QuantizationConfig) ->
             return norm, {}
 
     for pattern_cls in (ExecuTorchPattern, MTKPattern):
-        pattern_gm = export_for_training(pattern_cls(), (torch.randn(3, 3),)).module()
+        pattern_gm = export_for_training(
+            pattern_cls(), (torch.randn(3, 3),), strict=True
+        ).module()
         matcher = SubgraphMatcherWithNameNodeMap(
             pattern_gm, ignore_literals=True, remove_overlapping_matches=False
         )
@@ -201,7 +201,7 @@ def annotate_affine_ops(node: Node, quant_config: QuantizationConfig) -> None:
         return
 
     weight_node = node.args[1]
-    _annotate_input_qspec_map(
+    annotate_input_qspec_map(
         node,
         weight_node,
         quant_config.weight,
@@ -260,5 +260,5 @@ def annotate_embedding_op(node: Node, quant_config: QuantizationConfig) -> None:
         return
 
     wgt_node = node.args[0]
-    _annotate_input_qspec_map(node, wgt_node, quant_config.activation)
+    annotate_input_qspec_map(node, wgt_node, quant_config.activation)
     _mark_as_annotated([node])

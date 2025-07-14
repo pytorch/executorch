@@ -14,9 +14,10 @@
 #import "ETCoreMLOperationProfilingInfo.h"
 #import "ETCoreMLPair.h"
 #import "ETCoreMLStrings.h"
+#import "program_path.h"
+
 #import <mach/mach_time.h>
 #import <math.h>
-#import "program_path.h"
 
 namespace  {
 using namespace executorchcoreml::modelstructure;
@@ -42,8 +43,7 @@ MLComputePlan *_Nullable get_compute_plan_of_model_at_url(NSURL *model_url,
         ETCoreMLLogUnderlyingErrorAndSetNSError(error,
                                                 ETCoreMLErrorCompilationFailed,
                                                 local_error,
-                                                "%@: Failed to get compute plan of model with name=%@.",
-                                                NSStringFromClass(ETCoreMLModelProfiler.class),
+                                                "Failed to get compute plan of model with name=%@.",
                                                 model_url.lastPathComponent);
         return nil;
     }
@@ -288,8 +288,7 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
 #endif
     ETCoreMLLogErrorAndSetNSError(error,
                                   ETCoreMLErrorModelProfilingNotSupported,
-                                  "%@: Model profiling is only available for macOS >= 14.4, iOS >= 17.4, tvOS >= 17.4 and watchOS >= 10.4.",
-                                  NSStringFromClass(self.class));
+                                  "Model profiling is only available for macOS >= 14.4, iOS >= 17.4, tvOS >= 17.4 and watchOS >= 10.4.");
     return nil;
 }
 

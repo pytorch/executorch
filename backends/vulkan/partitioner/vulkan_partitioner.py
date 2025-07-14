@@ -116,9 +116,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
                     arg, self.buffer_limit
                 )
 
+        op_available_layouts = features.supported_memory_layouts(
+            VkStorageType.TEXTURE_3D
+        )
+
+        can_use_texture = any(
+            layout in op_available_layouts for layout in valid_texture_layouts
+        )
+
         # If there are no valid texture memory layouts, then buffer storage must be
         # supported by the operator implementation.
-        if len(valid_texture_layouts) == 0:
+        if not can_use_texture:
             if not can_use_buffers:
                 return (
                     False,
@@ -131,26 +139,16 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 reason = "op requires buffers which is not supported by op impl"
             return compatible, reason
 
-        op_available_layouts = features.supported_memory_layouts(
-            VkStorageType.TEXTURE_3D
-        )
-
-        is_compatible = any(
-            layout in op_available_layouts for layout in valid_texture_layouts
-        )
-        if not is_compatible:
-            return False, "Required texutre memory layout not supported"
-
-        return is_compatible, "Op is compatible"
+        return True, "Op is compatible"
 
     def node_is_compatible(
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
     ) -> Tuple[bool, str]:
-        # TODO(ssjia) support symbolic ints
-        if utils.is_symint_node(node):
-            return False, "symint node not supported yet"
-        elif utils.is_tensor_node(node):
+        if utils.is_tensor_node(node):
             return self.op_node_is_compatible(node, features=features)
+        # For non-tensor nodes, just check if the op is registered
+        elif hasattr(node, "target"):
+            return node.target in vulkan_supported_ops, "Op is compatible"
 
         return False, f"Unsupported node type: {node.format_node()}"
 
@@ -258,7 +256,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if target not in vulkan_supported_ops:
             # For some ops, i.e. custom ops the name is registered instead of the
             # OpOverload object.
-            if not isinstance(target, str) and target.name() in vulkan_supported_ops:
+            if hasattr(target, "name") and target.name() in vulkan_supported_ops:
                 features = vulkan_supported_ops[target.name()]
             else:
                 self.log_skip(node, "no operator implementation")

@@ -21,8 +21,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_BUILD_TYPE Release)
 
 # Set options for executorch build.
-option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
+option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_TENSOR "" ON)
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
 option(EXECUTORCH_BUILD_XNNPACK "" ON)
@@ -41,11 +42,12 @@ add_executable(
   phi_3_mini_runner
   main.cpp runner.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/sampler/sampler.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/tokenizer/bpe_tokenizer.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/tokenizers/src/llama2c_tokenizer.cpp
 )
 target_include_directories(
   phi_3_mini_runner
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/gflags/src
+         ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/tokenizers/include
 )
 target_link_libraries(
   phi_3_mini_runner PRIVATE executorch extension_module_static extension_tensor

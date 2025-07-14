@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
@@ -42,26 +43,26 @@ void add_unary_op_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
-  vkapi::ParamsBindList ubos({});
-  if (graph.is_buffer_storage(out)) {
-    ubos.append({graph.numel_ubo(out)});
-  } else {
-    ubos.append({graph.logical_limits_ubo(out)});
-  }
-  ubos.append(
-      {graph.create_params_buffer(min), graph.create_params_buffer(max)});
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  const utils::vec2 min_max = {min, max};
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
-      {{out, vkapi::MemoryAccessType::WRITE},
-       {in, vkapi::MemoryAccessType::READ}},
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
-      ubos,
+      {},
+      // Push Constants
+      {
+          graph.is_buffer_storage(out) ? graph.numel_pc_of(out)
+                                       : graph.logical_limits_pc_of(out),
+          PushConstantDataInfo(&min_max, sizeof(min_max)),
+      },
+      // pcs,
       // Specialization Constants
+      {},
+      // Resize Args
       {},
       // Resizing Logic
       resize_unary_op_node));
@@ -149,6 +150,7 @@ DEFINE_HARDSHRINK_FN(hardshrink);
 DEFINE_ACTIVATION_FN(hardswish);
 DEFINE_ACTIVATION_FN(hardsigmoid);
 DEFINE_LEAKY_RELU_FN(leaky_relu);
+DEFINE_ACTIVATION_FN(round);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -168,6 +170,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.hardswish.default, hardswish);
   VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
   VK_REGISTER_OP(aten.leaky_relu.default, leaky_relu);
+  VK_REGISTER_OP(aten.round.default, round);
 }
 
 } // namespace vkcompute

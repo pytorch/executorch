@@ -41,8 +41,9 @@ class TestLlava(unittest.TestCase):
         # The reference implementation in HF genetates the full logits. Get the last one.
         prefill_logits_ref = self.llava.prefill_ref(
             self.prompt_before_image, self.resized, self.prompt_after_image
-        )[0][:, -1, :]
-        self.assertTrue(torch.allclose(prefill_logits, prefill_logits_ref, atol=3e-2))
+        )[0]
+
+        torch.testing.assert_close(prefill_logits, prefill_logits_ref.squeeze(0))
 
     def test_generated_output(self):
         # source of truth, using HF llava
@@ -131,7 +132,7 @@ class TestLlava(unittest.TestCase):
         # being tested, using llama_transformer
         new_tokens = [torch.argmax(pte_prefill_after_img).item()]
         # TODO: uncomment this line
-        # self.assertEquals(new_tokens[0], 1932)  # When
+        # self.assertEqual(new_tokens[0], 1932)  # When
         for i in range(4):
             print(i, llava_model.tokenizer.decode(new_tokens[i]))
             token_embeds = llava_module.run_method(
