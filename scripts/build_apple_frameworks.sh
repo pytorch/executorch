@@ -54,7 +54,7 @@ libxnnpack_backend.a,\
 libxnnpack-microkernels-prod.a,\
 :"
 
-FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
+FRAMEWORK_KERNELS_LLM="kernels_llm:\
 libcustom_ops.a,\
 :"
 
@@ -78,7 +78,7 @@ usage() {
   echo "  --Debug              Build Debug version."
   echo "  --Release            Build Release version."
   echo "  --coreml             Only build the Core ML backend."
-  echo "  --custom             Only build the Custom kernels."
+  echo "  --llm                Only build the LLM custom kernels."
   echo "  --mps                Only build the Metal Performance Shaders backend."
   echo "  --optimized          Only build the Optimized kernels."
   echo "  --quantized          Only build the Quantized kernels."
@@ -95,7 +95,7 @@ set_cmake_options_override() {
     # Since the user wants specific options, turn everything off
     CMAKE_OPTIONS_OVERRIDE=(
       "-DEXECUTORCH_BUILD_COREML=OFF"
-      "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=OFF"
+      "-DEXECUTORCH_BUILD_KERNELS_LLM=OFF"
       "-DEXECUTORCH_BUILD_MPS=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
@@ -125,7 +125,7 @@ for arg in "$@"; do
         fi
         ;;
       --coreml) set_cmake_options_override "EXECUTORCH_BUILD_COREML";;
-      --custom) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_CUSTOM" ;;
+      --llm) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_LLM" ;;
       --mps) set_cmake_options_override "EXECUTORCH_BUILD_MPS" ;;
       --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
       --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
@@ -180,7 +180,7 @@ sed -i '' '1i\
 ' \
 "$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
 "$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h" \
-"$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch/standalone/macros/Export.h"
+"$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Export.h"
 
 cp -r $HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_ABSOLUTE_PATH/"
 cp -r $HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch "$HEADERS_ABSOLUTE_PATH/"
@@ -232,7 +232,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_MPS" "$FRAMEWORK_BACKEND_MPS" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
-  append_framework_flag "EXECUTORCH_BUILD_KERNELS_CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_KERNELS_LLM" "$FRAMEWORK_KERNELS_LLM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
 

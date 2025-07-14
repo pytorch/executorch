@@ -490,7 +490,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-install(FILES tools/cmake/executorch-config.cmake
+install(FILES tools/cmake/Utils.cmake tools/cmake/executorch-config.cmake
         DESTINATION lib/cmake/ExecuTorch
 )
 
@@ -677,7 +677,7 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_LLM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops)
 endif()
@@ -704,7 +704,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
-  if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+  if(EXECUTORCH_BUILD_KERNELS_LLM)
     list(APPEND _executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
   endif()
 
@@ -726,6 +726,17 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+
+  # Automatically set when using `emcmake cmake` for Wasm build.
+  if(EMSCRIPTEN)
+    # Directory of model pte files to embed in the wasm binary.
+    if(NOT DEFINED WASM_MODEL_DIR)
+      set(WASM_MODEL_DIR "${CMAKE_SOURCE_DIR}/models/")
+    endif()
+
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
