@@ -321,7 +321,9 @@ jobs:
 
         # Follow the steps required before running the notebooks
         # Try to mirror these as closely as possible
-        install_executorch.sh "--use-pt-pinned-commit"
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
         bash examples/arm/setup.sh --i-agree-to-the-contained-eula
         source examples/arm/ethos-u-scratch/setup_path.sh
 
