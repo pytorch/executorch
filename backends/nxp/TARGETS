@@ -1,4 +1,3 @@
-# @noautodeps
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load(
@@ -31,5 +30,34 @@ python_library(
         ":aten_passes",
         "//caffe2:torch",
         "//pytorch/ao:torchao",  # @manual
+    ],
+)
+
+python_library(
+    name = "neutron_sdk",
+    srcs = glob(["backend/**/*.py"]),
+    deps = [
+       "fbsource//third-party/pypi/neutron_convertor_SDK_25_03:neutron_convertor_SDK_25_03",
+    ],
+)
+
+python_library(
+    name = "neutron_backend",
+    srcs = [
+        "nxp_backend.py",
+        "neutron_partitioner.py",
+        "neutron_node_extraction.py",
+        "neutron_pass_manager.py",
+    ],
+    deps = [
+        ":neutron_sdk",
+        ":aten_passes",
+        ":quantizer",
+        "fbsource//third-party/pypi/flatbuffers:flatbuffers",
+        "fbsource//third-party/pypi/ml-dtypes:ml-dtypes",
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
+        "//executorch/exir:lib",
+        "//executorch/backends/transforms:remove_getitem_op",
+        "//caffe2:torch",
     ],
 )
