@@ -87,13 +87,16 @@ class EdgeProgramToIRConverter:
         self._convert_qdq_cluster_q_dq_nodes(edge_program.graph.nodes, cc)
         self._process_nodes(edge_program.graph.nodes, cc)
 
-        # Assign output
-        io_formats = cc.tflite_builder.assign_model_io_to_subgraph_and_get_io_formats(
-            edge_program.graph_signature
-        )
+        # Assign the model its inputs and outputs.
+        cc.tflite_builder.assign_model_io_to_subgraph(edge_program.graph_signature)
+
+        # Apply optimizations and finalize the model.
+        internal_tflite_model = cc.tflite_builder.finish()
+
+        # Extract the formats of the model's inputs and outputs.
+        io_formats = cc.tflite_builder.get_io_formats(edge_program.graph_signature)
 
         # TFLite model generation
-        internal_tflite_model = cc.tflite_builder.finish()
         flatbuffers_builder = flatbuffers.Builder()
         internal_tflite_model.gen_tflite(flatbuffers_builder)
 
