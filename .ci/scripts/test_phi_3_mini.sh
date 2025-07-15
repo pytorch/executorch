@@ -64,7 +64,7 @@ run_and_verify() {
     ${BUILD_DIR}/${MODEL_DIR}/phi_3_mini_runner \
     --model_path=phi-3-mini.pte \
     --tokenizer_path=tokenizer.bin \
-    --seq_len=128 \
+    --seq_len=60 \
     --temperature=0 \
     --prompt="<|system|>
 You are a helpful assistant.<|end|>
