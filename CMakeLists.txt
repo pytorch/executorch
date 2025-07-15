@@ -231,15 +231,14 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   endif()
   include(ExternalProject)
   set(PTHREADPOOL_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/pthreadpool")
-  set(PTHREADPOOL_LIBRARY
-      "${PTHREADPOOL_BINARY_DIR}/install/lib/libpthreadpool.a"
-  )
+  set(PTHREADPOOL_INSTALL_DIR "${PTHREADPOOL_BINARY_DIR}/install")
+  set(PTHREADPOOL_LIBRARY "${PTHREADPOOL_INSTALL_DIR}/lib/libpthreadpool.a")
   get_extra_cmake_args_for_external_project(PTHREADPOOL_EXTRA_CMAKE_ARGS)
   ExternalProject_Add(
     pthreadpoolExternalProject
     SOURCE_DIR "${PTHREADPOOL_SOURCE_DIR}"
     BINARY_DIR "${PTHREADPOOL_BINARY_DIR}"
-    INSTALL_DIR "${PTHREADPOOL_BINARY_DIR}/install"
+    INSTALL_DIR "${PTHREADPOOL_INSTALL_DIR}"
     BUILD_BYPRODUCTS "${PTHREADPOOL_LIBRARY}"
     CMAKE_ARGS ${PTHREADPOOL_EXTRA_CMAKE_ARGS}
                -D
@@ -262,7 +261,11 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
     TARGET pthreadpool PROPERTY IMPORTED_LOCATION "${PTHREADPOOL_LIBRARY}"
   )
   add_dependencies(pthreadpool pthreadpoolExternalProject)
-  install(FILES ${PTHREADPOOL_LIBRARY} DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  # Trailing slash matters here! "Move everything from the temporary pthreadpool
+  # install directory to the proper install directory."
+  install(DIRECTORY "${PTHREADPOOL_INSTALL_DIR}/"
+          DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  )
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
