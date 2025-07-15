@@ -148,10 +148,13 @@ for preset_index in "${!PRESETS[@]}"; do
     echo "Building preset ${preset} (${mode}) in ${preset_output_dir}..."
 
     # Do NOT add options here. Update the respective presets instead.
+    # Xcode multi-config presets leave CMAKE_BUILD_TYPE empty, so force EXECUTORCH_ENABLE_LOGGING per-mode.
     cmake -S "${SOURCE_ROOT_DIR}" \
           -B "${preset_output_dir}" \
           -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
           -DCMAKE_BUILD_TYPE="${mode}" \
+          -UEXECUTORCH_ENABLE_LOGGING \
+          -DEXECUTORCH_ENABLE_LOGGING=$([ "${mode}" = "Debug" ] && echo ON || echo OFF) \
           ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
           --preset "${preset}"
 
