@@ -275,9 +275,7 @@ def annotate_masked_fill(node: Node, quantization_config: QuantizationConfig) ->
     )
 
 
-@register_annotator(
-    [torch.ops.aten.mul, torch.ops.aten.mul.Tensor, torch.ops.aten.mul_.Tensor]
-)
+@register_annotator([torch.ops.aten.mul, torch.ops.aten.mul.Tensor])
 def annotate_mul(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
@@ -1300,7 +1298,7 @@ def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
     )
 
 
-@register_annotator([torch.ops.aten.zeros.default, torch.ops.aten.zeros_like.default])
+@register_annotator([torch.ops.aten.zeros.default])
 def annotate_zeros(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]) or not _is_float_tensor(node):
         return
