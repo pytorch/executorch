@@ -160,8 +160,7 @@ def quantize(
     else:
         raise RuntimeError("Unsupported compilespecs for quantization!")
 
-    # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
-    operator_config = get_symmetric_quantization_config(is_per_channel=False)
+    operator_config = get_symmetric_quantization_config()
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
 

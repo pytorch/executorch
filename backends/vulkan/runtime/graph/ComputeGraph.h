@@ -190,9 +190,15 @@ class ComputeGraph final {
       vkapi::ComputePipelineCache::Hasher>
       pipeline_descriptors_;
 
+  // Utility constexpr to express byte quantities
+  constexpr static size_t MB = 1024 * 1024;
+
  protected:
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
+
+  // Total number of bytes needed to store model weights
+  size_t total_constant_nbytes_ = 0;
 
   // Represents the amount of staging buffer data that will be copied if the
   // current Context's command buffer is submitted now.
@@ -820,6 +826,11 @@ class ComputeGraph final {
   // Command Buffer Management
 
   /*
+   * Submits the current command buffer in the Context to the GPU for execution.
+   */
+  void submit_current_cmd(const bool final_use = false);
+
+  /*
    * Submits the current command buffer in the Context to the GPU for execution,
    * and wait for it to complete before returning. This function will also flush
    * the Context after execution.
@@ -835,14 +846,11 @@ class ComputeGraph final {
     staging_nbytes_in_cmd_ += staging_bytes;
   }
 
-  void encode_prepack();
-  void prepack() const;
-
   /*
    * Executes prepacking operations to transfer model weight data from the CPU
    * to GPU.
    */
-  void run_prepack();
+  void prepack();
 
   //
   // Graph Execution
