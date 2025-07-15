@@ -26,6 +26,8 @@
 cmake_minimum_required(VERSION 3.19)
 include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
 
+include(${CMAKE_CURRENT_LIST_DIR}/Utils.cmake)
+
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
 set(EXECUTORCH_LIBRARIES)
@@ -186,3 +188,15 @@ foreach(lib ${shared_lib_list})
     target_link_options_shared_lib(${lib})
   endif()
 endforeach()
+
+if(TARGET xnnpack_backend)
+  if(TARGET kleidiai)
+    set(_deps "XNNPACK;xnnpack-microkernels-prod;kleidiai")
+  else()
+    set(_deps "XNNPACK;xnnpack-microkernels-prod")
+  endif()
+  set_target_properties(
+    xnnpack_backend PROPERTIES INTERFACE_LINK_LIBRARIES "${_deps}"
+  )
+  target_link_options_shared_lib(xnnpack_backend)
+endif()
