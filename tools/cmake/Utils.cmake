@@ -59,6 +59,14 @@ function(target_link_options_shared_lib target_name)
   endif()
 endfunction()
 
+function(target_link_options_gc_sections target_name)
+  if(APPLE)
+    target_link_options(${target_name} PRIVATE "LINKER:-dead_strip")
+  else()
+    target_link_options(${target_name} PRIVATE "LINKER:--gc-sections")
+  endif()
+endfunction()
+
 # Extract source files based on toml config. This is useful to keep buck2 and
 # cmake aligned. Do not regenerate if file exists.
 function(extract_sources sources_file)
@@ -128,7 +136,7 @@ function(resolve_buck2)
 
   set(resolve_buck2_command
       ${PYTHON_EXECUTABLE} ${executorch_root}/tools/cmake/resolve_buck.py
-      --cache_dir=buck2-bin
+      --cache_dir=${executorch_root}/buck2-bin
   )
 
   if(NOT ${BUCK2} STREQUAL "")

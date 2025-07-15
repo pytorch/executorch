@@ -62,25 +62,36 @@ class ConvlLinearModel(nn.Module):
         Returns the expected outputs of the debug handles and intermediate output mapping for this model for the given input.
         """
         return {
-            (10,): torch.tensor([[[[7.7000, 6.7000], [4.7000, 3.7000]]]]),
-            (11,): torch.tensor([[7.7000, 6.7000, 4.7000, 3.7000]]),
-            (12,): torch.tensor(
-                [
-                    [0.1000, 0.5000],
-                    [0.2000, 0.6000],
-                    [0.3000, 0.7000],
-                    [0.4000, 0.8000],
-                ]
-            ),
-            (13,): torch.tensor([[5.0000, 14.1200]]),
-            (14,): torch.tensor([[5.5000, 13.6200]]),
-            (15,): torch.tensor([[5.4000, 13.5200]]),
-            (16,): torch.tensor([[10.8000, 6.7600]]),
-            (17,): torch.tensor([3.0000, 1.5000]),
-            (18,): torch.tensor([[3.6000, 4.5067]]),
-            (19,): torch.tensor([[3.6000, 4.5067]]),
-            (20,): torch.tensor([[0.9734, 0.9891]]),
-            (21,): [torch.tensor([[0.9734]]), torch.tensor([[0.9891]])],
+            (1,): torch.tensor([[[[7.7000, 6.7000], [4.7000, 3.7000]]]]),
+            (2,): torch.tensor([[7.7000, 6.7000, 4.7000, 3.7000]]),
+            (3,): torch.tensor([[5.0000, 14.1200]]),
+            (4,): torch.tensor([[5.5000, 13.6200]]),
+            (5,): torch.tensor([[5.4000, 13.5200]]),
+            (6,): torch.tensor([[10.8000, 6.7600]]),
+            (7,): torch.tensor([3.0000, 1.5000]),
+            (8,): torch.tensor([[3.6000, 4.5067]]),
+            (9,): torch.tensor([[3.6000, 4.5067]]),
+            (10,): torch.tensor([[0.9734, 0.9891]]),
+            (11,): [torch.tensor([[0.9734]]), torch.tensor([[0.9891]])],
+        }
+
+    @staticmethod
+    def get_expected_debug_handle_to_op_names():
+        """
+        Returns the expected debug handle and op names mapping for this model for the given input.
+        """
+        return {
+            (1,): ["aten_convolution_default"],
+            (2,): ["aten_view_copy_default"],
+            (3,): ["aten_permute_copy_default", "aten_addmm_default"],
+            (4,): ["aten_add_tensor"],
+            (5,): ["aten_sub_tensor"],
+            (6,): ["aten_mul_tensor"],
+            (7,): ["aten_add_tensor_1"],
+            (8,): ["aten_div_tensor"],
+            (9,): ["aten_relu_default"],
+            (10,): ["aten_sigmoid_default"],
+            (11,): ["aten_split_with_sizes_copy_default"],
         }
 
 
@@ -115,4 +126,22 @@ def check_if_final_outputs_match(model_name, actual_outputs_with_handles):
         else:
             if not torch.allclose(actual_output, expected_output, rtol=1e-4, atol=1e-5):
                 return False
+    return True
+
+
+def check_if_debug_handle_to_op_names_match(model_name, actual_debug_handle_to_op_name):
+    """
+    Checks if the actual op names match the expected op names for the specified model.
+    Returns True if all match, otherwise returns False.
+    """
+    model_instance = model_registry[model_name]
+    expected_debug_handle_to_op_name = (
+        model_instance.get_expected_debug_handle_to_op_names()
+    )
+    if len(actual_debug_handle_to_op_name) != len(expected_debug_handle_to_op_name):
+        return False
+    for debug_handle, expected_op_name in expected_debug_handle_to_op_name.items():
+        actual_op_name = actual_debug_handle_to_op_name.get(debug_handle)
+        if actual_op_name != expected_op_name:
+            return False
     return True

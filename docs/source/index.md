@@ -39,6 +39,7 @@ ExecuTorch provides support for:
 - [Runtime Integration](using-executorch-runtime-integration)
 - [Troubleshooting](using-executorch-troubleshooting)
 - [Building from Source](using-executorch-building-from-source)
+- [Quantization](quantization-overview)
 - [FAQs](using-executorch-faqs)
 #### Examples
 - [Android Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
@@ -74,14 +75,13 @@ ExecuTorch provides support for:
 - [Platform Abstraction Layer](runtime-platform-abstraction-layer)
 #### Portable C++ Programming
 - [PTE File Format](pte-file-format)
+- [PTD File Format](ptd-file-format)
 #### API Reference
 - [Export to Executorch API Reference](export-to-executorch-api-reference)
 - [Executorch Runtime API Reference](executorch-runtime-api-reference)
 - [Runtime Python API Reference](runtime-python-api-reference)
 - [API Life Cycle](api-life-cycle)
 - [Javadoc](https://pytorch.org/executorch/main/javadoc/)
-#### Quantization
-- [Overview](quantization-overview)
 #### Kernel Library
 - [Overview](kernel-library-overview)
 - [Custom ATen Kernel](kernel-library-custom-aten-kernel)
@@ -197,6 +197,7 @@ runtime-backend-delegate-implementation-and-linking
 runtime-platform-abstraction-layer
 portable-cpp-programming
 pte-file-format
+ptd-file-format
 ```
 
 ```{toctree}

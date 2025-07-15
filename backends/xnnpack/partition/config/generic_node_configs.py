@@ -15,7 +15,11 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
 )
-from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_quant,
+    tag_as_implicit_q_dq,
+)
 from executorch.backends.xnnpack.utils.utils import get_input_node
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
@@ -54,10 +58,12 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
 
             quantized_deps.extend(node.all_input_nodes)
 
-            # check if quantized pattern has fused activation
+            # ensure the node has only one user to enforce quantized pattern
+            # (dq -> node -> fused act (optional) -> q)
             if len(node.users) != 1:
                 return deps
 
+            # check if quantized pattern has fused activation
             node_output = list(node.users)[0]
             if (
                 node_output.op == "call_function"
@@ -72,6 +78,15 @@ class GenericNodePartitionerConfig(XNNPartitionerConfig):
                 # Expected node --> fused_act (optional) --> dequant
                 return deps
 
+            # Tag input nodes (dq nodes) as implicit q/dq nodes
+            for dq_input in node.all_input_nodes:
+                if is_dequant(dq_input):
+                    tag_as_implicit_q_dq(dq_input)
+
+            # Tag node_output (q node) as an implicit q/dq node
+            if is_quant(node_output):
+                tag_as_implicit_q_dq(node_output)
+
             quantized_deps.append(node_output)
 
         return deps + quantized_deps
@@ -83,12 +98,22 @@ class QuantizedPerTensorConfig(GenericNodePartitionerConfig):
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.STATIC_QUANT]
 
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        return [node]
+
 
 class DeQuantizedPerTensorConfig(GenericNodePartitionerConfig):
     target_name = "dequantize_per_tensor.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.STATIC_QUANT]
+
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        return [node]
 
 
 class HardtanhConfig(GenericNodePartitionerConfig):
@@ -375,6 +400,9 @@ class HardswishConfig(GenericNodePartitionerConfig):
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
 
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.hardswish.default
+
 
 class LeakyReLUConfig(GenericNodePartitionerConfig):
     target_name = "leaky_relu.default"
@@ -561,36 +589,6 @@ class BMMConfig(GenericNodePartitionerConfig):
     """
 
     target_name = "bmm.default"
-
-    def supported_precision_types(self) -> List[ConfigPrecisionType]:
-        return [ConfigPrecisionType.FP32]
-
-
-class SDPAConfig(GenericNodePartitionerConfig):
-    target_name = "scaled_dot_product_attention.default"
-
-    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
-        """
-        Requires Mask to have Rank 2
-        """
-        if not self.check_common_constraints(node, ep):
-            return False
-
-        if len(node.all_input_nodes) < 4:
-            return False
-        mask_node = node.all_input_nodes[3]
-        mask_rank = mask_node.meta["val"].dim()
-        if mask_rank != 2:
-            why(
-                node,
-                reason=f"mask must have rank 2, got mask of rank {mask_rank}",
-            )
-            return False
-
-        return True
-
-    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
-        return torch.ops.aten.scaled_dot_product_attention.default
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]

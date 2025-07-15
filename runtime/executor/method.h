@@ -20,6 +20,7 @@
 #include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/merged_data_map.h>
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/compiler.h>
 
@@ -76,6 +77,7 @@ class Method final {
         delegates_(rhs.delegates_),
         n_chains_(rhs.n_chains_),
         chains_(rhs.chains_),
+        merged_data_map_(std::move(rhs.merged_data_map_)),
         external_constants_(rhs.external_constants_),
         n_external_constants_(rhs.n_external_constants_),
         init_state_(rhs.init_state_) {
@@ -85,6 +87,8 @@ class Method final {
     rhs.values_ = nullptr;
     rhs.n_delegate_ = 0;
     rhs.delegates_ = nullptr;
+
+    rhs.merged_data_map_ = nullptr;
     rhs.n_external_constants_ = 0;
     rhs.external_constants_ = nullptr;
 
@@ -314,6 +318,7 @@ class Method final {
         delegates_(nullptr),
         n_chains_(0),
         chains_(nullptr),
+        merged_data_map_(nullptr),
         external_constants_(nullptr),
         n_external_constants_(0),
         init_state_(InitializationState::Uninitialized) {}
@@ -364,6 +369,7 @@ class Method final {
   size_t n_chains_;
   Chain* chains_;
 
+  internal::MergedDataMap* merged_data_map_;
   NamedData* external_constants_;
   size_t n_external_constants_ = 0;
 
