@@ -19,7 +19,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import cast, List, Optional, Sequence
+from typing import cast, List, Optional, Sequence, Set
 
 import torch
 import torch.fx
@@ -705,6 +705,118 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return cast(list[int], permute_node.args[1])
         assert "dim" in permute_node.kwargs
         return cast(list[int], permute_node.kwargs["dim"])
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
+class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
+    """
+    Looks for subgraphs of the form:
+    squeeze -> [elementwise ops] -> view
+    and removes the squeeze node by reshaping the intermediate ops. If the final view
+    is a corresponding unsqueeze it should also get eliminated by noop view elimination
+    later. Only handles simple chain of intermediates now.
+
+    The pass works on view ops instead of squeeze directly, thus it should be run after
+    the squeeze/unsqueeze->view lowering.
+    """
+
+    intermediate_ops: set[EdgeOpOverload] = {
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.cadence.quantize_per_tensor.default,
+        exir_ops.edge.cadence.dequantize_per_tensor.default,
+        # Ops that require special handling:
+        exir_ops.edge.aten.slice_copy.Tensor,
+    }
+
+    def get_squeeze_indices(self, view_node: Node) -> List[int]:
+        """
+        Returns the indices of the input dimensions that are squeezed in the output if
+        view node is a squeeze. Returns an empty list otherwise.
+        """
+        input_node = cast(Node, get_arg(view_node, "input"))
+        input_shape = input_node.meta["val"].shape
+        output_shape = view_node.meta["val"].shape
+
+        if len(input_shape) <= len(output_shape):
+            return []
+
+        squeeze_indices = []
+        out_idx = 0
+        for idx, dim in enumerate(input_shape):
+            if out_idx >= len(output_shape):
+                return []
+            if dim == output_shape[out_idx]:
+                out_idx += 1
+            else:
+                # If there's a mismatch between the input and output dimensions, input
+                # dimension has to be 1.
+                if dim == 1:
+                    squeeze_indices.append(idx)
+                else:
+                    return []
+
+        # Check if all the output dimensions are consumed.
+        if out_idx != len(output_shape):
+            return []
+
+        return squeeze_indices
+
+    def handle_squeeze(self, view_node: Node, visited_view_nodes: Set[Node]) -> None:
+        if view_node in visited_view_nodes:
+            return
+
+        squeeze_indices = self.get_squeeze_indices(view_node)
+        if not squeeze_indices:
+            return
+
+        # Only handle simple chains for now.
+        if len(view_node.users) != 1:
+            return
+        node = next(iter(view_node.users))
+
+        # Traverse down from the node until finding another view op.
+        intermediate_slices = []
+        while node.target != exir_ops.edge.aten.view_copy.default:
+            # Only handle simple chains for now
+            if len(node.users) != 1:
+                return
+            if node.target not in self.intermediate_ops:
+                return
+            if node.target == exir_ops.edge.aten.slice_copy.Tensor:
+                intermediate_slices.append(node)
+            node = next(iter(node.users))
+
+        # View node found. We can't optimize this view_node again since the
+        # input shape is invalid now so add it to the visited set.
+        visited_view_nodes.add(node)
+
+        # Update the intermediate slices.
+        for slice_node in intermediate_slices:
+            slice_rank = len(slice_node.meta["val"].shape)
+            slice_dim = cast(int, get_arg(slice_node, "dim"))
+            if slice_dim < 0:
+                slice_dim += slice_rank
+            for squeeze_dim in squeeze_indices:
+                if slice_dim >= squeeze_dim:
+                    slice_dim += 1
+            set_arg(slice_node, "dim", slice_dim)
+
+        # Skip the initial view node.
+        input_node = cast(Node, get_arg(view_node, "input"))
+        view_node.replace_all_uses_with(input_node)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        visited_view_nodes = set()
+        for view_node in graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.view_copy.default, sort=True
+        ):
+            self.handle_squeeze(view_node, visited_view_nodes)
+
+        graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+
+        return super().call(graph_module)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
