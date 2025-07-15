@@ -324,7 +324,7 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        bash examples/arm/setup.sh --i-agree-to-the-contained-eula
+        .ci/scripts/setup-arm-baremetal-tools.sh
         source examples/arm/ethos-u-scratch/setup_path.sh
 
         # Install requirements for converting notebooks
@@ -349,7 +349,8 @@ jobs:
         # Follow the steps required before running the notebooks
         # Try to mirror these as closely as possible
         ${CONDA_RUN} sh install_executorch.sh "--use-pt-pinned-commit"
-        ${CONDA_RUN} sh examples/arm/setup.sh --i-agree-to-the-contained-eula
+
+        ${CONDA_RUN} sh .ci/scripts/setup-arm-baremetal-tools.sh
         ${CONDA_RUN} source examples/arm/ethos-u-scratch/setup_path.sh
 
         # Install requirements for converting notebooks
