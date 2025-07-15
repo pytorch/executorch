@@ -21,12 +21,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_BUILD_TYPE Release)
 
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
 find_package(executorch CONFIG REQUIRED)
 
 target_link_options_shared_lib(executorch)
 
 set(BUILD_TESTING OFF)
-add_subdirectory(${EXECUTORCH_ROOT}/extension/llm/runner ${CMAKE_BINARY_DIR}/../../../extension/llm/runner)
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/runner
+  ${CMAKE_BINARY_DIR}/../../../extension/llm/runner
+)
 
 if(NOT TARGET gflags)
   add_subdirectory(
@@ -35,11 +41,11 @@ if(NOT TARGET gflags)
   )
 endif()
 
-add_executable(
-  phi_3_mini_runner
-  main.cpp
-)
+add_executable(phi_3_mini_runner main.cpp)
+
+target_link_directories(phi_3_mini_runner PUBLIC ${_common_include_directories})
 
 target_link_libraries(
-  phi_3_mini_runner PUBLIC executorch optimized_native_cpu_ops_lib xnnpack_backend gflags extension_llm_runner
+  phi_3_mini_runner PUBLIC executorch optimized_native_cpu_ops_lib
+                           xnnpack_backend gflags extension_llm_runner
 )

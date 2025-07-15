@@ -48,8 +48,7 @@ int main(int32_t argc, char** argv) {
   std::unique_ptr<tokenizers::Tokenizer> tokenizer =
       std::make_unique<tokenizers::Llama2cTokenizer>();
   tokenizer->load(tokenizer_path);
-  std::cout << "Tokenizer loaded, eos_id = " << tokenizer->eos_tok()
-            << std::endl;
+
   auto runner = executorch::extension::llm::create_text_llm_runner(
       model_path, std::move(tokenizer));
 
