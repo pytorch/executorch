@@ -223,12 +223,6 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   set(PTHREADPOOL_SOURCE_DIR
       "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/pthreadpool"
   )
-  if(APPLE)
-    set(PTHREADPOOL_SYNC_PRIMITIVE
-        "condvar"
-        CACHE STRING ""
-    )
-  endif()
   include(ExternalProject)
   include(GNUInstallDirs)
   set(PTHREADPOOL_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/pthreadpool")
@@ -237,6 +231,11 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
       "${PTHREADPOOL_INSTALL_DIR}/${CMAKE_INSTALL_LIBDIR}/libpthreadpool.a"
   )
   get_extra_cmake_args_for_external_project(PTHREADPOOL_EXTRA_CMAKE_ARGS)
+  if(APPLE)
+    list(APPEND PTHREADPOOL_EXTRA_CMAKE_ARGS -D
+         PTHREADPOOL_SYNC_PRIMITIVE=condvar
+    )
+  endif()
   ExternalProject_Add(
     pthreadpoolExternalProject
     SOURCE_DIR "${PTHREADPOOL_SOURCE_DIR}"
@@ -252,8 +251,6 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
                PTHREADPOOL_LIBRARY_TYPE=static
                -D
                PTHREADPOOL_ALLOW_DEPRECATED_API=ON
-               -D
-               PTHREADPOOL_SYNC_PRIMITVE=${PTHREADPOOL_SYNC_PRIMITIVE}
                -D
                CMAKE_POSITION_INDEPENDENT_CODE=ON
                -D
