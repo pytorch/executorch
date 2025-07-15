@@ -145,7 +145,7 @@ def EXIRATenDialectVerifier(  # noqa: C901
                         raise RuntimeError(
                             f"Cannot preserve operator {op} because it is a view or mutation."
                         )
-                    if op.is_mutable:
+                    if op._schema.is_mutable:
                         logging.warning(
                             f"Preserving mutation ops like {op} is a no-op because run_decomposition functionalizes it and prevents it from showing up."
                         )
