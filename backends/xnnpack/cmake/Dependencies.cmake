@@ -68,12 +68,12 @@ install(TARGETS xnnpack-microkernels-prod
 
 
 if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
-    IF(TARGET kleidiai)
+    if(TARGET kleidiai)
         install(TARGETS kleidiai
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
             PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-    ENDIF()
+    endif()
 endif()
 
 # Revert PIC Flag to what it originally was
