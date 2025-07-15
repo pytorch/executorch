@@ -60,7 +60,7 @@ __all__ = [
 
 @functools.lru_cache
 def get_symmetric_quantization_config(
-    is_per_channel: bool = False,
+    is_per_channel: bool = True,
     is_qat: bool = False,
     is_dynamic: bool = False,
     act_qmin: int = -128,
