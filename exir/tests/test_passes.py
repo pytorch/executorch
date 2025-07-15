@@ -67,7 +67,7 @@ from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
-from executorch.exir.tests.models import MLP, Mul
+from executorch.exir.tests.models import FeedForwardBlock, MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
@@ -595,33 +595,78 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(counter, 1)
 
     def test_compile_fix_broken_ops(self) -> None:
-        # When pass an input of more than 4 dimensions to Linear
-        # aten._unsafe_view is used under the hood
-        x = torch.randn([2, 3, 4, 5])
-        model: torch.nn.Linear = torch.nn.Linear(5, 5)
-
-        class Foo(torch.nn.Module):
-            def __init__(self):
+        class ExportableLoop(nn.Module):
+            def __init__(self, hidden_size, out_channels):
                 super().__init__()
-                self.model = model
+                self.hidden_size = hidden_size
+                self.B = nn.Parameter(torch.randn(hidden_size, 1))  # (H, in_channels)
+                self.C = nn.Parameter(
+                    torch.randn(out_channels, hidden_size)
+                )  # (C_out, H)
+                A = torch.randn(2, hidden_size)
+                self.A_real = nn.Parameter(A[0].clone())
+                self.A_imag = nn.Parameter(A[1].clone())
 
-            def forward(self, inp: torch.Tensor) -> torch.Tensor:
-                return self.model(inp)
+            def update_state(self, h, x_t):
+                # h: [B, 2, H], x_t: [B, H]
+                hr, hi = h[:, 0, :], h[:, 1, :]  # [B, H]
+                hrn = hr * self.A_real - hi * self.A_imag + x_t  # [B, H]
+                hin = hi * self.A_real + hr * self.A_imag  # [B, H]
+                hn = torch.stack([hrn, hin], dim=1)  # [B, 2, H]
+                return hn, hrn
 
-        f = Foo()
+            def forward(self, u):
+                # u: [B, 1, T]
+                x = torch.matmul(self.B, u)  # (B, H, T)
+                B, H, T = x.shape
 
-        # ReplaceBrokenOpsWithFunctionalOpsPass is used in to_edge()
+                h = torch.zeros(B, 2, H, device=x.device, dtype=x.dtype)  # [B, 2, H]
+                h_accum = torch.zeros(
+                    B, H, T, device=x.device, dtype=x.dtype
+                )  # [B, H, T]
+                i = torch.tensor(0, device=x.device, dtype=torch.int64)
+                one = torch.tensor(1, device=x.device, dtype=torch.int64)
+
+                def cond(i, h, h_accum):
+                    return i < T
+
+                def body(i, h, h_accum):
+                    x_t = x.index_select(-1, i.unsqueeze(0)).squeeze(
+                        -1
+                    )  # ✅ safe for export
+                    h, hr = self.update_state(h, x_t)  # h: [B, 2, H], hr: [B, H]
+                    h_accum = h_accum.index_copy(
+                        -1, i.unsqueeze(0), hr.unsqueeze(-1)
+                    )  # [B, H, T]
+                    i_next = i + one
+                    return i_next, h, h_accum
+
+                _, h, h_accum = torch._higher_order_ops.while_loop(
+                    cond, body, (i, h, h_accum)
+                )
+                y = torch.matmul(self.C, h_accum).transpose(0, 1)  # (B, C_out, T)
+                return y
+
+        # Instantiate and export
+        model = ExportableLoop(hidden_size=128, out_channels=10)
+        inp = torch.randn(1, 1, 32)  # (B, in_channels=1, T=32)
+        ep = export(model, (inp,))
         prog = to_edge(
-            export(f, (x,), strict=True),
+            ep,
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
         gm = prog.exported_program().graph_module
         count_after = 0
         for node in gm.graph.nodes:
-            if node.target == torch.ops.aten._unsafe_view.default:
+            if (
+                node.target == torch.ops.aten.squeeze.dims
+                or node.target == torch.ops.aten.select.int
+            ):
                 count_after += 1
         self.assertEqual(count_after, 0)
-        self.assertTrue(torch.allclose(prog.exported_program().module()(x), f(x)))
+        self.assertTrue(
+            torch.allclose(prog.exported_program().module()(inp), model(inp))
+        )
 
     def test_convert_symb_ops(self) -> None:
         class Foo(torch.nn.Module):
@@ -883,11 +928,79 @@ class TestPasses(unittest.TestCase):
             .exported_program()
             .graph_module
         )
+
+        # Every node except input and output should have debug handle
         for node in graph_module.graph.nodes:
-            self.assertIn("debug_handle", node.meta)
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
         ScalarToTensorPass()(graph_module)
+
         for node in graph_module.graph.nodes:
-            self.assertIn("debug_handle", node.meta)
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
+
+    def test_debug_handle_generator_pass_generate_same_debug_handle_on_ops_sharing_same_source(
+        self,
+    ) -> None:
+        eager_model = FeedForwardBlock(256, 512)
+        inputs = (torch.randn(12, 256),)
+
+        graph_module = (
+            to_edge(export(eager_model, inputs, strict=True))
+            .exported_program()
+            .graph_module
+        )
+
+        same_source_nodes = {
+            "aten_native_layer_norm_default": (
+                "aten_native_layer_norm_default",
+                "getitem",
+            ),
+            "getitem": ("aten_native_layer_norm_default", "getitem"),
+            "aten_permute_copy_default": (
+                "aten_permute_copy_default",
+                "aten_addmm_default",
+            ),
+            "aten_addmm_default": ("aten_permute_copy_default", "aten_addmm_default"),
+            "aten_native_dropout_default": ("aten_native_dropout_default", "getitem_1"),
+            "getitem_1": ("aten_native_dropout_default", "getitem_1"),
+            "aten_relu_default": ("aten_relu_default",),
+            "aten_permute_copy_default_1": (
+                "aten_permute_copy_default_1",
+                "aten_addmm_default_1",
+            ),
+            "aten_addmm_default_1": (
+                "aten_permute_copy_default_1",
+                "aten_addmm_default_1",
+            ),
+            "aten_native_dropout_default_1": (
+                "aten_native_dropout_default_1",
+                "getitem_2",
+            ),
+            "getitem_2": ("aten_native_dropout_default_1", "getitem_2"),
+        }
+
+        node_name_to_debug_handle = {}
+
+        # Node having same source should have same debug handle
+        for node in graph_module.graph.nodes:
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
+                if node.name in node_name_to_debug_handle:
+                    for node_name_with_same_debug_handle in same_source_nodes[
+                        node.name
+                    ]:
+                        self.assertEqual(
+                            node_name_to_debug_handle[node_name_with_same_debug_handle],
+                            node.meta["debug_handle"],
+                        )
+                else:
+                    for node_name_with_same_debug_handle in same_source_nodes[
+                        node.name
+                    ]:
+                        node_name_to_debug_handle[node_name_with_same_debug_handle] = (
+                            node.meta["debug_handle"]
+                        )
 
     def test_generate_missing_debug_handles(self) -> None:
         eager_model = MLP(2, output_size=4)
@@ -895,10 +1008,15 @@ class TestPasses(unittest.TestCase):
 
         ep = to_edge(export(eager_model, inputs, strict=True)).exported_program()
 
-        list(ep.graph.nodes)[0].meta.pop("debug_handle")
-        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is None)
+        # get the first non-placeholder node
+        first_non_placeholder_node = [
+            n for n in ep.graph.nodes if n.op != "placeholder"
+        ][0]
+
+        first_non_placeholder_node.meta.pop("debug_handle")
+        self.assertTrue(first_non_placeholder_node.meta.get("debug_handle") is None)
         generate_missing_debug_handles(ep)
-        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is not None)
+        self.assertTrue(first_non_placeholder_node.meta.get("debug_handle") is not None)
 
     def test_debug_handle_generator_pass_with_control_flow(self) -> None:
         def true_nested(y: torch.Tensor) -> torch.Tensor:
@@ -952,7 +1070,8 @@ class TestPasses(unittest.TestCase):
             while queue:
                 current_graph_module = queue.pop(0)
                 for node in current_graph_module.graph.nodes:
-                    self.assertIn("debug_handle", node.meta)
+                    if node.op != "placeholder" and node.op != "output":
+                        self.assertIn("debug_handle", node.meta)
                 control_flow_submodules = [
                     submodule
                     for _, submodule, _ in get_control_flow_submodules(
@@ -963,7 +1082,6 @@ class TestPasses(unittest.TestCase):
 
         DebugHandleGeneratorPass()(graph_module)
         check_debug_handle_metadata(graph_module)
-        generate_missing_debug_handles(ep)
 
         # Check debug handle still preserved after ScalarToTensorPass
         ScalarToTensorPass()(graph_module)

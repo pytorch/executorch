@@ -20,6 +20,7 @@
 #include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/merged_data_map.h>
 #include <executorch/runtime/executor/platform_memory_allocator.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/tensor_parser.h>
@@ -270,6 +271,8 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
         static_cast<int8_t>(cond_val.scalar_type()));
 
     const bool* cond_data = cond_val.const_data_ptr<bool>();
+    ET_CHECK_OR_RETURN_ERROR(
+        cond_data != nullptr, InvalidState, "Tensor data is null");
     for (size_t i = 0; i < static_cast<size_t>(cond_val.numel()); i++) {
       if (!cond_data[i]) {
         return false;
@@ -328,9 +331,9 @@ Result<size_t> Method::get_num_external_constants() {
   return n_external_constants;
 }
 
-Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
+Error Method::parse_external_constants(const NamedDataMap* external_data_map) {
   ET_CHECK_OR_RETURN_ERROR(
-      named_data_map != nullptr, InvalidState, "named_data_map is null");
+      external_data_map != nullptr, InvalidState, "external_data_map is null");
   auto flatbuffer_values = serialization_plan_->values();
   size_t n_value = flatbuffer_values->size();
 
@@ -372,7 +375,7 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
       continue;
     }
     Result<const TensorLayout> tensor_layout =
-        named_data_map->get_tensor_layout(key);
+        external_data_map->get_tensor_layout(key);
     if (!tensor_layout.ok()) {
       ET_LOG(Info, "Failed to get metadata for key %s", key);
       return tensor_layout.error();
@@ -387,7 +390,7 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
     external_constants_[n_external_constants_].key = key;
 
     // Save the buffer.
-    Result<FreeableBuffer> buffer = named_data_map->get_data(key);
+    Result<FreeableBuffer> buffer = external_data_map->get_data(key);
     ET_CHECK_OR_RETURN_ERROR(
         buffer.ok(),
         InvalidExternalData,
@@ -400,7 +403,7 @@ Error Method::parse_external_constants(const NamedDataMap* named_data_map) {
   return Error::Ok;
 }
 
-Error Method::parse_values(const NamedDataMap* named_data_map) {
+Error Method::parse_values(const NamedDataMap* external_data_map) {
   auto flatbuffer_values = serialization_plan_->values();
   ET_CHECK_OR_RETURN_ERROR(
       flatbuffer_values != nullptr, InvalidProgram, "Missing values");
@@ -428,7 +431,7 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
     if (external_constants_ == nullptr) {
       return Error::MemoryAllocationFailed;
     }
-    Error err = parse_external_constants(named_data_map);
+    Error err = parse_external_constants(external_data_map);
     if (err != Error::Ok) {
       return err;
     }
@@ -541,7 +544,7 @@ Error Method::parse_values(const NamedDataMap* named_data_map) {
             program_,
             memory_manager_,
             static_cast<const executorch_flatbuffer::Tensor*>(val),
-            named_data_map,
+            external_data_map,
             Span<NamedData>(external_constants_, n_external_constants_));
         if (!t.ok()) {
           ET_LOG(
@@ -741,7 +744,7 @@ Result<Method> Method::load(
     const Program* program,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* named_data_map) {
+    const NamedDataMap* external_data_map) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
@@ -755,7 +758,7 @@ Result<Method> Method::load(
   }
   Method method(program, memory_manager, event_tracer, temp_allocator);
   ET_LOG(Debug, "Loading method: %s.", s_plan->name()->c_str());
-  Error err = method.init(s_plan, named_data_map);
+  Error err = method.init(s_plan, external_data_map);
   if (err != Error::Ok) {
     return err;
   } else {
@@ -766,7 +769,7 @@ Result<Method> Method::load(
 
 Error Method::init(
     executorch_flatbuffer::ExecutionPlan* s_plan,
-    const NamedDataMap* named_data_map) {
+    const NamedDataMap* external_data_map) {
   EXECUTORCH_SCOPE_PROF("Method::init");
   internal::EventTracerProfileMethodScope event_tracer_profile_scope =
       internal::EventTracerProfileMethodScope(event_tracer_, "Method::init");
@@ -783,7 +786,7 @@ Error Method::init(
 
   {
     // Parse the elements of the values_ array.
-    Error err = parse_values(named_data_map);
+    Error err = parse_values(external_data_map);
     if (err != Error::Ok) {
       return err;
     }
@@ -800,21 +803,34 @@ Error Method::init(
       return Error::MemoryAllocationFailed;
     }
 
-    // Get NamedDataMap, if it exists.
-    const NamedDataMap* pte_data_map = nullptr;
-    Result<const NamedDataMap*> pte_data_map_res =
-        program_->get_named_data_map();
-    if (pte_data_map_res.ok()) {
-      pte_data_map = pte_data_map_res.get();
-    }
-
+    // Get PTE data map, if it exists.
+    auto pte_data_map = program_->get_named_data_map();
     ET_CHECK_OR_RETURN_ERROR(
-        !(pte_data_map && named_data_map),
-        NotSupported,
-        "NamedDataMap merge not supported; both pte_data_map and named_data_map are non-empty. If you see this error please file an issue at https://github.com/pytorch/executorch/issues");
+        pte_data_map.ok() || pte_data_map.error() == Error::NotFound,
+        InvalidProgram,
+        "Failed to get named data map from program: 0x%" PRIx32,
+        static_cast<uint32_t>(pte_data_map.error()));
 
-    if (!named_data_map || named_data_map->get_num_keys().get() == 0) {
-      named_data_map = pte_data_map;
+    const NamedDataMap* named_data_map = nullptr;
+    if (external_data_map && pte_data_map.ok()) {
+      // Merge external_data_map and pte_data_map if both are present.
+      auto merged =
+          internal::MergedDataMap::load(external_data_map, pte_data_map.get());
+      if (!merged.ok()) {
+        return merged.error();
+      }
+      // Allocate memory for the merged data map.
+      merged_data_map_ =
+          method_allocator->allocateInstance<internal::MergedDataMap>();
+      if (merged_data_map_ == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
+      new (merged_data_map_) internal::MergedDataMap(std::move(merged.get()));
+      named_data_map = merged_data_map_;
+    } else if (external_data_map) {
+      named_data_map = external_data_map;
+    } else if (pte_data_map.ok()) {
+      named_data_map = pte_data_map.get();
     }
 
     // n_delegate_ counts the number of successfully-initialized delegates for
@@ -1679,6 +1695,10 @@ Method::~Method() {
   // Free resources associated with external constants.
   for (const auto i : c10::irange(n_external_constants_)) {
     external_constants_[i].buffer.~FreeableBuffer();
+  }
+  // Free the MergedDataMap.
+  if (merged_data_map_ != nullptr) {
+    merged_data_map_->~MergedDataMap();
   }
   // All other fields are trivially destructible.
 }
