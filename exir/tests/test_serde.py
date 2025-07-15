@@ -56,19 +56,6 @@ class TestSerde(unittest.TestCase):
         for orig, loaded in zip(flat_orig_outputs, flat_loaded_outputs, strict=True):
             self.assertTrue(torch.allclose(orig, loaded))
 
-        # print node names in ep1 and ep2 seperately
-        print("---------------------")
-        print("ep1")
-        print(len(ep1.graph.nodes))
-        for node in ep1.graph.nodes:
-            print(node.name)
-        print("**************")
-        print("ep2")
-        print(len(ep2.graph.nodes))
-        for node in ep2.graph.nodes:
-            print(node.name)
-        print("____________________")
-
         if compare_closeness:
             self.assertEqual(len(ep1.graph.nodes), len(ep2.graph.nodes))
             for node_a, node_b in zip(ep1.graph.nodes, ep2.graph.nodes):

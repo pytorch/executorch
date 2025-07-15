@@ -1687,29 +1687,13 @@ class GraphModuleDeserializer:
             # newly-created node after it. This ensures that these tensor values
             # have names that are consistent with serialized.
 
-            print(target)
-            print(target.__name__)
-            print(target.name)
-
             name = serialized_node.name
-
-            print(name)
-
-            if name == "split_tensor":
-                print(serialized_node)
-                print(serialized_node.inputs)
-                print(serialized_node.outputs)
 
             args, kwargs = self.deserialize_inputs(target, serialized_node)
             fx_node = self.graph.create_node(
                 "call_function", target, args, kwargs, name
             )
             self.deserialize_outputs(serialized_node, fx_node)
-
-            if name == "split_tensor":
-                print(fx_node)
-                print(fx_node.args)
-                print(fx_node.kwargs)
         else:
             raise SerializeError(
                 f"Unsupported target type for node {serialized_node}: {target}"
