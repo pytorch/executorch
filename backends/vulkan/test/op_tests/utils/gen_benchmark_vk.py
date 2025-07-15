@@ -196,6 +196,15 @@ vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {{
   }}
 }}
 
+at::Tensor make_casted_randint_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    int low = 0,
+    int high = 10) {{
+
+  return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
+}}
+
 at::Tensor make_rand_tensor(
     std::vector<int64_t> sizes,
     at::ScalarType dtype = at::kFloat,

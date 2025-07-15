@@ -307,6 +307,15 @@ class ReshapePattern(SharedSpecPattern):
         return [torch.ops.aten.reshape.default]
 
 
+class ViewPattern(SharedSpecPattern):
+    """
+    Quantizer for View operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.view.default]
+
+
 class SoftMaxPattern(QuantizationPattern):
     """
     Quantizer for Softmax operator.
