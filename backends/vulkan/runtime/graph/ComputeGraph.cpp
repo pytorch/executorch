@@ -764,8 +764,6 @@ void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
   context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
   fence.wait();
   context_->fences().return_fence(fence);
-
-  context_->flush();
 }
 
 void ComputeGraph::encode_prepack() {
@@ -794,6 +792,7 @@ void ComputeGraph::run_prepack() {
                                  : config_.prepack_initial_threshold_nbytes;
     if (not_terminal && staging_nbytes_in_cmd_ > threshold) {
       submit_current_cmd_and_wait(/*final_use=*/true);
+      context_->flush();
       staging_nbytes_in_cmd_ = 0;
       context_->set_cmd();
       submitted = true;
@@ -803,6 +802,7 @@ void ComputeGraph::run_prepack() {
     i++;
   }
   submit_current_cmd_and_wait(/*final_use=*/true);
+  context_->flush();
   staging_nbytes_in_cmd_ = 0;
 }
 

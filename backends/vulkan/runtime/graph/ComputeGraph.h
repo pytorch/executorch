@@ -821,8 +821,7 @@ class ComputeGraph final {
 
   /*
    * Submits the current command buffer in the Context to the GPU for execution,
-   * and wait for it to complete before returning. This function will also flush
-   * the Context after execution.
+   * and wait for it to complete before returning.
    */
   void submit_current_cmd_and_wait(const bool final_use = false);
 
