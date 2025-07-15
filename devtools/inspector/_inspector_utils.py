@@ -38,7 +38,6 @@ from executorch.devtools.etrecord import ETRecord
 from executorch.exir.debug_handle_utils import (
     DEBUG_HANDLE_KEY,
     get_greatest_ancestor_node_identifier,
-    UNSET_DEBUG_HANDLE,
 )
 
 from executorch.exir.graph_module import bfs_trace_with_node_process
@@ -626,23 +625,28 @@ def _debug_handles_have_overlap(
     return len(aot_set.intersection(runtime_set)) > 0
 
 
-def _combine_debug_handles(debug_handles: List[DebugHandle]) -> DebugHandle:
-    """Combine multiple debug handles into one debug handle"""
-    combined_debug_handles_set = set()
-    for debug_handle in debug_handles:
-        combined_debug_handles_set.update(set(debug_handle))
-    return tuple(sorted(combined_debug_handles_set))
-
-
-def _combine_overlapped_intermediate_outputs(
-    nodes: List[Tuple[DebugHandle, Any]]
+def _combine_aot_overlapped_intermediate_outputs(
+    aot_nodes: List[Tuple[DebugHandle, Any]], runtime_node: Tuple[DebugHandle, Any]
 ) -> Tuple[DebugHandle, Any]:
-    """Combine multiple overlapped intermediate outputs into one with combined debug_handles and last output"""
-    debug_handles = [debug_handle for debug_handle, _ in nodes]
-    outputs = [output for _, output in nodes]
-    combined_debug_handle = _combine_debug_handles(debug_handles)
-    output = outputs[-1]  # Pick the last one
-    return combined_debug_handle, output
+    """
+    Ensure the AOT combined debug_handles are the same as the runtime debug_handles (order ignored),
+    then pick the last intermediate output based on the runtime debug_handles
+    """
+    # Map AOT single element debug_handles to outputs
+    aot_map = dict(aot_nodes)
+    runtime_debug_handle, _ = runtime_node
+
+    # Combine all AOT debug_handles into a list
+    aot_combined_debug_handle = [t[0] for t in aot_map.keys()]
+
+    if set(aot_combined_debug_handle) != set(runtime_debug_handle):
+        # AOT combined debug_handle and runtime debug_handle do not match.
+        return (-1,), None
+
+    # Pick the last intermediate output
+    last_int = runtime_debug_handle[-1]
+    key = (last_int,)
+    return runtime_debug_handle, aot_map[key]
 
 
 def _create_debug_handle_overlap_graph(
@@ -752,38 +756,52 @@ def map_runtime_aot_intermediate_outputs(
 
         # Map only if both AOT and runtime data are present.
         if len(aot_list) != 0 and len(runtime_list) != 0:
+            # The size of runtime_list should be 1 because all AOT debug_handles are tuples with one element.
+            # Additionally, runtime debug handles have already undergone pre-processing to merge overlapping debug_hanldes.
+            # As a result, there shouldn't be any 1-to-n or n-to-n (AOT to runtime) mappings.
+            assert len(runtime_list) == 1
+            runtime_debug_handle, runtime_intermediate_output = runtime_list[0]
+
             # Combine aot debug handles into a single key
             aot_combined_debug_handle, aot_intermediate_output = (
-                _combine_overlapped_intermediate_outputs(aot_list)
+                _combine_aot_overlapped_intermediate_outputs(aot_list, runtime_list[0])
             )
-            # Combine runtime debug handles into a single key
-            runtime_combined_debug_handle, runtime_intermediate_output = (
-                _combine_overlapped_intermediate_outputs(runtime_list)
-            )
-            # List can't be used as a key, so convert to tuple
-            if isinstance(aot_intermediate_output, list):
+
+            if aot_combined_debug_handle == (-1,):
+                # Skip this mapping if the aot combined debug handle and runtime debug handle do not exact match.
+                continue
+
+            if isinstance(aot_intermediate_output, Sequence):
+                if not isinstance(runtime_intermediate_output, Sequence):
+                    raise TypeError(
+                        "runtime intermediate output should be a sequence when aot intermediate output is a sequence"
+                    )
+                last_element = runtime_intermediate_output[-1]
+                if isinstance(last_element, list) and all(
+                    isinstance(t, torch.Tensor) for t in last_element
+                ):
+                    # If the last element is a list of tensors (delegate case)
+                    runtime_intermediate_output = last_element
+                elif isinstance(last_element, torch.Tensor):
+                    # If the last element is a tensor (non-delegate case)
+                    pass
+                else:
+                    raise ValueError(
+                        "The last element of runtime argument list must be a tensor or a list of tensors when aot intermediate output is a sequence"
+                    )
+                # List can't be used as a key, so convert to tuple
                 aot_intermediate_output = tuple(aot_intermediate_output)
-            # runtime follow the same format as aot, so it's safe to convert to tuple
-            if isinstance(runtime_intermediate_output, list):
                 runtime_intermediate_output = tuple(runtime_intermediate_output)
 
-            # Currently, runtime_intermediate_output logs all delegate call arguments.
-            # Process here to extract only the outputs.
-            if isinstance(aot_intermediate_output, tuple):
-                # If both are sequences, slice runtime_intermediate_output to match the length of aot_intermediate_output
-                if isinstance(runtime_intermediate_output, tuple):
-                    runtime_intermediate_output = runtime_intermediate_output[
-                        -len(aot_intermediate_output) :
-                    ]
-            # If aot_intermediate_output is not a sequence but runtime_intermediate_output is, get the last element
-            elif isinstance(runtime_intermediate_output, tuple):
+            elif isinstance(runtime_intermediate_output, Sequence):
+                # delegate runtime call and AOT intermediate is not a sequence, just take the last element from runtime list
                 runtime_intermediate_output = runtime_intermediate_output[-1]
 
             # Create a mapping between runtime and aot
             aot_runtime_mapping[
                 (aot_combined_debug_handle, aot_intermediate_output)
             ] = (
-                runtime_combined_debug_handle,
+                runtime_debug_handle,
                 runtime_intermediate_output,
             )
 
@@ -891,7 +909,9 @@ def compare_intermediate_outputs(a: Any, b: Any, comparator) -> List[float]:
     if is_a_sequence and is_b_sequence:
         # Ensure both sequences have the same length
         if len(a) != len(b):
-            raise ValueError("Sequences must have the same length for comparison.")
+            raise ValueError(
+                f"Sequences 'a' ({a}) and 'b' ({b}) must have the same length for comparison."
+            )
 
         # Compare each element in the sequences and return the list of results
         return [comparator.compare(x, y) for x, y in zip(a, b)]
@@ -900,7 +920,9 @@ def compare_intermediate_outputs(a: Any, b: Any, comparator) -> List[float]:
         return [comparator.compare(a, b)]
     else:
         # Raise an error if one is a sequence and the other is not
-        raise ValueError("Both inputs must be sequences or both must be non-sequences.")
+        raise ValueError(
+            f"Both inputs 'a' ({a}) and 'b' ({b}) must be sequences or both must be non-sequences."
+        )
 
 
 def propagate_back_debug_handle(
@@ -918,7 +940,7 @@ def propagate_back_debug_handle(
     where op1_0 is from op1, op3_0 and op3_1 are from op3, op2 is removed by to_edge pipeline (e.g. RemoveNoopPass).
 
     Then debug handle of op1 should be same as op1_0, and debug handle of op3 should be same as op3_0 and op3_1.
-    The debug handle of op2 will be UNSET_DEBUG_HANDLE for further skipping.
+    The debug handle of op2 will be a non-existing debug handle in edge dialect program for further skipping.
 
     Return: True if:
         a. every debug handle in the edge dialect program has a corresponding node in the exported program
@@ -939,6 +961,11 @@ def propagate_back_debug_handle(
     # number of nodes in the exported program that have matched entry in export_graph_node_id_to_debug_handle
     n_matched_node = 0
 
+    # debug handle for the node in the exported program but not in the edge dialect program
+    debug_handle_for_removed_node = (
+        max(export_graph_node_id_to_debug_handle.values()) + 1
+    )
+
     def _find_n_match_node(node: torch.fx.Node) -> None:
         nonlocal n_matched_node
         if node.name in ("output", "placeholder"):
@@ -954,7 +981,7 @@ def propagate_back_debug_handle(
         if node_id in export_graph_node_id_to_debug_handle:
             node.meta[DEBUG_HANDLE_KEY] = export_graph_node_id_to_debug_handle[node_id]
         else:
-            node.meta[DEBUG_HANDLE_KEY] = UNSET_DEBUG_HANDLE
+            node.meta[DEBUG_HANDLE_KEY] = debug_handle_for_removed_node
 
     bfs_trace_with_node_process(exported_program.graph_module, _find_n_match_node)
 
