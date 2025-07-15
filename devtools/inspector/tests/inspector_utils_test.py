@@ -610,9 +610,6 @@ class TestInspectorUtils(unittest.TestCase):
         with self.assertRaises(ValueError):
             compare_intermediate_outputs(a, b, L1Comparator())
 
-    @unittest.skip(
-        "TODO: enable the test after required feature has been built in pytorch core nightly version"
-    )
     def test_equip_debug_handle_to_export_program_success(self):
         """Test that propagate_back_debug_handle returns True and properly equips debug handles."""
         # Create a test model
@@ -679,9 +676,6 @@ class TestInspectorUtils(unittest.TestCase):
         # Check that it returns False due to mismatch
         self.assertFalse(result)
 
-    @unittest.skip(
-        "TODO: enable the test after required feature has been built in pytorch core nightly version"
-    )
     def test_equip_debug_handle_to_export_program_op_to_be_removed_in_to_edge(self):
         """Test that propagate_back_debug_handle returns True and properly equips debug handles when an op is removed in to_edge"""
 
