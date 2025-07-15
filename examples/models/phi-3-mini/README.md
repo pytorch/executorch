@@ -28,7 +28,7 @@ cmake --build cmake-out -j16 --target install --config Release
 ```
 - Build Phi-3-mini runner.
 ```
-cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+cmake -DCMAKE_PREFIX_PATH=cmake-out \
       -DCMAKE_BUILD_TYPE=Release \
       -Bcmake-out/examples/models/phi-3-mini \
       examples/models/phi-3-mini
