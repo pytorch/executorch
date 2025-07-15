@@ -203,12 +203,6 @@ OPTIMIZED_ATEN_OPS = (
         deps = [":fft_utils"],
     ),
     op_target(
-        name = "op_sigmoid",
-        deps = [
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
-    ),
-    op_target(
         name = "op_gelu",
         deps = [
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
@@ -236,6 +230,7 @@ OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_log_softmax",
         deps = [
+            "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
@@ -262,12 +257,6 @@ OPTIMIZED_ATEN_OPS = (
         deps = [
             ":moments_utils",
             "//executorch/kernels/portable/cpu/util:normalization_ops_util",
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
-    ),
-    op_target(
-        name = "op_neg",
-        deps = [
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),

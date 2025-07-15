@@ -160,8 +160,7 @@ def quantize(
     else:
         raise RuntimeError("Unsupported compilespecs for quantization!")
 
-    # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
-    operator_config = get_symmetric_quantization_config(is_per_channel=False)
+    operator_config = get_symmetric_quantization_config()
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
 
@@ -386,6 +385,7 @@ def get_compile_spec(
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
     quantize: bool = False,
+    config: Optional[str] = None,
 ) -> list[CompileSpec]:
     spec_builder = None
     if target.startswith("TOSA"):
@@ -400,6 +400,7 @@ def get_compile_spec(
             system_config=system_config,
             memory_mode=memory_mode,
             extra_flags="--verbose-operators --verbose-cycle-estimate",
+            config_ini=config,
         )
     elif "vgf" in target:
         if quantize:
@@ -573,6 +574,12 @@ def get_args():
         default=None,
         help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U85 targets",
     )
+    parser.add_argument(
+        "--config",
+        required=False,
+        default="Arm/vela.ini",
+        help="Specify custom vela configuration file (vela.ini)",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -706,6 +713,7 @@ def to_edge_TOSA_delegate(
         args.system_config,
         args.memory_mode,
         args.quantize,
+        args.config,
     )
 
     model_int8 = None
@@ -746,6 +754,7 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
             args.system_config,
             args.memory_mode,
             args.quantize,
+            args.config,
         )
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec

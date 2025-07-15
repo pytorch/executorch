@@ -13,6 +13,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
+    ConvertBmmToMatmul,
     ConvertConv1dToConv2d,
     ConvertSquareToPow,
     DecomposeAny,
@@ -40,7 +41,6 @@ from executorch.backends.qualcomm._passes import (
     Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
-    ReplaceIndexPutInput,
     ReplaceInfValues,
     TagQuantIO,
 )
@@ -80,6 +80,7 @@ def get_capture_program_passes():
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
+        (ConvertBmmToMatmul, False),
         (ConvertConv1dToConv2d, True),
         (DecomposeAny, True),
         (DecomposeColIm, True),
@@ -92,7 +93,6 @@ def get_capture_program_passes():
         (RecomposeRmsNorm, False),
         (Remove0DTensor, True),
         (RemoveRedundancy, True),
-        (ReplaceIndexPutInput, True),
         (TagQuantIO, False),
     ]
 
@@ -224,4 +224,11 @@ class QnnPassManager(PassManager):
         self.add_pass(LayoutTransform(exported_program, insert_permute=True))
         self.add_pass(FuseConsecutiveCast())
         self.add_pass(FuseConsecutiveTranspose())
-        return self._transform(exported_program.graph_module)
+        self._transform(exported_program.graph_module)
+        # Update inputs_to_buffers and buffers_to_mutate in graph signature for mutable buffer
+        # Since I/O will be inserted Q/DQ, it results in failed to mapping output node names and buffer
+        exported_program._graph_signature = _get_updated_graph_signature(
+            exported_program.graph_signature,
+            exported_program.graph_module,
+        )
+        return exported_program.graph_module

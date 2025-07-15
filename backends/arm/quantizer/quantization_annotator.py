@@ -213,6 +213,11 @@ _one_to_one = [
     torch.ops.aten.full_like.default,
     torch.ops.aten.pow.Tensor_Scalar,
     torch.ops.aten.gelu.default,
+    torch.ops.aten.sinh.default,
+    torch.ops.aten.atan.default,
+    torch.ops.aten.acosh.default,
+    torch.ops.aten.sign.default,
+    torch.ops.aten.asin.default,
 ]
 
 _one_to_one_shared_input_qspec = [
@@ -260,6 +265,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.clamp.Tensor,
     torch.ops.aten.unflatten.int,
     torch.ops.aten.index_select.default,
+    torch.ops.aten.index.Tensor,
 ]
 
 _one_to_one_shared_input_or_input_act_qspec = [

@@ -44,10 +44,14 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     _load_for_executorch,  # noqa: F401
     _load_for_executorch_from_buffer,  # noqa: F401
     _load_for_executorch_from_bundled_program,  # noqa: F401
+    _load_program,  # noqa: F401
+    _load_program_from_buffer,  # noqa: F401
     _reset_profile_results,  # noqa: F401
     _unsafe_reset_threadpool,  # noqa: F401
     BundledModule,  # noqa: F401
+    ExecuTorchMethod,  # noqa: F401
     ExecuTorchModule,  # noqa: F401
+    ExecuTorchProgram,  # noqa: F401
     MethodMeta,  # noqa: F401
     Verification,  # noqa: F401
 )

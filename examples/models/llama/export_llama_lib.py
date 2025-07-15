@@ -27,14 +27,14 @@ import torch
 from executorch.devtools.backend_debug import print_delegation_info
 
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
-
-from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
+
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
@@ -53,6 +53,8 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
+
+from omegaconf import DictConfig
 
 from ..model_factory import EagerModelFactory
 from .source_transformation.apply_spin_quant_r1_r2 import (
@@ -103,9 +105,9 @@ EXECUTORCH_DEFINED_MODELS = [
     "llama3_2",
     "static_llama",
     "qwen2_5",
-    "qwen3-0_6b",
-    "qwen3-1_7b",
-    "qwen3-4b",
+    "qwen3_0_6b",
+    "qwen3_1_7b",
+    "qwen3_4b",
     "phi_4_mini",
     "smollm2",
 ]
@@ -114,9 +116,9 @@ HUGGING_FACE_REPO_IDS = {
     "qwen2_5": "Qwen/Qwen2.5-1.5B",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM-135M",
-    "qwen3-0_6b": "Qwen/Qwen3-0.6B",
-    "qwen3-1_7b": "Qwen/Qwen3-1.7B",
-    "qwen3-4b": "Qwen/Qwen3-4B",
+    "qwen3_0_6b": "Qwen/Qwen3-0.6B",
+    "qwen3_1_7b": "Qwen/Qwen3-1.7B",
+    "qwen3_4b": "Qwen/Qwen3-4B",
 }
 
 
@@ -587,12 +589,14 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
 
 
 def export_llama(
-    export_options: Union[argparse.Namespace, LlmConfig],
+    export_options: Union[argparse.Namespace, LlmConfig, DictConfig],
 ) -> str:
     if isinstance(export_options, argparse.Namespace):
         # Legacy CLI.
         llm_config = LlmConfig.from_args(export_options)
-    elif isinstance(export_options, LlmConfig):
+    elif isinstance(export_options, LlmConfig) or isinstance(
+        export_options, DictConfig
+    ):
         # Hydra CLI.
         llm_config = export_options
     else:
@@ -602,7 +606,7 @@ def export_llama(
 
     # If a checkpoint isn't provided for an HF OSS model, download and convert the
     # weights first.
-    model_name = llm_config.base.model_class
+    model_name = llm_config.base.model_class.value
     if not llm_config.base.checkpoint and model_name in HUGGING_FACE_REPO_IDS:
         repo_id = HUGGING_FACE_REPO_IDS[model_name]
         if model_name == "qwen2_5":
@@ -680,7 +684,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
     llm_config.export.output_dir = output_dir_path
 
     # Convert dtype override string to actual type.
-    dtype_override = DType[llm_config.model.dtype_override]
+    dtype_override = DType[llm_config.model.dtype_override.value]
 
     edge_manager = _load_llama_model(llm_config)
 
@@ -714,7 +718,11 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             checkpoint=llm_config.base.checkpoint,
             checkpoint_dtype=DType.from_torch_dtype(checkpoint_dtype),  # type: ignore
             tokenizer_path=llm_config.base.tokenizer_path,
-            use_spin_quant=llm_config.quantization.use_spin_quant,
+            use_spin_quant=(
+                llm_config.quantization.use_spin_quant.value
+                if llm_config.quantization.use_spin_quant
+                else None
+            ),
             embedding_quantize=llm_config.quantization.embedding_quantize,
             use_shared_embedding=llm_config.model.use_shared_embedding,
             quantization_mode=llm_config.quantization.qmode,
@@ -738,7 +746,9 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             vulkan=llm_config.backend.vulkan.enabled,
             use_qat=llm_config.quantization.use_qat,
             use_lora=llm_config.base.use_lora,
-            preq_mode=llm_config.base.preq_mode,
+            preq_mode=(
+                llm_config.base.preq_mode.value if llm_config.base.preq_mode else None
+            ),
             preq_group_size=llm_config.base.preq_group_size,
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
             local_global_attention=llm_config.model.local_global_attention,
@@ -750,25 +760,34 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
 
 def get_quantizer_and_quant_params(llm_config):
     pt2e_quant_params = get_pt2e_quantization_params(
-        llm_config.quantization.pt2e_quantize, llm_config.quantization.qmode
+        (
+            llm_config.quantization.pt2e_quantize.value
+            if llm_config.quantization.pt2e_quantize
+            else None
+        ),
+        llm_config.quantization.qmode,
     )
     quantizers = get_pt2e_quantizers(pt2e_quant_params, llm_config.export.so_library)
     quant_dtype = None
     if llm_config.backend.qnn.enabled and llm_config.quantization.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
         qnn_quantizer, quant_dtype = get_qnn_quantizer(
-            llm_config.quantization.pt2e_quantize, llm_config.quantization.qmode
+            llm_config.quantization.pt2e_quantize.value, llm_config.quantization.qmode
         )
         quantizers.append(qnn_quantizer)
     if llm_config.backend.coreml.enabled and llm_config.quantization.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
-        coreml_quantizer = get_coreml_quantizer(llm_config.quantization.pt2e_quantize)
+        coreml_quantizer = get_coreml_quantizer(
+            llm_config.quantization.pt2e_quantize.value
+        )
         quantizers.append(coreml_quantizer)
     if llm_config.backend.vulkan.enabled and llm_config.quantization.pt2e_quantize:
         assert (
             len(quantizers) == 0
         ), "Should not enable both vulkan and other quantizers"
-        vulkan_quantizer = get_vulkan_quantizer(llm_config.quantization.pt2e_quantize)
+        vulkan_quantizer = get_vulkan_quantizer(
+            llm_config.quantization.pt2e_quantize.value
+        )
         quantizers.append(vulkan_quantizer)
     logging.info(f"Applying quantizers: {quantizers}")
     return pt2e_quant_params, quantizers, quant_dtype
@@ -997,6 +1016,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm._passes`
         from executorch.backends.qualcomm._passes import (
             AnnotateStack,
+            ConvertBmmToMatmul,
             FoldQDQ,
             RecomposeRmsNorm,
             TagQuantIO,
@@ -1039,6 +1059,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
         passes_job = get_capture_program_passes()
         dep_table = get_passes_dependency_for_capture_program()
         passes_job[AnnotateStack][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[ConvertBmmToMatmul][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[RecomposeRmsNorm][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
@@ -1112,7 +1133,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     )
 
     additional_passes = []
-    if llm_config.base.model_class in TORCHTUNE_DEFINED_MODELS:
+    if llm_config.base.model_class.value in TORCHTUNE_DEFINED_MODELS:
         additional_passes = [InitializedMutableBufferPass(["kv_cache_pos"])]
 
     # export_to_edge
@@ -1160,14 +1181,22 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             mps=llm_config.backend.mps.enabled,
             coreml=llm_config.backend.coreml.enabled,
             qnn=llm_config.backend.qnn.enabled,
-            dtype_override=llm_config.model.dtype_override,
+            dtype_override=llm_config.model.dtype_override.value,
             enable_dynamic_shape=llm_config.model.enable_dynamic_shape,
             use_kv_cache=llm_config.model.use_kv_cache,
             embedding_quantize=llm_config.quantization.embedding_quantize,
-            pt2e_quantize=llm_config.quantization.pt2e_quantize,
+            pt2e_quantize=(
+                llm_config.quantization.pt2e_quantize.value
+                if llm_config.quantization.pt2e_quantize
+                else None
+            ),
             coreml_ios=llm_config.backend.coreml.ios,
-            coreml_quantize=llm_config.backend.coreml.quantize,
-            coreml_compute_units=llm_config.backend.coreml.compute_units,
+            coreml_quantize=(
+                llm_config.backend.coreml.quantize.value
+                if llm_config.backend.coreml.quantize
+                else None
+            ),
+            coreml_compute_units=llm_config.backend.coreml.compute_units.value,
             use_qnn_sha=llm_config.backend.qnn.use_sha,
             num_sharding=llm_config.backend.qnn.num_sharding,
             soc_model=llm_config.backend.qnn.soc_model,
@@ -1240,7 +1269,7 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
         An instance of LLMEdgeManager which contains the eager mode model.
     """
 
-    modelname = llm_config.base.model_class
+    modelname = llm_config.base.model_class.value
     if modelname in EXECUTORCH_DEFINED_MODELS:
         module_name = "llama"
         model_class_name = "Llama2Model"  # TODO: Change to "LlamaModel" in examples/models/llama/model.py.
@@ -1261,7 +1290,7 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
         )
     )
     # Convert dtype override string to actual type.
-    dtype_override = DType[llm_config.model.dtype_override]
+    dtype_override = DType[llm_config.model.dtype_override.value]
 
     return LLMEdgeManager(
         model=model,
@@ -1279,7 +1308,6 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
         calibration_seq_length=llm_config.quantization.calibration_seq_length,
         calibration_data=llm_config.quantization.calibration_data,
         tokenizer_path=llm_config.base.tokenizer_path,
-        use_legacy_export=llm_config.backend.qnn.enabled,
         save_exported_program=llm_config.export.export_only,
         verbose=llm_config.debug.verbose,
         metadata=_load_llama_model_metadata(

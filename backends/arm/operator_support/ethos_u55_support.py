@@ -138,6 +138,7 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.gt.Tensor,
         exir_ops.edge.aten.gt.Scalar,
         exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.le.Scalar,
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.lt.Scalar,
         exir_ops.edge.aten.ne.Tensor,
@@ -172,6 +173,69 @@ class EthosU55NotSupported(OperatorSupportBase):
 
 
 shape_t = list[int]
+
+
+class EthosU55ViewCheck(OperatorSupportBase):
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        super().__init__()
+        self.reporter = reporter
+
+    def axes_product(self, nhwc_shape: shape_t) -> int:
+        product = 1
+        for axes in nhwc_shape:
+            product *= axes
+        return product
+
+    # TODO: Extend this check to comply with u55 restrictions
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        """
+        Check whether a given view node is supported on U55.
+
+        Currently only checks dtypes and product of axes.
+
+        It is not the view operator itself that is not supported on U55. In order for the
+        view operator to be compatible with the channels-last format of TosaBackend,
+        transposes may need to be inserted before and after the view op. If that happens
+        and that transpose operator does not adhere to the limitations then it will
+        result in the following error:
+
+            CPU performance estimation for "Transpose" not implemented.
+            ...
+            CPU operations are not supported for GraphAPI input
+
+        Args:
+            node: The FX node representing the view_copy operator.
+
+        Returns:
+            False if the operator is not support and True if it is supported.
+        """
+        if not node.target == exir_ops.edge.aten.view_copy.default:
+            return True
+
+        shape = list(get_first_fake_tensor(node).shape)
+        dtype = _try_determine_dtype(node)
+        permutation = list(typing.cast(list[int], node.args[1]))
+
+        rank = len(shape)
+        if rank > 4:
+            if dtype == torch.int32:
+                self.reporter.report_reject(
+                    node, f"No support for {permutation=} in int32."
+                )
+                return False
+
+        if dtype in (torch.int8, torch.int16):
+            if self.axes_product(shape) > 65536:
+                self.reporter.report_reject(
+                    node,
+                    f"No support for {shape=}, {dtype=}. Product of axes must be <65536",
+                )
+                return False
+
+        return True
 
 
 class EthosU55TransposeCheck(OperatorSupportBase):

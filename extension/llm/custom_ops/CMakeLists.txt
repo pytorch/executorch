@@ -78,13 +78,11 @@ target_include_directories(
 )
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 
-target_compile_options(
-  custom_ops PUBLIC ${_common_compile_options}
-)
+target_compile_options(custom_ops PUBLIC ${_common_compile_options})
 
 install(TARGETS custom_ops DESTINATION lib)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
+if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
   # Add a AOT library
   find_package_torch()
   add_library(
@@ -117,7 +115,9 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   else()
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
     # ops in PyTorch
-    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core kernels_util_all_deps)
+    target_link_libraries(
+      custom_ops_aot_lib PUBLIC executorch_core kernels_util_all_deps
+    )
   endif()
 
   target_link_libraries(
@@ -130,9 +130,8 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
     target_link_libraries(custom_ops_aot_lib PUBLIC pthreadpool cpuinfo)
   endif()
   target_compile_options(
-    custom_ops_aot_lib
-    PUBLIC -Wno-deprecated-declarations -fPIC -frtti -fexceptions
-           ${_common_compile_options}
+    custom_ops_aot_lib PUBLIC -Wno-deprecated-declarations -fPIC -frtti
+                              -fexceptions ${_common_compile_options}
   )
 
   install(TARGETS custom_ops_aot_lib

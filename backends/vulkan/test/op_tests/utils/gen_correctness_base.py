@@ -140,7 +140,13 @@ class CorrectnessTestGen:
             else self.suite_def.arg_data_range[arg.name]
         )
 
-        ret_str = f"{self.suite_def.data_gen}({init_list_str(data)}, {tensor_dtype}, {data_range[0]}, {data_range[1]})"
+        data_gen_fn = (
+            self.suite_def.data_gen
+            if arg.name not in self.suite_def.arg_data_gen_fn
+            else self.suite_def.arg_data_gen_fn[arg.name]
+        )
+
+        ret_str = f"{data_gen_fn}({init_list_str(data)}, {tensor_dtype}, {data_range[0]}, {data_range[1]})"
         if terminate:
             ret_str += ";"
 
@@ -277,6 +283,15 @@ cpp_test_template = """
 
 {preamble}
 
+at::Tensor make_casted_randint_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    int low = 0,
+    int high = 10) {{
+
+  return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
+}}
+
 at::Tensor make_rand_tensor(
     std::vector<int64_t> sizes,
     at::ScalarType dtype = at::kFloat,
@@ -288,11 +303,27 @@ at::Tensor make_rand_tensor(
 
   if (dtype == at::kBool)
     return at::rand(sizes, at::device(at::kCPU)) > 0.5;
-    
+
   if (high == 1.0 && low == 0.0)
     return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
 
   return at::rand(sizes, at::device(at::kCPU).dtype(dtype)) * (high - low) + low;
+}}
+
+at::Tensor make_zeros_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    float low = 0.0,
+    float high = 1.0) {{
+  return at::zeros(sizes, at::device(at::kCPU).dtype(dtype));
+}}
+
+at::Tensor make_ones_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    float low = 0.0,
+    float high = 1.0) {{
+  return at::ones(sizes, at::device(at::kCPU).dtype(dtype));
 }}
 
 at::Tensor make_seq_tensor(

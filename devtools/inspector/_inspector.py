@@ -42,19 +42,25 @@ from executorch.devtools.etdump.schema_flatcc import (
 from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
     calculate_time_scale_factor,
+    compare_intermediate_outputs,
     create_debug_handle_to_op_node_mapping,
+    DebugHandle,
     display_or_print_df,
     EDGE_DIALECT_GRAPH_KEY,
     EXCLUDED_COLUMNS_WHEN_PRINTING,
     EXCLUDED_EVENTS_FOR_INTERMEDIATE_OUTPUT,
     EXCLUDED_EVENTS_WHEN_PRINTING,
+    find_op_names,
     find_populated_event,
     FORWARD,
     gen_etdump_object,
     gen_graphs_from_etrecord,
+    get_aot_debug_handle_to_op_name_mapping,
     inflate_runtime_output,
     is_debug_output,
     is_inference_output_equal,
+    map_runtime_aot_intermediate_outputs,
+    merge_runtime_overlapping_debug_handles,
     ProgramOutput,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TimeScale,
@@ -62,6 +68,11 @@ from executorch.devtools.inspector._inspector_utils import (
 )
 from executorch.devtools.inspector._intermediate_output_capturer import (
     IntermediateOutputCapturer,
+)
+from executorch.devtools.inspector.numerical_comparator import (
+    L1Comparator,
+    MSEComparator,
+    SNRComparator,
 )
 from executorch.exir import ExportedProgram
 
@@ -254,7 +265,7 @@ class RunSignature:
 
 # Typing for mapping Event.delegate_debug_identifiers to debug_handle(s)
 DelegateIdentifierDebugHandleMap: TypeAlias = Union[
-    Mapping[int, Tuple[int, ...]], Mapping[str, Tuple[int, ...]]
+    Mapping[int, DebugHandle], Mapping[str, DebugHandle]
 ]
 
 # Typing for Dict containig delegate metadata
@@ -649,7 +660,7 @@ class Event:
 
     def _associate_with_op_graph_nodes(
         self,
-        debug_handle_to_op_node_map: Dict[int, OperatorNode],
+        debug_handle_to_op_node_map: Dict[int, List[OperatorNode]],
     ) -> None:
         """
         Helper function to populate the stack_traces, module_hierarchy and op_types attributes
@@ -667,14 +678,21 @@ class Event:
             debug_handles = [debug_handles]
 
         for handle in debug_handles:
-            node = debug_handle_to_op_node_map.get(handle)
-            # Attach node metadata including stack traces, module hierarchy and op_types to this event
-            if node is not None and (metadata := node.metadata) is not None:
-                self.stack_traces[node.name] = metadata.get("stack_trace")
-                self.module_hierarchy[node.name] = metadata.get("nn_module_stack")
-                if node.op:
-                    # TODO: consider having this as a dict from node.name -> node.op
-                    self.op_types += [node.op]
+            nodes = debug_handle_to_op_node_map.get(handle, None)
+            if nodes is None:
+                continue
+
+            for node in nodes:
+                # Attach node metadata including stack traces, module hierarchy and op_types to this event
+                if node is not None and (metadata := node.metadata) is not None:
+                    if node.name not in self.stack_traces:
+                        self.stack_traces[node.name] = metadata.get("stack_trace")
+                        self.module_hierarchy[node.name] = metadata.get(
+                            "nn_module_stack"
+                        )
+                    if node.op:
+                        # TODO: consider having this as a dict from node.name -> node.op
+                        self.op_types += [node.op]
 
 
 @dataclass
@@ -1078,7 +1096,6 @@ class Inspector:
         # Key str is method name; value is list of ProgramOutputs because of list of test cases
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
         self._enable_module_hierarchy = enable_module_hierarchy
-        self._aot_intermediate_outputs: Optional[Dict[Tuple[int, ...], Any]] = None
         self._consume_etrecord()
 
     def _consume_etrecord(self) -> None:
@@ -1139,24 +1156,37 @@ class Inspector:
                     event_block.reference_output = self._reference_outputs[FORWARD][
                         index
                     ]
-        # Capture intermediate outputs only if _representative_inputs are provided
-        # when using bundled program to create the etrecord
+
+    def _get_aot_intermediate_outputs_and_op_names(
+        self,
+    ) -> Tuple[Dict[DebugHandle, Any], Dict[DebugHandle, List[str]]]:
+        """
+        Capture intermediate outputs only if _representative_inputs are provided
+        when using bundled program to create the etrecord
+        """
         if self._etrecord._representative_inputs is None:
-            return
+            return {}, {}
         export_program = self._etrecord.edge_dialect_program
         graph_module = export_program.module()
+        aot_debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(
+            graph_module
+        )
         capturer = IntermediateOutputCapturer(graph_module)
-        self._aot_intermediate_outputs = capturer.run_and_capture(
+        aot_intermediate_outputs = capturer.run_and_capture(
             self._etrecord._representative_inputs
         )
+        return aot_intermediate_outputs, aot_debug_handle_to_op_name
 
     # TODO: Make it more extensible to further merge overlapping debug handles
-    def _get_runtime_intermediate_outputs(self) -> Dict[Tuple[int, ...], Any]:
+    def _get_runtime_intermediate_outputs_and_op_names(
+        self,
+    ) -> Tuple[Dict[DebugHandle, Any], Dict[DebugHandle, List[str]]]:
         """
-        Retrieve the raw runtime intermediate outputs(debug handles and value mappings)
-        from the event blocks. These outputs will be processed later to merge overlapping debug handles.
+        Retrieve the runtime intermediate outputs(debug handles and intermediate values mappings)
+        from the event blocks, along with the corresponding debug handles and op names mapping.
         """
         debug_handle_to_output = {}
+        debug_handle_to_op_names = {}
         for event_block in self.event_blocks:
             for event in event_block.events:
                 # Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax
@@ -1165,20 +1195,26 @@ class Inspector:
                     or not event.op_types
                 ):
                     continue
-                # Normalize debug_handles to a tuple
-                debug_handles = event.debug_handles
-                if isinstance(debug_handles, int):
-                    debug_handles = (debug_handles,)
+                # Normalize debug_handle to a tuple
+                debug_handle = event.debug_handles
+                if isinstance(debug_handle, int):
+                    debug_handle = (debug_handle,)
                 else:
-                    debug_handles = tuple(debug_handles)
-                current_entry = debug_handle_to_output.get(debug_handles, (-1, None))
-                # When event has same debug handles, only keep the one with the largest instruction id
+                    debug_handle = tuple(debug_handle)
+                current_entry = debug_handle_to_output.get(debug_handle, (-1, None))
+                # When event has same debug_handle, only keep the one with the largest instruction id
                 if event._instruction_id > current_entry[0]:
-                    debug_handle_to_output[debug_handles] = (
+                    debug_handle_to_output[debug_handle] = (
                         event._instruction_id,
                         event.debug_data,
                     )
-        return {k: v[1] for k, v in debug_handle_to_output.items()}
+                    # TODO: One debug handle can be associated with multiple op names
+                    debug_handle_to_op_names[debug_handle] = [event.name]
+
+        merge_runtime_overlapping_debug_handles(debug_handle_to_output)
+        return {
+            k: v[1] for k, v in debug_handle_to_output.items()
+        }, debug_handle_to_op_names
 
     def to_dataframe(
         self,
@@ -1337,3 +1373,63 @@ class Inspector:
             if graph is None
             else self._etrecord.graph_map.get(graph)
         )
+
+    def calculate_numeric_gap(self, distance: str = "MSE") -> pd.DataFrame:
+        """
+        Compares logged intermediate outputs from the exported graph (in ETRecord)
+        with runtime outputs (in ETDump) using a user-specific numerical comparator.
+
+        Args:
+            distance: the metrics the inspector will use for gap calculation. Should be one of "MSE", "L1" and "SNR".
+
+        Returns:
+            pd.DataFrame: A DataFrame listing corresponding operator outputs from
+                          both stages and their computed numerical gaps.
+        """
+        aot_intermediate_outputs, aot_debug_handle_to_op_names = (
+            self._get_aot_intermediate_outputs_and_op_names()
+        )
+        if len(aot_intermediate_outputs) == 0 or len(aot_debug_handle_to_op_names) == 0:
+            raise ValueError(
+                "Missing etrecord or missing representative inputs within etrecord, both of which are required for calculating numerical gap"
+            )
+        # The runtime_op_names will be used later to map runtime debug_handle to op_name
+        runtime_intermediate_outputs, runtime_debug_handle_to_op_names = (
+            self._get_runtime_intermediate_outputs_and_op_names()
+        )
+        mapping = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+        metric = distance.strip().upper()
+        if metric == "MSE":
+            comparator = MSEComparator()
+        elif metric == "L1":
+            comparator = L1Comparator()
+        elif metric == "SNR":
+            comparator = SNRComparator()
+        else:
+            raise ValueError(f"Unsupported distance metric {distance!r}")
+
+        rows = []
+        for (aot_debug_handle, aot_intermediate_output), (
+            runtime_debug_handle,
+            runtime_intermediate_output,
+        ) in mapping.items():
+            if aot_intermediate_output is None or runtime_intermediate_output is None:
+                continue
+            rows.append(
+                {
+                    "aot_ops": find_op_names(
+                        aot_debug_handle, aot_debug_handle_to_op_names
+                    ),
+                    "aot_intermediate_output": aot_intermediate_output,
+                    "runtime_ops": find_op_names(
+                        runtime_debug_handle, runtime_debug_handle_to_op_names
+                    ),
+                    "runtime_intermediate_output": runtime_intermediate_output,
+                    "gap": compare_intermediate_outputs(
+                        aot_intermediate_output, runtime_intermediate_output, comparator
+                    ),
+                }
+            )
+        return pd.DataFrame(rows)

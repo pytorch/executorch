@@ -398,7 +398,7 @@ class SingleLlama:
                 self.llama_graph_module, self.inputs, strict=True
             ).module()
 
-            if QuantDtype == QuantDtype.use_16a4w_block:
+            if quant_dtype == QuantDtype.use_16a4w_block:
                 conv_nodes = [
                     n for n in fx_graph_module.graph.nodes if "conv" in n.name
                 ]
@@ -591,7 +591,7 @@ def compile(args, pte_filename, tokenizer):
     for llama_instance in llama_instance_list:
         llama_instance.load_state_dict(
             state_dict,
-            strict=False,
+            strict=True,
             assign=True,
         )
     end_load_ts = time.time()

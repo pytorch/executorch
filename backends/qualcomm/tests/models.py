@@ -146,6 +146,14 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         return squeeze_out, conv_out
 
 
+class Atan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.atan(x)
+
+
 class AvgPoolModule(torch.nn.Module):
     def __init__(self, kernel_size, stride, padding, ceil_mode):
         super().__init__()
@@ -741,6 +749,14 @@ class ExpM1(torch.nn.Module):
         return torch.special.expm1(x)
 
 
+class Floor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.floor(x)
+
+
 class Fold(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -909,17 +925,36 @@ class Index(torch.nn.Module):
         return self.dispatcher[self.axis](x)
 
 
-class IndexPut(torch.nn.Module):
-    def __init__(self):
+class IndexCopy(torch.nn.Module):
+    def __init__(self, copy_dim=1, skip_mutable_buffer=False):
         super().__init__()
+        self.skip_mutable_buffer = skip_mutable_buffer
+        self.copy_dim = copy_dim
         self.register_buffer(
             "k_cache",
             torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+            persistent=True,
+        )
+
+    def forward(self, input_pos, k_val):
+        k_out = self.k_cache
+        k_out.index_copy_(self.copy_dim, input_pos, k_val)
+        return k_out + 0
+
+
+class IndexPut(torch.nn.Module):
+    def __init__(self, skip_mutable_buffer=False):
+        super().__init__()
+        self.skip_mutable_buffer = skip_mutable_buffer
+        self.register_buffer(
+            "k_cache",
+            torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+            persistent=True,
         )
 
     def forward(self, input_pos, k_val):
         k_out = torch.ops.aten.index_put_(self.k_cache, [None, input_pos], k_val)
-        return k_out
+        return k_out + 0
 
 
 class InstanceNorm2d(torch.nn.Module):
@@ -1428,6 +1463,14 @@ class Roll(torch.nn.Module):
 
     def forward(self, x):
         return torch.roll(x, shifts=self.shifts, dims=self.dims)
+
+
+class Round(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.round(x)
 
 
 class Rsqrt(torch.nn.Module):

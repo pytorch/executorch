@@ -61,7 +61,6 @@ set_target_properties(fbjni PROPERTIES
 )
 
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
-find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
 add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
@@ -113,7 +112,7 @@ endif()
 
 if(TARGET xnnpack_backend)
   target_link_options_shared_lib(xnnpack_backend)
-  list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo microkernels-prod)
+  list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo xnnpack-microkernels-prod)
 endif()
 
 if(TARGET vulkan_backend)
@@ -121,7 +120,7 @@ if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_LLM)
   list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
@@ -144,6 +143,12 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
     executorch_jni -Wl,--whole-archive ${EXECUTORCH_JNI_CUSTOM_LIBRARY}
     -Wl,--no-whole-archive
   )
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_training.cpp jni/log.cpp)
+  list(APPEND link_libraries extension_training)
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_TRAINING=1)
 endif()
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
