@@ -89,6 +89,7 @@ def to_quantized_edge_program(
     remove_quant_io_ops=False,
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
     get_quantizer_fn=lambda: NeutronQuantizer(),
+    use_neutron_for_format_conversion=False,
 ) -> EdgeProgramManager:
     calibration_inputs = get_calibration_inputs_fn(to_model_input_spec(input_spec))
 
@@ -120,6 +121,7 @@ def to_quantized_edge_program(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
         neutron_converter_flavor=neutron_converter_flavor,
+        use_neutron_for_format_conversion=use_neutron_for_format_conversion,
     )
     partitioner = NeutronPartitioner(compile_spec, custom_delegation_options)
     edge_program_manager = edge_program_manager.to_backend(partitioner)
