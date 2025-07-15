@@ -603,7 +603,7 @@ jobs:
         bash examples/models/phi-3-mini/install_requirements.sh
 
         # run e2e (export, tokenizer and runner)
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh Release
 
   test-eval_llama-wikitext-linux:
     name: test-eval_llama-wikitext-linux
