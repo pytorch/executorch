@@ -759,11 +759,16 @@ void ComputeGraph::prepare_pipelines() {
       vkapi::ComputePipelineCache::Hasher>();
 }
 
-void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
-  vkapi::VulkanFence fence = context_->fences().get_fence();
-  context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
-  fence.wait();
-  context_->fences().return_fence(fence);
+void ComputeGraph::submit_current_cmd(const bool final_use, bool wait) {
+  if (wait) {
+    // Submit and wait for command buffer
+    vkapi::VulkanFence fence = context_->fences().get_fence();
+    context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
+    fence.wait();
+    context_->fences().return_fence(fence);
+  } else {
+    context_->submit_cmd_to_gpu(VK_NULL_HANDLE, final_use);
+  }
 }
 
 void ComputeGraph::encode_prepack() {
@@ -772,13 +777,9 @@ void ComputeGraph::encode_prepack() {
   }
 }
 
-void ComputeGraph::prepack() const {
+void ComputeGraph::prepack() {
   // Submit and execute the command buffer
-  vkapi::VulkanFence fence = context_->fences().get_fence();
-  context_->submit_cmd_to_gpu(fence.get_submit_handle(), /*final_use = */ true);
-  fence.wait();
-  context_->fences().return_fence(fence);
-
+  submit_current_cmd(/*final_use = */ true, /*wait = */ true);
   context_->flush();
 }
 
@@ -791,7 +792,7 @@ void ComputeGraph::run_prepack() {
     size_t threshold = submitted ? config_.prepack_threshold_nbytes
                                  : config_.prepack_initial_threshold_nbytes;
     if (not_terminal && staging_nbytes_in_cmd_ > threshold) {
-      submit_current_cmd_and_wait(/*final_use=*/true);
+      submit_current_cmd(/*final_use=*/true, /*wait=*/true);
       context_->flush();
       staging_nbytes_in_cmd_ = 0;
       context_->set_cmd();
@@ -801,7 +802,7 @@ void ComputeGraph::run_prepack() {
     node->encode(this);
     i++;
   }
-  submit_current_cmd_and_wait(/*final_use=*/true);
+  submit_current_cmd(/*final_use=*/true, /*wait=*/true);
   context_->flush();
   staging_nbytes_in_cmd_ = 0;
 }
@@ -823,7 +824,7 @@ void ComputeGraph::encode_execute() {
 
 void ComputeGraph::execute() {
   if (execute_pending_first_submission) {
-    submit_current_cmd_and_wait(/*final_use=*/false);
+    submit_current_cmd(/*final_use=*/false, /*wait=*/true);
     execute_pending_first_submission = false;
   } else {
     vkapi::VulkanFence fence = context_->fences().get_fence();
