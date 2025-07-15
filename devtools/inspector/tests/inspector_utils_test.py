@@ -302,23 +302,19 @@ class TestInspectorUtils(unittest.TestCase):
         }
         self.assertEqual(actual, expected)
 
-    def test_map_runtime_aot_intermediate_outputs_exact_match(self):
-        # Exact match between aot and runtime debug_handles
-        aot_intermediate_outputs = {(0, 1): 100, (2, 3): 200, (4, 5): 300}
-        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
+    def test_map_runtime_aot_intermediate_outputs_no_overlaps(self):
+        # No overlaps between aot and runtime debug_handles
+        aot_intermediate_outputs = {(0,): 100, (4,): 300}
+        runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
-        expected = {
-            ((0, 1), 100): ((0, 1), 150),
-            ((2, 3), 200): ((2, 3), 200),
-            ((4, 5), 300): ((4, 5), 300),
-        }
+        expected = {}
         self.assertEqual(actual, expected)
 
-    def test_map_runtime_aot_intermediate_outputs_no_overlaps(self):
-        # No overlaps between aot and runtime debug_handles
-        aot_intermediate_outputs = {(0, 1): 100, (4, 5): 300}
+    def test_map_runtime_aot_intermediate_outputs_partial_match(self):
+        # Partial match between aot and runtime debug_handles will return empty
+        aot_intermediate_outputs = {(2,): 100, (9,): 300}
         runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
@@ -328,41 +324,24 @@ class TestInspectorUtils(unittest.TestCase):
 
     def test_map_runtime_aot_intermediate_outputs_multiple_aot_to_one_runtime(self):
         # Multiple aot debug_handles map to one runtime debug_handle
-        aot_intermediate_outputs = {(0, 1, 2): 100, (3, 4): 300}
-        runtime_intermediate_outputs = {(1, 2, 3): 250, (8, 9): 300}
+        aot_intermediate_outputs = {(0,): 100, (1,): 200, (2,): 300, (3,): 400}
+        runtime_intermediate_outputs = {(2, 3, 1): 250, (8, 9): 300}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
-        expected = {((0, 1, 2, 3, 4), 300): ((1, 2, 3), 250)}
-        self.assertEqual(actual, expected)
-
-    def test_map_runtime_aot_intermediate_outputs_one_aot_to_multiple_runtime(self):
-        # One aot debug_handle map to multiple runtime debug_handles
-        aot_intermediate_outputs = {(0, 1, 2, 3, 4): 100, (8, 9): 300}
-        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
-        actual = map_runtime_aot_intermediate_outputs(
-            aot_intermediate_outputs, runtime_intermediate_outputs
-        )
-        expected = {((0, 1, 2, 3, 4), 100): ((0, 1, 2, 3, 4, 5), 300)}
-        self.assertEqual(actual, expected)
-
-    def test_map_runtime_aot_intermediate_outputs_complex_chain(self):
-        # Complex chain (N-to-N mapping)
-        aot_intermediate_outputs = {(1, 2): 100, (3, 4): 200, (5, 6): 300}
-        runtime_intermediate_outputs = {(2, 3): 150, (4, 5): 250, (6, 7): 350}
-        actual = map_runtime_aot_intermediate_outputs(
-            aot_intermediate_outputs, runtime_intermediate_outputs
-        )
-        expected = {((1, 2, 3, 4, 5, 6), 300): ((2, 3, 4, 5, 6, 7), 350)}
+        expected = {((2, 3, 1), 200): ((2, 3, 1), 250)}
         self.assertEqual(actual, expected)
 
     def test_map_runtime_aot_intermediate_outputs_delegated(self):
         # Currently, runtime_intermediate_output logs all delegate call arguments
         # Test that the map function correctly extracted out the delegated outputs
         aot_intermediate_outputs = {
-            (1, 2): torch.tensor([4, 5]),
-            (3, 4): torch.tensor([10, 11, 12]),
-            (5, 6): torch.tensor([13, 14, 15, 16, 17]),
+            (1,): torch.tensor([4, 1]),
+            (2,): torch.tensor([4, 5]),
+            (3,): torch.tensor([10, 10, 13]),
+            (4,): torch.tensor([10, 11, 12]),
+            (5,): torch.tensor([13, 14, 15, 16, 21]),
+            (6,): torch.tensor([13, 14, 15, 16, 17]),
         }
         runtime_intermediate_outputs = {
             (1, 2): [torch.tensor([1, 2, 3]), torch.tensor([4, 5])],
@@ -610,9 +589,6 @@ class TestInspectorUtils(unittest.TestCase):
         with self.assertRaises(ValueError):
             compare_intermediate_outputs(a, b, L1Comparator())
 
-    @unittest.skip(
-        "TODO: enable the test after required feature has been built in pytorch core nightly version"
-    )
     def test_equip_debug_handle_to_export_program_success(self):
         """Test that propagate_back_debug_handle returns True and properly equips debug handles."""
         # Create a test model
@@ -679,9 +655,6 @@ class TestInspectorUtils(unittest.TestCase):
         # Check that it returns False due to mismatch
         self.assertFalse(result)
 
-    @unittest.skip(
-        "TODO: enable the test after required feature has been built in pytorch core nightly version"
-    )
     def test_equip_debug_handle_to_export_program_op_to_be_removed_in_to_edge(self):
         """Test that propagate_back_debug_handle returns True and properly equips debug handles when an op is removed in to_edge"""
 
