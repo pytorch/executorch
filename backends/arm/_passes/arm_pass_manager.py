@@ -171,7 +171,6 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
-        self.add_pass(DecomposeExpm1Pass())
         self.add_pass(DecomposeLogitPass())
         self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
@@ -184,6 +183,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeAtanhPass())
         self.add_pass(DecomposeAddmmPass())
         self.add_pass(DecomposeEluPass())
+        self.add_pass(DecomposeExpm1Pass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())

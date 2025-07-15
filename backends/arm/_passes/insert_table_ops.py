@@ -94,7 +94,7 @@ class TableOps:
                         x, approximate=approximate
                     ).flatten()
                 case exir_ops.edge.aten.elu.default:
-                    input_alpha = cast(int, node.args[1]) if len(node.args) > 1 else 1
+                    input_alpha = cast(int, node.kwargs["alpha"])
                     return lambda x: torch.nn.functional.elu(
                         x, alpha=input_alpha
                     ).flatten()

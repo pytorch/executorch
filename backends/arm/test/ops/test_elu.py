@@ -10,10 +10,11 @@ import torch.nn as nn
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 test_data_suite = {
@@ -35,9 +36,19 @@ test_data_suite = {
     "randn_neg_custom": lambda: (2.0, torch.randn(1, 2, 4, 3) - 10),
     "ramp_custom": lambda: (2.0, torch.arange(-16, 16, 0.2)),
     "large_pos_custom": lambda: (2.0, torch.randn(3, 3) * 1e6 + 1e7),
-    "large_neg_custom": lambda: (2, -torch.empty(5).uniform_(1e5, 1e8)),
+    "large_neg_custom": lambda: (2.0, -torch.empty(5).uniform_(1e5, 1e8)),
     "small_pos_custom": lambda: (2.0, torch.empty(5).uniform_(1e-8, 1e-5)),
     "small_neg_custom": lambda: (2.0, -torch.empty(5).uniform_(1e-8, 1e-5)),
+    "zeros_zero": lambda: (0.0, torch.zeros(1, 10, 10, 10)),
+    "ones_zero": lambda: (0.0, torch.ones(10, 10, 10)),
+    "rand_zero": lambda: (0.0, torch.rand(10, 10) - 0.5),
+    "randn_pos_zero": lambda: (0.0, torch.randn(1, 3, 3) + 10),
+    "randn_neg_zero": lambda: (0.0, torch.randn(1, 2, 4, 3) - 10),
+    "ramp_zero": lambda: (0.0, torch.arange(-16, 16, 0.2)),
+    "large_pos_zero": lambda: (0.0, torch.randn(3, 3) * 1e6 + 1e7),
+    "large_neg_zero": lambda: (0.0, -torch.empty(5).uniform_(1e5, 1e8)),
+    "small_pos_zero": lambda: (0.0, torch.empty(5).uniform_(1e-8, 1e-5)),
+    "small_neg_zero": lambda: (0.0, -torch.empty(5).uniform_(1e-8, 1e-5)),
 }
 
 
@@ -57,18 +68,18 @@ input_t1 = Tuple[torch.Tensor]
 
 
 @common.parametrize("test_module", test_data_suite)
-def test_elu_tosa_MI(test_module: input_t1):
+def test_elu_tosa_FP(test_module: input_t1):
     alpha, test_data = test_module()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         Elu(alpha), (test_data,), aten_op=Elu.aten_op, exir_op=Elu.exir_op
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_suite)
-def test_elu_tosa_BI(test_module: input_t1):
+def test_elu_tosa_INT(test_module: input_t1):
     alpha, test_data = test_module()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         Elu(alpha), (test_data,), aten_op=Elu.aten_op, exir_op=Elu.exir_op
     )
     pipeline.run()
@@ -76,9 +87,9 @@ def test_elu_tosa_BI(test_module: input_t1):
 
 @common.XfailIfNoCorstone300
 @common.parametrize("test_module", test_data_suite)
-def test_elu_u55_BI(test_module: input_t1):
+def test_elu_u55_INT(test_module: input_t1):
     alpha, test_data = test_module()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         Elu(alpha), (test_data,), aten_ops=Elu.aten_op, exir_ops=Elu.exir_op
     )
     pipeline.run()
@@ -86,9 +97,37 @@ def test_elu_u55_BI(test_module: input_t1):
 
 @common.XfailIfNoCorstone320
 @common.parametrize("test_module", test_data_suite)
-def test_elu_u85_BI(test_module: input_t1):
+def test_elu_u85_INT(test_module: input_t1):
     alpha, test_data = test_module()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         Elu(alpha), (test_data,), aten_ops=Elu.aten_op, exir_ops=Elu.exir_op
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("test_module", test_data_suite)
+def test_elu_vgf_FP(test_module: input_t1):
+    alpha, test_data = test_module()
+    pipeline = VgfPipeline[input_t1](
+        Elu(alpha),
+        (test_data,),
+        aten_op=Elu.aten_op,
+        exir_op=Elu.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("test_module", test_data_suite)
+def test_elu_vgf_INT(test_module: input_t1):
+    alpha, test_data = test_module()
+    pipeline = VgfPipeline[input_t1](
+        Elu(alpha),
+        (test_data,),
+        aten_op=Elu.aten_op,
+        exir_op=Elu.exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

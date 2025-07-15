@@ -27,12 +27,19 @@ class ConvertELUParamsPass(ExportPass):
         for node in node_list:
             with graph.inserting_after(node):
                 replace_node = create_node(graph, exir_ops.edge.aten.elu.default)
-                replace_node.args = (
-                    node.args[0],
-                    int(node.args[1]) if len(node.args) > 1 else 1,
-                )
+                old_args = list(node.args)
+
+                alpha = old_args[1] if len(old_args) > 1 else 1.0
+                scale = 1.0
+                input_scale = 2.0
+
+                replace_node.args = (old_args[0],)
+
                 updated_kwargs = dict(node.kwargs)
-                updated_kwargs["input_scale"] = int(2)
+                updated_kwargs["alpha"] = int(alpha)
+                updated_kwargs["scale"] = int(scale)
+                updated_kwargs["input_scale"] = int(input_scale)
+
                 replace_node.kwargs = updated_kwargs
 
                 node.replace_all_uses_with(replace_node)
