@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import itertools
+import logging
 import operator
 import types
 from contextlib import nullcontext
@@ -134,16 +135,21 @@ def EXIRATenDialectVerifier(  # noqa: C901
                 ):
                     return
                 if op in self._preserve_ops:
-                    # Preserved ops should not include mutation or view,
-                    # which may affect memory planning.
-                    if op._schema.is_mutable or op.is_view:
-                        raise RuntimeError(
-                            f"Cannot preserve operator {op} because it is a view or mutation."
-                        )
                     if op.namespace != "aten":
                         raise RuntimeError(
                             f"Only preserve aten ops. Received op {op} with namespace {op.namespace}."
                         )
+                    # Preserved ops should not include mutation or view,
+                    # which may affect memory planning.
+                    if op.is_view:
+                        raise RuntimeError(
+                            f"Cannot preserve operator {op} because it is a view or mutation."
+                        )
+                    if op.is_mutable:
+                        logging.warning(
+                            f"Preserving mutation ops like {op} is a no-op because run_decomposition functionalizes it and prevents it from showing up."
+                        )
+
                     return
                 if torch.Tag.core not in op.tags and torch.Tag.view_copy not in op.tags:
                     # NOTE(qihan): whether view_copy operators are marked as canonical is still under
