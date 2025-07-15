@@ -13,17 +13,18 @@
 # It should also be cmake-lint clean.
 #
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
+cmake_policy(SET CMP0144 NEW)
 project(phi_3_mini_runner)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_BUILD_TYPE Release)
 
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 set(_common_include_directories
     ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
 )
+set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
 
 target_link_options_shared_lib(executorch)

@@ -23,10 +23,8 @@
 # executorch-config.cmake in executorch pip package gives, but we wanted to keep
 # the contract of exposing these CMake variables.
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
-
-include(${CMAKE_CURRENT_LIST_DIR}/Utils.cmake)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
