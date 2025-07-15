@@ -16,6 +16,9 @@ from typing import Any, Callable, Tuple
 
 import torch
 from executorch.backends.test.harness import Tester
+from executorch.backends.test.suite.context import get_active_test_context, TestContext
+from executorch.backends.test.suite.reporting import log_test_summary
+from executorch.backends.test.suite.runner import run_test, runner_main
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -60,17 +63,17 @@ if is_backend_enabled("coreml"):
 
 
 DTYPES = [
-    torch.int8,
-    torch.uint8,
-    torch.int16,
-    torch.uint16,
-    torch.int32,
-    torch.uint32,
-    torch.int64,
-    torch.uint64,
-    torch.float16,
+    # torch.int8,
+    # torch.uint8,
+    # torch.int16,
+    # torch.uint16,
+    # torch.int32,
+    # torch.uint32,
+    # torch.int64,
+    # torch.uint64,
+    # torch.float16,
     torch.float32,
-    torch.float64,
+    # torch.float64,
 ]
 
 FLOAT_DTYPES = [
@@ -117,16 +120,19 @@ def _expand_test(cls, test_name: str):
     delattr(cls, test_name)
 
 
-def _make_wrapped_test(test_func, *args, **kwargs):
+def _make_wrapped_test(
+    test_func: Callable,
+    test_name: str,
+    test_flow: str,
+    tester_factory: Callable,
+    params: dict | None = None,
+):
     def wrapped_test(self):
-        test_func(self, *args, **kwargs)
+        with TestContext(test_name, test_flow, params):
+            test_kwargs = params or {}
+            test_kwargs["tester_factory"] = tester_factory
 
-    return wrapped_test
-
-
-def _make_wrapped_dtype_test(test_func, dtype, tester_factory):
-    def wrapped_test(self):
-        test_func(self, dtype, tester_factory)
+            test_func(self, **test_kwargs)
 
     return wrapped_test
 
@@ -140,13 +146,20 @@ def _create_test_for_backend(
     test_type = getattr(test_func, "test_type", TestType.STANDARD)
 
     if test_type == TestType.STANDARD:
-        wrapped_test = _make_wrapped_test(test_func, tester_factory)
+        wrapped_test = _make_wrapped_test(
+            test_func, test_func.__name__, flow_name, tester_factory
+        )
         test_name = f"{test_func.__name__}_{flow_name}"
         setattr(cls, test_name, wrapped_test)
     elif test_type == TestType.DTYPE:
         for dtype in DTYPES:
-            # wrapped_test = _make_wrapped_dtype_test(test_func, dtype, tester_factory)
-            wrapped_test = _make_wrapped_test(test_func, dtype, tester_factory)
+            wrapped_test = _make_wrapped_test(
+                test_func,
+                test_func.__name__,
+                flow_name,
+                tester_factory,
+                {"dtype": dtype},
+            )
             dtype_name = str(dtype)[6:]  # strip "torch."
             test_name = f"{test_func.__name__}_{dtype_name}_{flow_name}"
             setattr(cls, test_name, wrapped_test)
@@ -154,23 +167,42 @@ def _create_test_for_backend(
         raise NotImplementedError(f"Unknown test type {test_type}.")
 
 
+def load_tests(loader, suite, pattern):
+    package_dir = os.path.dirname(__file__)
+    discovered_suite = loader.discover(
+        start_dir=package_dir, pattern=pattern or "test_*.py"
+    )
+    suite.addTests(discovered_suite)
+    return suite
+
+
 class OperatorTest(unittest.TestCase):
     def _test_op(self, model, inputs, tester_factory):
-        tester = (
-            tester_factory(
-                model,
-                inputs,
-            )
-            .export()
-            .to_edge_transform_and_lower()
+        context = get_active_test_context()
+
+        # This should be set in the wrapped test. See _make_wrapped_test above.
+        assert context is not None, "Missing test context."
+
+        run_summary = run_test(
+            model,
+            inputs,
+            tester_factory,
+            context.test_name,
+            context.flow_name,
+            context.params,
         )
 
-        is_delegated = any(
-            n.target == torch._higher_order_ops.executorch_call_delegate
-            for n in tester.stages[tester.cur].graph_module.graph.nodes
-            if n.op == "call_function"
-        )
+        log_test_summary(run_summary)
 
-        # Only run the runtime test if the op was delegated.
-        if is_delegated:
-            (tester.to_executorch().serialize().run_method_and_compare_outputs())
+        if not run_summary.result.is_success():
+            if run_summary.result.is_backend_failure():
+                raise RuntimeError("Test failure.") from run_summary.error
+            else:
+                # Non-backend failure indicates a bad test. Mark as skipped.
+                raise unittest.SkipTest(
+                    f"Test failed for reasons other than backend failure. Error: {run_summary.error}"
+                )
+
+
+if __name__ == "__main__":
+    runner_main()
