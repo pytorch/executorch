@@ -17,7 +17,7 @@ main() {
         # Set build directory
         local build_dir="cmake-out"
 
-        # Create and enter the build directory
+        # Enter the Executorch root directory
         cd "$EXECUTORCH_ROOT"
         rm -rf "${build_dir}"
 
@@ -32,6 +32,7 @@ main() {
               -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
               -DEXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER=ON \
+              -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
               -B"${build_dir}"
 
 
@@ -42,7 +43,7 @@ main() {
     elif [[ "$build_type" == "--enable_python" ]]; then
         echo "Building Python Package with Pybinding"
 
-        # Create and enter the build directory
+        # Enter the Executorch root directory
         cd "$EXECUTORCH_ROOT"
         ./install_executorch.sh --clean
 
@@ -58,6 +59,29 @@ main() {
         # Install torchao
         pip install third-party/ao
 
+    # If the first arguments is --llama_runner, build export llama runner binary
+    # Note: c++ runtime with openvino backend should be built before building export llama runner
+    elif [[ "$build_type" == "--llama_runner" ]]; then
+        echo "Building Export Llama Runner"
+
+        # Set build directory
+        local build_dir="cmake-out"
+
+        # Enter the Executorch root directory
+        cd "$EXECUTORCH_ROOT"
+
+        # Configure the project with CMake
+        # Note: Add any additional configuration options you need here
+        cmake -DBUILD_TESTING=OFF \
+            -DCMAKE_INSTALL_PREFIX="${build_dir}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_BUILD_OPENVINO=ON \
+            -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+            -B"${build_dir}"/examples/models/llama \
+            examples/models/llama
+        
+        # Build the export llama runner
+        cmake --build cmake-out/examples/models/llama -j$(nproc) --config Release
     else
         echo "Error: Argument is not valid: $build_type"
         exit 1  # Exit the script with an error code
