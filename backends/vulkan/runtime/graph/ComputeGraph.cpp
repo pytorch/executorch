@@ -815,13 +815,22 @@ void ComputeGraph::encode_execute() {
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->encode(this);
   }
+
+  // Indicate execute nodes have been freshly encoded and needs to be submitted
+  // first
+  execute_pending_first_submission = true;
 }
 
 void ComputeGraph::execute() {
-  vkapi::VulkanFence fence = context_->fences().get_fence();
-  context_->submit_cmd_to_gpu(fence.get_submit_handle());
-  fence.wait();
-  context_->fences().return_fence(fence);
+  if (execute_pending_first_submission) {
+    submit_current_cmd_and_wait(/*final_use=*/false);
+    execute_pending_first_submission = false;
+  } else {
+    vkapi::VulkanFence fence = context_->fences().get_fence();
+    context_->submit_all_non_final_cmds(fence.get_submit_handle());
+    fence.wait();
+    context_->fences().return_fence(fence);
+  }
   execute_count_++;
 }
 

@@ -68,6 +68,8 @@ class Context final {
   // Command buffers submission
   std::mutex cmd_mutex_;
   vkapi::CommandBuffer cmd_;
+  // List of submitted command buffers, not marked as final use.
+  std::vector<vkapi::CommandBuffer> non_final_cmds_;
   // Semaphore for the previously submitted command buffer, if any
   VkSemaphore prev_semaphore_;
   uint32_t submit_count_;
@@ -229,6 +231,8 @@ class Context final {
   void submit_cmd_to_gpu(
       VkFence fence_handle = VK_NULL_HANDLE,
       const bool final_use = false);
+
+  void submit_all_non_final_cmds(VkFence fence_handle = VK_NULL_HANDLE);
 
   void flush();
 
