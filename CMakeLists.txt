@@ -182,39 +182,49 @@ endif()
 
 if(EXECUTORCH_BUILD_CPUINFO)
   # --- cpuinfo
-  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
-      ${CMAKE_POSITION_INDEPENDENT_CODE}
+  set(CPUINFO_SOURCE_DIR
+      "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/cpuinfo"
   )
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
-  set(CPUINFO_BUILD_TOOLS
-      OFF
-      CACHE BOOL ""
+  set(CPUINFO_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/cpuinfo")
+  set(CPUINFO_INSTALL_DIR "${CPUINFO_BINARY_DIR}/install")
+  set(CPUINFO_LIBRARY
+      "${CPUINFO_INSTALL_DIR}/${CMAKE_INSTALL_LIBDIR}/libcpuinfo.a"
   )
-  set(CPUINFO_BUILD_UNIT_TESTS
-      OFF
-      CACHE BOOL ""
+
+  get_extra_cmake_args_for_external_project(CPUINFO_EXTRA_CMAKE_ARGS)
+  ExternalProject_Add(
+    cpuinfoExternalProject
+    SOURCE_DIR "${CPUINFO_SOURCE_DIR}"
+    BINARY_DIR "${CPUINFO_BINARY_DIR}"
+    INSTALL_DIR "${CPUINFO_INSTALL_DIR}"
+    BUILD_BYPRODUCTS "${CPUINFO_LIBRARY}"
+    CMAKE_ARGS "${CPUINFO_EXTRA_CMAKE_ARGS}"
+               -D
+               CMAKE_POSITION_INDEPENDENT_CODE=ON
+               -D
+               CPUINFO_BUILD_TOOLS=OFF
+               -D
+               CPUINFO_BUILD_UNIT_TESTS=OFF
+               -D
+               CPUINFO_BUILD_MOCK_TESTS=OFF
+               -D
+               CPUINFO_BUILD_BENCHMARKS=OFF
+               -D
+               CPUINFO_LIBRARY_TYPE=static
+               -D
+               CPUINFO_LOG_LEVEL=error
+               -D
+               CMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+               -D
+               CLOG_SOURCE_DIR="${CPUINFO_SOURCE_DIR}/deps/clog"
   )
-  set(CPUINFO_BUILD_MOCK_TESTS
-      OFF
-      CACHE BOOL ""
-  )
-  set(CPUINFO_BUILD_BENCHMARKS
-      OFF
-      CACHE BOOL ""
-  )
-  set(CPUINFO_LIBRARY_TYPE
-      "static"
-      CACHE STRING ""
-  )
-  set(CPUINFO_LOG_LEVEL
-      "error"
-      CACHE STRING ""
-  )
-  set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
-  add_subdirectory("${CPUINFO_SOURCE_DIR}")
-  set(CMAKE_POSITION_INDEPENDENT_CODE
-      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  add_library(cpuinfo STATIC IMPORTED)
+  set_property(TARGET cpuinfo PROPERTY IMPORTED_LOCATION "${CPUINFO_LIBRARY}")
+  add_dependencies(cpuinfo cpuinfoExternalProject)
+  # Trailing slash matters here! "Move everything from the temporary pthreadpool
+  # install directory to the proper install directory."
+  install(DIRECTORY "${CPUINFO_INSTALL_DIR}/"
+          DESTINATION "${CMAKE_INSTALL_PREFIX}"
   )
 endif()
 
