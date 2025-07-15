@@ -230,9 +230,12 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
     )
   endif()
   include(ExternalProject)
+  include(GNUInstallDirs)
   set(PTHREADPOOL_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/pthreadpool")
   set(PTHREADPOOL_INSTALL_DIR "${PTHREADPOOL_BINARY_DIR}/install")
-  set(PTHREADPOOL_LIBRARY "${PTHREADPOOL_INSTALL_DIR}/lib/libpthreadpool.a")
+  set(PTHREADPOOL_LIBRARY
+      "${PTHREADPOOL_INSTALL_DIR}/${CMAKE_INSTALL_LIBDIR}/libpthreadpool.a"
+  )
   get_extra_cmake_args_for_external_project(PTHREADPOOL_EXTRA_CMAKE_ARGS)
   ExternalProject_Add(
     pthreadpoolExternalProject
