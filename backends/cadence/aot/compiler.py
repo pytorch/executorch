@@ -34,7 +34,7 @@ from executorch.exir import (
 )
 from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
-from executorch.exir.program._program import to_edge_with_preserved_ops
+from executorch.exir.program._program import to_edge
 from torch._inductor.decomposition import remove_decompositions
 
 from torch.export.exported_program import ExportedProgram
@@ -219,7 +219,7 @@ TO_EDGE_OP_EXCEPTION_LIST: list[torch._ops.OpOverload] = [
     torch.ops.aten.angle.default,
     torch.ops.aten.rms_norm.default,
 ]
-TO_EDGE_PRESERVE_OPS: tuple[torch._ops.OpOverload, ...] = (
+TO_EDGE_PRESERVE_OPS: list[torch._ops.OpOverload, ...] = (
     torch.ops.aten.rms_norm.default,
 )
 
@@ -233,18 +233,18 @@ def _lower_ep_to_edge(
     """
     Lower an ExportedProgram to an EdgeProgramManager (in edge IR).
     """
-    # Call to_edge_with_preserved_ops to convert the graph to edge IR.
+    # Call to_edge to convert the graph to edge IR.
     # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
-    edge_prog_manager = to_edge_with_preserved_ops(
+    edge_prog_manager = to_edge(
         expo_program,
         compile_config=EdgeCompileConfig(
             _skip_dim_order=True,
             # Allow specific non-core aten ops in the IR.
             _core_aten_ops_exception_list=TO_EDGE_OP_EXCEPTION_LIST
             + (core_aten_exceptions or []),
+            _preserve_ops=TO_EDGE_PRESERVE_OPS,
         ),
         constant_methods=constant_methods,
-        preserve_ops=TO_EDGE_PRESERVE_OPS,
     )
 
     if dump_graphs:
