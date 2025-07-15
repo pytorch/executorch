@@ -1,6 +1,3 @@
-#ifndef _ARM_ZEPHYR_PAL_HPP
-#define _ARM_ZEPHYR_PAL_HPP
-
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
@@ -48,5 +45,3 @@ void* et_pal_allocate(size_t size) {
 void et_pal_free(ET_UNUSED void* ptr) {
     k_free(ptr);
 } 
-
-#endif // _ARM_ZEPHYR_PAL_HPP
