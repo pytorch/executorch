@@ -152,6 +152,9 @@ for preset_index in "${!PRESETS[@]}"; do
           -B "${preset_output_dir}" \
           -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
           -DCMAKE_BUILD_TYPE="${mode}" \
+          # Xcode multi-config presets leave CMAKE_BUILD_TYPE empty, so force our logging flag per-mode.
+          -UEXECUTORCH_ENABLE_LOGGING \
+          -DEXECUTORCH_ENABLE_LOGGING=$([ "${mode}" = "Debug" ] && echo ON || echo OFF) \
           ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
           --preset "${preset}"
 
