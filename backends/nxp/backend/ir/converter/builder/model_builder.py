@@ -48,6 +48,9 @@ from executorch.backends.nxp.backend.ir.tflite_generator.custom_options.flex_tra
     FlexTranspose,
 )
 from executorch.backends.nxp.backend.ir.tflite_optimizer import optimizer
+from executorch.backends.nxp.backend.neutron_operator_support import (
+    transposition_is_supported_on_neutron,
+)
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 
 
@@ -355,6 +358,19 @@ class ModelBuilder:
             if input_tensor.tensor_format.is_channels_last():
                 # Create a Transpose operator and replace the graph input
 
+                new_input_shape = translator.channels_last_shape_to_channels_first(
+                    input_tensor.shape
+                )
+                perm = translator.create_channels_first_to_channels_last_permutation(
+                    input_tensor.rank
+                )
+
+                if not transposition_is_supported_on_neutron(
+                    new_input_shape.vector, list(perm), self.neutron_target_spec
+                ):
+                    new_inputs.append(input_tensor)
+                    continue
+
                 if input_tensor.rank > 6:
                     msg = (
                         f"Couldn't preserve the shape of input tensor '{input_tensor.name}', because it has "
@@ -365,14 +381,9 @@ class ModelBuilder:
                 new_input = self.duplicate_tensor(
                     input_tensor, input_tensor.name + "_channels_first"
                 )
-                new_input.shape = translator.channels_last_shape_to_channels_first(
-                    input_tensor.shape
-                )
+                new_input.shape = new_input_shape
                 new_input.tensor_format = input_tensor.tensor_format.to_node_format()
 
-                perm = translator.create_channels_first_to_channels_last_permutation(
-                    input_tensor.rank
-                )
                 transpose = self._create_transpose_operator(
                     new_input, input_tensor, perm
                 )
@@ -396,6 +407,16 @@ class ModelBuilder:
         for output_tensor in self.get_sub_graph().outputs.tmp_outputs:
             if output_tensor.tensor_format.is_channels_last():
                 # Add a Transpose operator, to make the output channels first
+
+                shape = output_tensor.shape.vector
+                perm = translator.create_channels_last_to_channels_first_permutation(
+                    len(shape), True
+                )
+                if not transposition_is_supported_on_neutron(
+                    shape, perm, self.neutron_target_spec
+                ):
+                    new_outputs.append(output_tensor)
+                    continue
 
                 if output_tensor.rank > 6:
                     logger.e(
