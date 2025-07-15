@@ -23,7 +23,7 @@
 # executorch-config.cmake in executorch pip package gives, but we wanted to keep
 # the contract of exposing these CMake variables.
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 
@@ -34,4 +34,4 @@ set(EXECUTORCH_INCLUDE_DIRS
     ${_root}/lib
 )
 
-# TODO: does ExecuTorchTargets.cmake set EXECUTORCH_FOUDND?
+# TODO: does ExecuTorchTargets.cmake set EXECUTORCH_FOUND?

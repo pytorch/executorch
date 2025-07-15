@@ -286,6 +286,7 @@ function(get_extra_cmake_args_for_external_project outVar)
   set(VARIABLES_TO_PROPAGATE
       ANDROID_ABI
       ANDROID_PLATFORM
+      CMAKE_ARCHIVE_OUTPUT_DIRECTORY
       CMAKE_BUILD_TYPE
       CMAKE_C_COMPILER_LAUNCHER
       CMAKE_CXX_COMPILER_LAUNCHER
