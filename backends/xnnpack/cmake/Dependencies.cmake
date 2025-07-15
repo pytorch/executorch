@@ -83,10 +83,10 @@ if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
     KLEIDIAI_LIBRARY kleidiai
     PATHS "${CMAKE_CURRENT_BINARY_DIR}/XNNPACK/kleidiai-source"
   )
-  if(not KLEIDIAI_LIBRARY)
-    message(FATAL_ERROR "Can't find KleidiAI")
+  if(KLEIDIAI_LIBRARY)
+    message(WARNING "Can't find KleidiAI, skipping install")
+    install(FILES ${KLEIDIAI_LIBRARY} PUBLIC_HEADER
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
   endif()
-  install(FILES ${KLEIDIAI_LIBRARY} PUBLIC_HEADER
-          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-  )
 endif()
