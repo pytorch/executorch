@@ -228,6 +228,17 @@ class Cat4(torch.nn.Module):
     def forward(self, x, y):
         return torch.cat((y, y, x, x), axis=2)
 
+class CausalMask(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("causal_mask", torch.zeros((1,1, 1, 128)))
+        self.mask_length = 128
+
+    def forward(self, padding_mask):
+        self.causal_mask[:, :, :, :self.mask_length] = self.causal_mask[:, :, :, :self.mask_length].masked_fill(
+                    padding_mask, 1
+                )
+        return self.causal_mask+1
 
 class CDist(torch.nn.Module):
     def __init__(self):
@@ -1592,6 +1603,16 @@ class SliceCopyWithStep(torch.nn.Module):
             + self.position_ids[:, : seq_length : self.step]
         )
 
+class SliceScatter(torch.nn.Module):
+    def __init__(self, dim, start, end, step):
+        super().__init__()
+        self.dim = dim
+        self.start = start
+        self.end = end
+        self.step = step
+
+    def forward(self, x, y):
+        return x.slice_scatter(y, dim=self.dim, start=self.start, end=self.end, step=self.step)
 
 class Softmax(torch.nn.Module):
     def __init__(self, dim):

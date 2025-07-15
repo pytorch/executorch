@@ -67,10 +67,11 @@ class ET_EXPERIMENTAL TextDecoderRunner {
       const executorch::aten::Tensor& logits_tensor,
       const float temperature = 0.0f) {
     int32_t result = 0;
-    ET_SWITCH_THREE_TYPES(
+    ET_SWITCH_FOUR_TYPES(
         Float,
         Half,
         BFloat16,
+        UInt16,
         logits_tensor.scalar_type(),
         unused,
         "logits_to_token",
