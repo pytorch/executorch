@@ -204,9 +204,7 @@ class ComputeGraph final {
   // current Context's command buffer is submitted now.
   size_t staging_nbytes_in_cmd_ = 0;
 
-  // Flag to indicate if execute nodes have been freshly encoded and have not
-  // been submitted yet.
-  bool execute_pending_first_submission = true;
+  vkapi::VulkanFence encode_execute_fence_;
 
  public:
   //
@@ -839,6 +837,8 @@ class ComputeGraph final {
    * and wait for it to complete before returning, if wait is True.
    */
   void submit_current_cmd(const bool final_use = false, bool wait = true);
+
+  void wait_on_encode_execute();
 
  public:
   //
