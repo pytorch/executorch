@@ -237,6 +237,8 @@ bool registry_has_op_function(
  */
 Span<const Kernel> get_registered_kernels();
 
+using ErrorHandler = Error (*)(Error errorCode);
+
 /**
  * Registers the provided kernels.
  *
@@ -244,7 +246,7 @@ Span<const Kernel> get_registered_kernels();
  * @retval Error::Ok always. Panics on error. This function needs to return a
  *     non-void type to run at static initialization time.
  */
-ET_NODISCARD Error register_kernels(const Span<const Kernel>);
+ET_NODISCARD Error register_kernels(const Span<const Kernel>, ErrorHandler errorHandler = nullptr);
 
 /**
  * Registers a single kernel.
@@ -253,8 +255,8 @@ ET_NODISCARD Error register_kernels(const Span<const Kernel>);
  * @retval Error::Ok always. Panics on error. This function needs to return a
  *     non-void type to run at static initialization time.
  */
-ET_NODISCARD inline Error register_kernel(const Kernel& kernel) {
-  return register_kernels({&kernel, 1});
+ET_NODISCARD inline Error register_kernel(const Kernel& kernel, ErrorHandler errorHandler = nullptr) {
+  return register_kernels({&kernel, 1}, errorHandler);
 };
 
 } // namespace ET_RUNTIME_NAMESPACE
@@ -269,12 +271,13 @@ using ::executorch::ET_RUNTIME_NAMESPACE::KernelKey;
 using ::executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 using ::executorch::ET_RUNTIME_NAMESPACE::OpFunction;
 using ::executorch::ET_RUNTIME_NAMESPACE::TensorMeta;
+using ::executorch::ET_RUNTIME_NAMESPACE::ErrorHandler;
 using KernelRuntimeContext =
     ::executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 
-inline ::executorch::runtime::Error register_kernels(ArrayRef<Kernel> kernels) {
+inline ::executorch::runtime::Error register_kernels(ArrayRef<Kernel> kernels, ErrorHandler errorHandler = nullptr) {
   return ::executorch::ET_RUNTIME_NAMESPACE::register_kernels(
-      {kernels.data(), kernels.size()});
+      {kernels.data(), kernels.size()}, errorHandler);
 }
 inline OpFunction getOpsFn(
     const char* name,
@@ -294,5 +297,6 @@ inline ArrayRef<Kernel> get_kernels() {
       ::executorch::ET_RUNTIME_NAMESPACE::get_registered_kernels();
   return ArrayRef<Kernel>(kernels.data(), kernels.size());
 }
+
 } // namespace executor
 } // namespace torch

@@ -49,7 +49,7 @@ Kernel* registered_kernels = reinterpret_cast<Kernel*>(registered_kernels_data);
 size_t num_registered_kernels = 0;
 
 // Registers the kernels, but may return an error.
-Error register_kernels_internal(const Span<const Kernel> kernels) {
+Error register_kernels_internal(const Span<const Kernel> kernels, ErrorHandler errorHandler) {
   // Operator registration happens in static initialization time before or after
   // PAL init, so call it here. It is safe to call multiple times.
   ::et_pal_init();
@@ -74,11 +74,18 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
       ET_LOG(Error, "%s", kernels[i].name_);
       ET_LOG_KERNEL_KEY(kernels[i].kernel_key_);
     }
+
+    if (errorHandler != nullptr) {
+      return errorHandler(Error::RegistrationExceedingMaxKernels);
+    }
+
     return Error::RegistrationExceedingMaxKernels;
   }
   // for debugging purpose
   ET_UNUSED const char* lib_name =
       et_pal_get_shared_library_name(kernels.data());
+
+  Error err = Error::Ok;
 
   for (const auto& kernel : kernels) {
     // Linear search. This is fine if the number of kernels is small.
@@ -88,24 +95,33 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
           kernel.kernel_key_ == k.kernel_key_) {
         ET_LOG(Error, "Re-registering %s, from %s", k.name_, lib_name);
         ET_LOG_KERNEL_KEY(k.kernel_key_);
-        return Error::RegistrationAlreadyRegistered;
+        err = Error::RegistrationAlreadyRegistered;
+        continue;
       }
     }
+
     registered_kernels[num_registered_kernels++] = kernel;
   }
-  ET_LOG(
-      Debug,
-      "Successfully registered all kernels from shared library: %s",
-      lib_name);
 
-  return Error::Ok;
+  if (errorHandler != nullptr) {
+    err =  errorHandler(err);
+  }
+
+  if (err == Error::Ok) {
+    ET_LOG(
+        Debug,
+        "Successfully registered all kernels from shared library: %s",
+        lib_name);
+  }
+
+  return err;
 }
 
 } // namespace
 
 // Registers the kernels, but panics if an error occurs. Always returns Ok.
-Error register_kernels(const Span<const Kernel> kernels) {
-  Error success = register_kernels_internal(kernels);
+Error register_kernels(const Span<const Kernel> kernels, ErrorHandler errorHandler) {
+  Error success = register_kernels_internal(kernels, errorHandler);
   if (success == Error::RegistrationAlreadyRegistered ||
       success == Error::RegistrationExceedingMaxKernels) {
     ET_CHECK_MSG(
