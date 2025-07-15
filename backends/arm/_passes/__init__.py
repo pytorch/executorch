@@ -15,6 +15,7 @@ from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
 from .convert_any_default_dim_dims_pass import ConvertAnyDefaultDimDimsPass  # noqa
+from .convert_elu_params import ConvertELUParamsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
 from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
 from .convert_int_pow_to_mul import ConvertIntPowToMuls  # noqa
@@ -32,6 +33,7 @@ from .decompose_avg_pool2d import DecomposeAvgPool2d  # noqa
 from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
+from .decompose_elu_pass import DecomposeEluPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_grouped_conv import DecomposeGroupedConv  # noqa
