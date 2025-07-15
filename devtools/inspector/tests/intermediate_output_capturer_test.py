@@ -6,7 +6,6 @@
 
 # pyre-unsafe
 
-import copy
 import unittest
 from typing import Dict, Tuple, Union
 
@@ -77,7 +76,6 @@ class TestIntermediateOutputCapturer(unittest.TestCase):
                 input_tensor = model.get_input()
                 aten_model: ExportedProgram = export(model, (input_tensor,))
                 aten_model_graph_id = id(aten_model.graph)
-                aten_model_copy = copy.deepcopy(aten_model)
 
                 edge_program_manager: EdgeProgramManager = to_edge(
                     aten_model,
@@ -85,15 +83,15 @@ class TestIntermediateOutputCapturer(unittest.TestCase):
                 )
 
                 ret = propagate_back_debug_handle(
-                    aten_model_copy,
+                    aten_model,
                     aten_model_graph_id,
                     edge_program_manager.exported_program(),
                 )
-                assert ret == True
+                assert ret is True
 
                 self._capture_intermediate_outputs_and_check(
                     input_tensor,
-                    aten_model_copy,
+                    aten_model,
                     model.get_exported_program_expected_intermediate_outputs(),
                 )
                 self._capture_intermediate_outputs_and_check(

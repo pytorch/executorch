@@ -495,53 +495,16 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
 
         return res
 
-    def _deserialize_from_node(self, from_node_data):
+    def _deserialize_from_node(self, from_node_data: Optional[List[Dict[str, Any]]]) -> Optional[List[NodeSource]]:
         """
         Recursively deserialize from_node metadata from JSON data.
         """
         if from_node_data is None:
             return None
 
-        if isinstance(from_node_data, list):
-            return [self._deserialize_from_node(item) for item in from_node_data]
+        assert isinstance(from_node_data, list)
 
-        if isinstance(from_node_data, dict):
-            # Create a NodeSource object directly without going through the constructor
-            # to avoid issues with graph ID and node creation
-            node_source = NodeSource.__new__(NodeSource)
-
-            # Set the basic attributes
-            node_source.pass_name = from_node_data.get('pass_name', '')
-
-            # Parse action string back to NodeSourceAction enum list
-            action_str = from_node_data.get('action', '')
-            actions = []
-            if action_str:
-                for action_name in action_str.split('+'):
-                    if action_name.upper() == 'CREATE':
-                        actions.append(NodeSourceAction.CREATE)
-                    elif action_name.upper() == 'REPLACE':
-                        actions.append(NodeSourceAction.REPLACE)
-            node_source.action = actions
-
-            # Create the NodeInfo object directly
-            if 'name' in from_node_data and 'target' in from_node_data and 'graph_id' in from_node_data:
-                node_info = NodeSource.NodeInfo(
-                    from_node_data.get('name', ''),
-                    from_node_data.get('target', ''),
-                    from_node_data.get('graph_id', -1)
-                )
-                node_source.node_info = node_info
-            else:
-                node_source.node_info = None
-
-            # Recursively deserialize nested from_node
-            node_source.from_node = self._deserialize_from_node(from_node_data.get('from_node', []))
-
-            return node_source
-
-        # Fallback for primitive types
-        return from_node_data
+        return [NodeSource._from_dict(fn_dict) for fn_dict in from_node_data]
 
     # pyre-ignore
     def deserialize_alloc_inputs(self, serialized_inputs: List[schema.NamedArgument]):
