@@ -104,12 +104,14 @@ class TOSAPartitioner(Partitioner):
                         if not is_partitioned(input):
                             del node.meta["delegation_tag"]
                             break
+                    continue
 
                 if is_dequant_node(node):
                     for user in node.users:
                         if not is_partitioned(user):
                             del node.meta["delegation_tag"]
                             break
+                    continue
 
                 if tosa_spec.support_float():
                     continue
@@ -172,10 +174,18 @@ class TOSAPartitioner(Partitioner):
 
         ops_to_not_decompose = [
             torch.ops.aten.linear.default,
-            torch.ops.aten.upsample_bilinear2d.vec,
-            torch.ops.aten.upsample_nearest2d.vec,
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
         ] + ops_to_not_decompose_if_quant_op
+
+        tosa_spec = get_tosa_spec(self.delegation_spec.compile_specs)
+        if not tosa_spec.is_U55_subset:
+            # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d
+            # and upsample_nearest2d decompose into that it will not be possible to
+            # delegate those operators on U55. If we have said here to not decompose
+            # them there will be an error saying the operator was not decomposed. It
+            # will not be possible for it to end up on either CPU or NPU.
+            ops_to_not_decompose.append(torch.ops.aten.upsample_nearest2d.vec)
+            ops_to_not_decompose.append(torch.ops.aten.upsample_bilinear2d.vec)
 
         return (ops_to_not_decompose, filter_fn)

@@ -1,4 +1,5 @@
-# Copyright 2024 NXP
+# Copyright (c) 2024-2025 NXP
+# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,6 +19,7 @@ class Conv2dModule(torch.nn.Module):
         out_channels: int = 8,
         padding: Union[str, int, Collection[int]] = 0,
         stride: Union[int, tuple[int, int]] = 2,
+        group: int = 1,
     ):
         super().__init__()
 
@@ -29,6 +31,7 @@ class Conv2dModule(torch.nn.Module):
             padding=padding,
             dilation=dilation,
             bias=bias,
+            groups=group,
         )
 
     def forward(self, x):

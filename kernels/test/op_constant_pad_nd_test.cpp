@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -347,6 +348,21 @@ class OpConstantPadNDOutTest : public OperatorTest {
     op_constant_pad_nd_out(self, padding_ref, 7, out);
     EXPECT_TENSOR_CLOSE(out, expected);
   }
+
+  template <ScalarType DTYPE>
+  void expect_bad_scalar_value_dies(const Scalar& bad_value) {
+    TensorFactory<DTYPE> tf;
+    const std::vector<int32_t> sizes = {2, 2};
+    const std::vector<int32_t> sizes_out = {2, 4};
+    const std::vector<int64_t> padding = {1, 1};
+
+    IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
+    Tensor self = tf.ones(sizes);
+    Tensor out = tf.zeros(sizes_out);
+
+    ET_EXPECT_KERNEL_FAILURE(
+        context_, op_constant_pad_nd_out(self, padding_ref, bad_value, out));
+  }
 };
 
 TEST_F(OpConstantPadNDOutTest, TestPadDim2) {
@@ -465,3 +481,5 @@ TEST_F(OpConstantPadNDOutTest, IncorrectOutputShapeFail) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_constant_pad_nd_out(self, padding_ref, 0, out));
 }
+
+GENERATE_SCALAR_OVERFLOW_TESTS(OpConstantPadNDOutTest)

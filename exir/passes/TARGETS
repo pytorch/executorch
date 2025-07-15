@@ -31,6 +31,7 @@ python_library(
         ":sym_shape_eval_pass",
         ":sym_to_tensor_pass",
         ":weights_to_outputs_pass",
+        ":reinplace_pass",
         "//caffe2:torch",
         "//executorch/exir:common",
         "//executorch/exir:control_flow",
@@ -65,6 +66,17 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "reinplace_pass",
+    srcs = [
+        "reinplace.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
     ],
 )
 
@@ -330,6 +342,7 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/exir:debug_handle_utils",
         "//executorch/exir:graph_module",
         "//executorch/exir:pass_base",
     ],

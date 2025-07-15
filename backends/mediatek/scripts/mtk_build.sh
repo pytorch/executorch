@@ -6,12 +6,6 @@ set -e
 # Define the directory where CMakeLists.txt is located
 SOURCE_DIR=$(realpath "$(dirname "$0")/../../..")
 
-# Check if buck2 exists
-BUCK_PATH=${BUCK2:-buck2}
-if [ -z "$BUCK2" ]; then
-    echo "Info: BUCK2 environment variable is not set." >&2
-fi
-
 # Check if the ANDROID_NDK environment variable is set
 if [ -z "$ANDROID_NDK" ]; then
     echo "Error: ANDROID_NDK environment variable is not set." >&2

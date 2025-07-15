@@ -19,6 +19,7 @@ from .decompose_expm1 import DecomposeExpM1
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
+from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
 from .fold_qdq import FoldQDQ
@@ -35,7 +36,6 @@ from .reduce_dynamic_range import ReduceDynamicRange
 from .remove_0d_tensor import Remove0DTensor
 from .remove_redundancy import RemoveRedundancy
 from .replace_arange_args import ReplaceArangeArgs
-from .replace_index_put_input import ReplaceIndexPutInput
 from .replace_inf_values import ReplaceInfValues
 from .tag_quant_io import TagQuantIO
 
@@ -56,6 +56,7 @@ __all__ = [
     DecomposeLinalgVectorNorm,
     DecomposeRoll,
     DecomposeSilu,
+    DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
@@ -72,7 +73,6 @@ __all__ = [
     Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
-    ReplaceIndexPutInput,
     ReplaceInfValues,
     TagQuantIO,
 ]

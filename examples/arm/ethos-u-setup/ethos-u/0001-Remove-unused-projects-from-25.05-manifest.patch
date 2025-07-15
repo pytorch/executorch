@@ -1,0 +1,65 @@
+From 31a3be0c97093dbd70777c644d47ce8a7a9f57b3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?M=C3=A5ns=20Nilsson?= <mans.nilsson@arm.com>
+Date: Fri, 13 Jun 2025 18:25:37 +0200
+Subject: [PATCH] Remove unused projects from 25.05 manifest
+
+---
+ 25.05.json | 42 ------------------------------------------
+ 1 file changed, 42 deletions(-)
+
+diff --git a/25.05.json b/25.05.json
+index 6a2697a..d248548 100644
+--- a/25.05.json
++++ b/25.05.json
+@@ -38,48 +38,6 @@
+             "path": "core_software/cmsis-view",
+             "fetchurl": "https://github.com/ARM-software/CMSIS-View.git",
+             "revision": "486ca2726d4a5de4895c9d3c273781d141b4a5b3"
+-        },
+-        {
+-            "path": "core_software/openamp/libmetal",
+-            "fetchurl": "https://github.com/OpenAMP/libmetal",
+-            "revision": "36f87f9335f5afc3ce3a56c1069346df591094e1"
+-        },
+-        {
+-            "path": "core_software/openamp/openamp",
+-            "fetchurl": "https://github.com/OpenAMP/open-amp",
+-            "revision": "3737f8b18ad24a3b091a11cc6ea320d8b0576da5"
+-        },
+-        {
+-            "path": "core_software/rtos/freertos/freertos_kernel",
+-            "fetchurl": "https://github.com/FreeRTOS/FreeRTOS-Kernel.git",
+-            "revision": "2615dcde13d953dbe60ae1ee0cf9312458984c3a"
+-        },
+-        {
+-            "path": "core_software/rtos/threadx",
+-            "fetchurl": "https://github.com/eclipse-threadx/threadx",
+-            "revision": "7ad78c40e9702917264a9b722890110fdb909ebc"
+-        },
+-        {
+-            "path": "core_software/tflite_micro",
+-            "fetchurl": "https://github.com/tensorflow/tflite-micro",
+-            "revision": "9d35a74b03fa313026982abb4d2c4ffe29de88bc"
+-        },
+-        {
+-            "path": "linux_driver_stack",
+-            "fetchurl": "https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-linux-driver-stack.git",
+-            "pushurl": "ssh://git@git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-linux-driver-stack.git",
+-            "revision": "25.05"
+-        },
+-        {
+-            "path": "linux_driver_stack/thirdparty/tensorflow",
+-            "fetchurl": "https://github.com/tensorflow/tensorflow.git",
+-            "revision": "v2.18.1"
+-        },
+-        {
+-            "path": "vela",
+-            "fetchurl": "https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela.git",
+-            "pushurl": "ssh://git@git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela.git",
+-            "revision": "4.3.0"
+         }
+     ]
+ }
+-- 
+2.34.1
+

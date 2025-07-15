@@ -12,8 +12,9 @@ buffer_to_buffer:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int
+      - VALUE: double
       - VALUE: int8
       - VALUE: uint8
+      - VALUE: int32
   shader_variants:
     - NAME: buffer_to_buffer

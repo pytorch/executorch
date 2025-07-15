@@ -288,12 +288,8 @@ def _partition_and_lower_one_graph_module(
                 tagged_graph_module, node_list, tag
             )
 
-        tagged_graph_module_output_node = [
-            node for node in tagged_graph_module.graph.nodes if node.op == "output"
-        ][0]
-        submodule_output_node = [
-            node for node in submodule.graph.nodes if node.op == "output"
-        ][0]
+        tagged_graph_module_output_node = tagged_graph_module.graph.output_node()
+        submodule_output_node = submodule.graph.output_node()
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
         submodule_output_node.meta = tagged_graph_module_output_node.meta
@@ -476,12 +472,8 @@ def _create_partitions_in_graph_module(
                 tagged_graph_module, node_list, tag
             )
 
-        tagged_graph_module_output_node = [
-            node for node in tagged_graph_module.graph.nodes if node.op == "output"
-        ][0]
-        submodule_output_node = [
-            node for node in submodule.graph.nodes if node.op == "output"
-        ][0]
+        tagged_graph_module_output_node = tagged_graph_module.graph.output_node()
+        submodule_output_node = submodule.graph.output_node()
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
         submodule_output_node.meta = tagged_graph_module_output_node.meta

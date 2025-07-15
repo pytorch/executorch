@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/kernels/portable/cpu/util/arange_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -29,9 +30,7 @@ Tensor& arange_out(KernelRuntimeContext& ctx, const Scalar& end, Tensor& out) {
 
   ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(out), InvalidArgument, out);
 
-  size_t size = static_cast<size_t>(std::ceil(end_val));
-
-  Tensor::SizesType out_length = static_cast<Tensor::SizesType>(size);
+  Tensor::SizesType out_length = compute_arange_out_size(0.0, end_val, 1.0);
 
   ET_KERNEL_CHECK(
       ctx,
@@ -39,12 +38,7 @@ Tensor& arange_out(KernelRuntimeContext& ctx, const Scalar& end, Tensor& out) {
       InvalidArgument,
       out);
 
-  ET_SWITCH_REALHBF16_TYPES(out.scalar_type(), ctx, "arange.out", CTYPE, [&]() {
-    auto out_data = out.mutable_data_ptr<CTYPE>();
-    for (size_t i = 0; i < size; i++) {
-      out_data[i] = static_cast<CTYPE>(i);
-    }
-  });
+  arange_out_impl(ctx, end_val, out);
 
   return out;
 }
@@ -77,10 +71,8 @@ Tensor& arange_start_out(
 
   ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(out), InvalidArgument, out);
 
-  double size_d = (d_end - d_start) / d_step;
-  size_t size = static_cast<size_t>(std::ceil(size_d));
-
-  Tensor::SizesType out_length = static_cast<Tensor::SizesType>(size);
+  Tensor::SizesType out_length =
+      compute_arange_out_size(d_start, d_end, d_step);
 
   ET_KERNEL_CHECK(
       ctx,
@@ -88,13 +80,7 @@ Tensor& arange_start_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REALHBF16_TYPES(
-      out.scalar_type(), ctx, "arange.start_out", CTYPE, [&]() {
-        auto out_data = out.mutable_data_ptr<CTYPE>();
-        for (size_t i = 0; i < size; i++) {
-          out_data[i] = convert<CTYPE, double>(d_start + i * d_step);
-        }
-      });
+  arange_out_impl(ctx, d_start, d_end, d_step, out);
 
   return out;
 }

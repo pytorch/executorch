@@ -241,8 +241,7 @@ def get_ptq_per_channel_quant_config(
         torch.int8,
         torch.int16,
     }
-    # TODO accept "int4" temporally. Remove "int4" when torch support torch.int4 dtype
-    supported_weight_dtypes = {"int4", torch.int8, torch.int16}
+    supported_weight_dtypes = {torch.int4, torch.int8, torch.int16}
     assert (
         act_dtype in supported_act_types
     ), f"act_dtype, {act_dtype} is not one of supported types, {supported_act_types}"
@@ -276,9 +275,11 @@ def get_ptq_per_channel_quant_config(
         )
 
     weight_quantization_spec = QuantizationSpec(
-        dtype=torch.int8 if weight_dtype == "int4" else weight_dtype,
-        quant_min=-7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).min + 1,
-        quant_max=7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).max,
+        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
+        quant_min=(
+            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
+        ),
+        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
         observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(**extra_args),
@@ -310,9 +311,11 @@ def get_ptq_per_block_quant_config(
         act_symmetric=act_symmetric,
     )
     weight_quantization_spec = QuantizationSpec(
-        dtype=torch.int8 if weight_dtype == "int4" else weight_dtype,
-        quant_min=-7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).min + 1,
-        quant_max=7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).max,
+        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
+        quant_min=(
+            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
+        ),
+        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
         observer_or_fake_quant_ctr=PerBlockParamObserver.with_args(**extra_args),
@@ -463,8 +466,7 @@ def get_qat_per_channel_quant_config(
         torch.int8,
         torch.int16,
     }
-    # TODO accept "int4" temporally. Remove "int4" when torch support torch.int4 dtype
-    supported_weight_dtypes = {"int4", torch.int8, torch.int16}
+    supported_weight_dtypes = {torch.int4, torch.int8, torch.int16}
     assert (
         act_dtype in supported_act_types
     ), f"act_dtype, {act_dtype} is not one of supported types, {supported_act_types}"
@@ -491,17 +493,21 @@ def get_qat_per_channel_quant_config(
     )
 
     weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
-        dtype=torch.int8 if weight_dtype == "int4" else weight_dtype,
-        quant_min=-7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).min + 1,
-        quant_max=7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).max,
+        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
+        quant_min=(
+            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
+        ),
+        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
         observer=MovingAveragePerChannelMinMaxObserver,
     )
     weight_quantization_spec = QuantizationSpec(
-        dtype=torch.int8 if weight_dtype == "int4" else weight_dtype,
-        quant_min=-7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).min + 1,
-        quant_max=7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).max,
+        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
+        quant_min=(
+            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
+        ),
+        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
         observer_or_fake_quant_ctr=weight_fake_quant_ctr,

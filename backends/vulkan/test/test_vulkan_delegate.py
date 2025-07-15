@@ -1898,3 +1898,165 @@ class TestVulkanBackend(unittest.TestCase):
             dynamic_shapes=dynamic_shapes,
             test_inputs=test_inputs,
         )
+
+    def test_vulkan_backend_group_norm(self):
+        class ConvGroupNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Conv2d: 3 input channels -> 16 output channels
+                self.conv = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=16,
+                    kernel_size=3,
+                    padding=1,
+                    bias=True,
+                )
+                # GroupNorm: 4 groups for 16 channels (16 % 4 == 0)
+                self.group_norm = torch.nn.GroupNorm(
+                    num_groups=4,
+                    num_channels=16,
+                    eps=1e-5,
+                    affine=True,
+                )
+
+            def forward(self, x):
+                x = self.conv(x)
+                x = self.group_norm(x)
+                return x
+
+        # Create sample inputs: [batch, channels, height, width]
+        sample_inputs = (torch.randn(size=(1, 3, 32, 32), dtype=torch.float32),)
+
+        # Test with static shapes first
+        self.lower_module_and_test_output(
+            ConvGroupNormModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_group_norm_different_groups(self):
+        class GroupNormModule(torch.nn.Module):
+            def __init__(self, num_groups, num_channels):
+                super().__init__()
+                self.group_norm = torch.nn.GroupNorm(
+                    num_groups=num_groups,
+                    num_channels=num_channels,
+                    eps=1e-5,
+                    affine=True,
+                )
+
+            def forward(self, x):
+                return self.group_norm(x)
+
+        # Test different group configurations
+        test_configs = [
+            (2, 8),  # 2 groups, 8 channels
+            (4, 16),  # 4 groups, 16 channels
+            (8, 32),  # 8 groups, 32 channels
+        ]
+
+        for num_groups, num_channels in test_configs:
+            with self.subTest(num_groups=num_groups, num_channels=num_channels):
+                sample_inputs = (
+                    torch.randn(size=(2, num_channels, 16, 16), dtype=torch.float32),
+                )
+
+                self.lower_module_and_test_output(
+                    GroupNormModule(num_groups, num_channels),
+                    sample_inputs,
+                )
+
+    def test_vulkan_backend_full_quantization_workflow(self):
+        class FullQuantizationWorkflowModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # Step 1: Choose quantization parameters per tensor
+                scale, zero_point = (
+                    torch.ops.quantized_decomposed.choose_qparams.tensor(
+                        x,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        eps=1e-5,
+                        dtype=torch.int32,
+                    )
+                )
+
+                # Step 2: Quantize using the calculated parameters
+                quantized = torch.ops.quantized_decomposed.quantize_per_tensor.tensor(
+                    x,
+                    scale,
+                    zero_point,
+                    quant_min=-2147483648,  # int32 min
+                    quant_max=2147483647,  # int32 max
+                    dtype=torch.int32,
+                )
+
+                # Step 3: Dequantize back to float
+                dequantized = (
+                    torch.ops.quantized_decomposed.dequantize_per_tensor.tensor(
+                        quantized,
+                        scale,
+                        zero_point,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        dtype=torch.int32,
+                    )
+                )
+
+                return dequantized
+
+        full_workflow_module = FullQuantizationWorkflowModule()
+        sample_inputs = (torch.rand(size=(2, 3, 4), dtype=torch.float32),)
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            full_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
+        )
+
+    def test_vulkan_backend_full_per_token_quantization_workflow(self):
+        class FullPerTokenQuantizationWorkflowModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # Step 1: Choose quantization parameters per token
+                scale, zero_point = (
+                    torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
+                        x,
+                        dtype=torch.int32,
+                    )
+                )
+
+                # Step 2: Quantize using the calculated parameters per token
+                quantized = torch.ops.quantized_decomposed.quantize_per_token.default(
+                    x,
+                    scale,
+                    zero_point,
+                    quant_min=-2147483648,  # int32 min
+                    quant_max=2147483647,  # int32 max
+                    dtype=torch.int32,
+                )
+
+                # Step 3: Dequantize back to float per token
+                dequantized = (
+                    torch.ops.quantized_decomposed.dequantize_per_token.default(
+                        quantized,
+                        scale,
+                        zero_point,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        dtype=torch.int32,
+                        output_dtype=torch.float32,
+                    )
+                )
+
+                return dequantized
+
+        full_per_token_workflow_module = FullPerTokenQuantizationWorkflowModule()
+        sample_inputs = (torch.rand(size=(6, 4), dtype=torch.float32),)
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            full_per_token_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
+        )

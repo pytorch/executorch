@@ -22,12 +22,12 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineBI,
     TosaPipelineMI,
 )
-
-from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
     get_llama_model,
 )
+
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 
 input_t = Tuple[torch.Tensor]
 

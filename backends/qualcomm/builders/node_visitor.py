@@ -41,6 +41,8 @@ from .utils import (
     get_parameter,
     is_graph_input,
     is_graph_output,
+    is_mutable_buffer_input,
+    is_mutable_buffer_output,
     is_parameter,
 )
 
@@ -307,7 +309,9 @@ class NodeVisitor:
         node: torch.fx.Node,
         tensor_type: PyQnnWrapper.Qnn_TensorType_t,
     ) -> PyQnnWrapper.Qnn_TensorType_t:
-        is_input = is_graph_input(node, self.edge_program)
+        is_input = is_graph_input(node, self.edge_program) or is_mutable_buffer_input(
+            node, self.edge_program
+        )
         is_output = is_graph_output(node)
         # handle logic for input/output tensors
         if is_input or is_output:
@@ -351,6 +355,33 @@ class NodeVisitor:
                 dynamic_dims.append(0)
 
         return dynamic_dims if any(dynamic_dims) else [], nominal_dims
+
+    def get_tensor_name(
+        self,
+        node: torch.fx.Node,
+        wrapper_idx: int = 0,
+    ):
+        tensor_name = f"{node.name}_{wrapper_idx}"
+        # The `input_{id}` is utilized for sorting at runtime. Due to multiple passes in qnn_preprocess,
+        # the input order between QNN and the original graph’s forward function may differ.
+        # The `mutbuf_{id}` is utilized for mapping I/O of mutable buffer at runtime.
+        # The `output_` is identified as the graph’s output at runtime to prevent confusion with per_tensor_dump.
+        if is_mutable_buffer_input(node, self.edge_program):
+            fqn = self.edge_program.graph_signature.inputs_to_buffers[node.target]
+            position_index = list(
+                self.edge_program.graph_signature.buffers_to_mutate.values()
+            ).index(fqn)
+            tensor_name = f"input_{str(self.external_ids[node])}_mutbuf_{str(position_index)}_{tensor_name}"
+        elif is_graph_input(node, self.edge_program):
+            tensor_name = f"input_{str(self.external_ids[node])}_{tensor_name}"
+        elif is_mutable_buffer_output(node, self.edge_program):
+            position_index = list(
+                self.edge_program.graph_signature.buffers_to_mutate.keys()
+            ).index(node.name)
+            tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
+        elif is_graph_output(node):
+            tensor_name = f"output_{tensor_name}"
+        return tensor_name
 
     def define_custom_tensor_wrapper(
         self,
@@ -413,16 +444,7 @@ class NodeVisitor:
         if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
             return cached
 
-        tensor_name = f"{tensor_source_node.name}_{wrapper_idx}"
-        if is_graph_input(tensor_source_node, self.edge_program):
-            tensor_name = (
-                "input_"
-                + str(self.external_ids[tensor_source_node])
-                + "_"
-                + tensor_name
-            )
-        if is_graph_output(tensor_source_node):
-            tensor_name = "output_" + tensor_name
+        tensor_name = self.get_tensor_name(tensor_source_node, wrapper_idx)
         dims = torch.Size([1]) if len(tensor.size()) == 0 else tensor.size()
         dynamic_dims, nominal_dims = self.get_dynamic_dimension(dims)
         tensor_type = self.get_tensor_type(tensor_source_node, tensor_type)

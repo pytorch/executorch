@@ -24,8 +24,7 @@ TextPrefiller::TextPrefiller(
     : text_decoder_runner_(text_decoder_runner),
       use_kv_cache_(use_kv_cache),
       enable_parallel_prefill_(enable_parallel_prefill),
-      max_seq_len_(max_seq_len > 0 ? max_seq_len - 1 : 127) {
-} // -1 because for some reason tracing results in this upperbound
+      max_seq_len_(max_seq_len > 0 ? max_seq_len : 128) {}
 
 ::executorch::runtime::Result<uint64_t> TextPrefiller::prefill(
     std::vector<uint64_t>& prompt_tokens,
@@ -56,21 +55,22 @@ TextPrefiller::TextPrefiller(
           prompt_tokens_to_process.begin());
 
       // Process this chunk
-      auto chunk_result = prefillChunk(prompt_tokens_to_process, start_pos);
+      auto chunk_result = prefill_chunk(prompt_tokens_to_process, start_pos);
       ET_CHECK_OK_OR_RETURN_ERROR(chunk_result.error());
       cur_token = chunk_result.get();
 
+      start_pos += num_tokens_to_prefill_with;
       num_tokens_to_process += num_tokens_to_prefill_with;
     }
 
     return cur_token;
   } else {
     // If prompt tokens don't exceed max_seq_len_, process them directly
-    return prefillChunk(prompt_tokens, start_pos);
+    return prefill_chunk(prompt_tokens, start_pos);
   }
 }
 
-::executorch::runtime::Result<uint64_t> TextPrefiller::prefillChunk(
+::executorch::runtime::Result<uint64_t> TextPrefiller::prefill_chunk(
     std::vector<uint64_t>& prompt_tokens,
     int64_t& start_pos) {
   // enable_parallel_prefill_ maybe set even when not using kv cache
@@ -86,10 +86,7 @@ TextPrefiller::TextPrefiller(
         {1, num_prompt_tokens},
         executorch::aten::ScalarType::Long);
 
-    auto start_pos_tensor =
-        from_blob(&start_pos, {1}, executorch::aten::ScalarType::Long);
-
-    auto outputs_res = text_decoder_runner_->step(tokens, start_pos_tensor);
+    auto outputs_res = text_decoder_runner_->step(tokens, start_pos);
 
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_LOG(
@@ -106,13 +103,10 @@ TextPrefiller::TextPrefiller(
     auto tokens =
         from_blob(&cur_token, {1, 1}, executorch::aten::ScalarType::Long);
 
-    auto start_pos_tensor =
-        from_blob(&start_pos, {1}, executorch::aten::ScalarType::Long);
-
     // run the first token and get back logits tensor. Assuming the first token
     // is bos so don't callback.
     auto logits_tensor =
-        ET_UNWRAP(text_decoder_runner_->step(tokens, start_pos_tensor));
+        ET_UNWRAP(text_decoder_runner_->step(tokens, start_pos));
 
     pos += 1; // start the loop from index 1
     start_pos += 1;
@@ -122,8 +116,7 @@ TextPrefiller::TextPrefiller(
       // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
       cur_token = prompt_tokens[pos];
 
-      logits_tensor =
-          ET_UNWRAP(text_decoder_runner_->step(tokens, start_pos_tensor));
+      logits_tensor = ET_UNWRAP(text_decoder_runner_->step(tokens, start_pos));
 
       pos++;
       start_pos++;

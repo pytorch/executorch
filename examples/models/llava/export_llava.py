@@ -16,7 +16,6 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from executorch.examples.models.llama.config.llm_config import LlmConfig
 from executorch.examples.models.llama.export_llama_lib import (
     get_quantizer_and_quant_params,
 )
@@ -44,6 +43,7 @@ from executorch.exir.passes.sym_shape_eval_pass import (
     HintBasedSymShapeEvalPass,
 )
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as Tokenizer
 from torch.export import Dim
@@ -186,7 +186,7 @@ def export_token_embedding(llava, prompt):
             packed=False,
         ).quantized_model()
 
-    quantized_token_embed = quant_embedding(llava.model_.language_model.model)
+    quantized_token_embed = quant_embedding(llava.model_.model.language_model)
     token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():

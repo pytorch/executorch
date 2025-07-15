@@ -5,15 +5,12 @@
 
 # pyre-unsafe
 
-from typing import cast
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
-    insert_q_dq_pair,
 )
-from executorch.backends.arm.tosa_quant_utils import dq_op, q_op
 from executorch.backends.arm.tosa_utils import is_consumer_node_depthwise_conv2d
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -59,20 +56,10 @@ class AnnotateChannelsLastDimOrder(ExportPass):
 
     def is_weight_node_for_depthwise_conv2d(self, node: torch.fx.Node):
         """
-        returns True for dq and w in the following sequences;
+        returns True for w in the following sequence;
         w -> depthwise_conv2d -> ...
-        w -> dq -> depthwise_conv2d -> ...
         """
-        if node.op == "call_function":
-            if node.target != dq_op:
-                return False
-            prev_node = node.args[0]
-            if cast(torch.fx.Node, prev_node).op != "placeholder":
-                return False
-            if is_consumer_node_depthwise_conv2d(node):
-                consumer_node = list(node.users)[0]
-                return consumer_node.args[1] == node
-        elif node.op == "placeholder":
+        if node.op == "placeholder":
             # node is an input, weight or bias node
             consumer_node = list(node.users)[0]
             if self.is_weight_node_for_depthwise_conv2d(consumer_node):
@@ -129,8 +116,6 @@ class AnnotateChannelsLastDimOrder(ExportPass):
 
     @staticmethod
     def insert_input_transpose(node, input_node, graph_module):
-        quantize = input_node.target == dq_op
-        q_params = input_node.args[1:] if quantize else None
         with graph_module.graph.inserting_before(node):
             permute_node = create_node(
                 graph_module.graph,
@@ -143,8 +128,6 @@ class AnnotateChannelsLastDimOrder(ExportPass):
                         else AnnotateChannelsLastDimOrder.NHWC_inverse_order
                     ),
                 ),
-                quantize=quantize,
-                q_params=q_params,
             )
             node.replace_input_with(input_node, permute_node)
 
@@ -185,11 +168,6 @@ class AnnotateChannelsLastDimOrder(ExportPass):
             for user in users:
                 user.replace_input_with(node, permute_node)
 
-            quantize = node.args[0] == q_op
-            if quantize:
-                q_params = node.args[0].args[1:]
-                insert_q_dq_pair(graph_module.graph, node, q_params)
-
     @staticmethod
     def _insert_view_transpose(
         input_shape, output_shape, node, input_node, graph_module
@@ -225,10 +203,18 @@ class AnnotateChannelsLastDimOrder(ExportPass):
         - 1D/2D tensors
         """
         for node in graph_module.graph.nodes:
-            if node.op != "call_function":
+            # call_function and placeholder allowed due to
+            # index.Tensor being able to come in as both
+            if node.op not in ["call_function", "placeholder"]:
                 continue
 
-            elif node.target == exir_ops.edge.aten.view_copy.default:
+            elif node.target in (
+                exir_ops.edge.aten.view_copy.default,
+                exir_ops.edge.aten.index.Tensor,
+            ):
+                # For index.Tensor:
+                #   If we want to support 4D indexing tensors this logic
+                #   should be updated.
                 input_node = node.args[0]
                 input_shape = input_node.meta["val"].shape
                 output_shape = node.meta["val"].shape

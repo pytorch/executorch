@@ -78,11 +78,11 @@ class QuantizationConfig:
                 )
             act_obs_or_fq = obs_or_fqs[0]
             weight_obs_or_fq = obs_or_fqs[1]
-            act_scale, act_zp = act_obs_or_fq.calculate_qparams()
-            weight_scale, weight_zp = weight_obs_or_fq.calculate_qparams()
-            return torch.tensor([act_scale * weight_scale]).to(
+            act_scale, _ = act_obs_or_fq.calculate_qparams()
+            weight_scale, _ = weight_obs_or_fq.calculate_qparams()
+            return torch.tensor(act_scale * weight_scale).to(
                 torch.float32
-            ), torch.tensor([0]).to(torch.int32)
+            ), torch.full_like(weight_scale, fill_value=0, dtype=torch.int32)
 
         if node.target in [
             torch.ops.aten.conv1d.default,
@@ -92,13 +92,25 @@ class QuantizationConfig:
         ]:
             input_act = node.args[0]
             weight = node.args[1]
+            # If the weights are quantized per_tensor, do the same with bias
+            qscheme = (
+                torch.per_tensor_symmetric
+                if self.weight is None
+                else self.weight.qscheme
+            )
+            ch_axis = None
+            if self.weight is not None:
+                if qscheme == torch.per_channel_symmetric:
+                    ch_axis = self.weight.ch_axis
+
             quantization_spec = DerivedQuantizationSpec(
                 derived_from=[(input_act, node), (weight, node)],  # type: ignore[list-item]
                 derive_qparams_fn=_derive_qparams_fn,
                 dtype=torch.int32,
                 quant_min=torch.iinfo(torch.int32).min,
                 quant_max=torch.iinfo(torch.int32).max - 1,
-                qscheme=torch.per_tensor_symmetric,
+                qscheme=qscheme,
+                ch_axis=ch_axis,
             )
             return quantization_spec  # type: ignore[return-value]
 

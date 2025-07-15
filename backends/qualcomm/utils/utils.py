@@ -332,6 +332,7 @@ def to_edge_transform_and_lower_to_qnn(
     passes_job: Optional[Union[OrderedDict, Dict[str, OrderedDict]]] = None,
     skip_node_id_set: Optional[set] = None,
     skip_node_op_set: Optional[set] = None,
+    skip_mutable_buffer: bool = False,
 ) -> EdgeProgramManager:
     """
     Transforms and lowers a given PyTorch module to the QNN backend.
@@ -356,6 +357,8 @@ def to_edge_transform_and_lower_to_qnn(
             Set of node IDs to skip during partitioning.
         skip_node_op_set (Optional[set]):
             Set of node operations to skip during partitioning.
+        skip_mutable_buffer (Optional[set]):
+            Whether to skip delegating the mutable buffer in QNN backend.
 
     Returns:
         EdgeProgramManager:
@@ -407,6 +410,7 @@ def to_edge_transform_and_lower_to_qnn(
                 compiler_specs[graph_name],
                 skip_node_id_set=skip_node_id_set,
                 skip_node_op_set=skip_node_op_set,
+                skip_mutable_buffer=skip_mutable_buffer,
             )
         ]
         for graph_name in graph_names

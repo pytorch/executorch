@@ -26,7 +26,6 @@ Tensor& fill_scalar_out(
   (void)ctx;
 
   ScalarType a_type = a.scalar_type();
-  ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, a_type == out_type, InvalidArgument, out);
@@ -43,12 +42,9 @@ Tensor& fill_scalar_out(
       "Failed to resize output tensor.");
 
   ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "fill.Scalar_out", CTYPE_A, [&] {
-    CTYPE_A b_casted;
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "fill.Scalar_out", CTYPE_B, [&] {
-      CTYPE_B b_val = 0;
-      utils::extract_scalar(b, &b_val);
-      b_casted = static_cast<CTYPE_A>(b_val);
-    });
+    auto opt_b_casted = utils::internal::check_overflow_scalar_cast<CTYPE_A>(b);
+    ET_KERNEL_CHECK(ctx, opt_b_casted.has_value(), InvalidArgument, );
+    auto b_casted = opt_b_casted.value();
 
     apply_unary_map_fn(
         [b_casted](const CTYPE_A val_a) { return b_casted; },

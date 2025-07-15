@@ -49,7 +49,7 @@ class MatchWhereSelfDtypePass(ExportPass):
 
             input_dtype = input_.meta["val"].dtype
             other_dtype = other_.meta["val"].dtype
-            target_dtype = torch.float32
+            target_dtype = input_dtype
             if input_dtype != other_dtype:
                 target_dtype = get_largest_dtype(input_dtype, other_dtype)
 

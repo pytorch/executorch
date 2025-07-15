@@ -29,6 +29,36 @@ static inline ExecuTorchValueTag deduceValueTag(NSNumber *number) {
   }
 }
 
+static inline NSString *valueTagDescription(ExecuTorchValueTag tag) {
+  switch (tag) {
+    case ExecuTorchValueTagNone:
+      return @"none";
+    case ExecuTorchValueTagTensor:
+      return @"tensor";
+    case ExecuTorchValueTagString:
+      return @"string";
+    case ExecuTorchValueTagDouble:
+      return @"double";
+    case ExecuTorchValueTagInteger:
+      return @"integer";
+    case ExecuTorchValueTagBoolean:
+      return @"boolean";
+    case ExecuTorchValueTagBooleanList:
+      return @"boolean_list";
+    case ExecuTorchValueTagDoubleList:
+      return @"double_list";
+    case ExecuTorchValueTagIntegerList:
+      return @"integer_list";
+    case ExecuTorchValueTagTensorList:
+      return @"tensor_list";
+    case ExecuTorchValueTagScalarList:
+      return @"scalar_list";
+    case ExecuTorchValueTagOptionalTensorList:
+      return @"optional_tensor_list";
+  }
+  return @"undefined";
+}
+
 @interface ExecuTorchValue ()
 
 - (instancetype)initWithTag:(ExecuTorchValueTag)tag
@@ -193,6 +223,26 @@ static inline ExecuTorchValueTag deduceValueTag(NSNumber *number) {
     return NO;
   }
   return [self isEqualToValue:(ExecuTorchValue *)other];
+}
+
+- (NSString *)description {
+  NSMutableString *string = [NSMutableString new];
+  [string appendString:@"Value {"];
+  [string appendFormat:@"\n  tag: %@", valueTagDescription(_tag)];
+  [string appendString:@","];
+  [string appendString:@"\n  value: "];
+  if (_value) {
+    NSString *valueDescription = [_value description];
+    [string appendString:[_value description]];
+    [string replaceOccurrencesOfString:@"\n"
+                            withString:@"\n  "
+                               options:0
+                                 range:NSMakeRange(string.length - valueDescription.length, valueDescription.length)];
+  } else {
+    [string appendString:@"nil"];
+  }
+  [string appendString:@"\n}"];
+  return string;
 }
 
 @end

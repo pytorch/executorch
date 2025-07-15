@@ -13,7 +13,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 
 from .node_visitor import NodeVisitor
 from .op_custom_op import CustomOp
-from .utils import is_graph_input, is_graph_output
+from .utils import is_graph_input, is_graph_output, is_mutable_buffer_input
 
 
 # This will hold mapping of all node names to the visitor class
@@ -39,7 +39,9 @@ def generate_node_to_external_map(
         # The order in which we visit the placeholder node is same as the *args
         # order for the forward(*args) signature for this gm. Using the order of
         # the nodes as external_id to extract the right arg from *args at runtime
-        if is_graph_input(node, edge_program):
+        if is_graph_input(node, edge_program) or is_mutable_buffer_input(
+            node, edge_program
+        ):
             node_to_external_map[node] = len(node_to_external_map)
     for node in edge_program.graph_module.graph.nodes:
         if is_graph_output(node):

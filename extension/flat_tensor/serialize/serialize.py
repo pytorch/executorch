@@ -19,7 +19,11 @@ from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_da
 
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 from executorch.exir._serialize._program import _insert_flatbuffer_header
-from executorch.exir._serialize.data_serializer import DataPayload, DataSerializer
+from executorch.exir._serialize.data_serializer import (
+    DataEntry,
+    DataPayload,
+    DataSerializer,
+)
 
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
 
@@ -33,6 +37,9 @@ from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
 # regardless of the host system, since all commonly-used modern CPUs are little
 # endian.
 _HEADER_BYTEORDER: Literal["little"] = "little"
+
+# Current version. Keep in sync with c++ version number in serialize.
+_FLAT_TENSOR_VERSION: int = 0
 
 
 def _serialize_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
@@ -320,7 +327,7 @@ class FlatTensorSerializer(DataSerializer):
         # Create FlatTensor, which describes of the contents of the file and
         # points to all the data segments. It will be serialized to flatbuffer.
         flat_tensor = FlatTensor(
-            version=0,  # Keep in sync with c++ version number in serialize.h
+            version=_FLAT_TENSOR_VERSION,
             segments=data_segments,
             named_data=named_data,
         )
@@ -383,4 +390,49 @@ class FlatTensorSerializer(DataSerializer):
         """
         Deserializes a flat_tensor blob into a list of tensor metadata and tensors.
         """
-        raise NotImplementedError("deserialize_data")
+
+        data = bytes(blob)
+
+        # Read header. Verify that it's valid.
+        header = FlatTensorHeader.from_bytes(data[8:])
+        if not header.is_valid():
+            raise RuntimeError(
+                "Flat tensor header is invalid. File is likely incorrect format or corrupt."
+            )
+
+        # Deserialize the flat tensor data, which contains the data offsets and tensor metadata.
+        flat_tensor_bytes = data[0 : header.flatbuffer_offset + header.flatbuffer_size]
+        flat_tensor = _deserialize_to_flat_tensor(flat_tensor_bytes)
+
+        # Verify that this is a supported version.
+        if flat_tensor.version != _FLAT_TENSOR_VERSION:
+            raise NotImplementedError(
+                f"Flat tensor files reports unsupported version {flat_tensor.version}. Expected {_FLAT_TENSOR_VERSION}."
+            )
+
+        # Extract the buffers.
+        buffers = [
+            data[
+                header.segment_base_offset
+                + segment.offset : header.segment_base_offset
+                + segment.offset
+                + segment.size
+            ]
+            for segment in flat_tensor.segments
+        ]
+
+        payload = DataPayload(
+            buffers=buffers,
+            named_data={},
+        )
+
+        # Read the named data entries.
+        for named_data in flat_tensor.named_data:
+            entry = DataEntry(
+                buffer_index=named_data.segment_index,
+                alignment=1,
+                tensor_layout=named_data.tensor_layout,
+            )
+            payload.named_data[named_data.key] = entry
+
+        return payload

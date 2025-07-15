@@ -7,6 +7,7 @@
  */
 
 #include <c10/util/irange.h>
+#include <array>
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
@@ -38,7 +39,7 @@ bool check_batch_norm_args(
     ET_LOG_AND_RETURN_IF_FALSE(
         tensors_have_same_dtype(in, running_mean.value()));
   }
-  if (running_mean.has_value()) {
+  if (running_var.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(
         tensors_have_same_dtype(in, running_var.value()));
   }
@@ -92,6 +93,11 @@ bool check_layer_norm_args(
       ", ndim = %zu",
       in.dim(),
       ndim);
+  ET_CHECK_OR_RETURN_FALSE(
+      ndim <= kTensorDimensionLimit,
+      "Expected normalized shape to have at most %zu dimensions but it had %zu",
+      kTensorDimensionLimit,
+      ndim);
   size_t shift = in.dim() - ndim;
   for (const auto d : c10::irange(ndim)) {
     ET_CHECK_OR_RETURN_FALSE(
@@ -103,7 +109,7 @@ bool check_layer_norm_args(
         d,
         normalized_shape[d]);
   }
-  executorch::aten::SizesType shape[ndim];
+  std::array<executorch::aten::SizesType, kTensorDimensionLimit> shape;
   for (const auto i : c10::irange(ndim)) {
     shape[i] = static_cast<executorch::aten::SizesType>(normalized_shape[i]);
   }
@@ -111,12 +117,12 @@ bool check_layer_norm_args(
   if (weight.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight.value()));
     ET_LOG_AND_RETURN_IF_FALSE(
-        tensor_has_expected_size(weight.value(), {shape, ndim}));
+        tensor_has_expected_size(weight.value(), {shape.data(), ndim}));
   }
   if (bias.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, bias.value()));
     ET_LOG_AND_RETURN_IF_FALSE(
-        tensor_has_expected_size(bias.value(), {shape, ndim}));
+        tensor_has_expected_size(bias.value(), {shape.data(), ndim}));
   }
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mean_out));

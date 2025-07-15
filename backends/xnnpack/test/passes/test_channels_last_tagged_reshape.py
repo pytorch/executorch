@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+from executorch.backends.test.harness.stages.stage import StageType
 from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
@@ -17,6 +18,11 @@ from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
     OpSequencesAddConv2d,
 )
 from executorch.backends.xnnpack.test.tester import Quantize, RunPasses, Tester
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_quant,
+    is_tagged_as_implicit_q_dq,
+)
 
 
 class TestChannelsLastTaggedReshapePass(unittest.TestCase):
@@ -48,7 +54,9 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             module.eval(),
             inputs,
         )
-        tester.export().to_edge_transform_and_lower().to_executorch().serialize().run_method_and_compare_outputs()
+        tester.export().to_edge_transform_and_lower().check_not(
+            ["executorch_exir_dialects_edge__ops_aten__to_copy_default"]
+        ).to_executorch().serialize().run_method_and_compare_outputs()
 
     class LinearConv(torch.nn.Module):
         def __init__(self):
@@ -172,6 +180,23 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                 )
                 .run_method_and_compare_outputs()
             )
+
+    class LinearConvDimSwap(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 3, 3)
+            self.linear1 = torch.nn.Linear(4, 3)
+
+        def forward(self, x):
+            y = self.linear1(x)
+            y = y.to(memory_format=torch.channels_last)
+            y = y.to(memory_format=torch.contiguous_format)
+            return self.conv1(y)
+
+    LinearConvDimSwapModule = LinearConvDimSwap()
+
+    def test_conv_linear_dim_order_swap_partitioner(self):
+        self.run_tester(self.LinearConvDimSwapModule, (torch.randn(1, 3, 6, 4),))
 
     def test_qs8_channels_last_tagged_reshape_pass(self):
         for module, num_reshape in self.modules.items():
@@ -335,3 +360,123 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             )
             .run_method_and_compare_outputs()
         )
+
+    class ConvAddConvOutput(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 16, 3)
+            self.conv2 = torch.nn.Conv2d(16, 16, 3)
+
+        def forward(self, x):
+            y = self.conv1(x)
+            z = torch.add(y, 1.0)
+            out1 = self.conv2(z)
+            out2 = z
+            return out1, out2
+
+    ConvAddConvOutputModule = ConvAddConvOutput()
+
+    def test_conv_add_conv_output(self):
+        x = torch.randn(1, 3, 8, 8)
+
+        self.run_tester(self.ConvAddConvOutput().eval(), (x,))
+
+        x_cl = x.to(memory_format=torch.channels_last)
+        self.run_tester(self.ConvAddConvOutput().eval(), (x_cl,))
+
+    class ThreeOutputsModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(3, 3, 3)
+            self.conv2 = torch.nn.Conv2d(3, 3, 3)
+            self.linear = torch.nn.Linear(6, 6)
+
+        def forward(self, x):
+            conv1_out = self.conv1(x)
+            conv2_out = self.conv2(x)
+            linear_out = self.linear(x)
+
+            return linear_out, conv1_out, conv2_out
+
+    ThreeOutputsModelModule = ThreeOutputsModel()
+
+    def test_three_outputs_model(self):
+        x = torch.randn(1, 3, 6, 6)
+
+        self.run_tester(self.ThreeOutputsModelModule.eval(), (x,))
+
+        x_cl = x.to(memory_format=torch.channels_last)
+        self.run_tester(self.ThreeOutputsModelModule.eval(), (x_cl,))
+
+    class ConvQDQModule(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 16, 3, padding=1)
+
+        def forward(self, x):
+            return self.conv(x)
+
+    def _check_implicit_q_dq_tagging(
+        self, graph_module: torch.fx.GraphModule, expected_tagging: list[bool]
+    ):
+        q_dq_nodes = []
+        for node in graph_module.graph.nodes:
+            if is_quant(node) or is_dequant(node):
+                q_dq_nodes.append(node)
+
+        # Check that we have the expected number of nodes
+        self.assertEqual(
+            len(q_dq_nodes),
+            len(expected_tagging),
+            f"Expected {len(expected_tagging)} q/dq nodes but found {len(q_dq_nodes)}",
+        )
+
+        actual_tagging = []
+        for node in q_dq_nodes:
+            is_tagged = is_tagged_as_implicit_q_dq(node)
+            actual_tagging.append(is_tagged)
+
+        self.assertEqual(
+            actual_tagging,
+            expected_tagging,
+            f"Q/DQ node tagging mismatch. Expected: {expected_tagging}, Actual: {actual_tagging}",
+        )
+
+    def test_q_dq_nodes_around_copy_are_tagged(self):
+        # Create a model with conv operation
+        model = self.ConvQDQModule().eval()
+        input_tensor = torch.randn(1, 3, 8, 8)
+
+        tester = (
+            Tester(model, (input_tensor,))
+            .quantize()
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check(
+                [
+                    self.dequant_name,
+                    self.quant_name,
+                    self.dequant_name,
+                    self.to_copy_name,
+                    self.quant_name,
+                    self.dequant_name,
+                    self.conv_name,
+                    self.quant_name,
+                    self.dequant_name,
+                    self.to_copy_name,
+                    self.quant_name,
+                    self.dequant_name,
+                ]
+            )
+        )
+
+        artifact = tester.get_artifact(StageType.RUN_PASSES)
+        graph_module = artifact.exported_program().graph_module
+
+        # Check implicit q/dq tagging
+        expected_tagging = [False, False, True, True, False, False, True, True, False]
+        self._check_implicit_q_dq_tagging(graph_module, expected_tagging)
+
+        # Compare outputs
+        tester.run_method_and_compare_outputs()

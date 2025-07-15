@@ -65,8 +65,8 @@ class BMMVisitor_0_80(NodeVisitor):
         # for a later rescale.
         if inputs[0].dtype == ts.DType.INT8:
             input_qparams = get_input_qparams(node)
-            input0_zp = input_qparams[0].zp
-            input1_zp = input_qparams[1].zp
+            input0_zp = input_qparams[0].get_zp_per_tensor()
+            input1_zp = input_qparams[1].get_zp_per_tensor()
             bmm_result = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
             bmm_output_name = bmm_result.name
         else:
@@ -88,8 +88,8 @@ class BMMVisitor_0_80(NodeVisitor):
         if output.dtype == ts.DType.INT8:
             output_qparams = get_output_qparams(node)[0]
             final_output_scale = (
-                input_qparams[0].scale * input_qparams[1].scale  # type: ignore[possibly-undefined]  # pyre-ignore[61]
-            ) / output_qparams.scale
+                input_qparams[0].get_scale_per_tensor() * input_qparams[1].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore[61]
+            ) / output_qparams.get_scale_per_tensor()
 
             build_rescale_v0_80(
                 tosa_fb=tosa_graph,
@@ -98,8 +98,8 @@ class BMMVisitor_0_80(NodeVisitor):
                 input_node=bmm_result,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=output_qparams.zp,
+                input_zp=[0],
+                output_zp=[output_qparams.get_zp_per_tensor()],
                 is_double_round=False,
             )
 
@@ -142,8 +142,8 @@ class BMMVisitor(NodeVisitor):
 
         if inputs[0].dtype == ts.DType.INT8:
             input_qparams = get_input_qparams(node)
-            input0_zp = input_qparams[0].zp
-            input1_zp = input_qparams[1].zp
+            input0_zp = input_qparams[0].get_zp_per_tensor()
+            input1_zp = input_qparams[1].get_zp_per_tensor()
             bmm_result = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
             bmm_output_name = bmm_result.name
         else:
@@ -169,8 +169,8 @@ class BMMVisitor(NodeVisitor):
         if output.dtype == ts.DType.INT8:
             output_qparams = get_output_qparams(node)[0]
             final_output_scale = (
-                input_qparams[0].scale * input_qparams[1].scale  # type: ignore[possibly-undefined]  # pyre-ignore[61]
-            ) / output_qparams.scale
+                input_qparams[0].get_scale_per_tensor() * input_qparams[1].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore[61]
+            ) / output_qparams.get_scale_per_tensor()
 
             build_rescale(
                 tosa_fb=tosa_graph,
@@ -179,7 +179,7 @@ class BMMVisitor(NodeVisitor):
                 input_node=bmm_result,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=output_qparams.zp,
+                input_zp=[0],
+                output_zp=[output_qparams.get_zp_per_tensor()],
                 rounding_mode=RoundingMode.SINGLE_ROUND,
             )

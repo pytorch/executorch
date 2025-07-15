@@ -72,8 +72,9 @@ def define_common_targets():
         srcs = [],
         exported_headers = ["scalar_utils.h", "selective_build.h"],
         visibility = [
-            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/fb/...",
             "//executorch/kernels/optimized/cpu/...",
+            "//executorch/kernels/portable/cpu/...",
             "//executorch/kernels/portable/test/...",
             "@EXECUTORCH_CLIENTS",
         ],

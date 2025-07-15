@@ -4,34 +4,64 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+# pyre-strict
 
+import logging
 import math
 import unittest
-from typing import cast, Optional
+from typing import cast, List, Optional, Sequence
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
+from executorch.backends.cadence.aot.memory_constraints import (
+    ConstraintsGenPass,
+    MemConstraints,
+)
 from executorch.backends.cadence.aot.memory_planning import (
     CadenceMemoryPlanning,
     find_peak_memory_usage,
+    PositionBasedGreedyWithHierarchy,
 )
-from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.cadence.aot.memory_planning_algo import (
+    MemoryPlanningAlgo,
+    MemoryPlanningState,
+)
+from executorch.backends.cadence.aot.pass_utils import (
+    CadencePassAttribute,
+    count_node,
+    register_cadence_pass,
+)
+from executorch.backends.cadence.aot.program_builder import ProgramBuilder
+from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
     MemoryConfig,
 )
+from executorch.exir import EdgeProgramManager, ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.memory_planning import collect_specs_from_nodes
+from executorch.exir.memory_planning import (
+    collect_specs_from_nodes,
+    update_all_tensors_lifetime,
+)
+from executorch.exir.pass_base import PassBase, PassResult
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tests.models import MultiLayerPerceptron
-from parameterized.parameterized import parameterized
+from parameterized import parameterized
 from torch.fx import GraphModule
 
 
 class TestMemPlanningPasses(unittest.TestCase):
+    def setUp(self) -> None:
+        logging.basicConfig(
+            format="%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
+            datefmt="%Y-%m-%d:%H:%M:%S",
+            level=logging.getLevelName(logging.INFO),
+            force=True,
+        )
+        return super().setUp()
+
     def test_calculate_peak_memory_pass(self) -> None:
         class PeakMemoryTestModel(torch.nn.Module):
             def __init__(self, input_dim: int, hidden_dim: int, output_dim: int):
@@ -224,12 +254,13 @@ class TestMemTransform(unittest.TestCase):
     # GenerateSliceAndSelectNopConstraints, and GenerateCatNopConstraints passes.
     def run_memory_planning(
         self,
-        original,
-        opt_level=2,
-        mem_algo=1,  # greedy_by_size_for_offset_calculation_with_hierarchy
-        alloc_graph_input=True,
-        alloc_graph_output=True,
+        original: GraphModule,
+        opt_level: int = 2,
+        mem_algo: int = 1,  # greedy_by_size_for_offset_calculation_with_hierarchy
+        alloc_graph_input: bool = True,
+        alloc_graph_output: bool = True,
         memory_config: Optional[MemoryConfig] = None,
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
     ) -> GraphModule:
         if memory_config is None:
             memory_config = get_default_memory_config()
@@ -240,9 +271,10 @@ class TestMemTransform(unittest.TestCase):
             mem_algo=mem_algo,
             alloc_graph_input=alloc_graph_input,
             alloc_graph_output=alloc_graph_output,
+            additional_constraint_gen_passes=additional_constraint_gen_passes,
         )(graph_module).graph_module
 
-    @parameterized.expand(
+    @expand(
         [
             [
                 [3, 6],  # x_shape
@@ -259,7 +291,11 @@ class TestMemTransform(unittest.TestCase):
         ]
     )
     def test_optimize_cat_on_placeholders(
-        self, x_shape, y_shape, concat_dim, alloc_graph_input
+        self,
+        x_shape: List[int],
+        y_shape: List[int],
+        concat_dim: int,
+        alloc_graph_input: bool,
     ) -> None:
         concat_shape = [x_shape[concat_dim] + y_shape[concat_dim], x_shape[1]]
         builder = GraphBuilder()
@@ -294,7 +330,12 @@ class TestMemTransform(unittest.TestCase):
     # "add_add_cat_model" : cat(x + 123, y + 456)
     # "add_add_cat_add_model": cat(x + 123, y + 456) + 789
     def get_graph_module(
-        self, model_name, x_shape, y_shape, concated_shape, concat_dim
+        self,
+        model_name: str,
+        x_shape: List[int],
+        y_shape: List[int],
+        concated_shape: List[int],
+        concat_dim: int,
     ) -> GraphModule:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.ones(*x_shape, dtype=torch.float32))
@@ -346,7 +387,7 @@ class TestMemTransform(unittest.TestCase):
 
         raise ValueError(f"Unknown model name {model_name}")
 
-    @parameterized.expand(
+    @expand(
         [
             (
                 "outermost",
@@ -363,10 +404,14 @@ class TestMemTransform(unittest.TestCase):
                 1,  # concat dim
             ),
         ],
-        name_func=lambda f, _, param: f"{f.__name__}_{param.args[0]}",
     )
     def test_cat_optimized(
-        self, _, x_shape, y_shape, concated_shape, concat_dim
+        self,
+        _,
+        x_shape: List[int],
+        y_shape: List[int],
+        concated_shape: List[int],
+        concat_dim: int,
     ) -> None:
         original = self.get_graph_module(
             "add_add_cat_model", x_shape, y_shape, concated_shape, concat_dim
@@ -379,7 +424,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten._cat_nop.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    @parameterized.expand(
+    @expand(
         [
             (
                 "non_outermost",
@@ -389,10 +434,14 @@ class TestMemTransform(unittest.TestCase):
                 1,  # concat dim
             ),
         ],
-        name_func=lambda f, _, param: f"{f.__name__}_{param.args[0]}",
     )
     def test_cat_not_optimized(
-        self, _, x_shape, y_shape, concated_shape, concat_dim
+        self,
+        _,
+        x_shape: List[int],
+        y_shape: List[int],
+        concated_shape: List[int],
+        concat_dim: int,
     ) -> None:
         original = self.get_graph_module(
             "add_add_cat_model", x_shape, y_shape, concated_shape, concat_dim
@@ -404,7 +453,7 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, torch.ops.aten.cat.out), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    @parameterized.expand(
+    @expand(
         [
             (
                 "aligned",
@@ -423,10 +472,15 @@ class TestMemTransform(unittest.TestCase):
                 1,  # expected cat nodes
             ),
         ],
-        name_func=lambda f, _, param: f"{f.__name__}_{param.args[0]}",
     )
     def test_cat_not_graph_output(
-        self, _, x_shape, y_shape, concated_shape, concat_dim, expected_cat_nodes
+        self,
+        _,
+        x_shape: List[int],
+        y_shape: List[int],
+        concated_shape: List[int],
+        concat_dim: int,
+        expected_cat_nodes: int,
     ) -> None:
         original = self.get_graph_module(
             "add_add_cat_add_model", x_shape, y_shape, concated_shape, concat_dim
@@ -493,13 +547,13 @@ class TestMemTransform(unittest.TestCase):
         self.assertEqual(count_node(graph_module, exir_ops.edge.aten.slice.Tensor), 1)
         self.verify_nop_memory_alloc(graph_module)
 
-    @parameterized.expand(
+    @expand(
         [
             (True,),  # alloc_graph_input
             (False,),  # alloc_graph_input
         ],
     )
-    def test_optimize_cat_with_slice_infeasible(self, alloc_graph_input) -> None:
+    def test_optimize_cat_with_slice_infeasible(self, alloc_graph_input: bool) -> None:
         x_shape = [5, 6]
         y_shape = [3, 6]
         concated_shape = [8, 6]
@@ -962,3 +1016,248 @@ class TestMemTransform(unittest.TestCase):
             ):
                 if spec and spec.mem_offset:
                     self.assertEqual(spec.mem_offset % 37, 0)
+
+    @parameterized.expand([0, 1])
+    def test_block_mem_id(self, mem_algo: int) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(16))
+        add = builder.call_operator(
+            op=torch.ops.aten.add.Scalar,
+            args=(x, 2.0),
+        )
+        mul = builder.call_operator(
+            op=torch.ops.aten.mul.Scalar,
+            args=(add, 2.0),
+        )
+        builder.output([mul])
+        original = builder.get_graph_module()
+
+        dummy_memory_config = MemoryConfig([1024, 1024, 1024, 1024])
+
+        add_scalar_block_mem_ids = [2, 3]
+        mul_scalar_block_mem_ids = [1, 3]
+
+        @register_cadence_pass(CadencePassAttribute(opt_level=0))
+        class DummyMemIdBlockConstraintGen(PassBase):
+            """Blocks placement based on op type.
+            add: blocks 2, 3
+            mul: blocks 1, 3
+            """
+
+            def __init__(self, memory_constraints: MemoryConfig):
+                self.memory_constraints = memory_constraints
+
+            def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+                for node in graph_module.graph.find_nodes(
+                    op="call_function", target=torch.ops.aten.add.Scalar
+                ):
+                    spec = node.meta["spec"]
+                    logging.error(f"add node: {node} {id(spec)=}")
+                    for mem_id in add_scalar_block_mem_ids:
+                        self.memory_constraints.add_mem_id_to_blocklist(spec, mem_id)
+                for node in graph_module.graph.find_nodes(
+                    op="call_function", target=torch.ops.aten.mul.Scalar
+                ):
+                    spec = node.meta["spec"]
+                    logging.error(f"mul node: {node} {id(spec)=}")
+                    for mem_id in mul_scalar_block_mem_ids:
+                        self.memory_constraints.add_mem_id_to_blocklist(spec, mem_id)
+
+        graph_module = self.run_memory_planning(
+            original,
+            mem_algo=mem_algo,
+            memory_config=dummy_memory_config,
+            additional_constraint_gen_passes=[DummyMemIdBlockConstraintGen],
+        )
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.add.Scalar
+        ):
+            spec = node.meta["spec"]
+            self.assertIsNotNone(spec.mem_id)
+            self.assertNotIn(spec.mem_id, add_scalar_block_mem_ids)
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.mul.Scalar
+        ):
+            spec = node.meta["spec"]
+            self.assertIsNotNone(spec.mem_id)
+            self.assertNotIn(spec.mem_id, mul_scalar_block_mem_ids)
+
+
+class TestConstraintsBase(unittest.TestCase):
+    def get_view_then_add_graph(self) -> EdgeProgramManager:
+        builder = ProgramBuilder()
+        x = builder.placeholder("x", torch.ones(3, 5, dtype=torch.float32))
+        y = builder.placeholder("y", torch.ones(2, 15, dtype=torch.float32))
+        x_reshape = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [15]),
+        )
+        add_x_y = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor,
+            args=(x_reshape, y),
+        )
+        builder.output([add_x_y])
+        edge_program = builder.get_edge_program()
+        edge_program = edge_program.transform([SpecPropPass()])
+        return edge_program
+
+    @staticmethod
+    def get_aligned(num: int) -> int:
+        return ((num + 16 - 1) // 16) * 16
+
+    def _run_mem_planning(
+        self,
+        program: ExportedProgram,
+        memory_planning: MemoryPlanningAlgo,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
+    ) -> None:
+        gm = program.graph_module
+        graph_signature = program.graph_signature
+        # Difficult to just filter the list of specs returned by this due to
+        # how we flag trainable weights.
+        _ = update_all_tensors_lifetime(gm, graph_signature)
+
+        # Filter specs based on alloc_graph_input and alloc_graph_output
+        specs = set(
+            collect_specs_from_nodes(
+                gm.graph.nodes,
+                graph_signature,
+                do_assertion=False,
+                ignore_graph_input=False,
+                ignore_graph_output=False,
+                ignore_mutable_buffers=False,
+            )
+        )
+        memory_planning.plan_with_constraints(
+            specs,
+            gm,
+            # pyre-ignore[6]
+            None,
+            state,
+            placement_constraints,
+        )
+
+
+class TestAbsolutePlacementConstraint(TestConstraintsBase):
+
+    def test_manually_planned_specs(self) -> None:
+        edge_program = self.get_view_then_add_graph()
+        x, y, x_view, add, _ = edge_program.exported_program().graph_module.graph.nodes
+
+        # Create constraints for all nodes.
+        memory_config = MemoryConfig([1000, 10000])
+        mem_planning = PositionBasedGreedyWithHierarchy(memory_config)
+        state = MemoryPlanningState(memory_config=memory_config)
+        placement_constraints = MemConstraints()
+        x_offset = 8000
+        y_offset = 7000
+        x_view_offset = 20
+        add_offset = 400
+        placement_constraints.add_absolute_placement_constraint(x, 2, x_offset)
+        placement_constraints.add_absolute_placement_constraint(y, 2, y_offset)
+        placement_constraints.add_absolute_placement_constraint(
+            x_view, 1, x_view_offset
+        )
+        placement_constraints.add_absolute_placement_constraint(add, 1, add_offset)
+
+        self._run_mem_planning(
+            edge_program.exported_program(), mem_planning, state, placement_constraints
+        )
+        self.assertListEqual(
+            state.bufsizes,
+            [
+                0,
+                self.get_aligned(add_offset + 2 * 3 * 5 * 4),
+                self.get_aligned(x_offset + 3 * 5 * 4),
+            ],
+            msg=f"{state}",
+        )
+
+    def test_pinned_memory_id(self) -> None:
+        edge_program = self.get_view_then_add_graph()
+        x, y, x_view, add, _ = edge_program.exported_program().graph_module.graph.nodes
+        # Create both mem_id+mem_offset and mem_offset constraints for all nodes.
+        memory_config = MemoryConfig([1000, 10000])
+        mem_planning = PositionBasedGreedyWithHierarchy(memory_config)
+        state = MemoryPlanningState(memory_config=memory_config)
+        placement_constraints = MemConstraints()
+        x_offset = None
+        y_offset = 8000
+        x_view_offset = 800
+        add_offset = None
+        placement_constraints.add_absolute_placement_constraint(x, 2, x_offset)
+        placement_constraints.add_absolute_placement_constraint(y, 2, y_offset)
+        placement_constraints.add_absolute_placement_constraint(
+            x_view, 1, x_view_offset
+        )
+        placement_constraints.add_absolute_placement_constraint(add, 1, add_offset)
+
+        self._run_mem_planning(
+            edge_program.exported_program(), mem_planning, state, placement_constraints
+        )
+        self.assertListEqual(
+            state.bufsizes,
+            [
+                0,
+                self.get_aligned(x_view_offset + 3 * 5 * 4),
+                self.get_aligned(y_offset + 2 * 3 * 5 * 4),
+            ],
+            msg=f"{state}",
+        )
+
+
+class TestMixedPlacementConstraints(TestConstraintsBase):
+    def get_slice_graph(self) -> EdgeProgramManager:
+        builder = ProgramBuilder()
+        x = builder.placeholder("x", torch.ones(3, 5, dtype=torch.float32))
+        x_slice = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 0, 2),
+        )
+        builder.output([x_slice])
+        edge_program = builder.get_edge_program()
+        edge_program = edge_program.transform([SpecPropPass()])
+        return edge_program
+
+    def test_slice_pinned_output(self) -> None:
+        edge_program = self.get_slice_graph()
+        x, x_slice, _ = edge_program.exported_program().graph_module.graph.nodes
+        # Create both mem_id+mem_offset and mem_offset constraints for all nodes.
+        memory_config = MemoryConfig([1000])
+        mem_planning = PositionBasedGreedyWithHierarchy(memory_config)
+        state = MemoryPlanningState(memory_config=memory_config)
+        placement_constraints = MemConstraints()
+        x_offset = 20
+        placement_constraints.add_absolute_placement_constraint(x, 1, x_offset)
+        placement_constraints.add_relative_placement_constraint(
+            x, x_slice, 40, update_lifetime=False
+        )
+        self._run_mem_planning(
+            edge_program.exported_program(), mem_planning, state, placement_constraints
+        )
+
+        # Check that x is placed correctly at `x_offset` and x_slice is placed at `x_offset + 40`.
+        self.assertEqual(x.meta["spec"].mem_id, 1)
+        self.assertEqual(x.meta["spec"].mem_offset, x_offset)
+        self.assertEqual(x_slice.meta["spec"].mem_id, 1)
+        self.assertEqual(x_slice.meta["spec"].mem_offset, x_offset + 2 * 5 * 4)
+
+    def test_slice_pinned_input_fail(self) -> None:
+        edge_program = self.get_slice_graph()
+        x, x_slice, _ = edge_program.exported_program().graph_module.graph.nodes
+        # Create both mem_id+mem_offset and mem_offset constraints for all nodes.
+        placement_constraints = MemConstraints()
+        x_slice_offset = 20
+        x_offset = 40
+        pin_memory_id = 1
+        placement_constraints.add_absolute_placement_constraint(
+            x_slice, pin_memory_id, x_slice_offset
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            f"Cannot add relative placement constraint for aten_slice_copy_tensor with non-zero offset {x_offset} when it has an absolute placement constraint AbsolutePlacementConstraint\\(pinned_memory_id={pin_memory_id}, offset={x_slice_offset}\\)",
+        ):
+            placement_constraints.add_relative_placement_constraint(
+                x, x_slice, x_offset, update_lifetime=False
+            )

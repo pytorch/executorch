@@ -20,19 +20,15 @@ scalar_tensor_out(KernelRuntimeContext& ctx, const Scalar& s, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, {}) == Error::Ok, InvalidArgument, out);
 
-  ScalarType s_type = utils::get_scalar_dtype(s);
   ScalarType out_type = out.scalar_type();
 
   constexpr auto name = "scalar_tensor.out";
 
-  ET_SWITCH_REAL_TYPES_AND3(
-      Half, Bool, BFloat16, out_type, ctx, name, CTYPE, [&]() {
-        ET_SWITCH_SCALAR_OBJ_TYPES(s_type, ctx, name, CTYPE_S, [&]() {
-          CTYPE_S val_s = 0;
-          utils::extract_scalar(s, &val_s);
-          out.mutable_data_ptr<CTYPE>()[0] = convert<CTYPE, CTYPE_S>(val_s);
-        });
-      });
+  ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE, [&]() {
+    auto opt_val_casted = utils::internal::check_overflow_scalar_cast<CTYPE>(s);
+    ET_KERNEL_CHECK(ctx, opt_val_casted.has_value(), InvalidArgument, );
+    out.mutable_data_ptr<CTYPE>()[0] = opt_val_casted.value();
+  });
 
   return out;
 }

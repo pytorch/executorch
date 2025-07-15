@@ -17,7 +17,7 @@ from executorch.exir.backend.test.op_partitioner_demo import (
     NonDecompTestPartitioner,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.error import ExportError
+from executorch.exir.error import ExportError, InternalError
 from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
@@ -293,6 +293,32 @@ class TestProgramManagers(unittest.TestCase):
         ).exported_program()
         for node in ep.graph.nodes:
             self.assertNotEqual(node.op, "get_attr")
+
+    def test_while(self):
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 2)
+                self.dec = torch.nn.Buffer(torch.tensor(1))
+
+            def forward(self, iter, x):
+                def cond_fn(it, x):
+                    return it - self.dec > 0
+
+                def body_fn(it, x):
+                    return it - 1, self.linear(x)
+
+                return torch._higher_order_ops.while_loop(cond_fn, body_fn, (iter, x))
+
+        # Instantiate and export
+        inp = (torch.tensor(3), torch.randn(2, 2))
+        exported = export(M(), inp)
+        ep = to_edge(exported)
+        # TODO(jakeszwe)
+        with self.assertRaisesRegex(
+            InternalError, "Unsupported control flow operator: while_loop"
+        ):
+            ep.to_executorch()
 
     def test_constraint_present_after_dce(self):
         import executorch.exir as exir

@@ -30,7 +30,7 @@ class OpMulOutTest : public OperatorTest {
     return torch::executor::aten::mul_outf(context_, self, other, out);
   }
 
-  // Common testing for multipling two integer Tensors
+  // Common testing for multiplying two integer Tensors
   template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
   void test_mul() {
     TensorFactory<DTYPE_A> tf_a;
@@ -54,6 +54,10 @@ class OpMulOutTest : public OperatorTest {
         tf_b.make(sizes, /*data=*/{1, 2, 4, 8}),
         out);
     EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{1, 4, 16, 64}));
+
+    out = tf_out.zeros({18});
+    op_mul_out(tf_a.full({18}, 4), tf_b.full({18}, 2), out);
+    EXPECT_TENSOR_EQ(out, tf_out.full({18}, 8));
   }
 
   template <ScalarType DTYPE_A, ScalarType DTYPE_B>
@@ -740,6 +744,21 @@ TEST_F(OpMulOutTest, DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = op_mul_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+// >>> torch.ops.aten.mul(torch.tensor([100], dtype=torch.int8),
+// torch.tensor([100], dtype=torch.int8), out=torch.zeros([1],
+// dtype=torch.long)) tensor([16])
+TEST_F(OpMulOutTest, MixedIntegerDtypeMatchesATen) {
+  TensorFactory<ScalarType::Char> tf_in;
+  TensorFactory<ScalarType::Long> tf_out;
+
+  Tensor in = tf_in.make({1}, {100});
+  Tensor out = tf_out.zeros({1});
+  Tensor ret = op_mul_out(in, in, out);
+
+  Tensor expected = tf_out.make({1}, {16});
+  EXPECT_TENSOR_CLOSE(out, expected);
 }
 
 TEST_F(OpMulScalarOutTest, SanityCheck) {

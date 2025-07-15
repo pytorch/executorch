@@ -111,10 +111,6 @@ def get_preprocessor_flags():
     return preprocessor_flags
 
 
-# Currently, having a dependency on fbsource//third-party/sleef:sleef may cause
-# duplicate symbol errors when linking fbcode targets in opt mode that also
-# depend on ATen. This is because ATen accesses sleef via the third-party folder
-# in caffe2 (caffe2/third-party//sleef:sleef).
 # TODO(ssjia): Enable -DCPU_CAPABILITY_AVX2 in fbcode, which requires sleef.
 def define_libs(is_fbcode=False):
     runtime.cxx_library(

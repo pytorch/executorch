@@ -30,56 +30,7 @@ Tensor& opt_le_tensor_out(
   (void)ctx;
 
   ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
-
-  if (a.numel() == 1 || b.numel() == 1) {
-    const Tensor* tensor;
-    const Tensor* scalar;
-    ScalarType tensor_type;
-    ScalarType scalar_type;
-    if (a.numel() == 1) {
-      tensor = &b;
-      tensor_type = b_type;
-      scalar = &a;
-      scalar_type = a_type;
-    } else {
-      tensor = &a;
-      tensor_type = a_type;
-      scalar = &b;
-      scalar_type = b_type;
-    }
-    ET_KERNEL_CHECK(
-        ctx,
-        resize_to_broadcast_target_size(a, b, out) == Error::Ok,
-        InvalidArgument,
-        out);
-
-    constexpr auto name = "le.Tensor_out";
-
-    ET_SWITCH_REALB_TYPES(tensor_type, ctx, name, CTYPE, [&]() {
-      ET_SWITCH_REALB_TYPES(scalar_type, ctx, name, CTYPE_SCALAR, [&]() {
-        CTYPE_SCALAR scalar_val = *scalar->const_data_ptr<CTYPE_SCALAR>();
-        CTYPE scalar_casted = static_cast<CTYPE>(scalar_val);
-
-        using Vec = at::vec::Vectorized<CTYPE>;
-        if (a.numel() == 1) {
-          at::vec::map<CTYPE>(
-              [scalar_casted](Vec x) { return Vec(scalar_casted).le(x); },
-              out.mutable_data_ptr<CTYPE>(),
-              tensor->const_data_ptr<CTYPE>(),
-              out.numel());
-        } else {
-          at::vec::map<CTYPE>(
-              [scalar_casted](Vec x) { return x.le(Vec(scalar_casted)); },
-              out.mutable_data_ptr<CTYPE>(),
-              tensor->const_data_ptr<CTYPE>(),
-              out.numel());
-        }
-      });
-    });
-    return out;
-  }
 
   // Check for optimized broadcast paths
   auto selected_optimized_path = select_optimized_path(a, b, out);

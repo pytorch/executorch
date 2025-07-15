@@ -6,7 +6,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -29,6 +28,22 @@ class BitwiseBinary(torch.nn.Module):
         "ones": lambda: (
             torch.ones(10, 10, 10, dtype=torch.int8),
             torch.ones(10, 10, 10, dtype=torch.int8),
+        ),
+        "pattern_int8": lambda: (
+            0xAA * torch.ones(1, 2, 2, 2, dtype=torch.int8),
+            0xCC * torch.ones(1, 2, 2, 2, dtype=torch.int8),
+        ),
+        "pattern_int16": lambda: (
+            0xAAAA * torch.ones(1, 2, 2, 2, dtype=torch.int16),
+            0xCCCC * torch.ones(1, 2, 2, 2, dtype=torch.int16),
+        ),
+        "pattern_int32": lambda: (
+            0xAAAAAAAA * torch.ones(1, 2, 2, 2, dtype=torch.int32),
+            0xCCCCCCCC * torch.ones(1, 2, 2, 2, dtype=torch.int32),
+        ),
+        "pattern_bool": lambda: (
+            torch.tensor([True, False, True], dtype=torch.bool),
+            torch.tensor([True, True, False], dtype=torch.bool),
         ),
         "rand_rank2": lambda: (
             torch.randint(-128, 127, (10, 10), dtype=torch.int8),
@@ -68,7 +83,13 @@ class Or(BitwiseBinary):
 @common.parametrize("test_data", And().test_data)
 def test_bitwise_and_tensor_tosa_MI(test_data: input_t2):
     pipeline = TosaPipelineMI[input_t2](
-        And(), test_data(), And().aten_op, And().exir_op
+        And(),
+        test_data(),
+        And().aten_op,
+        And().exir_op,
+        atol=0,
+        rtol=0,
+        qtol=0,
     )
     pipeline.run()
 
@@ -76,7 +97,13 @@ def test_bitwise_and_tensor_tosa_MI(test_data: input_t2):
 @common.parametrize("test_data", And().test_data)
 def test_bitwise_and_tensor_tosa_BI(test_data: input_t2):
     pipeline = TosaPipelineBI[input_t2](
-        And(), test_data(), And().aten_op, And().exir_op
+        And(),
+        test_data(),
+        And().aten_op,
+        And().exir_op,
+        atol=0,
+        rtol=0,
+        qtol=0,
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
@@ -97,11 +124,17 @@ def test_bitwise_and_tensor_u55_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", And().test_data)
-@pytest.mark.xfail(reason="MLETORCH-706: Support ScalarType::Bool in EthosUBackend.")
 @common.XfailIfNoCorstone320
 def test_bitwise_and_tensor_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
-        And(), test_data(), And().aten_op, And().exir_op, run_on_fvp=True
+        And(),
+        test_data(),
+        And().aten_op,
+        And().exir_op,
+        run_on_fvp=True,
+        atol=0,
+        rtol=0,
+        qtol=0,
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
@@ -111,7 +144,13 @@ def test_bitwise_and_tensor_u85_BI(test_data: input_t2):
 @common.parametrize("test_data", Xor().test_data)
 def test_bitwise_xor_tensor_tosa_MI(test_data: input_t2):
     pipeline = TosaPipelineMI[input_t2](
-        Xor(), test_data(), Xor().aten_op, Xor().exir_op
+        Xor(),
+        test_data(),
+        Xor().aten_op,
+        Xor().exir_op,
+        atol=0,
+        rtol=0,
+        qtol=0,
     )
     pipeline.run()
 
@@ -119,7 +158,13 @@ def test_bitwise_xor_tensor_tosa_MI(test_data: input_t2):
 @common.parametrize("test_data", Xor().test_data)
 def test_bitwise_xor_tensor_tosa_BI(test_data: input_t2):
     pipeline = TosaPipelineBI[input_t2](
-        Xor(), test_data(), Xor().aten_op, Xor().exir_op
+        Xor(),
+        test_data(),
+        Xor().aten_op,
+        Xor().exir_op,
+        atol=0,
+        rtol=0,
+        qtol=0,
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
@@ -140,11 +185,17 @@ def test_bitwise_xor_tensor_u55_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Xor().test_data)
-@pytest.mark.xfail(reason="MLETORCH-706: Support ScalarType::Bool in EthosUBackend.")
 @common.XfailIfNoCorstone320
 def test_bitwise_xor_tensor_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
-        Xor(), test_data(), Xor().aten_op, Xor().exir_op, run_on_fvp=True
+        Xor(),
+        test_data(),
+        Xor().aten_op,
+        Xor().exir_op,
+        run_on_fvp=True,
+        atol=0,
+        rtol=0,
+        qtol=0,
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
@@ -153,13 +204,29 @@ def test_bitwise_xor_tensor_u85_BI(test_data: input_t2):
 
 @common.parametrize("test_data", Or().test_data)
 def test_bitwise_or_tensor_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](Or(), test_data(), Or().aten_op, Or().exir_op)
+    pipeline = TosaPipelineMI[input_t2](
+        Or(),
+        test_data(),
+        Or().aten_op,
+        Or().exir_op,
+        atol=0,
+        rtol=0,
+        qtol=0,
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", Or().test_data)
 def test_bitwise_or_tensor_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](Or(), test_data(), Or().aten_op, Or().exir_op)
+    pipeline = TosaPipelineBI[input_t2](
+        Or(),
+        test_data(),
+        Or().aten_op,
+        Or().exir_op,
+        atol=0,
+        rtol=0,
+        qtol=0,
+    )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -179,7 +246,6 @@ def test_bitwise_or_tensor_u55_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Or().test_data)
-@pytest.mark.xfail(reason="MLETORCH-706: Support ScalarType::Bool in EthosUBackend.")
 @common.XfailIfNoCorstone320
 def test_bitwise_or_tensor_u85_BI(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
@@ -188,6 +254,9 @@ def test_bitwise_or_tensor_u85_BI(test_data: input_t2):
         Or().aten_op,
         Or().exir_op,
         run_on_fvp=True,
+        atol=0,
+        rtol=0,
+        qtol=0,
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")

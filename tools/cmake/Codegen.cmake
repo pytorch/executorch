@@ -22,15 +22,20 @@ function(gen_selected_ops)
   message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
   message(STATUS "  OPS_FROM_MODEL: ${GEN_OPS_FROM_MODEL}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
+
+  set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+
   if(GEN_DTYPE_SELECTIVE_BUILD)
-     message(STATUS "  DTYPE_SELECTIVE_BUILD is still WIP and may not be fully functional")
+    if(NOT GEN_OPS_FROM_MODEL)
+      message(FATAL_ERROR "  DTYPE_SELECTIVE_BUILD is only support with model API, please pass in a model")
+    endif()
   endif()
 
   set(_oplist_yaml
-      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml
+    ${_out_dir}/selected_operators.yaml
   )
 
-  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  file(MAKE_DIRECTORY ${_out_dir})
 
   file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
 
@@ -64,18 +69,18 @@ function(gen_selected_ops)
 
   if(GEN_DTYPE_SELECTIVE_BUILD)
     set(_opvariant_h
-      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_op_variants.h
+      ${_out_dir}/selected_op_variants.h
     )
     set(_gen_opvariant_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_selected_op_variants
                           --yaml-file=${_oplist_yaml}
-                          --output-dir=${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/
+                          --output-dir=${_out_dir}/
     )
     message("Command - ${_gen_opvariant_command}")
     add_custom_command(
-      COMMENT "Generating selected_op_variants.h for ${GEN_LIB_NAME}"
+      COMMENT "Generating ${_opvariant_h} for ${GEN_LIB_NAME}"
       OUTPUT ${_opvariant_h}
       COMMAND ${_gen_opvariant_command}
-      DEPENDS ${_oplist_yaml} ${_codegen_tools_srcs}
+      DEPENDS ${_oplist_yaml} ${GEN_OPS_SCHEMA_YAML} ${_codegen_tools_srcs}
       WORKING_DIRECTORY ${EXECUTORCH_ROOT}
     )
   endif()
@@ -88,7 +93,7 @@ endfunction()
 # functions_yaml CUSTOM_OPS_YAML custom_ops_yaml )
 function(generate_bindings_for_kernels)
   set(options ADD_EXCEPTION_BOUNDARY)
-  set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML)
+  set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "${options}" "${arg_names}" "" ${ARGN})
 
   message(STATUS "Generating kernel bindings:")
@@ -96,6 +101,7 @@ function(generate_bindings_for_kernels)
   message(STATUS "  FUNCTIONS_YAML: ${GEN_FUNCTIONS_YAML}")
   message(STATUS "  CUSTOM_OPS_YAML: ${GEN_CUSTOM_OPS_YAML}")
   message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARY}")
+  message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
@@ -103,6 +109,13 @@ function(generate_bindings_for_kernels)
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   # By default selective build output is selected_operators.yaml
   set(_oplist_yaml ${_out_dir}/selected_operators.yaml)
+
+  # If dtype selective build is enable, force header file to be preserved
+  if(GEN_DTYPE_SELECTIVE_BUILD)
+    set(_opvariant_h ${_out_dir}/selected_op_variants.h)
+  else()
+    set(_opvariant_h "")
+  endif()
 
   # Command to codegen C++ wrappers to register custom ops to both PyTorch and
   # Executorch runtime.
@@ -148,8 +161,9 @@ function(generate_bindings_for_kernels)
     COMMENT "Generating code for kernel registration"
     OUTPUT ${_gen_command_sources}
     COMMAND ${_gen_command}
-    DEPENDS ${_oplist_yaml} ${GEN_CUSTOM_OPS_YAML} ${GEN_FUNCTIONS_YAML}
-            ${_codegen_templates} ${_torchgen_srcs}
+    DEPENDS ${_oplist_yaml} ${_opvariant_h} ${GEN_CUSTOM_OPS_YAML}
+            ${GEN_FUNCTIONS_YAML} ${_codegen_templates}
+            ${_torchgen_srcs}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
   # Make generated file list available in parent scope
@@ -191,29 +205,85 @@ endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
 function(gen_operators_lib)
-  set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS)
+  set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
 
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_LIBS: ${GEN_KERNEL_LIBS}")
   message(STATUS "  DEPS: ${GEN_DEPS}")
+  message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  if(GEN_DTYPE_SELECTIVE_BUILD)
+    set(_opvariant_h
+      ${_out_dir}/selected_op_variants.h
+    )
+  endif()
 
   add_library(${GEN_LIB_NAME})
+
+  set(_srcs_list
+    ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+    ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+  )
+  if(GEN_DTYPE_SELECTIVE_BUILD)
+    list(APPEND _srcs_list ${_opvariant_h})
+  endif()
   target_sources(
     ${GEN_LIB_NAME}
-    PRIVATE ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-            ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    PRIVATE ${_srcs_list}
   )
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  set(portable_kernels_check "portable_kernels")
   if(GEN_KERNEL_LIBS)
-    target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
+
+    set(_common_compile_options -Wno-deprecated-declarations -ffunction-sections -fdata-sections -Os)
+
+    if(GEN_DTYPE_SELECTIVE_BUILD)
+      if("${portable_kernels_check}" IN_LIST GEN_KERNEL_LIBS)
+        list(REMOVE_ITEM GEN_KERNEL_LIBS ${portable_kernels_check})
+
+        # Build kernels_util_all_deps, since later selected_portable_kernels depends on it
+        list(TRANSFORM _kernels_util_all_deps__srcs PREPEND "${EXECUTORCH_ROOT}/")
+        add_library(selected_kernels_util_all_deps ${_kernels_util_all_deps__srcs})
+        target_link_libraries(selected_kernels_util_all_deps PRIVATE executorch_core)
+        target_include_directories(selected_kernels_util_all_deps PUBLIC ${_common_include_directories})
+        target_compile_definitions(selected_kernels_util_all_deps PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+        target_compile_options(selected_kernels_util_all_deps PUBLIC ${_common_compile_options})
+
+        # Build selected_portable_kernels
+        list(TRANSFORM _portable_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
+        add_library(selected_portable_kernels ${_portable_kernels__srcs})
+        target_link_libraries(selected_portable_kernels PRIVATE executorch_core selected_kernels_util_all_deps)
+        target_compile_options(selected_portable_kernels PUBLIC ${_common_compile_options})
+        target_include_directories(selected_portable_kernels PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/)
+
+        # Make sure the header is generated before compiling the library
+        add_dependencies(selected_portable_kernels ${GEN_LIB_NAME})
+        # Create a custom target for the header to ensure proper dependency tracking
+        add_custom_target(selected_portable_kernels_header DEPENDS ${_opvariant_h})
+        add_dependencies(selected_portable_kernels selected_portable_kernels_header)
+        # Apply the compile definition for dtype selective build
+        target_compile_definitions(selected_portable_kernels PRIVATE EXECUTORCH_SELECTIVE_BUILD_DTYPE=1)
+
+        target_link_libraries(${GEN_LIB_NAME} PUBLIC selected_portable_kernels)
+      else()
+        message(FATAL_ERROR "Currently dtype selective build is only supported for portable_kernels but {${GEN_KERNEL_LIBS}} were provided!")
+      endif()
+    endif()
+
+    # After removing portable_kernels, test if there are other kernel libs provided
+    if(GEN_KERNEL_LIBS)
+      target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
+    endif()
   endif()
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
   set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
+  if(GEN_DTYPE_SELECTIVE_BUILD)
+    list(APPEND _generated_headers ${_opvariant_h})
+  endif()
   set_target_properties(
     ${GEN_LIB_NAME} PROPERTIES PUBLIC_HEADER "${_generated_headers}"
   )

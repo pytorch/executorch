@@ -8,7 +8,7 @@
 
 import unittest
 
-from executorch.examples.models.llama.config.llm_config import (
+from executorch.extension.llm.export.config.llm_config import (
     BackendConfig,
     BaseConfig,
     CoreMLComputeUnit,
@@ -41,7 +41,7 @@ class TestValidation(unittest.TestCase):
 
     def test_invalid_export_config_context_length(self):
         with self.assertRaises(ValueError):
-            ExportConfig(max_seq_length=128, max_context_length=256)
+            ExportConfig(max_seq_length=256, max_context_length=128)
 
     def test_invalid_qmode(self):
         with self.assertRaises(ValueError):
@@ -84,8 +84,8 @@ class TestValidConstruction(unittest.TestCase):
                 local_global_attention="[16, 32]",
             ),
             export=ExportConfig(
-                max_seq_length=256,
-                max_context_length=128,
+                max_seq_length=128,
+                max_context_length=256,
                 output_dir="/tmp/export",
                 output_name="model.pte",
             ),
@@ -94,7 +94,7 @@ class TestValidConstruction(unittest.TestCase):
             backend=BackendConfig(
                 xnnpack=XNNPackConfig(enabled=False),
                 coreml=CoreMLConfig(
-                    enabled=True, ios=17, compute_units=CoreMLComputeUnit.ALL
+                    enabled=True, ios=17, compute_units=CoreMLComputeUnit.cpu_only
                 ),
             ),
         )

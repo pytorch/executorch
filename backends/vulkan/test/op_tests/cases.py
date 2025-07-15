@@ -63,6 +63,42 @@ def get_binary_elementwise_inputs():
         "utils::kBuffer",
         "utils::kTexture3D",
     ]
+
+    return test_suite
+
+
+# Eq requires a different test generator so it was split from the other test case.
+@register_test_suite(
+    [
+        "aten.eq.Tensor",
+        "aten.gt.Tensor",
+        "aten.lt.Tensor",
+        "aten.ge.Tensor",
+        "aten.le.Tensor",
+    ]
+)
+def get_binary_elementwise_compare_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M1, M2), (M1, M2)),
+            ((M1, M2), (M1, 1), 2.0),
+            ((M1, M2), (1, M2)),
+            ((S, S1, S2), (S, S1, S2)),
+            ((S, S1, S2), (S, S1, 1), 2.0),
+            ((S, S1, S2), (S, 1, S2), 2.0),
+            ((XS, S, S1, S2), (XS, S, 1, 1), 2.0),
+            ((3, 64, 1), (1, 64, 1)),
+        ]
+    )
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.data_gen = "make_casted_randint_tensor"
     return test_suite
 
 
@@ -646,6 +682,45 @@ def get_native_layer_norm_inputs():
     return test_suite
 
 
+@register_test_suite("aten.native_group_norm.default")
+def get_native_group_norm_inputs():
+    test_suite = VkTestSuite(
+        [
+            # (input_shape, weight_shape, bias_shape, N, C, HxW, group, eps)
+            # General test cases
+            ((1, 8, 4, 4), (8), (8), 1, 8, 16, 2, 0.001),
+            ((2, 8, 3, 3), (8), (8), 2, 8, 9, 4, 0.001),
+            ((1, 12, 2, 2), (12), (12), 1, 12, 4, 3, 0.001),
+            ((3, 16, 5, 5), (16), (16), 3, 16, 25, 8, 0.001),
+            ((3, 16, 13, 17), (16), (16), 3, 16, 13 * 17, 4, 0.001),
+            ((1, 4, 7, 7), (4), (4), 1, 4, 49, 2, 0.001),
+            ((2, 6, 1, 8), (6), (6), 2, 6, 8, 3, 0.001),
+            # Single group and prime number sizes
+            ((3, 7, 13, 11), (7), (7), 3, 7, 13 * 11, 1, 0.001),
+            # Each channel is it's own group and prime number sizes
+            ((1, 7, 13, 11), (7), (7), 1, 7, 13 * 11, 7, 0.001),
+        ]
+    )
+    test_suite.layouts = [
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kTexture3D",
+    ]
+    test_suite.dtypes = [
+        "at::kFloat",
+        "at::kHalf",
+    ]
+    test_suite.arg_storage_types = {
+        "out": [None, "utils::kBuffer", "utils::kBuffer"],
+    }
+
+    test_suite.prepacked_args = ["weight", "bias"]
+    test_suite.requires_prepack = True
+
+    return test_suite
+
+
 def get_upsample_inputs():
     inputs_list = [
         # (input tensor shape, output 2D image size (H, W), output scaling factors)
@@ -751,6 +826,13 @@ def get_permute_inputs():
         "utils::kWidthPacked",
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.dtypes = [
+        "at::kFloat",
     ]
     return test_suite
 
@@ -990,9 +1072,11 @@ def get_unsqueeze_inputs():
             ((9, 9), 2),
             ((9,), 0),
             ((9,), 1),
+            ((1, 10), -1),
         ]
     )
     test_suite.layouts = [
+        "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"

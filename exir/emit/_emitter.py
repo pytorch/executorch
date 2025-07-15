@@ -1480,10 +1480,11 @@ class _Emitter(torch.fx.Interpreter):
             # pyre-ignore
             return self._emit_free(args[0])
 
-        elif target is torch.ops.higher_order.cond:
-            return self._emit_control_flow(target, args, kwargs)
-
-        elif target is torch.ops.higher_order.map_impl:
+        elif target in (
+            torch.ops.higher_order.cond,
+            torch.ops.higher_order.map_impl,
+            torch.ops.higher_order.while_loop,
+        ):
             return self._emit_control_flow(target, args, kwargs)
 
         elif target == executorch_call_delegate:

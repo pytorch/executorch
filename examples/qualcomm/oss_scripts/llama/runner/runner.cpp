@@ -11,6 +11,7 @@
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/client_mem.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/rpc_mem.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
 #include <executorch/extension/llm/runner/util.h>
@@ -57,13 +58,22 @@ Runner::Runner(
     const std::string& performance_output_path,
     const float temperature,
     const int eval_mode,
-    const std::string& kv_updater)
-    : tokenizer_path_(tokenizer_path),
+    const std::string& kv_updater,
+    const int ngram,
+    const int window,
+    const int gcap,
+    std::unique_ptr<tokenizers::Tokenizer> tokenizer)
+    : ngram_(ngram),
+      window_(window),
+      gcap_(gcap),
+      tokenizer_path_(tokenizer_path),
       performance_output_path_(performance_output_path),
       temperature_(temperature),
-      eval_mode_(static_cast<EvalMode>(eval_mode)) {
+      eval_mode_(static_cast<EvalMode>(eval_mode)),
+      tokenizer_(std::move(tokenizer)) {
   module_ = std::make_unique<Module>(
       model_path, Module::LoadMode::MmapUseMlockIgnoreErrors);
+  stats_.reset();
   if (kv_updater == "SmartMask") {
     kv_updater_ = KVManagerMode::SMART_MASK;
   } else if (kv_updater == "ShiftPointer") {
@@ -96,6 +106,7 @@ Error Runner::load() {
       method_names.emplace_back(token_generator_method_name);
       break;
     case EvalMode::kHybrid:
+    case EvalMode::kLookaheadDecoding:
       prompt_processor_method_name = "prefill_forward";
       token_generator_method_name = "kv_forward";
       method_names.emplace_back(prompt_processor_method_name);
@@ -106,30 +117,40 @@ Error Runner::load() {
       break;
   }
 
-  // load tokenizer. Assuming tiktoken is the default tokenizer
-  tokenizer_ = get_tiktoken_for_llama();
-  auto err = tokenizer_->load(tokenizer_path_);
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>();
-  // Rely on tiktoken to throw error if the artifact is incompatible. Then we
-  // fallback to BPE tokenizer.
-  if (err != tokenizers::Error::Ok) {
-    ET_LOG(
-        Info,
-        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
-        tokenizer_path_.c_str());
-    tokenizer_.reset();
-    tokenizer_ = std::make_unique<tokenizers::Llama2cTokenizer>();
-    err = tokenizer_->load(tokenizer_path_);
-    llama_version_ = LlamaVersion::kLlama2;
-    ET_CHECK_MSG(
-        err == tokenizers::Error::Ok,
-        "failed to load tokenizer %s",
-        tokenizer_path_.c_str());
-  } else {
+  // TODO: remove this once we could release the new tokens used for the
+  // tokenizer
+  if (tokenizer_ != nullptr) {
     eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
-    llama_version_ = LlamaVersion::kLlama3;
+    eos_ids->insert(tokenizer_->encode("<|eot|>", 0, 0).get()[0]);
+    eos_ids->insert(tokenizer_->encode("<|end_of_text|>", 0, 0).get()[0]);
+  } else {
+    // load tokenizer. Assuming tiktoken is the default tokenizer
+    tokenizer_ = get_tiktoken_for_llama();
+    auto err = tokenizer_->load(tokenizer_path_);
+    auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>();
+    // Rely on tiktoken to throw error if the artifact is incompatible. Then we
+    // fallback to BPE tokenizer.
+    if (err != tokenizers::Error::Ok) {
+      ET_LOG(
+          Info,
+          "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
+          tokenizer_path_.c_str());
+      tokenizer_.reset();
+      tokenizer_ = std::make_unique<tokenizers::Llama2cTokenizer>();
+      err = tokenizer_->load(tokenizer_path_);
+      llama_version_ = LlamaVersion::kLlama2;
+      ET_CHECK_MSG(
+          err == tokenizers::Error::Ok,
+          "failed to load tokenizer %s",
+          tokenizer_path_.c_str());
+    } else {
+      eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+      llama_version_ = LlamaVersion::kLlama3;
+    }
+    eos_ids->insert(tokenizer_->eos_tok());
   }
-  eos_ids->insert(tokenizer_->eos_tok());
+
   int32_t vocab_size = tokenizer_->vocab_size();
   decoder_runner_ =
       std::make_unique<DecoderRunner>(module_.get(), vocab_size, temperature_);
@@ -162,7 +183,9 @@ Error Runner::load() {
   context_len_ = atten_mask_meta_token->sizes()[2];
   if (eval_mode_ == EvalMode::kKVCached) {
     prompt_processor_ar_len = token_generator_ar_len;
-  } else if (eval_mode_ == EvalMode::kHybrid) {
+  } else if (
+      eval_mode_ == EvalMode::kHybrid ||
+      eval_mode_ == EvalMode::kLookaheadDecoding) {
     auto atten_mask_meta_prompt =
         module_->method_meta(prompt_processor_method_name)
             ->input_tensor_meta(1);
@@ -196,21 +219,40 @@ Error Runner::load() {
           prompt_processor_ar_len,
           vocab_size,
           use_int64_token});
-  token_generator_ = std::make_unique<TokenGenerator>(
-      tokenizer_.get(),
-      decoder_runner_.get(),
-      kv_manager_.get(),
-      token_generator_method_name,
-      std::move(eos_ids),
-      TokenGenerator::Metadata{
-          context_len_,
-          num_heads,
-          num_layers,
-          token_generator_ar_len,
-          vocab_size,
-          use_int64_token,
-      },
-      &stats_);
+  if (eval_mode_ == EvalMode::kLookaheadDecoding) {
+    token_generator_ = std::make_unique<LhdTokenGenerator>(
+        tokenizer_.get(),
+        decoder_runner_.get(),
+        kv_manager_.get(),
+        token_generator_method_name,
+        std::move(eos_ids),
+        LhdTokenGenerator::Metadata{
+            context_len_,
+            num_heads,
+            num_layers,
+            token_generator_ar_len,
+            vocab_size,
+            use_int64_token,
+            ngram_,
+            window_,
+            gcap_},
+        &stats_);
+  } else {
+    token_generator_ = std::make_unique<TokenGenerator>(
+        tokenizer_.get(),
+        decoder_runner_.get(),
+        kv_manager_.get(),
+        token_generator_method_name,
+        std::move(eos_ids),
+        TokenGenerator::Metadata{
+            context_len_,
+            num_heads,
+            num_layers,
+            token_generator_ar_len,
+            vocab_size,
+            use_int64_token},
+        &stats_);
+  }
 
   buffer_manager_ = std::make_unique<ClientMem>();
   if (kv_updater_ == KVManagerMode::SMART_MASK) {

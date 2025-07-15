@@ -150,10 +150,10 @@ void MunmapSegment(void* context, void* data, size_t size) {
 }
 } // namespace
 
-Result<FreeableBuffer> MmapDataLoader::load(
-    size_t offset,
-    size_t size,
-    ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
+/**
+ * Validates that file read range is within bounds.
+ */
+Error MmapDataLoader::validate_input(size_t offset, size_t size) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
@@ -173,6 +173,18 @@ Result<FreeableBuffer> MmapDataLoader::load(
       InvalidArgument,
       "Offset %zu too large for off_t",
       offset);
+  return Error::Ok;
+}
+
+Result<FreeableBuffer> MmapDataLoader::load(
+    size_t offset,
+    size_t size,
+    ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
+  // Ensure read range is valid.
+  auto validation_err = validate_input(offset, size);
+  if (validation_err != Error::Ok) {
+    return validation_err;
+  }
 
   // mmap() will fail if the size is zero.
   if (size == 0) {
@@ -193,14 +205,13 @@ Result<FreeableBuffer> MmapDataLoader::load(
     map_size = file_size_ - range.start;
   }
 
-  // Map the pages read-only. MAP_PRIVATE vs. MAP_SHARED doesn't matter since
-  // the data is read-only, but use PRIVATE just to further avoid accidentally
-  // modifying the file.
+  // Map the pages read-only. Use shared mappings so that other processes
+  // can also map the same pages and share the same memory.
   void* pages = ::mmap(
       nullptr,
       map_size,
       PROT_READ,
-      MAP_PRIVATE,
+      MAP_SHARED,
       fd_,
       static_cast<off_t>(range.start));
   ET_CHECK_OR_RETURN_ERROR(
@@ -266,6 +277,70 @@ Result<size_t> MmapDataLoader::size() const {
       InvalidState,
       "Uninitialized");
   return file_size_;
+}
+
+Error MmapDataLoader::load_into(
+    size_t offset,
+    size_t size,
+    ET_UNUSED const SegmentInfo& segment_info,
+    void* buffer) const {
+  ET_CHECK_OR_RETURN_ERROR(
+      buffer != nullptr, InvalidArgument, "Buffer is null");
+
+  // Ensure read range is valid.
+  auto err = validate_input(offset, size);
+  if (err != Error::Ok) {
+    return err;
+  }
+
+  // Nothing to copy.
+  if (size == 0) {
+    return Error::Ok;
+  }
+
+  // Find the range of pages that covers the requested region.
+  Range range =
+      get_overlapping_pages(static_cast<uintptr_t>(offset), size, page_size_);
+
+  size_t map_size = range.size;
+  if (range.start + map_size > file_size_) {
+    // Clamp to the end of the file.
+    //
+    // The Windows implementation of mmap uses CreateFileMapping which returns
+    // error STATUS_SECTION_TOO_BIG (0xc0000040) if we try to map past the end
+    // of the last page of a file mapped in as read-only.
+    map_size = file_size_ - range.start;
+  }
+
+  // Map the pages read-only. MAP_PRIVATE vs. MAP_SHARED doesn't matter since
+  // the data is read-only, but use PRIVATE just to further avoid accidentally
+  // modifying the file.
+  void* pages = ::mmap(
+      nullptr,
+      map_size,
+      PROT_READ,
+      MAP_PRIVATE,
+      fd_,
+      static_cast<off_t>(range.start));
+  ET_CHECK_OR_RETURN_ERROR(
+      pages != MAP_FAILED,
+      AccessFailed,
+      "Failed to map %s: mmap(..., size=%zd, ..., fd=%d, offset=0x%zx)",
+      file_name_,
+      range.size,
+      fd_,
+      range.start);
+
+  // Offset into mapped region.
+  const size_t map_delta = offset - range.start;
+
+  // Copy data into caller's buffer.
+  std::memcpy(buffer, static_cast<uint8_t*>(pages) + map_delta, size);
+
+  // Unmap mapped region.
+  ::munmap(pages, map_size);
+
+  return Error::Ok;
 }
 
 } // namespace extension
