@@ -89,6 +89,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
         if node.target is memory.alloc:
             ex_node = schema.Node(
+                name=node.name,
                 target="memory.alloc",
                 inputs=self.serialize_alloc_inputs(node.args),
                 outputs=self.serialize_arbitrary_outputs(node),
@@ -99,6 +100,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         elif isinstance(node.target, EdgeOpOverload):
             assert node.target._op is not None
             ex_node = schema.Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 # pyre-ignore Undefined attribute [16]: Item `typing.Callable` of
                 # `typing.Union[typing.Callable[..., typing.Any], str]` has no attribute `_op`.
@@ -111,6 +113,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             return
         elif node.target is delegate.executorch_call_delegate:
             ex_node = schema.Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 inputs=self.serialize_call_delegate_inputs(node.args),
                 outputs=self.serialize_arbitrary_outputs(node),
