@@ -145,7 +145,12 @@ ComputeGraph::ComputeGraph(GraphConfig config)
   execute_descriptor_counts_.descriptor_combined_sampler_count = 0;
   execute_descriptor_counts_.descriptor_storage_image_count = 0;
 
-  context_->set_cmd(/*reusable = */ true);
+  // If certain graph config variables are not specified, then set them
+  // automatically.
+  if (config_.prepack_threshold_nbytes == 0) {
+    config_.prepack_threshold_nbytes = 10 * MB;
+    config_.prepack_initial_threshold_nbytes = 10 * MB;
+  }
 }
 
 ComputeGraph::~ComputeGraph() {
@@ -431,6 +436,7 @@ ValueRef ComputeGraph::add_tensorref(
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
   values_.emplace_back(TensorRef(sizes, dtype, data));
+  total_constant_nbytes_ += values_.back().toConstTensorRef().nbytes();
   return idx;
 }
 
@@ -750,6 +756,19 @@ void ComputeGraph::prepare_pipelines() {
       vkapi::ComputePipelineCache::Hasher>();
 }
 
+void ComputeGraph::submit_current_cmd(const bool final_use) {
+  context_->submit_cmd_to_gpu(VK_NULL_HANDLE, final_use);
+}
+
+void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
+  vkapi::VulkanFence fence = context_->fences().get_fence();
+  context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
+  fence.wait();
+  context_->fences().return_fence(fence);
+
+  context_->flush();
+}
+
 void ComputeGraph::encode_prepack() {
   for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
     node->encode(this);
@@ -764,6 +783,37 @@ void ComputeGraph::prepack() const {
   context_->fences().return_fence(fence);
 
   context_->flush();
+}
+
+void ComputeGraph::run_prepack() {
+  int i = 0;
+  bool submitted = false;
+  const bool reduce_peak_memory = total_constant_nbytes_ > 500 * MB;
+  // int count = 0;
+  context_->set_cmd();
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    // Do not trigger on the first or last prepack node.
+    const bool not_terminal = i != 0 && i != (prepack_nodes_.size() - 1);
+    size_t threshold = submitted ? config_.prepack_threshold_nbytes
+                                 : config_.prepack_initial_threshold_nbytes;
+    if (not_terminal && staging_nbytes_in_cmd_ > threshold) {
+      // If reducing peak memory usage, wait for the current command buffer to
+      // finish executing and flush to recycle the staging memory. This will
+      // reduce peak memory usage, but will slightly increase load latency.
+      // Otherwise, just submit the current command buffer for execution and
+      // proceed. This results in lower load latency at the cost of higher peak
+      // memory usage.
+      reduce_peak_memory ? submit_current_cmd_and_wait() : submit_current_cmd();
+      staging_nbytes_in_cmd_ = 0;
+      context_->set_cmd();
+      submitted = true;
+    }
+
+    node->encode(this);
+    i++;
+  }
+  submit_current_cmd_and_wait(/*final_use=*/true);
+  staging_nbytes_in_cmd_ = 0;
 }
 
 void ComputeGraph::encode_execute() {
