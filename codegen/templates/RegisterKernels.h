@@ -16,7 +16,7 @@
 namespace torch {
 namespace executor {
 
-Error register_all_kernels();
+Error register_all_kernels(ErrorHandler errorHandler = nullptr);
 
 } // namespace executor
 } // namespace torch

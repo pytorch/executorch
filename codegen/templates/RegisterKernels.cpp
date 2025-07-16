@@ -15,12 +15,12 @@
 namespace torch {
 namespace executor {
 
-Error register_all_kernels() {
+Error register_all_kernels(ErrorHandler errorHandler /* = nullptr */) {
   Kernel kernels_to_register[] = {
       ${unboxed_kernels} // Generated kernels
   };
   Error success_with_kernel_reg =
-      ::executorch::runtime::register_kernels({kernels_to_register});
+      ::executorch::runtime::register_kernels({kernels_to_register}, errorHandler);
   if (success_with_kernel_reg != Error::Ok) {
     ET_LOG(Error, "Failed register all kernels");
     return success_with_kernel_reg;
