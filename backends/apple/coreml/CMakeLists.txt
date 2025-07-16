@@ -104,7 +104,9 @@ if(APPLE)
 endif()
 
 add_library(coreml_util ${UTIL_SOURCES})
-target_include_directories(coreml_util PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util)
+target_include_directories(
+  coreml_util PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
+)
 if(APPLE)
   target_link_libraries(coreml_util PRIVATE ${FOUNDATION_FRAMEWORK})
 endif()
@@ -119,21 +121,25 @@ install(
 
 # CoreML inmemoryfs
 
-set(
-  INMEMORYFS_SOURCES
-  runtime/inmemoryfs/inmemory_filesystem.cpp
-  runtime/inmemoryfs/memory_buffer.cpp
-  runtime/inmemoryfs/memory_stream.cpp
-  runtime/inmemoryfs/reversed_memory_stream.cpp
+set(INMEMORYFS_SOURCES
+    runtime/inmemoryfs/inmemory_filesystem.cpp
+    runtime/inmemoryfs/memory_buffer.cpp runtime/inmemoryfs/memory_stream.cpp
+    runtime/inmemoryfs/reversed_memory_stream.cpp
 )
 if(APPLE)
-  list(APPEND INMEMORYFS_SOURCES runtime/inmemoryfs/inmemory_filesystem_utils.mm)
+  list(APPEND INMEMORYFS_SOURCES
+       runtime/inmemoryfs/inmemory_filesystem_utils.mm
+  )
 endif()
 
 add_library(coreml_inmemoryfs ${INMEMORYFS_SOURCES})
-target_include_directories(coreml_inmemoryfs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs)
+target_include_directories(
+  coreml_inmemoryfs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
+)
 if(APPLE)
-  target_link_libraries(coreml_inmemoryfs PRIVATE coreml_util ${FOUNDATION_FRAMEWORK})
+  target_link_libraries(
+    coreml_inmemoryfs PRIVATE coreml_util ${FOUNDATION_FRAMEWORK}
+  )
 endif()
 target_compile_options(coreml_inmemoryfs PUBLIC -fPIC)
 
@@ -148,17 +154,12 @@ install(
 
 if(EXECUTORCH_BUILD_PYBIND)
   pybind11_add_module(
-    executorchcoreml
-    SHARED
-      runtime/inmemoryfs/inmemory_filesystem_py.cpp
-      runtime/inmemoryfs/inmemory_filesystem_utils.cpp
+    executorchcoreml SHARED runtime/inmemoryfs/inmemory_filesystem_py.cpp
+    runtime/inmemoryfs/inmemory_filesystem_utils.cpp
   )
   target_link_libraries(
-    executorchcoreml
-    PRIVATE
-      coreml_util
-      coreml_inmemoryfs
-      nlohmann_json::nlohmann_json
+    executorchcoreml PRIVATE coreml_util coreml_inmemoryfs
+                             nlohmann_json::nlohmann_json
   )
   target_compile_options(executorchcoreml PUBLIC -fPIC)
 endif()
@@ -179,8 +180,12 @@ if(APPLE)
     coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/delegate
   )
   target_include_directories(coremldelegate PRIVATE ${PROJECT_SOURCE_DIR}/..)
-  target_include_directories(coremldelegate PRIVATE ${PROJECT_SOURCE_DIR}/runtime/core/portable_type/c10)
-  target_compile_definitions(coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS)
+  target_include_directories(
+    coremldelegate PRIVATE ${PROJECT_SOURCE_DIR}/runtime/core/portable_type/c10
+  )
+  target_compile_definitions(
+    coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
+  )
 
   if(EXECUTORCH_BUILD_DEVTOOLS)
     target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
@@ -200,13 +205,9 @@ if(APPLE)
 
   target_link_libraries(
     coremldelegate
-    PUBLIC  coreml_util
-            coreml_inmemoryfs
-    PRIVATE executorch_core
-            ${ACCELERATE_FRAMEWORK}
-            ${COREML_FRAMEWORK}
-            ${FOUNDATION_FRAMEWORK}
-            ${SQLITE_LIBRARY}
+    PUBLIC coreml_util coreml_inmemoryfs
+    PRIVATE executorch_core ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
+            ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
 
   target_link_options_shared_lib(coremldelegate)
@@ -218,13 +219,8 @@ if(APPLE)
   endif()
 
   target_compile_options(
-    coremldelegate
-    PRIVATE
-      -fobjc-arc
-      -fno-exceptions
-      -x objective-c++
-      -Wno-null-character
-      -Wno-receiver-expr
+    coremldelegate PRIVATE -fobjc-arc -fno-exceptions -x objective-c++
+                           -Wno-null-character -Wno-receiver-expr
   )
 
   if(EXECUTORCH_BUILD_DEVTOOLS)
