@@ -845,15 +845,10 @@ class ComputeGraph final {
   // Command Buffer Management
 
   /*
-   * Submits the current command buffer in the Context to the GPU for execution.
-   */
-  void submit_current_cmd(const bool final_use = false);
-
-  /*
    * Submits the current command buffer in the Context to the GPU for execution,
-   * and wait for it to complete before returning.
+   * and wait for it to complete before returning, if wait is True.
    */
-  void submit_current_cmd_and_wait(const bool final_use = false);
+  void submit_current_cmd(const bool final_use = false, bool wait = true);
 
  public:
   //
