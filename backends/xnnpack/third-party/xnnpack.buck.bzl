@@ -4,8 +4,8 @@ load(
     "OPERATOR_SRCS",
     "SUBGRAPH_SRCS",
     "TABLE_SRCS",
-    "XNNPACK_SRCS",
     "get_xnnpack_headers",
+    "get_ukernel_config_srcs",
     "prod_srcs_for_arch_wrapper",
 )
 
@@ -1142,7 +1142,7 @@ def define_xnnpack():
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "XNNPACK",
-        srcs = XNNPACK_SRCS + LOGGING_SRCS + [
+        srcs = get_ukernel_config_srcs() + LOGGING_SRCS + [
             "XNNPACK/src/init.c",
             "XNNPACK/src/params.c",
             "XNNPACK/src/configs/hardware-config.c",
