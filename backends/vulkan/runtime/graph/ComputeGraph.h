@@ -204,6 +204,10 @@ class ComputeGraph final {
   // current Context's command buffer is submitted now.
   size_t staging_nbytes_in_cmd_ = 0;
 
+  // Flag to indicate if execute nodes have been freshly encoded and have not
+  // been submitted yet.
+  bool execute_pending_first_submission = false;
+
  public:
   //
   // Accessors
