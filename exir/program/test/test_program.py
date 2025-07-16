@@ -784,11 +784,7 @@ class TestProgramManagers(unittest.TestCase):
         self, program, preserved_ops, expected_preserved_ops
     ):
         edge = to_edge(
-<<<<<<< HEAD
             program, compile_config=EdgeCompileConfig(preserve_ops=preserved_ops)
-=======
-            program, compile_config=EdgeCompileConfig(_preserve_ops=preserved_ops)
->>>>>>> 0012ffaf9f (Add preserve_ops to EdgeCompileConfig (#12546))
         )
 
         def count_nodes(graph_module, target):
