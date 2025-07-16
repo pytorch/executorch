@@ -425,35 +425,6 @@ class TanhConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32]
 
 
-class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
-    target_name = "_to_dim_order_copy.default"
-
-    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
-        """
-        Only support dim order conversion partitioning, not DType conversions
-        """
-        if not self.check_common_constraints(node, ep):
-            return False
-
-        # Get input node and compare dtypes
-        input_node = get_input_node(node, 0)
-        input_dtype = input_node.meta["val"].dtype
-        output_dtype = node.meta["val"].dtype
-
-        # Return False if doing dtype conversion
-        if input_dtype != output_dtype:
-            why(
-                node,
-                reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
-            )
-            return False
-
-        return True
-
-    def supported_precision_types(self) -> List[ConfigPrecisionType]:
-        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
-
-
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
 
