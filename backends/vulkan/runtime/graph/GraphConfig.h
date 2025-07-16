@@ -36,6 +36,20 @@ struct GraphConfig final {
   // Whether or not the ComputeGraph should expect input shapes to be dynamic
   bool expect_dynamic_shapes;
 
+  // Execution properties that determine specifics re: how command buffer
+  // submission is handled, etc. 0 means this field is not set.
+
+  // During prepacking, once this threshold is reached, submit the current
+  // command buffer for execution. This allows the work to be distributed over
+  // multiple command buffer submissions, which can improve model load
+  // performance and prevent crashes when loading large models.
+  size_t prepack_threshold_nbytes = 0;
+  // Threshold used for the first command buffer submission during prepacking.
+  // This can be set to be lower than prepack_submission_threshold_nbytes to
+  // submit a command buffer for execution earlier which can improve performance
+  // by taking more advantage of parallelism between the CPU and GPU.
+  size_t prepack_initial_threshold_nbytes = 0;
+
   vkapi::Adapter* external_adapter;
 
   // Generate a default graph config with pre-configured settings
