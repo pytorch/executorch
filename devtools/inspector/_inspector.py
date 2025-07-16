@@ -1211,7 +1211,9 @@ class Inspector:
                     # TODO: One debug handle can be associated with multiple op names
                     debug_handle_to_op_names[debug_handle] = [event.name]
 
-        merge_runtime_overlapping_debug_handles(debug_handle_to_output)
+        debug_handle_to_output = merge_runtime_overlapping_debug_handles(
+            debug_handle_to_output
+        )
         return {
             k: v[1] for k, v in debug_handle_to_output.items()
         }, debug_handle_to_op_names
