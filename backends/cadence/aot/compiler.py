@@ -219,9 +219,9 @@ TO_EDGE_OP_EXCEPTION_LIST: list[torch._ops.OpOverload] = [
     torch.ops.aten.angle.default,
     torch.ops.aten.rms_norm.default,
 ]
-TO_EDGE_PRESERVE_OPS: list[torch._ops.OpOverload, ...] = (
+TO_EDGE_PRESERVE_OPS: list[torch._ops.OpOverload, ...] = [
     torch.ops.aten.rms_norm.default,
-)
+]
 
 
 def _lower_ep_to_edge(
