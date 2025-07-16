@@ -47,7 +47,7 @@ from executorch.devtools.inspector._inspector_utils import (
 )
 from executorch.devtools.inspector.numerical_comparator import L1Comparator
 from executorch.exir import to_edge
-from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY, UNSET_DEBUG_HANDLE
 from torch.export import export
 
 
@@ -277,6 +277,27 @@ class TestInspectorUtils(unittest.TestCase):
             expected_value = expected_intermediate_outputs[key][1]
             actual_value = intermediate_outputs[key][1]
             self.assertTrue(torch.allclose(expected_value, actual_value))
+
+    def test_merge_overlapping_debug_handles_edge_cases(self):
+        intermediate_outputs = {
+            (9,): (1, "val1"),
+            (
+                9,
+                9,
+                9,
+            ): (2, "val2"),
+            (
+                9,
+                9,
+            ): (3, "val3"),
+        }
+        intermediate_outputs = merge_runtime_overlapping_debug_handles(
+            intermediate_outputs
+        )
+        expected_intermediate_outputs = {
+            (9,): (3, "val3"),
+        }
+        self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
 
     def test_map_runtime_aot_intermediate_outputs_empty_inputs(self):
         # When the inputs are empty, the output should also be empty
@@ -683,8 +704,7 @@ class TestInspectorUtils(unittest.TestCase):
             )
         )
 
-        # only two add ops in the exported program will keep in edge dialect program, so the debug handles for removed op will be three
-        debug_handle_for_removed_node = 3
+        n_removed_nodes = 0
 
         for node in exported_program.graph.nodes:
             if node.name == "add":
@@ -692,9 +712,10 @@ class TestInspectorUtils(unittest.TestCase):
             elif node.name == "add_1":
                 self.assertEqual(node.meta[DEBUG_HANDLE_KEY], 2)
             elif node.op not in ("placeholder", "output"):
-                self.assertEqual(
-                    node.meta[DEBUG_HANDLE_KEY], debug_handle_for_removed_node
-                )
+                n_removed_nodes += 1
+                self.assertEqual(node.meta[DEBUG_HANDLE_KEY], UNSET_DEBUG_HANDLE)
+
+        self.assertEqual(n_removed_nodes, 2)
 
 
 def gen_mock_operator_graph_with_expected_map() -> (
