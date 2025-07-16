@@ -768,6 +768,13 @@ void ComputeGraph::submit_current_cmd(const bool final_use, bool wait) {
   }
 }
 
+void ComputeGraph::wait_on_encode_execute() {
+  if (encode_execute_fence_) {
+    encode_execute_fence_.wait();
+    context_->fences().return_fence(encode_execute_fence_);
+  }
+}
+
 void ComputeGraph::prepack() {
   int i = 0;
   bool submitted = false;
@@ -793,7 +800,7 @@ void ComputeGraph::prepack() {
         submit_current_cmd(/*final_use=*/true, /*wait=*/false);
       }
       staging_nbytes_in_cmd_ = 0;
-      context_->set_cmd();
+      context_->set_cmd(/*reusable = */ true);
       submitted = true;
     }
 
@@ -806,30 +813,33 @@ void ComputeGraph::prepack() {
 }
 
 void ComputeGraph::encode_execute() {
+  wait_on_encode_execute();
   context_->flush();
   context_->set_cmd(/*reusable = */ true);
 
   context_->cmd_reset_querypool();
+  uint32_t encoded_node_count = 0;
 
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->encode(this);
+    encoded_node_count++;
+    if ((encoded_node_count % 64) == 0) {
+      submit_current_cmd(/*final_use=*/false, /*wait=*/false);
+      context_->set_cmd(true);
+    }
   }
 
-  // Indicate execute nodes have been freshly encoded and needs to be submitted
-  // first
-  execute_pending_first_submission = true;
+  encode_execute_fence_ = context_->fences().get_fence();
+  context_->submit_cmd_to_gpu(
+      encode_execute_fence_.get_submit_handle(), /*final_use=*/false);
 }
 
 void ComputeGraph::execute() {
-  if (execute_pending_first_submission) {
-    submit_current_cmd(/*final_use=*/false, /*wait=*/true);
-    execute_pending_first_submission = false;
-  } else {
-    vkapi::VulkanFence fence = context_->fences().get_fence();
-    context_->submit_all_non_final_cmds(fence.get_submit_handle());
-    fence.wait();
-    context_->fences().return_fence(fence);
-  }
+  wait_on_encode_execute();
+  vkapi::VulkanFence fence = context_->fences().get_fence();
+  context_->submit_all_non_final_cmds(fence.get_submit_handle());
+  fence.wait();
+  context_->fences().return_fence(fence);
   execute_count_++;
 }
 
