@@ -66,7 +66,7 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
                 ), "Cannot have skip_ops_for_coreml_delegation when lower_full_graph is True"
                 return False
 
-            # TODO: enable this after bugs in to_edge_transform_and_lower are fixed
+            # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
             # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
             # # in the placeholders due to partitioning, which CoreML does not support
             # if not self.lower_full_graph and any(
@@ -137,6 +137,7 @@ class CoreMLPartitioner(Partitioner):
         self.take_over_mutable_buffer = take_over_mutable_buffer
         self.lower_full_graph = lower_full_graph
         self.take_over_constant_data = take_over_constant_data
+        self._logged_msgs = set()
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
@@ -174,6 +175,11 @@ class CoreMLPartitioner(Partitioner):
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
 
+    def log_once(self, msg: str) -> None:
+        if msg not in self._logged_msgs:
+            logging.info(msg)
+            self._logged_msgs.add(msg)
+
     def ops_to_not_decompose(
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
@@ -181,7 +187,6 @@ class CoreMLPartitioner(Partitioner):
         op_support = OperatorsSupportedForCoreMLBackend(
             self.skip_ops_for_coreml_delegation, self.lower_full_graph
         )
-        _logged_warnings = set()
 
         # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace
         # TODO: upstream fixes, but pending ET consuming a new published version of coremltools with the
@@ -205,8 +210,7 @@ class CoreMLPartitioner(Partitioner):
                 except Exception as e:
                     # CoreML's op_support.is_node_supported will sometimes throw
                     # for unsupported ops, rather than returning False
-                    warn_str = f"Encountered exception when checking node support: {e}"
-                    if warn_str not in _logged_warnings:
-                        logger.warning(warn_str)
-                        _logged_warnings.add(warn_str)
+                    self.log_once(
+                        f"Encountered exception when checking node support, treating node as unsupported: {e}"
+                    )
         return do_not_decompose, None

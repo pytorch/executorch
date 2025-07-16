@@ -253,6 +253,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             edge_program_manager2.to_backend(CoreMLPartitioner(lower_full_graph=True))
 
+    # TODO: enable this after bugs are fixed in ExecuTorch's partitioner
     # def test_symint_arg(self):
     #     class Model(torch.nn.Module):
     #         def forward(self, x, w, b, y):
@@ -330,9 +331,6 @@ class TestCoreMLPartitioner(unittest.TestCase):
             self.assertTrue(
                 torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
             )
-
-            with open("/tmp/et_model.pte", "wb") as file:
-                et_prog.write_to_file(file)
 
 
 if __name__ == "__main__":
