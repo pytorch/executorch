@@ -166,6 +166,10 @@ endif()
 
 if(EXECUTORCH_BUILD_TESTS)
   include(CTest)
+else()
+  # It looks like some of our third-party deps will try to turn this
+  # on if it's not explicitly set, leading to confusing behavior.
+  set(BUILD_TESTING OFF)
 endif()
 
 add_subdirectory(third-party)
