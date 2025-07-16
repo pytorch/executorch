@@ -190,9 +190,19 @@ class ComputeGraph final {
       vkapi::ComputePipelineCache::Hasher>
       pipeline_descriptors_;
 
+  // Utility constexpr to express byte quantities
+  constexpr static size_t MB = 1024 * 1024;
+
  protected:
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
+
+  // Total number of bytes needed to store model weights
+  size_t total_constant_nbytes_ = 0;
+
+  // Represents the amount of staging buffer data that will be copied if the
+  // current Context's command buffer is submitted now.
+  size_t staging_nbytes_in_cmd_ = 0;
 
  public:
   //
@@ -424,6 +434,12 @@ class ComputeGraph final {
   // Scalar Value Extraction
   //
 
+  bool is_scalar_or_none(const ValueRef idx) const {
+    const Value& value = values_.at(idx);
+    return value.isInt() || value.isDouble() || value.isBool() ||
+        value.isNone();
+  }
+
   template <typename T>
   T extract_scalar(const ValueRef idx) {
     Value& value = values_.at(idx);
@@ -437,6 +453,15 @@ class ComputeGraph final {
       return static_cast<T>(value.toBool());
     }
     VK_THROW("Cannot extract scalar from Value with type ", value.type());
+  }
+
+  template <typename T>
+  T extract_scalar_or(const ValueRef idx, const T default_value) {
+    Value& value = values_.at(idx);
+    if (value.isNone()) {
+      return default_value;
+    }
+    return extract_scalar<T>(idx);
   }
 
   template <typename T>
@@ -812,12 +837,35 @@ class ComputeGraph final {
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
   void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
 
+ protected:
+  // Command Buffer Management
+
+  /*
+   * Submits the current command buffer in the Context to the GPU for execution.
+   */
+  void submit_current_cmd(const bool final_use = false);
+
+  /*
+   * Submits the current command buffer in the Context to the GPU for execution,
+   * and wait for it to complete before returning. This function will also flush
+   * the Context after execution.
+   */
+  void submit_current_cmd_and_wait(const bool final_use = false);
+
+ public:
   //
   // Graph Prepacking
   //
 
-  void encode_prepack();
-  void prepack() const;
+  inline void update_staging_nbytes_in_cmd(const size_t staging_bytes) {
+    staging_nbytes_in_cmd_ += staging_bytes;
+  }
+
+  /*
+   * Executes prepacking operations to transfer model weight data from the CPU
+   * to GPU.
+   */
+  void prepack();
 
   //
   // Graph Execution
