@@ -3,6 +3,7 @@
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 import copy
+import sys
 import unittest
 
 import coremltools as ct
@@ -15,6 +16,7 @@ import torchvision
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.exir.backend.utils import format_delegated_graph
+from executorch.runtime import Runtime
 
 
 @torch.library.custom_op("unsupported::linear", mutates_args=())
@@ -33,6 +35,10 @@ def _(
     b: torch.Tensor,
 ) -> torch.Tensor:
     return torch.ops.aten.linear.default(x, w, b)
+
+
+_TEST_RUNTIME = sys.platform == "darwin"
+_TEST_RUNTIME = False  # Disable until segfault fixed: https://github.com/pytorch/executorch/issues/12408
 
 
 class TestCoreMLPartitioner(unittest.TestCase):
@@ -236,8 +242,6 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner())
 
-        print(delegated_program_manager.exported_program())
-
         for node in delegated_program_manager.exported_program().graph.nodes:
             if node.op == "call_function":
                 assert node.target.__name__ in [
@@ -249,51 +253,62 @@ class TestCoreMLPartitioner(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             edge_program_manager2.to_backend(CoreMLPartitioner(lower_full_graph=True))
 
-    def test_symint_arg(self):
-        class Model(torch.nn.Module):
-            def forward(self, x, w, b, y):
-                val = y.item()
-                out = torch.ops.unsupported.linear.default(x, w, b + val) + val
-                out2 = torch.ops.aten.linear.default(out, w, b) + val
-                return out2
+    # def test_symint_arg(self):
+    #     class Model(torch.nn.Module):
+    #         def forward(self, x, w, b, y):
+    #             val = y.item()
+    #             torch._check(val >= 0)
+    #             torch._check(val < 2)
+    #             out = torch.ops.aten.linear.default(x, w, b)
+    #             out2 = out.relu()[val]
+    #             return out2
 
-        model = Model()
-        model.eval()
-        example_inputs = (
-            torch.randn(2, 2),
-            torch.randn(2, 2),
-            torch.randn(2, 2),
-            torch.tensor(2),
-        )
-        exir_program_aten = torch.export.export(model, example_inputs)
+    #     model = Model()
+    #     model.eval()
+    #     example_inputs = (
+    #         torch.randn(2, 2),
+    #         torch.randn(2, 2),
+    #         torch.randn(2, 2),
+    #         torch.tensor(2),
+    #     )
+    #     exir_program_aten = torch.export.export(model, example_inputs)
 
-        edge_program_manager = executorch.exir.to_edge(exir_program_aten)
+    #     edge_program_manager = executorch.exir.to_edge(exir_program_aten)
 
-        delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner())
+    #     delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner(skip_ops_for_coreml_delegation=["aten.scalar_tensor.default"]))
 
-        # This op has symbolic args
-        assert (
-            "torch.ops.aten.scalar_tensor.default"
-            in delegated_program_manager.exported_program().graph_module.code
-        )
+    #     # This op has symbolic args
+    #     assert (
+    #         "torch.ops.aten._assert_scalar.default"
+    #         in delegated_program_manager.exported_program().graph_module.code
+    #     )
 
-    def test_tag_constant_data_false(self):
+    #     if _TEST_RUNTIME:
+    #         et_prog = delegated_program_manager.to_executorch()
+    #         runtime = Runtime.get()
+    #         program = runtime.load_program(et_prog.buffer)
+    #         method = program.load_method("forward")
+    #         et_outputs = method.execute(*example_inputs)[0]
+    #         eager_outputs = model(*example_inputs)
+    #         self.assertTrue(torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02))
+
+    def test_take_over_constant_data_false(self):
         class Model(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.linear = torch.nn.Linear(2, 2)
+                self.linear = torch.nn.Linear(50, 100)
 
             def forward(self, x):
                 return self.linear(x)
 
         model = Model()
         model.eval()
-        example_inputs = (torch.randn(2, 2),)
+        example_inputs = (torch.randn(2, 50),)
         exir_program_aten = torch.export.export(model, example_inputs)
 
         edge_program_manager = executorch.exir.to_edge_transform_and_lower(
             exir_program_aten,
-            partitioner=[CoreMLPartitioner(tag_constant_data=False)],
+            partitioner=[CoreMLPartitioner(take_over_constant_data=False)],
         )
         for node in edge_program_manager.exported_program().graph.nodes:
             if (
@@ -305,6 +320,20 @@ class TestCoreMLPartitioner(unittest.TestCase):
         # lowered_module_0, x, p_linear_weight, p_linear_bias
         assert len(node.args) == 4
 
+        if _TEST_RUNTIME:
+            et_prog = edge_program_manager.to_executorch()
+            runtime = Runtime.get()
+            program = runtime.load_program(et_prog.buffer)
+            method = program.load_method("forward")
+            et_outputs = method.execute(*example_inputs)[0]
+            eager_outputs = model(*example_inputs)
+            self.assertTrue(
+                torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
+            )
+
+            with open("/tmp/et_model.pte", "wb") as file:
+                et_prog.write_to_file(file)
+
 
 if __name__ == "__main__":
     test_runner = TestCoreMLPartitioner()
@@ -313,5 +342,5 @@ if __name__ == "__main__":
     test_runner.test_ops_to_not_decompose()
     test_runner.test_buffer()
     test_runner.test_lower_full_graph()
-    test_runner.test_symint_arg()
-    test_runner.test_tag_constant_data_false()
+    # test_runner.test_symint_arg()
+    test_runner.test_take_over_constant_data_false()

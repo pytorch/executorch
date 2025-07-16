@@ -41,7 +41,12 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             assert (
                 len(self.skip_ops_for_coreml_delegation or []) == 0
             ), "Cannot have skip_ops_for_coreml_delegation when lower_full_graph is True"
-        self._logged_skips = set()
+        self._logged_msgs = set()
+
+    def log_once(self, msg: str) -> None:
+        if msg not in self._logged_msgs:
+            logging.info(msg)
+            self._logged_msgs.add(msg)
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         # get_attr node can always be supported on any backend
@@ -52,37 +57,32 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             # skip ops if specified by user
             node_target_name = getattr(node.target, "__name__", "").lower()
             if node_target_name in (self.skip_ops_for_coreml_delegation or []):
-                skip_str = (
+                self.log_once(
                     "Skipping op for CoreML delegation because it is in skip_ops_for_coreml_delegation: "
                     + node_target_name
                 )
-                if skip_str not in self._logged_skips:
-                    logging.info(skip_str)
-                    self._logged_skips.add(skip_str)
                 assert (
                     not self.lower_full_graph
                 ), "Cannot have skip_ops_for_coreml_delegation when lower_full_graph is True"
                 return False
 
-            # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
-            # in the placeholders due to partitioning, which CoreML does not support
-            if not self.lower_full_graph and any(
-                isinstance(arg, torch.fx.Node)
-                and isinstance(
-                    arg.meta.get("val", None),
-                    (torch.SymInt, torch.SymBool, torch.SymFloat),
-                )
-                for arg in node.args
-            ):
-                skip_str = (
-                    "Skipping op for CoreML delegation because it contains symbolic args: "
-                    + node_target_name
-                )
-                if skip_str not in self._logged_skips:
-                    logging.info(skip_str)
-                    self._logged_skips.add(skip_str)
-                assert not self.lower_full_graph
-                return False
+            # TODO: enable this after bugs in to_edge_transform_and_lower are fixed
+            # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
+            # # in the placeholders due to partitioning, which CoreML does not support
+            # if not self.lower_full_graph and any(
+            #     isinstance(arg, torch.fx.Node)
+            #     and isinstance(
+            #         arg.meta.get("val", None),
+            #         (torch.SymInt, torch.SymBool, torch.SymFloat),
+            #     )
+            #     for arg in node.args
+            # ):
+            #     self.log_once(
+            #         "Skipping op for CoreML delegation because it contains symbolic args: "
+            #         + node_target_name
+            #     )
+            #     assert not self.lower_full_graph
+            #     return False
 
             # query coremltools to see if node is supported
             is_supported = ct.converters.mil.frontend.torch.is_torch_fx_node_supported(
@@ -100,26 +100,20 @@ Also consider filing an issue with Apple's coremltools repo to request support f
 Do not file an issue with ExecuTorch for op support.
 """
                     )
-                skip_str = (
+                self.log_once(
                     "Skipping op for CoreML delegation because it is not supported by CoreML: "
                     + node_target_name
                 )
-                if skip_str not in self._logged_skips:
-                    logging.info(skip_str)
-                    self._logged_skips.add(skip_str)
             return is_supported
         # cowardly refuse to support all other types of node:
         # 1. placeholder / output nodes should not be tagged
         #    reference: https://github.com/pytorch/executorch/pull/1398
         # 2. call_module / call_method should have been replaced with call_function?
         else:
-            skip_str = (
+            self.log_once(
                 "Skipping op for CoreML delegation because it is not get_attr or call_function: "
                 + node.op
             )
-            if skip_str not in self._logged_skips:
-                logging.info(skip_str)
-                self._logged_skips.add(skip_str)
             return False
 
 
@@ -131,7 +125,7 @@ class CoreMLPartitioner(Partitioner):
         compile_specs: Optional[List[CompileSpec]] = None,
         take_over_mutable_buffer: Optional[bool] = True,
         lower_full_graph: bool = False,
-        tag_constant_data: bool = True,
+        take_over_constant_data: bool = True,
     ) -> None:
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
@@ -142,7 +136,7 @@ class CoreMLPartitioner(Partitioner):
         )
         self.take_over_mutable_buffer = take_over_mutable_buffer
         self.lower_full_graph = lower_full_graph
-        self.tag_constant_data = tag_constant_data
+        self.take_over_constant_data = take_over_constant_data
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
@@ -164,7 +158,7 @@ class CoreMLPartitioner(Partitioner):
                 node.meta["delegation_tag"] = tag
                 partition_tags[tag] = self.delegation_spec
 
-        if self.tag_constant_data:
+        if self.take_over_constant_data:
             tag_constant_data(exported_program)
         if self.take_over_mutable_buffer:
             logger.info(
@@ -215,5 +209,4 @@ class CoreMLPartitioner(Partitioner):
                     if warn_str not in _logged_warnings:
                         logger.warning(warn_str)
                         _logged_warnings.add(warn_str)
-
         return do_not_decompose, None
