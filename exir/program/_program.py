@@ -1097,7 +1097,6 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
                     can_skip_using_EDGE_DO_NOT_DECOMP = False
     return can_skip_using_EDGE_DO_NOT_DECOMP
 
-
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
