@@ -27,8 +27,8 @@ TokenGenerator::TokenGenerator(
       kv_manager_(kv_manager),
       method_name_(method_name),
       eos_ids_(std::move(eos_ids)),
-      metadata_(metadata),
-      stats_(stats) {
+      stats_(stats),
+      metadata_(metadata) {
   k_cache_in_.resize(metadata_.num_layers);
   v_cache_in_.resize(metadata_.num_layers);
   k_cache_out_.resize(metadata_.num_layers);
