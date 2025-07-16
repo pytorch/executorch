@@ -25,13 +25,37 @@
 
 cmake_minimum_required(VERSION 3.24)
 include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
+find_package(tokenizers REQUIRED)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
-set(EXECUTORCH_LIBRARIES)
 set(EXECUTORCH_INCLUDE_DIRS
     ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10
     ${_root}/lib
 )
+set(non_exported_lib_list XNNPACK xnnpack-microkernels-prod kleidiai pthreadpool cpuinfo)
+foreach(lib ${non_exported_lib_list})
+  # Name of the variable which stores result of the find_library search
+  set(lib_var "LIB_${lib}")
+  find_library(
+    ${lib_var} ${lib}
+    HINTS "${_root}/lib"
+    CMAKE_FIND_ROOT_PATH_BOTH
+  )
+  if(NOT ${lib_var})
+    message("${lib} library is not found.
+            If needed rebuild with the proper options in CMakeLists.txt"
+    )
+  else()
+    add_library(${lib} STATIC IMPORTED)
+    set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
+    target_include_directories(
+      ${lib}
+      INTERFACE ${EXECUTORCH_INCLUDE_DIRS}
+    )
+    list(APPEND EXECUTORCH_LIBRARIES ${lib})
+  endif()
+endforeach()
+
+include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 
 # TODO: does ExecuTorchTargets.cmake set EXECUTORCH_FOUND?

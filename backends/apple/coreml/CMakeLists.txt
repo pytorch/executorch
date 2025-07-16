@@ -115,8 +115,13 @@ target_compile_options(coreml_util PUBLIC -fPIC)
 install(
   TARGETS coreml_util
   DESTINATION lib
-  INCLUDES
-  DESTINATION ${_common_include_directories}
+)
+
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
+  DESTINATION include/executorch/backends/apple/coreml/runtime/util
+  FILES_MATCHING
+  PATTERN "*.h"
 )
 
 # CoreML inmemoryfs
@@ -148,6 +153,13 @@ install(
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
+)
+
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
+  DESTINATION include/executorch/backends/apple/coreml/runtime/inmemoryfs
+  FILES_MATCHING
+  PATTERN "*.h"
 )
 
 # executorchcoreml

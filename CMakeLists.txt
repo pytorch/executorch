@@ -54,6 +54,7 @@ include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 include(ExternalProject)
+include(GNUInstallDirs)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -170,14 +171,29 @@ endif()
 add_subdirectory(third-party)
 
 if(NOT DEFINED FXDIV_SOURCE_DIR)
-  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
-      ${CMAKE_POSITION_INDEPENDENT_CODE}
+  get_extra_cmake_args_for_external_project(FXDIV_EXTRA_CMAKE_ARGS)
+  set(FXDIV_SOURCE_DIR
+      "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/FXdiv"
   )
-  set(FXDIV_SOURCE_DIR "backends/xnnpack/third-party/FXdiv")
-  add_subdirectory("${FXDIV_SOURCE_DIR}")
-  set(CMAKE_POSITION_INDEPENDENT_CODE
-      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  set(FXDIV_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/fxdiv")
+  set(FXDIV_INSTALL_DIR "${FXDIV_BINARY_DIR}/install")
+  set(FXDIV_HEADER "${FXDIV_INSTALL_DIR}/${CMAKE_INSTALL_INCLUDEDIR}/fxdiv.h")
+  ExternalProject_Add(
+    fxdivExternalProject
+    SOURCE_DIR "${FXDIV_SOURCE_DIR}"
+    BINARY_DIR "${FXDIV_BINARY_DIR}"
+    INSTALL_DIR "${FXDIV_INSTALL_DIR}"
+    BUILD_BYPRODUCTS "${FXDIV_HEADER}"
+    CMAKE_ARGS "${FXDIV_EXTRA_CMAKE_ARGS}"
+               -D
+               CMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+               -D
+               FXDIV_BUILD_TESTS=OFF
+               -D
+               FXDIV_BUILD_BENCHMARKS=OFF
   )
+  add_library(fxdiv INTERFACE IMPORTED)
+  set_property(TARGET fxdiv PROPERTY IMPORTED_LOCATION "${FXDIV_HEADER}")
 endif()
 
 if(EXECUTORCH_BUILD_CPUINFO)
@@ -233,8 +249,6 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   set(PTHREADPOOL_SOURCE_DIR
       "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/pthreadpool"
   )
-  include(ExternalProject)
-  include(GNUInstallDirs)
   set(PTHREADPOOL_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/pthreadpool")
   set(PTHREADPOOL_INSTALL_DIR "${PTHREADPOOL_BINARY_DIR}/install")
   set(PTHREADPOOL_LIBRARY
@@ -298,8 +312,8 @@ endif()
 set(_common_include_directories
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
-  $<INSTALL_INTERFACE:include>
-  $<INSTALL_INTERFACE:include/executorch/runtime/core/portable_type/c10>)
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core/portable_type/c10>)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -473,43 +487,43 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 # ${CMAKE_INSTALL_PREFIX}/
 install(
   DIRECTORY runtime/core/
-  DESTINATION include/executorch/runtime/core
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY runtime/executor/
-  DESTINATION include/executorch/runtime/executor
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/executor
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY runtime/kernel/
-  DESTINATION include/executorch/runtime/kernel
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/kernel
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY runtime/platform/
-  DESTINATION include/executorch/runtime/platform
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/platform
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY extension/kernel_util/
-  DESTINATION include/executorch/extension/kernel_util
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/kernel_util
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY extension/tensor/
-  DESTINATION include/executorch/extension/tensor
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/tensor
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY extension/threadpool/
-  DESTINATION include/executorch/extension/threadpool
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/threadpool
   FILES_MATCHING
   PATTERN "*.h"
 )
@@ -583,7 +597,7 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
   install(
     DIRECTORY extension/module/
-    DESTINATION include/executorch/extension/module
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/module
     FILES_MATCHING
     PATTERN "*.h"
   )
