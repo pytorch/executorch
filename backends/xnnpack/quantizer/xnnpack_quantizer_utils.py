@@ -271,7 +271,6 @@ def _do_annotate_conv(
 
         # skip if transposed conv has more than 1 group
         skip = skip or (is_conv_transpose and num_groups != 1)
-        print(f"{skip} conv transpose and num_groups")
 
         if is_conv_transpose:
             # transposed convs per output channel quantization
@@ -1003,22 +1002,15 @@ def _annotate_cat(
     quantization_config: Optional[QuantizationConfig],
     filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> Optional[list[list[Node]]]:
-    cat_partitions = get_source_partitions(gm.graph, [torch.cat], filter_fn)
-    cat_partitions = list(itertools.chain.from_iterable(cat_partitions.values()))
     annotated_partitions = []
-    for cat_partition in cat_partitions:
-        cat_node = cat_partition.output_nodes[0]
+    for cat_node in gm.graph.nodes:
+        if cat_node.target != torch.ops.aten.cat.default:
+            continue
+
         if _is_annotated([cat_node]):
             continue
 
-        if cat_node.target != torch.ops.aten.cat.default:
-            # TODO: change this to AnnotationException
-            raise Exception(  # noqa: TRY002
-                f"Expected cat node: torch.ops.aten.cat.default, but found {cat_node.target}"
-                " please check if you are calling the correct capture API"
-            )
-
-        annotated_partitions.append(cat_partition.nodes)
+        annotated_partitions.append(cat_node.all_input_nodes)
 
         input_act_qspec = get_input_act_qspec(quantization_config)
         inputs = cat_node.args[0]

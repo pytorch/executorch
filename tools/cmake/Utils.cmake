@@ -59,6 +59,14 @@ function(target_link_options_shared_lib target_name)
   endif()
 endfunction()
 
+function(target_link_options_gc_sections target_name)
+  if(APPLE)
+    target_link_options(${target_name} PRIVATE "LINKER:-dead_strip")
+  else()
+    target_link_options(${target_name} PRIVATE "LINKER:--gc-sections")
+  endif()
+endfunction()
+
 # Extract source files based on toml config. This is useful to keep buck2 and
 # cmake aligned. Do not regenerate if file exists.
 function(extract_sources sources_file)
@@ -92,8 +100,8 @@ function(extract_sources sources_file)
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE} ${executorch_root}/tools/cmake/extract_sources.py
-        --config=${executorch_root}/tools/cmake/cmake_deps.toml --out=${sources_file}
-        --buck2=${BUCK2} ${target_platforms_arg}
+        --config=${executorch_root}/tools/cmake/cmake_deps.toml
+        --out=${sources_file} --buck2=${BUCK2} ${target_platforms_arg}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
       RESULT_VARIABLE gen_srcs_exit_code
@@ -195,8 +203,8 @@ function(resolve_python_executable)
     )
   elseif(DEFINED ENV{VIRTUAL_ENV})
     set(PYTHON_EXECUTABLE
-      $ENV{VIRTUAL_ENV}/bin/python3
-      PARENT_SCOPE
+        $ENV{VIRTUAL_ENV}/bin/python3
+        PARENT_SCOPE
     )
   else()
     set(PYTHON_EXECUTABLE
@@ -209,29 +217,29 @@ endfunction()
 # find_package(Torch CONFIG REQUIRED) replacement for targets that have a
 # header-only Torch dependency.
 #
-# Unlike find_package(Torch ...), this will only set
-# TORCH_INCLUDE_DIRS in the parent scope. In particular, it will NOT
-# set any of the following:
-# - TORCH_FOUND
-# - TORCH_LIBRARY
-# - TORCH_CXX_FLAGS
+# Unlike find_package(Torch ...), this will only set TORCH_INCLUDE_DIRS in the
+# parent scope. In particular, it will NOT set any of the following: -
+# TORCH_FOUND - TORCH_LIBRARY - TORCH_CXX_FLAGS
 function(find_package_torch_headers)
   # We implement this way rather than using find_package so that
-  # cross-compilation can still use the host's installed copy of
-  # torch, since the headers should be fine.
+  # cross-compilation can still use the host's installed copy of torch, since
+  # the headers should be fine.
   get_torch_base_path(TORCH_BASE_PATH)
-  set(TORCH_INCLUDE_DIRS "${TORCH_BASE_PATH}/include;${TORCH_BASE_PATH}/include/torch/csrc/api/include" PARENT_SCOPE)
+  set(TORCH_INCLUDE_DIRS
+      "${TORCH_BASE_PATH}/include;${TORCH_BASE_PATH}/include/torch/csrc/api/include"
+      PARENT_SCOPE
+  )
 endfunction()
 
-# Return the base path to the installed Torch Python library in
-# outVar.
+# Return the base path to the installed Torch Python library in outVar.
 function(get_torch_base_path outVar)
   if(NOT PYTHON_EXECUTABLE)
     resolve_python_executable()
   endif()
   execute_process(
-    COMMAND "${PYTHON_EXECUTABLE}" -c
-            "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])"
+    COMMAND
+      "${PYTHON_EXECUTABLE}" -c
+      "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])"
     OUTPUT_VARIABLE _tmp_torch_path
     ERROR_VARIABLE _tmp_torch_path_error
     RESULT_VARIABLE _tmp_torch_path_result COMMAND_ECHO STDERR
@@ -244,7 +252,10 @@ function(get_torch_base_path outVar)
     message("Output:\n${_tmp_torch_path}")
     message(FATAL_ERROR "Error:\n${_tmp_torch_path_error}")
   endif()
-  set(${outVar} ${_tmp_torch_path} PARENT_SCOPE)
+  set(${outVar}
+      ${_tmp_torch_path}
+      PARENT_SCOPE
+  )
 endfunction()
 
 # Add the Torch CMake configuration to CMAKE_PREFIX_PATH so that find_package

@@ -58,6 +58,7 @@ from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
+from executorch.exir.passes.reinplace import reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
     RemoveGraphAssertsPass,
     RemoveNonCoreAtenOpGraphAssertsPass,
@@ -193,7 +194,7 @@ def _get_updated_graph_signature(
         )
         i += 1
 
-    output_node = list(new_gm.graph.nodes)[-1]
+    output_node = new_gm.graph.output_node()
     assert output_node.op == "output"
 
     new_output_specs = []
@@ -651,9 +652,7 @@ def _get_aten_to_edge_passes(config: EdgeCompileConfig):
     # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
     # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
 
-    pre_op_replace_passes = base_pre_op_replace_passes + (
-        [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
-    )
+    pre_op_replace_passes = base_pre_op_replace_passes + [RemoveMixedTypeOperators()]
 
     post_op_replace_passes = base_post_op_replace_passes
 
@@ -796,9 +795,19 @@ def _generate_edge_program(
     name: str,
     config: EdgeCompileConfig,
     program: ExportedProgram,
-    ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
+    core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
+    preserve_ops: Optional[List[torch._ops.OpOverload]] = None,
 ) -> ExportedProgram:
-
+    """
+    Args:
+        name: The name of the program.
+        config: The configuration for the edge program.
+        program: The exported program to be converted to an edge program.
+        core_aten_ops_exception_list: A list of aten ops that are missing decompositions to core aten.
+        preserve_ops: A list of aten ops that should not be decomposed.
+    Returns:
+        An ExportedProgram in edge dialect.
+    """
     # Remove invalid assert ops, such as _assert_tensor_metadata
     gm = program.graph_module
     gm_res = RemoveNonCoreAtenOpGraphAssertsPass()(gm)
@@ -813,7 +822,8 @@ def _generate_edge_program(
             EXIRATenDialectVerifier(
                 edge_compile_config=config,
                 class_only=False,
-                exception_list=ops_set_to_not_decompose,
+                core_aten_ops_exception_list=core_aten_ops_exception_list,
+                preserve_ops=preserve_ops,
             )(gm)
         except ExportError as e:
             logging.info(f"Input program {name} is not in ATen dialect.")
@@ -849,7 +859,8 @@ def _generate_edge_program(
             EXIREdgeDialectVerifier(
                 edge_compile_config=config,
                 class_only=True,
-                exception_list=ops_set_to_not_decompose,
+                core_aten_ops_exception_list=core_aten_ops_exception_list,
+                preserve_ops=preserve_ops,
             )
         ],
     )
@@ -865,7 +876,7 @@ def _replace_aten_ops_with_transformed_ops(
     program: ExportedProgram,
     partitioner,
 ):
-    ops_to_not_decompose = set()
+    preserve_ops = set()
     partitioners = partitioner.get(name)
     if partitioners is None:
         return
@@ -890,7 +901,7 @@ def _replace_aten_ops_with_transformed_ops(
                 and node.target in ops_set_to_not_decompose
                 and is_op_supported
             ):
-                ops_to_not_decompose.add(node.target)
+                preserve_ops.add(node.target)
                 node.target = aten_op_to_transform_op[node.target]
 
         for _, submod, _ in get_control_flow_submodules(program.graph_module):
@@ -901,10 +912,10 @@ def _replace_aten_ops_with_transformed_ops(
                     and node.target in ops_set_to_not_decompose
                     and is_op_supported
                 ):
-                    ops_to_not_decompose.add(node.target)
+                    preserve_ops.add(node.target)
                     node.target = aten_op_to_transform_op[node.target]
 
-    return ops_to_not_decompose
+    return preserve_ops
 
 
 def _restore_transformed_ops_to_aten_ops(program: ExportedProgram):
@@ -1015,7 +1026,7 @@ def _sanity_check_graph_for_non_decomp_ops(
 
 
 def _remove_invalid_ops_for_not_decompose(
-    ops_to_not_decompose: List[torch._ops.OpOverload],
+    preserve_ops: List[torch._ops.OpOverload],
 ) -> List[torch._ops.OpOverload]:
     _logged_warnings = set()
 
@@ -1080,7 +1091,7 @@ def _remove_invalid_ops_for_not_decompose(
             return False
         return True
 
-    return list(filter(keep, ops_to_not_decompose))
+    return list(filter(keep, preserve_ops))
 
 
 def _gen_edge_manager_for_partitioners(
@@ -1137,7 +1148,7 @@ def _gen_edge_manager_for_partitioners(
             name,
             config,
             program,
-            list(ops_set_to_not_decompose_by_program.get(name, [])),
+            preserve_ops=list(ops_set_to_not_decompose_by_program.get(name, [])),
         )
 
     edge_manager = EdgeProgramManager(
@@ -1282,7 +1293,7 @@ def to_edge_transform_and_lower(
             EXIREdgeDialectVerifier(
                 edge_compile_config=config,
                 class_only=True,
-                exception_list=list(ops_set_to_not_decompose),
+                preserve_ops=list(ops_set_to_not_decompose),
             )()(program.graph_module)
 
     return edge_manager
@@ -1329,7 +1340,7 @@ def to_edge_with_preserved_ops(
             table.pop(op, None)
         program = program.run_decompositions(table)
         edge_programs[name] = _generate_edge_program(
-            name, config, program, list(preserve_ops)
+            name, config, program, preserve_ops=list(preserve_ops)
         )
 
     return EdgeProgramManager(
@@ -1368,8 +1379,16 @@ def to_edge(
 
     for name, program in aten_programs.items():
         # Decompose to Core ATen
-        program = program.run_decompositions(_default_decomposition_table())
-        edge_programs[name] = _generate_edge_program(name, config, program)
+        table = _default_decomposition_table()
+        preserve_ops = []
+        if compile_config:
+            preserve_ops = compile_config._preserve_ops
+            for op in compile_config._preserve_ops:
+                table.pop(op, None)
+        program = program.run_decompositions(table)
+        edge_programs[name] = _generate_edge_program(
+            name, config, program, preserve_ops=preserve_ops
+        )
 
     return EdgeProgramManager(edge_programs, constant_methods, config)
 
@@ -1390,7 +1409,8 @@ class EdgeProgramManager:
         edge_programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
         constant_methods: Optional[Dict[str, Any]] = None,
         compile_config: Optional[EdgeCompileConfig] = None,
-        ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
+        core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
+        preserve_ops: Optional[List[torch._ops.OpOverload]] = None,
     ):
         """
         Should not be called directly by users. User should use :func:'to_edge' instead.
@@ -1405,7 +1425,8 @@ class EdgeProgramManager:
             try:
                 EXIREdgeDialectVerifier(
                     edge_compile_config=self.compile_config,
-                    exception_list=ops_set_to_not_decompose,
+                    core_aten_ops_exception_list=core_aten_ops_exception_list,
+                    preserve_ops=preserve_ops,
                 )(program.graph_module)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in aten dialect.")
@@ -1563,6 +1584,8 @@ class EdgeProgramManager:
                         " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
                     )
                 program = quant_fusion_and_const_prop_pass(program)
+            if config.run_reinplace_pass:
+                program = reinplace_pass(program)
             program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)

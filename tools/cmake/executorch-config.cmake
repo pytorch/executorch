@@ -23,7 +23,8 @@
 # executorch-config.cmake in executorch pip package gives, but we wanted to keep
 # the contract of exposing these CMake variables.
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
+include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
@@ -170,4 +171,30 @@ if(TARGET extension_threadpool)
     extension_threadpool PROPERTIES INTERFACE_LINK_LIBRARIES
                                     "cpuinfo;pthreadpool"
   )
+endif()
+
+set(shared_lib_list
+  # executorch -- size tests fail due to regression if we include this and I'm not sure it's needed.
+  optimized_native_cpu_ops_lib
+  portable_ops_lib
+  quantized_ops_lib
+  xnnpack_backend
+  vulkan_backend
+  quantized_ops_aot_lib)
+foreach(lib ${shared_lib_list})
+  if(TARGET ${lib})
+    target_link_options_shared_lib(${lib})
+  endif()
+endforeach()
+
+if(TARGET xnnpack_backend)
+  if(TARGET kleidiai)
+    set(_deps "XNNPACK;xnnpack-microkernels-prod;kleidiai")
+  else()
+    set(_deps "XNNPACK;xnnpack-microkernels-prod")
+  endif()
+  set_target_properties(
+    xnnpack_backend PROPERTIES INTERFACE_LINK_LIBRARIES "${_deps}"
+  )
+  target_link_options_shared_lib(xnnpack_backend)
 endif()

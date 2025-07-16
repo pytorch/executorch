@@ -9,11 +9,12 @@
 import collections
 import itertools
 import logging
-from typing import Callable, Iterable, List, Optional, Set, Tuple, TypeAlias
+from typing import Iterable, Optional, Sequence
 
 import torch
 from executorch.backends.cadence.aot.memory_constraints import MemConstraints
 from executorch.backends.cadence.aot.memory_planning_algo import (
+    ConstraintsGenPass,
     get_aligned_offset,
     MemoryPlanningAlgo,
     MemoryPlanningState,
@@ -51,13 +52,18 @@ def collect_specs_from_graph_module(
 class PositionBasedGreedyWithHierarchy(MemoryPlanningAlgo):
     """Greedily place tensor in the fastest memory available."""
 
-    def plan_spec(self, spec: TensorSpec, state: MemoryPlanningState) -> None:
+    def plan_spec(
+        self,
+        spec: TensorSpec,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
+    ) -> None:
         """
         Greedily place the spec in the first memory that can fit it.
         """
         for spec.mem_id in range(1, self.get_num_memories()):
             spec.mem_offset = 0
-            while self.is_valid_placement(spec) and (
+            while self.is_valid_placement(spec, placement_constraints) and (
                 overlapped := state.get_overlapping_spec(spec)
             ):
                 # Found an overlapping spec, so we need to adjust the offset = end of the overlapping spec + alignment.
@@ -66,20 +72,20 @@ class PositionBasedGreedyWithHierarchy(MemoryPlanningAlgo):
                     self.get_alignment(spec.mem_id),
                 )
 
-            if self.is_valid_placement(spec):
+            if self.is_valid_placement(spec, placement_constraints):
                 # Found a valid `spec.mem_offset` which is both valid and has no overlap.
                 state.place_spec(spec)
                 break
 
     def plan(
         self,
-        specs: Set[TensorSpec],
+        specs: Iterable[TensorSpec],
         graph_module: torch.fx.GraphModule,
         graph_signature: ExportGraphSignature,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
         extra_padding: int = 0,
-        prev_state: Optional[MemoryPlanningState] = None,
-    ) -> MemoryPlanningState:
-        state = prev_state or MemoryPlanningState(self.memory_config)
+    ) -> None:
 
         # Iterate over all the specs in sorted order
         for spec in sorted(
@@ -87,17 +93,20 @@ class PositionBasedGreedyWithHierarchy(MemoryPlanningAlgo):
             key=lambda spec: spec.allocated_memory,
             reverse=True,
         ):
-            self.plan_spec(spec, state)
+            self.plan_spec(spec, state, placement_constraints)
             if not state.is_placed(spec):
                 raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
-
-        return state
 
 
 class GreedyWithHeuristic(MemoryPlanningAlgo):
     """Greedy tensor placement with the heuristics from arxiv.org/pdf/2001.03288.pdf."""
 
-    def plan_spec(self, spec: TensorSpec, state: MemoryPlanningState) -> None:
+    def plan_spec(
+        self,
+        spec: TensorSpec,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
+    ) -> None:
         """
         Greedily place the spec in the first memory that can fit it.
         """
@@ -126,10 +135,9 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
                     prev_offset,
                 )
             if spec.mem_offset is None:
-                if get_aligned_offset(
-                    prev_offset + spec.allocated_memory,
-                    self.get_alignment(spec.mem_id),
-                ) > self.get_size(spec.mem_id):
+                spec.mem_offset = prev_offset
+                if not self.is_valid_placement(spec, placement_constraints):
+                    spec.mem_offset = None
                     continue
                 else:
                     spec.mem_offset = prev_offset
@@ -142,17 +150,16 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
 
     def plan(
         self,
-        specs: set[TensorSpec],
+        specs: Iterable[TensorSpec],
         graph_module: torch.fx.GraphModule,
         graph_signature: ExportGraphSignature,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
         extra_padding: int = 0,
-        prev_state: Optional[MemoryPlanningState] = None,
-    ) -> MemoryPlanningState:
+    ) -> None:
         """Plan memory allocation for the given tensor specs."""
         # We do not use the `alignment` parameter and instead use the per-memory alignment
         # constraints from `memory_config`.
-
-        state = prev_state or MemoryPlanningState(self.memory_config)
 
         # Iterate over all the specs in sorted order
         for spec in sorted(
@@ -160,15 +167,13 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
             key=lambda spec: spec.allocated_memory,
             reverse=True,
         ):
-            self.plan_spec(spec, state)
+            self.plan_spec(spec, state, placement_constraints)
             if not state.is_placed(spec):
                 raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
 
         logging.debug(
             f"greedy by size for offset calculation with hierarchy returns bufsizes: {state.bufsizes}"
         )
-
-        return state
 
 
 def find_peak_memory_usages_per_memory(
@@ -177,7 +182,7 @@ def find_peak_memory_usages_per_memory(
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     mem_constraints: Optional[MemConstraints] = None,
-) -> List[int]:
+) -> list[int]:
     """
     Given a GraphModule with a memory plan, find the peak memory usages for each memory
     in the memory hierarchy.
@@ -216,7 +221,7 @@ def find_peak_memory_usage(
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     mem_constraints: Optional[MemConstraints] = None,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """
     Given a GraphModule with a memory plan, find the peak usage over time across all
     memories in the memory hierarchy. The resulting peak memory usage should be:
@@ -344,12 +349,6 @@ def print_memory_planning_info(
     )
 
 
-ConstraintGenPassType: TypeAlias = Callable[
-    [MemConstraints],
-    Callable[[torch.fx.GraphModule], Optional[PassResult]],
-]
-
-
 class CadenceMemoryPlanning:
     def __init__(
         self,
@@ -358,7 +357,7 @@ class CadenceMemoryPlanning:
         mem_algo: int,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
-        additional_constraint_gen_passes: Optional[list[ConstraintGenPassType]] = None,
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
     ) -> None:
         self.memory_config = memory_config
         self.opt_level = opt_level
@@ -379,26 +378,22 @@ class CadenceMemoryPlanning:
         opt_level: int,
         alloc_graph_input: bool,
         alloc_graph_output: bool,
-        additional_constraint_gen_passes: Optional[list[ConstraintGenPassType]],
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]],
     ) -> list[MemoryPlanningAlgo]:
         return [
             PositionBasedGreedyWithHierarchy(
-                memory_config,
-                MemConstraints(
-                    opt_level=opt_level,
-                    alloc_graph_input=alloc_graph_input,
-                    alloc_graph_output=alloc_graph_output,
-                ),
-                additional_constraint_gen_passes,
+                memory_config=memory_config,
+                opt_level=opt_level,
+                alloc_graph_input=alloc_graph_input,
+                alloc_graph_output=alloc_graph_output,
+                additional_constraint_gen_passes=additional_constraint_gen_passes,
             ),
             GreedyWithHeuristic(
-                memory_config,
-                MemConstraints(
-                    opt_level=opt_level,
-                    alloc_graph_input=alloc_graph_input,
-                    alloc_graph_output=alloc_graph_output,
-                ),
-                additional_constraint_gen_passes,
+                memory_config=memory_config,
+                opt_level=opt_level,
+                alloc_graph_input=alloc_graph_input,
+                alloc_graph_output=alloc_graph_output,
+                additional_constraint_gen_passes=additional_constraint_gen_passes,
             ),
         ]
 

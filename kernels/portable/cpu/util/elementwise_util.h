@@ -9,6 +9,7 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/selective_build.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
@@ -28,34 +29,6 @@ namespace torch {
 namespace executor {
 namespace native {
 namespace utils {
-
-/*
- * Convert Scalar to C++ type
- */
-
-template <typename T>
-T scalar_to(const Scalar& s) {
-  if (s.isBoolean()) {
-    return static_cast<T>(s.to<bool>());
-  } else if (s.isFloatingPoint()) {
-    return static_cast<T>(s.to<double>());
-  } else {
-    return static_cast<T>(s.to<int64_t>());
-  }
-}
-
-template <>
-inline double scalar_to<double>(const Scalar& s) {
-  return s.isFloatingPoint() ? s.to<double>()
-                             : static_cast<double>(s.to<int64_t>());
-}
-
-template <>
-inline int64_t scalar_to<int64_t>(const Scalar& s) {
-  return s.isFloatingPoint() ? static_cast<int64_t>(s.to<double>())
-                             : s.to<int64_t>();
-}
-
 namespace internal {
 /**
  * Causes these utility functions to make sure to respect Tensor
@@ -220,9 +193,8 @@ inline void dtype_specialized_elementwise_fn_impl(
       });
 }
 
-template <typename CTYPE_COMPUTE, typename Op, typename... Args>
+template <typename CTYPE_COMPUTE, typename... Args>
 inline bool validate_elementwise_fn_inputs(
-    const Op& compute_fun,
     KernelRuntimeContext& ctx,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes,
@@ -315,7 +287,7 @@ inline void apply_elementwise_fn_runtime_out_dtypes(
     SupportedTensorDtypes out_dtypes,
     Args... inputs) {
   const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMPUTE>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
+      ctx, out, out_dtypes, inputs...);
   if (!inputs_valid) {
     return;
   }
@@ -340,18 +312,19 @@ inline void apply_elementwise_fn(
     const Tensor& out,
     Args... inputs) {
   const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMPUTE>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
+      ctx, out, out_dtypes, inputs...);
   if (!inputs_valid) {
     return;
   }
 
   constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMPUTE>::value;
-  if constexpr (should_include_kernel_dtype(op_name, compute_type)) {
+  constexpr ScalarType out_specialized_scalar_type =
+      specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
+  if constexpr (should_include_kernel_dtype(
+                    op_name, out_specialized_scalar_type)) {
     const bool all_inputs_compute_dtype =
         ((inputs.first->scalar_type() == compute_type) && ...);
 
-    constexpr ScalarType out_specialized_scalar_type =
-        specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
     if (all_inputs_compute_dtype &&
         out.scalar_type() == out_specialized_scalar_type) {
       using CTYPE_OUT =
