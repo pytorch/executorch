@@ -2,6 +2,7 @@
 #
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
+import copy
 import unittest
 
 import coremltools as ct
@@ -14,6 +15,24 @@ import torchvision
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.exir.backend.utils import format_delegated_graph
+
+
+@torch.library.custom_op("unsupported::linear", mutates_args=())
+def _(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    b: torch.Tensor,
+) -> torch.Tensor:
+    return torch.ops.aten.linear.default(x, w, b)
+
+
+@torch.library.register_fake("unsupported::linear")
+def _(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    b: torch.Tensor,
+) -> torch.Tensor:
+    return torch.ops.aten.linear.default(x, w, b)
 
 
 class TestCoreMLPartitioner(unittest.TestCase):
@@ -200,6 +219,92 @@ class TestCoreMLPartitioner(unittest.TestCase):
             "getitem",
         ]
 
+    def test_lower_full_graph(self):
+        class Model(torch.nn.Module):
+            def forward(self, a, x, b):
+                out = torch.ops.aten.linear.default(a, x, b)
+                out2 = torch.ops.unsupported.linear.default(out, x, b)
+                return out2
+
+        model = Model()
+        model.eval()
+
+        example_inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
+        edge_program_manager = executorch.exir.to_edge(exir_program_aten)
+        edge_program_manager2 = copy.deepcopy(edge_program_manager)
+
+        delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner())
+
+        print(delegated_program_manager.exported_program())
+
+        for node in delegated_program_manager.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "unsupported.linear.default",
+                    "executorch_call_delegate",
+                    "getitem",
+                ], node.target.__name__
+
+        with self.assertRaises(NotImplementedError):
+            edge_program_manager2.to_backend(CoreMLPartitioner(lower_full_graph=True))
+
+    def test_symint_arg(self):
+        class Model(torch.nn.Module):
+            def forward(self, x, w, b, y):
+                val = y.item()
+                out = torch.ops.unsupported.linear.default(x, w, b + val) + val
+                out2 = torch.ops.aten.linear.default(out, w, b) + val
+                return out2
+
+        model = Model()
+        model.eval()
+        example_inputs = (
+            torch.randn(2, 2),
+            torch.randn(2, 2),
+            torch.randn(2, 2),
+            torch.tensor(2),
+        )
+        exir_program_aten = torch.export.export(model, example_inputs)
+
+        edge_program_manager = executorch.exir.to_edge(exir_program_aten)
+
+        delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner())
+
+        # This op has symbolic args
+        assert (
+            "torch.ops.aten.scalar_tensor.default"
+            in delegated_program_manager.exported_program().graph_module.code
+        )
+
+    def test_tag_constant_data_false(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 2)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        model = Model()
+        model.eval()
+        example_inputs = (torch.randn(2, 2),)
+        exir_program_aten = torch.export.export(model, example_inputs)
+
+        edge_program_manager = executorch.exir.to_edge_transform_and_lower(
+            exir_program_aten,
+            partitioner=[CoreMLPartitioner(tag_constant_data=False)],
+        )
+        for node in edge_program_manager.exported_program().graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target.__name__ == "executorch_call_delegate"
+            ):
+                break
+
+        # lowered_module_0, x, p_linear_weight, p_linear_bias
+        assert len(node.args) == 4
+
 
 if __name__ == "__main__":
     test_runner = TestCoreMLPartitioner()
@@ -207,3 +312,6 @@ if __name__ == "__main__":
     test_runner.test_vit_skip_conv()
     test_runner.test_ops_to_not_decompose()
     test_runner.test_buffer()
+    test_runner.test_lower_full_graph()
+    test_runner.test_symint_arg()
+    test_runner.test_tag_constant_data_false()
