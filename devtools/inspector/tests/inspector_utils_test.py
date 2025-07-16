@@ -278,6 +278,27 @@ class TestInspectorUtils(unittest.TestCase):
             actual_value = intermediate_outputs[key][1]
             self.assertTrue(torch.allclose(expected_value, actual_value))
 
+    def test_merge_overlapping_debug_handles_edge_cases(self):
+        intermediate_outputs = {
+            (9,): (1, "val1"),
+            (
+                9,
+                9,
+                9,
+            ): (2, "val2"),
+            (
+                9,
+                9,
+            ): (3, "val3"),
+        }
+        intermediate_outputs = merge_runtime_overlapping_debug_handles(
+            intermediate_outputs
+        )
+        expected_intermediate_outputs = {
+            (9,): (3, "val3"),
+        }
+        self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
+
     def test_map_runtime_aot_intermediate_outputs_empty_inputs(self):
         # When the inputs are empty, the output should also be empty
         aot_intermediate_outputs = {}
