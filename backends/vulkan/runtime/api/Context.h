@@ -68,8 +68,6 @@ class Context final {
   // Command buffers submission
   std::mutex cmd_mutex_;
   vkapi::CommandBuffer cmd_;
-  // List of submitted command buffers, not marked as final use.
-  std::vector<vkapi::CommandBuffer> non_final_cmds_;
   // Semaphore for the previously submitted command buffer, if any
   VkSemaphore prev_semaphore_;
   uint32_t submit_count_;
@@ -92,8 +90,8 @@ class Context final {
     return device_;
   }
 
-  inline VkQueue queue() {
-    return queue_.handle;
+  inline vkapi::Adapter::Queue& queue() {
+    return queue_;
   }
 
   // Device Caches
@@ -232,7 +230,9 @@ class Context final {
       VkFence fence_handle = VK_NULL_HANDLE,
       const bool final_use = false);
 
-  void submit_all_non_final_cmds(VkFence fence_handle = VK_NULL_HANDLE);
+  vkapi::CommandBuffer& extract_cmd() {
+    return cmd_;
+  }
 
   void flush();
 

@@ -158,6 +158,7 @@ ComputeGraph::~ComputeGraph() {
 
   prepack_nodes_.clear();
   execute_nodes_.clear();
+  deferred_cmd_list_.clear();
 
   context_->flush();
 }
@@ -767,6 +768,30 @@ void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
   context_->fences().return_fence(fence);
 }
 
+void ComputeGraph::submit_deferred_cmds() {
+  VkSemaphore prev_semaphore = VK_NULL_HANDLE;
+  vkapi::VulkanFence fence = context_->fences().get_fence();
+
+  for (uint32_t i = 0; i < deferred_cmd_list_.size(); i++) {
+    auto& cmd = deferred_cmd_list_[i];
+    VkSemaphore wait_semaphore = prev_semaphore;
+    VkSemaphore signal_semaphore = cmd.get_signal_semaphore();
+    prev_semaphore = signal_semaphore;
+
+    if (cmd) {
+      cmd.end();
+      context_->adapter_ptr()->submit_cmd(
+          context_->queue(),
+          cmd.get_submit_handle(false),
+          i == (deferred_cmd_list_.size() - 1) ? fence.get_submit_handle() : VK_NULL_HANDLE,
+          wait_semaphore,
+          signal_semaphore);
+    }
+  }
+  fence.wait();
+  context_->fences().return_fence(fence);
+}
+
 void ComputeGraph::prepack() {
   int i = 0;
   bool submitted = false;
@@ -805,6 +830,7 @@ void ComputeGraph::prepack() {
 }
 
 void ComputeGraph::encode_execute() {
+  deferred_cmd_list_.clear();
   context_->flush();
   context_->set_cmd(/*reusable = */ true);
 
@@ -814,21 +840,11 @@ void ComputeGraph::encode_execute() {
     node->encode(this);
   }
 
-  // Indicate execute nodes have been freshly encoded and needs to be submitted
-  // first
-  execute_pending_first_submission = true;
+  deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
 }
 
 void ComputeGraph::execute() {
-  if (execute_pending_first_submission) {
-    submit_current_cmd_and_wait(/*final_use=*/false);
-    execute_pending_first_submission = false;
-  } else {
-    vkapi::VulkanFence fence = context_->fences().get_fence();
-    context_->submit_all_non_final_cmds(fence.get_submit_handle());
-    fence.wait();
-    context_->fences().return_fence(fence);
-  }
+  submit_deferred_cmds();
   execute_count_++;
 }
 
