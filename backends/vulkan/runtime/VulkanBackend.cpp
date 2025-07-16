@@ -507,8 +507,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     compute_graph->prepare();
     compute_graph->prepare_pipelines();
 
-    compute_graph->encode_prepack();
-    compute_graph->prepack();
+    compute_graph->run_prepack();
 
     // If dynamic shapes are not expected, then the command buffer only needs to
     // be encoded once. Otherwise, wait until the first inference to encode the
