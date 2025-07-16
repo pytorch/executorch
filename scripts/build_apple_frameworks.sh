@@ -7,7 +7,7 @@
 
 set -euxo pipefail
 
-MODES=("Release" "Debug")
+MODES=()
 PRESETS=("ios" "ios-simulator" "macos")
 # To support backwards compatibility, we want to retain the same output directory.
 PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
@@ -136,6 +136,11 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# If no modes are specified, default to both Release and Debug
+if [[ ${#MODES[@]} -eq 0 ]]; then
+  MODES=("Release" "Debug")
+fi
 
 echo "Building libraries"
 

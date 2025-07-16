@@ -554,6 +554,7 @@ def _merge_runtime_debug_handles(
     Merge two DebugHandles by removing elements from debug_handle1 that are also present in debug_handle2,
     while preserving the relative order of elements in both modified debug_handle1 and debug_handle2.
     All elements from the modified debug_handle1 will appear before any elements from debug_handle2.
+    Also removes duplicates within debug_handle2.
     """
 
     # Initialize a list to store unique elements in order
@@ -566,14 +567,16 @@ def _merge_runtime_debug_handles(
         # If the element has not been seen before, add it to the list and mark it as seen
         if item not in seen:
             unique_ordered_list.append(item)
-
+    seen = set(unique_ordered_list)
     for item in debug_handle2:
-        unique_ordered_list.append(item)
+        if item not in seen:
+            unique_ordered_list.append(item)
+            seen.add(item)
     return tuple(unique_ordered_list)
 
 
 def merge_runtime_overlapping_debug_handles(
-    intermediate_outputs: Dict[DebugHandle, Tuple[int, Any]]
+    runtime_intermediate_outputs: Dict[DebugHandle, Tuple[int, Any]]
 ) -> Dict[DebugHandle, Tuple[int, Any]]:
     """
     Merges runtimes with overlapping debug handles into a single key in the dict.
@@ -585,15 +588,18 @@ def merge_runtime_overlapping_debug_handles(
 
     The value associated with the merged key is determined by the debug handle with the highest instruction id.
     """
-    if len(intermediate_outputs) == 0:
+    if len(runtime_intermediate_outputs) == 0:
         return {}
     merged: Dict[DebugHandle, Tuple[int, Any]] = {}
-    for debug_handle, (instruction_id, debug_data) in intermediate_outputs.items():
+    for debug_handle, (
+        instruction_id,
+        debug_data,
+    ) in runtime_intermediate_outputs.items():
         curr_debug_handle, last_value = debug_handle, (instruction_id, debug_data)
         # Collect any existing keys that overlap with the current key
         to_remove = []
         for existing_debug_handle, existing_value in merged.items():
-            if any(item in existing_debug_handle for item in debug_handle):
+            if set(debug_handle) & set(existing_debug_handle):
                 # Keep the value with the highest instruction_id
                 # Also merge the debug handles higher instruction_id
                 if existing_value[0] < instruction_id:
@@ -759,7 +765,11 @@ def map_runtime_aot_intermediate_outputs(
             # The size of runtime_list should be 1 because all AOT debug_handles are tuples with one element.
             # Additionally, runtime debug handles have already undergone pre-processing to merge overlapping debug_hanldes.
             # As a result, there shouldn't be any 1-to-n or n-to-n (AOT to runtime) mappings.
-            assert len(runtime_list) == 1
+            if len(runtime_list) != 1:
+                raise ValueError(
+                    f"Expected only one runtime debug handle, but found {len(runtime_list)}: {runtime_list}"
+                )
+
             runtime_debug_handle, runtime_intermediate_output = runtime_list[0]
 
             # Combine aot debug handles into a single key
