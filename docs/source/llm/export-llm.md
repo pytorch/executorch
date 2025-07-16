@@ -72,9 +72,9 @@ Quantization options are defined by [`QuantizationConfig`](https://github.com/py
 1. TorchAO [`quantize_`](https://docs.pytorch.org/ao/stable/generated/torchao.quantization.quantize_.html) API
 2. [pt2e quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)
 
-### TorchAO
+### TorchAO (XNNPACK)
 TorchAO quantizes at the source code level, swapping out Linear modules for QuantizedLinear modules.
-This is the recommended quantization path for running on CPU.
+**To quantize on XNNPACK backend, this is the quantization path to follow.**
 The quantization modes are defined [here](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L306).
 
 Common ones to use are:
@@ -106,10 +106,12 @@ python -m extension.llm.export.export_llm \
   --config path/to/config.yaml
 ```
 
-### pt2e
+### pt2e (QNN, CoreML, and Vulkan)
 pt2e quantizes at the post-export graph level, swapping nodes and injecting quant/dequant nodes.
-Used mainly for non-CPU backends (QNN, CoreML, Vulkan).
+**To quantize on non-CPU backends (QNN, CoreML, Vulkan), this is the quantization path to follow.**
 Read more about pt2e [here](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html), and how ExecuTorch uses pt2e [here](https://github.com/pytorch/executorch/blob/main/docs/source/quantization-overview.md).
+
+*CoreML and Vulkan support for export_llm is currently experimental and limited. To read more about QNN export, please read [Running on Android (Qualcomm)](build-run-llama3-qualcomm-ai-engine-direct-backend.md).*
 
 
 ## Backend support
