@@ -351,7 +351,11 @@ void linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef bias = args.at(2);
   ValueRef out = args.at(3);
   ValueRef weight = prepack_standard(
-      graph, weight_data, graph.storage_type_of(out), utils::kWidthPacked);
+      graph,
+      weight_data,
+      graph.storage_type_of(out),
+      utils::kWidthPacked,
+      /*passthrough = */ true);
   ValueRef mat2_is_transposed = graph.add_scalar(true);
 
   if (graph.val_is_none(bias)) {

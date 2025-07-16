@@ -13,6 +13,20 @@ python_library(
     ],
 )
 
+python_library(
+    name = "executorch_pipeline",
+    srcs = [
+        "executorch_pipeline.py",
+        "executors.py",
+    ],
+    deps = [
+        "//executorch/exir:lib",
+        "//pytorch/ao:torchao",  
+        "//executorch/backends/nxp:quantizer",
+        "//executorch/backends/nxp:neutron_backend",
+    ]
+)
+
 python_pytest(
     name = "test_quantizer",
     srcs = [
@@ -23,4 +37,16 @@ python_pytest(
         "//caffe2:torch",
         "//executorch/backends/nxp/tests:models",
     ],
+)
+
+python_pytest(
+    name = "test_neutron_backend",
+    srcs = [
+        "test_neutron_backend.py",
+    ],
+    deps = [
+        "//executorch/backends/nxp:neutron_backend",
+        ":executorch_pipeline",
+        ":models",
+    ]
 )
