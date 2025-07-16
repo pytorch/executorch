@@ -18,6 +18,7 @@ from executorch.backends.arm.test.runner_utils import (
     arm_executor_runner_exists,
     corstone300_installed,
     corstone320_installed,
+    model_converter_installed,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -244,6 +245,13 @@ XfailIfNoCorstone320 = pytest.mark.xfail(
     reason="Did not find Corstone-320 FVP or executor_runner on path",
 )
 """Xfails a test if Corsone320 FVP is not installed, or if the executor runner is not built"""
+
+SkipIfNoModelConverter = pytest.mark.skipif(
+    condition=not (model_converter_installed()),
+    raises=FileNotFoundError,
+    reason="Did not find model-converter on path",
+)
+"""Xfails a test if model-converter is not installed"""
 
 xfail_type = str | tuple[str, type[Exception]]
 

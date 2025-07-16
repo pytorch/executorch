@@ -189,6 +189,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.gt.Tensor,
             exir_ops.edge.aten.gt.Scalar,
             exir_ops.edge.aten.le.Tensor,
+            exir_ops.edge.aten.le.Scalar,
             exir_ops.edge.aten.lt.Tensor,
             exir_ops.edge.aten.lt.Scalar,
             exir_ops.edge.aten.mul.Tensor,
@@ -248,6 +249,10 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.sinh.default,
             exir_ops.edge.aten.atan.default,
             exir_ops.edge.aten.acosh.default,
+            exir_ops.edge.aten._adaptive_avg_pool2d.default,
+            exir_ops.edge.aten.sign.default,
+            exir_ops.edge.aten.asin.default,
+            exir_ops.edge.aten.atanh.default,
         ]
 
         return supported
@@ -326,6 +331,7 @@ class CheckProperQuantization(OperatorSupportBase):
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.upsample_nearest2d.vec,
         torch.ops.aten.scalar_tensor.default,
+        exir_ops.edge.aten.mean.dim,
         *TableOps.included_ops(),
     )
 

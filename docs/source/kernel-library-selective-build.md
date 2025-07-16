@@ -73,7 +73,8 @@ This API lets users pass in a pte file of an exported model. When used, the pte 
 
 Beyond pruning the binary to remove unused operators, the binary size can further reduced by removing unused dtypes. For example, if your model only uses floats for the `add` operator, then including variants of the `add` operators for `doubles` and `ints` is unnecessary. The flag `DTYPE_SELECTIVE_BUILD` can be set to `ON` to support this additional optimization. Currently, dtype selective build is only supported with the model API described above. Once enabled, a header file that specifies only the operators and dtypes used by the model is created and linked against a rebuild of the `portable_kernels` lib. This feature is only supported for the portable kernels library; it's not supported for optimized, quantized or custom kernel libraries.
 
-## Example Walkthrough
+
+This API lets users pass in a pte file of an exported model. When used, the pte file will be parsed to generate a yaml file that enumerates the operators and dtypes used in the model. 
 
 In [CMakeLists.txt](https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L48-L72), we have the following cmake config options:
 
@@ -126,3 +127,26 @@ This avoids relying on static initialization and enables you to register only th
 
 ### Compatibility
 If `--lib-name` is not passed, the default behavior remains unchanged, the codegen script will generate a general `RegisterKernels.cpp` and `register_all_kernels()` function.
+
+### Dtype Selective Build
+
+Beyond pruning the binary to remove unused operators, the binary size can further reduced by removing unused dtypes. For example, if your model only uses floats for the `add` operator, then including variants of the `add` operators for `doubles` and `ints` is unnecessary. The flag `DTYPE_SELECTIVE_BUILD` can be set to `ON` to support this additional optimization. Currently, dtype selective build is only supported with the model API described above. Once enabled, a header file that specifies only the operators and dtypes used by the model is created and linked against a rebuild of the `portable_kernels` lib. This feature is only supported for the portable kernels library; it's not supported for optimized, quantized or custom kernel libraries.
+
+## Example Walkthrough
+
+In [CMakeLists.txt](https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L48-L72), we have the following cmake config options:
+
+1. `EXECUTORCH_SELECT_OPS_YAML`
+2. `EXECUTORCH_SELECT_OPS_LIST`
+3. `EXECUTORCH_SELECT_ALL_OPS`
+4. `EXECUTORCH_SELECT_OPS_FROM_MODEL`
+5. `EXECUTORCH_DTYPE_SELECTIVE_BUILD`
+
+These options allow a user to tailor the cmake build process to utilize the different APIs, and results in different invocations on the `gen_selected_ops` [function](https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L110-L123). The following table describes some examples of how the invocation changes when these configs are set:
+
+| Example cmake Call | Resultant `gen_selected_ops` Invocation |
+| :----: | :---:| 
+|<code><br>  cmake -D… -DSELECT_OPS_LIST="aten::add.out,aten::mm.out" <br></code> | <code><br>  gen_selected_ops("" "${SELECT_OPS_LIST}" "" "" "") <br></code> |
+|<code><br> cmake -D… -DSELECT_OPS_YAML=ON <br></code> | <code><br>  set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml) <br> gen_selected_ops("${_custom_ops_yaml}" "" "") <br></code> |
+|<code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" <br></code> | <code><br> gen_selected_ops("" "" "" "${_model_path}" "") <br></code> |
+|<code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON<br></code> | <code><br> gen_selected_ops("" "" "" "${_model_path}" "ON") <br></code> |
