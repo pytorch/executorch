@@ -1717,7 +1717,9 @@
                     <span class="c1"># TODO: One debug handle can be associated with multiple op names</span>
                     <span class="n">debug_handle_to_op_names</span><span class="p">[</span><span class="n">debug_handle</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
 
-        <span class="n">merge_runtime_overlapping_debug_handles</span><span class="p">(</span><span class="n">debug_handle_to_output</span><span class="p">)</span>
+        <span class="n">debug_handle_to_output</span> <span class="o">=</span> <span class="n">merge_runtime_overlapping_debug_handles</span><span class="p">(</span>
+            <span class="n">debug_handle_to_output</span>
+        <span class="p">)</span>
         <span class="k">return</span> <span class="p">{</span>
             <span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">debug_handle_to_output</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
         <span class="p">},</span> <span class="n">debug_handle_to_op_names</span>
