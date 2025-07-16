@@ -38,8 +38,19 @@ Currently, this ExecuTorch Backend can delegate AI computations to Hexagon proce
 
 The Linux host operating system that QNN Backend is verified with is Ubuntu 22.04 LTS x64
 at the moment of updating this tutorial.
+In addition, it is also confirmed to work on Windows Subsystem for Linux (WSL) with Ubuntu 22.04.
 Usually, we verified the backend on the same OS version which QNN is verified with.
 The version is documented in QNN SDK.
+
+#### Windows (WSL) Setup
+To install Ubuntu 22.04 on WSL, run the following command in PowerShell or Windows Terminal:
+``` bash
+wsl --install -d ubuntu 22.04
+```
+This command will install WSL and set up Ubuntu 22.04 as the default Linux distribution.
+
+For more details and troubleshooting, refer to the official Microsoft WSL installation guide:
+👉 [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
 
 ### Hardware:
 You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:
