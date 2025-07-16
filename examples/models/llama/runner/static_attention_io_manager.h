@@ -759,7 +759,7 @@ class StaticAttentionIOManager {
   }
 
   void set_lookahead_decoding_mask(
-      StaticAttentionMask<MaskT>& mask,
+      StaticAttentionMask<MaskT, MaskAllocatorT>& mask,
       size_t input_len,
       size_t ngram_size,
       size_t window_size,
