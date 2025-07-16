@@ -769,23 +769,7 @@ void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
   context_->flush();
 }
 
-void ComputeGraph::encode_prepack() {
-  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
-    node->encode(this);
-  }
-}
-
-void ComputeGraph::prepack() const {
-  // Submit and execute the command buffer
-  vkapi::VulkanFence fence = context_->fences().get_fence();
-  context_->submit_cmd_to_gpu(fence.get_submit_handle(), /*final_use = */ true);
-  fence.wait();
-  context_->fences().return_fence(fence);
-
-  context_->flush();
-}
-
-void ComputeGraph::run_prepack() {
+void ComputeGraph::prepack() {
   int i = 0;
   bool submitted = false;
   const bool reduce_peak_memory = total_constant_nbytes_ > 500 * MB;
