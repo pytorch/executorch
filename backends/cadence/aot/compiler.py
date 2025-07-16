@@ -242,7 +242,7 @@ def _lower_ep_to_edge(
             # Allow specific non-core aten ops in the IR.
             _core_aten_ops_exception_list=TO_EDGE_OP_EXCEPTION_LIST
             + (core_aten_exceptions or []),
-            _preserve_ops=TO_EDGE_PRESERVE_OPS,
+            preserve_ops=TO_EDGE_PRESERVE_OPS,
         ),
         constant_methods=constant_methods,
     )

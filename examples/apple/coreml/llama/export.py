@@ -201,7 +201,7 @@ def main() -> None:
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_dim_order=True,
-            _preserve_ops=[
+            preserve_ops=[
                 torch.ops.aten.scaled_dot_product_attention.default,
                 # preserve norm op for numerical stability
                 torch.ops.aten.linalg_vector_norm.default,

@@ -1382,8 +1382,8 @@ def to_edge(
         table = _default_decomposition_table()
         preserve_ops = []
         if compile_config:
-            preserve_ops = compile_config._preserve_ops
-            for op in compile_config._preserve_ops:
+            preserve_ops = compile_config.preserve_ops
+            for op in compile_config.preserve_ops:
                 table.pop(op, None)
         program = program.run_decompositions(table)
         edge_programs[name] = _generate_edge_program(
