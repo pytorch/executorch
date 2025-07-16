@@ -1076,6 +1076,26 @@ def _remove_invalid_ops_for_not_decompose(
     return list(filter(keep, preserve_ops))
 
 
+def _can_skip_using_EDGE_DO_NOT_DECOMP(
+    partitioner: Dict[str, List[Partitioner]], aten_programs: Dict[str, ExportedProgram]
+) -> bool:
+    # THe current design of using EDGE_DO_NOT_DECOMP to prevent decomposition
+    # has long standing issues.  _remove_invalid_ops_for_not_decompose was a band-aid to
+    # fix some of the issues, but more issues are coming up over time, including a new issue with SDPA
+    # and contiguous views: https://fb.workplace.com/groups/pytorch.edge.users/permalink/1796069037930048/
+    # EDGE_DO_NOT_DECOMP is only needed by partitioners that specify check_op_support
+    # As a temp fix, we give a more reliable path for backends that do not specify check_op_support
+    can_skip_using_EDGE_DO_NOT_DECOMP = True
+    for name, program in aten_programs.items():
+        if partitioner is not None:
+            for curr_partitioner in partitioner.get(name, []):
+                curr_ops_no_decomp, check_op_support = (
+                    curr_partitioner.ops_to_not_decompose(program)
+                )
+                if check_op_support is not None:
+                    can_skip_using_EDGE_DO_NOT_DECOMP = False
+    return can_skip_using_EDGE_DO_NOT_DECOMP
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
