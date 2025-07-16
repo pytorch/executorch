@@ -4,6 +4,39 @@ This directory contains tests that validate correctness and coverage of backends
 
 These tests are intended to ensure that backends are robust and provide a smooth, "out-of-box" experience for users across the full span of input patterns. They are not intended to be a replacement for backend-specific tests, as they do not attempt to validate performance or that backends delegate operators that they expect to.
 
+## Running Tests and Interpreting Output
+Tests can be run from the command line, either using the runner.py entry point or the standard Python unittest runner. When running through runner.py, the test runner will report test statistics, including the number of tests with each result type.
+
+Backends can be specified with the `ET_TEST_ENABLED_BACKENDS` environment variable. By default, all available backends are enabled. Note that backends such as Core ML or Vulkan may require specific hardware or software to be available. See the documentation for each backend for information on requirements.
+
+Example:
+```
+ET_TEST_ENABLED_BACKENDS=xnnpack python -m executorch.backends.test.suite.runner
+```
+
+```
+2465 Passed / 2494
+16 Failed
+13 Skipped
+
+[Success]
+736 Delegated
+1729 Undelegated
+
+[Failure]
+5 Lowering Fail
+3 PTE Run Fail
+8 Output Mismatch Fail
+```
+
+Outcomes can be interpreted as follows:
+ * Success (delegated): The test passed and at least one op was delegated by the backend.
+ * Success (undelegated): The test passed with no ops delegated by the backend. This is a pass, as the partitioner works as intended.
+ * Skipped: test fails in eager or export (indicative of a test or dynamo issue).
+ * Lowering fail: The test fails in to_edge_transform_and_lower.
+ * PTE run failure: The test errors out when loading or running the method.
+ * Output mismatch failure: Output delta (vs eager) exceeds the configured tolerance.
+
 ## Backend Registration
 
 To plug into the test framework, each backend should provide an implementation of the Tester class, defined in backends/test/harness/tester.py. Backends can provide implementations of each stage, or use the default implementation, as appropriate.
