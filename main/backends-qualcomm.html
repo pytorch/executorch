@@ -863,6 +863,127 @@ The model, inputs, and output location are passed to <code class="docutils liter
 <h2>Supported model list<a class="headerlink" href="#supported-model-list" title="Permalink to this heading">¶</a></h2>
 <p>Please refer to <code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/examples/qualcomm/scripts/</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/</span></code> to the list of supported models.</p>
 </div>
+<div class="section" id="how-to-support-a-custom-model-in-htp-backend">
+<h2>How to Support a Custom Model in HTP Backend<a class="headerlink" href="#how-to-support-a-custom-model-in-htp-backend" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="step-by-step-implementation-guide">
+<h3>Step-by-Step Implementation Guide<a class="headerlink" href="#step-by-step-implementation-guide" title="Permalink to this heading">¶</a></h3>
+<p>Please reference <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/export_example.py">the simple example</a> and <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/qualcomm/scripts">more compilated examples</a> for reference</p>
+<div class="section" id="step-1-prepare-your-model">
+<h4>Step 1: Prepare Your Model<a class="headerlink" href="#step-1-prepare-your-model" title="Permalink to this heading">¶</a></h4>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># Initialize your custom model</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">YourModelClass</span><span class="p">()</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>  <span class="c1"># Your custom PyTorch model</span>
+
+<span class="c1"># Create example inputs (adjust shape as needed)</span>
+<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),)</span>  <span class="c1"># Example input tensor</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="step-2-optional-quantize-your-model">
+<h4>Step 2: [Optional] Quantize Your Model<a class="headerlink" href="#step-2-optional-quantize-your-model" title="Permalink to this heading">¶</a></h4>
+<p>Choose between quantization approaches, post training quantization (PTQ) or quantization aware training (QAT):</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.qualcomm.quantizer.quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">QnnQuantizer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.ao.quantization.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">prepare_pt2e</span><span class="p">,</span> <span class="n">prepare_qat_pt2e</span><span class="p">,</span> <span class="n">convert_pt2e</span>
+
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">QnnQuantizer</span><span class="p">()</span>
+<span class="n">m</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+
+<span class="c1"># PTQ (Post-Training Quantization)</span>
+<span class="k">if</span> <span class="n">quantization_type</span> <span class="o">==</span> <span class="s2">&quot;ptq&quot;</span><span class="p">:</span>
+    <span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+    <span class="c1"># Calibration loop would go here</span>
+    <span class="n">prepared_model</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span>
+
+<span class="c1"># QAT (Quantization-Aware Training)</span>
+<span class="k">elif</span> <span class="n">quantization_type</span> <span class="o">==</span> <span class="s2">&quot;qat&quot;</span><span class="p">:</span>
+    <span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_qat_pt2e</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+    <span class="c1"># Training loop would go here</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">training_steps</span><span class="p">):</span>
+        <span class="n">prepared_model</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span>
+
+<span class="c1"># Convert to quantized model</span>
+<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">QNNQuantizer</span></code> is configurable, with the default setting being <strong>8a8w</strong>. For advanced users, refer to the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/quantizer/quantizer.py"><code class="docutils literal notranslate"><span class="pre">QnnQuantizer</span></code></a> documentation for details.</p>
+<div class="section" id="supported-quantization-schemes">
+<h5>Supported Quantization Schemes<a class="headerlink" href="#supported-quantization-schemes" title="Permalink to this heading">¶</a></h5>
+<ul class="simple">
+<li><p><strong>8a8w</strong> (default)</p></li>
+<li><p><strong>16a16w</strong></p></li>
+<li><p><strong>16a8w</strong></p></li>
+<li><p><strong>16a4w</strong></p></li>
+<li><p><strong>16a4w_block</strong></p></li>
+</ul>
+</div>
+<div class="section" id="customization-options">
+<h5>Customization Options<a class="headerlink" href="#customization-options" title="Permalink to this heading">¶</a></h5>
+<ul class="simple">
+<li><p><strong>Per-node annotation</strong>: Use <code class="docutils literal notranslate"><span class="pre">custom_quant_annotations</span></code>.</p></li>
+<li><p><strong>Per-module (<code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>) annotation</strong>: Use <code class="docutils literal notranslate"><span class="pre">submodule_qconfig_list</span></code>.</p></li>
+</ul>
+</div>
+<div class="section" id="additional-features">
+<h5>Additional Features<a class="headerlink" href="#additional-features" title="Permalink to this heading">¶</a></h5>
+<ul class="simple">
+<li><p><strong>Node exclusion</strong>: Discard specific nodes via <code class="docutils literal notranslate"><span class="pre">discard_nodes</span></code>.</p></li>
+<li><p><strong>Blockwise quantization</strong>: Configure block sizes with <code class="docutils literal notranslate"><span class="pre">block_size_map</span></code>.</p></li>
+</ul>
+<p>For practical examples, see <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/tests/test_qnn_delegate.py"><code class="docutils literal notranslate"><span class="pre">test_qnn_delegate.py</span></code></a>.</p>
+</div>
+</div>
+<div class="section" id="step-3-configure-compile-specs">
+<h4>Step 3: Configure Compile Specs<a class="headerlink" href="#step-3-configure-compile-specs" title="Permalink to this heading">¶</a></h4>
+<p>During this step, you will need to specify the target SoC, data type, and other QNN compiler spec.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.qualcomm.compiler</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">generate_qnn_executorch_compiler_spec</span><span class="p">,</span>
+    <span class="n">generate_htp_compiler_spec</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.qualcomm.utils.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">QcomChipset</span>
+
+<span class="c1"># HTP Compiler Configuration</span>
+<span class="n">backend_options</span> <span class="o">=</span> <span class="n">generate_htp_compiler_spec</span><span class="p">(</span>
+    <span class="n">use_fp16</span><span class="o">=</span><span class="ow">not</span> <span class="n">quantized</span><span class="p">,</span>  <span class="c1"># False for quantized models</span>
+<span class="p">)</span>
+
+<span class="c1"># QNN Compiler Spec</span>
+<span class="n">compile_spec</span> <span class="o">=</span> <span class="n">generate_qnn_executorch_compiler_spec</span><span class="p">(</span>
+    <span class="n">soc_model</span><span class="o">=</span><span class="n">QcomChipset</span><span class="o">.</span><span class="n">SM8650</span><span class="p">,</span>  <span class="c1"># Your target SoC</span>
+    <span class="n">backend_options</span><span class="o">=</span><span class="n">backend_options</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="step-4-lower-and-export-the-model">
+<h4>Step 4: Lower and Export the Model<a class="headerlink" href="#step-4-lower-and-export-the-model" title="Permalink to this heading">¶</a></h4>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.qualcomm.partition.qnn_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">to_edge_transform_and_lower_to_qnn</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExecutorchBackendConfig</span>
+
+<span class="c1"># Lower to QNN backend</span>
+<span class="n">delegated_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower_to_qnn</span><span class="p">(</span>
+    <span class="n">quantized_model</span> <span class="k">if</span> <span class="n">quantized</span> <span class="k">else</span> <span class="n">model</span><span class="p">,</span>
+    <span class="n">example_inputs</span><span class="p">,</span>
+    <span class="n">compile_spec</span>
+<span class="p">)</span>
+
+<span class="c1"># Export to ExecuTorch format</span>
+<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">delegated_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
+    <span class="n">config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span><span class="n">extract_delegate_segments</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="p">)</span>
+
+<span class="c1"># Save the compiled model</span>
+<span class="n">model_name</span> <span class="o">=</span> <span class="s2">&quot;custom_model_qnn.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">model_name</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model successfully exported to </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
 <div class="section" id="what-is-coming">
 <h2>What is coming?<a class="headerlink" href="#what-is-coming" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
@@ -950,6 +1071,21 @@ issue on ExecuTorch repo and tag use <code class="docutils literal notranslate">
 </ul>
 </li>
 <li><a class="reference internal" href="#supported-model-list">Supported model list</a></li>
+<li><a class="reference internal" href="#how-to-support-a-custom-model-in-htp-backend">How to Support a Custom Model in HTP Backend</a><ul>
+<li><a class="reference internal" href="#step-by-step-implementation-guide">Step-by-Step Implementation Guide</a><ul>
+<li><a class="reference internal" href="#step-1-prepare-your-model">Step 1: Prepare Your Model</a></li>
+<li><a class="reference internal" href="#step-2-optional-quantize-your-model">Step 2: [Optional] Quantize Your Model</a><ul>
+<li><a class="reference internal" href="#supported-quantization-schemes">Supported Quantization Schemes</a></li>
+<li><a class="reference internal" href="#customization-options">Customization Options</a></li>
+<li><a class="reference internal" href="#additional-features">Additional Features</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#step-3-configure-compile-specs">Step 3: Configure Compile Specs</a></li>
+<li><a class="reference internal" href="#step-4-lower-and-export-the-model">Step 4: Lower and Export the Model</a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li><a class="reference internal" href="#what-is-coming">What is coming?</a></li>
 <li><a class="reference internal" href="#faq">FAQ</a></li>
 </ul>
