@@ -37,10 +37,6 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         super().__init__()
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
         self.lower_full_graph = lower_full_graph
-        if self.lower_full_graph:
-            assert (
-                len(self.skip_ops_for_coreml_delegation or []) == 0
-            ), "Cannot have skip_ops_for_coreml_delegation when lower_full_graph is True"
         self._logged_msgs = set()
 
     def log_once(self, msg: str) -> None:
@@ -138,6 +134,17 @@ class CoreMLPartitioner(Partitioner):
         self.lower_full_graph = lower_full_graph
         self.take_over_constant_data = take_over_constant_data
         self._logged_msgs = set()
+
+        if self.lower_full_graph:
+            assert (
+                len(self.skip_ops_for_coreml_delegation) == 0
+            ), "When lower_full_graph=True, you cannot set skip_ops_for_coreml_delegation"
+            assert (
+                self.take_over_constant_data
+            ), "When lower_full_graph=True, you must set take_over_constant_data=True"
+            assert (
+                self.take_over_mutable_buffer
+            ), "When lower_full_graph=True, you must set take_over_mutable_buffer=True"
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
