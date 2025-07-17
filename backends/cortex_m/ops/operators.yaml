@@ -15,3 +15,9 @@
   kernels:
     - arg_meta: null
       kernel_name: cortex_m::dequantize_per_tensor_out
+
+- func: cortex_m::add.out(Tensor a, Tensor b, Scalar alpha, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::add_out
