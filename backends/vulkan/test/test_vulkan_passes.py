@@ -7,7 +7,7 @@ from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTrans
 from executorch.backends.vulkan._passes import FuseQuantizedOpsTransform
 
 from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
-    get_linear_weight_only_qcs_xnn_qconfig,
+    get_symmetric_quantization_config,
     VulkanQuantizer,
 )
 
@@ -101,7 +101,9 @@ class TestVulkanPasses(unittest.TestCase):
         sample_inputs = model.get_sample_inputs()
 
         quantizer = VulkanQuantizer()
-        quantizer.set_global(get_linear_weight_only_qcs_xnn_qconfig(8))
+        quantizer.set_global(
+            get_symmetric_quantization_config(is_dynamic=False, weight_bits=8)
+        )
 
         edge_manager = quantize_and_lower_module(
             model,
@@ -129,7 +131,9 @@ class TestVulkanPasses(unittest.TestCase):
         sample_inputs = model.get_sample_inputs()
 
         quantizer = VulkanQuantizer()
-        quantizer.set_global(get_linear_weight_only_qcs_xnn_qconfig(4))
+        quantizer.set_global(
+            get_symmetric_quantization_config(is_dynamic=False, weight_bits=4)
+        )
 
         edge_manager = quantize_and_lower_module(
             model,
