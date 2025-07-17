@@ -13,7 +13,7 @@ add_compile_options(
   -fdebug-prefix-map=${PROJECT_SOURCE_DIR}=/executorch
 )
 
-set_overridable_option(BUILD_TESTING ON)
+set_overridable_option(BUILD_TESTING OFF)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 set_overridable_option(EXECUTORCH_BUILD_COREML ON)
 set_overridable_option(EXECUTORCH_BUILD_MPS ON)
