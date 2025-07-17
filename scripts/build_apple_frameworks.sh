@@ -311,6 +311,7 @@ for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
 done
 
 rm -rf "$FRAMEWORK_EXECUTORCH_HEADERS_PATH"
+rm -rf "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
 
 echo "Running tests"
 
