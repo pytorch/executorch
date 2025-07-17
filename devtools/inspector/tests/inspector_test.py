@@ -45,7 +45,7 @@ from executorch.devtools.inspector._inspector import (
 )
 from executorch.devtools.inspector.tests.inspector_test_utils import (
     check_if_debug_handle_to_op_names_match,
-    check_if_final_outputs_match,
+    check_if_intermediate_outputs_match,
     model_registry,
 )
 from executorch.exir import (
@@ -526,8 +526,9 @@ class TestInspector(unittest.TestCase):
                     inspector_instance._get_aot_intermediate_outputs_and_op_names()
                 )
                 self.assertTrue(
-                    check_if_final_outputs_match(
-                        "ConvLinearModel", aot_intermediate_outputs
+                    check_if_intermediate_outputs_match(
+                        aot_intermediate_outputs,
+                        mod.get_edge_dialect_expected_intermediate_outputs(),
                     )
                 )
 

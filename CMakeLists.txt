@@ -48,8 +48,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(executorch)
 
-# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION
-
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
@@ -82,6 +80,7 @@ announce_configured_options(BUCK2)
 
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
+announce_configured_options(BUILD_TESTING)
 
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
@@ -96,11 +95,6 @@ else()
   message(STATUS "ccache not found, builds will not be cached")
 endif()
 announce_configured_options(CCACHE_PROGRAM)
-
-# Print all the configs that were called with announce_configured_options.
-print_configured_options()
-
-# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -778,3 +772,6 @@ if(EXECUTORCH_BUILD_ANDROID_JNI)
 endif()
 
 include(Test.cmake)
+
+# Print all the configs that were called with announce_configured_options.
+print_configured_options()
