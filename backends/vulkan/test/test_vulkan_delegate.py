@@ -2060,3 +2060,39 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             full_per_token_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
         )
+
+    def test_vulkan_backend_quantize_per_channel_input_specific(self):
+        class QuantizePerChannelModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # Create fixed scale and zero_point tensors for 8 channels
+                scale = torch.tensor(
+                    [0.05, 0.03, 0.07, 0.04, 0.06, 0.02, 0.08, 0.05],
+                    dtype=torch.float32,
+                )
+                zero_point = torch.tensor(
+                    [2, -3, 5, 0, -1, 4, -2, 1], dtype=torch.int32
+                )
+
+                # Quantize per channel along axis 1 (channel dimension)
+                quantized = torch.ops.quantized_decomposed.quantize_per_channel.default(
+                    x,
+                    scale,
+                    zero_point,
+                    axis=1,  # Channel dimension
+                    quant_min=-128,  # int8 range for quant_min/max
+                    quant_max=127,  # int8 range for quant_min/max
+                    dtype=torch.int32,  # Use int32 for output since test_vulkan_delegate can't handle int8
+                )
+
+                return quantized
+
+        quantize_per_channel_module = QuantizePerChannelModule()
+        sample_inputs = (torch.rand(size=(2, 8, 16, 16), dtype=torch.float32),)
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            quantize_per_channel_module, sample_inputs, atol=5e-3, rtol=5e-3
+        )
