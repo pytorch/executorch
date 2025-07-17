@@ -12,7 +12,6 @@
       "inherits": ["common"],
       "generator": "Xcode",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/macos.cmake",
         "PLATFORM": "MAC_ARM64",
         "DEPLOYMENT_TARGET": "12.0"
@@ -47,7 +46,7 @@
       "generator": "Xcode",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
-        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
+        "EXECUTORCH_BUILD_PREe SET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "SIMULATORARM64",
         "DEPLOYMENT_TARGET": "17.0"
       },
