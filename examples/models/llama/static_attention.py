@@ -418,6 +418,8 @@ class StaticAttentionIOManager:
                 ]
 
             x[0] = new_tokens[-1]
+            if new_tokens[-1] in stop_tokens:
+                break
 
         logger.info(
             f"Generated {len(new_tokens) - 1} tokens with {inference_cnt} inference(s)."

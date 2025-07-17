@@ -30,6 +30,7 @@ Not all quantization options are supported by all backends. Consult backend-spec
 
 * [XNNPACK quantization](backends-xnnpack.md#quantization)
 * [CoreML quantization](backends-coreml.md#quantization)
+* [QNN quantization](backends-qualcomm.md#step-2-optional-quantize-your-model)
 
 
 
