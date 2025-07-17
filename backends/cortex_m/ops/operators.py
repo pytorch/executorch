@@ -5,10 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.exir.dialects._ops import (
-    ops as exir_ops,
-)  # To provide the implementation of the operators
+from executorch.backends.cortex_m.passes.passes_utils import (
+    dequantize_tensor,
+    quantize_tensor,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
+
+# To provide the implementation of the operators
 from torch.library import impl, Library, register_fake
+
 
 # New operator library with a custom namespace to allow fusion etc.
 lib = Library("cortex_m", "DEF")
@@ -96,3 +101,114 @@ def dequantize_per_tensor_impl(
     return exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
         input, scale, zero_point, quant_min, quant_max, dtype
     )
+
+
+# Define the operator schema with multipliers and shifts (11 args)
+lib.define(
+    "quantized_add("
+    "Tensor self, Scalar self_zero_point, Scalar self_multiplier, Scalar self_shift, "
+    "Tensor other, Scalar other_zero_point, Scalar other_multiplier, Scalar other_shift, "
+    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift) -> Tensor"
+)
+
+
+@register_fake("cortex_m::quantized_add")
+def quantized_add_meta(
+    self: torch.Tensor,
+    self_zero_point: int,
+    self_multiplier: int,
+    self_shift: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    other_multiplier: int,
+    other_shift: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+) -> torch.Tensor:
+    return torch.empty_like(self, dtype=torch.int8)
+
+
+@impl(lib, "quantized_add", "CompositeExplicitAutograd")
+def quantized_add_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    self_multiplier: int,
+    self_shift: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    other_multiplier: int,
+    other_shift: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+) -> torch.Tensor:
+    self_fp = dequantize_tensor(self, self_zero_point, self_multiplier, self_shift)
+    other_fp = dequantize_tensor(other, other_zero_point, other_multiplier, other_shift)
+    result_fp = self_fp + other_fp
+    result_quantized = quantize_tensor(
+        result_fp, output_zero_point, output_multiplier, output_shift
+    )
+    return result_quantized
+
+
+# Define the operator schema with multipliers and shifts (11 args + out tensor)
+lib.define(
+    "quantized_add.out("
+    "Tensor self, Scalar self_zero_point, Scalar self_multiplier, Scalar self_shift, "
+    "Tensor other, Scalar other_zero_point, Scalar other_multiplier, Scalar other_shift, "
+    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+# Fake meta function for shape and dtype inference during compilation
+@register_fake("cortex_m::quantized_add.out")
+def quantized_add_out_meta(
+    self: torch.Tensor,
+    self_zero_point: int,
+    self_multiplier: int,
+    self_shift: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    other_multiplier: int,
+    other_shift: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    # Validate shape compatibility if needed
+    assert out.shape == self.shape, "Output shape must match input shape"
+    # Output dtype is int8
+    return out
+
+
+# Actual implementation delegating to backend or custom kernel
+@impl(lib, "quantized_add.out", "CompositeExplicitAutograd")
+def quantized_add_out_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    self_multiplier: int,
+    self_shift: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    other_multiplier: int,
+    other_shift: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+    *,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    self_fp = dequantize_tensor(self, self_zero_point, self_multiplier, self_shift)
+    other_fp = dequantize_tensor(other, other_zero_point, other_multiplier, other_shift)
+    result_fp = self_fp + other_fp
+    result_quantized = quantize_tensor(
+        result_fp, output_zero_point, output_multiplier, output_shift
+    )
+
+    # Write into the provided output tensor
+    out.copy_(result_quantized)
+
+    return out
