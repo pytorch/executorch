@@ -70,6 +70,33 @@ non_fbcode_target(_kind = fb_android_cxx_library,
 )
 
 non_fbcode_target(_kind = fb_android_cxx_library,
+    name = "executorch_training_jni",
+    srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp", "jni_layer_training.cpp"],
+    allow_jni_merging = False,
+    compiler_flags = ET_JNI_COMPILER_FLAGS + [
+        "-DEXECUTORCH_BUILD_EXTENSION_TRAINING",
+    ],
+    soname = "libexecutorch.$(ext)",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":jni_headers",
+        ":log_provider_static",
+        ":generated_op_lib_optimized_static",
+        "//fbandroid/libraries/fbjni:fbjni",
+        "//fbandroid/native/fb:fb",
+        "//third-party/glog:glog",
+        "//xplat/executorch/backends/xnnpack:xnnpack_backend_static",
+        "//xplat/executorch/extension/data_loader:file_data_loader_static",
+        "//xplat/executorch/extension/module:module_static",
+        "//xplat/executorch/extension/runner_util:inputs_static",
+        "//xplat/executorch/extension/tensor:tensor_static",
+        "//xplat/executorch/extension/training/module:training_module_static",
+        "//xplat/executorch/extension/training/optimizer:sgd_static",
+        "//xplat/executorch/kernels/quantized:generated_lib_static",
+    ],
+)
+
+non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_llama_jni",
     srcs = [
         "jni_layer.cpp",

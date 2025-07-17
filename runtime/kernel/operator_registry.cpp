@@ -74,7 +74,7 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
       ET_LOG(Error, "%s", kernels[i].name_);
       ET_LOG_KERNEL_KEY(kernels[i].kernel_key_);
     }
-    return Error::Internal;
+    return Error::RegistrationExceedingMaxKernels;
   }
   // for debugging purpose
   ET_UNUSED const char* lib_name =
@@ -88,7 +88,7 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
           kernel.kernel_key_ == k.kernel_key_) {
         ET_LOG(Error, "Re-registering %s, from %s", k.name_, lib_name);
         ET_LOG_KERNEL_KEY(k.kernel_key_);
-        return Error::InvalidArgument;
+        return Error::RegistrationAlreadyRegistered;
       }
     }
     registered_kernels[num_registered_kernels++] = kernel;
@@ -106,7 +106,8 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
 // Registers the kernels, but panics if an error occurs. Always returns Ok.
 Error register_kernels(const Span<const Kernel> kernels) {
   Error success = register_kernels_internal(kernels);
-  if (success == Error::InvalidArgument || success == Error::Internal) {
+  if (success == Error::RegistrationAlreadyRegistered ||
+      success == Error::RegistrationExceedingMaxKernels) {
     ET_CHECK_MSG(
         false,
         "Kernel registration failed with error %" PRIu32

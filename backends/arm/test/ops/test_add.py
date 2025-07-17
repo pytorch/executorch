@@ -7,8 +7,6 @@
 
 from typing import Tuple
 
-import pytest
-
 import torch
 from executorch.backends.arm.arm_backend import get_tosa_spec
 from executorch.backends.arm.quantizer import arm_quantizer
@@ -190,7 +188,7 @@ def test_add_tensor_u85_BI_2(test_data: input_t2):
 
 
 @common.parametrize("test_data", Add.test_data)
-@pytest.mark.skip(reason="Model converter not yet made available")
+@common.SkipIfNoModelConverter
 def test_add_tensor_vgf_fp(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Add(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
@@ -199,7 +197,7 @@ def test_add_tensor_vgf_fp(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
-@pytest.mark.skip(reason="Model converter not yet made available")
+@common.SkipIfNoModelConverter
 def test_add_tensor_vgf_int(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Add(),

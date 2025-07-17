@@ -150,6 +150,7 @@ void add_choose_qparams_tensor_node(
     const ValueRef& input,
     const ValueRef& quant_min,
     const ValueRef& quant_max,
+    const ValueRef& eps,
     const ValueRef& scale_out,
     const ValueRef& zero_point_out) {
   std::string kernel_name("choose_qparams_tensor");
@@ -158,6 +159,7 @@ void add_choose_qparams_tensor_node(
 
   int quant_min_val = static_cast<int>(graph.get_int(quant_min));
   int quant_max_val = static_cast<int>(graph.get_int(quant_max));
+  float eps_val = static_cast<float>(graph.get_double(eps));
 
   vkapi::ParamsBindList param_ubos;
 
@@ -180,6 +182,7 @@ void add_choose_qparams_tensor_node(
   push_constants = {
       PushConstantDataInfo(&quant_min_val, sizeof(int)),
       PushConstantDataInfo(&quant_max_val, sizeof(int)),
+      PushConstantDataInfo(&eps_val, sizeof(float)),
   };
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -275,8 +278,22 @@ void choose_qparams_tensor_impl(
   const ValueRef input = args[arg_idx++];
   const ValueRef quant_min = args[arg_idx++];
   const ValueRef quant_max = args[arg_idx++];
-  const ValueRef scale_out = args[arg_idx++];
-  const ValueRef zero_point_out = args[arg_idx++];
+  const ValueRef eps = args[arg_idx++]; // Added eps parameter (will be voided)
+  const ValueRef dtype =
+      args[arg_idx++]; // Added dtype parameter (will be voided)
+  const ValueRef out_tuple_ref = args[arg_idx++];
+
+  ValueRef scale_out = kDummyValueRef;
+  ValueRef zero_point_out = kDummyValueRef;
+
+  {
+    const ValueListPtr out_tuple = graph.get_value_list(out_tuple_ref);
+    scale_out = out_tuple->at(0);
+    zero_point_out = out_tuple->at(1);
+  }
+
+  // Void the unused dtype parameter to match ATen signature
+  (void)dtype;
 
   // Check tensor types
   VK_CHECK_COND(graph.val_is_tensor(input));
@@ -289,13 +306,12 @@ void choose_qparams_tensor_impl(
       graph.dtype_of(input) == vkapi::kHalf ||
       graph.dtype_of(input) == vkapi::kDouble);
 
-  // Verify output types - accept CPU types but convert to GPU types
-  VK_CHECK_COND(
-      graph.dtype_of(scale_out) == vkapi::kFloat ||
-      graph.dtype_of(scale_out) == vkapi::kDouble);
+  // Verify output types - accept both int32 and float32 for zero_point
+  // TorchAO may use float32 for zero_point in some cases
+  VK_CHECK_COND(graph.dtype_of(scale_out) == vkapi::kFloat);
   VK_CHECK_COND(
       graph.dtype_of(zero_point_out) == vkapi::kInt ||
-      graph.dtype_of(zero_point_out) == vkapi::kLong);
+      graph.dtype_of(zero_point_out) == vkapi::kFloat);
 
   // Check that texture storage is width packed
   if (!graph.is_buffer_storage(input)) {
@@ -303,7 +319,7 @@ void choose_qparams_tensor_impl(
   }
 
   add_choose_qparams_tensor_node(
-      graph, input, quant_min, quant_max, scale_out, zero_point_out);
+      graph, input, quant_min, quant_max, eps, scale_out, zero_point_out);
 }
 
 void choose_qparams_per_token_asymmetric_impl(
@@ -311,8 +327,21 @@ void choose_qparams_per_token_asymmetric_impl(
     const std::vector<ValueRef>& args) {
   int arg_idx = 0;
   const ValueRef input = args[arg_idx++];
-  const ValueRef scale_out = args[arg_idx++];
-  const ValueRef zero_point_out = args[arg_idx++];
+  const ValueRef dtype =
+      args[arg_idx++]; // Added dtype parameter (will be voided)
+  const ValueRef out_tuple_ref = args[arg_idx++];
+
+  ValueRef scale_out = kDummyValueRef;
+  ValueRef zero_point_out = kDummyValueRef;
+
+  {
+    const ValueListPtr out_tuple = graph.get_value_list(out_tuple_ref);
+    scale_out = out_tuple->at(0);
+    zero_point_out = out_tuple->at(1);
+  }
+
+  // Void the unused parameter to match ATen signature
+  (void)dtype;
 
   // Check tensor types
   VK_CHECK_COND(graph.val_is_tensor(input));
@@ -325,23 +354,96 @@ void choose_qparams_per_token_asymmetric_impl(
       graph.dtype_of(input) == vkapi::kHalf ||
       graph.dtype_of(input) == vkapi::kDouble);
 
-  // Verify output types - accept CPU types but convert to GPU types
-  VK_CHECK_COND(
-      graph.dtype_of(scale_out) == vkapi::kFloat ||
-      graph.dtype_of(scale_out) == vkapi::kDouble);
+  // Verify output types - accept both int32 and float32 for zero_point
+  // TorchAO may use float32 for zero_point in some cases
+  VK_CHECK_COND(graph.dtype_of(scale_out) == vkapi::kFloat);
   VK_CHECK_COND(
       graph.dtype_of(zero_point_out) == vkapi::kInt ||
-      graph.dtype_of(zero_point_out) == vkapi::kLong);
+      graph.dtype_of(zero_point_out) == vkapi::kFloat);
 
   add_choose_qparams_per_token_asymmetric_node(
       graph, input, scale_out, zero_point_out);
 }
 
+void choose_qparams_affine_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef input = args[arg_idx++];
+  const ValueRef mapping_type = args[arg_idx++]; // str - ignored for per-tensor
+  const ValueRef block_size =
+      args[arg_idx++]; // SymInt[] - ignored for per-tensor
+  const ValueRef target_dtype = args[arg_idx++];
+  const ValueRef quant_min = args[arg_idx++];
+  const ValueRef quant_max = args[arg_idx++];
+  const ValueRef eps = args[arg_idx++];
+  const ValueRef scale_dtype = args[arg_idx++];
+  const ValueRef zero_point_dtype = args[arg_idx++];
+  const ValueRef out_tuple_ref = args[arg_idx++];
+
+  // Suppress unused variable warnings
+  (void)mapping_type;
+  (void)target_dtype;
+  (void)scale_dtype;
+  (void)zero_point_dtype;
+
+  ValueRef scale_out = kDummyValueRef;
+  ValueRef zero_point_out = kDummyValueRef;
+
+  {
+    const ValueListPtr out_tuple = graph.get_value_list(out_tuple_ref);
+    scale_out = out_tuple->at(0);
+    zero_point_out = out_tuple->at(1);
+  }
+
+  // Check tensor types
+  VK_CHECK_COND(graph.val_is_tensor(input));
+  VK_CHECK_COND(graph.val_is_tensor(scale_out));
+  VK_CHECK_COND(graph.val_is_tensor(zero_point_out));
+
+  // Verify input is a floating point type
+  VK_CHECK_COND(
+      graph.dtype_of(input) == vkapi::kFloat ||
+      graph.dtype_of(input) == vkapi::kHalf ||
+      graph.dtype_of(input) == vkapi::kDouble);
+
+  // Verify output types - accept both int32 and float32 for zero_point
+  // TorchAO may use float32 for zero_point in some cases
+  VK_CHECK_COND(graph.dtype_of(scale_out) == vkapi::kFloat);
+  VK_CHECK_COND(
+      graph.dtype_of(zero_point_out) == vkapi::kInt ||
+      graph.dtype_of(zero_point_out) == vkapi::kFloat);
+
+  // Check if this is per-tensor quantization (only supported granularity)
+  // block_size should equal input tensor dimensions for per-tensor quantization
+  const auto input_sizes = graph.sizes_of(input);
+  const auto block_size_list = graph.get_int_list(block_size);
+  VK_CHECK_COND(block_size_list->size() == input_sizes.size());
+  for (size_t i = 0; i < input_sizes.size(); i++) {
+    VK_CHECK_COND((*block_size_list)[i] == input_sizes[i]);
+  }
+
+  // Check that texture storage is width packed
+  if (!graph.is_buffer_storage(input)) {
+    VK_CHECK_COND(graph.packed_dim_of(input) == WHCN::kWidthDim);
+  }
+
+  // Default to per-tensor quantization parameter calculation for TorchAO affine
+  // ops
+  add_choose_qparams_tensor_node(
+      graph, input, quant_min, quant_max, eps, scale_out, zero_point_out);
+}
+
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(choose_qparams.tensor, choose_qparams_tensor_impl);
   VK_REGISTER_OP(
-      choose_qparams_per_token_asymmetric.default,
+      quantized_decomposed.choose_qparams.tensor, choose_qparams_tensor_impl);
+  VK_REGISTER_OP(
+      quantized_decomposed.choose_qparams_per_token_asymmetric.default,
       choose_qparams_per_token_asymmetric_impl);
+
+  // TorchAO affine choose_qparams operators
+  VK_REGISTER_OP(
+      torchao.choose_qparams_affine.default, choose_qparams_affine_impl);
 }
 
 } // namespace vkcompute

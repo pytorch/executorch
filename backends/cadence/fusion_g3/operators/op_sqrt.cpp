@@ -55,7 +55,8 @@ Tensor& sqrt_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
     return out;
   } else {
     return torch::executor::native::internal::
-        unary_ufunc_realhbbf16_to_floathbf16(std::sqrt, ctx, in, out);
+        unary_ufunc_realhbbf16_to_floathbf16(
+            std::sqrt, std::sqrt, ctx, in, out);
   }
 }
 

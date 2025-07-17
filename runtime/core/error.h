@@ -63,6 +63,12 @@ enum class Error : error_code_t {
   /// Operator(s) missing in the operator registry.
   OperatorMissing = 0x14,
 
+  /// Registration error: Exceeding the maximum number of kernels.
+  RegistrationExceedingMaxKernels = 0x15,
+
+  /// Registration error: The kernel is already registered.
+  RegistrationAlreadyRegistered = 0x16,
+
   /*
    * Resource errors.
    */
@@ -95,7 +101,6 @@ enum class Error : error_code_t {
   DelegateMemoryAllocationFailed = 0x31,
   /// Execute stage: The handle is invalid.
   DelegateInvalidHandle = 0x32,
-
 };
 
 // Stringify the Error enum.
@@ -137,6 +142,10 @@ constexpr const char* to_string(const Error error) {
       return "Error::DelegateMemoryAllocationFailed";
     case Error::DelegateInvalidHandle:
       return "Error::DelegateInvalidHandle";
+    case Error::RegistrationExceedingMaxKernels:
+      return "Error::RegistrationExceedingMaxKernels";
+    case Error::RegistrationAlreadyRegistered:
+      return "Error::RegistrationAlreadyRegistered";
   }
 }
 

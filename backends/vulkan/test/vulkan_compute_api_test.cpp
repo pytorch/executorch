@@ -1435,7 +1435,6 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 
   graph.prepare();
 
-  graph.encode_prepack();
   graph.prepack();
 
   graph.encode_execute();
@@ -2568,7 +2567,7 @@ void test_binary_op(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 
@@ -2641,7 +2640,7 @@ void test_mm(
       B, M, K, N, dtype, storage_type, memory_layout, mat2_data, prepack);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
 
   for (int i = 1; i < 4; i++) {
@@ -2722,7 +2721,7 @@ void test_mm_with_resize_reencode(
       B, M, K, N, dtype, storage_type, memory_layout, mat2_data, false);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 
@@ -2800,7 +2799,7 @@ void test_max_pool2d(
   idx_ioval.staging = graph.set_output_tensor(idx_ioval.value);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 
@@ -2879,7 +2878,7 @@ void test_grid_priors(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 
@@ -2983,7 +2982,7 @@ void test_transpose_view_mm(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
 
   for (int i = 1; i < 4; i++) {
@@ -3049,7 +3048,7 @@ void test_to_copy() {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
   graph.propagate_resize();
@@ -3236,7 +3235,7 @@ void test_dynamic_dispatch(int M, int N) {
   ComputeGraph graph = build_dynamic_dispatch_test_graph(M, N);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 

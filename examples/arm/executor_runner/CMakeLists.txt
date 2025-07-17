@@ -566,7 +566,7 @@ endif()
 add_executable(arm_executor_runner)
 
 target_sources(
-  arm_executor_runner PRIVATE arm_executor_runner.cpp arm_perf_monitor.cpp
+  arm_executor_runner PRIVATE arm_executor_runner.cpp arm_perf_monitor.cpp arm_memory_allocator.cpp
 )
 
 # Include the target's bare-metal linker script

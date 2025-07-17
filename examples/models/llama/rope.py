@@ -306,3 +306,15 @@ class Rope(torch.nn.Module):
             freqs_cos = self.freqs_cos[:seq_len]
             freqs_sin = self.freqs_sin[:seq_len]
         return freqs_cos, freqs_sin
+
+    def get_freqs_using_indices(self, indices: torch.Tensor):
+        """
+        Get the precomputed frequencies for given input indices.
+
+        Args:
+            indices (torch.Tensor): The input indices tensor.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: The precomputed frequencies for given input indices.
+        """
+        return self.freqs_cos[indices], self.freqs_sin[indices]

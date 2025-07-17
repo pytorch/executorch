@@ -350,7 +350,7 @@ void test_vulkan_sdpa(
   ValueRef staging_out = graph.set_output_tensor(r_out);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 

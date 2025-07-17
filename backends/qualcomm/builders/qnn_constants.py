@@ -106,6 +106,11 @@ class OpElementWiseAnd:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAtan:
+    op_name: str = "ElementWiseAtan"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseCeil:
     op_name = "ElementWiseCeil"
 
@@ -128,6 +133,11 @@ class OpElementWiseExp:
 @dataclass(init=False, frozen=True)
 class OpElementWiseEqual:
     op_name: str = "ElementWiseEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseFloor:
+    op_name: str = "ElementWiseFloor"
 
 
 @dataclass(init=False, frozen=True)
@@ -201,6 +211,11 @@ class OpElementWiseOr:
 @dataclass(init=False, frozen=True)
 class OpElementWisePower:
     op_name: str = "ElementWisePower"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseRound:
+    op_name: str = "ElementWiseRound"
 
 
 @dataclass(init=False, frozen=True)

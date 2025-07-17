@@ -5,6 +5,8 @@
 
 # Tests for NeutronQuantizer.
 
+from copy import deepcopy
+
 import executorch.backends.nxp.tests.models as models
 import torch
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -271,3 +273,73 @@ def test_quantizer_conv2d_permute():
     assert nodes[7].name == "dequantize_per_tensor_default_2"
     assert nodes[8].name == "permute"
     assert nodes[9].name == "quantize_per_tensor_default_3"
+
+
+def test_multiple_shared_spec_ops_in_row():
+    """
+    This test demonstrates that having two operators in a row, both relying on quantizers
+    with SharedSpecPattern, does not break the quantization process.
+    """
+    model = models.Conv2dReLUMaxPoolModule()
+    model.eval()
+
+    example_input = (torch.ones(1, 3, 64, 64),)
+    quantizer = NeutronQuantizer()
+    graph_module = torch.export.export_for_training(
+        model, example_input, strict=True
+    ).module()
+
+    # noinspection PyTypeChecker
+    m = prepare_pt2e(graph_module, quantizer)
+    m(*example_input)
+    m = convert_pt2e(m)
+
+    # Dry run
+    m(*example_input)
+
+    nodes = list(m.graph.nodes)
+
+    assert len(nodes) == 15
+    assert nodes[-5].name == "dequantize_per_tensor_default_3"
+    assert nodes[-4].name == "max_pool2d"
+    assert nodes[-3].name == "quantize_per_tensor_default_4"
+
+    # Assert that post-ReLU quantize and pre-MaxPool dequantize has same specs
+    assert nodes[-6].args[1:] == nodes[-5].args[1:]
+    # Assert that post-Conv quantize and pre-ReLU dequantize has same specs
+    assert nodes[6].args[1:] == nodes[7].args[1:]
+
+
+def test_quantizers_order_invariance():
+    """
+    This test demonstrates that the order of quantizers in NeutronQuantizer
+    does not affect the resulting graph.
+    """
+    model = models.Conv2dReLUModule()
+    model.eval()
+
+    example_input = (torch.ones(1, 4, 64, 64),)
+    quantizer = NeutronQuantizer()
+
+    graph_module = torch.export.export_for_training(
+        model, example_input, strict=True
+    ).module()
+
+    m = prepare_pt2e(deepcopy(graph_module), quantizer)
+    m(*example_input)
+    m = convert_pt2e(m)
+
+    quantizer.quantizers = quantizer.quantizers[::-1]
+    m_reversed = prepare_pt2e(graph_module, quantizer)
+    m_reversed(*example_input)
+    m_reversed = convert_pt2e(m)
+
+    # Dry run
+    m(*example_input)
+    m_reversed(*example_input)
+
+    nodes = list(m.graph.nodes)
+    nodes_reversed = list(m.graph.nodes)
+
+    assert len(nodes) == len(nodes_reversed)
+    assert all(n == n_reversed for n, n_reversed in zip(nodes, nodes_reversed))

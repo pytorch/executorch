@@ -12,6 +12,7 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 
+#include <algorithm>
 #include <cmath>
 
 using torch::executor::function::et_copy_index;
@@ -119,6 +120,48 @@ static Kernel prim_ops[] = {
               self.to<executorch::aten::Tensor>();
           int64_t numel = self_tensor.numel();
           out = EValue(numel);
+        }),
+    // executorch_prim::sym_max.Scalar(SymInt a, SymInt b) -> SymInt
+    Kernel(
+        "executorch_prim::sym_max.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(std::max(a.toInt(), b.toInt()));
+          } else {
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "sym_max only supports int inputs, got %zu, %zu",
+                (size_t)a.tag,
+                (size_t)b.tag);
+          }
+        }),
+    // executorch_prim::sym_min.Scalar(SymInt a, SymInt b) -> SymInt
+    Kernel(
+        "executorch_prim::sym_min.Scalar",
+        [](KernelRuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(std::min(a.toInt(), b.toInt()));
+          } else {
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "sym_min only supports int inputs, got %zu, %zu",
+                (size_t)a.tag,
+                (size_t)b.tag);
+          }
         }),
     // executorch_prim::add.Scalar(Scalar, Scalar) -> Scalar
     Kernel(

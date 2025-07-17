@@ -252,6 +252,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten._adaptive_avg_pool2d.default,
             exir_ops.edge.aten.sign.default,
             exir_ops.edge.aten.asin.default,
+            exir_ops.edge.aten.atanh.default,
         ]
 
         return supported

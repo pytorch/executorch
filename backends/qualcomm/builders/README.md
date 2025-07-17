@@ -360,7 +360,7 @@ The operator now should be functional for Qualcomm backends. For operator to wor
 ## Operator Support Status
 Please help update following table if you are contributing new operators:
 
-| Operators | HTP - 77/116 Enabled |
+| Operators | HTP - 80/116 Enabled |
 |-----------|---------|
 | Argmax | &cross; |
 | Argmin | &check; |
@@ -382,14 +382,14 @@ Please help update following table if you are contributing new operators:
 | ElementWiseAdd | &check; |
 | ElementWiseAnd | &check; |
 | ElementWiseAsin | &cross; |
-| ElementWiseAtan | &cross; |
+| ElementWiseAtan | &check; |
 | ElementWiseBinary | &cross; |
 | ElementWiseCeil | &check; |
 | ElementWiseCos | &check; |
 | ElementWiseDivide | &check; |
 | ElementWiseEqual | &check; |
 | ElementWiseExp | &check; |
-| ElementWiseFloor | &cross; |
+| ElementWiseFloor | &check; |
 | ElementWiseFloorDiv | &cross; |
 | ElementWiseGreater | &check; |
 | ElementWiseGreaterEqual | &check; |
@@ -405,7 +405,7 @@ Please help update following table if you are contributing new operators:
 | ElementWiseNotEqual | &check; |
 | ElementWiseOr | &check; |
 | ElementWisePower | &check; |
-| ElementWiseRound | &cross; |
+| ElementWiseRound | &check; |
 | ElementWiseRsqrt | &check; |
 | ElementWiseSelect | &check; |
 | ElementWiseSign | &cross; |

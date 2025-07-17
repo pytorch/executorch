@@ -15,13 +15,12 @@ namespace executor {
 namespace native {
 namespace internal {
 
-Tensor& unary_ufunc_realhb_to_bool(
-    bool (*fn)(double),
+Tensor& unary_ufunc_realhbbf16_to_bool(
+    bool (*fn_float)(float),
+    bool (*fn_double)(double),
     KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out) {
-  (void)ctx;
-
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
       ctx,
@@ -45,7 +44,17 @@ Tensor& unary_ufunc_realhb_to_bool(
 
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, __func__, CTYPE_IN, [&] {
     apply_unary_map_fn(
-        [fn](const CTYPE_IN val_in) { return fn(val_in); },
+        [fn_double, fn_float](const CTYPE_IN val_in) {
+          if constexpr (std::is_same_v<CTYPE_IN, double>) {
+            (void)fn_float;
+            double xi = static_cast<double>(val_in);
+            return static_cast<bool>(fn_double(xi));
+          } else {
+            (void)fn_double;
+            float xi = static_cast<float>(val_in);
+            return static_cast<bool>(fn_float(xi));
+          }
+        },
         in.const_data_ptr<CTYPE_IN>(),
         out.mutable_data_ptr<bool>(),
         in.numel());

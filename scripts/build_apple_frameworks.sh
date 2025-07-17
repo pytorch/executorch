@@ -7,7 +7,7 @@
 
 set -euxo pipefail
 
-MODES=("Release" "Debug")
+MODES=()
 PRESETS=("ios" "ios-simulator" "macos")
 # To support backwards compatibility, we want to retain the same output directory.
 PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
@@ -54,7 +54,7 @@ libxnnpack_backend.a,\
 libxnnpack-microkernels-prod.a,\
 :"
 
-FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
+FRAMEWORK_KERNELS_LLM="kernels_llm:\
 libcustom_ops.a,\
 :"
 
@@ -78,7 +78,7 @@ usage() {
   echo "  --Debug              Build Debug version."
   echo "  --Release            Build Release version."
   echo "  --coreml             Only build the Core ML backend."
-  echo "  --custom             Only build the Custom kernels."
+  echo "  --llm                Only build the LLM custom kernels."
   echo "  --mps                Only build the Metal Performance Shaders backend."
   echo "  --optimized          Only build the Optimized kernels."
   echo "  --quantized          Only build the Quantized kernels."
@@ -95,7 +95,7 @@ set_cmake_options_override() {
     # Since the user wants specific options, turn everything off
     CMAKE_OPTIONS_OVERRIDE=(
       "-DEXECUTORCH_BUILD_COREML=OFF"
-      "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=OFF"
+      "-DEXECUTORCH_BUILD_KERNELS_LLM=OFF"
       "-DEXECUTORCH_BUILD_MPS=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
@@ -125,7 +125,7 @@ for arg in "$@"; do
         fi
         ;;
       --coreml) set_cmake_options_override "EXECUTORCH_BUILD_COREML";;
-      --custom) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_CUSTOM" ;;
+      --llm) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_LLM" ;;
       --mps) set_cmake_options_override "EXECUTORCH_BUILD_MPS" ;;
       --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
       --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
@@ -136,6 +136,11 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# If no modes are specified, default to both Release and Debug
+if [[ ${#MODES[@]} -eq 0 ]]; then
+  MODES=("Release" "Debug")
+fi
 
 echo "Building libraries"
 
@@ -150,6 +155,7 @@ for preset_index in "${!PRESETS[@]}"; do
     # Do NOT add options here. Update the respective presets instead.
     cmake -S "${SOURCE_ROOT_DIR}" \
           -B "${preset_output_dir}" \
+          --fresh \
           -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
           -DCMAKE_BUILD_TYPE="${mode}" \
           ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
@@ -232,7 +238,7 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_MPS" "$FRAMEWORK_BACKEND_MPS" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
-  append_framework_flag "EXECUTORCH_BUILD_KERNELS_CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_KERNELS_LLM" "$FRAMEWORK_KERNELS_LLM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
 

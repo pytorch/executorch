@@ -152,7 +152,7 @@ jobs:
           "backend_coreml"
           "backend_mps"
           "backend_xnnpack"
-          "kernels_custom"
+          "kernels_llm"
           "kernels_optimized"
           "kernels_quantized"
           "threadpool"

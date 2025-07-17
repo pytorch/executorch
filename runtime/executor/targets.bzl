@@ -70,6 +70,16 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
+            name = "merged_data_map" + aten_suffix,
+            exported_headers = [
+                "merged_data_map.h",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:named_data_map" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
             name = "program" + aten_suffix,
             exported_deps = [
                 ":program_no_prim_ops" + aten_suffix,
@@ -107,6 +117,7 @@ def define_common_targets():
             exported_deps = [
                 ":memory_manager",
                 ":pte_data_map" + aten_suffix,
+                ":merged_data_map" + aten_suffix,
                 "//executorch/runtime/backend:interface" + aten_suffix,
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:named_data_map" + aten_suffix,

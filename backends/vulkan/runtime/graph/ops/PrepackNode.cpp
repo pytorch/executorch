@@ -62,6 +62,7 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   TensorRefPtr tref = graph->get_tref(tref_);
   size_t numel = utils::multiply_integers(tref->sizes);
   api::StagingBuffer staging(graph->context(), tref->dtype, numel);
+  graph->update_staging_nbytes_in_cmd(staging.buffer().mem_size_as_size_t());
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
   staging.copy_from(tref->data, nbytes);
   return staging;

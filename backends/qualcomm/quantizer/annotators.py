@@ -163,6 +163,11 @@ def annotate_single_in_single_out(
         )
 
 
+@register_annotator([torch.ops.aten.atan.default])
+def annotate_atan(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.topk.default])
 def annotate_topk(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
@@ -404,6 +409,11 @@ def annotate_clamp(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.floor.default])
+def annotate_floor(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.relu.default, torch.ops.aten.relu_.default])
 def annotate_relu(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -411,6 +421,11 @@ def annotate_relu(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.repeat.default])
 def annotate_repeat(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.round.default])
+def annotate_round(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
