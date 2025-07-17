@@ -38,7 +38,6 @@ def _(
 
 
 _TEST_RUNTIME = sys.platform == "darwin"
-_TEST_RUNTIME = False  # Disable until segfault fixed: https://github.com/pytorch/executorch/issues/12408
 
 
 class TestCoreMLPartitioner(unittest.TestCase):
