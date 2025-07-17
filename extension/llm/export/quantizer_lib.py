@@ -271,7 +271,9 @@ def get_vulkan_quantizer(pt2e_quantize: str):
     )
 
     if pt2e_quantize == "vulkan_8w":
-        config = get_symmetric_quantization_config_vulkan(is_dynamic=False, weight_bits=8)
+        config = get_symmetric_quantization_config_vulkan(
+            is_dynamic=False, weight_bits=8
+        )
     else:
         raise ValueError(f"Unsupported Vulkan quantizer specification {pt2e_quantize}")
 
