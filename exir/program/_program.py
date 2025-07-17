@@ -11,7 +11,7 @@ import copy
 import io
 import logging
 import os
-from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Type, Union
 
 import torch
 import torch._export
@@ -22,7 +22,6 @@ from executorch.exir._serialize._named_data_store import (
 )
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
-from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import (
     MethodProgramsPartitionerSpec,
     to_backend,
@@ -1297,55 +1296,6 @@ def to_edge_transform_and_lower(
             )()(program.graph_module)
 
     return edge_manager
-
-
-@experimental(
-    """
-    This is an experimental API which overloads to_edge by preserving specified ops to not be decomposed.
-    This function will be combined with to_edge in the future.
-    """
-)
-def to_edge_with_preserved_ops(
-    programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
-    constant_methods: Optional[Dict[str, Any]] = None,
-    compile_config: Optional[EdgeCompileConfig] = None,
-    preserve_ops: Tuple[torch._ops.OpOverload, ...] = (),
-) -> "EdgeProgramManager":
-    """
-    :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in
-    ATen dialect. Upon construction those programs are transformed into edge dialect.
-
-    Args:
-        programs: Can be a single ExportedProgram or a dictionary mapping function names to their corresponding ExportedPrograms. If only a single ExportedProgram is provided it will be assigned the name "forward".
-        constant_methods: An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.
-        compile_config: An optional argument used to provide greater control over the transformation to edge dialect process.
-        preserve_ops: An argument used to specify ops that should not be decomposed.
-
-    Returns:
-        EdgeProgramManager
-    """
-    assert not isinstance(constant_methods, EdgeCompileConfig)
-    config = compile_config or EdgeCompileConfig()
-    if not isinstance(programs, dict):
-        aten_programs = {"forward": programs}
-    else:
-        aten_programs = programs
-
-    edge_programs: Dict[str, ExportedProgram] = {}
-
-    for name, program in aten_programs.items():
-        # Decompose to Core ATen
-        table = _default_decomposition_table()
-        for op in preserve_ops:
-            table.pop(op, None)
-        program = program.run_decompositions(table)
-        edge_programs[name] = _generate_edge_program(
-            name, config, program, preserve_ops=list(preserve_ops)
-        )
-
-    return EdgeProgramManager(
-        edge_programs, constant_methods, config, list(preserve_ops)
-    )
 
 
 @et_logger("to_edge")
