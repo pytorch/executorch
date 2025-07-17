@@ -26,7 +26,10 @@ namespace vkapi {
 
 class CommandBuffer final {
  public:
-  explicit CommandBuffer(VkCommandBuffer, const VkCommandBufferUsageFlags);
+  explicit CommandBuffer(
+      VkCommandBuffer,
+      VkSemaphore,
+      const VkCommandBufferUsageFlags);
 
   CommandBuffer(const CommandBuffer&) = delete;
   CommandBuffer& operator=(const CommandBuffer&) = delete;
@@ -70,6 +73,8 @@ class CommandBuffer final {
 
  private:
   VkCommandBuffer handle_;
+  // Semaphore to signal when the command buffer has completed execution
+  VkSemaphore signal_semaphore_;
   VkCommandBufferUsageFlags flags_;
   State state_;
   Bound bound_;
@@ -81,6 +86,7 @@ class CommandBuffer final {
 
   inline void invalidate() {
     handle_ = VK_NULL_HANDLE;
+    signal_semaphore_ = VK_NULL_HANDLE;
     bound_.reset();
   }
 
@@ -99,6 +105,10 @@ class CommandBuffer final {
   void reset_querypool(VkQueryPool, const uint32_t, const uint32_t) const;
 
   VkCommandBuffer get_submit_handle(const bool final_use = false);
+
+  VkSemaphore get_signal_semaphore() const {
+    return signal_semaphore_;
+  }
 
   inline operator bool() const {
     return handle_ != VK_NULL_HANDLE;
@@ -130,6 +140,8 @@ class CommandPool final {
   // New Buffers
   std::mutex mutex_;
   std::vector<VkCommandBuffer> buffers_;
+  // Semaphores corresponding to the command buffers
+  std::vector<VkSemaphore> semaphores_;
   size_t in_use_;
 
  public:
