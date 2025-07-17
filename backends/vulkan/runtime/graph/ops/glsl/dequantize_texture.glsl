@@ -56,6 +56,17 @@ $if MODE == "per_channel":
     int quant_min;
     int quant_max;
   };
+$if MODE == "block_wise":
+  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+
+  layout(push_constant) uniform restrict Block {
+    ivec4 blockSize;     // bW, bH, bC, bN
+    ivec4 numBlocks;     // tW/bW, tH/bH, tC/bC, tN/bN
+    ivec4 blockStride;   // pre-computed linear strides for the block grid
+    int quant_min;
+    int quant_max;
+  };
 
 ${layout_declare_ubo(B, "ivec3", "t_in_limits")}
 ${layout_declare_ubo(B, "ivec3", "t_out_limits")}
@@ -201,7 +212,7 @@ void dequantize_per_token() {
   write_texel(t_out, pos, outtex);
 }
 
-#else // per_channel
+#elif defined(per_channel)
 
 void dequantize_per_channel() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
@@ -287,6 +298,39 @@ void dequantize_per_channel() {
       $else:
         outtex[i] = value;
     }
+  }
+
+  write_texel(t_out, pos, outtex);
+}
+
+#else // block_wise
+
+void dequantize_block_wise() {
+  const ivec3 pos = ivec3(gl_GlobalInvocationID);
+
+  if (any(greaterThanEqual(pos, t_in_limits)))
+    return;
+
+  IVEC4_T intex = load_texel(t_in, pos);
+  FVEC4_T outtex;
+
+  ivec4 base_tidx = ivec4(pos.x * 4, pos.y, pos.z, 0);
+  int foldedZ = pos.z;
+
+  int C_total = numBlocks.z * blockSize.z;
+
+  [[unroll]] for (int i = 0; i < 4; ++i) {
+    ivec4 tidx = ivec4(base_tidx.x + i, base_tidx.y, (foldedZ % C_total), (foldedZ / C_total));
+
+    ivec4 bcoord = tidx / blockSize;
+    int block_id = bcoord.x * blockStride.x + bcoord.y * blockStride.y + bcoord.z * blockStride.z + bcoord.w * blockStride.w;
+
+    IN_T qvalue = IN_T(intex[i]);
+    OUT_T value = dequantize_val(qvalue, t_scale[block_id], t_zero_point[block_id]);
+    $if OUT_DTYPE == "double":
+      outtex[i] = float(value);
+    $else:
+      outtex[i] = value;
   }
 
   write_texel(t_out, pos, outtex);
