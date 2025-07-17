@@ -855,9 +855,23 @@ class ComputeGraph final {
   void submit_current_cmd_and_wait(const bool final_use = false);
 
   /*
+   * Submit one command buffer to the GPU.
+   */
+  void submit_cmd(
+      vkapi::CommandBuffer& cmd_buf,
+      VkSemaphore wait_semaphore,
+      VkSemaphore signal_semaphore,
+      VkFence fence);
+
+  /*
    * Submits all the commands gathered in deferred_cmd_bufs_ to the GPU.
    */
-  void submit_deferred_cmds();
+  void submit_deferred_cmds_and_wait();
+
+  /*
+   * Ends and invalidates all deferred commands.
+   */
+  void clear_deferred_cmds();
 
  public:
   //
