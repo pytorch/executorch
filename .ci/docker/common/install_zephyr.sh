@@ -69,6 +69,25 @@ install_prerequiresites() {
         xterm \
         telnet \
         net-tools
+    apt install --no-install-recommends -y gcc-multilib g++-multilib
+    apt-get clean -y
+    apt-get autoremove --purge -y
+    rm -rf /var/lib/apt/lists/*
+    wget https://apt.kitware.com/kitware-archive.sh && \
+        chmod +x kitware-archive.sh && \
+        ./kitware-archive.sh && \
+        rm -f kitware-archive.sh
+    useradd -d /home/zephyruser -m -s /bin/bash zephyruser
+}
+
+install_sdk() {
+    wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.16.0/zephyr-sdk-0.16.0_linux-x86_64.tar.xz && \
+         tar -xf zephyr-sdk-0.16.0_linux-x86_64.tar.xz && \
+         rm -f zephyr-sdk-0.16.0_linux-x86_64.tar.xz && \
+         cd zephyr-sdk-0.16.0/ && \
+         ./setup.sh -c -t arm-zephyr-eabi
 }
 
 install_prerequiresites
+install_sdk
+
