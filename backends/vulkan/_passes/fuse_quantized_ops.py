@@ -210,6 +210,240 @@ def fuse_into_linear_qcnw_node(
         graph_module.graph.erase_node(dq_weight_node)
 
 
+#########################
+## linear_qta8a_qga4w ##
+#########################
+
+
+def _is_dequantize_affine_node(node: torch.fx.Node) -> bool:
+    """Check if a node is a dequantize_affine function call."""
+    return (
+        node.op == "call_function"
+        and node.target is not None
+        and hasattr(node.target, "__name__")
+        and "dequantize_affine" in getattr(node.target, "__name__", "")
+    )
+
+
+def _validate_qta8a_qga4w_nodes(
+    program: ExportedProgram, weight_node: torch.fx.Node
+) -> Optional[Tuple[torch.fx.Node, torch.fx.Node, torch.fx.Node]]:
+    """Validate and extract weight quantization nodes for QTA8A_QGA4W pattern."""
+    if len(weight_node.args) < 4:
+        return None
+
+    orig_weight = weight_node.args[0]
+    weight_scales = weight_node.args[2]
+    weight_zeros = weight_node.args[3]
+
+    # Type checking
+    if not isinstance(orig_weight, torch.fx.Node):
+        return None
+    if not is_param_node(program, orig_weight):
+        return None
+    if not isinstance(weight_scales, torch.fx.Node):
+        return None
+    if not is_param_node(program, weight_scales):
+        return None
+    if not isinstance(weight_zeros, torch.fx.Node):
+        return None
+    if not is_param_node(program, weight_zeros):
+        return None
+
+    return orig_weight, weight_scales, weight_zeros
+
+
+def _validate_qta8a_qga4w_tensors(
+    program: ExportedProgram,
+    orig_weight: torch.fx.Node,
+    weight_scales: torch.fx.Node,
+    weight_zeros: torch.fx.Node,
+) -> Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    """Validate and extract weight tensors for QTA8A_QGA4W pattern."""
+    orig_weight_tensor = get_param_tensor(program, orig_weight)
+    weight_scales_tensor = get_param_tensor(program, weight_scales)
+    weight_zeros_tensor = get_param_tensor(program, weight_zeros)
+
+    if not isinstance(orig_weight_tensor, torch.Tensor):
+        return None
+    if not isinstance(weight_scales_tensor, torch.Tensor):
+        return None
+    if not isinstance(weight_zeros_tensor, torch.Tensor):
+        return None
+
+    return orig_weight_tensor, weight_scales_tensor, weight_zeros_tensor
+
+
+def _validate_4bit_quantization(orig_weight_tensor: torch.Tensor) -> bool:
+    """Check if weight tensor is quantized to 4 bits."""
+    quant_min = orig_weight_tensor.min().item()
+    quant_max = orig_weight_tensor.max().item()
+    return quant_min >= -8 and quant_max <= 7
+
+
+def _calculate_group_size(
+    orig_weight_tensor: torch.Tensor, weight_scales_tensor: torch.Tensor
+) -> Optional[int]:
+    """Calculate and validate group size from tensor shapes."""
+    if len(weight_scales_tensor.shape) != 2:
+        return None
+
+    out_features, in_features = orig_weight_tensor.shape
+    scales_out_features, num_groups = weight_scales_tensor.shape
+
+    if scales_out_features != out_features:
+        return None
+
+    group_size = in_features // num_groups
+    if in_features % group_size != 0:
+        return None
+
+    return group_size
+
+
+def matches_linear_qta8a_qga4w_pattern(
+    program: ExportedProgram, node: torch.fx.Node
+) -> Optional[Tuple[int, int]]:
+    """
+    Checks if the nodes surrounding a linear node matches the pattern for dynamic
+    activation + grouped weight quantized linear (QTA8A_QGA4W).
+
+    This pattern involves:
+    1. Dynamic quantization of input activations (8-bit)
+    2. Grouped quantization of weights (4-bit with group size)
+
+    The expected pattern from Int8DynActInt4WeightQuantizer is:
+        scale, zero_point = choose_qparams_affine(input)
+        quantized_input = quantize_affine(input, scale, zero_point)
+        dequantized_input = dequantize_affine(quantized_input, ...)
+        dequantized_weight = dequantize_affine(weight, weight_scales, weight_zeros)
+        output = linear(dequantized_input, dequantized_weight)
+
+    If the pattern matches, return (group_size, weight_bits), otherwise None.
+    """
+    if not utils.is_linear_node(node):
+        return None
+
+    input_node = node.args[0]
+    weight_node = node.args[1]
+
+    # Type checking - ensure we have torch.fx.Node objects
+    if not isinstance(weight_node, torch.fx.Node):
+        return None
+    if not isinstance(input_node, torch.fx.Node):
+        return None
+
+    # Check if input and weight are dequantized with dequantize_affine
+    if not _is_dequantize_affine_node(input_node):
+        return None
+    if not _is_dequantize_affine_node(weight_node):
+        return None
+
+    # Validate and extract weight quantization nodes
+    weight_nodes = _validate_qta8a_qga4w_nodes(program, weight_node)
+    if weight_nodes is None:
+        return None
+    orig_weight, weight_scales, weight_zeros = weight_nodes
+
+    # Validate and extract weight tensors
+    weight_tensors = _validate_qta8a_qga4w_tensors(
+        program, orig_weight, weight_scales, weight_zeros
+    )
+    if weight_tensors is None:
+        return None
+    orig_weight_tensor, weight_scales_tensor, weight_zeros_tensor = weight_tensors
+
+    # Check if weight is quantized to 4 bits
+    if not _validate_4bit_quantization(orig_weight_tensor):
+        return None
+
+    # Calculate and validate group size
+    group_size = _calculate_group_size(orig_weight_tensor, weight_scales_tensor)
+    if group_size is None:
+        return None
+
+    # Verify this is 4-bit grouped quantization
+    weight_bits = 4
+
+    return group_size, weight_bits
+
+
+def fuse_into_linear_qta8a_qga4w_node(
+    program: ExportedProgram,
+    graph_module: torch.fx.GraphModule,
+    linear_node: torch.fx.Node,
+    group_size: int,
+    weight_bits: int,
+) -> None:
+    """
+    Fuse the dynamic activation + grouped weight quantized linear pattern into
+    a single linear_qta8a_qga4w operator.
+
+    The pattern:
+        dequantized_input = dequantize_affine(quantized_input, block_size, scale, zero_point, ...)
+        dequantized_weight = dequantize_affine(weight, block_size, weight_scales, weight_zeros, ...)
+        output = linear(dequantized_input, dequantized_weight)
+
+    Becomes:
+        output = linear_qta8a_qga4w(quantized_input, input_scale, input_zero_point,
+                                   weight, group_size, weight_scales, weight_zeros)
+    """
+    dq_input_node = linear_node.args[0]
+    dq_weight_node = linear_node.args[1]
+
+    assert isinstance(dq_input_node, torch.fx.Node)
+    assert isinstance(dq_weight_node, torch.fx.Node)
+
+    # Get the quantized input and quantization parameters from the input dequantize_affine node
+    # Args: (input, block_size, scale, zero_point, input_dtype, quant_min, quant_max, output_dtype)
+    quantized_input = dq_input_node.args[0]
+    input_scale = dq_input_node.args[2]  # scale is the 3rd argument
+    input_zero_point = dq_input_node.args[3] if len(dq_input_node.args) > 3 else None
+
+    # Get the weight and its quantization parameters from dequantize_affine
+    # Args: (weight, block_size, weight_scales, weight_zeros, input_dtype, quant_min, quant_max, output_dtype)
+    orig_weight = dq_weight_node.args[0]
+    weight_scales = dq_weight_node.args[2]
+    weight_zeros = dq_weight_node.args[3]
+
+    # Pack the 4-bit weight tensor for efficient storage
+    assert isinstance(orig_weight, torch.fx.Node)
+    orig_weight_tensor = get_param_tensor(program, orig_weight)
+    assert isinstance(orig_weight_tensor, torch.Tensor)
+    packed_weight_tensor = pack_4bit_weight_tensor(orig_weight_tensor)
+    utils.update_program_state_dict(
+        program,
+        orig_weight.name,
+        packed_weight_tensor,
+    )
+    # Update the metadata to reflect the new packed shape
+    orig_weight.meta["val"] = orig_weight.meta["val"][:, ::2].to(torch.uint8)
+
+    # Create the linear_qta8a_qga4w node
+    with graph_module.graph.inserting_before(linear_node):
+        linear_qta8a_qga4w_node = graph_module.graph.create_node(
+            "call_function",
+            exir_ops.edge.et_vk.linear_qta8a_qga4w.default,
+            (
+                quantized_input,  # quantized input (int8)
+                input_scale,  # mat1_scale
+                input_zero_point,  # mat1_zero_point
+                orig_weight,  # mat2_data (packed 4-bit weights)
+                group_size,  # group_size (int)
+                weight_scales,  # weight_scales
+                weight_zeros,  # weight_zeros
+            ),
+        )
+
+        # Replace the linear node with the new fused node
+        linear_node.replace_all_uses_with(linear_qta8a_qga4w_node)
+
+        # Erase nodes in the correct order (users first, then dependencies)
+        graph_module.graph.erase_node(linear_node)
+        graph_module.graph.erase_node(dq_weight_node)
+        graph_module.graph.erase_node(dq_input_node)
+
+
 class FuseQuantizedOpsTransform(ExportPass):
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__()
@@ -217,12 +451,23 @@ class FuseQuantizedOpsTransform(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         for node in graph_module.graph.nodes:
+            # Check for linear_qcnw pattern (weight-only quantization)
             qcnw_details = matches_linear_qcnw_pattern(self.program, node)
             if qcnw_details is not None:
                 qcnw_method, qcnw_nbits = qcnw_details
                 fuse_into_linear_qcnw_node(
                     self.program, graph_module, node, qcnw_method, qcnw_nbits
                 )
+                continue
+
+            # Check for linear_qta8a_qga4w pattern (dynamic activation + grouped weight quantization)
+            qta8a_qga4w_details = matches_linear_qta8a_qga4w_pattern(self.program, node)
+            if qta8a_qga4w_details is not None:
+                group_size, weight_bits = qta8a_qga4w_details
+                fuse_into_linear_qta8a_qga4w_node(
+                    self.program, graph_module, node, group_size, weight_bits
+                )
+                continue
 
         graph_module.recompile()
         dead_code_elimination_pass(graph_module)
