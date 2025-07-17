@@ -10,6 +10,9 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/backend/backend_init_context.h>
+#include <executorch/runtime/backend/backend_option_context.h>
+#include <executorch/runtime/backend/options.h>
 
 #include <memory>
 
@@ -52,6 +55,16 @@ public:
 
     /// Returns `true` if the delegate is available otherwise `false`.
     bool is_available() const override;
+
+    executorch::runtime::Error set_option(
+      executorch::runtime::BackendOptionContext& context,
+      const executorch::runtime::Span<executorch::runtime::BackendOption>& backend_options) override;
+
+
+    executorch::runtime::Error get_option(
+    executorch::runtime::BackendOptionContext& context,
+    executorch::runtime::Span<executorch::runtime::BackendOption>& backend_options) override;
+
 
     /// Unloads the loaded CoreML model with the  specified handle.
     ///
