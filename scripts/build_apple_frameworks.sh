@@ -163,8 +163,7 @@ for preset_index in "${!PRESETS[@]}"; do
           --preset "${preset}"
 
     cmake --build "${preset_output_dir}" \
-          --config "${mode}" \
-          -j$(sysctl -n hw.ncpu)
+          --config "${mode}"
   done
 done
 
