@@ -242,8 +242,12 @@ class Adapter final {
 
   // Command Buffer Submission
 
-  void
-  submit_cmd(const Queue&, VkCommandBuffer, VkFence fence = VK_NULL_HANDLE);
+  void submit_cmd(
+      const Queue&,
+      VkCommandBuffer,
+      VkFence fence = VK_NULL_HANDLE,
+      VkSemaphore wait_semaphore = VK_NULL_HANDLE,
+      VkSemaphore signal_semaphore = VK_NULL_HANDLE);
 
   std::string stringize() const;
   friend std::ostream& operator<<(std::ostream&, const Adapter&);
