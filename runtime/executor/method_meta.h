@@ -77,12 +77,31 @@ class TensorInfo final {
   friend class MethodMeta;
   friend class testing::TensorInfoTestFriend;
 
-  TensorInfo(
+  /**
+   * Create a TensorInfo instance.
+   *
+   * @param[in] sizes The sizes of the tensor.
+   * @param[in] dim_order The dim order of the tensor.
+   * @param[in] scalar_type The scalar type of the tensor.
+   * @param[in] is_memory_planned Whether the tensor's memory was planned.
+   * @param[in] name The fully qualified name of the tensor.
+   * @returns A Result containing the TensorInfo on success, or an error on
+   * failure.
+   */
+  static Result<TensorInfo> create(
       Span<const int32_t> sizes,
       Span<const uint8_t> dim_order,
       executorch::aten::ScalarType scalar_type,
       const bool is_memory_planned,
       std::string_view name);
+
+  TensorInfo(
+      Span<const int32_t> sizes,
+      Span<const uint8_t> dim_order,
+      executorch::aten::ScalarType scalar_type,
+      const bool is_memory_planned,
+      std::string_view name,
+      size_t nbytes);
 
   /**
    * The sizes of the tensor.
