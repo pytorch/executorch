@@ -3,25 +3,18 @@ load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 oncall("executorch")
 
 python_library(
-    name = "vulkan_quantizer_utils",
-    srcs = [
-        "vulkan_quantizer_utils.py",
-    ],
+    name = "vulkan_quantizer",
+    srcs = ["vulkan_quantizer.py"],
     deps = [
+        ":vulkan_quantizer_utils",
         "//caffe2:torch",
-        "//pytorch/ao/torchao/quantization/pt2e:quantizer",
-        "//pytorch/ao/torchao/quantization/pt2e:utils",
     ],
 )
 
 python_library(
-    name = "vulkan_quantizer",
-    srcs = [
-        "vulkan_quantizer.py",
-    ],
+    name = "vulkan_quantizer_utils",
+    srcs = ["vulkan_quantizer_utils.py"],
     deps = [
-        ":vulkan_quantizer_utils",
         "//caffe2:torch",
-        "//pytorch/ao/torchao/quantization/pt2e:quantizer",
     ],
 )

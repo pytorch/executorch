@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import torch
 from torch.fx import Node
@@ -48,7 +48,7 @@ def register_annotator(op: str) -> Callable[[AnnotatorType], None]:
     return decorator
 
 
-def _is_annotated(nodes: list[Node]):
+def _is_annotated(nodes: list[Node]) -> bool:
     """
     Given a list of nodes (that represents an operator pattern),
     check if any of the node is annotated, return True if any of the node
@@ -63,7 +63,7 @@ def _is_annotated(nodes: list[Node]):
     return annotated
 
 
-def _mark_nodes_as_annotated(nodes: list[Node]):
+def _mark_nodes_as_annotated(nodes: list[Node]) -> None:
     for node in nodes:
         if node is not None:
             if "quantization_annotation" not in node.meta:
@@ -119,7 +119,7 @@ def _annotate_linear(
     return annotated_partitions
 
 
-def _is_share_obs_or_fq_op(op: Callable) -> bool:
+def _is_share_obs_or_fq_op(op: Callable[..., torch.Tensor]) -> bool:
     return op in [
         torch.ops.aten.relu.default,
         torch.ops.aten.hardtanh.default,
