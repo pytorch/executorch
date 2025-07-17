@@ -66,8 +66,7 @@ find_library(MPS_GRAPH_FRAMEWORK MetalPerformanceShadersGraph)
 
 target_link_libraries(
   mpsdelegate
-  PRIVATE bundled_program
-          mps_schema
+  PRIVATE mps_schema
           executorch_core
           ${FOUNDATION_FRAMEWORK}
           ${METAL_FRAMEWORK}
