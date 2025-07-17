@@ -4,9 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Enable logging even when in release mode. We are building for desktop, where
-# saving a few kB is less important than showing useful error information to
-# users.
 # keep sorted
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
