@@ -7,7 +7,7 @@
 
 set -euxo pipefail
 
-MODES=("Release" "Debug")
+MODES=()
 PRESETS=("ios" "ios-simulator" "macos")
 # To support backwards compatibility, we want to retain the same output directory.
 PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
@@ -137,6 +137,11 @@ for arg in "$@"; do
   esac
 done
 
+# If no modes are specified, default to both Release and Debug
+if [[ ${#MODES[@]} -eq 0 ]]; then
+  MODES=("Release" "Debug")
+fi
+
 echo "Building libraries"
 
 rm -rf "${OUTPUT_DIR}"
@@ -150,6 +155,7 @@ for preset_index in "${!PRESETS[@]}"; do
     # Do NOT add options here. Update the respective presets instead.
     cmake -S "${SOURCE_ROOT_DIR}" \
           -B "${preset_output_dir}" \
+          --fresh \
           -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
           -DCMAKE_BUILD_TYPE="${mode}" \
           ${CMAKE_OPTIONS_OVERRIDE[@]:-} \

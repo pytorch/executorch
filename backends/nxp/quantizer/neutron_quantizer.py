@@ -10,12 +10,13 @@ import torch
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
-
 from executorch.backends.nxp.quantizer.patterns import (
     AddmmPattern,
     AvgPoolPattern,
     Conv1dPattern,
     Conv2dPattern,
+    HardTanhInPlacePattern,
+    HardTanhPattern,
     LinearPattern,
     MaxPoolPattern,
     PadPattern,
@@ -24,6 +25,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     ReluInPlacePattern,
     ReluPattern,
     ReshapePattern,
+    SharedSpecPattern,
     SoftMaxPattern,
     ViewPattern,
 )
@@ -199,14 +201,43 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(PermutePattern(), static_qconfig),
                 NeutronAtenQuantizer(PadPattern(), static_qconfig),
                 NeutronAtenQuantizer(ReluPattern(), static_qconfig),
+                NeutronAtenQuantizer(HardTanhPattern(), static_qconfig),
+                NeutronAtenQuantizer(HardTanhInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(AvgPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(ViewPattern(), static_qconfig),
             ]
         )
+        # Mapping ops defined in quantizer partition types to its quantizer
+        self.op_to_quantizer = {
+            pt: q for q in self.quantizers for pt in q.pattern.partition_types()
+        }
+        # Mapping ops to the quantizer application state
+        self.op_to_applied_quantizer = {
+            pt: False for q in self.quantizers for pt in q.pattern.partition_types()
+        }
 
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
         pass_runner = NeutronAtenPassManager()
         return pass_runner(model).graph_module
+
+    def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        nodes = list(model.graph.nodes)
+        for node in nodes:
+            if (
+                node.target not in self.op_to_quantizer
+                or self.op_to_applied_quantizer[node.target]
+            ):
+                continue
+            else:
+                quantizer = self.op_to_quantizer[node.target]
+                quantizer.annotate(model)
+                if not isinstance(quantizer.pattern, SharedSpecPattern):
+                    self.op_to_applied_quantizer[node.target] = True
+
+        return model
+
+    def validate(self, model: torch.fx.GraphModule) -> None:
+        return super().validate(model)
