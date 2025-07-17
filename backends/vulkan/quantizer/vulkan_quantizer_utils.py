@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional
 
 import torch
 from torch.fx import Node
