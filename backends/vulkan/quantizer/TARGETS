@@ -9,8 +9,7 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//pytorch/ao/torchao/quantization/pt2e:quantizer",
-        "//pytorch/ao/torchao/quantization/pt2e:utils",
+        "//pytorch/ao:torchao",  # @manual
     ],
 )
 
@@ -22,6 +21,6 @@ python_library(
     deps = [
         ":vulkan_quantizer_utils",
         "//caffe2:torch",
-        "//pytorch/ao/torchao/quantization/pt2e:quantizer",
+        "//pytorch/ao:torchao",  # @manual
     ],
 )
