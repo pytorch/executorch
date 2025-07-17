@@ -58,6 +58,17 @@ $if MODE == "per_channel":
     int quant_min;
     int quant_max;
   };
+$if MODE == "block_wise":
+  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+
+  layout(push_constant) uniform restrict BlockPC {
+    ivec4 blockSize;        // WHCN
+    ivec4 numBlocks;        // (#W,#H,#C,#N)
+    ivec4 blockStride;      // {1, #W, #W * #H, #W * #H * #C}
+    int   quant_min;
+    int   quant_max;
+  };
 
 ${layout_declare_ubo(B, "ivec3", "t_in_limits")}
 ${layout_declare_ubo(B, "ivec3", "t_out_limits")}
@@ -70,68 +81,58 @@ ${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 /*
- * QUANTIZATION SHADER (TEXTURE STORAGE)
- *
- * This shader converts floating-point tensor values to n-bit integer representations
- * using pre-computed quantization parameters (scale and zero_point). The quantization
- * maps floating-point values to a discrete integer range while preserving the
- * original data distribution as much as possible.
- *
- * ALGORITHM:
- * 1. Load floating-point texel (4 values) from 3D texture
- * 2. Apply quantization formula to each component: qvalue = round(value / scale) + zero_point
- * 3. Clamp each result to [quant_min, quant_max] range
- * 4. Store quantized integer texel to output texture
- *
- * WORKGROUP CONFIGURATION:
- * - Per-Tensor Mode:
- *   - Global WG Size: {W, H, C/4} for input size (W, H, C) with width-packing
- *   - Local WG Size: Default (typically {8, 8, 1} or based on global WG size)
- * - Per-Token Mode:
- *   - Global WG Size: {W, H, C/4} for input size (W, H, C) with width-packing
- *   - Local WG Size: Default (typically {8, 8, 1} or based on global WG size)
- *
- * SUPPORTED CONFIGURATIONS:
- * - Texture Storage: Uses 3D texture indexing with texel-based processing
- * - Assumes width-packed layout (packed_dim = 0) in current implementation
- * - Handles texel padding for non-multiple-of-4 tensor dimensions
- * - For per-token mode: scale/zero_point tensors must use buffer storage
- *
- * QUANTIZATION FORMULA VISUALIZATION:
- * For input range [min_val, max_val] mapped to integer range [quant_min, quant_max]:
- *
- * Floating Point Domain:    Integer Domain:
- * min_val ────────────────► quant_min
- *    │                         │
- *    │    scale = (max_val - min_val) / (quant_max - quant_min)
- *    │    zero_point = quant_min - round(min_val / scale)
- *    │                         │
- * max_val ────────────────► quant_max
- *
- * Texel Quantization Process:
- * Input Texel: [2.5, -1.0, 0.5, 3.2] (float4)
- * Per-component quantization with scale=0.1, zero_point=-128:
- * Component 0: round(2.5 / 0.1) + (-128) = 25 + (-128) = -103
- * Component 1: round(-1.0 / 0.1) + (-128) = -10 + (-128) = -138 → clamp to -128
- * Component 2: round(0.5 / 0.1) + (-128) = 5 + (-128) = -123
- * Component 3: round(3.2 / 0.1) + (-128) = 32 + (-128) = -96
- * Output Texel: [-103, -128, -123, -96] (int4)
- *
- * PER-TENSOR QUANTIZATION:
- * - Single scale and zero_point values for entire tensor
- * - All texel components use same quantization parameters
- * - Parameters passed as push constants for efficiency
- * - Each thread processes one texel (4 elements) independently
- * - Formula: qvalue[i] = clamp(round(value[i] / scale) + zero_point, quant_min, quant_max)
- *
- * PER-TOKEN QUANTIZATION:
- * - Separate scale and zero_point for each token
- * - Token = all elements except last dimension (e.g., for [B,S,H]: B*S tokens of H elements)
- * - Parameters stored in buffer arrays indexed by token_id
- * - Each thread calculates token_id from its 3D texture position
- * - Scale/zero_point buffers accessed directly (not as textures)
- * - Formula: qvalue[i] = clamp(round(value[i] / scale[token_id]) + zero_point[token_id], quant_min, quant_max)
- */
+  Quantization Shader (Texture Storage)
+    This shader converts floating-point tensor values to n-bit integer representations
+    using pre-computed quantization parameters (scale and zero_point). The quantization
+    maps floating-point values to a discrete integer range while preserving the original
+    data distribution as much as possible.
+
+  Important Considerations:
+    (+) All input tensors are assumed to be WIDTH_PACKED (i.e., contiguous in the last dimension)
+    (+) The axis map layout is assumed to be a standard layout for scales and zero_points
+    (++) The scale and zero_point tensors must be implemented as buffers
+
+  Workgroup Configuration:
+  - quantize_per_tensor
+      This mode applies uniform quantization across the entire tensor using a single scale
+      and zero_point value.
+
+    (*) global_wg_size: default
+    (*) local_wg_size: default
+
+  - quantize_per_token
+      This mode applies quantization individually to each token (or element) in the input,
+      using separate scale and zero_point values for each token. For instance if we have
+      a tensor of shape [B, S, H] then we have B*S tokens (and s+zp pairs) of H elements each.
+
+    (*) global_wg_size: default
+    (*) local_wg_size: default
+
+  - quantize_per_channel
+      This mode applies quantization separately to each channel of the input tensor, using
+      distinct scale and zero_point values for each channel. For example, if the tensor shape
+      is [B, C, H, W] and axis = 1, quantization parameters are computed per channel C, allowing
+      each channel to be quantized independently.
+
+    (*) global_wg_size: default
+    (*) local_wg_size: Default with special handling for batch dimension. When quantizing along
+        the batch axis, Z dimension is set to 1 to ensure correct workgroup dispatching. Otherwise,
+        uses standard workgroup size derived from global workgroup dimensions.
+
+  - quantize_block_wise
+      This mode applies quantization in blocks or groups of elements, allowing different scale
+      and zero_point values for each block. It is equivalent to quantize_affine, where quantization
+      parameters are affine transformations applied per block. For example, if the tensor shape
+      is [6, 9, 4] and blockSize = [3, 3, 2], then we have 12 blocks each with 18 elements.
+
+    (*) global_wg_size: default
+    (*) local_wg_size: Default with special handling for batch dimension. When quantizing along
+        the batch axis, Z dimension is set to 1 to ensure correct workgroup dispatching. Otherwise,
+        uses standard workgroup size derived from global workgroup dimensions.
+
+  Quantization Formula:
+    qvalue = clamp(round(value / scale) + zero_point, quant_min, quant_max).
+*/
 
 #ifdef per_tensor
 
@@ -192,7 +193,7 @@ void quantize_per_token() {
   write_texel(t_out, pos, outtex);
 }
 
-#else // per_channel
+#elif defined(per_channel)
 
 void quantize_per_channel() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
@@ -265,6 +266,36 @@ void quantize_per_channel() {
       OUT_T qvalue = quantize_val(value, scale_val, zero_point_val);
       outtex[i] = qvalue;
     }
+  }
+
+  write_texel(t_out, pos, outtex);
+}
+
+#else // block_wise
+
+void quantize_block_wise() {
+  const ivec3 pos = ivec3(gl_GlobalInvocationID);
+
+  if (any(greaterThanEqual(pos, t_in_limits)))
+    return;
+
+  FVEC4_T intex = load_texel(t_in, pos);
+  IVEC4_T outtex;
+
+  ivec4 base_tidx = ivec4(pos.x * 4, pos.y, pos.z, 0);
+  int foldedZ = pos.z;
+
+  int C_total = numBlocks.z * blockSize.z;
+
+  [[unroll]] for (int i = 0; i < 4; ++i) {
+    ivec4 tidx = ivec4(base_tidx.x + i, base_tidx.y, (foldedZ % C_total), (foldedZ / C_total));
+
+    ivec4 bcoord = tidx / blockSize;
+    int block_id = bcoord.x * blockStride.x + bcoord.y * blockStride.y + bcoord.z * blockStride.z + bcoord.w * blockStride.w;
+
+    IN_T value = IN_T(intex[i]);
+    OUT_T qvalue = quantize_val(value, t_scale[block_id], t_zero_point[block_id]);
+    outtex[i] = qvalue;
   }
 
   write_texel(t_out, pos, outtex);
