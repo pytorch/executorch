@@ -43,6 +43,7 @@ from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
+    VgfQuantizer,
 )
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
@@ -332,6 +333,8 @@ class ArmTester(Tester):
                 quantizer = TOSAQuantizer(tosa_spec)
             elif is_ethosu(self.compile_spec):
                 quantizer = EthosUQuantizer(self.compile_spec)
+            elif is_vgf(self.compile_spec):
+                quantizer = VgfQuantizer(self.compile_spec)
             quantize_stage = tester.Quantize(
                 quantizer,
                 get_symmetric_quantization_config(),
