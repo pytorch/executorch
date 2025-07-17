@@ -36,7 +36,7 @@ layout(push_constant) uniform restrict Block {
   ivec4 weight_sizes;
 };
 
-layout(local_size_x = WGS, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 layout(constant_id = 3) const int group_size = 64;
 
@@ -58,7 +58,9 @@ void main() {
   const uint n = MUL_8(n8);
   const uint K4 = DIV_UP_4(input_sizes.x);
 
-  const int block_num = input_sizes.x / group_size;
+  if (n >= output_sizes.x) {
+    return;
+  }
 
   VEC4_T out_texels[2];
   out_texels[0] = VEC4_T(0);
@@ -150,6 +152,8 @@ void main() {
 
     uint n4 = DIV_4(n);
     write_output_texel(out_texels[0], n4);
-    write_output_texel(out_texels[1], n4 + 1);
+    if (n + 4 < output_sizes.x) {
+      write_output_texel(out_texels[1], n4 + 1);
+    }
   }
 }
