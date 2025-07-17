@@ -688,6 +688,7 @@ def register_transfer_ops(features: OpFeatures):
         exir_ops.edge.aten.full_like.default,
         exir_ops.edge.aten.ones.default,
         exir_ops.edge.aten.ones_like.default,
+        exir_ops.edge.aten.scalar_tensor.default,
         exir_ops.edge.aten.upsample_nearest2d.vec,
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.zeros.default,
