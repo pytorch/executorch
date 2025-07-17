@@ -255,6 +255,7 @@ filters = [
 [targets.extension_llm_runner]
 buck_targets = [
   "//extension/llm/runner:runner_lib",
+  "//extension/llm/runner/io_manager:io_manager",
 ]
 filters = [
   ".cpp$",
