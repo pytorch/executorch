@@ -205,6 +205,5 @@ def test_add_tensor_vgf_int(test_data: input_t1):
         aten_op,
         exir_op,
         tosa_version="TOSA-1.0+INT",
-        symmetric_io_quantization=True,
     )
     pipeline.run()
