@@ -199,6 +199,19 @@ python_library(
     ],
 )
 
+python_unittest(
+    name = "test_program_builder",
+    srcs = [
+        "tests/test_program_builder.py",
+    ],
+    typing = True,
+    deps = [
+        ":program_builder",
+        "//caffe2:torch",
+        "//later:lib",
+    ],
+)
+
 python_library(
     name = "fuse_ops",
     srcs = [
