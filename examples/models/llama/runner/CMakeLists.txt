@@ -42,7 +42,6 @@ else()
   add_library(llama_runner SHARED ${llama_runner_srcs})
 endif()
 
-# For extension_llm_runner
 if(NOT TARGET extension_llm_runner)
   message(
     FATAL_ERROR
@@ -56,7 +55,6 @@ set(llama_runner_deps
 )
 
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
-# XXX: this fixing anything means we are defining an unnamespaced tokenizers target that needs building somehow
 target_link_libraries(llama_runner PUBLIC tokenizers::tokenizers)
 
 target_include_directories(

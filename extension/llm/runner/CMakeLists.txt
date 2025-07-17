@@ -44,10 +44,6 @@ set(SUPPORT_REGEX_LOOKAHEAD ON)
 # llama/runner/CMakeLists.txt builds a shared library libllama_runner.so that
 # transitively depends on tokenizers. Need to build tokenizers with -fPIC.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-add_subdirectory(
-  ${EXECUTORCH_ROOT}/extension/llm/tokenizers
-  ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/tokenizers
-)
 
 set(runner_deps executorch_core extension_module extension_tensor tokenizers)
 
@@ -69,11 +65,19 @@ install(
   DESTINATION ${_common_include_directories}
 )
 install(
-  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/
   DESTINATION include/executorch/extension/llm/runner
   FILES_MATCHING
   PATTERN "*.h"
 )
+# TODO: remove this once we create a proper CMake setup for sampler.
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../sampler/
+  DESTINATION include/executorch/extension/llm/sampler
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+
 
 if(BUILD_TESTING)
   add_subdirectory(test)

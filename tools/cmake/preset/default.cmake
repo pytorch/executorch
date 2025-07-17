@@ -95,6 +95,11 @@ define_overridable_option(
   BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+  "Build the LLM runner extension"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_MODULE
   "Build the Module extension"
   BOOL OFF
@@ -295,6 +300,13 @@ check_required_options_on(
     EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
   REQUIRES
     EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+)
+
+check_required_options_on(
+  IF_ON
+    EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+  REQUIRES
+    EXECUTORCH_BUILD_EXTENSION_LLM
 )
 
 check_required_options_on(

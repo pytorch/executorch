@@ -24,8 +24,10 @@
 # the contract of exposing these CMake variables.
 
 cmake_minimum_required(VERSION 3.24)
+
+include(CMakeFindDependencyMacro)
 include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
-find_package(tokenizers) # not REQUIRED because building it is optional
+find_dependency(tokenizers CONFIG)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
@@ -71,6 +73,12 @@ foreach(lib ${non_exported_lib_list})
     list(APPEND EXECUTORCH_LIBRARIES ${lib})
   endif()
 endforeach()
+
+if(TARGET XNNPACK)
+set_target_properties(
+  XNNPACK PROPERTIES INTERFACE_LINK_LIBRARIES xnnpack-microkernels-prod
+)
+endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 
