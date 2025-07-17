@@ -48,25 +48,23 @@
 cmake_minimum_required(VERSION 3.24)
 project(executorch)
 
-include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
-include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
-include(CMakeDependentOption)
-include(ExternalProject)
-
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
-announce_configured_options(CMAKE_CXX_STANDARD)
 
 if(NOT CMAKE_SYSTEM_PROCESSOR)
   set(CMAKE_SYSTEM_PROCESSOR ${CMAKE_HOST_SYSTEM_PROCESSOR})
 endif()
-announce_configured_options(CMAKE_SYSTEM_PROCESSOR)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
-announce_configured_options(CMAKE_BUILD_TYPE)
+
+include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
+include(${PROJECT_SOURCE_DIR}/tools/cmake/common/cc_library.cmake)
+include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
+include(CMakeDependentOption)
+include(ExternalProject)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -78,6 +76,9 @@ if(NOT BUCK2)
 endif()
 announce_configured_options(BUCK2)
 
+announce_configured_options(CMAKE_CXX_STANDARD)
+announce_configured_options(CMAKE_SYSTEM_PROCESSOR)
+announce_configured_options(CMAKE_BUILD_TYPE)
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 announce_configured_options(BUILD_TESTING)
