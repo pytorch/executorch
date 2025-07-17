@@ -38,7 +38,6 @@ from executorch.devtools.etrecord import ETRecord
 from executorch.exir.debug_handle_utils import (
     DEBUG_HANDLE_KEY,
     FROM_NODE_KEY,
-    get_greatest_ancestor_node_identifier,
     UNSET_DEBUG_HANDLE,
 )
 
@@ -976,6 +975,95 @@ def get_parent_node_identifier(node: Node) -> Optional[str]:
     return f"{node_source.name}.{str(node_source.graph_id)}"
 
 
+def _extract_ancestor_debug_handles(
+    edge_dialect_program: ExportedProgram,
+) -> Dict[str, int]:
+    """Extract mapping from ancestor node identifiers to debug handles."""
+    ancestors_node_id_to_debug_handle: Dict[str, int] = {}
+
+    def _extract_node_id_to_debug_handle(node: Node) -> None:
+        if node.op in ("placeholder", "output"):
+            return
+        for ancestor_node_id in get_ancestor_node_identifiers(node):
+            if ancestor_node_id not in ancestors_node_id_to_debug_handle:
+                ancestors_node_id_to_debug_handle[ancestor_node_id] = node.meta[
+                    DEBUG_HANDLE_KEY
+                ]
+            else:
+                assert (
+                    ancestors_node_id_to_debug_handle[ancestor_node_id]
+                    == node.meta[DEBUG_HANDLE_KEY]
+                )
+
+    bfs_trace_with_node_process(
+        edge_dialect_program.graph_module, _extract_node_id_to_debug_handle
+    )
+    return ancestors_node_id_to_debug_handle
+
+
+def _find_matched_debug_handles(
+    exported_program: ExportedProgram,
+    exported_program_graph_id: int,
+    ancestors_node_id_to_debug_handle: Dict[str, int],
+) -> Set[int]:
+    """Find debug handles that have corresponding nodes in the exported program."""
+    matched_debug_handles: Set[int] = set()
+
+    def _find_n_match_node(node: Node) -> None:
+        if node.op in ("output", "placeholder"):
+            return
+        node_id = f"{node.name}.{exported_program_graph_id}"
+        parent_node_id = get_parent_node_identifier(node)
+        if node_id in ancestors_node_id_to_debug_handle:
+            matched_debug_handles.add(ancestors_node_id_to_debug_handle[node_id])
+        elif parent_node_id and parent_node_id in ancestors_node_id_to_debug_handle:
+            matched_debug_handles.add(ancestors_node_id_to_debug_handle[parent_node_id])
+
+    bfs_trace_with_node_process(exported_program.graph_module, _find_n_match_node)
+    return matched_debug_handles
+
+
+def _verify_graph_match(
+    edge_dialect_program: ExportedProgram, matched_debug_handles: Set[int]
+) -> bool:
+    """Verify if every debug handle in edge dialect program has a corresponding node."""
+    graph_matched = True
+
+    def _check_graph_match(node: Node) -> None:
+        nonlocal graph_matched
+        if node.op in ("output", "placeholder"):
+            return
+        if node.meta[DEBUG_HANDLE_KEY] not in matched_debug_handles:
+            graph_matched = False
+
+    bfs_trace_with_node_process(edge_dialect_program.graph_module, _check_graph_match)
+    return graph_matched
+
+
+def _apply_debug_handles(
+    exported_program: ExportedProgram,
+    exported_program_graph_id: int,
+    ancestors_node_id_to_debug_handle: Dict[str, int],
+) -> None:
+    """Apply debug handles to the exported program nodes."""
+
+    def _equip_debug_handle(node: Node) -> None:
+        if node.op in ("output", "placeholder"):
+            return
+        node_id = f"{node.name}.{exported_program_graph_id}"
+        parent_node_id = get_parent_node_identifier(node)
+        if node_id in ancestors_node_id_to_debug_handle:
+            node.meta[DEBUG_HANDLE_KEY] = ancestors_node_id_to_debug_handle[node_id]
+        elif parent_node_id and parent_node_id in ancestors_node_id_to_debug_handle:
+            node.meta[DEBUG_HANDLE_KEY] = ancestors_node_id_to_debug_handle[
+                parent_node_id
+            ]
+        else:
+            node.meta[DEBUG_HANDLE_KEY] = UNSET_DEBUG_HANDLE
+
+    bfs_trace_with_node_process(exported_program.graph_module, _equip_debug_handle)
+
+
 def propagate_back_debug_handle(
     exported_program: ExportedProgram,
     exported_program_graph_id: int,
@@ -995,76 +1083,22 @@ def propagate_back_debug_handle(
 
     Return: True if every debug handle in the edge dialect program has a corresponding node in the exported program, otherwise, return False.
     """
-
-    # 1. set up a mapping from identifier of every possible ancestor node id to debug handle
-    # using edge dialect program nodes' debug handles and from_node info
-    ancestors_node_id_to_debug_handle: Dict[str, int] = {}
-
-    def _extract_node_id_to_debug_handle(node: Node) -> None:
-        nonlocal ancestors_node_id_to_debug_handle
-        if node.op in ("placeholder", "output"):
-            return
-        for ancestor_node_id in get_ancestor_node_identifiers(node):
-            if ancestor_node_id not in ancestors_node_id_to_debug_handle:
-                ancestors_node_id_to_debug_handle[ancestor_node_id] = node.meta[
-                    DEBUG_HANDLE_KEY
-                ]
-            else:
-                assert (
-                    ancestors_node_id_to_debug_handle[ancestor_node_id]
-                    == node.meta[DEBUG_HANDLE_KEY]
-                )
-
-    bfs_trace_with_node_process(
-        edge_dialect_program.graph_module, _extract_node_id_to_debug_handle
+    # 1. Extract mapping from ancestor node identifiers to debug handles
+    ancestors_node_id_to_debug_handle = _extract_ancestor_debug_handles(
+        edge_dialect_program
     )
 
-    # 2. verify if every debug handle in the edge dialect program has a corresponding node in the exported program
-    matched_debug_handes: Set[int] = set()
+    # 2. Find debug handles that have corresponding nodes in the exported program
+    matched_debug_handles = _find_matched_debug_handles(
+        exported_program, exported_program_graph_id, ancestors_node_id_to_debug_handle
+    )
 
-    def _find_n_match_node(node: Node) -> None:
-        nonlocal matched_debug_handes
-        if node.op in ("output", "placeholder"):
-            return
-        node_id = f"{node.name}.{exported_program_graph_id}"
-        parent_node_id = get_parent_node_identifier(node)
-        if node_id in ancestors_node_id_to_debug_handle:
-            matched_debug_handes.add(ancestors_node_id_to_debug_handle[node_id])
-        elif parent_node_id and parent_node_id in ancestors_node_id_to_debug_handle:
-            matched_debug_handes.add(ancestors_node_id_to_debug_handle[parent_node_id])
-
-    bfs_trace_with_node_process(exported_program.graph_module, _find_n_match_node)
-
-    graph_matched = True
-
-    def _check_graph_match(node: Node) -> None:
-        nonlocal graph_matched
-        if node.op in ("output", "placeholder"):
-            return
-
-        if node.meta[DEBUG_HANDLE_KEY] not in matched_debug_handes:
-            graph_matched = False
-
-    bfs_trace_with_node_process(edge_dialect_program.graph_module, _check_graph_match)
-
-    # if any node in the edge dialect program has no corresponding node in the exported program, match failed
-    if not graph_matched:
+    # 3. Verify if every debug handle in edge dialect program has a corresponding node
+    if not _verify_graph_match(edge_dialect_program, matched_debug_handles):
         return False
 
-    # 3. propagate debug handle from edge dialect program back to the exported program while maintain the correctness of operator tracing
-    def _equip_debug_handle(node: Node) -> None:
-        if node.op in ("output", "placeholder"):
-            return
-        node_id = f"{node.name}.{exported_program_graph_id}"
-        parent_node_id = get_parent_node_identifier(node)
-        if node_id in ancestors_node_id_to_debug_handle:
-            node.meta[DEBUG_HANDLE_KEY] = ancestors_node_id_to_debug_handle[node_id]
-        elif parent_node_id and parent_node_id in ancestors_node_id_to_debug_handle:
-            node.meta[DEBUG_HANDLE_KEY] = ancestors_node_id_to_debug_handle[
-                parent_node_id
-            ]
-        else:
-            node.meta[DEBUG_HANDLE_KEY] = UNSET_DEBUG_HANDLE
-
-    bfs_trace_with_node_process(exported_program.graph_module, _equip_debug_handle)
+    # 4. Apply debug handles to the exported program
+    _apply_debug_handles(
+        exported_program, exported_program_graph_id, ancestors_node_id_to_debug_handle
+    )
     return True
