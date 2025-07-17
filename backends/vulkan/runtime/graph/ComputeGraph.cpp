@@ -765,8 +765,6 @@ void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
   context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
   fence.wait();
   context_->fences().return_fence(fence);
-
-  context_->flush();
 }
 
 void ComputeGraph::prepack() {
@@ -787,7 +785,12 @@ void ComputeGraph::prepack() {
       // Otherwise, just submit the current command buffer for execution and
       // proceed. This results in lower load latency at the cost of higher peak
       // memory usage.
-      reduce_peak_memory ? submit_current_cmd_and_wait() : submit_current_cmd();
+      if (reduce_peak_memory) {
+        submit_current_cmd_and_wait();
+        context_->flush();
+      } else {
+        submit_current_cmd();
+      }
       staging_nbytes_in_cmd_ = 0;
       context_->set_cmd();
       submitted = true;
@@ -797,6 +800,7 @@ void ComputeGraph::prepack() {
     i++;
   }
   submit_current_cmd_and_wait(/*final_use=*/true);
+  context_->flush();
   staging_nbytes_in_cmd_ = 0;
 }
 
