@@ -214,36 +214,51 @@ endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   # --- pthreadpool
-  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
-      ${CMAKE_POSITION_INDEPENDENT_CODE}
+  set(PTHREADPOOL_SOURCE_DIR
+      "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/pthreadpool"
   )
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
-  set(PTHREADPOOL_BUILD_TESTS
-      OFF
-      CACHE BOOL ""
+  include(ExternalProject)
+  include(GNUInstallDirs)
+  set(PTHREADPOOL_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/pthreadpool")
+  set(PTHREADPOOL_INSTALL_DIR "${PTHREADPOOL_BINARY_DIR}/install")
+  set(PTHREADPOOL_LIBRARY
+      "${PTHREADPOOL_INSTALL_DIR}/${CMAKE_INSTALL_LIBDIR}/libpthreadpool.a"
   )
-  set(PTHREADPOOL_BUILD_BENCHMARKS
-      OFF
-      CACHE BOOL ""
-  )
-  set(PTHREADPOOL_LIBRARY_TYPE
-      "static"
-      CACHE STRING ""
-  )
-  set(PTHREADPOOL_ALLOW_DEPRECATED_API
-      ON
-      CACHE BOOL ""
-  )
+  get_extra_cmake_args_for_external_project(PTHREADPOOL_EXTRA_CMAKE_ARGS)
   if(APPLE)
-    set(PTHREADPOOL_SYNC_PRIMITIVE
-        "condvar"
-        CACHE STRING ""
+    list(APPEND PTHREADPOOL_EXTRA_CMAKE_ARGS -D
+         PTHREADPOOL_SYNC_PRIMITIVE=condvar
     )
   endif()
-  add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
-  set(CMAKE_POSITION_INDEPENDENT_CODE
-      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  ExternalProject_Add(
+    pthreadpoolExternalProject
+    SOURCE_DIR "${PTHREADPOOL_SOURCE_DIR}"
+    BINARY_DIR "${PTHREADPOOL_BINARY_DIR}"
+    INSTALL_DIR "${PTHREADPOOL_INSTALL_DIR}"
+    BUILD_BYPRODUCTS "${PTHREADPOOL_LIBRARY}"
+    CMAKE_ARGS ${PTHREADPOOL_EXTRA_CMAKE_ARGS}
+               -D
+               PTHREADPOOL_BUILD_TESTS=OFF
+               -D
+               PTHREADPOOL_BUILD_BENCHMARKS=OFF
+               -D
+               PTHREADPOOL_LIBRARY_TYPE=static
+               -D
+               PTHREADPOOL_ALLOW_DEPRECATED_API=ON
+               -D
+               CMAKE_POSITION_INDEPENDENT_CODE=ON
+               -D
+               CMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+  )
+  add_library(pthreadpool STATIC IMPORTED)
+  set_property(
+    TARGET pthreadpool PROPERTY IMPORTED_LOCATION "${PTHREADPOOL_LIBRARY}"
+  )
+  add_dependencies(pthreadpool pthreadpoolExternalProject)
+  # Trailing slash matters here! "Move everything from the temporary pthreadpool
+  # install directory to the proper install directory."
+  install(DIRECTORY "${PTHREADPOOL_INSTALL_DIR}/"
+          DESTINATION "${CMAKE_INSTALL_PREFIX}"
   )
 endif()
 
