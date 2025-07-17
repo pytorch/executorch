@@ -38,7 +38,7 @@ Context::Context(vkapi::Adapter* adapter, const ContextConfig& config)
       querypool_(config_.query_pool_config, nullptr),
       // Command buffer submission
       cmd_mutex_{},
-      cmd_(VK_NULL_HANDLE, 0u),
+      cmd_(VK_NULL_HANDLE, VK_NULL_HANDLE, 0u),
       submit_count_{0u},
       // Memory Management
       buffer_clearlist_mutex_{},
