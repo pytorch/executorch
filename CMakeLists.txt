@@ -164,14 +164,30 @@ endif()
 add_subdirectory(third-party)
 
 if(NOT DEFINED FXDIV_SOURCE_DIR)
-  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
-      ${CMAKE_POSITION_INDEPENDENT_CODE}
+  include(GNUInstallDirs)
+  get_extra_cmake_args_for_external_project(FXDIV_EXTRA_CMAKE_ARGS)
+  set(FXDIV_SOURCE_DIR
+      "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/FXdiv"
   )
-  set(FXDIV_SOURCE_DIR "backends/xnnpack/third-party/FXdiv")
-  add_subdirectory("${FXDIV_SOURCE_DIR}")
-  set(CMAKE_POSITION_INDEPENDENT_CODE
-      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  set(FXDIV_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/fxdiv")
+  set(FXDIV_INSTALL_DIR "${FXDIV_BINARY_DIR}/install")
+  set(FXDIV_HEADER "${FXDIV_INSTALL_DIR}/${CMAKE_INSTALL_INCLUDEDIR}/fxdiv.h")
+  ExternalProject_Add(
+    fxdivExternalProject
+    SOURCE_DIR "${FXDIV_SOURCE_DIR}"
+    BINARY_DIR "${FXDIV_BINARY_DIR}"
+    INSTALL_DIR "${FXDIV_INSTALL_DIR}"
+    BUILD_BYPRODUCTS "${FXDIV_HEADER}"
+    CMAKE_ARGS "${FXDIV_EXTRA_CMAKE_ARGS}"
+               -D
+               CMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+               -D
+               FXDIV_BUILD_TESTS=OFF
+               -D
+               FXDIV_BUILD_BENCHMARKS=OFF
   )
+  add_library(fxdiv INTERFACE IMPORTED)
+  set_property(TARGET fxdiv PROPERTY IMPORTED_LOCATION "${FXDIV_HEADER}")
 endif()
 
 if(EXECUTORCH_BUILD_CPUINFO)
@@ -227,7 +243,6 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   set(PTHREADPOOL_SOURCE_DIR
       "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/pthreadpool"
   )
-  include(ExternalProject)
   include(GNUInstallDirs)
   set(PTHREADPOOL_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/pthreadpool")
   set(PTHREADPOOL_INSTALL_DIR "${PTHREADPOOL_BINARY_DIR}/install")
