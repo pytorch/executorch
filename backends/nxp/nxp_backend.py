@@ -174,7 +174,8 @@ class NeutronBackend(BackendDetails):
             # Otherwise, we get violation that this op is not part of ATen Core ops.
             edge_program._verifiers = [
                 EXIREdgeDialectVerifier(
-                    class_only=True, core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default]
+                    class_only=True,
+                    core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
                 )
             ]
 
