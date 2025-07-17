@@ -34,6 +34,29 @@ libextension_module.a,\
 libextension_tensor.a,\
 :${FRAMEWORK_EXECUTORCH_HEADERS_DIR}:${FRAMEWORK_EXECUTORCH_MODULE_NAME}"
 
+FRAMEWORK_EXECUTORCH_LLM_NAME="executorch_llm"
+FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME="ExecuTorchLLM"
+FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR="${FRAMEWORK_EXECUTORCH_LLM_NAME}_include"
+FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH="${OUTPUT_DIR}/${FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR}"
+FRAMEWORK_EXECUTORCH_LLM="${FRAMEWORK_EXECUTORCH_LLM_NAME}:\
+libabsl_hash.a,\
+libabsl_int128.a,\
+libabsl_log_initialize.a,\
+libabsl_log_internal_format.a,\
+libabsl_log_internal_log_sink_set.a,\
+libabsl_log_internal_message.a,\
+libabsl_spinlock_wait.a,\
+libabsl_str_format_internal.a,\
+libabsl_strings.a,\
+libabsl_strings_internal.a,\
+libabsl_time.a,\
+libabsl_time_zone.a,\
+libextension_llm_runner.a,\
+libre2.a,\
+libsentencepiece.a,\
+libtokenizers.a,\
+:${FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR}"
+
 FRAMEWORK_THREADPOOL="threadpool:\
 libcpuinfo.a,\
 libextension_threadpool.a,\
@@ -145,7 +168,7 @@ if [[ ${#MODES[@]} -eq 0 ]]; then
   MODES=("Release" "Debug")
 fi
 
-echo "Building libraries"
+# echo "Building libraries"
 
 rm -rf "${OUTPUT_DIR}"
 for preset_index in "${!PRESETS[@]}"; do
@@ -170,6 +193,8 @@ for preset_index in "${!PRESETS[@]}"; do
 done
 
 echo "Exporting headers"
+
+# FRAMEWORK_EXECUTORCH
 
 mkdir -p "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 
@@ -198,6 +223,36 @@ cp "$SOURCE_ROOT_DIR/extension/apple/$FRAMEWORK_EXECUTORCH_MODULE_NAME/Exported/
 cat > "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME/module.modulemap" << EOF
 module ${FRAMEWORK_EXECUTORCH_MODULE_NAME} {
   umbrella header "${FRAMEWORK_EXECUTORCH_MODULE_NAME}.h"
+  export *
+}
+EOF
+
+# FRAMEWORK_EXECUTORCH_LLM
+
+mkdir -p "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME"
+
+"$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py \
+  --buck2="$(realpath "$BUCK2")" \
+  --targets //extension/llm/runner:runner_lib \
+| tee \
+    >(
+      grep '^extension/llm/' \
+      | rsync -av --files-from=- \
+          "$SOURCE_ROOT_DIR" \
+          "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
+    ) \
+    >(
+      grep '^pytorch/tokenizers/' \
+      | rsync -av --files-from=- \
+          "$SOURCE_ROOT_DIR/extension/llm/tokenizers/include" \
+          "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
+    )
+
+cp "$SOURCE_ROOT_DIR/extension/llm/apple/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME"
+
+cat > "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME/module.modulemap" << EOF
+module ${FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME} {
+  umbrella header "${FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME}.h"
   export *
 }
 EOF
@@ -236,6 +291,7 @@ for mode in "${MODES[@]}"; do
   done
 
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH" "$mode"
+  append_framework_flag "" "$FRAMEWORK_EXECUTORCH_LLM" "$mode"
   append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_MPS" "$FRAMEWORK_BACKEND_MPS" "$mode"
