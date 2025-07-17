@@ -487,7 +487,12 @@ def register_int8_mm_op(features: OpFeatures):
     return features
 
 
-@update_features(exir_ops.edge.et_vk.linear_weight_int4.default)
+@update_features(
+    [
+        exir_ops.edge.et_vk.linear_weight_int4.default,
+        exir_ops.edge.et_vk.linear_qta8a_qga4w.default,
+    ]
+)
 def register_int4_mm_op(features: OpFeatures):
     features.buffer_impl = True
     features.texture_impl = TextureImplFeatures(

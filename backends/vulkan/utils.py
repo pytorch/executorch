@@ -38,6 +38,14 @@ _DQ_OPS = {
     "dequantize_affine.default",
 }
 
+_Q_OPS = {
+    "quantize_per_tensor.tensor",
+    "quantize_per_tensor.default",
+    "quantize_per_channel.default",
+    "quantize_per_token.default",
+    "quantize_affine.default",
+}
+
 ##
 ## Node type determination
 ##
@@ -48,6 +56,13 @@ def is_dequant_node(node: torch.fx.Node) -> bool:
         return False
     node_name = format_target_name(node.target.__name__)  # pyre-ignore
     return node_name in _DQ_OPS
+
+
+def is_quant_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return node_name in _Q_OPS
 
 
 def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
