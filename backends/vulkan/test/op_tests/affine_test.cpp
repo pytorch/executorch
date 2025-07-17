@@ -279,40 +279,26 @@ at::Tensor dequantize_affine_reference_impl(
       std::string("INT"));
 }
 
-/*
- * choose_qparams_affine_reference_impl
- * -----------------------------------
- * A faithful C++ re-implementation of the Python helper
- *   choose_qparams_affine  (see quant_primitives.py)
- *
- * Supported input dtypes : float32 / float16 / bfloat16
- * Supported mapping types: ASYMMETRIC / SYMMETRIC / SYMMETRIC_NO_CLIPPING_ERR
- */
 std::tuple<at::Tensor, at::Tensor> choose_qparams_affine_reference_impl(
-    const at::Tensor& input_, // F32 / F16 / BF16
-    const std::string&
-        mapping_type, // ASYMMETRIC / SYMMETRIC / SYMMETRIC_NO_CLIPPING_ERR
-    const std::vector<int64_t>& block_size, // same length as input_.dim()
+    const at::Tensor& input_,
+    const std::string& mapping_type,
+    const std::vector<int64_t>& block_size,
     int64_t quant_min,
     int64_t quant_max,
     double eps) {
-  // -------------------- 1. Validations --------------------------------------
   const int64_t ndim = input_.dim();
   _check_dims("input", block_size.size(), ndim);
 
-  TORCH_CHECK(
+  VK_CHECK_COND(
       input_.scalar_type() == at::kFloat || input_.scalar_type() == at::kHalf ||
           input_.scalar_type() == at::kBFloat16,
       "Unsupported input dtype: ",
       input_.dtype());
 
-  // Ensure contiguous –  view() is only well-defined on contiguous tensors
   at::Tensor input = input_.contiguous();
 
-  // -------------------- 2. Derive reduction shape ---------------------------
-  // Equivalent to python _get_reduction_params
   std::vector<int64_t> shape_for_reduction;
-  std::vector<int64_t> reduction_dims; // dims we later collapse to size-1
+  std::vector<int64_t> reduction_dims;
   int64_t cur_dim = 0;
 
   auto in_sizes = input.sizes();
@@ -321,7 +307,7 @@ std::tuple<at::Tensor, at::Tensor> choose_qparams_affine_reference_impl(
     const int64_t dim = in_sizes[i];
 
     if (blk != dim && blk > 1) {
-      TORCH_CHECK(
+      VK_CHECK_COND(
           dim % blk == 0,
           "Input size ",
           dim,
@@ -331,11 +317,11 @@ std::tuple<at::Tensor, at::Tensor> choose_qparams_affine_reference_impl(
           i);
       shape_for_reduction.push_back(dim / blk);
       shape_for_reduction.push_back(blk);
-      reduction_dims.push_back(cur_dim + 1); // the 'inside block' dim
+      reduction_dims.push_back(cur_dim + 1);
       cur_dim += 2;
     } else {
       shape_for_reduction.push_back(dim);
-      if (blk != 1) { // per-axis / per-tensor
+      if (blk != 1) {
         reduction_dims.push_back(cur_dim);
       }
       cur_dim += 1;
@@ -344,19 +330,14 @@ std::tuple<at::Tensor, at::Tensor> choose_qparams_affine_reference_impl(
 
   at::Tensor input_reshaped = input.view(shape_for_reduction);
 
-  // Shape after reduction – same rank as shape_for_reduction but
-  // all 'reduction_dims' set to 1.  We'll reshape scale / zp to that.
   std::vector<int64_t> shape_after_reduction = shape_for_reduction;
   for (int64_t d : reduction_dims) {
     shape_after_reduction[d] = 1;
   }
 
-  // -------------------- 3. Find min/max values -----------------------------
-  // Reduce over the specified dimensions to get min/max values
   at::Tensor min_val = input_reshaped.amin(reduction_dims, /*keepdim=*/true);
   at::Tensor max_val = input_reshaped.amax(reduction_dims, /*keepdim=*/true);
 
-  // -------------------- 4. Calculate scale and zero_point ------------------
   at::Tensor scale, zero_point;
 
   if (mapping_type == "ASYMMETRIC") {
@@ -403,15 +384,13 @@ std::tuple<at::Tensor, at::Tensor> choose_qparams_affine_reference_impl(
     zero_point =
         at::full_like(scale, (quant_max + quant_min + 1) / 2, at::kInt);
   } else {
-    TORCH_CHECK(
+    VK_CHECK_COND(
         false,
         "Unsupported mapping_type: ",
         mapping_type,
         ". Expected ASYMMETRIC, SYMMETRIC, or SYMMETRIC_NO_CLIPPING_ERR");
   }
 
-  // -------------------- 5. Reshape back to output shape --------------------
-  // Calculate output shape (remove reduction dimensions)
   std::vector<int64_t> output_shape;
   for (size_t i = 0; i < shape_after_reduction.size(); ++i) {
     if (shape_after_reduction[i] != 1 ||
@@ -1007,7 +986,6 @@ TEST(VulkanDequantizeAffineTest, test_4d_dequantization) {
       at::kFloat); // output dtype
 }
 
-// Test function for choose_qparams_affine
 void test_vulkan_choose_qparams_affine_impl(
     const std::vector<int>& input_sizes,
     const std::vector<int64_t>& block_size,
@@ -1033,7 +1011,6 @@ void test_vulkan_choose_qparams_affine_impl(
   at::Tensor reference_scale = std::get<0>(reference_out);
   at::Tensor reference_zero_point = std::get<1>(reference_out);
 
-  // Ensure zero_point is int32 as expected by the shader
   reference_zero_point = reference_zero_point.to(at::kInt);
 
   using namespace vkcompute;
