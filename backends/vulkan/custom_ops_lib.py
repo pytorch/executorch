@@ -258,7 +258,6 @@ def linear_qta8a_qga4w(
         weight_zeros: Per-group zero points for weights
     """
     original_x_shape = x_quantized.shape
-    batch_size = original_x_shape[0]
     feature_dim = original_x_shape[-1]
 
     # Reshape for processing
