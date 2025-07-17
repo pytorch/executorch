@@ -88,5 +88,7 @@ ARG QNN_SDK
 
 ARG MEDIATEK_SDK
 
+ARG NXP_SDK
+
 USER ci-user
 CMD ["bash"]
