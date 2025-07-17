@@ -15,6 +15,8 @@ from executorch.backends.nxp.backend.edge_program_converter import (
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from torch.export import ExportedProgram
+from torch.fx.graph import Graph
+
 
 # If executed on i.MX platform, there is no tensorflow module. And typically the intention is to use the tflite python
 # interpreter available in tflite_runtime
@@ -276,6 +278,10 @@ def convert_run_compare(
         )
 
     return tflite_executor, edge_program_executor
+
+
+def graph_contains_any_of_ops(graph: Graph, ops: list) -> bool:
+    return any(node.target in ops for node in graph.nodes)
 
 
 class OverrideSupportedTargets:
