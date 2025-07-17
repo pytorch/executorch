@@ -4,11 +4,17 @@ oncall("executorch")
 
 python_library(
     name = "vulkan_quantizer",
-    srcs = [
-        "vulkan_quantizer.py",
+    srcs = ["vulkan_quantizer.py"],
+    deps = [
+        ":vulkan_quantizer_utils",
+        "//caffe2:torch",
     ],
+)
+
+python_library(
+    name = "vulkan_quantizer_utils",
+    srcs = ["vulkan_quantizer_utils.py"],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer_utils",
     ],
 )
