@@ -396,6 +396,8 @@ extern SYCL_EXTERNAL void __assert_fail(
     const char* file,
     unsigned int line,
     const char* func);
+#elif (defined(__EMSCRIPTEN__))
+_Noreturn void __assert_fail (const char *, const char *, int, const char *);
 #else // __SYCL_DEVICE_ONLY__
 #if (defined(__CUDA_ARCH__) && !(defined(__clang__) && defined(__CUDA__)))
 // CUDA supports __assert_fail function which are common for both device

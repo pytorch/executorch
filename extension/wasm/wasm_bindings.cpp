@@ -20,7 +20,7 @@
     }                                                \
   })
 
-/// Throws a JavaScript Error with the provided message if `error` is not `Ok`.
+/// Throws a JavaScript Error with the provided message if `cond` is not `true`.
 #define THROW_IF_FALSE(cond, message, ...)           \
   ({                                                 \
     if ET_UNLIKELY (!(cond)) {                       \
@@ -62,6 +62,7 @@ inline void assert_valid_numel(
       data.size());
 }
 
+// Base class for all JS Tensor types. Subclasses are not exposed to JS.
 class JsBaseTensor {
  public:
   virtual ~JsBaseTensor() = default;
@@ -86,6 +87,7 @@ class JsBaseTensor {
   }
 };
 
+// Tensor that owns its own data. JS only has access to the static methods.
 template <typename T, aten::ScalarType S>
 class JsTensor final : public JsBaseTensor {
  public:
@@ -154,9 +156,10 @@ class JsTensor final : public JsBaseTensor {
 
 #define JS_DECLARE_TENSOR_TYPE(T, NAME) \
   using Js##NAME##Tensor = JsTensor<T, aten::ScalarType::NAME>;
-
 JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_DECLARE_TENSOR_TYPE)
 
+// Tensor that does not own its own data. It is a wrapper around a C++ Tensor.
+// This class is not exposed to JS.
 class JsOutputTensor final : public JsBaseTensor {
  public:
   JsOutputTensor() = delete;
@@ -180,6 +183,7 @@ class JsOutputTensor final : public JsBaseTensor {
   std::unique_ptr<Tensor> tensor_;
 };
 
+// Converts JS value to EValue.
 EValue to_evalue(val v) {
   if (v.isNull()) {
     return EValue();
@@ -200,6 +204,7 @@ EValue to_evalue(val v) {
   }
 }
 
+// Converts EValue to JS value.
 val to_val(EValue v) {
   if (v.isNone()) {
     return val::null();
@@ -221,6 +226,7 @@ val to_val(EValue v) {
   }
 }
 
+// Wrapper around TensorInfo.
 class JsTensorInfo final {
  public:
   JsTensorInfo() = delete;
@@ -241,6 +247,7 @@ class JsTensorInfo final {
   std::unique_ptr<TensorInfo> tensor_info_;
 };
 
+// Wrapper around MethodMeta.
 class JsMethodMeta final {
  public:
   JsMethodMeta() = delete;
@@ -275,6 +282,7 @@ class JsMethodMeta final {
   std::unique_ptr<MethodMeta> meta_;
 };
 
+// Wrapper around extension/Module.
 class JsModule final {
  public:
   JsModule() = delete;
