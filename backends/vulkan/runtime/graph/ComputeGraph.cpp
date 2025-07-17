@@ -273,6 +273,14 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
     return val.toConstTensor().dtype();
   } else if (val.isTensorRef()) {
     return val.toConstTensorRef().dtype;
+  } else if (val.isBool()) {
+    return vkapi::ScalarType::Bool;
+  } else if (val.isDouble()) {
+    // We downcast anyway in the shader and we want to avoid having to
+    // write special cases there.
+    return vkapi::ScalarType::Float;
+  } else if (val.isInt()) {
+    return vkapi::ScalarType::Int;
   }
   VK_THROW("Could not get dtype of value with type ", val.type());
 }
