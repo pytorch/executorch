@@ -3384,6 +3384,38 @@ class TestQNNQuantizedUtils(TestQNN):
         quantized_module = convert_pt2e(prepared)
         self.lower_module_and_test_output(quantized_module, sample_input)
 
+    def test_qnn_backend_saver_backend(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            saver=True,
+        )
+        module = Relu()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+
+        from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+            flatbuffer_to_option,
+            option_to_flatbuffer,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            option = flatbuffer_to_option(TestQNN.compiler_specs[0].value)
+            option.saver_output_dir = f"{tmp_dir}/saver_output"
+            TestQNN.compiler_specs[0].value = option_to_flatbuffer(option)
+
+            with self.assertRaises(SystemExit):
+                self.lower_module_and_test_output(module, sample_input)
+            self.assertTrue(
+                os.path.isfile(f"{tmp_dir}/saver_output/params.bin"),
+                "failed to find params.bin",
+            )
+            self.assertTrue(
+                os.path.isfile(f"{tmp_dir}/saver_output/saver_output.c"),
+                "failed to find saver_output.c",
+            )
+
     def test_qnn_backend_skip_node_id_partitioner(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
@@ -5021,6 +5053,40 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 80)
+
+    def test_t5(self):
+        if not self.required_envs([self.qa_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/t5/t5.py",
+            "--dataset",
+            self.sentence_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["f1"], 0.7)
 
     def test_whisper(self):
         if not self.required_envs():
