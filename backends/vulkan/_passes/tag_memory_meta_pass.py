@@ -131,7 +131,7 @@ class TagMemoryMetaPass(ExportPass):
             # pyre-ignore
             features = get_op_features(node.target)
             valid_storage_types = features.supported_storage_types()
-            storage = features.propose_storage_type()
+            storage = features.propose_output_storage_type()
             if storage is not None:
                 return storage
 
@@ -180,7 +180,7 @@ class TagMemoryMetaPass(ExportPass):
             # pyre-ignore
             features = get_op_features(node.target)
             valid_layouts = features.supported_memory_layouts(storage)
-            layout = features.propose_memory_layout(storage)
+            layout = features.propose_output_memory_layout(storage)
             if layout is not None:
                 return layout
 
@@ -251,22 +251,38 @@ class TagMemoryMetaPass(ExportPass):
     ) -> bool:
         assert isinstance(arg, torch.fx.Node)
 
-        storage = utils.get_node_storage_type(node)
-        assert storage is not None
-        layout = utils.get_node_memory_layout(node)
-        assert layout is not None
+        # Determine the desired storage and layout for this input
+        desired_storage = None
+        desired_layout = None
+
+        # Check if the operator has input-specific preferences
+        if has_impl(node.target):
+            features = get_op_features(node.target)
+            desired_storage = features.propose_input_storage_type(i)
+            if desired_storage is not None:
+                desired_layout = features.propose_input_memory_layout(
+                    i, desired_storage
+                )
+
+        # Fallback to output preferences if no input-specific preferences
+        if desired_storage is None:
+            desired_storage = utils.get_node_storage_type(node)
+            assert desired_storage is not None
+        if desired_layout is None:
+            desired_layout = utils.get_node_memory_layout(node)
+            assert desired_layout is not None
 
         arg_storage = utils.get_node_storage_type(arg)
         arg_layout = utils.get_node_memory_layout(arg)
 
         if arg_storage is None:
-            utils.set_node_spec_attr(arg, "vk_storage_type", storage)
-            arg_storage = storage
+            utils.set_node_spec_attr(arg, "vk_storage_type", desired_storage)
+            arg_storage = desired_storage
         if arg_layout is None:
-            utils.set_node_spec_attr(arg, "vk_memory_layout", layout)
-            arg_layout = layout
+            utils.set_node_spec_attr(arg, "vk_memory_layout", desired_layout)
+            arg_layout = desired_layout
 
-        if arg_storage == storage and arg_layout == layout:
+        if arg_storage == desired_storage and arg_layout == desired_layout:
             return False
 
         if not dirty:
@@ -274,10 +290,10 @@ class TagMemoryMetaPass(ExportPass):
                 f"[Vulkan Delegate] Inserting transition(s) for {node.format_node()}:"
             )
 
-        insert_transition_node(graph_module, node, arg, storage, layout)
+        insert_transition_node(graph_module, node, arg, desired_storage, desired_layout)
 
         logger.info(
-            f"   args {i} ({arg}): ({arg_storage}, {arg_layout}) -> ({storage}, {layout})"
+            f"   args {i} ({arg}): ({arg_storage}, {arg_layout}) -> ({desired_storage}, {desired_layout})"
         )
 
         return True

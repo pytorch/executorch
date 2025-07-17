@@ -83,9 +83,12 @@ class OpFeatures:
         # bool indicating if the operator has a resize function, which allows it to
         # support dynamic shape tensors.
         "resize_fn",
-        # Optimal
-        "optimal_storage",
-        "optimal_layout",
+        # Output-specific optimal storage and layout specifications
+        "optimal_output_storage",
+        "optimal_output_layout",
+        # Input-specific optimal storage and layout specifications
+        "optimal_input_storage",
+        "optimal_input_layout",
         # bool indicating if the operator handles its own prepacking. If this is True,
         # then the insert_prepack_nodes pass will not insert prepack nodes for the args
         # of the op.
@@ -103,8 +106,10 @@ class OpFeatures:
         texture_impl: Optional[TextureImplFeatures] = None,
         buffer_impl: bool = False,
         resize_fn: bool = False,
-        optimal_storage: Optional[VkStorageType] = None,
-        optimal_layout: Optional[VkMemoryLayout] = None,
+        optimal_output_storage: Optional[VkStorageType] = None,
+        optimal_output_layout: Optional[VkMemoryLayout] = None,
+        optimal_input_storage: Optional[Union[VkStorageType, list]] = None,
+        optimal_input_layout: Optional[Union[VkMemoryLayout, list]] = None,
         handles_own_prepacking: bool = False,
         skip_limits_check: Optional[Set[int]] = None,
         check_node_fn: Optional[Callable] = None,
@@ -112,8 +117,14 @@ class OpFeatures:
         self.texture_impl: Optional[TextureImplFeatures] = texture_impl
         self.buffer_impl: bool = buffer_impl
         self.resize_fn: bool = resize_fn
-        self.optimal_storage: Optional[VkStorageType] = optimal_storage
-        self.optimal_layout: Optional[VkMemoryLayout] = optimal_layout
+        self.optimal_output_storage: Optional[VkStorageType] = optimal_output_storage
+        self.optimal_output_layout: Optional[VkMemoryLayout] = optimal_output_layout
+        self.optimal_input_storage: Optional[Union[VkStorageType, list]] = (
+            optimal_input_storage
+        )
+        self.optimal_input_layout: Optional[Union[VkMemoryLayout, list]] = (
+            optimal_input_layout
+        )
         self.handles_own_prepacking: bool = handles_own_prepacking
 
         self.skip_limits_check: Set[int] = set()
@@ -124,7 +135,7 @@ class OpFeatures:
         if check_node_fn is not None:
             self.check_node_fn = check_node_fn
 
-    def propose_storage_type(self) -> Optional[VkStorageType]:
+    def propose_output_storage_type(self) -> Optional[VkStorageType]:
         """
         Propose a storage type that should be used for this operator. A proposal can be
         made if one of the following is true:
@@ -134,8 +145,8 @@ class OpFeatures:
         If both storage types are supported and no optimal storage type is specified,
         then None is returned to indicate that there is no preference in storage type.
         """
-        if self.optimal_storage is not None:
-            return self.optimal_storage
+        if self.optimal_output_storage is not None:
+            return self.optimal_output_storage
 
         if self.texture_impl is not None and not self.buffer_impl:
             return VkStorageType.TEXTURE_3D
@@ -156,7 +167,9 @@ class OpFeatures:
 
         return storage_types
 
-    def propose_memory_layout(self, storage: VkStorageType) -> Optional[VkMemoryLayout]:
+    def propose_output_memory_layout(
+        self, storage: VkStorageType
+    ) -> Optional[VkMemoryLayout]:
         """
         Given a storage type as a precondition, propose a memory layout that should be
         used for this operator. A proposal can be made if one of the following is true:
@@ -167,8 +180,8 @@ class OpFeatures:
         specified then return None to indicate that the "best" memory layout for the
         operator is ambiguous.
         """
-        if self.optimal_layout is not None:
-            return self.optimal_layout
+        if self.optimal_output_layout is not None:
+            return self.optimal_output_layout
 
         if storage == VkStorageType.TEXTURE_3D:
             assert self.texture_impl is not None
@@ -188,6 +201,51 @@ class OpFeatures:
             return self.texture_impl.valid_memory_layouts()
         else:
             return all_memory_layouts
+
+    def propose_input_storage_type(self, input_index: int) -> Optional[VkStorageType]:
+        """
+        Propose a storage type for a specific input tensor by index.
+
+        Args:
+            input_index: Index of the input tensor in the operator's input list
+
+        Returns:
+            Optimal storage type for the input, or None if no preference
+        """
+        if self.optimal_input_storage is not None:
+            if isinstance(self.optimal_input_storage, list):
+                if input_index < len(self.optimal_input_storage):
+                    return self.optimal_input_storage[input_index]
+            else:
+                # Single storage type applies to all inputs
+                return self.optimal_input_storage
+
+        # Fallback to output preference
+        return self.propose_output_storage_type()
+
+    def propose_input_memory_layout(
+        self, input_index: int, storage: VkStorageType
+    ) -> Optional[VkMemoryLayout]:
+        """
+        Propose a memory layout for a specific input tensor by index and storage type.
+
+        Args:
+            input_index: Index of the input tensor in the operator's input list
+            storage: Storage type for the input tensor
+
+        Returns:
+            Optimal memory layout for the input, or None if no preference
+        """
+        if self.optimal_input_layout is not None:
+            if isinstance(self.optimal_input_layout, list):
+                if input_index < len(self.optimal_input_layout):
+                    return self.optimal_input_layout[input_index]
+            else:
+                # Single layout applies to all inputs
+                return self.optimal_input_layout
+
+        # Fallback to output preference
+        return self.propose_output_memory_layout(storage)
 
 
 #######################
@@ -253,8 +311,6 @@ def register_ephemeral_op(features: OpFeatures):
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_token.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
-        exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
-        exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default,
     ]
 )
 def register_quantization_op(features: OpFeatures):
@@ -268,7 +324,37 @@ def register_quantization_op(features: OpFeatures):
     )
     features.buffer_impl = True
     features.resize_fn = True
-    features.optimal_storage = VkStorageType.BUFFER
+    features.optimal_output_storage = VkStorageType.TEXTURE_3D
+    # Input can be TEXTURE_3D, but scales and zeros must be BUFFER
+    # For most quantization ops: input[0] = tensor, input[1] = scale, input[2] = zero_point
+    features.optimal_input_storage = [
+        VkStorageType.TEXTURE_3D,  # input tensor
+        VkStorageType.BUFFER,  # scale
+        VkStorageType.BUFFER,  # zero_point
+    ]
+    return features
+
+
+@update_features(
+    [
+        exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
+        exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default,
+    ]
+)
+def register_choose_qparams_op(features: OpFeatures):
+    # choose_qparams operators only have input tensor, no scales/zeros
+    # Optimal storage should be TEXTURE_3D for both input and output since it's faster
+    features.texture_impl = TextureImplFeatures(
+        uses_axis_map=True,
+        valid_packed_dims={
+            PackedDim.WIDTH,
+        },
+    )
+    features.buffer_impl = True
+    features.resize_fn = True
+    features.optimal_output_storage = VkStorageType.TEXTURE_3D
+    # Only input is the input tensor, should be TEXTURE_3D for optimal performance
+    features.optimal_input_storage = VkStorageType.TEXTURE_3D
     return features
 
 
@@ -285,8 +371,10 @@ def register_affine_quantization_op(features: OpFeatures):
     )
     features.buffer_impl = True
     features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
+    features.optimal_output_storage = VkStorageType.TEXTURE_3D
+    features.optimal_output_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
+    # All inputs should be TEXTURE_3D for quantize_affine and dequantize_affine
+    features.optimal_input_storage = VkStorageType.TEXTURE_3D
     features.handles_own_prepacking = True
 
     return features
@@ -308,7 +396,9 @@ def register_choose_qparams_affine_op(features: OpFeatures):
     )
     features.buffer_impl = True
     features.resize_fn = True
-    features.optimal_storage = VkStorageType.BUFFER
+    features.optimal_output_storage = VkStorageType.BUFFER
+    # All inputs should be BUFFER since texture implementation is not available yet
+    features.optimal_input_storage = VkStorageType.BUFFER
 
     return features
 
@@ -449,8 +539,8 @@ def register_mm_op(features: OpFeatures):
     )
     features.buffer_impl = True
     features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
+    features.optimal_output_storage = VkStorageType.TEXTURE_3D
+    features.optimal_output_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
     features.handles_own_prepacking = True
     return features
 
@@ -468,8 +558,8 @@ def register_int8_mm_op(features: OpFeatures):
     )
     features.buffer_impl = True
     features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
+    features.optimal_output_storage = VkStorageType.TEXTURE_3D
+    features.optimal_output_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
     features.handles_own_prepacking = True
     return features
 
@@ -487,8 +577,8 @@ def register_int4_mm_op(features: OpFeatures):
         valid_packed_dims={PackedDim.WIDTH},
     )
     features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
+    features.optimal_output_storage = VkStorageType.TEXTURE_3D
+    features.optimal_output_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
     features.handles_own_prepacking = True
     features.skip_limits_check = {1}
     return features
@@ -562,8 +652,8 @@ def register_convolution_op(features: OpFeatures):
         valid_packed_dims={PackedDim.CHANNELS},
     )
     features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_CHANNELS_PACKED
+    features.optimal_output_storage = VkStorageType.TEXTURE_3D
+    features.optimal_output_layout = VkMemoryLayout.TENSOR_CHANNELS_PACKED
     features.handles_own_prepacking = True
     features.skip_limits_check = {1, 2}
     return features
@@ -575,8 +665,8 @@ def register_sdpa_with_kv_cache_op(features: OpFeatures):
         valid_packed_dims={PackedDim.WIDTH},
     )
     features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
+    features.optimal_output_storage = VkStorageType.TEXTURE_3D
+    features.optimal_output_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
     features.handles_own_prepacking = True
     return features
 
@@ -740,13 +830,13 @@ def register_native_group_norm(features: OpFeatures):
     )
     features.handles_own_prepacking = True
 
-    features.optimal_storage = [
+    features.optimal_output_storage = [
         VkStorageType.TEXTURE_3D,
         VkStorageType.BUFFER,
         VkStorageType.BUFFER,
     ]
 
-    features.optimal_layout = [
+    features.optimal_output_layout = [
         VkMemoryLayout.TENSOR_CHANNELS_PACKED,
         VkMemoryLayout.TENSOR_WIDTH_PACKED,
         VkMemoryLayout.TENSOR_WIDTH_PACKED,
