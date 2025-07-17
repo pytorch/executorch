@@ -861,18 +861,15 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         rtol: float = 1e-03,
         qtol: int = 1,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
 
         if (
             symmetric_io_quantization or per_channel_quantization
         ) and tosa_version == "TOSA-1.0+FP":
             raise ValueError("Dont configure quantization with FP TOSA profile.")
-        if (
-            symmetric_io_quantization is False
-            and per_channel_quantization is False
-            and tosa_version == "TOSA-1.0+INT"
-        ):
-            raise ValueError("Missing quantization options for INT TOSA profile.")
 
         tosa_profile = TosaSpecification.create_from_string(tosa_version)
         compile_spec = common.get_vgf_compile_spec(
@@ -887,6 +884,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
             exir_op,
             use_to_edge_transform_and_lower,
             dynamic_shapes,
+            transform_passes=transform_passes,
         )
 
         if symmetric_io_quantization or per_channel_quantization:
@@ -900,7 +898,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         else:
             quant_stage = None
 
-        if quant_stage:
+        if "INT" in tosa_version:
             self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
             self.add_stage_after(

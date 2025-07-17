@@ -539,8 +539,10 @@ python_unittest(
     ],
     typing = True,
     deps = [
+        ":program_builder",
         "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/runtime:runtime",
         "//later:lib",
     ],
 )
