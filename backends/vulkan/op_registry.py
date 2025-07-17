@@ -245,9 +245,9 @@ def register_ephemeral_op(features: OpFeatures):
 
 @update_features(
     [
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
@@ -276,14 +276,32 @@ def register_quantization_op(features: OpFeatures):
     [
         exir_ops.edge.torchao.quantize_affine.default,
         exir_ops.edge.torchao.dequantize_affine.default,
+    ]
+)
+def register_affine_quantization_op(features: OpFeatures):
+    features.texture_impl = TextureImplFeatures(
+        uses_axis_map=False,
+        valid_packed_dims={PackedDim.WIDTH},
+    )
+    features.buffer_impl = True
+    features.resize_fn = True
+    features.optimal_storage = VkStorageType.TEXTURE_3D
+    features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
+    features.handles_own_prepacking = True
+
+    return features
+
+
+@update_features(
+    [
         exir_ops.edge.torchao.choose_qparams_affine.default,
     ]
 )
-def register_torchao_quantization_op(features: OpFeatures):
-    # TorchAO quantization operators - default to per-tensor behavior
-    # Same features as standard quantization ops
+def register_choose_qparams_affine_op(features: OpFeatures):
+    # Currently only created a rudimentary buffer implementation for choose_qparams_affine
+    # since the reduction logic for blocks in texture3d is not trivial to implement in vulkan.
     features.texture_impl = TextureImplFeatures(
-        uses_axis_map=True,
+        uses_axis_map=False,
         valid_packed_dims={
             PackedDim.WIDTH,
         },
@@ -292,37 +310,6 @@ def register_torchao_quantization_op(features: OpFeatures):
     features.resize_fn = True
     features.optimal_storage = VkStorageType.BUFFER
 
-    def check_torchao_quantization_node(node: torch.fx.Node) -> bool:
-        # Only per-tensor quantization is supported by the Vulkan backend.
-        if len(node.args) < 2:
-            return False
-
-        block_size = node.args[1]
-
-        if not isinstance(block_size, (list, tuple)):
-            return False
-
-        input_arg = node.args[0]
-        if not isinstance(input_arg, torch.fx.Node):
-            return False
-
-        input_tensor = input_arg.meta.get("val", None)
-        if not isinstance(input_tensor, FakeTensor):
-            return False
-
-        input_shape = list(input_tensor.shape)
-
-        if len(block_size) != len(input_shape):
-            return False
-
-        # Check if block_size matches input_shape exactly (per-tensor quantization)
-        for i in range(len(block_size)):
-            if block_size[i] != input_shape[i]:
-                return False
-
-        return True
-
-    features.check_node_fn = check_torchao_quantization_node
     return features
 
 
