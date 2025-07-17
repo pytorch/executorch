@@ -63,9 +63,6 @@ from executorch.examples.models.llama.hf_download import (
 from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.hf_converter.convert_config import (
-    convert_configs,
-)
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
@@ -514,20 +511,25 @@ def compile(args, pte_filename, tokenizer):
     start_ts = time.time()
 
     kv_config, prefill_config = None, None
+    params_path = ""
     if args.params:
-        with open(args.params) as f:
-            kv_config = ModelArgs(**json.load(f))
+        params_path = args.params
     else:
-        # For huggingface decoder model, we need to convert config to match the keys
-        model_id = HUGGING_FACE_REPO_IDS[args.decoder_model]
-        kv_config = AutoConfig.from_pretrained(model_id)
-        kv_config = convert_configs(kv_config)
+        if args.decoder_model == "qwen2_5":
+            cur_dir = os.path.dirname(__file__)
+            params_path = os.path.join(
+                cur_dir,
+                "..",
+                "..",
+                "..",
+                "models",
+                "qwen2_5",
+                "config",
+                "0_5b_config.json",
+            )
+    with open(params_path) as f:
+        kv_config = ModelArgs(**json.load(f))
 
-    if args.decoder_model == "qwen2_5":
-        kv_config.attention_qkv_bias = True
-
-    if not hasattr(kv_config, "head_dim"):
-        kv_config.head_dim = kv_config.dim // kv_config.n_heads
     # TODO: support batch inputs if necessary
     kv_config.max_batch_size = 1
     kv_config.max_seq_len = args.max_seq_len
@@ -1235,18 +1237,13 @@ def export_llama(args) -> None:
         with open(runtime_tokenizer_path, "r+") as file:
             data = json.load(file)
             # TODO: Encountered the following error during runtime, so switched behavior for now.
-            # Error: libc++abi: terminating due to uncaught exception of type std::runtime_error:
-            # Unsupported behavior 'Isolated' for Split PreTokenizer. Only 'MergedWithPrevious' is supported.
-            behavior = data["pre_tokenizer"]["pretokenizers"][0]["behavior"]
-            if behavior == "Isolated":
-                data["pre_tokenizer"]["pretokenizers"][0][
-                    "behavior"
-                ] = "MergedWithPrevious"
-                file.seek(0)
-                json.dump(data, file, indent=4)
-                file.truncate()
+            # Error: libc++abi: terminating due to uncaught exception of type std::runtime_error: Unsupported Normalizer type: NFC.
+            data.pop("normalizer")
+            file.seek(0)
+            json.dump(data, file, indent=4)
+            file.truncate()
     else:
-        raise RuntimeError(f"Unknown decoder_model: {args.llama_model}.")
+        raise RuntimeError(f"Unknown decoder_model: {args.decoder_model}.")
 
     if args.kv_updater == "smart_mask":
         args.shared_buffer = True
