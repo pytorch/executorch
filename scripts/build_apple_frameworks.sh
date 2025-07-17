@@ -168,7 +168,7 @@ if [[ ${#MODES[@]} -eq 0 ]]; then
   MODES=("Release" "Debug")
 fi
 
-# echo "Building libraries"
+echo "Building libraries"
 
 rm -rf "${OUTPUT_DIR}"
 for preset_index in "${!PRESETS[@]}"; do
