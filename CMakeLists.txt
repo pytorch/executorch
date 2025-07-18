@@ -220,16 +220,14 @@ if(EXECUTORCH_BUILD_CPUINFO)
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
-  if(NOT EXECUTORCH_BUILD_XNNPACK)
-    add_prefix_to_public_headers(cpuinfo "${CPUINFO_SOURCE_DIR}/")
-    install(
-      TARGETS cpuinfo
-      EXPORT ExecuTorchTargets
-      DESTINATION lib
-      INCLUDES
-      DESTINATION ${_common_include_directories}
-    )
-  endif()
+  add_prefix_to_public_headers(cpuinfo "${CPUINFO_SOURCE_DIR}/")
+  install(
+    TARGETS cpuinfo
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+    INCLUDES
+    DESTINATION ${_common_include_directories}
+  )
 endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL)
@@ -262,17 +260,15 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
     )
   endif()
   add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
-  if(NOT EXECUTORCH_BUILD_XNNPACK)
-    move_interface_include_directories_to_build_time_only(pthreadpool)
-    move_interface_include_directories_to_build_time_only(pthreadpool_interface)
-    install(
-      TARGETS pthreadpool pthreadpool_interface fxdiv
-      EXPORT ExecuTorchTargets
-      DESTINATION lib
-      INCLUDES
-      DESTINATION ${_common_include_directories}
-    )
-  endif()
+  move_interface_include_directories_to_build_time_only(pthreadpool)
+  move_interface_include_directories_to_build_time_only(pthreadpool_interface)
+  install(
+    TARGETS pthreadpool pthreadpool_interface fxdiv
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+    INCLUDES
+    DESTINATION ${_common_include_directories}
+  )
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )

@@ -129,9 +129,9 @@ install(
 
 # Without this, XNNPACK fails to install because of a failure to find
 # backends/xnnpack/include/xnnpack.h.
-add_prefix_to_public_headers(XNNPACK "third-party/xnnpack/")
+set_target_properties(XNNPACK PROPERTIES PUBLIC_HEADER "")
 
-add_prefix_to_public_headers(cpuinfo "third-party/cpuinfo/")
+set_target_properties(cpuinfo PROPERTIES PUBLIC_HEADER "")
 move_interface_include_directories_to_build_time_only(fxdiv)
 move_interface_include_directories_to_build_time_only(pthreadpool)
 move_interface_include_directories_to_build_time_only(pthreadpool_interface)
@@ -157,10 +157,6 @@ install(
           xnnpack-datatype
           xnnpack-reference-ukernels
           xnnpack-logging
-          cpuinfo
-          pthreadpool
-          pthreadpool_interface
-          fxdiv
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
