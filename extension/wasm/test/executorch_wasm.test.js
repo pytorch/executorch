@@ -16,49 +16,58 @@ beforeAll((done) => {
 
 describe("Tensor", () => {
     test("ones", () => {
-        const tensor = et.FloatTensor.ones([2, 2]);
-        expect(tensor.getData()).toEqual([1, 1, 1, 1]);
-        expect(tensor.getSizes()).toEqual([2, 2]);
+        const tensor = et.Tensor.ones([2, 2]);
+        expect(tensor.data).toEqual([1, 1, 1, 1]);
+        expect(tensor.sizes).toEqual([2, 2]);
         tensor.delete();
     });
 
     test("zeros", () => {
-        const tensor = et.FloatTensor.zeros([2, 2]);
-        expect(tensor.getData()).toEqual([0, 0, 0, 0]);
-        expect(tensor.getSizes()).toEqual([2, 2]);
+        const tensor = et.Tensor.zeros([2, 2]);
+        expect(tensor.data).toEqual([0, 0, 0, 0]);
+        expect(tensor.sizes).toEqual([2, 2]);
         tensor.delete();
     });
 
     test("fromArray", () => {
-        const tensor = et.FloatTensor.fromArray([1, 2, 3, 4], [2, 2]);
-        expect(tensor.getData()).toEqual([1, 2, 3, 4]);
-        expect(tensor.getSizes()).toEqual([2, 2]);
+        const tensor = et.Tensor.fromArray([2, 2], [1, 2, 3, 4]);
+        expect(tensor.data).toEqual([1, 2, 3, 4]);
+        expect(tensor.sizes).toEqual([2, 2]);
         tensor.delete();
     });
 
     test("fromArray wrong size", () => {
-        expect(() => et.FloatTensor.fromArray([1, 2, 3, 4], [3, 2])).toThrow();
+        expect(() => et.Tensor.fromArray([3, 2], [1, 2, 3, 4])).toThrow();
     });
 
     test("full", () => {
-        const tensor = et.FloatTensor.full([2, 2], 3);
-        expect(tensor.getData()).toEqual([3, 3, 3, 3]);
-        expect(tensor.getSizes()).toEqual([2, 2]);
+        const tensor = et.Tensor.full([2, 2], 3);
+        expect(tensor.data).toEqual([3, 3, 3, 3]);
+        expect(tensor.sizes).toEqual([2, 2]);
         tensor.delete();
     });
 
     test("scalar type", () => {
-        const tensor = et.FloatTensor.ones([2, 2]);
+        const tensor = et.Tensor.ones([2, 2]);
         // ScalarType can only be checked by strict equality.
         expect(tensor.scalarType).toBe(et.ScalarType.Float);
         tensor.delete();
     });
 
     test("long tensor", () => {
+        const tensor = et.Tensor.ones([2, 2], et.ScalarType.Long);
+        expect(tensor.data).toEqual([1n, 1n, 1n, 1n]);
+        expect(tensor.sizes).toEqual([2, 2]);
+        // ScalarType can only be checked by strict equality.
+        expect(tensor.scalarType).toBe(et.ScalarType.Long);
+        tensor.delete();
+    });
+
+    test("infer long tensor", () => {
         // Number cannot be converted to Long, so we use BigInt instead.
-        const tensor = et.LongTensor.fromArray([1n, 2n, 3n, 4n], [2, 2]);
-        expect(tensor.getData()).toEqual([1n, 2n, 3n, 4n]);
-        expect(tensor.getSizes()).toEqual([2, 2]);
+        const tensor = et.Tensor.fromArray([2, 2], [1n, 2n, 3n, 4n]);
+        expect(tensor.data).toEqual([1n, 2n, 3n, 4n]);
+        expect(tensor.sizes).toEqual([2, 2]);
         // ScalarType can only be checked by strict equality.
         expect(tensor.scalarType).toBe(et.ScalarType.Long);
         tensor.delete();
@@ -185,12 +194,12 @@ describe("Module", () => {
     describe("execute", () => {
         test("add normally", () => {
             const module = et.Module.load("add.pte");
-            const inputs = [et.FloatTensor.ones([1]), et.FloatTensor.ones([1])];
+            const inputs = [et.Tensor.ones([1]), et.Tensor.ones([1])];
             const output = module.execute("forward", inputs);
 
             expect(output.length).toEqual(1);
-            expect(output[0].getData()).toEqual([2]);
-            expect(output[0].getSizes()).toEqual([1]);
+            expect(output[0].data).toEqual([2]);
+            expect(output[0].sizes).toEqual([1]);
 
             inputs.forEach((input) => input.delete());
             output.forEach((output) => output.delete());
@@ -199,12 +208,12 @@ describe("Module", () => {
 
         test("add_mul normally", () => {
             const module = et.Module.load("add_mul.pte");
-            const inputs = [et.FloatTensor.ones([2, 2]), et.FloatTensor.ones([2, 2]), et.FloatTensor.ones([2, 2])];
+            const inputs = [et.Tensor.ones([2, 2]), et.Tensor.ones([2, 2]), et.Tensor.ones([2, 2])];
             const output = module.execute("forward", inputs);
 
             expect(output.length).toEqual(1);
-            expect(output[0].getData()).toEqual([3, 3, 3, 3]);
-            expect(output[0].getSizes()).toEqual([2, 2]);
+            expect(output[0].data).toEqual([3, 3, 3, 3]);
+            expect(output[0].sizes).toEqual([2, 2]);
 
             inputs.forEach((input) => input.delete());
             output.forEach((output) => output.delete());
@@ -213,12 +222,12 @@ describe("Module", () => {
 
         test("forward directly", () => {
             const module = et.Module.load("add_mul.pte");
-            const inputs = [et.FloatTensor.ones([2, 2]), et.FloatTensor.ones([2, 2]), et.FloatTensor.ones([2, 2])];
+            const inputs = [et.Tensor.ones([2, 2]), et.Tensor.ones([2, 2]), et.Tensor.ones([2, 2])];
             const output = module.forward(inputs);
 
             expect(output.length).toEqual(1);
-            expect(output[0].getData()).toEqual([3, 3, 3, 3]);
-            expect(output[0].getSizes()).toEqual([2, 2]);
+            expect(output[0].data).toEqual([3, 3, 3, 3]);
+            expect(output[0].sizes).toEqual([2, 2]);
 
             inputs.forEach((input) => input.delete());
             output.forEach((output) => output.delete());
@@ -227,7 +236,7 @@ describe("Module", () => {
 
         test("wrong number of inputs", () => {
             const module = et.Module.load("add_mul.pte");
-            const inputs = [et.FloatTensor.ones([2, 2]), et.FloatTensor.ones([2, 2])];
+            const inputs = [et.Tensor.ones([2, 2]), et.Tensor.ones([2, 2])];
             expect(() => module.execute("forward", inputs)).toThrow();
 
             inputs.forEach((input) => input.delete());
@@ -236,7 +245,7 @@ describe("Module", () => {
 
         test("wrong input size", () => {
             const module = et.Module.load("add.pte");
-            const inputs = [et.FloatTensor.ones([2, 1]), et.FloatTensor.ones([2, 1])];
+            const inputs = [et.Tensor.ones([2, 1]), et.Tensor.ones([2, 1])];
             expect(() => module.execute("forward", inputs)).toThrow();
 
             inputs.forEach((input) => input.delete());
@@ -245,7 +254,7 @@ describe("Module", () => {
 
         test("wrong input type", () => {
             const module = et.Module.load("add.pte");
-            const inputs = [et.FloatTensor.ones([1]), et.LongTensor.ones([1])];
+            const inputs = [et.Tensor.ones([1]), et.Tensor.ones([1], et.ScalarType.Long)];
             expect(() => module.execute("forward", inputs)).toThrow();
 
             inputs.forEach((input) => input.delete());
@@ -254,7 +263,7 @@ describe("Module", () => {
 
         test("method does not exist", () => {
             const module = et.Module.load("add.pte");
-            const inputs = [et.FloatTensor.ones([1]), et.FloatTensor.ones([1])];
+            const inputs = [et.Tensor.ones([1]), et.Tensor.ones([1])];
             expect(() => module.execute("does_not_exist", inputs)).toThrow();
 
             inputs.forEach((input) => input.delete());
@@ -263,19 +272,19 @@ describe("Module", () => {
 
         test("output tensor can be reused", () => {
             const module = et.Module.load("add_mul.pte");
-            const inputs = [et.FloatTensor.ones([2, 2]), et.FloatTensor.ones([2, 2]), et.FloatTensor.ones([2, 2])];
+            const inputs = [et.Tensor.ones([2, 2]), et.Tensor.ones([2, 2]), et.Tensor.ones([2, 2])];
             const output = module.forward(inputs);
 
             expect(output.length).toEqual(1);
-            expect(output[0].getData()).toEqual([3, 3, 3, 3]);
-            expect(output[0].getSizes()).toEqual([2, 2]);
+            expect(output[0].data).toEqual([3, 3, 3, 3]);
+            expect(output[0].sizes).toEqual([2, 2]);
 
             const inputs2 = [output[0], output[0], output[0]];
             const output2 = module.forward(inputs2);
 
             expect(output2.length).toEqual(1);
-            expect(output2[0].getData()).toEqual([21, 21, 21, 21]);
-            expect(output2[0].getSizes()).toEqual([2, 2]);
+            expect(output2[0].data).toEqual([21, 21, 21, 21]);
+            expect(output2[0].sizes).toEqual([2, 2]);
 
             inputs.forEach((input) => input.delete());
             output.forEach((output) => output.delete());

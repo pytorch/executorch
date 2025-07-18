@@ -81,14 +81,26 @@ inline void assert_valid_numel(
       data.size());
 }
 
-// Base class for all JS Tensor types. Subclasses are not exposed to JS.
-class JsBaseTensor {
+class JsTensor {
  public:
-  virtual ~JsBaseTensor() = default;
+  JsTensor() = delete;
+  JsTensor(const JsTensor&) = delete;
+  JsTensor& operator=(const JsTensor&) = delete;
+  JsTensor(JsTensor&&) = default;
+  JsTensor& operator=(JsTensor&&) = default;
 
-  virtual const Tensor& get_tensor() = 0;
-  virtual ScalarType get_scalar_type() const = 0;
-  val_array<val> get_data() {
+  explicit JsTensor(TensorPtr tensor) : tensor_(std::move(tensor)) {}
+  explicit JsTensor(Tensor&& tensor)
+      : tensor_(std::make_shared<Tensor>(tensor)) {}
+
+  const Tensor& get_tensor() const {
+    return *tensor_;
+  }
+
+  ScalarType get_scalar_type() const {
+    return tensor_->scalar_type();
+  }
+  val_array<val> get_data() const {
     switch (get_scalar_type()) {
 #define JS_CASE_TENSOR_TO_VAL_TYPE(T, NAME) \
   case ScalarType::NAME:                    \
@@ -101,110 +113,96 @@ class JsBaseTensor {
             TypeError, "Unsupported Tensor type: %d", get_scalar_type());
     }
   }
-  val_array<int> get_sizes() {
+  val_array<int> get_sizes() const {
     return val::array(get_tensor().sizes().begin(), get_tensor().sizes().end());
   }
-};
 
-// Tensor that owns its own data. JS only has access to the static methods.
-template <typename T, ScalarType S>
-class JsTensor final : public JsBaseTensor {
- public:
-  JsTensor(std::vector<T> data, TensorPtr tensor)
-      : data_(std::move(data)), tensor_(std::move(tensor)) {}
-
-  static std::unique_ptr<JsBaseTensor> fill_internal(
-      const std::vector<torch::executor::Tensor::SizesType>&& sizes,
-      T fill_value) {
-    std::vector<T> data_vec(compute_expected_numel(sizes), fill_value);
-    TensorPtr tensor = from_blob(data_vec.data(), sizes, S);
-    return std::make_unique<JsTensor>(std::move(data_vec), std::move(tensor));
-  }
-
-  static std::unique_ptr<JsBaseTensor> full(
-      val_array<int> sizes,
-      val fill_value) {
+  static std::unique_ptr<JsTensor>
+  full(val_array<int> sizes, val fill_value, val type = val::undefined()) {
     auto sizes_vec =
-        convertJSArrayToNumberVector<torch::executor::Tensor::SizesType>(sizes);
-    return fill_internal(std::move(sizes_vec), fill_value.as<T>());
+        convertJSArrayToNumberVector<executorch::aten::SizesType>(sizes);
+    ScalarType scalar_type =
+        type.isUndefined() ? ScalarType::Float : type.as<ScalarType>();
+    switch (scalar_type) {
+#define JS_CASE_FULL_VECTOR_TYPE(T, NAME)                                 \
+  case ScalarType::NAME: {                                                \
+    TensorPtr tensor =                                                    \
+        extension::full(sizes_vec, fill_value.as<T>(), ScalarType::NAME); \
+    return std::make_unique<JsTensor>(std::move(tensor));                 \
   }
-
-  static std::unique_ptr<JsBaseTensor> zeros(val_array<int> sizes) {
-    auto sizes_vec =
-        convertJSArrayToNumberVector<torch::executor::Tensor::SizesType>(sizes);
-    return fill_internal(std::move(sizes_vec), 0);
-  }
-
-  static std::unique_ptr<JsBaseTensor> ones(val_array<int> sizes) {
-    auto sizes_vec =
-        convertJSArrayToNumberVector<torch::executor::Tensor::SizesType>(sizes);
-    return fill_internal(std::move(sizes_vec), 1);
-  }
-
-  static std::unique_ptr<JsBaseTensor> from_array(
-      val_array<val> data,
-      val_array<int> sizes) {
-    return from_array(data, sizes, val::null());
-  }
-
-  static std::unique_ptr<JsBaseTensor> from_array(
-      val_array<val> data,
-      val_array<int> sizes,
-      val_array<int> strides) {
-    auto data_vec = convertJSArrayToNumberVector<T>(data);
-    auto sizes_vec =
-        convertJSArrayToNumberVector<torch::executor::Tensor::SizesType>(sizes);
-    assert_valid_numel(data_vec, sizes_vec);
-
-    if (strides.isNull()) {
-      TensorPtr tensor = from_blob(data_vec.data(), std::move(sizes_vec), S);
-      return std::make_unique<JsTensor>(std::move(data_vec), std::move(tensor));
+      JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_CASE_FULL_VECTOR_TYPE)
+      default:
+        THROW_JS_ERROR(TypeError, "Unsupported Tensor type: %d", scalar_type);
     }
-    auto strides_vec =
-        convertJSArrayToNumberVector<torch::executor::Tensor::StridesType>(
-            strides);
-    TensorPtr tensor = from_blob(
-        data_vec.data(), std::move(sizes_vec), std::move(strides_vec), S);
-    return std::make_unique<JsTensor>(std::move(data_vec), std::move(tensor));
   }
-  const Tensor& get_tensor() override {
-    return *tensor_;
+
+  static std::unique_ptr<JsTensor> zeros(
+      val_array<int> sizes,
+      val type = val::undefined()) {
+    auto sizes_vec =
+        convertJSArrayToNumberVector<executorch::aten::SizesType>(sizes);
+    ScalarType scalar_type =
+        type.isUndefined() ? ScalarType::Float : type.as<ScalarType>();
+    TensorPtr tensor = extension::zeros(sizes_vec, scalar_type);
+    return std::make_unique<JsTensor>(std::move(tensor));
   }
-  ScalarType get_scalar_type() const override {
-    return S;
+
+  static std::unique_ptr<JsTensor> ones(
+      val_array<int> sizes,
+      val type = val::undefined()) {
+    auto sizes_vec =
+        convertJSArrayToNumberVector<executorch::aten::SizesType>(sizes);
+    ScalarType scalar_type =
+        type.isUndefined() ? ScalarType::Float : type.as<ScalarType>();
+    TensorPtr tensor = extension::ones(sizes_vec, scalar_type);
+    return std::make_unique<JsTensor>(std::move(tensor));
+  }
+
+  static std::unique_ptr<JsTensor> from_array(
+      val_array<int> sizes,
+      val_array<val> data,
+      val type = val::undefined(),
+      val_array<int> dim_order = val::undefined(),
+      val_array<int> strides = val::undefined()) {
+    auto sizes_vec =
+        convertJSArrayToNumberVector<executorch::aten::SizesType>(sizes);
+
+    auto dim_order_vec = dim_order.isUndefined()
+        ? std::vector<executorch::aten::DimOrderType>()
+        : convertJSArrayToNumberVector<executorch::aten::DimOrderType>(
+              dim_order);
+    auto strides_vec = strides.isUndefined()
+        ? std::vector<executorch::aten::StridesType>()
+        : convertJSArrayToNumberVector<executorch::aten::StridesType>(strides);
+
+    // If type is undefined, infer the type from the data.
+    // Assume it is a Bigint if not Number.
+    ScalarType scalar_type = type.isUndefined()
+        ? (data["length"].as<size_t>() == 0 || data[0].isNumber()
+               ? ScalarType::Float
+               : ScalarType::Long)
+        : type.as<ScalarType>();
+    switch (scalar_type) {
+#define JS_CASE_FROM_ARRAY_VECTOR_TYPE(T, NAME)            \
+  case ScalarType::NAME: {                                 \
+    auto data_vec = convertJSArrayToNumberVector<T>(data); \
+    assert_valid_numel(data_vec, sizes_vec);               \
+    TensorPtr tensor = make_tensor_ptr(                    \
+        std::move(sizes_vec),                              \
+        std::move(data_vec),                               \
+        std::move(dim_order_vec),                          \
+        std::move(strides_vec),                            \
+        ScalarType::NAME);                                 \
+    return std::make_unique<JsTensor>(std::move(tensor));  \
+  }
+      JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_CASE_FROM_ARRAY_VECTOR_TYPE)
+      default:
+        THROW_JS_ERROR(TypeError, "Unsupported Tensor type: %d", scalar_type);
+    }
   }
 
  private:
-  std::vector<T> data_;
   TensorPtr tensor_;
-};
-
-#define JS_DECLARE_TENSOR_TYPE(T, NAME) \
-  using Js##NAME##Tensor = JsTensor<T, ScalarType::NAME>;
-JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_DECLARE_TENSOR_TYPE)
-
-// Tensor that does not own its own data. It is a wrapper around a C++ Tensor.
-// This class is not exposed to JS.
-class JsOutputTensor final : public JsBaseTensor {
- public:
-  JsOutputTensor() = delete;
-  JsOutputTensor(const JsOutputTensor&) = delete;
-  JsOutputTensor& operator=(const JsOutputTensor&) = delete;
-  JsOutputTensor(JsOutputTensor&&) = default;
-  JsOutputTensor& operator=(JsOutputTensor&&) = default;
-
-  explicit JsOutputTensor(Tensor tensor) : tensor_(tensor) {}
-
-  const Tensor& get_tensor() override {
-    return tensor_;
-  }
-
-  ScalarType get_scalar_type() const override {
-    return tensor_.scalar_type();
-  }
-
- private:
-  Tensor tensor_;
 };
 
 // Converts JS value to EValue.
@@ -223,7 +221,7 @@ EValue to_evalue(val v) {
       return EValue(v.as<int64_t>());
     } else if (type_str == "object") {
       // If it is an object, assume it is a tensor.
-      return EValue(v.as<JsBaseTensor&>().get_tensor());
+      return EValue(v.as<JsTensor&>().get_tensor());
     }
     THROW_JS_ERROR(
         TypeError, "Unsupported JavaScript type: %s", type_str.c_str());
@@ -242,8 +240,8 @@ val to_val(EValue v) {
     return val(v.toBool());
   } else if (v.isTensor()) {
     Tensor tensor = v.toTensor();
-    std::unique_ptr<JsBaseTensor> wrapper =
-        std::make_unique<JsOutputTensor>(std::move(tensor));
+    std::unique_ptr<JsTensor> wrapper =
+        std::make_unique<JsTensor>(std::move(tensor));
     return val(std::move(wrapper));
   } else {
     char tag_buf[32];
@@ -418,10 +416,14 @@ EMSCRIPTEN_BINDINGS(WasmBindings) {
       .function("getMethodMeta", &JsModule::get_method_meta)
       .function("execute", &JsModule::execute)
       .function("forward", &JsModule::forward);
-  class_<JsBaseTensor>("Tensor")
-      .property("scalarType", &JsBaseTensor::get_scalar_type)
-      .function("getData", &JsBaseTensor::get_data)
-      .function("getSizes", &JsBaseTensor::get_sizes);
+  class_<JsTensor>("Tensor")
+      .class_function("zeros", &JsTensor::zeros)
+      .class_function("ones", &JsTensor::ones)
+      .class_function("full", &JsTensor::full)
+      .class_function("fromArray", &JsTensor::from_array)
+      .property("scalarType", &JsTensor::get_scalar_type)
+      .property("data", &JsTensor::get_data)
+      .property("sizes", &JsTensor::get_sizes);
   value_object<JsTensorInfo>("TensorInfo")
       .field("sizes", &JsTensorInfo::sizes)
       .field("dimOrder", &JsTensorInfo::dim_order)
@@ -441,21 +443,6 @@ EMSCRIPTEN_BINDINGS(WasmBindings) {
           &JsMethodMeta::memory_planned_buffer_sizes)
       .field("backends", &JsMethodMeta::backends)
       .field("numInstructions", &JsMethodMeta::num_instructions);
-
-#define JS_DECLARE_TENSOR_BINDINGS(T, NAME)                              \
-  class_<Js##NAME##Tensor>(#NAME "Tensor")                               \
-      .class_function("zeros", &Js##NAME##Tensor::zeros)                 \
-      .class_function("ones", &Js##NAME##Tensor::ones)                   \
-      .class_function("full", &Js##NAME##Tensor::full)                   \
-      .class_function(                                                   \
-          "fromArray",                                                   \
-          select_overload<std::unique_ptr<JsBaseTensor>(val, val, val)>( \
-              &Js##NAME##Tensor::from_array))                            \
-      .class_function(                                                   \
-          "fromArray",                                                   \
-          select_overload<std::unique_ptr<JsBaseTensor>(val, val)>(      \
-              &Js##NAME##Tensor::from_array));
-  JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_DECLARE_TENSOR_BINDINGS)
 }
 
 } // namespace wasm
