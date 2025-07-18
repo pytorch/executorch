@@ -10,19 +10,20 @@
 
 from typing import Sequence, Tuple
 
-import pytest
-
 import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineBI,
     EthosU85PipelineBI,
+    OpNotSupportedPipeline,
     TosaPipelineBI,
     TosaPipelineMI,
 )
 
 aten_op = "torch.ops.aten.expand.default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_expand_copy_default"
+
 input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, Input y
 
 
@@ -47,7 +48,7 @@ class Expand(torch.nn.Module):
         return x.expand(m)
 
 
-@common.parametrize("test_data", Expand.test_parameters | Expand.test_reject_set)
+@common.parametrize("test_data", Expand.test_parameters)
 def test_expand_tosa_MI(test_data: Tuple):
     pipeline = TosaPipelineMI[input_t1](
         Expand(),
@@ -58,7 +59,7 @@ def test_expand_tosa_MI(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Expand.test_parameters | Expand.test_reject_set)
+@common.parametrize("test_data", Expand.test_parameters)
 def test_expand_tosa_BI(test_data: Tuple):
     pipeline = TosaPipelineBI[input_t1](
         Expand(),
@@ -103,32 +104,8 @@ def test_expand_u85_BI(test_data: Tuple):
 
 
 @common.parametrize("test_data", Expand.test_reject_set)
-@common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="MLETORCH-716: Node will be optimized away and Vela can't handle empty graphs"
-)
-def test_expand_u55_BI_failure_set(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
-        Expand(),
-        test_data(),
-        aten_op,
-        exir_ops=[],
-        run_on_fvp=True,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", Expand.test_reject_set)
-@common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="MLETORCH-716: Node will be optimized away and Vela can't handle empty graphs"
-)
-def test_expand_u85_BI_failure_set(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
-        Expand(),
-        test_data(),
-        aten_op,
-        exir_ops=[],
-        run_on_fvp=True,
+def test_expand_u55_BI_not_delegated(test_data: Tuple):
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Expand(), test_data(), {exir_op: 1}, n_expected_delegates=0
     )
     pipeline.run()
