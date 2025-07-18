@@ -26,7 +26,7 @@ jobs:
     with:
       job-name: Build doc
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12-android
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       repository: pytorch/executorch
       upload-artifact: docs
