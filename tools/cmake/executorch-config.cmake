@@ -27,7 +27,7 @@ cmake_minimum_required(VERSION 3.24)
 
 include(CMakeFindDependencyMacro)
 include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
-find_dependency(tokenizers CONFIG)
+find_package(tokenizers CONFIG)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
@@ -50,35 +50,6 @@ foreach(lib ${required_lib_list})
   list(APPEND EXECUTORCH_LIBRARIES ${lib})
 endforeach()
 set(EXECUTORCH_FOUND ON)
-
-set(non_exported_lib_list XNNPACK xnnpack-microkernels-prod kleidiai
-                          pthreadpool cpuinfo
-)
-foreach(lib ${non_exported_lib_list})
-  # Name of the variable which stores result of the find_library search
-  set(lib_var "LIB_${lib}")
-  find_library(
-    ${lib_var} ${lib}
-    HINTS "${_root}/lib"
-    CMAKE_FIND_ROOT_PATH_BOTH
-  )
-  if(NOT ${lib_var})
-    message("${lib} library is not found.
-            If needed rebuild with the proper options in CMakeLists.txt"
-    )
-  else()
-    add_library(${lib} STATIC IMPORTED)
-    set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
-    target_include_directories(${lib} INTERFACE ${EXECUTORCH_INCLUDE_DIRS})
-    list(APPEND EXECUTORCH_LIBRARIES ${lib})
-  endif()
-endforeach()
-
-if(TARGET XNNPACK)
-set_target_properties(
-  XNNPACK PROPERTIES INTERFACE_LINK_LIBRARIES xnnpack-microkernels-prod
-)
-endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 
@@ -114,6 +85,7 @@ set(optional_lib_list
     quantized_ops_lib
     quantized_ops_aot_lib
 )
+
 foreach(lib ${optional_lib_list})
   if(TARGET ${lib})
     list(APPEND EXECUTORCH_LIBRARIES ${lib})

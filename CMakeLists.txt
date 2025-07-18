@@ -45,7 +45,9 @@
 # ~~~
 #
 
-cmake_minimum_required(VERSION 3.24)
+# TODO Lower to 3.24 when XNNPACK dependency is updated to include
+# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
+cmake_minimum_required(VERSION 3.29)
 project(executorch)
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
@@ -161,132 +163,118 @@ endif()
 if(EXECUTORCH_BUILD_TESTS)
   include(CTest)
 else()
-  # It looks like some of our third-party deps will try to turn this
-  # on if it's not explicitly set, leading to confusing behavior.
+  # It looks like some of our third-party deps will try to turn this on if it's
+  # not explicitly set, leading to confusing behavior.
   set(BUILD_TESTING OFF)
 endif()
 
 add_subdirectory(third-party)
 
 if(NOT DEFINED FXDIV_SOURCE_DIR)
-  get_extra_cmake_args_for_external_project(FXDIV_EXTRA_CMAKE_ARGS)
-  set(FXDIV_SOURCE_DIR
-      "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/FXdiv"
+  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+      ${CMAKE_POSITION_INDEPENDENT_CODE}
   )
-  set(FXDIV_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/fxdiv")
-  set(FXDIV_INSTALL_DIR "${FXDIV_BINARY_DIR}/install")
-  set(FXDIV_HEADER "${FXDIV_INSTALL_DIR}/${CMAKE_INSTALL_INCLUDEDIR}/fxdiv.h")
-  ExternalProject_Add(
-    fxdivExternalProject
-    SOURCE_DIR "${FXDIV_SOURCE_DIR}"
-    BINARY_DIR "${FXDIV_BINARY_DIR}"
-    INSTALL_DIR "${FXDIV_INSTALL_DIR}"
-    BUILD_BYPRODUCTS "${FXDIV_HEADER}"
-    CMAKE_ARGS "${FXDIV_EXTRA_CMAKE_ARGS}"
-               -D
-               CMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-               -D
-               FXDIV_BUILD_TESTS=OFF
-               -D
-               FXDIV_BUILD_BENCHMARKS=OFF
+  set(FXDIV_SOURCE_DIR "backends/xnnpack/third-party/FXdiv")
+  add_subdirectory("${FXDIV_SOURCE_DIR}")
+  move_interface_include_directories_to_build_time_only(fxdiv)
+  set(CMAKE_POSITION_INDEPENDENT_CODE
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
-  add_library(fxdiv INTERFACE IMPORTED)
-  set_property(TARGET fxdiv PROPERTY IMPORTED_LOCATION "${FXDIV_HEADER}")
 endif()
 
 if(EXECUTORCH_BUILD_CPUINFO)
   # --- cpuinfo
+  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+      ${CMAKE_POSITION_INDEPENDENT_CODE}
+  )
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   set(CPUINFO_SOURCE_DIR
       "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/cpuinfo"
   )
-  set(CPUINFO_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/cpuinfo")
-  set(CPUINFO_INSTALL_DIR "${CPUINFO_BINARY_DIR}/install")
-  set(CPUINFO_LIBRARY
-      "${CPUINFO_INSTALL_DIR}/${CMAKE_INSTALL_LIBDIR}/libcpuinfo.a"
+  set(CPUINFO_BUILD_TOOLS
+      OFF
+      CACHE BOOL ""
   )
-
-  get_extra_cmake_args_for_external_project(CPUINFO_EXTRA_CMAKE_ARGS)
-  ExternalProject_Add(
-    cpuinfoExternalProject
-    SOURCE_DIR "${CPUINFO_SOURCE_DIR}"
-    BINARY_DIR "${CPUINFO_BINARY_DIR}"
-    INSTALL_DIR "${CPUINFO_INSTALL_DIR}"
-    BUILD_BYPRODUCTS "${CPUINFO_LIBRARY}"
-    CMAKE_ARGS "${CPUINFO_EXTRA_CMAKE_ARGS}"
-               -D
-               CMAKE_POSITION_INDEPENDENT_CODE=ON
-               -D
-               CPUINFO_BUILD_TOOLS=OFF
-               -D
-               CPUINFO_BUILD_UNIT_TESTS=OFF
-               -D
-               CPUINFO_BUILD_MOCK_TESTS=OFF
-               -D
-               CPUINFO_BUILD_BENCHMARKS=OFF
-               -D
-               CPUINFO_LIBRARY_TYPE=static
-               -D
-               CPUINFO_LOG_LEVEL=error
-               -D
-               CMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-               -D
-               CLOG_SOURCE_DIR="${CPUINFO_SOURCE_DIR}/deps/clog"
+  set(CPUINFO_BUILD_UNIT_TESTS
+      OFF
+      CACHE BOOL ""
   )
-  add_library(cpuinfo STATIC IMPORTED)
-  set_property(TARGET cpuinfo PROPERTY IMPORTED_LOCATION "${CPUINFO_LIBRARY}")
-  add_dependencies(cpuinfo cpuinfoExternalProject)
-  # Trailing slash matters here! "Move everything from the temporary pthreadpool
-  # install directory to the proper install directory."
-  install(DIRECTORY "${CPUINFO_INSTALL_DIR}/"
-          DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  set(CPUINFO_BUILD_MOCK_TESTS
+      OFF
+      CACHE BOOL ""
   )
+  set(CPUINFO_BUILD_BENCHMARKS
+      OFF
+      CACHE BOOL ""
+  )
+  set(CPUINFO_LIBRARY_TYPE
+      "static"
+      CACHE STRING ""
+  )
+  set(CPUINFO_LOG_LEVEL
+      "error"
+      CACHE STRING ""
+  )
+  set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
+  add_subdirectory("${CPUINFO_SOURCE_DIR}")
+  set(CMAKE_POSITION_INDEPENDENT_CODE
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  )
+  if(NOT EXECUTORCH_BUILD_XNNPACK)
+    add_prefix_to_public_headers(cpuinfo "${CPUINFO_SOURCE_DIR}/")
+    install(
+      TARGETS cpuinfo
+      EXPORT ExecuTorchTargets
+      DESTINATION lib
+      INCLUDES
+      DESTINATION ${_common_include_directories}
+    )
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   # --- pthreadpool
-  set(PTHREADPOOL_SOURCE_DIR
-      "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/pthreadpool"
+  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+      ${CMAKE_POSITION_INDEPENDENT_CODE}
   )
-  set(PTHREADPOOL_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/pthreadpool")
-  set(PTHREADPOOL_INSTALL_DIR "${PTHREADPOOL_BINARY_DIR}/install")
-  set(PTHREADPOOL_LIBRARY
-      "${PTHREADPOOL_INSTALL_DIR}/${CMAKE_INSTALL_LIBDIR}/libpthreadpool.a"
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
+  set(PTHREADPOOL_BUILD_TESTS
+      OFF
+      CACHE BOOL ""
   )
-  get_extra_cmake_args_for_external_project(PTHREADPOOL_EXTRA_CMAKE_ARGS)
+  set(PTHREADPOOL_BUILD_BENCHMARKS
+      OFF
+      CACHE BOOL ""
+  )
+  set(PTHREADPOOL_LIBRARY_TYPE
+      "static"
+      CACHE STRING ""
+  )
+  set(PTHREADPOOL_ALLOW_DEPRECATED_API
+      ON
+      CACHE BOOL ""
+  )
   if(APPLE)
-    list(APPEND PTHREADPOOL_EXTRA_CMAKE_ARGS -D
-         PTHREADPOOL_SYNC_PRIMITIVE=condvar
+    set(PTHREADPOOL_SYNC_PRIMITIVE
+        "condvar"
+        CACHE STRING ""
     )
   endif()
-  ExternalProject_Add(
-    pthreadpoolExternalProject
-    SOURCE_DIR "${PTHREADPOOL_SOURCE_DIR}"
-    BINARY_DIR "${PTHREADPOOL_BINARY_DIR}"
-    INSTALL_DIR "${PTHREADPOOL_INSTALL_DIR}"
-    BUILD_BYPRODUCTS "${PTHREADPOOL_LIBRARY}"
-    CMAKE_ARGS ${PTHREADPOOL_EXTRA_CMAKE_ARGS}
-               -D
-               PTHREADPOOL_BUILD_TESTS=OFF
-               -D
-               PTHREADPOOL_BUILD_BENCHMARKS=OFF
-               -D
-               PTHREADPOOL_LIBRARY_TYPE=static
-               -D
-               PTHREADPOOL_ALLOW_DEPRECATED_API=ON
-               -D
-               CMAKE_POSITION_INDEPENDENT_CODE=ON
-               -D
-               CMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-  )
-  add_library(pthreadpool STATIC IMPORTED)
-  set_property(
-    TARGET pthreadpool PROPERTY IMPORTED_LOCATION "${PTHREADPOOL_LIBRARY}"
-  )
-  add_dependencies(pthreadpool pthreadpoolExternalProject)
-  # Trailing slash matters here! "Move everything from the temporary pthreadpool
-  # install directory to the proper install directory."
-  install(DIRECTORY "${PTHREADPOOL_INSTALL_DIR}/"
-          DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
+  if(NOT EXECUTORCH_BUILD_XNNPACK)
+    move_interface_include_directories_to_build_time_only(pthreadpool)
+    move_interface_include_directories_to_build_time_only(pthreadpool_interface)
+    install(
+      TARGETS pthreadpool pthreadpool_interface fxdiv
+      EXPORT ExecuTorchTargets
+      DESTINATION lib
+      INCLUDES
+      DESTINATION ${_common_include_directories}
+    )
+  endif()
+  set(CMAKE_POSITION_INDEPENDENT_CODE
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
 endif()
 
@@ -308,10 +296,11 @@ if(NOT "${_repo_dir_name}" STREQUAL "executorch")
   )
 endif()
 set(_common_include_directories
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core/portable_type/c10>)
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core/portable_type/c10>
+)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -609,6 +598,10 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
 endif()
@@ -709,9 +702,10 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
-  install(TARGETS portable_lib
-          EXPORT ExecuTorchTargets
-          LIBRARY DESTINATION executorch/extension/pybindings
+  install(
+    TARGETS portable_lib
+    EXPORT ExecuTorchTargets
+    LIBRARY DESTINATION executorch/extension/pybindings
   )
 endif()
 
@@ -794,9 +788,11 @@ endif()
 
 include(Test.cmake)
 
-install(EXPORT ExecuTorchTargets
+install(
+  EXPORT ExecuTorchTargets
   FILE ExecuTorchTargets.cmake
-  DESTINATION lib/cmake/ExecuTorch)
+  DESTINATION lib/cmake/ExecuTorch
+)
 
 # Print all the configs that were called with announce_configured_options.
 print_configured_options()

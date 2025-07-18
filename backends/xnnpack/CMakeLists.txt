@@ -93,8 +93,9 @@ target_include_directories(
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
 )
 
+set(xnnpack_third_party pthreadpool extension_threadpool cpuinfo)
+
 include(cmake/Dependencies.cmake)
-set(xnnpack_third_party XNNPACK pthreadpool extension_threadpool cpuinfo)
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend ${_xnnpack_backend__srcs})
@@ -117,6 +118,7 @@ target_include_directories(
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(xnnpack_backend)
 
+move_interface_include_directories_to_build_time_only(XNNPACK)
 install(
   TARGETS xnnpack_backend xnnpack_schema
   EXPORT ExecuTorchTargets
@@ -125,6 +127,43 @@ install(
   DESTINATION ${_common_include_directories}
 )
 
+# Without this, XNNPACK fails to install because of a failure to find
+# backends/xnnpack/include/xnnpack.h.
+add_prefix_to_public_headers(XNNPACK "third-party/xnnpack/")
+
+add_prefix_to_public_headers(cpuinfo "third-party/cpuinfo/")
+move_interface_include_directories_to_build_time_only(fxdiv)
+move_interface_include_directories_to_build_time_only(pthreadpool)
+move_interface_include_directories_to_build_time_only(pthreadpool_interface)
+install(
+  TARGETS XNNPACK
+          xnnpack-base
+          xnnpack-allocator
+          xnnpack-cache
+          xnnpack-hardware-config
+          xnnpack-indirection
+          xnnpack-memory
+          xnnpack-microkernel-utils
+          xnnpack-microparams-init
+          xnnpack-mutex
+          xnnpack-normalization
+          xnnpack-operators
+          xnnpack-operator-run
+          xnnpack-operator-utils
+          xnnpack-pack-lh
+          xnnpack-packing
+          xnnpack-sanitizers
+          xnnpack-subgraph
+          xnnpack-datatype
+          xnnpack-reference-ukernels
+          xnnpack-logging
+          cpuinfo
+          pthreadpool
+          pthreadpool_interface
+          fxdiv
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
+)
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()

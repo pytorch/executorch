@@ -279,31 +279,35 @@ macro(find_package_torch)
   endif()
 endmacro()
 
-# In order to support cross compiling, we need to propagate a bunch of CMake
-# variables to ExternalProject. Call this to get the current values of all
-# relevant variables, which should then be passed to CMAKE_ARGS.
-function(get_extra_cmake_args_for_external_project outVar)
-  set(VARIABLES_TO_PROPAGATE
-      ANDROID_ABI
-      ANDROID_PLATFORM
-      CMAKE_ARCHIVE_OUTPUT_DIRECTORY
-      CMAKE_BUILD_TYPE
-      CMAKE_C_COMPILER_LAUNCHER
-      CMAKE_CXX_COMPILER_LAUNCHER
-      CMAKE_FIND_ROOT_PATH
-      CMAKE_OSX_DEPLOYMENT_TARGET
-      CMAKE_TOOLCHAIN_FILE
-      DEPLOYMENT_TARGET
-      PLATFORM
+# Modify ${targetName}'s INTERFACE_INCLUDE_DIRECTORIES by wrapping each entry in
+# $<BUILD_INTERFACE:...> so that they work with CMake EXPORT.
+function(move_interface_include_directories_to_build_time_only targetName)
+  get_property(
+    OLD_INTERFACE_INCLUDE_DIRECTORIES
+    TARGET "${targetName}"
+    PROPERTY INTERFACE_INCLUDE_DIRECTORIES
   )
-  set(${outVar} "")
-  foreach(var ${VARIABLES_TO_PROPAGATE})
-    if(DEFINED ${var})
-      list(APPEND ${outVar} -D "${var}=${${var}}")
-    endif()
+  set(FIXED_INTERFACE_INCLUDE_DIRECTORIES)
+  foreach(dir ${OLD_INTERFACE_INCLUDE_DIRECTORIES})
+    list(APPEND FIXED_INTERFACE_INCLUDE_DIRECTORIES $<BUILD_INTERFACE:${dir}>)
   endforeach()
-  set(${outVar}
-      ${${outVar}}
-      PARENT_SCOPE
+  set_property(
+    TARGET "${targetName}" PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+                                    ${FIXED_INTERFACE_INCLUDE_DIRECTORIES}
+  )
+endfunction()
+
+function(add_prefix_to_public_headers targetName prefix)
+  get_property(
+    OLD_PUBLIC_HEADERS
+    TARGET "${targetName}"
+    PROPERTY PUBLIC_HEADER
+  )
+  set(FIXED_PUBLIC_HEADERS)
+  foreach(header ${OLD_PUBLIC_HEADERS})
+    list(APPEND FIXED_PUBLIC_HEADERS "${prefix}${header}")
+  endforeach()
+  set_property(
+    TARGET "${targetName}" PROPERTY PUBLIC_HEADER ${FIXED_PUBLIC_HEADERS}
   )
 endfunction()
