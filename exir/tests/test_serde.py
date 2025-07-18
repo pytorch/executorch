@@ -42,6 +42,7 @@ class TestSerde(unittest.TestCase):
         ep1: TorchExportedProgram,
         ep2: TorchExportedProgram,
         inputs: Tuple[exir.Value, ...],
+        compare_closeness: bool = False,
     ) -> None:
         """
         Checks if two graphs are equivalent
@@ -55,15 +56,40 @@ class TestSerde(unittest.TestCase):
         for orig, loaded in zip(flat_orig_outputs, flat_loaded_outputs, strict=True):
             self.assertTrue(torch.allclose(orig, loaded))
 
+        if compare_closeness:
+            self.assertEqual(len(ep1.graph.nodes), len(ep2.graph.nodes))
+            for node_a, node_b in zip(ep1.graph.nodes, ep2.graph.nodes):
+                self.assertEqual(node_a.target, node_b.target)
+                self.assertEqual(node_a.name, node_b.name)
+                self.assertEqual(node_a.type, node_b.type)
+                self.assertEqual(node_a.op, node_b.op)
+                if node_a.op != "call_function":
+                    continue
+
+                self.assertEqual(
+                    node_a.meta.get("debug_handle"), node_b.meta.get("debug_handle")
+                )
+                from_node_a = node_a.meta.get("from_node")
+                from_node_b = node_b.meta.get("from_node")
+
+                if from_node_a is None:
+                    self.assertIsNone(from_node_b)
+                else:
+                    self.assertIsNotNone(from_node_b)
+                    for node_source_a, node_source_b in zip(from_node_a, from_node_b):
+                        self.assertEqual(
+                            node_source_a.to_dict(), node_source_b.to_dict()
+                        )
+
     # pyre-ignore
     def check_serde(self, m, inputs, check_executorch=True) -> None:
         aten = export(m, inputs, strict=True)
         aten_new = deserialize(serialize(aten))
-        self.check_ep(aten, aten_new, inputs)
+        self.check_ep(aten, aten_new, inputs, compare_closeness=True)
 
         edge = to_edge(aten)
         edge_new = deserialize(serialize(edge.exported_program()))
-        self.check_ep(edge.exported_program(), edge_new, inputs)
+        self.check_ep(edge.exported_program(), edge_new, inputs, compare_closeness=True)
 
         buffer = io.BytesIO()
         exir.save(edge.exported_program(), buffer)
