@@ -195,6 +195,11 @@ define_overridable_option(
   BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_VGF
+  "Build the Arm VGF backend"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_PORTABLE_OPS
   "Build portable_ops library"
   BOOL ON
