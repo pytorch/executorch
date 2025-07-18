@@ -1096,6 +1096,7 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
                     can_skip_using_EDGE_DO_NOT_DECOMP = False
     return can_skip_using_EDGE_DO_NOT_DECOMP
 
+
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -1118,22 +1119,43 @@ def _gen_edge_manager_for_partitioners(
     ops_set_to_not_decompose_by_program = {}
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
+        # Functionalize program without doing any decompositions
+        program = program.run_decompositions({})
+        ReplaceViewOpsWithViewCopyOpsPass()(program.graph_module)
+
+        print(program)
+
         if partitioner is not None:
             # preserve all ops listed by all partitioners first
             all_ops_no_decomp = set()
             for curr_partitioner in partitioner.get(name, []):
                 curr_ops_no_decomp, _ = curr_partitioner.ops_to_not_decompose(program)
+<<<<<<< HEAD
                 curr_ops_no_decomp = _remove_invalid_ops_for_not_decompose(
                     curr_ops_no_decomp
                 )
+=======
+>>>>>>> ec44f8478 (updates)
                 all_ops_no_decomp |= set(curr_ops_no_decomp)
+            
+            # If not using the can_skip_using_EDGE_DO_NOT_DECOMP path, we need to remove invalid ops
+            # Otherwise there will be issues 
+            if not can_skip_using_EDGE_DO_NOT_DECOMP:
+                all_ops_no_decomp = _remove_invalid_ops_for_not_decompose(list(all_ops_no_decomp))
+                all_ops_no_decomp = set(all_ops_no_decomp)
 
+            # Run default decompositions, except for those in all_ops_no_decomp
             table = _default_decomposition_table()
-
             for op in all_ops_no_decomp:
+<<<<<<< HEAD
                 table.pop(op, None)
 
+=======
+                if table.pop(op, None) is not None:
+                    all_ops_no_decomp_needing_preservation.append(op)
+>>>>>>> ec44f8478 (updates)
             program = program.run_decompositions(table)
+
             # Among all the preserved aten ops, use the check_op_fn to do an additional
             # check on which ops need to be preserved and which ops need to be decomposed
             # Those which are truly preserved will be replaced with transformed ops
