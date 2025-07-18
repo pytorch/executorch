@@ -16,7 +16,7 @@ from .qnn_constants import OpElementWiseMinimum, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Min(NodeVisitor):
-    target = ["aten.minimum.default", "aten.min.dim"]
+    target = ["aten.minimum.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
