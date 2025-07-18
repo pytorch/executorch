@@ -45,10 +45,13 @@ libabsl_decode_rust_punycode.a,\
 libabsl_demangle_internal.a,\
 libabsl_demangle_rust.a,\
 libabsl_examine_stack.a,\
+libabsl_graphcycles_internal.a,\
 libabsl_hash.a,\
 libabsl_int128.a,\
 libabsl_kernel_timeout_internal.a,\
+libabsl_leak_check.a,\
 libabsl_log_globals.a,\
+libabsl_log_internal_check_op.a,\
 libabsl_log_internal_format.a,\
 libabsl_log_internal_globals.a,\
 libabsl_log_internal_log_sink_set.a,\
@@ -69,6 +72,7 @@ libabsl_strings.a,\
 libabsl_strings_internal.a,\
 libabsl_symbolize.a,\
 libabsl_synchronization.a,\
+libabsl_throw_delegate.a,\
 libabsl_time.a,\
 libabsl_time_zone.a,\
 libabsl_tracing_internal.a,\
