@@ -25,9 +25,11 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 # Cortex-M ops kernel sources
 set(_cortex_m_kernels__srcs
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_add.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_aten_add_tensor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_softmax.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_add.cpp
 )
 
 # Generate C++ bindings to register kernels into Executorch (for runtime).

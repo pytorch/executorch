@@ -31,6 +31,22 @@ class ReplaceQuantNodesPass(ExportPass):
     def __init__(self):
         super().__init__()
         self.op_replacements = {
+            exir_ops.edge.add: {
+                "new_target": exir_ops.edge.cortex_m.add,
+                "qualifier": lambda args: True,
+            },
+            exir_ops.edge.aten.add.Tensor: {
+                "new_target": exir_ops.edge.cortex_m.add.Tensor,
+                "qualifier": lambda args: True,
+            },
+            exir_ops.edge.aten._softmax.out: {
+                "new_target": exir_ops.edge.cortex_m.softmax.out,
+                "qualifier": lambda args: True,
+            },
+            exir_ops.edge.aten._softmax.default: {
+                "new_target": exir_ops.edge.cortex_m.softmax,  # or .softmax if you have an out variant
+                "qualifier": lambda args: True,
+            },
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: {
                 "new_target": exir_ops.edge.cortex_m.quantize_per_tensor.default,
                 "qualifier": self._is_qualified_int8_node,
@@ -51,12 +67,14 @@ class ReplaceQuantNodesPass(ExportPass):
         assert isinstance(
             op, EdgeOpOverload
         ), "Op must be an EdgeOpOverload. Run this pass after to_edge()."
+        print(f"[ReplaceQuantNodesPass] Operator called: {op}, Args: {args}")
 
-        if op in self.op_replacements and self.op_replacements[op]["qualifier"](args):
+        if op in self.op_replacements and self.op_replacements[op]["qualifier"](args):            
+            print(f"[ReplaceQuantNodesPass] Replacing {op} with {self.op_replacements[op]['new_target']}")       
             return super().call_operator(
-                self.op_replacements[op]["new_target"],
-                args,
-                kwargs,
-                meta,
-            )
+                    self.op_replacements[op]["new_target"],
+                    args,
+                    kwargs,
+                    meta,
+                )
         return super().call_operator(op, args, kwargs, meta)
