@@ -428,7 +428,7 @@ jobs:
     with:
       build-mode: Debug
       build-tool: cmake
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
   unittest-editable:
     uses: ./.github/workflows/_unittest.yml
@@ -439,7 +439,7 @@ jobs:
       build-mode: Debug
       build-tool: cmake
       editable: true
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
   unittest-buck:
     uses: ./.github/workflows/_unittest.yml
@@ -449,7 +449,7 @@ jobs:
     with:
       build-mode: Debug
       build-tool: buck2
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
   unittest-arm-backend-with-no-fvp:
     name: unittest-arm-backend-with-no-fvp

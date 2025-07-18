@@ -771,4 +771,4 @@ jobs:
     with:
       build-mode: Release
       build-tool: cmake
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
