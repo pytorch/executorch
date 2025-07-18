@@ -258,7 +258,7 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_XNNPACK_ENABLE_KLEIDI
   "Enable Arm Kleidi kernels"
-  BOOL OFF
+  BOOL ON
 )
 # Turning this on cache weights between partitions and methods. If weights
 # are shared across methods/partitions then this can reduce load time and
