@@ -27,7 +27,7 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.exir.program._program import to_edge
+from executorch.exir.program._program import to_edge, to_edge_transform_and_lower
 from executorch.extension.export_util.utils import save_pte_program
 
 
@@ -196,26 +196,35 @@ def main() -> None:
     print("Exported program")
     print(ep)
 
-    edge_manager = to_edge(
+    # edge_manager = to_edge(
+    #     ep,
+    #     compile_config=EdgeCompileConfig(
+    #         _check_ir_validity=False,
+    #         _skip_dim_order=True,
+    #         preserve_ops=[
+    #             torch.ops.aten.scaled_dot_product_attention.default,
+    #             # preserve norm op for numerical stability
+    #             torch.ops.aten.linalg_vector_norm.default,
+    #             torch.ops.aten.reciprocal.default,
+    #         ],
+    #     ),
+    # )
+    # print("Edge program")
+    # print(edge_manager.exported_program())
+
+    # for node in edge_manager.exported_program().graph_module.graph.nodes:
+    #     print(node.name, node.target, node.args, node.kwargs)
+
+    # edge_manager = edge_manager.to_backend(partitioner)
+
+    edge_manager = to_edge_transform_and_lower(
         ep,
+        partitioner=[partitioner],
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_dim_order=True,
-            preserve_ops=[
-                torch.ops.aten.scaled_dot_product_attention.default,
-                # preserve norm op for numerical stability
-                torch.ops.aten.linalg_vector_norm.default,
-                torch.ops.aten.reciprocal.default,
-            ],
         ),
     )
-    print("Edge program")
-    print(edge_manager.exported_program())
-
-    for node in edge_manager.exported_program().graph_module.graph.nodes:
-        print(node.name, node.target, node.args, node.kwargs)
-
-    edge_manager = edge_manager.to_backend(partitioner)
 
     print("Delegated program")
 
