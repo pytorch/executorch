@@ -365,7 +365,7 @@ class CoreMLBackend(BackendDetails):
 
         match model_type:
             case CoreMLBackend.MODEL_TYPE.COMPILED_MODEL:
-                shutil.rmtree(str(model_path.resolve()), ignore_errors=True)
+                shutil.rmtree(str(model_path.resolve()))
                 model_path = model_dir_path / MODEL_PATHS.COMPILED_MODEL.value
                 compiled_model_path = mlmodel.get_compiled_model_path()
                 shutil.move(
@@ -396,7 +396,7 @@ class CoreMLBackend(BackendDetails):
                 for key, value in model_debug_info.debugSymbolToHandles.items()
             }
 
-        shutil.rmtree(str(dir_path.resolve()), ignore_errors=True)
+        shutil.rmtree(str(dir_path.resolve()))
         return PreprocessResult(
             processed_bytes=processed_bytes,
             debug_handle_map=debug_handle_map,
