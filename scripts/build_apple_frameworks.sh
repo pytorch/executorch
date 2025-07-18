@@ -39,20 +39,45 @@ FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME="ExecuTorchLLM"
 FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR="${FRAMEWORK_EXECUTORCH_LLM_NAME}_include"
 FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH="${OUTPUT_DIR}/${FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR}"
 FRAMEWORK_EXECUTORCH_LLM="${FRAMEWORK_EXECUTORCH_LLM_NAME}:\
+libabsl_base.a,\
+libabsl_city.a,\
+libabsl_decode_rust_punycode.a,\
+libabsl_demangle_internal.a,\
+libabsl_demangle_rust.a,\
+libabsl_examine_stack.a,\
 libabsl_hash.a,\
 libabsl_int128.a,\
-libabsl_log_initialize.a,\
+libabsl_kernel_timeout_internal.a,\
+libabsl_log_globals.a,\
 libabsl_log_internal_format.a,\
+libabsl_log_internal_globals.a,\
 libabsl_log_internal_log_sink_set.a,\
 libabsl_log_internal_message.a,\
+libabsl_log_internal_nullguard.a,\
+libabsl_log_internal_proto.a,\
+libabsl_log_severity.a,\
+libabsl_log_sink.a,\
+libabsl_low_level_hash.a,\
+libabsl_malloc_internal.a,\
+libabsl_raw_hash_set.a,\
+libabsl_raw_logging_internal.a,\
 libabsl_spinlock_wait.a,\
+libabsl_stacktrace.a,\
 libabsl_str_format_internal.a,\
+libabsl_strerror.a,\
 libabsl_strings.a,\
 libabsl_strings_internal.a,\
+libabsl_symbolize.a,\
+libabsl_synchronization.a,\
 libabsl_time.a,\
 libabsl_time_zone.a,\
+libabsl_tracing_internal.a,\
+libabsl_utf8_for_code_point.a,\
+libextension_llm_apple.a,\
 libextension_llm_runner.a,\
+libpcre2-8.a,\
 libre2.a,\
+libregex_lookahead.a,\
 libsentencepiece.a,\
 libtokenizers.a,\
 :${FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR}"
@@ -230,23 +255,6 @@ EOF
 # FRAMEWORK_EXECUTORCH_LLM
 
 mkdir -p "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME"
-
-"$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py \
-  --buck2="$(realpath "$BUCK2")" \
-  --targets //extension/llm/runner:runner_lib \
-| tee \
-    >(
-      grep '^extension/llm/' \
-      | rsync -av --files-from=- \
-          "$SOURCE_ROOT_DIR" \
-          "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
-    ) \
-    >(
-      grep '^pytorch/tokenizers/' \
-      | rsync -av --files-from=- \
-          "$SOURCE_ROOT_DIR/extension/llm/tokenizers/include" \
-          "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
-    )
 
 cp "$SOURCE_ROOT_DIR/extension/llm/apple/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME"
 
