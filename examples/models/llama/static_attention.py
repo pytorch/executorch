@@ -138,14 +138,16 @@ class StaticVCache(StaticKVCache):
 
 
 class StaticAttentionMask:
-    def __init__(self, input_len, cache_len, style, mask_val=float("-inf")):
+    def __init__(
+        self, input_len, cache_len, style, mask_val=float("-inf"), dtype=torch.float32
+    ):
         self.input_len = input_len
         self.cache_len = cache_len
         assert style in ("shift_pointer", "smart_mask")
         self.style = style
         self.mask_val = mask_val
         self.unmasked_len = 0
-        self.tensor = torch.zeros(1, input_len, input_len + cache_len)
+        self.tensor = torch.zeros(1, input_len, input_len + cache_len, dtype=dtype)
         self.reset()
 
     def reset(self):
@@ -200,30 +202,31 @@ class StaticAttentionIOManager:
         config: ModelArgs,
         input_len: int,
         cache_len: int,
+        dtype=torch.float32,
         style: str = "shift_pointer",
         mask_val: float = float("-inf"),
     ):
         self.mask = StaticAttentionMask(
-            input_len, cache_len, style=style, mask_val=mask_val
+            input_len, cache_len, style=style, mask_val=mask_val, dtype=dtype
         )
 
         rope = Rope(config)
         freqs = rope.get_freqs(None, config.max_seq_len)
-        self.freqs_cos = freqs[0]
-        self.freqs_sin = freqs[1]
+        self.freqs_cos = freqs[0].to(dtype)
+        self.freqs_sin = freqs[1].to(dtype)
 
         split_mha = config.attention_type in ("static", "static_shas")
         if split_mha:
             self.k_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, head_id): torch.zeros(
-                    1, cache_len, config.head_dim
+                    1, cache_len, config.head_dim, dtype=dtype
                 )
                 for layer_id in range(config.n_layers)
                 for head_id in range(config.n_kv_heads)
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, head_id): torch.zeros(
-                    1, cache_len, config.head_dim
+                    1, cache_len, config.head_dim, dtype=dtype
                 )
                 for layer_id in range(config.n_layers)
                 for head_id in range(config.n_kv_heads)
@@ -231,13 +234,13 @@ class StaticAttentionIOManager:
         else:
             self.k_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, 0): torch.zeros(
-                    1, config.n_kv_heads, cache_len, config.head_dim
+                    1, config.n_kv_heads, cache_len, config.head_dim, dtype=dtype
                 )
                 for layer_id in range(config.n_layers)
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, 0): torch.zeros(
-                    1, config.n_kv_heads, cache_len, config.head_dim
+                    1, config.n_kv_heads, cache_len, config.head_dim, dtype=dtype
                 )
                 for layer_id in range(config.n_layers)
             }
