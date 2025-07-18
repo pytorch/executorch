@@ -1162,6 +1162,15 @@ class Minimum(torch.nn.Module):
         return torch.minimum(x, y)
 
 
+class MinDim(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logits):
+        min_logits, min_indices = torch.min(logits, dim=1)
+        return min_logits, min_indices
+
+
 class Mul(torch.nn.Module):
     def __init__(self):
         super().__init__()
