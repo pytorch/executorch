@@ -54,6 +54,7 @@ include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 include(ExternalProject)
+include(FetchContent)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -220,7 +221,9 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
       ${CMAKE_POSITION_INDEPENDENT_CODE}
   )
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
+  set(PTHREADPOOL_SOURCE_DIR
+      "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/pthreadpool"
+  )
   set(PTHREADPOOL_BUILD_TESTS
       OFF
       CACHE BOOL ""
@@ -243,7 +246,14 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
         CACHE STRING ""
     )
   endif()
-  add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
+  FetchContent_Declare(
+    pthreadpool
+    SOURCE_DIR "${PTHREADPOOL_SOURCE_DIR}"
+    OVERRIDE_FIND_PACKAGE # We want our build of pthreadpool, but we want to
+                          # interact with it through find_package.
+  )
+  FetchContent_MakeAvailable(pthreadpool)
+  find_package(pthreadpool REQUIRED)
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
@@ -737,7 +747,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     endif()
 
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+    target_link_options(
+      executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file
+      "${WASM_MODEL_DIR}@/"
+    )
   endif()
 endif()
 
