@@ -12,11 +12,13 @@ import os
 import unittest
 
 from enum import Enum
-from typing import Any, Callable, Tuple
+from typing import Callable, Sequence, Sequence
+
+import executorch.backends.test.suite.flow
 
 import torch
-from executorch.backends.test.harness import Tester
 from executorch.backends.test.suite.context import get_active_test_context, TestContext
+from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.reporting import log_test_summary
 from executorch.backends.test.suite.runner import run_test, runner_main
 
@@ -44,22 +46,20 @@ def is_backend_enabled(backend):
         return backend in _ENABLED_BACKENDS
 
 
-ALL_TEST_FLOWS = []
+_ALL_TEST_FLOWS: Sequence[TestFlow] | None = None
 
-if is_backend_enabled("xnnpack"):
-    from executorch.backends.xnnpack.test.tester import Tester as XnnpackTester
 
-    XNNPACK_TEST_FLOW = ("xnnpack", XnnpackTester)
-    ALL_TEST_FLOWS.append(XNNPACK_TEST_FLOW)
+def get_test_flows() -> Sequence[TestFlow]:
+    global _ALL_TEST_FLOWS
 
-if is_backend_enabled("coreml"):
-    try:
-        from executorch.backends.apple.coreml.test.tester import CoreMLTester
+    if _ALL_TEST_FLOWS is None:
+        _ALL_TEST_FLOWS = [
+            f
+            for f in executorch.backends.test.suite.flow.all_flows()
+            if is_backend_enabled(f.backend)
+        ]
 
-        COREML_TEST_FLOW = ("coreml", CoreMLTester)
-        ALL_TEST_FLOWS.append(COREML_TEST_FLOW)
-    except Exception:
-        print("Core ML AOT is not available.")
+    return _ALL_TEST_FLOWS
 
 
 DTYPES = [
@@ -115,24 +115,26 @@ def _create_tests(cls):
 # Expand a test into variants for each registered flow.
 def _expand_test(cls, test_name: str):
     test_func = getattr(cls, test_name)
-    for flow_name, tester_factory in ALL_TEST_FLOWS:
-        _create_test_for_backend(cls, test_func, flow_name, tester_factory)
+    for flow in get_test_flows():
+        _create_test_for_backend(cls, test_func, flow)
     delattr(cls, test_name)
 
 
 def _make_wrapped_test(
     test_func: Callable,
     test_name: str,
-    test_flow: str,
-    tester_factory: Callable,
+    flow: TestFlow,
     params: dict | None = None,
 ):
     def wrapped_test(self):
-        with TestContext(test_name, test_flow, params):
+        with TestContext(test_name, flow.name, params):
             test_kwargs = params or {}
-            test_kwargs["tester_factory"] = tester_factory
+            test_kwargs["tester_factory"] = flow.tester_factory
 
             test_func(self, **test_kwargs)
+
+    setattr(wrapped_test, "_name", test_name)
+    setattr(wrapped_test, "_flow", flow)
 
     return wrapped_test
 
@@ -140,28 +142,24 @@ def _make_wrapped_test(
 def _create_test_for_backend(
     cls,
     test_func: Callable,
-    flow_name: str,
-    tester_factory: Callable[[torch.nn.Module, Tuple[Any]], Tester],
+    flow: TestFlow,
 ):
     test_type = getattr(test_func, "test_type", TestType.STANDARD)
 
     if test_type == TestType.STANDARD:
-        wrapped_test = _make_wrapped_test(
-            test_func, test_func.__name__, flow_name, tester_factory
-        )
-        test_name = f"{test_func.__name__}_{flow_name}"
+        wrapped_test = _make_wrapped_test(test_func, test_func.__name__, flow)
+        test_name = f"{test_func.__name__}_{flow.name}"
         setattr(cls, test_name, wrapped_test)
     elif test_type == TestType.DTYPE:
         for dtype in DTYPES:
             wrapped_test = _make_wrapped_test(
                 test_func,
                 test_func.__name__,
-                flow_name,
-                tester_factory,
+                flow,
                 {"dtype": dtype},
             )
             dtype_name = str(dtype)[6:]  # strip "torch."
-            test_name = f"{test_func.__name__}_{dtype_name}_{flow_name}"
+            test_name = f"{test_func.__name__}_{dtype_name}_{flow.name}"
             setattr(cls, test_name, wrapped_test)
     else:
         raise NotImplementedError(f"Unknown test type {test_type}.")
