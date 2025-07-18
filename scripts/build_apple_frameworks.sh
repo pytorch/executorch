@@ -14,15 +14,17 @@ PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
 
 SOURCE_ROOT_DIR=$(git rev-parse --show-toplevel)
 OUTPUT_DIR="${SOURCE_ROOT_DIR}/cmake-out"
-HEADERS_RELATIVE_PATH="include"
-HEADERS_ABSOLUTE_PATH="${OUTPUT_DIR}/${HEADERS_RELATIVE_PATH}"
 
 BUCK2=$(python3 "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="$SOURCE_ROOT_DIR/buck2-bin")
 if [[ "$BUCK2" == "buck2" ]]; then
   BUCK2=$(command -v buck2)
 fi
 
-FRAMEWORK_EXECUTORCH="executorch:\
+FRAMEWORK_EXECUTORCH_NAME="executorch"
+FRAMEWORK_EXECUTORCH_MODULE_NAME="ExecuTorch"
+FRAMEWORK_EXECUTORCH_HEADERS_DIR="${FRAMEWORK_EXECUTORCH_NAME}_include"
+FRAMEWORK_EXECUTORCH_HEADERS_PATH="${OUTPUT_DIR}/${FRAMEWORK_EXECUTORCH_HEADERS_DIR}"
+FRAMEWORK_EXECUTORCH="${FRAMEWORK_EXECUTORCH_NAME}:\
 libexecutorch.a,\
 libexecutorch_core.a,\
 libextension_apple.a,\
@@ -30,7 +32,7 @@ libextension_data_loader.a,\
 libextension_flat_tensor.a,\
 libextension_module.a,\
 libextension_tensor.a,\
-:$HEADERS_RELATIVE_PATH:ExecuTorch"
+:${FRAMEWORK_EXECUTORCH_HEADERS_DIR}:${FRAMEWORK_EXECUTORCH_MODULE_NAME}"
 
 FRAMEWORK_THREADPOOL="threadpool:\
 libcpuinfo.a,\
@@ -169,12 +171,12 @@ done
 
 echo "Exporting headers"
 
-mkdir -p "$HEADERS_ABSOLUTE_PATH"
+mkdir -p "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 
 "$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
   //extension/module: \
   //extension/tensor: \
-| rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_ABSOLUTE_PATH/executorch"
+| rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 
 # HACK: XCFrameworks don't appear to support exporting any build
 # options, but we need the following:
@@ -184,18 +186,18 @@ mkdir -p "$HEADERS_ABSOLUTE_PATH"
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
 ' \
-"$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
-"$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h" \
-"$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Export.h"
+"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
+"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h" \
+"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Export.h"
 
-cp -r $HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_ABSOLUTE_PATH/"
-cp -r $HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch "$HEADERS_ABSOLUTE_PATH/"
+cp -r $FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/"
+cp -r $FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/"
 
-cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_ABSOLUTE_PATH/executorch"
+cp "$SOURCE_ROOT_DIR/extension/apple/$FRAMEWORK_EXECUTORCH_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 
-cat > "$HEADERS_ABSOLUTE_PATH/module.modulemap" << 'EOF'
-module ExecuTorch {
-  umbrella header "ExecuTorch/ExecuTorch.h"
+cat > "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME/module.modulemap" << EOF
+module ${FRAMEWORK_EXECUTORCH_MODULE_NAME} {
+  umbrella header "${FRAMEWORK_EXECUTORCH_MODULE_NAME}.h"
   export *
 }
 EOF
@@ -252,7 +254,7 @@ for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
   rm -rf "${OUTPUT_DIR}/${preset_out_dir}"
 done
 
-rm -rf "$HEADERS_ABSOLUTE_PATH"
+rm -rf "$FRAMEWORK_EXECUTORCH_HEADERS_PATH"
 
 echo "Running tests"
 
