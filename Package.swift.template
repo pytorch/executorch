@@ -69,6 +69,13 @@ let products = deliverables([
       "c++",
     ],
   ],
+  "executorch_llm": [
+    "sha256": "__SHA256_executorch_llm__",
+    "sha256" + debug_suffix: "__SHA256_executorch_llm_debug__",
+    "targets": [
+      "executorch",
+    ],
+  ],
   "kernels_llm": [
     "sha256": "__SHA256_kernels_llm__",
     "sha256" + debug_suffix: "__SHA256_kernels_llm_debug__",
