@@ -282,9 +282,9 @@ class CoreMLBackend(BackendDetails):
         if delegate_info is None:
             return None
 
-        debug_handle_to_operation_path_mapping: Optional[Dict[str, Any]] = (
-            delegate_info.get("mapping", None)
-        )
+        debug_handle_to_operation_path_mapping: Optional[
+            Dict[str, Any]
+        ] = delegate_info.get("mapping", None)
 
         if debug_handle_to_operation_path_mapping is None:
             return None
