@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from copy import copy
-from typing import cast
+from typing import cast, Set, Type
 
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
@@ -23,6 +23,8 @@ class InsertRescalePass(ExportPass):
     produced the dq and q nodes. The TOSA constraints are validated
     in the fake implementation of.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def fold_dq_q_to_rescale(self, node: Node, user: Node, graph_module: GraphModule):
         dq_args = QuantArgs.from_operator(node.target, node.args)

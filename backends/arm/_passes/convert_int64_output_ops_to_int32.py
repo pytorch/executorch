@@ -7,6 +7,7 @@
 
 
 import logging
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -43,6 +44,8 @@ class ConvertInt64OutputOpsToInt32Pass(ExportPass):
     such checks, it is the user's responsibility to ensure that values fit within
     the int32 range.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     aten_cast_ops = (
         torch.ops.aten.to.dtype,

@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 from executorch.backends.arm._passes import ArmPass
 
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -12,7 +14,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 
@@ -21,6 +23,8 @@ class BroadcastArgsPass(ArmPass):
     Pass to manually broadcast arguments by inserting repeats.
     This is done when more than one arg needs broadcasting.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     targeted_ops = {
         exir_ops.edge.aten.add.Tensor,

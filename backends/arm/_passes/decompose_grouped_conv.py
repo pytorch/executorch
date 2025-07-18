@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from copy import copy
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.quant_args import QuantArgs
@@ -32,6 +33,8 @@ class DecomposeGroupedConv(ExportPass):
 
         x = cat(x1, x2)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     @staticmethod
     def _get_decomposition(op):

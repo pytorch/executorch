@@ -5,6 +5,8 @@
 
 # pyre-unsafe
 
+from typing import Set, Type
+
 import torch
 from executorch.exir.pass_base import ExportPass
 
@@ -21,6 +23,8 @@ class DecomposeSiluPass(ExportPass):
         x = sigmoid(a)
         y = mul(a,x)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (aten_silu_ops):

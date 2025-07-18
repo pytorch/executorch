@@ -5,6 +5,7 @@
 
 import hashlib
 from collections import defaultdict
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -26,6 +27,8 @@ class FuseEqualPlaceholdersPass(ExportPass):
     pointing to identical tensors and fusing them to one single placeholder
     with multiple users, using a cache for faster comparison.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: ExportedProgram):
         self.exported_program = exported_program

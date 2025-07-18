@@ -7,6 +7,7 @@
 
 
 import logging
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import AnnotateOutputDimOrderPass
@@ -37,6 +38,8 @@ class ToTosaMemoryFormatPass(ExportPass):
     when a transition between 3D and 4D/5D tensors happen.
     The annotated tosa_dim_order is used to permute the node's shape such that it gives a TOSA-compliant shape.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     NHWC_order = (0, 2, 3, 1)
     NHWC_inverse_order = (0, 3, 1, 2)

@@ -7,11 +7,13 @@
 
 import logging
 from math import pi
+from typing import Set, Type
 
 import torch
 
 from executorch.backends.arm._passes import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 # For MI case
 edge_asin_op = (exir_ops.edge.aten.asin.default,)
@@ -53,6 +55,8 @@ class DecomposeAsinAndAcosPass(ArmPass):
     where P and Q are polynomials defined in the function and s is the square root of z.
 
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def _build_polynomial(
         self, coefficients: list[float], variable: torch.Tensor, meta: dict[str, str]

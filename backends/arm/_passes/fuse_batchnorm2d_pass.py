@@ -5,6 +5,8 @@
 
 # pyre-unsafe
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
@@ -27,6 +29,8 @@ class FuseBatchnorm2DPass(ExportPass):
     """Fuses the pattern convolution -> batchnorm by updating
     the weights and bias of the convolution and removing the batchnorm.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: ExportedProgram):
         self.exported_program = exported_program

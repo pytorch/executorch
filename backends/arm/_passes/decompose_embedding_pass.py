@@ -8,6 +8,7 @@
 
 import logging
 from math import prod
+from typing import Set, Type
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -32,6 +33,8 @@ class DecomposeEmbeddingPass(ExportPass):
     Note:
          i = indices is expected to be int32 before this pass
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     aten_ops = (torch.ops.aten.embedding.default,)
     edge_ops = (exir_ops.edge.aten.embedding.default,)
