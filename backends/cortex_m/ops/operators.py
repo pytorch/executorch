@@ -14,6 +14,61 @@ from torch.library import impl, Library, register_fake
 lib = Library("cortex_m", "DEF")
 
 ###
+# add.Tensor
+###
+
+lib.define(
+    "add.Tensor(Tensor self, Tensor other, ScalarType dtype) -> (Tensor Z)"
+)
+
+lib.define(
+    "add_Tensor.out(Tensor self, Tensor other, ScalarType dtype, Tensor(a!) out) -> Tensor(a!)"
+)
+
+@impl(lib, "add.Tensor", "CompositeExplicitAutograd")
+def aten_add_tensor_impl(
+    input1: torch.Tensor,
+    input2: torch.Tensor,
+    dtype: torch.dtype,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    """
+    The implementation of aten add.Tensor.
+    """
+    return exir_ops.edge.aten.add.Tensor(input1, input2, dtype)
+
+###
+# add.out
+###
+
+lib.define(
+    "add(Tensor input1, Tensor input2, ScalarType dtype) -> (Tensor Z)"
+)
+
+lib.define(
+    "add.out(Tensor input1, Tensor input2, ScalarType dtype, Tensor(a!) out) -> Tensor(a!)"
+)
+
+@impl(lib, "add.out", "CompositeExplicitAutograd")
+def add_out_impl(
+    input1: torch.Tensor,
+    input2: torch.Tensor,
+    dtype: torch.dtype,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    """
+    The implementation of cmsis-nn add.out.
+    """
+    if node.dtype == torch.qint8:
+        return exir_ops.edge.quantized_decomposed.add.default(
+            input1, input2, dtype, dtype
+        )
+    else:
+        return exir_ops.edge.aten.add.default(
+            input1, input2, dtype, dtype
+        )
+
+###
 # dequantize_per_tensor
 ###
 
@@ -25,7 +80,6 @@ lib.define(
     "quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
-
 @register_fake("cortex_m::quantize_per_tensor")
 def quantize_per_tensor_meta(
     input: torch.Tensor,
@@ -36,7 +90,6 @@ def quantize_per_tensor_meta(
     dtype: torch.dtype,
 ) -> torch.Tensor:
     return torch.empty_like(input, dtype=dtype)
-
 
 @impl(lib, "quantize_per_tensor", "CompositeExplicitAutograd")
 def quantize_per_tensor_impl(

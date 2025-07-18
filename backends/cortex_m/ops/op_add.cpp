@@ -1,5 +1,6 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <cinttypes>
+#include <iostream>
+
 namespace cortex_m {
 namespace native {
 
@@ -13,7 +14,9 @@ Tensor& add_out(
     const Tensor& input2,
     const ScalarType dtype,
     Tensor& out) {
-  
+  std::cout << "add_out kernel called" << std::endl;
+  ET_LOG(Info, "xxxxxxxxxx add_out kernel called");
+
   // Ensure input is char type
   ET_CHECK_MSG(
       input1.scalar_type() == ScalarType::Char,
@@ -37,6 +40,7 @@ Tensor& add_out(
       "dtype %" PRId8 " is not int8 (Char)",
       static_cast<int8_t>(dtype));
   
+  assert(false);
 
   return out;
 }
