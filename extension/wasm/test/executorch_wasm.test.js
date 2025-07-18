@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 let et;
 beforeAll((done) => {
@@ -39,6 +46,23 @@ describe("Tensor", () => {
         expect(tensor.getSizes()).toEqual([2, 2]);
         tensor.delete();
     });
+
+    test("scalar type", () => {
+        const tensor = et.FloatTensor.ones([2, 2]);
+        // ScalarType can only be checked by strict equality.
+        expect(tensor.scalarType).toBe(et.ScalarType.Float);
+        tensor.delete();
+    });
+
+    test("long tensor", () => {
+        // Number cannot be converted to Long, so we use BigInt instead.
+        const tensor = et.LongTensor.fromArray([1n, 2n, 3n, 4n], [2, 2]);
+        expect(tensor.getData()).toEqual([1n, 2n, 3n, 4n]);
+        expect(tensor.getSizes()).toEqual([2, 2]);
+        // ScalarType can only be checked by strict equality.
+        expect(tensor.scalarType).toBe(et.ScalarType.Long);
+        tensor.delete();
+    });
 });
 
 describe("Module", () => {
@@ -66,15 +90,31 @@ describe("Module", () => {
             const module = et.Module.load("add_mul.pte");
             const methodMeta = module.getMethodMeta("forward");
             expect(methodMeta.name).toEqual("forward");
-            methodMeta.delete();
             module.delete();
         });
 
-        test("numInputs is 3", () => {
+        test("inputs are tensors", () => {
             const module = et.Module.load("add_mul.pte");
             const methodMeta = module.getMethodMeta("forward");
-            expect(methodMeta.numInputs).toEqual(3);
-            methodMeta.delete();
+            expect(methodMeta.inputTags.length).toEqual(3);
+            // Tags can only be checked by strict equality.
+            methodMeta.inputTags.forEach((tag) => expect(tag).toBe(et.Tag.Tensor));
+            module.delete();
+        });
+
+        test("outputs are tensors", () => {
+            const module = et.Module.load("add_mul.pte");
+            const methodMeta = module.getMethodMeta("forward");
+            expect(methodMeta.outputTags.length).toEqual(1);
+            // Tags can only be checked by strict equality.
+            expect(methodMeta.outputTags[0]).toBe(et.Tag.Tensor);
+            module.delete();
+        });
+
+        test("num instructions is 2", () => {
+            const module = et.Module.load("add_mul.pte");
+            const methodMeta = module.getMethodMeta("forward");
+            expect(methodMeta.numInstructions).toEqual(2);
             module.delete();
         });
 
@@ -85,23 +125,58 @@ describe("Module", () => {
         });
 
         describe("TensorInfo", () => {
-            test("sizes is 2x2", () => {
+            test("input sizes is 2x2", () => {
                 const module = et.Module.load("add_mul.pte");
                 const methodMeta = module.getMethodMeta("forward");
-                for (var i = 0; i < methodMeta.numInputs; i++) {
-                    const tensorInfo = methodMeta.inputTensorMeta(i);
+                expect(methodMeta.inputTensorMeta.length).toEqual(3);
+                methodMeta.inputTensorMeta.forEach((tensorInfo) => {
                     expect(tensorInfo.sizes).toEqual([2, 2]);
-                    tensorInfo.delete();
-                }
-                methodMeta.delete();
+                });
                 module.delete();
             });
 
-            test("out of range", () => {
+            test("output sizes is 2x2", () => {
                 const module = et.Module.load("add_mul.pte");
                 const methodMeta = module.getMethodMeta("forward");
-                expect(() => methodMeta.inputTensorMeta(3)).toThrow();
-                methodMeta.delete();
+                expect(methodMeta.outputTensorMeta.length).toEqual(1);
+                expect(methodMeta.outputTensorMeta[0].sizes).toEqual([2, 2]);
+                module.delete();
+            });
+
+            test("dim order is contiguous", () => {
+                const module = et.Module.load("add_mul.pte");
+                const methodMeta = module.getMethodMeta("forward");
+                methodMeta.inputTensorMeta.forEach((tensorInfo) => {
+                    expect(tensorInfo.dimOrder).toEqual([0, 1]);
+                });
+                module.delete();
+            });
+
+            test("scalar type is float", () => {
+                const module = et.Module.load("add_mul.pte");
+                const methodMeta = module.getMethodMeta("forward");
+                methodMeta.inputTensorMeta.forEach((tensorInfo) => {
+                    // ScalarType can only be checked by strict equality.
+                    expect(tensorInfo.scalarType).toBe(et.ScalarType.Float);
+                });
+                module.delete();
+            });
+
+            test("memory planned", () => {
+                const module = et.Module.load("add_mul.pte");
+                const methodMeta = module.getMethodMeta("forward");
+                methodMeta.inputTensorMeta.forEach((tensorInfo) => {
+                    expect(tensorInfo.isMemoryPlanned).toBe(true);
+                });
+                module.delete();
+            });
+
+            test("nbytes is 16", () => {
+                const module = et.Module.load("add_mul.pte");
+                const methodMeta = module.getMethodMeta("forward");
+                methodMeta.inputTensorMeta.forEach((tensorInfo) => {
+                    expect(tensorInfo.nbytes).toEqual(16);
+                });
                 module.delete();
             });
         });
@@ -170,7 +245,7 @@ describe("Module", () => {
 
         test("wrong input type", () => {
             const module = et.Module.load("add.pte");
-            const inputs = [et.FloatTensor.ones([1]), et.IntTensor.ones([1])];
+            const inputs = [et.FloatTensor.ones([1]), et.LongTensor.ones([1])];
             expect(() => module.execute("forward", inputs)).toThrow();
 
             inputs.forEach((input) => input.delete());

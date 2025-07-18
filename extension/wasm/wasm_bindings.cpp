@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 #include <emscripten.h>
 #include <emscripten/bind.h>
@@ -29,10 +36,12 @@
   })
 
 using namespace emscripten;
+using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::Result;
+using ::executorch::runtime::Tag;
 using ::executorch::runtime::TensorInfo;
 
 namespace executorch {
@@ -41,9 +50,19 @@ namespace wasm {
 
 namespace {
 
+// val represents all JS values. Using val_array to specify that we specifically
+// want an array.
+template <typename T>
+using val_array = val;
+
+template <typename T>
+inline void js_array_push(val_array<T>& array, const T& value) {
+  array.call<void>("push", value);
+}
+
 #define JS_FORALL_SUPPORTED_TENSOR_TYPES(_) \
   _(float, Float)                           \
-  _(int, Int)
+  _(int64_t, Long)
 
 inline ssize_t compute_expected_numel(
     const std::vector<torch::executor::Tensor::SizesType>& sizes) {
@@ -67,14 +86,14 @@ class JsBaseTensor {
  public:
   virtual ~JsBaseTensor() = default;
 
-  virtual Tensor get_tensor() = 0;
-  virtual int get_scalar_type() const = 0;
-  val get_data() {
+  virtual const Tensor& get_tensor() = 0;
+  virtual ScalarType get_scalar_type() const = 0;
+  val_array<val> get_data() {
     switch (get_scalar_type()) {
-#define JS_CASE_TENSOR_TO_VAL_TYPE(T, NAME)      \
-  case static_cast<int>(aten::ScalarType::NAME): \
-    return val::array(                           \
-        get_tensor().data_ptr<T>(),              \
+#define JS_CASE_TENSOR_TO_VAL_TYPE(T, NAME) \
+  case ScalarType::NAME:                    \
+    return val::array(                      \
+        get_tensor().data_ptr<T>(),         \
         get_tensor().data_ptr<T>() + get_tensor().numel());
       JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_CASE_TENSOR_TO_VAL_TYPE)
       default:
@@ -82,13 +101,13 @@ class JsBaseTensor {
             TypeError, "Unsupported Tensor type: %d", get_scalar_type());
     }
   }
-  val get_sizes() {
+  val_array<int> get_sizes() {
     return val::array(get_tensor().sizes().begin(), get_tensor().sizes().end());
   }
 };
 
 // Tensor that owns its own data. JS only has access to the static methods.
-template <typename T, aten::ScalarType S>
+template <typename T, ScalarType S>
 class JsTensor final : public JsBaseTensor {
  public:
   JsTensor(std::vector<T> data, TensorPtr tensor)
@@ -102,30 +121,36 @@ class JsTensor final : public JsBaseTensor {
     return std::make_unique<JsTensor>(std::move(data_vec), std::move(tensor));
   }
 
-  static std::unique_ptr<JsBaseTensor> full(val sizes, val fill_value) {
+  static std::unique_ptr<JsBaseTensor> full(
+      val_array<int> sizes,
+      val fill_value) {
     auto sizes_vec =
         convertJSArrayToNumberVector<torch::executor::Tensor::SizesType>(sizes);
     return fill_internal(std::move(sizes_vec), fill_value.as<T>());
   }
 
-  static std::unique_ptr<JsBaseTensor> zeros(val sizes) {
+  static std::unique_ptr<JsBaseTensor> zeros(val_array<int> sizes) {
     auto sizes_vec =
         convertJSArrayToNumberVector<torch::executor::Tensor::SizesType>(sizes);
     return fill_internal(std::move(sizes_vec), 0);
   }
 
-  static std::unique_ptr<JsBaseTensor> ones(val sizes) {
+  static std::unique_ptr<JsBaseTensor> ones(val_array<int> sizes) {
     auto sizes_vec =
         convertJSArrayToNumberVector<torch::executor::Tensor::SizesType>(sizes);
     return fill_internal(std::move(sizes_vec), 1);
   }
 
-  static std::unique_ptr<JsBaseTensor> from_array(val data, val sizes) {
+  static std::unique_ptr<JsBaseTensor> from_array(
+      val_array<val> data,
+      val_array<int> sizes) {
     return from_array(data, sizes, val::null());
   }
 
-  static std::unique_ptr<JsBaseTensor>
-  from_array(val data, val sizes, val strides) {
+  static std::unique_ptr<JsBaseTensor> from_array(
+      val_array<val> data,
+      val_array<int> sizes,
+      val_array<int> strides) {
     auto data_vec = convertJSArrayToNumberVector<T>(data);
     auto sizes_vec =
         convertJSArrayToNumberVector<torch::executor::Tensor::SizesType>(sizes);
@@ -142,11 +167,11 @@ class JsTensor final : public JsBaseTensor {
         data_vec.data(), std::move(sizes_vec), std::move(strides_vec), S);
     return std::make_unique<JsTensor>(std::move(data_vec), std::move(tensor));
   }
-  Tensor get_tensor() override {
+  const Tensor& get_tensor() override {
     return *tensor_;
   }
-  int get_scalar_type() const override {
-    return static_cast<int>(S);
+  ScalarType get_scalar_type() const override {
+    return S;
   }
 
  private:
@@ -155,7 +180,7 @@ class JsTensor final : public JsBaseTensor {
 };
 
 #define JS_DECLARE_TENSOR_TYPE(T, NAME) \
-  using Js##NAME##Tensor = JsTensor<T, aten::ScalarType::NAME>;
+  using Js##NAME##Tensor = JsTensor<T, ScalarType::NAME>;
 JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_DECLARE_TENSOR_TYPE)
 
 // Tensor that does not own its own data. It is a wrapper around a C++ Tensor.
@@ -168,19 +193,18 @@ class JsOutputTensor final : public JsBaseTensor {
   JsOutputTensor(JsOutputTensor&&) = default;
   JsOutputTensor& operator=(JsOutputTensor&&) = default;
 
-  explicit JsOutputTensor(std::unique_ptr<Tensor> tensor)
-      : tensor_(std::move(tensor)) {}
+  explicit JsOutputTensor(Tensor tensor) : tensor_(tensor) {}
 
-  Tensor get_tensor() override {
-    return *tensor_;
+  const Tensor& get_tensor() override {
+    return tensor_;
   }
 
-  int get_scalar_type() const override {
-    return static_cast<int>(tensor_->scalar_type());
+  ScalarType get_scalar_type() const override {
+    return tensor_.scalar_type();
   }
 
  private:
-  std::unique_ptr<Tensor> tensor_;
+  Tensor tensor_;
 };
 
 // Converts JS value to EValue.
@@ -195,7 +219,9 @@ EValue to_evalue(val v) {
     return EValue(false);
   } else {
     const std::string& type_str = v.typeOf().as<std::string>();
-    if (type_str == "object") {
+    if (type_str == "bigint") {
+      return EValue(v.as<int64_t>());
+    } else if (type_str == "object") {
       // If it is an object, assume it is a tensor.
       return EValue(v.as<JsBaseTensor&>().get_tensor());
     }
@@ -216,8 +242,8 @@ val to_val(EValue v) {
     return val(v.toBool());
   } else if (v.isTensor()) {
     Tensor tensor = v.toTensor();
-    std::unique_ptr<JsBaseTensor> wrapper = std::make_unique<JsOutputTensor>(
-        std::make_unique<Tensor>(std::move(tensor)));
+    std::unique_ptr<JsBaseTensor> wrapper =
+        std::make_unique<JsOutputTensor>(std::move(tensor));
     return val(std::move(wrapper));
   } else {
     char tag_buf[32];
@@ -226,60 +252,77 @@ val to_val(EValue v) {
   }
 }
 
-// Wrapper around TensorInfo.
-class JsTensorInfo final {
- public:
-  JsTensorInfo() = delete;
-  JsTensorInfo(const JsTensorInfo&) = delete;
-  JsTensorInfo& operator=(const JsTensorInfo&) = delete;
-  JsTensorInfo(JsTensorInfo&&) = default;
-  JsTensorInfo& operator=(JsTensorInfo&&) = default;
+// JS object containing tensor metadata.
+struct JsTensorInfo {
+  val_array<int32_t> sizes;
+  val_array<uint8_t> dim_order;
+  ScalarType scalar_type;
+  bool is_memory_planned;
+  size_t nbytes;
+  std::string name;
 
-  explicit JsTensorInfo(std::unique_ptr<TensorInfo> tensor_info)
-      : tensor_info_(std::move(tensor_info)) {}
-
-  val sizes() const {
-    return val::array(
-        tensor_info_->sizes().begin(), tensor_info_->sizes().end());
+  static JsTensorInfo from_tensor_info(const TensorInfo& info) {
+    return {
+        val::array(info.sizes().begin(), info.sizes().end()),
+        val::array(info.dim_order().begin(), info.dim_order().end()),
+        info.scalar_type(),
+        info.is_memory_planned(),
+        info.nbytes(),
+        std::string(info.name())};
   }
-
- private:
-  std::unique_ptr<TensorInfo> tensor_info_;
 };
 
-// Wrapper around MethodMeta.
-class JsMethodMeta final {
- public:
-  JsMethodMeta() = delete;
-  JsMethodMeta(const JsMethodMeta&) = delete;
-  JsMethodMeta& operator=(const JsMethodMeta&) = delete;
-  JsMethodMeta(JsMethodMeta&&) = default;
-  JsMethodMeta& operator=(JsMethodMeta&&) = default;
+// JS object containing method metadata.
+struct JsMethodMeta {
+  std::string name;
+  val_array<Tag> input_tags;
+  val_array<JsTensorInfo> input_tensor_meta;
+  val_array<Tag> output_tags;
+  val_array<JsTensorInfo> output_tensor_meta;
+  val_array<JsTensorInfo> attribute_tensor_meta;
+  val_array<int64_t> memory_planned_buffer_sizes;
+  val_array<std::string> backends;
+  ET_DEPRECATED size_t num_instructions;
 
-  explicit JsMethodMeta(std::unique_ptr<MethodMeta> meta)
-      : meta_(std::move(meta)) {}
-
-  val name() const {
-    return val::u8string(meta_->name());
+  static JsMethodMeta from_method_meta(const MethodMeta& meta) {
+    JsMethodMeta new_meta{
+        meta.name(),
+        val::array(),
+        val::array(),
+        val::array(),
+        val::array(),
+        val::array(),
+        val::array(),
+        val::array(),
+        meta.num_instructions()};
+    for (int i = 0; i < meta.num_inputs(); i++) {
+      js_array_push(new_meta.input_tags, meta.input_tag(i).get());
+      js_array_push(
+          new_meta.input_tensor_meta,
+          JsTensorInfo::from_tensor_info(meta.input_tensor_meta(i).get()));
+    }
+    for (int i = 0; i < meta.num_outputs(); i++) {
+      js_array_push(new_meta.output_tags, meta.output_tag(i).get());
+      js_array_push(
+          new_meta.output_tensor_meta,
+          JsTensorInfo::from_tensor_info(meta.output_tensor_meta(i).get()));
+    }
+    for (int i = 0; i < meta.num_attributes(); i++) {
+      js_array_push(
+          new_meta.attribute_tensor_meta,
+          JsTensorInfo::from_tensor_info(meta.attribute_tensor_meta(i).get()));
+    }
+    for (int i = 0; i < meta.num_memory_planned_buffers(); i++) {
+      js_array_push(
+          new_meta.memory_planned_buffer_sizes,
+          meta.memory_planned_buffer_size(i).get());
+    }
+    for (int i = 0; i < meta.num_backends(); i++) {
+      js_array_push(
+          new_meta.backends, val::u8string(meta.get_backend_name(i).get()));
+    }
+    return new_meta;
   }
-
-  size_t num_inputs() const {
-    return meta_->num_inputs();
-  }
-
-  std::unique_ptr<JsTensorInfo> input_tensor_meta(size_t index) {
-    auto res = meta_->input_tensor_meta(index);
-    THROW_IF_ERROR(
-        res.error(),
-        "Failed to get input tensor info for index %zu, error: 0x%" PRIx32,
-        index,
-        static_cast<uint32_t>(res.error()));
-    return std::make_unique<JsTensorInfo>(
-        std::make_unique<TensorInfo>(std::move(res.get())));
-  }
-
- private:
-  std::unique_ptr<MethodMeta> meta_;
 };
 
 // Wrapper around extension/Module.
@@ -316,19 +359,17 @@ class JsModule final {
         static_cast<uint32_t>(res));
   }
 
-  std::unique_ptr<JsMethodMeta> get_method_meta(
-      const std::string& method_name) {
+  JsMethodMeta get_method_meta(const std::string& method_name) {
     auto res = module_->method_meta(method_name);
     THROW_IF_ERROR(
         res.error(),
         "Failed to get method meta for %s, error: 0x%" PRIx32,
         method_name.c_str(),
         static_cast<uint32_t>(res.error()));
-    return std::make_unique<JsMethodMeta>(
-        std::make_unique<MethodMeta>(std::move(res.get())));
+    return JsMethodMeta::from_method_meta(res.get());
   }
 
-  val execute(const std::string& method, val js_inputs) {
+  val_array<val> execute(const std::string& method, val js_inputs) {
     std::vector<EValue> inputs;
     if (js_inputs.isArray()) {
       inputs.reserve(js_inputs["length"].as<size_t>());
@@ -347,12 +388,12 @@ class JsModule final {
     std::vector<EValue> outputs = res.get();
     val js_outputs = val::array();
     for (auto& output : outputs) {
-      js_outputs.call<void>("push", to_val(std::move(output)));
+      js_array_push(js_outputs, to_val(std::move(output)));
     }
     return js_outputs;
   }
 
-  val forward(val inputs) {
+  val_array<val> forward(val inputs) {
     return execute("forward", inputs);
   }
 
@@ -363,6 +404,13 @@ class JsModule final {
 } // namespace
 
 EMSCRIPTEN_BINDINGS(WasmBindings) {
+  enum_<ScalarType>("ScalarType")
+#define JS_DECLARE_SCALAR_TYPE(T, NAME) .value(#NAME, ScalarType::NAME)
+      JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_DECLARE_SCALAR_TYPE);
+  enum_<Tag>("Tag")
+#define JS_DECLARE_TAG(NAME) .value(#NAME, Tag::NAME)
+      EXECUTORCH_FORALL_TAGS(JS_DECLARE_TAG);
+
   class_<JsModule>("Module")
       .class_function("load", &JsModule::load)
       .function("getMethods", &JsModule::get_methods)
@@ -374,11 +422,26 @@ EMSCRIPTEN_BINDINGS(WasmBindings) {
       .property("scalarType", &JsBaseTensor::get_scalar_type)
       .function("getData", &JsBaseTensor::get_data)
       .function("getSizes", &JsBaseTensor::get_sizes);
-  class_<JsMethodMeta>("MethodMeta")
-      .property("name", &JsMethodMeta::name)
-      .property("numInputs", &JsMethodMeta::num_inputs)
-      .function("inputTensorMeta", &JsMethodMeta::input_tensor_meta);
-  class_<JsTensorInfo>("TensorInfo").property("sizes", &JsTensorInfo::sizes);
+  value_object<JsTensorInfo>("TensorInfo")
+      .field("sizes", &JsTensorInfo::sizes)
+      .field("dimOrder", &JsTensorInfo::dim_order)
+      .field("scalarType", &JsTensorInfo::scalar_type)
+      .field("isMemoryPlanned", &JsTensorInfo::is_memory_planned)
+      .field("nbytes", &JsTensorInfo::nbytes)
+      .field("name", &JsTensorInfo::name);
+  value_object<JsMethodMeta>("MethodMeta")
+      .field("name", &JsMethodMeta::name)
+      .field("inputTags", &JsMethodMeta::input_tags)
+      .field("inputTensorMeta", &JsMethodMeta::input_tensor_meta)
+      .field("outputTags", &JsMethodMeta::output_tags)
+      .field("outputTensorMeta", &JsMethodMeta::output_tensor_meta)
+      .field("attributeTensorMeta", &JsMethodMeta::attribute_tensor_meta)
+      .field(
+          "memoryPlannedBufferSizes",
+          &JsMethodMeta::memory_planned_buffer_sizes)
+      .field("backends", &JsMethodMeta::backends)
+      .field("numInstructions", &JsMethodMeta::num_instructions);
+
 #define JS_DECLARE_TENSOR_BINDINGS(T, NAME)                              \
   class_<Js##NAME##Tensor>(#NAME "Tensor")                               \
       .class_function("zeros", &Js##NAME##Tensor::zeros)                 \

@@ -1,3 +1,13 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Please this file formatted by running:
+# ~~~
+# cmake-format -i CMakeLists.txt
+# ~~~
 
 cmake_minimum_required(VERSION 3.24)
 
@@ -36,7 +46,9 @@ list(
 add_library(executorch_wasm OBJECT wasm_bindings.cpp)
 
 target_compile_options(executorch_wasm PUBLIC ${_common_compile_options})
-target_include_directories(executorch_wasm PUBLIC ${_common_include_directories})
+target_include_directories(
+  executorch_wasm PUBLIC ${_common_include_directories}
+)
 target_link_libraries(executorch_wasm PUBLIC ${link_libraries})
 
 if(BUILD_TESTING)
