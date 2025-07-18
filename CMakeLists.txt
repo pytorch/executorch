@@ -183,7 +183,7 @@ if(EXECUTORCH_BUILD_CPUINFO)
       ${CMAKE_POSITION_INDEPENDENT_CODE}
   )
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
+  set(CPUINFO_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/cpuinfo")
   set(CPUINFO_BUILD_TOOLS
       OFF
       CACHE BOOL ""
@@ -209,7 +209,14 @@ if(EXECUTORCH_BUILD_CPUINFO)
       CACHE STRING ""
   )
   set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
-  add_subdirectory("${CPUINFO_SOURCE_DIR}")
+  FetchContent_Declare(
+    cpuinfo
+    SOURCE_DIR "${CPUINFO_SOURCE_DIR}"
+    OVERRIDE_FIND_PACKAGE # We want our build of cpuinfo, but we want to
+                          # interact with it through find_package.
+  )
+  FetchContent_MakeAvailable(cpuinfo)
+  find_package(cpuinfo REQUIRED)
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
