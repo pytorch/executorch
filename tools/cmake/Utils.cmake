@@ -278,32 +278,3 @@ macro(find_package_torch)
     find_package(Torch CONFIG REQUIRED)
   endif()
 endmacro()
-
-# In order to support cross compiling, we need to propagate a bunch of CMake
-# variables to ExternalProject. Call this to get the current values of all
-# relevant variables, which should then be passed to CMAKE_ARGS.
-function(get_extra_cmake_args_for_external_project outVar)
-  set(VARIABLES_TO_PROPAGATE
-      ANDROID_ABI
-      ANDROID_PLATFORM
-      CMAKE_ARCHIVE_OUTPUT_DIRECTORY
-      CMAKE_BUILD_TYPE
-      CMAKE_C_COMPILER_LAUNCHER
-      CMAKE_CXX_COMPILER_LAUNCHER
-      CMAKE_FIND_ROOT_PATH
-      CMAKE_OSX_DEPLOYMENT_TARGET
-      CMAKE_TOOLCHAIN_FILE
-      DEPLOYMENT_TARGET
-      PLATFORM
-  )
-  set(${outVar} "")
-  foreach(var ${VARIABLES_TO_PROPAGATE})
-    if(DEFINED ${var})
-      list(APPEND ${outVar} -D "${var}=${${var}}")
-    endif()
-  endforeach()
-  set(${outVar}
-      ${${outVar}}
-      PARENT_SCOPE
-  )
-endfunction()
