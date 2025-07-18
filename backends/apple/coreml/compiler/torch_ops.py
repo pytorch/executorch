@@ -19,7 +19,6 @@ from coremltools.converters.mil.frontend.torch.torch_op_registry import (
 def transpose_copy(context, node):
     transpose(context, node)
 
-
 # https://github.com/apple/coremltools/pull/2557
 @register_torch_op(override=False)
 def unbind_copy(context, node):
