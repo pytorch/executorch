@@ -8,6 +8,7 @@
 
 #include <emscripten.h>
 #include <emscripten/bind.h>
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 
@@ -38,6 +39,7 @@
 using namespace emscripten;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using ::executorch::extension::BufferDataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::Result;
@@ -333,10 +335,29 @@ class JsModule final {
   JsModule& operator=(JsModule&&) = default;
 
   explicit JsModule(std::unique_ptr<Module> module)
-      : module_(std::move(module)) {}
+      : buffer_(0), module_(std::move(module)) {}
 
-  static std::unique_ptr<JsModule> load(const std::string& path) {
-    return std::make_unique<JsModule>(std::make_unique<Module>(path));
+  explicit JsModule(std::vector<uint8_t> buffer, std::unique_ptr<Module> module)
+      : buffer_(std::move(buffer)), module_(std::move(module)) {}
+
+  static std::unique_ptr<JsModule> load(val data) {
+    if (data.isString()) {
+      return std::make_unique<JsModule>(
+          std::make_unique<Module>(data.as<std::string>()));
+    } else if (data.instanceof (val::global("Uint8Array"))) {
+      size_t length = data["length"].as<size_t>();
+      std::vector<uint8_t> buffer(length);
+      val memory_view = val(typed_memory_view(length, buffer.data()));
+      memory_view.call<void>("set", data);
+      auto loader = std::make_unique<BufferDataLoader>(buffer.data(), length);
+      return std::make_unique<JsModule>(
+          std::move(buffer), std::make_unique<Module>(std::move(loader)));
+    } else {
+      THROW_JS_ERROR(
+          TypeError,
+          "Unsupported data type: %s",
+          data.typeOf().as<std::string>().c_str());
+    }
   }
 
   val get_methods() {
@@ -396,6 +417,8 @@ class JsModule final {
   }
 
  private:
+  // If loaded from a buffer, keeps it alive for the lifetime of the module.
+  std::vector<uint8_t> buffer_;
   std::unique_ptr<Module> module_;
 };
 
