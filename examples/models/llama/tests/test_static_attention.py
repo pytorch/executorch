@@ -1,3 +1,4 @@
+import copy
 import itertools
 import unittest
 from collections import defaultdict
@@ -20,9 +21,15 @@ class StaticAttentionTest(unittest.TestCase):
         torch.manual_seed(42)
 
     def test_without_cache(self):
-        def test(use_qk_norm, qk_norm_before_rope, adopt_hf_rope, use_conv2d):
+        def test(
+            use_qk_norm, qk_norm_before_rope, split_mha, adopt_hf_rope, use_conv2d
+        ):
+            torch.manual_seed(42)
+
+            # Redundant or unsupported configurations.
             if not use_qk_norm and qk_norm_before_rope:
-                # Redundant test.
+                return
+            if not split_mha and use_conv2d:
                 return
 
             config = ModelArgs(
@@ -32,6 +39,7 @@ class StaticAttentionTest(unittest.TestCase):
                 max_seq_len=8,
                 use_qk_norm=use_qk_norm,
                 qk_norm_before_rope=qk_norm_before_rope,
+                attention_type="static" if split_mha else "static_mha",
             )
             layer_id = 0
             rope = Rope(config)
@@ -73,11 +81,12 @@ class StaticAttentionTest(unittest.TestCase):
                 torch.isclose(y, expected, rtol=1e-3).all(),
                 f"Failed for use_qk_norm={use_qk_norm}, "
                 f"qk_norm_before_rope={qk_norm_before_rope}, "
+                f"split_mha={split_mha}, "
                 f"adopt_hf_rope={adopt_hf_rope}, "
                 f"use_conv2d={use_conv2d}",
             )
 
-        for args in itertools.product([False, True], repeat=4):
+        for args in itertools.product([False, True], repeat=5):
             test(*args)
 
     def test_with_cache(self):
@@ -154,10 +163,11 @@ class StaticAttentionTest(unittest.TestCase):
         test_with_style("shift_pointer")
         test_with_style("smart_mask")
 
-    def _get_test_transformers(self, config):
+    def _get_test_transformers(self, config, attention_type="static"):
         mha_transformer = construct_transformer(config).eval()
 
-        config.attention_type = "static"
+        config = copy.copy(config)
+        config.attention_type = attention_type
         static_transformer = construct_transformer(config).eval()
         static_transformer.load_state_dict(mha_transformer.state_dict(), strict=False)
         for mha_layer, static_layer in zip(
@@ -165,8 +175,9 @@ class StaticAttentionTest(unittest.TestCase):
         ):
             static_layer.attention.load_weights_from_attention_mha(mha_layer.attention)
             static_layer.attention.adopt_hf_rope()
+        config.use_hf_rope = True
 
-        return mha_transformer, static_transformer
+        return mha_transformer, static_transformer, config
 
     def test_within_transformer(self):
         config = ModelArgs(
@@ -177,17 +188,23 @@ class StaticAttentionTest(unittest.TestCase):
             n_layers=4,
             vocab_size=128,
         )
-        mha_transformer, static_transformer = self._get_test_transformers(config)
         x = torch.randint(config.vocab_size, (1, config.max_seq_len))
-        expected = mha_transformer(x)
-
         n_chunks = 3
         chunk_len = config.max_seq_len // n_chunks
         cache_len = config.max_seq_len - chunk_len
 
-        def test_with_style(style):
-            config.use_hf_rope = True
-            mgr = StaticAttentionIOManager(config, chunk_len, cache_len, style=style)
+        def test(style, attention_type):
+            mha_transformer, static_transformer, static_config = (
+                self._get_test_transformers(
+                    config,
+                    attention_type,
+                )
+            )
+            expected = mha_transformer(x)
+
+            mgr = StaticAttentionIOManager(
+                static_config, chunk_len, cache_len, style=style
+            )
             ys = []
             for i in range(n_chunks):
                 y_i = mgr.prefill(
@@ -198,8 +215,10 @@ class StaticAttentionTest(unittest.TestCase):
 
             self.assertTrue(torch.isclose(ys[-1], expected, rtol=1e-3).all())
 
-        test_with_style("shift_pointer")
-        test_with_style("smart_mask")
+        for args in itertools.product(
+            ["shift_pointer", "smart_mask"], ["static", "static_mha"]
+        ):
+            test(*args)
 
     def test_lookahead_decode(self):
         config = ModelArgs(
@@ -211,14 +230,13 @@ class StaticAttentionTest(unittest.TestCase):
             vocab_size=128,
             generate_full_logits=True,
         )
-        _, static_transformer = self._get_test_transformers(config)
+        _, static_transformer, static_config = self._get_test_transformers(config)
 
-        config.use_hf_rope = True
         input_len = 32
-        cache_len = config.max_seq_len - input_len
-        prefill_input = torch.randint(config.vocab_size, (input_len,))
-        ref_mgr = StaticAttentionIOManager(config, input_len, cache_len)
-        lookahead_mgr = StaticAttentionIOManager(config, input_len, cache_len)
+        cache_len = static_config.max_seq_len - input_len
+        prefill_input = torch.randint(static_config.vocab_size, (input_len,))
+        ref_mgr = StaticAttentionIOManager(static_config, input_len, cache_len)
+        lookahead_mgr = StaticAttentionIOManager(static_config, input_len, cache_len)
 
         next_tok = (
             ref_mgr.prefill(static_transformer, prefill_input.tolist())[0][-1]
