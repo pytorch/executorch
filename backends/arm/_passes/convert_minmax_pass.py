@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -28,6 +30,8 @@ class ConvertMinMaxPass(ExportPass):
         amax(dim2, keepdim = True)
         squeeze(dim = [dim1, dim2])
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def check_argmax(self, node):
         """
