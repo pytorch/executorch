@@ -62,6 +62,7 @@ from executorch.devtools.inspector._inspector_utils import (
     map_runtime_aot_intermediate_outputs,
     merge_runtime_overlapping_debug_handles,
     ProgramOutput,
+    propagate_back_debug_handle,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TimeScale,
     verify_debug_data_equivalence,
@@ -1166,7 +1167,18 @@ class Inspector:
         """
         if self._etrecord._representative_inputs is None:
             return {}, {}
-        export_program = self._etrecord.edge_dialect_program
+
+        export_program = None
+
+        # Will use the exported program to extract intermediate output if and only if exported_program has been provided, and it is the greatest ancestor of the edge_dialect_program
+        if self._etrecord.exported_program and propagate_back_debug_handle(
+            self._etrecord.exported_program,
+            self._etrecord.export_graph_id,
+            self._etrecord.edge_dialect_program,
+        ):
+            export_program = self._etrecord.exported_program
+        else:
+            export_program = self._etrecord.edge_dialect_program
         graph_module = export_program.module()
         aot_debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(
             graph_module
