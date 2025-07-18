@@ -227,7 +227,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     // For support, contact the PyTorch Edge team or make an issue in:
     // https://github.com/pytorch/executorch/issues.
     ET_LOG(
-        Error,
+        Info,
         "!!DEPRECATED!! This branch is deprecated from ExecuTorch 0.7; re-export this PTE file to ensure support on newer runtimes.");
     return Program(
         loader,
