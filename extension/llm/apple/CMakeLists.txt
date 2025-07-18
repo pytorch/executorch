@@ -33,6 +33,13 @@ target_include_directories(extension_llm_apple
   PUBLIC ExecuTorchLLM/Exported
 )
 
+if(NOT TARGET extension_llm_runner)
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/extension/llm/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/../runner
+  )
+endif()
+
 find_library(FOUNDATION_FRAMEWORK Foundation)
 target_link_libraries(extension_llm_apple
   PRIVATE extension_llm_runner ${FOUNDATION_FRAMEWORK}
