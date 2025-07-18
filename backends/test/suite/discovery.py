@@ -9,7 +9,9 @@
 import os
 import unittest
 
+from dataclasses import dataclass
 from types import ModuleType
+from typing import Pattern
 
 from executorch.backends.test.suite.flow import TestFlow
 
@@ -18,8 +20,19 @@ from executorch.backends.test.suite.flow import TestFlow
 #
 
 
+@dataclass
+class TestFilter:
+    """A set of filters for test discovery."""
+
+    backends: set[str] | None
+    """ The set of backends to include. If None, all backends are included. """
+
+    name_regex: Pattern[str] | None
+    """ A regular expression to filter test names. If None, all tests are included. """
+
+
 def discover_tests(
-    root_module: ModuleType, backends: set[str] | None
+    root_module: ModuleType, test_filter: TestFilter
 ) -> unittest.TestSuite:
     # Collect all tests using the unittest discovery mechanism then filter down.
 
@@ -32,20 +45,20 @@ def discover_tests(
     module_dir = os.path.dirname(module_file)
     suite = loader.discover(module_dir)
 
-    return _filter_tests(suite, backends)
+    return _filter_tests(suite, test_filter)
 
 
 def _filter_tests(
-    suite: unittest.TestSuite, backends: set[str] | None
+    suite: unittest.TestSuite, test_filter: TestFilter
 ) -> unittest.TestSuite:
     # Recursively traverse the test suite and add them to the filtered set.
     filtered_suite = unittest.TestSuite()
 
     for child in suite:
         if isinstance(child, unittest.TestSuite):
-            filtered_suite.addTest(_filter_tests(child, backends))
+            filtered_suite.addTest(_filter_tests(child, test_filter))
         elif isinstance(child, unittest.TestCase):
-            if _is_test_enabled(child, backends):
+            if _is_test_enabled(child, test_filter):
                 filtered_suite.addTest(child)
         else:
             raise RuntimeError(f"Unexpected test type: {type(child)}")
@@ -53,11 +66,16 @@ def _filter_tests(
     return filtered_suite
 
 
-def _is_test_enabled(test_case: unittest.TestCase, backends: set[str] | None) -> bool:
+def _is_test_enabled(test_case: unittest.TestCase, test_filter: TestFilter) -> bool:
     test_method = getattr(test_case, test_case._testMethodName)
+    flow: TestFlow = getattr(test_method, "_flow")
 
-    if backends is not None:
-        flow: TestFlow = getattr(test_method, "_flow")
-        return flow.backend in backends
-    else:
-        return True
+    if test_filter.backends is not None and flow.backend not in test_filter.backends:
+        return False
+
+    if test_filter.name_regex is not None and not test_filter.name_regex.search(
+        test_case.id()
+    ):
+        return False
+
+    return True
