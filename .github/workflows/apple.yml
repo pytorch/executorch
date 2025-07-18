@@ -149,6 +149,7 @@ jobs:
         VERSION="${{ needs.set-version.outputs.version }}"
         FRAMEWORKS=(
           "executorch"
+          "executorch_llm"
           "backend_coreml"
           "backend_mps"
           "backend_xnnpack"
