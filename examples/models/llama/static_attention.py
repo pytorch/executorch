@@ -418,6 +418,8 @@ class StaticAttentionIOManager:
                 ]
 
             x[0] = new_tokens[-1]
+            if new_tokens[-1] in stop_tokens:
+                break
 
         logger.info(
             f"Generated {len(new_tokens) - 1} tokens with {inference_cnt} inference(s)."
@@ -729,6 +731,34 @@ class StaticAttention(Attention):
             self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
             self.k_norm = torch.nn.RMSNorm(other.k_norm_fn.dim, other.k_norm_fn.eps)
             self.k_norm.load_state_dict(other.k_norm_fn.state_dict())
+
+    def adopt_hf_rope(self):
+        if self.rope.use_hf_rope:
+            return
+
+        if self.use_conv2d:
+            raise RuntimeError(
+                "adopt_hf_rope needs to be called before linear_to_conv2d"
+            )
+
+        # Permute weights of qk projections and norms to match HF RoPE's channel order.
+        def permute(w):
+            shape = w.shape
+            return (
+                w.view((-1, 2) + shape[1:]).transpose(0, 1).reshape(shape).contiguous()
+            )
+
+        for wq in self.wqs:
+            wq.weight.data.copy_(permute(wq.weight.data))
+
+        for wk in self.wks:
+            wk.weight.data.copy_(permute(wk.weight.data))
+
+        if self.use_qk_norm:
+            self.q_norm.weight.data.copy_(permute(self.q_norm.weight.data))
+            self.k_norm.weight.data.copy_(permute(self.k_norm.weight.data))
+
+        self.rope.use_hf_rope = True
 
     def linear_to_conv2d(self):
         def transfer_weight(linear, conv2d):

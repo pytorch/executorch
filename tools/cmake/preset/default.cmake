@@ -95,6 +95,11 @@ define_overridable_option(
   BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_LLM_APPLE
+  "Build the LLM Apple extension"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_MODULE
   "Build the Module extension"
   BOOL OFF
