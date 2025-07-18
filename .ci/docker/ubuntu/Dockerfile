@@ -84,6 +84,11 @@ RUN rm install_android.sh
 
 ARG ARM_SDK
 
+ARG ZEPHYR_SDK
+COPY ./common/install_zephyr.sh install_zephyr.sh
+RUN if [ -n "${ZEPHYR_SDK}" ]; then bash ./install_zephyr.sh; fi
+RUN rm install_zephyr.sh
+
 ARG QNN_SDK
 
 ARG MEDIATEK_SDK
