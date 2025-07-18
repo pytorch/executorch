@@ -98,8 +98,8 @@ def EXIRATenDialectVerifier(  # noqa: C901
             _core_aten_ops_exception_list.extend(
                 edge_compile_config._core_aten_ops_exception_list
             )
-        if edge_compile_config._preserve_ops:
-            _preserve_ops.extend(edge_compile_config._preserve_ops)
+        if edge_compile_config.preserve_ops:
+            _preserve_ops.extend(edge_compile_config.preserve_ops)
 
     class _EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
         dialect = "OLD_EXIR_ATEN"
@@ -181,7 +181,7 @@ def get_aten_verifier(config: EdgeCompileConfig):
         EXIRATenDialectVerifier(
             class_only=True,
             core_aten_ops_exception_list=config._core_aten_ops_exception_list,
-            preserve_ops=config._preserve_ops,
+            preserve_ops=config.preserve_ops,
         )
         if config._check_ir_validity
         else EXIRATenDialectVerifierBase
@@ -253,8 +253,8 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             _core_aten_ops_exception_list.extend(
                 edge_compile_config._core_aten_ops_exception_list
             )
-        if edge_compile_config._preserve_ops:
-            _preserve_ops.extend(edge_compile_config._preserve_ops)
+        if edge_compile_config.preserve_ops:
+            _preserve_ops.extend(edge_compile_config.preserve_ops)
 
     class _EXIREdgeDialectVerifier(Verifier):
         dialect = "EDGE"

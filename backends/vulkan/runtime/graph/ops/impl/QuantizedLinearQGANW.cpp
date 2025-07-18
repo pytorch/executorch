@@ -50,25 +50,28 @@ void resize_linear_qga4w_node(
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
 
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
-  vTensorPtr mat2 = graph->get_tensor(args[1].refs[1]);
+  ValueRef out = args.at(0).refs.at(0);
+  ValueRef mat1 = args.at(1).refs.at(0);
+  ValueRef mat2_data = extra_args.at(0);
 
-  const int out_cols = utils::val_at(-2, mat1->sizes());
-  const int out_rows = utils::val_at(-1, mat2->sizes()) * 2;
+  std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
+  std::vector<int64_t> mat2_sizes = graph->sizes_of(mat2_data);
+
+  const int64_t out_cols = utils::val_at(-2, mat1_sizes);
+  const int64_t out_rows = utils::val_at(-2, mat2_sizes);
 
   std::vector<int64_t> new_out_sizes(3);
-  if (mat1->sizes().size() == 2) {
+  if (mat1_sizes.size() == 2) {
     new_out_sizes.resize(2);
     new_out_sizes.at(0) = out_cols;
     new_out_sizes.at(1) = out_rows;
   } else {
-    new_out_sizes.at(0) = mat1->sizes().at(0);
+    new_out_sizes.at(0) = mat1_sizes.at(0);
     new_out_sizes.at(1) = out_cols;
     new_out_sizes.at(2) = out_rows;
   }
 
-  out->virtual_resize(new_out_sizes);
+  graph->virtual_resize(out, new_out_sizes);
 }
 
 /**
@@ -117,14 +120,18 @@ utils::uvec3 linear_qga4w_global_wg_size(
   const bool use_coop_algorithm =
       shader.kernel_name.find("_coop") != std::string::npos;
 
-  utils::uvec3 global_wg_size = graph->logical_limits_of(out);
-  global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
-
   if (!use_coop_algorithm) {
+    utils::uvec3 global_wg_size = graph->logical_limits_of(out);
+    global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
+
     global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(3));
+    return global_wg_size;
   }
 
-  return global_wg_size;
+  uint32_t output_channels = graph->size_at<uint32_t>(-1, out);
+  uint32_t batch_size = graph->size_at<uint32_t>(-2, out);
+
+  return {64, utils::div_up(output_channels, 8u), batch_size};
 }
 
 utils::uvec3 linear_qga4w_local_wg_size(
@@ -139,7 +146,7 @@ utils::uvec3 linear_qga4w_local_wg_size(
       shader.kernel_name.find("_coop") != std::string::npos;
 
   if (use_coop_algorithm) {
-    return {8, 1, 8};
+    return {64, 1, 1};
   } else {
     return graph->create_local_wg_size(global_workgroup_size);
   }
@@ -155,13 +162,19 @@ void add_linear_qga4w_node(
   check_linear_qga4w_args(
       graph, mat1, mat2_data, group_size, scales_and_zeros_data, out);
 
+  bool is_gemv = should_use_coop_algorithm(&graph, mat1);
   const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);
 
-  ValueRef mat2 =
-      prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
+  ValueRef mat2 = is_gemv
+      ? prepack_int4_linear_weight_transposed_block_4x8(graph, mat2_data)
+      : prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
 
-  ValueRef scales_and_zeros = prepack_standard_hw_transposed(
-      graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
+  ValueRef scales_and_zeros = is_gemv
+      ? prepack_standard(
+            graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked)
+      : prepack_standard_hw_transposed(
+            graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_linear_qga4w_shader,
@@ -178,7 +191,7 @@ void add_linear_qga4w_node(
       // Specialization Constants
       {SV(group_size_val)},
       // Resize Args
-      {},
+      {mat2_data},
       // Resizing Logic
       resize_linear_qga4w_node));
 }
