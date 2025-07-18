@@ -8,7 +8,7 @@
 # coremltools than is used by ExecuTorch.  Each op registered here should have a link to a PR in coremltools that adds
 # the op to the coremltools library.
 
-from coremltools.converters.mil.frontend.torch.ops import transpose
+from coremltools.converters.mil.frontend.torch.ops import transpose, unbind
 from coremltools.converters.mil.frontend.torch.torch_op_registry import (
     register_torch_op,
 )
@@ -18,3 +18,8 @@ from coremltools.converters.mil.frontend.torch.torch_op_registry import (
 @register_torch_op(override=False)
 def transpose_copy(context, node):
     transpose(context, node)
+
+# https://github.com/apple/coremltools/pull/2557
+@register_torch_op(override=False)
+def unbind_copy(context, node):
+    unbind(context, node)
