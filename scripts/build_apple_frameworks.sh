@@ -50,6 +50,7 @@ libmpsdelegate.a,\
 
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
+libkleidiai.a,\
 libxnnpack_backend.a,\
 libxnnpack-microkernels-prod.a,\
 :"
