@@ -172,7 +172,18 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   // only offset, the constant segment is empty and does not need to be loaded.
   const auto* constant_segment = flatbuffer_program->constant_segment();
   if (constant_segment != nullptr && constant_segment->offsets() != nullptr &&
-      constant_segment->offsets()->size() > 1) {
+      constant_segment->offsets()->size() > 0) {
+    if (constant_segment->offsets()->size() == 1) {
+      // No constants; the constant segment is empty and does not
+      // need to be loaded.
+      return Program(
+          loader,
+          segment_base_offset,
+          std::move(program_data.get()),
+          flatbuffer_program,
+          /*constant_segment_data=*/FreeableBuffer{},
+          std::move(pte_data_map));
+    }
     // The constant data is inside a separate segment.
     const auto* constant_buffer = flatbuffer_program->constant_buffer();
     ET_CHECK_OR_RETURN_ERROR(
