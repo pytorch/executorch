@@ -76,8 +76,8 @@ find_package(gflags REQUIRED)
 #
 
 # find `executorch` libraries Same as for gflags
-list(APPEND CMAKE_PREFIX_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
-find_package(executorch CONFIG REQUIRED)
+list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
+find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 target_link_options_shared_lib(executorch)
 
 # llava_runner library
