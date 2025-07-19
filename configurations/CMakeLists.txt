@@ -60,5 +60,9 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     executorch_core
   )
 
-  install(TARGETS optimized_native_cpu_ops_lib DESTINATION lib)
+  install(
+    TARGETS optimized_native_cpu_ops_lib
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+  )
 endif()

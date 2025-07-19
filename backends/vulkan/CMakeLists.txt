@@ -135,6 +135,7 @@ endif()
 
 install(
   TARGETS vulkan_backend
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${COMMON_INCLUDES}
