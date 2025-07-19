@@ -23,6 +23,16 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
+void dequantize_per_tensor_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ::executorch::aten::ScalarType dtype,
+    ::executorch::aten::Tensor& out);
+
 // Quantize the input tensor (PT2 version). Note that quant_<min,max> are not
 // used in any computation.
 void quantize_per_tensor_out(
@@ -41,6 +51,15 @@ void quantize_per_tensor_out(
     const ::executorch::aten::Tensor& b,
     std::optional<std::string_view> mode,
     ::executorch::aten::Tensor& out);
+
+void quantized_relu_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    const ::executorch::aten::Tensor& in_zero_point,
+    const int64_t out_zero_point,
+    const ::executorch::aten::Tensor& out_multiplier,
+    const ::executorch::aten::Tensor& out_shift,
+    ::executorch::aten::Tensor& output);
 
 void quantized_linear_out(
     __ET_UNUSED KernelRuntimeContext& ctx,

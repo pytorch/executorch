@@ -27,7 +27,7 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.exir.program._program import to_edge_with_preserved_ops
+from executorch.exir.program._program import to_edge
 from executorch.extension.export_util.utils import save_pte_program
 
 
@@ -196,17 +196,17 @@ def main() -> None:
     print("Exported program")
     print(ep)
 
-    edge_manager = to_edge_with_preserved_ops(
+    edge_manager = to_edge(
         ep,
-        preserve_ops=[
-            torch.ops.aten.scaled_dot_product_attention.default,
-            # preserve norm op for numerical stability
-            torch.ops.aten.linalg_vector_norm.default,
-            torch.ops.aten.reciprocal.default,
-        ],
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_dim_order=True,
+            preserve_ops=[
+                torch.ops.aten.scaled_dot_product_attention.default,
+                # preserve norm op for numerical stability
+                torch.ops.aten.linalg_vector_norm.default,
+                torch.ops.aten.reciprocal.default,
+            ],
         ),
     )
     print("Edge program")

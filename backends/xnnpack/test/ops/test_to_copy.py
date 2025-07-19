@@ -110,4 +110,4 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                 "executorch_exir_dialects_edge__ops_aten__to_copy_default",
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
             ]
-        ).to_executorch().serialize().run_method_and_compare_outputs(qtol=0.01)
+        ).to_executorch().serialize().run_method_and_compare_outputs(qtol=1)

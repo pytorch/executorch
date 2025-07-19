@@ -68,6 +68,18 @@
  */
 #define mod4(x) ((x) & 3)
 
+#define ALIGN_UP_4(x) (((x) + 3) & ~3)
+
+#define DIV_UP_8(x) (((x) + 7) >> 3)
+#define DIV_UP_4(x) (((x) + 3) >> 2)
+
+#define DIV_4(x) ((x) >> 2)
+#define DIV_2(x) ((x) >> 1)
+
+#define MUL_8(x) ((x) << 3)
+#define MUL_4(x) ((x) << 2)
+#define MUL_2(x) ((x) << 1)
+
 /*
  * Get the staging buffer indices that contain the data of the texel that
  * corresponds to the provided tensor index. Since the texel have 4 elements,

@@ -193,6 +193,9 @@ class ComputeGraph final {
   // Utility constexpr to express byte quantities
   constexpr static size_t MB = 1024 * 1024;
 
+  // List of command buffers deferred for submission
+  std::vector<vkapi::CommandBuffer> deferred_cmd_list_;
+
  protected:
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
@@ -850,6 +853,25 @@ class ComputeGraph final {
    * and wait for it to complete before returning.
    */
   void submit_current_cmd_and_wait(const bool final_use = false);
+
+  /*
+   * Submit one command buffer to the GPU.
+   */
+  void submit_cmd(
+      vkapi::CommandBuffer& cmd_buf,
+      VkSemaphore wait_semaphore,
+      VkSemaphore signal_semaphore,
+      VkFence fence);
+
+  /*
+   * Submits all the commands gathered in deferred_cmd_bufs_ to the GPU.
+   */
+  void submit_deferred_cmds_and_wait();
+
+  /*
+   * Ends and invalidates all deferred commands.
+   */
+  void clear_deferred_cmds();
 
  public:
   //

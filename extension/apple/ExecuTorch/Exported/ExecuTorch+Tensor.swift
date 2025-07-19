@@ -832,7 +832,7 @@ public extension Tensor {
   /// - Returns: An array of scalars of type `T`.
   /// - Throws: An error if the underlying data cannot be accessed.
   func scalars() throws -> [T] {
-    try withUnsafeBytes(Array.init)
+    try withUnsafeBytes { Array($0) }
   }
 }
 

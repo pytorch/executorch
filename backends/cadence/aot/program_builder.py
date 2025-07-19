@@ -34,10 +34,18 @@ class ProgramBuilder(GraphBuilder):
     def insert_input_spec(
         self, target: str, input_kind: InputKind, value: Tensor
     ) -> None:
-        if input_kind == InputKind.USER_INPUT:
-            self.input_specs.append(
-                InputSpec(input_kind, TensorArgument(target), target=target)
+        persistent: Optional[bool] = None
+        if input_kind == InputKind.BUFFER:
+            persistent = True
+        self.input_specs.append(
+            InputSpec(
+                input_kind, TensorArgument(target), target=target, persistent=persistent
             )
+        )
+        if input_kind == InputKind.PARAMETER or input_kind == InputKind.BUFFER:
+            self.state_dict[target] = value
+        elif input_kind == InputKind.CONSTANT_TENSOR:
+            self.constants[target] = value
 
     def placeholder(
         self,
