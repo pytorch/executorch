@@ -789,7 +789,7 @@ jobs:
         source .ci/scripts/setup-emscripten.sh
 
         # Test selective build
-        scripts/build_wasm_tests.sh
+        bash scripts/build_wasm_tests.sh
 
         # Install Jest
         cd cmake-out-wasm/extension/wasm/test
