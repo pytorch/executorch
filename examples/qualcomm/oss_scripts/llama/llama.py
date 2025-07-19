@@ -484,6 +484,8 @@ class SingleLlama:
     def get_quant_attrs(self):
         return self.quant_attrs
 
+def rtol(a, b):
+    return abs(a - b) / max(abs(a), abs(b))
 
 def compile(args, pte_filename, tokenizer):
     os.makedirs(args.artifact, exist_ok=True)
@@ -651,8 +653,10 @@ def compile(args, pte_filename, tokenizer):
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
-        kv_quant_attrs = {}
+        # For kv_quant_attrs, kv_quant_attrs_list[0] is for prefill, and kv_quant_attrs_list[1] is for kv
+        kv_quant_attrs_list = []
         for i, llama_instance in enumerate(llama_instance_list):
+            kv_quant_attrs = {}
             llama_instance.quantize(
                 quant_dtype=quant_dtype,
                 args=args,
@@ -668,16 +672,35 @@ def compile(args, pte_filename, tokenizer):
                             kv_quant_attrs[output_indices] = output.args[1:]
                             output_indices += 1
                         break
-                custom_annotations = custom_annotations + (
-                    partial(
-                        annotate_prefill_kv_output,
-                        kv_quant_attrs=kv_quant_attrs,
-                    ),
-                )
+            kv_quant_attrs_list.append(kv_quant_attrs)
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                 "get_quant_io_dtype_fn"
             ] = partial(llama_instance._tag_ios, fixed_point_type=fixed_point_type)
+        
+        # Check prefill and decode graph is the same:
+        assert len(llama_instance_list[0].llama_graph_module.graph.nodes) == len(llama_instance_list[1].llama_graph_module.graph.nodes)
+        for node in llama_instance_list[0].llama_graph_module.graph.nodes:
+            assert node.op == llama_instance_list[1].llama_graph_module.graph.nodes[node.name].op
+            assert node.target == llama_instance_list[1].llama_graph_module.graph.nodes[node.name].target
+            assert node.args == llama_instance_list[1].llama_graph_module.graph.nodes[node.name].args
+            assert node.kwargs == llama_instance_list[1].llama_graph_module.graph.nodes[node.name].kwargs
+
+        # Check prefill kv quant_attrs is the same as decode kv quant_attrs
+        rtol_threshold = 1e-5
+        for i in range(len(kv_quant_attrs_debug[0])):
+            rtol = abs(kv_quant_attrs_debug[0][i][0] - kv_quant_attrs_debug[1][i][0]) / max(abs(kv_quant_attrs_debug[0][i][0]), abs(kv_quant_attrs_debug[1][i][0]))
+            assert rtol < rtol_threshold, f"rtol: {rtol}, {kv_quant_attrs_debug[0][i][0]}, {kv_quant_attrs_debug[1][i][0]}"
+        
+        # Copy prefill quant_attrs to kv output quant_attrs        
+        output_indices = 0
+        for node_prefill, node_decode in zip(llama_instance[0].llama_graph_module.graph.nodes, llama_instance[1].llama_graph_module.graph.nodes):
+            if node_prefill.op == "output" and node_decode.op == "output":
+                for prefill_output in node_prefill.args[0]:
+                    kv_quant_attrs[output_indices] = prefill_output.args[1:]
+                    assert rtol(prefill_output.args[1], decode_output.args[1]) < rtol_threshold
+                    decode_output.args[1:] = prefill_output.args[1:]                    
+
         end_quantize_ts = time.time()
         logging.info(f"Time for quantizing: {end_quantize_ts - start_quantize_ts}")
 
