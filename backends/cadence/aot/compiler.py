@@ -179,8 +179,6 @@ def quantize_pt2(
     Note: this function should not be called directly in general. Please use
     quantize_and_export_to_executorch for most needs.
     """
-    # Make the model inference mode by calling model.eval()
-    model.eval()
 
     # Instantiate the quantizer to CadenceQuantizer if not supplied
     if not quantizer:
