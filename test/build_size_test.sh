@@ -37,6 +37,7 @@ cmake_install_executorch_lib() {
 
 test_cmake_size_test() {
     CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_PREFIX_PATH=cmake-out \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         ${EXTRA_BUILD_ARGS} \
         -Bcmake-out/test test

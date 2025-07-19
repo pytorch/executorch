@@ -41,7 +41,7 @@ function(et_cxx_test target_name)
     ${EXECUTORCH_ROOT}/runtime/core/exec_aten/testing_util/tensor_util.cpp
   )
   if(NOT TARGET GTest::gtest)
-    find_package(GTest)
+    find_package(GTest REQUIRED)
   endif()
   # Includes gtest, gmock, executorch_core by default
   target_link_libraries(
