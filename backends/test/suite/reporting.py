@@ -1,6 +1,6 @@
 from collections import Counter
 from dataclasses import dataclass
-from enum import IntEnum, nonmember
+from enum import IntEnum
 
 
 class TestResult(IntEnum):
@@ -33,19 +33,15 @@ class TestResult(IntEnum):
     UNKNOWN_FAIL = 8
     """ The test failed in an unknown or unexpected manner. """
 
-    @nonmember
     def is_success(self):
         return self in {TestResult.SUCCESS, TestResult.SUCCESS_UNDELEGATED}
 
-    @nonmember
     def is_non_backend_failure(self):
         return self in {TestResult.EAGER_FAIL, TestResult.EAGER_FAIL}
 
-    @nonmember
     def is_backend_failure(self):
         return not self.is_success() and not self.is_non_backend_failure()
 
-    @nonmember
     def display_name(self):
         if self == TestResult.SUCCESS:
             return "Success (Delegated)"
