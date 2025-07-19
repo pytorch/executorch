@@ -147,7 +147,7 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   target_sources(executorch_jni PRIVATE jni/jni_layer_training.cpp jni/log.cpp)
-  list(APPEND link_libraries extension_training)
+  list(APPEND link_libraries extension_training extension_flat_tensor_serialize)
   target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_TRAINING=1)
 endif()
 
