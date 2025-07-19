@@ -31,6 +31,14 @@ class ReplaceQuantNodesPass(ExportPass):
     def __init__(self):
         super().__init__()
         self.op_replacements = {
+            exir_ops.edge.add: {
+                "new_target": exir_ops.edge.cortex_m.add,
+                "qualifier": self._is_qualified_int8_node,
+            },
+            exir_ops.edge.aten.add.Tensor: {
+                "new_target": exir_ops.edge.cortex_m.add.Tensor,
+                "qualifier": self._is_qualified_int8_node,
+            },
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: {
                 "new_target": exir_ops.edge.cortex_m.quantize_per_tensor.default,
                 "qualifier": self._is_qualified_int8_node,
