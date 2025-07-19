@@ -3,11 +3,12 @@ import importlib
 import re
 import unittest
 
-from typing import Callable
+from typing import Any, Callable
 
 import torch
 
 from executorch.backends.test.harness import Tester
+from executorch.backends.test.harness.stages import StageType
 from executorch.backends.test.suite.discovery import discover_tests, TestFilter
 from executorch.backends.test.suite.reporting import (
     begin_test_session,
@@ -20,17 +21,19 @@ from executorch.backends.test.suite.reporting import (
 
 # A list of all runnable test suites and the corresponding python package.
 NAMED_SUITES = {
+    "models": "executorch.backends.test.suite.models",
     "operators": "executorch.backends.test.suite.operators",
 }
 
 
 def run_test(  # noqa: C901
     model: torch.nn.Module,
-    inputs: any,
+    inputs: Any,
     tester_factory: Callable[[], Tester],
     test_name: str,
     flow_name: str,
     params: dict | None,
+    dynamic_shapes: Any | None = None,
 ) -> TestCaseSummary:
     """
     Top-level test run function for a model, input set, and tester. Handles test execution
@@ -61,7 +64,10 @@ def run_test(  # noqa: C901
         return build_result(TestResult.UNKNOWN_FAIL, e)
 
     try:
-        tester.export()
+        # TODO Use Tester dynamic_shapes parameter once input generation can properly handle derived dims.
+        tester.export(
+            tester._get_default_stage(StageType.EXPORT, dynamic_shapes=dynamic_shapes),
+        )
     except Exception as e:
         return build_result(TestResult.EXPORT_FAIL, e)
 
