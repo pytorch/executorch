@@ -791,7 +791,6 @@ def edge_to_executorch_passes(
 
 
 def _generate_edge_program(
-    name: str,
     config: EdgeCompileConfig,
     program: ExportedProgram,
     core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
@@ -799,7 +798,6 @@ def _generate_edge_program(
 ) -> ExportedProgram:
     """
     Args:
-        name: The name of the program.
         config: The configuration for the edge program.
         program: The exported program to be converted to an edge program.
         core_aten_ops_exception_list: A list of aten ops that are missing decompositions to core aten.
@@ -815,18 +813,6 @@ def _generate_edge_program(
 
     # Remove unused parameters
     program = remove_unused_parameters_pass(program)
-
-    if config._check_ir_validity:
-        try:
-            EXIRATenDialectVerifier(
-                edge_compile_config=config,
-                class_only=False,
-                core_aten_ops_exception_list=core_aten_ops_exception_list,
-                preserve_ops=preserve_ops,
-            )(gm)
-        except ExportError as e:
-            logging.info(f"Input program {name} is not in ATen dialect.")
-            raise e
 
     pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
 
@@ -1144,7 +1130,6 @@ def _gen_edge_manager_for_partitioners(
         edge_programs[name] = program
 
         edge_programs[name] = _generate_edge_program(
-            name,
             config,
             program,
             preserve_ops=list(ops_set_to_not_decompose_by_program.get(name, [])),
@@ -1288,11 +1273,12 @@ def to_edge_transform_and_lower(
                 generate_error=True,
             )
 
+        preserve_ops = config.preserve_ops + list(ops_set_to_not_decompose)
         if config._check_ir_validity:
             EXIREdgeDialectVerifier(
                 edge_compile_config=config,
                 class_only=True,
-                preserve_ops=list(ops_set_to_not_decompose),
+                preserve_ops=preserve_ops,
             )()(program.graph_module)
 
     return edge_manager
@@ -1328,6 +1314,15 @@ def to_edge(
     edge_programs: Dict[str, ExportedProgram] = {}
 
     for name, program in aten_programs.items():
+        if config._check_ir_validity:
+            try:
+                EXIRATenDialectVerifier(
+                    edge_compile_config=config,
+                    class_only=False,
+                )(program.graph_module)
+            except ExportError as e:
+                raise SpecViolationError(f"Input program {name} is not a valid aten IR.") from e
+
         # Decompose to Core ATen
         table = _default_decomposition_table()
         preserve_ops = []
@@ -1337,8 +1332,17 @@ def to_edge(
                 table.pop(op, None)
         program = program.run_decompositions(table)
         edge_programs[name] = _generate_edge_program(
-            name, config, program, preserve_ops=preserve_ops
+            config, program, preserve_ops=preserve_ops
         )
+        if config._check_ir_validity:
+            try:
+                EXIREdgeDialectVerifier(
+                    edge_compile_config=config,
+                    class_only=True,
+                    preserve_ops=preserve_ops,
+                )()(edge_programs[name].graph_module)
+            except ExportError as e:
+                raise SpecViolationError(f"Input program {name} is not a valid edge IR.") from e
 
     return EdgeProgramManager(edge_programs, constant_methods, config)
 
