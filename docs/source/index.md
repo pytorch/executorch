@@ -88,7 +88,7 @@ ExecuTorch provides support for:
 - [Selective Build](kernel-library-selective-build)
 #### Working with LLMs
 - [Getting Started](llm/getting-started.md)
-- [Exporting LLMs with export_llm](llm/export-llm.md)
+- [Exporting LLMs](llm/export-llm.md)
 - [Exporting custom LLMs](llm/export-custom-llm.md)
 - [Running with C++](llm/run-with-c-plus-plus.md)
 - [Running on Android (XNNPack)](llm/llama-demo-android.md)
