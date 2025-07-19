@@ -1,5 +1,6 @@
 import argparse
 import importlib
+import re
 import unittest
 
 from typing import Callable
@@ -7,7 +8,7 @@ from typing import Callable
 import torch
 
 from executorch.backends.test.harness import Tester
-from executorch.backends.test.suite.discovery import discover_tests
+from executorch.backends.test.suite.discovery import discover_tests, TestFilter
 from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
@@ -148,18 +149,17 @@ def parse_args():
     parser.add_argument(
         "-b", "--backend", nargs="*", help="The backend or backends to test."
     )
+    parser.add_argument(
+        "-f", "--filter", nargs="?", help="A regular expression filter for test names."
+    )
     return parser.parse_args()
 
 
-def test(suite):
-    if isinstance(suite, unittest.TestSuite):
-        print(f"Suite: {suite}")
-        for t in suite:
-            test(t)
-    else:
-        print(f"Leaf: {type(suite)} {suite}")
-        print(f" {suite.__name__}")
-        print(f" {callable(suite)}")
+def build_test_filter(args: argparse.Namespace) -> TestFilter:
+    return TestFilter(
+        backends=set(args.backend) if args.backend is not None else None,
+        name_regex=re.compile(args.filter) if args.filter is not None else None,
+    )
 
 
 def runner_main():
@@ -172,7 +172,9 @@ def runner_main():
 
     test_path = NAMED_SUITES[args.suite[0]]
     test_root = importlib.import_module(test_path)
-    suite = discover_tests(test_root, args.backend)
+    test_filter = build_test_filter(args)
+
+    suite = discover_tests(test_root, test_filter)
     unittest.TextTestRunner(verbosity=2).run(suite)
 
     summary = complete_test_session()
