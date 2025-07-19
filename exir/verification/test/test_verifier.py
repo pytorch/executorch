@@ -171,7 +171,7 @@ class TestEdgeDialectVerifier(unittest.TestCase):
                 return x.expand(2, 2, 2, 2)
 
         model = TestExpand()
-        config = EdgeCompileConfig(_preserve_ops=[torch.ops.aten.expand.default])
+        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.expand.default])
         export_model = export(model, (torch.randn(2, 2, 2, 2),), strict=True)
         with self.assertRaises(RuntimeError):
             to_edge(export_model, compile_config=config)
