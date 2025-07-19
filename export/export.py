@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -18,6 +19,7 @@ from executorch.exir.program import (
 )
 from executorch.exir.program._program import _transform
 from executorch.exir.schema import Program
+from executorch.export.recipe import QuantizationRecipe
 from executorch.extension.export_util.utils import save_pte_program
 from executorch.runtime import Runtime, Verification
 from tabulate import tabulate
@@ -541,28 +543,45 @@ class ExportSession:
         self._artifact_dir = artifact_dir
         self._export_recipe = export_recipe
 
+        self._quant_recipe: Optional[QuantizationRecipe] = (
+            self._export_recipe.quantization_recipe
+        )
+
         # Initialize pipeline as a list of stages
         self._pipeline = []
 
         # Create the source transform stage if a quantization recipe is provided
-        if self._export_recipe.quantization_recipe is not None:
+        if self._quant_recipe is not None and self._quant_recipe.ao_base_config:
             source_transform_stage = SourceTransformStage(
                 quantization_recipe=self._export_recipe.quantization_recipe
             )
             self._pipeline.append(source_transform_stage)
 
-        # Create the export stage
+        enable_quantize_stage = (
+            self._quant_recipe is not None and self._quant_recipe.quantizers
+        )
+
+        # Create the export stage, don't run the pre edge passes yet if quantization stage is enabled
         export_stage = ExportStage(
-            pre_edge_transform_passes=self._export_recipe.pre_edge_transform_passes
+            pre_edge_transform_passes=(
+                self._export_recipe.pre_edge_transform_passes
+                if not enable_quantize_stage
+                else []
+            ),
         )
         self._pipeline.append(export_stage)
 
         # Create the quantize stage if a quantizer is provided
-        if self._export_recipe.quantization_recipe is not None:
-            quantizers = self._export_recipe.quantization_recipe.get_quantizers()
-            if quantizers is not None:
+        if enable_quantize_stage:
+            # pyre-ignore
+            if quantizers := self._quant_recipe.quantizers:
                 quantize_stage = QuantizeStage(quantizers=quantizers)
                 self._pipeline.append(quantize_stage)
+
+                re_export_stage = ExportStage(
+                    pre_edge_transform_passes=self._export_recipe.pre_edge_transform_passes,
+                )
+                self._pipeline.append(re_export_stage)
 
         # Create the edge transform and lower stage
         edge_transform_and_lower_stage = EdgeTransformAndLowerStage(
@@ -597,6 +616,7 @@ class ExportSession:
         # Process each stage in the pipeline
         for stage in self._pipeline:
             stage_name = stage.name
+            logging.info(f"Executing stage: {stage_name}")
             # Configure inputs for the current stage
             if stage_name == "source_transform":
                 # Run the source transform stage
