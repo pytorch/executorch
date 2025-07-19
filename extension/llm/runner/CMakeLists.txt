@@ -39,12 +39,6 @@ list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
-# add tokenizers
-set(SUPPORT_REGEX_LOOKAHEAD ON)
-# llama/runner/CMakeLists.txt builds a shared library libllama_runner.so that
-# transitively depends on tokenizers. Need to build tokenizers with -fPIC.
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
 set(runner_deps executorch_core extension_module extension_tensor tokenizers)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
