@@ -28,6 +28,8 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
+from executorch.backends.apple.coreml.compiler.torch_ops import *  # noqa: F401, F403
+
 
 class COMPILE_SPEC_KEYS(Enum):
     COMPUTE_UNITS = "compute_units"
@@ -280,9 +282,9 @@ class CoreMLBackend(BackendDetails):
         if delegate_info is None:
             return None
 
-        debug_handle_to_operation_path_mapping: Optional[Dict[str, Any]] = (
-            delegate_info.get("mapping", None)
-        )
+        debug_handle_to_operation_path_mapping: Optional[
+            Dict[str, Any]
+        ] = delegate_info.get("mapping", None)
 
         if debug_handle_to_operation_path_mapping is None:
             return None
