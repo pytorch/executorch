@@ -173,7 +173,8 @@ class NodeConverter(ABC):
 
         # Initialize node's inputs
         t_operator.inputs = tflite_model.OperatorInputs()
-        for ancestor_node in node.all_input_nodes:
+        input_nodes = [arg for arg in node.args if isinstance(arg, Node)]
+        for ancestor_node in input_nodes:
             assert self.context.tflite_builder.tensor_exists(ancestor_node.name)
             t_operator.tmp_inputs.append(
                 self.context.tflite_builder.tensor_for_name(ancestor_node.name)

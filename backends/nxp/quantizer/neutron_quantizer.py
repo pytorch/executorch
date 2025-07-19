@@ -11,14 +11,20 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
 from executorch.backends.nxp.quantizer.patterns import (
+    AbsPattern,
+    AdaptiveAvgPoolPattern,
     AddmmPattern,
+    AddTensorPattern,
     AvgPoolPattern,
     Conv1dPattern,
     Conv2dPattern,
+    DropoutPattern,
+    FlattenPattern,
     HardTanhInPlacePattern,
     HardTanhPattern,
     LinearPattern,
     MaxPoolPattern,
+    MeanDimPattern,
     PadPattern,
     PermutePattern,
     QuantizationPattern,
@@ -191,10 +197,14 @@ class NeutronQuantizer(ComposableQuantizer):
         static_fc_qconfig = QuantizationConfig(act_qspec, act_qspec, wgt_fc_qspec, None)
         super().__init__(
             [
+                NeutronAtenQuantizer(AbsPattern(), static_qconfig),
+                NeutronAtenQuantizer(AdaptiveAvgPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(AddmmPattern(), static_fc_qconfig),
                 NeutronAtenQuantizer(Conv1dPattern(), static_qconfig),
                 NeutronAtenQuantizer(Conv2dPattern(), static_qconfig),
+                NeutronAtenQuantizer(DropoutPattern(), static_qconfig),
                 NeutronAtenQuantizer(LinearPattern(), static_fc_qconfig),
+                NeutronAtenQuantizer(AddTensorPattern(), static_qconfig),
                 NeutronAtenQuantizer(MaxPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(SoftMaxPattern(), static_qconfig),
                 NeutronAtenQuantizer(ReshapePattern(), static_qconfig),
@@ -206,6 +216,9 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(AvgPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(ViewPattern(), static_qconfig),
+                NeutronAtenQuantizer(ViewPattern(), static_qconfig),
+                NeutronAtenQuantizer(MeanDimPattern(), static_qconfig),
+                NeutronAtenQuantizer(FlattenPattern(), static_qconfig),
             ]
         )
         # Mapping ops defined in quantizer partition types to its quantizer

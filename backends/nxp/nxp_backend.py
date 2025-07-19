@@ -137,7 +137,7 @@ def generate_neutron_compile_spec(
 class NeutronBackend(BackendDetails):
 
     @staticmethod
-    def preprocess(
+    def preprocess(  # noqa C901
         edge_program: ExportedProgram,
         compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
@@ -194,12 +194,17 @@ class NeutronBackend(BackendDetails):
             )
 
             # Dump the tflite file if logging level is enabled
-            if logging.root.isEnabledFor(logging.WARNING):
+            if logging.root.isEnabledFor(logging.DEBUG):
                 import os
 
-                delegation_tag = list(edge_program.graph.nodes)[0].meta[
-                    "delegation_tag"
-                ]
+                # Some of the nodes do not have delegation_tag, find any node with delegation tag.
+                delegation_tag = None
+                for n in list(edge_program.graph.nodes):
+                    if "delegation_tag" in n.meta.keys():
+                        delegation_tag = n.meta["delegation_tag"]
+                        break
+                assert delegation_tag is not None
+
                 logging.debug(
                     f"Serializing converted graph with tag {delegation_tag} to {os.getcwd()}"
                 )
