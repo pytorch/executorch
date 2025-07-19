@@ -29,6 +29,7 @@ Platform Support:
   - Arm
   - Cadence
   - MediaTek
+  - NXP
   - OpenVINO
   - Qualcomm
   - Vulkan
