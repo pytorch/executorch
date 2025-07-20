@@ -484,6 +484,8 @@ class SingleLlama:
     def get_quant_attrs(self):
         return self.quant_attrs
 
+def rtol(a, b):
+    return abs(a - b) / max(abs(a), abs(b))
 
 def compile(args, pte_filename, tokenizer):
     os.makedirs(args.artifact, exist_ok=True)
@@ -651,33 +653,37 @@ def compile(args, pte_filename, tokenizer):
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
-        kv_quant_attrs = {}
+
         for i, llama_instance in enumerate(llama_instance_list):
+            print("Running llama instance: ", i)
             llama_instance.quantize(
                 quant_dtype=quant_dtype,
                 args=args,
                 tokenizer=tokenizer,
                 custom_annotations=custom_annotations,
             )
-            # If hybrid and lookahead mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
-            if i == 0 and args.model_mode in ["hybrid", "lookahead"]:
-                output_indices = 0
-                for node in llama_instance.llama_graph_module.graph.nodes:
-                    if node.op == "output":
-                        for output in node.args[0]:
-                            kv_quant_attrs[output_indices] = output.args[1:]
-                            output_indices += 1
-                        break
-                custom_annotations = custom_annotations + (
-                    partial(
-                        annotate_prefill_kv_output,
-                        kv_quant_attrs=kv_quant_attrs,
-                    ),
-                )
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                 "get_quant_io_dtype_fn"
             ] = partial(llama_instance._tag_ios, fixed_point_type=fixed_point_type)
+        
+        # Check prefill and decode graph is the same:
+        assert len(llama_instance_list[0].llama_graph_module.graph.nodes) == len(llama_instance_list[1].llama_graph_module.graph.nodes)
+        for prefill_node, decode_node in zip(llama_instance_list[0].llama_graph_module.graph.nodes, llama_instance_list[1].llama_graph_module.graph.nodes):
+            assert prefill_node.op == decode_node.op
+            assert prefill_node.target == decode_node.target
+                
+        # Copy prefill quant_attrs to kv output quant_attrs        
+        for prefill_node, decode_node in zip(llama_instance_list[0].llama_graph_module.graph.nodes, llama_instance_list[1].llama_graph_module.graph.nodes):
+            if prefill_node.op == "output" and decode_node.op == "output":
+                output_index = 0
+                for prefill_output, decode_output in zip(prefill_node.args[0], decode_node.args[0]):
+                    rtol_value = rtol(prefill_output.args[1], decode_output.args[1])
+                    if rtol_value > 0.01:
+                        print(f"Warning: prefill and decode output at output_index={output_index} quant_attrs are different, rtol is {rtol_value}")
+                    decode_node.args = tuple([decode_node.args[0]] + list(prefill_node.args[1:]))                    
+                    output_index += 1
+                    
         end_quantize_ts = time.time()
         logging.info(f"Time for quantizing: {end_quantize_ts - start_quantize_ts}")
 
