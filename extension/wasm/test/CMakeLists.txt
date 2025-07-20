@@ -27,22 +27,6 @@ add_custom_target(
                                       ${MODELS_DIR}/add.pte
 )
 
-add_executable(executorch_wasm_test_lib)
-target_link_libraries(executorch_wasm_test_lib PUBLIC executorch_wasm)
-target_link_options(
-  executorch_wasm_test_lib PUBLIC --embed-file "${MODELS_DIR}@/"
-)
-add_dependencies(executorch_wasm_test_lib executorch_wasm_test_models)
-
-add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/executorch_wasm.test.js
-  COMMAND
-    ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/executorch_wasm.test.js
-    ${CMAKE_CURRENT_BINARY_DIR}/executorch_wasm.test.js
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/executorch_wasm.test.js
-  COMMENT "Copying executorch_wasm.test.js to build output directory"
-)
-
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/package.json
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/package.json
@@ -52,8 +36,25 @@ add_custom_command(
 )
 
 add_custom_target(
-  executorch_wasm_tests
-  DEPENDS executorch_wasm_test_lib
-          ${CMAKE_CURRENT_BINARY_DIR}/executorch_wasm.test.js
-          ${CMAKE_CURRENT_BINARY_DIR}/package.json
+  executorch_wasm_test_package_json
+  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/package.json
+)
+
+add_executable(executorch_wasm_tests)
+target_link_libraries(executorch_wasm_tests PUBLIC executorch_wasm)
+target_link_options(
+  executorch_wasm_tests PUBLIC --embed-file "${MODELS_DIR}@/" --post-js
+  ${CMAKE_CURRENT_SOURCE_DIR}/unittests.js
+)
+set_target_properties(
+  executorch_wasm_tests PROPERTIES OUTPUT_NAME "executorch_wasm.test"
+)
+set_property(
+  TARGET executorch_wasm_tests
+  APPEND
+  PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/unittests.js
+)
+add_dependencies(
+  executorch_wasm_tests executorch_wasm_test_models
+  executorch_wasm_test_package_json
 )
