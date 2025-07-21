@@ -632,7 +632,18 @@
         <span class="k">if</span> <span class="n">method</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">method</span> <span class="o">=</span> <span class="n">Method</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">method</span>
-        <span class="k">return</span> <span class="n">method</span></div></div>
+        <span class="k">return</span> <span class="n">method</span></div>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MethodMeta</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the metadata for the specified method.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            method_name: The name of the method.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The outputs of the method.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">method_meta</span><span class="p">(</span><span class="n">method_name</span><span class="p">)</span></div>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">BackendRegistry</span><span class="p">:</span>
