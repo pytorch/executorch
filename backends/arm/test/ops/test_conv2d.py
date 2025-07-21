@@ -385,8 +385,6 @@ test_data_BI = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
     for (k, v) in test_data_MI.items()
     for q in [True, False]
-    # TODO: Invalid TOSA graph (MLETORCH-1144)
-    if (k not in ["groups", "groups_bias"]) and (q is True)
 }
 
 fvp_xfails = {
