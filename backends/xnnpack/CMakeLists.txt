@@ -92,9 +92,8 @@ target_include_directories(
                            ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
 )
 
-set(xnnpack_third_party pthreadpool extension_threadpool cpuinfo)
-
 include(cmake/Dependencies.cmake)
+set(xnnpack_third_party XNNPACK pthreadpool extension_threadpool cpuinfo)
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend ${_xnnpack_backend__srcs})
