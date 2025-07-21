@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import torch
 
+from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.tests.executorch_pipeline import (
     to_edge_program,
     to_quantized_edge_program,
@@ -101,6 +102,9 @@ def test_constant_pad_nd_conversion__channels_first(input_shape, paddings):
         input_data,
         tflite_input_preprocess=ToNHWCPreprocess(),
         tflite_output_preprocess=ToNCHWPreprocess(),
+        conversion_config=ConversionConfig(
+            {"use_neutron_for_format_conversion": False}
+        ),
     )
 
 

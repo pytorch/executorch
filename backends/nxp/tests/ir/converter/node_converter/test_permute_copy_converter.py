@@ -89,7 +89,7 @@ class TestPermuteCopyConversion(kgb.SpyAgency, unittest.TestCase):
 
             # Run conversion
             edge_program = to_quantized_edge_program(
-                model, input_shape
+                model, input_shape, use_neutron_for_format_conversion=False
             ).exported_program()
 
             # Make sure the `Permute_copy` was delegated.
