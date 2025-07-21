@@ -67,8 +67,9 @@ def _expand_test(cls, test_name: str) -> None:
     test_func = getattr(cls, test_name)
     supports_dynamic_shapes = getattr(test_func, "supports_dynamic_shapes", True)
     dynamic_shape_values = [True, False] if supports_dynamic_shapes else [False]
+    dtypes = getattr(test_func, "dtypes", DTYPES)
 
-    for flow, dtype, use_dynamic_shapes in itertools.product(get_test_flows(), DTYPES, dynamic_shape_values):
+    for flow, dtype, use_dynamic_shapes in itertools.product(get_test_flows(), dtypes, dynamic_shape_values):
         _create_test(cls, test_func, flow, dtype, use_dynamic_shapes)
     delattr(cls, test_name)
 
@@ -81,10 +82,17 @@ def model_test_cls(cls) -> Callable | None:
     return cls
 
 
-def model_test_params(supports_dynamic_shapes: bool) -> Callable:
+def model_test_params(
+    supports_dynamic_shapes: bool = True,
+    dtypes: list[torch.dtype] | None = None,
+) -> Callable:
     """ Optional parameter decorator for model tests. Specifies test pararameters. Only valid with a class decorated by model_test_cls. """
     def inner_decorator(func: Callable) -> Callable:
         setattr(func, "supports_dynamic_shapes", supports_dynamic_shapes)
+        
+        if dtypes is not None:
+            setattr(func, "dtypes", dtypes)
+
         return func
     return inner_decorator
 
