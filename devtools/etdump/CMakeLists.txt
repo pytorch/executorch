@@ -56,11 +56,12 @@ target_include_directories(
   etdump
   PUBLIC
     ${DEVTOOLS_INCLUDE_DIR}
-    ${PROJECT_SOURCE_DIR}/third-party/flatcc/include
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third-party/flatcc/include>
 )
 
 install(
-  TARGETS etdump
+  TARGETS etdump flatccrt
+  EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_BINARY_DIR}/lib
   INCLUDES
   DESTINATION ${_common_include_directories}
