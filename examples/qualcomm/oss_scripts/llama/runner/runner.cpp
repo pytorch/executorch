@@ -191,7 +191,9 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kPhi4) {
     eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
-  } else if (decoder_model_version_ == DecoderModelVersion::kQwen3) {
+  } else if (
+      decoder_model_version_ == DecoderModelVersion::kQwen3 ||
+      decoder_model_version_ == DecoderModelVersion::kSmollm2_135m) {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kGemma3) {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);

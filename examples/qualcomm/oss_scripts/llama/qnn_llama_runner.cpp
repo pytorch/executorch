@@ -155,7 +155,7 @@ std::string get_formatted_prompt(
       if (!system_prompt.empty()) {
         formatted_prompt.append("<|im_start|>system\n");
         formatted_prompt.append(system_prompt);
-        formatted_prompt.append("<|im_end|>\n\n");
+        formatted_prompt.append("<|im_end|>\n");
       }
       formatted_prompt.append("<|im_start|>user\n");
       formatted_prompt.append(prompt);
