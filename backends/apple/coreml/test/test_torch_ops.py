@@ -2,7 +2,6 @@
 #
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-import copy
 import sys
 import unittest
 
@@ -15,7 +14,7 @@ import torch
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.runtime import Runtime
-from torchao.quantization import quantize_, PerGroup, PerAxis, IntxWeightOnlyConfig
+from torchao.quantization import IntxWeightOnlyConfig, PerAxis, PerGroup, quantize_
 
 _TEST_RUNTIME = sys.platform == "darwin"
 
@@ -30,10 +29,12 @@ class TestTorchOps(unittest.TestCase):
         return CoreMLPartitioner(compile_specs=compile_specs)
 
     def _get_test_model(self):
-        model = torch.nn.Sequential(torch.nn.Embedding(64, 128), torch.nn.Linear(128, 128), torch.nn.ReLU())
+        model = torch.nn.Sequential(
+            torch.nn.Embedding(64, 128), torch.nn.Linear(128, 128), torch.nn.ReLU()
+        )
         example_inputs = (torch.LongTensor([0]),)
         return model, example_inputs
-    
+
     def _compare_outputs(self, executorch_program, eager_program, example_inputs):
         if not _TEST_RUNTIME:
             return
@@ -45,10 +46,14 @@ class TestTorchOps(unittest.TestCase):
         self.assertTrue(
             torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
         )
-    
+
     def test_dequantize_affine_b4w_embedding(self):
         model, example_inputs = self._get_test_model()
-        quantize_(model, IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)), lambda m, fqn: isinstance(m, torch.nn.Embedding))
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        )
         ep = torch.export.export(model, example_inputs)
         delegated_program = executorch.exir.to_edge_transform_and_lower(
             ep,
@@ -65,7 +70,10 @@ class TestTorchOps(unittest.TestCase):
 
     def test_dequantize_affine_b4w_linear(self):
         model, example_inputs = self._get_test_model()
-        quantize_(model, IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)))
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+        )
         ep = torch.export.export(model, example_inputs)
         delegated_program = executorch.exir.to_edge_transform_and_lower(
             ep,
@@ -82,7 +90,11 @@ class TestTorchOps(unittest.TestCase):
 
     def test_dequantize_affine_c4w_embedding(self):
         model, example_inputs = self._get_test_model()
-        quantize_(model, IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerAxis(0)), lambda m, fqn: isinstance(m, torch.nn.Embedding))
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerAxis(0)),
+            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        )
         ep = torch.export.export(model, example_inputs)
         delegated_program = executorch.exir.to_edge_transform_and_lower(
             ep,
@@ -99,7 +111,9 @@ class TestTorchOps(unittest.TestCase):
 
     def test_dequantize_affine_c4w_linear(self):
         model, example_inputs = self._get_test_model()
-        quantize_(model, IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerAxis(0)))
+        quantize_(
+            model, IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerAxis(0))
+        )
         ep = torch.export.export(model, example_inputs)
         delegated_program = executorch.exir.to_edge_transform_and_lower(
             ep,
@@ -113,11 +127,18 @@ class TestTorchOps(unittest.TestCase):
                 ], f"Got unexpected node target after delegation: {node.target.__name__}"
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
-    
+
     def test_dequantize_affine_c8w_embedding_b4w_linear(self):
         model, example_inputs = self._get_test_model()
-        quantize_(model, IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerAxis(0)), lambda m, fqn: isinstance(m, torch.nn.Embedding))
-        quantize_(model, IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)))
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerAxis(0)),
+            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        )
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+        )
         ep = torch.export.export(model, example_inputs)
         delegated_program = executorch.exir.to_edge_transform_and_lower(
             ep,

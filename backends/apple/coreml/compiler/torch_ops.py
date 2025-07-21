@@ -9,10 +9,12 @@
 # the op to the coremltools library.
 
 import torch as _torch
+from coremltools import _logger as logger
 from coremltools.converters.mil.frontend import _utils
 from coremltools.converters.mil.frontend.torch.ops import (
     _get_inputs,
-    NUM_TO_NUMPY_DTYPE,  # noqa: F401
+    NUM_TO_NUMPY_DTYPE,
+    NUM_TO_TORCH_DTYPE,
     transpose,
     unbind,
 )
@@ -20,7 +22,6 @@ from coremltools.converters.mil.frontend.torch.ops import (
 from coremltools.converters.mil.frontend.torch.torch_op_registry import (
     register_torch_op,
 )
-from coremltools.converters.mil.frontend.torch.utils import TORCH_DTYPE_TO_NUM
 from coremltools.converters.mil.mil import types
 
 
@@ -48,8 +49,14 @@ def dequantize_affine(context, node):
     zero_point = (
         inputs[3].val if inputs[3] is not None and inputs[3].val is not None else None
     )
-    # TODO: I'm not sure we need to worry about this b/c input gets cast to int4/int8
+    # I do not think we need to worry about input_dtype b/c it gets cast to int4/int8
+    # For now, we just check that it is int8 or int32
     input_dtype = inputs[4].val  # noqa: F841
+    assert NUM_TO_TORCH_DTYPE[input_dtype] in [
+        _torch.int8,
+        _torch.int32,
+    ], "input_dtype should be int8 or int32"
+
     quant_min = inputs[5].val
     quant_max = inputs[6].val
 
@@ -67,17 +74,15 @@ def dequantize_affine(context, node):
     if zero_point is not None:
         zero_point = zero_point.reshape(-1, scales_per_row)
 
-    # # TODO: I don't know if CoreML can make use of this.  I guess we could add a cast op to the output, but I'm pretty
-    # CoreML removes casts during one of its passes
+    # TODO: I don't know if CoreML can make use of this
+    # We could add a cast op to the output, but I'm pretty CoreML will remove this during a later pass
+    # For now, we just log a warning
     out_np_dtype = None
     if len(inputs) > 7:
-        output_dtype = inputs[7].val
-        assert isinstance(
-            output_dtype, _torch.dtype
-        ), f"output_dtype must be a torch.dtype, but got type {type(output_dtype)}"
-        out_np_dtype = NUM_TO_NUMPY_DTYPE[  # noqa: F841
-            TORCH_DTYPE_TO_NUM[output_dtype]
-        ]
+        out_np_dtype = NUM_TO_NUMPY_DTYPE[inputs[7].val]
+        logger.warning(
+            f"Core ML ignores output_dtype {out_np_dtype} on torchao.dequantize_affine and instead uses the native precision."
+        )
 
     if quant_min == -8 and quant_max == 7:
         quantized_np_dtype = types.nptype_from_builtin(types.string_to_builtin("int4"))
