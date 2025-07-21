@@ -67,8 +67,8 @@ from executorch.backends.arm._passes import (
     InsertCastForOpsWithInt64InputPass,
     InsertRescalePass,
     InsertTableOpsPass,
+    MatchArgDtypePass,
     MatchArgRanksPass,
-    MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
     ReplaceInfValues,
@@ -117,7 +117,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
-        self.add_pass(MatchWhereSelfDtypePass())
+        self.add_pass(MatchArgDtypePass())
         if self.tosa_spec.is_U55_subset:
             self.add_pass(CastToInt32Pass())
 
@@ -195,8 +195,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
-        self.add_pass(MatchWhereSelfDtypePass())
-
+        self.add_pass(MatchArgDtypePass())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
