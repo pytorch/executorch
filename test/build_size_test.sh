@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Build size_test and show the size of it
-set -e
+set -ex
 
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../.ci/scripts/utils.sh"
