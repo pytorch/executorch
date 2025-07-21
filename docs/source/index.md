@@ -93,7 +93,7 @@ ExecuTorch provides support for:
 - [Running with C++](llm/run-with-c-plus-plus.md)
 - [Running on Android (XNNPack)](llm/llama-demo-android.md)
 - [Running on Android (QNN)](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
-- [Running on iOS](llm/llama-demo-ios.md)
+- [Running on iOS](llm/run-on-ios.md)
 #### Backend Development
 - [Delegates Integration](backend-delegates-integration)
 - [XNNPACK Reference](backend-delegates-xnnpack-reference)
