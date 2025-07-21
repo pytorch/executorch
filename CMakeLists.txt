@@ -570,6 +570,12 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  install(
+    DIRECTORY extension/data_loader/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/data_loader
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)

@@ -24,10 +24,10 @@ if(NOT RUNTIME_PATH)
   set(RUNTIME_PATH ${CMAKE_CURRENT_SOURCE_DIR}/runtime)
 endif()
 
-# Include this file to access executorch_target_link_options_shared_lib This is required to
-# provide access to executorch_target_link_options_shared_lib which allows libraries to be
-# linked with the --whole-archive flag. This is required for libraries that
-# perform dynamic registration via static initialization.
+# Include this file to access executorch_target_link_options_shared_lib This is
+# required to provide access to executorch_target_link_options_shared_lib which
+# allows libraries to be linked with the --whole-archive flag. This is required
+# for libraries that perform dynamic registration via static initialization.
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 include(cmake/ShaderLibrary.cmake)
@@ -40,8 +40,10 @@ set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers)
 set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
-set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH}/include
-                    ${VOLK_PATH} ${VMA_PATH}
+set(COMMON_INCLUDES
+    $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+    $<BUILD_INTERFACE:${VULKAN_HEADERS_PATH}/include>
+    $<BUILD_INTERFACE:${VOLK_PATH}> $<BUILD_INTERFACE:${VMA_PATH}>
 )
 
 # Compile settings
@@ -96,8 +98,10 @@ add_library(vulkan_schema INTERFACE ${GENERATED_HEADER})
 set_target_properties(vulkan_schema PROPERTIES LINKER_LANGUAGE CXX)
 
 target_include_directories(
-  vulkan_schema INTERFACE ${SCHEMA_INCLUDE_DIR}
-                          ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+  vulkan_schema
+  INTERFACE
+    ${SCHEMA_INCLUDE_DIR}
+    $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
 )
 
 # vulkan_backend
@@ -134,7 +138,7 @@ endif()
 # Test targets
 
 install(
-  TARGETS vulkan_backend
+  TARGETS vulkan_backend vulkan_schema
   EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
