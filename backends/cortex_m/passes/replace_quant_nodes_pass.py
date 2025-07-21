@@ -39,14 +39,6 @@ class ReplaceQuantNodesPass(ExportPass):
                 "new_target": exir_ops.edge.cortex_m.add.Tensor,
                 "qualifier": lambda args: True,
             },
-            exir_ops.edge.aten._softmax.out: {
-                "new_target": exir_ops.edge.cortex_m.softmax.out,
-                "qualifier": lambda args: True,
-            },
-            exir_ops.edge.aten._softmax.default: {
-                "new_target": exir_ops.edge.cortex_m.softmax,  # or .softmax if you have an out variant
-                "qualifier": lambda args: True,
-            },
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: {
                 "new_target": exir_ops.edge.cortex_m.quantize_per_tensor.default,
                 "qualifier": self._is_qualified_int8_node,
