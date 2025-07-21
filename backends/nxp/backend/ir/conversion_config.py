@@ -14,7 +14,6 @@ class ConversionConfig:
         :param args: Optional dictionary with conversion arguments. Unknown arguments are ignored.
         """
         self.use_neutron_for_format_conversion: bool = False
-        self.keep_io_format: bool = False
         self.allow_inputs_stripping: bool = True
         self.qdq_aware_conversion: bool = True
         self.symbolic_dimensions_mapping: dict[str, int] | None = None
