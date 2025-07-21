@@ -1385,8 +1385,7 @@ class Inspector:
             distance: the metrics the inspector will use for gap calculation. Should be one of "MSE", "L1" and "SNR".
 
         Returns:
-            pd.DataFrame: A DataFrame listing corresponding operator outputs from
-                          both stages and their computed numerical gaps.
+            pd.DataFrame: A DataFrame listing corresponding operator outputs from both stages and their computed numerical gaps.
         """
         aot_intermediate_outputs, aot_debug_handle_to_op_names = (
             self._get_aot_intermediate_outputs_and_op_names()
