@@ -19,5 +19,8 @@ class NodeFormat(Enum):
     # Format has not been identified
     NONE = 2
 
+    # NHWC
+    CHANNELS_LAST = 3
+
     def is_channels_first(self) -> bool:
         return self == NodeFormat.CHANNELS_FIRST

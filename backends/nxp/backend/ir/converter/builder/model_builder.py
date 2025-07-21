@@ -5,7 +5,9 @@
 # License: MIT
 # See the LICENSE_MIT for more details.
 #
+
 from copy import deepcopy
+from itertools import chain
 from typing import Dict, List, Optional, Union
 
 import executorch.backends.nxp.backend.ir.converter.conversion.translator as translator
@@ -221,7 +223,7 @@ class ModelBuilder:
         new_tensor.shape = translator.channels_last_shape_to_channels_first(
             t_tensor.shape
         )
-        new_tensor.tensor_format = new_tensor.tensor_format.to_node_format()
+        new_tensor.tensor_format = TensorFormat.CHANNELS_FIRST
 
         perm = translator.create_channels_last_to_channels_first_permutation(
             t_tensor.rank
@@ -382,7 +384,7 @@ class ModelBuilder:
                     input_tensor, input_tensor.name + "_channels_first"
                 )
                 new_input.shape = new_input_shape
-                new_input.tensor_format = input_tensor.tensor_format.to_node_format()
+                new_input.tensor_format = TensorFormat.CHANNELS_FIRST
 
                 transpose = self._create_transpose_operator(
                     new_input, input_tensor, perm
@@ -458,6 +460,14 @@ class ModelBuilder:
             # It's safe to replace the buffer.
             t.tmp_buffer = empty_buffer
 
+    def replace_io_tensor_format_with_node_format(self):
+        for t in chain(
+            self.get_sub_graph().inputs.tmp_inputs,
+            self.get_sub_graph().outputs.tmp_outputs,
+        ):
+            if isinstance(t.tensor_format, TensorFormat):
+                t.tensor_format = t.tensor_format.to_equal_node_format()
+
     def finish(self) -> tflite_model.Model:
         """Finalize and optimize the converted TFLite model. Then return it.
 
@@ -477,6 +487,8 @@ class ModelBuilder:
         )
 
         self._keep_one_empty_buffer()
+
+        self.replace_io_tensor_format_with_node_format()
 
         # Remove outputs, which are not produced by any node. Otherwise, there would be errors after inference.
         operator_outputs = []

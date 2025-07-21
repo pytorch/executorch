@@ -14,17 +14,17 @@ from typing import final, List, Optional
 
 import numpy as np
 import torch
-from executorch.backends.nxp._passes.remove_getitem_pass import RemoveGetItemPass
 
+from executorch.backends.nxp._passes.remove_getitem_pass import RemoveGetItemPass
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.neutron_converter_manager import (
     NeutronConverterManager,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from executorch.backends.nxp.backend.node_format import NodeFormat
 from executorch.backends.nxp.neutron_node_extraction import (
     extract_artifacts_from_neutron_node,
     NeutronNodeArtifacts,
@@ -264,7 +264,9 @@ class PayloadComposer:
 
         return f"{array.size}s{self._padding_format_string_for_array(array)}"
 
-    def _create_payload_header(self, io_formats, neutron_artifacts) -> np.ndarray:
+    def _create_payload_header(
+        self, io_formats: dict[str, list[NodeFormat]], neutron_artifacts
+    ) -> np.ndarray:
         """
         Create bytes header for returned payload. It contains information about
         input and output tensor formats. Tensors are ordered based on graph signature
@@ -302,9 +304,7 @@ class PayloadComposer:
         for input_name in neutron_artifacts.input_names:
             try:
                 header_data.append(
-                    1
-                    if inputs[input_name.decode()] == TensorFormat.CHANNELS_LAST
-                    else 0
+                    1 if inputs[input_name.decode()] == NodeFormat.CHANNELS_LAST else 0
                 )
             except KeyError:
                 raise AssertionError(
@@ -315,7 +315,7 @@ class PayloadComposer:
             try:
                 header_data.append(
                     1
-                    if outputs[output_name.decode()] == TensorFormat.CHANNELS_LAST
+                    if outputs[output_name.decode()] == NodeFormat.CHANNELS_LAST
                     else 0
                 )
             except KeyError:
@@ -354,7 +354,9 @@ class PayloadComposer:
             neutron_artifacts.kernels.tobytes(),
         )
 
-    def get_binary_payload(self, io_formats, neutron_model) -> bytes:
+    def get_binary_payload(
+        self, io_formats: dict[str, list[NodeFormat]], neutron_model
+    ) -> bytes:
         """
         Get binary payload for provided input/output tensor formats and neutron_model. Returned data have
         following structure:
@@ -374,7 +376,7 @@ class PayloadComposer:
         Tensor format definition: '0x1' == CHANNELS_LAST, '0x0' == FORMATLESS (no format).
 
         :param io_formats: Dictionary with keys 'inputs' and 'outputs' that contains dictionaries
-            mapping tensor name to TensorFormat.
+            mapping tensor name to NodeFormat.
         :param neutron_model: Neutron model with single NeutronGraph node.
         :return: 16 bytes aligned binary payload.
         """
