@@ -439,7 +439,7 @@ target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch PUBLIC ${_common_compile_options})
-target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(executorch)
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
@@ -516,7 +516,7 @@ install(
   INCLUDES
   DESTINATION include
 )
-install(FILES tools/cmake/Utils.cmake tools/cmake/executorch-config.cmake
+install(FILES tools/cmake/executorch-config.cmake
         DESTINATION lib/cmake/ExecuTorch
 )
 
@@ -731,7 +731,7 @@ endif()
 
 if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
-  target_link_options_shared_lib(quantized_ops_lib)
+  executorch_target_link_options_shared_lib(quantized_ops_lib)
 endif()
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)

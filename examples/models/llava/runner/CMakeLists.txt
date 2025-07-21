@@ -38,6 +38,7 @@ if(NOT TARGET extension_llm_runner)
 endif()
 
 add_library(llava_runner STATIC ${_llava_runner__srcs})
+target_include_directories(llava_runner PRIVATE ${_common_include_directories})
 
 set(llava_runner_deps executorch_core extension_data_loader extension_llm_runner
                       extension_module extension_tensor extension_flat_tensor

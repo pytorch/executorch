@@ -70,7 +70,7 @@ target_link_libraries(
           ${MPS_FRAMEWORK} ${MPS_GRAPH_FRAMEWORK}
 )
 
-target_link_options_shared_lib(mpsdelegate)
+executorch_target_link_options_shared_lib(mpsdelegate)
 target_compile_options(mpsdelegate PUBLIC ${_common_compile_options})
 target_compile_options(mpsdelegate PRIVATE "-fno-objc-arc")
 

@@ -26,7 +26,6 @@
 cmake_minimum_required(VERSION 3.24)
 
 include(CMakeFindDependencyMacro)
-include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
 find_package(tokenizers CONFIG)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
