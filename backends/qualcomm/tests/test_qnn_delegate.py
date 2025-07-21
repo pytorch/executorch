@@ -3981,6 +3981,33 @@ class TestQNNQuantizedUtils(TestQNN):
                         qhas_data = json.load(qhas_file)
                         self.assertIn("data", qhas_data)
 
+    def test_qnn_backend_seq_mse(self):
+        from executorch.backends.qualcomm.quantizer.quantizer import qnn_ptq_manager
+
+        o_ch, i_ch, kernel, padding = 32, 512, (1, 1), 0
+        module = Conv2dSingle(  # noqa: F405
+            in_channel=i_ch,
+            out_channel=o_ch,
+            kernel_size=kernel,
+            padding=padding,
+        )
+        sample_input = (torch.randn(1, i_ch, 1, o_ch),)
+        # per-channel / per-block
+        quantizers = [
+            make_quantizer(),
+            make_quantizer(quant_dtype=QuantDtype.use_16a4w_block),
+        ]
+        quantizers[-1].set_block_size_map({"conv2d": (1, 32, 1, 1)})
+
+        for i, quantizer in enumerate(quantizers):
+            with self.subTest(i=i):
+                ep = torch.export.export(module, sample_input).module()
+                prepared = prepare_pt2e(ep, quantizer)
+                with qnn_ptq_manager(prepared):
+                    prepared(*sample_input)
+                converted = convert_pt2e(prepared)
+                self.lower_module_and_test_output(converted, sample_input)
+
 
 class TestExampleLLMScript(TestQNN):
     def test_llama3_2_1b(self):

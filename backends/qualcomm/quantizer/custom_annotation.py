@@ -285,9 +285,9 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
         quantization_config_8a8w = get_8a8w_qnn_ptq_config(
             act_symmetric=True, act_observer=MinMaxObserver
         )
-        quantization_config_8a4w_per_channel = get_ptq_per_channel_quant_config(
-            act_dtype=torch.uint8,
-            weight_dtype=torch.int4,
+        quantization_config_16a8w_per_channel = get_ptq_per_channel_quant_config(
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int8,
             act_observer=MinMaxObserver,
             act_symmetric=True,
         )
@@ -318,7 +318,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
                 node = node.args[0][1]
             elif node.target == torch.ops.aten.conv2d.default:
                 annotate_conv2d(
-                    node, quantization_config=quantization_config_8a4w_per_channel
+                    node, quantization_config=quantization_config_16a8w_per_channel
                 )
                 break
             elif node.target in [torch.ops.aten.add.Tensor, torch.ops.aten.sub.Tensor]:

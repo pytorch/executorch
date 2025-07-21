@@ -142,6 +142,9 @@ def _kv_calibrate(
     updater=smart_mask_updater,
     use_i64_token=False,
 ):
+    from contextlib import nullcontext
+    from executorch.backends.qualcomm.quantizer.quantizer import qnn_ptq_manager
+
     _, atten_mask, _, k_caches, v_caches = example_inputs
 
     # TODO: change criteria & support batch inputs if necessary
@@ -191,13 +194,14 @@ def _kv_calibrate(
                     dim=-1,
                 )
 
-            logits, new_k_caches, new_v_caches = module(
-                tmp_token_list,
-                tmp_atten_mask,
-                tmp_pos,
-                *k_caches,
-                *v_caches,
-            )
+            with qnn_ptq_manager(module) if pos == max_seq_len-1 else nullcontext():
+                logits, new_k_caches, new_v_caches = module(
+                    tmp_token_list,
+                    tmp_atten_mask,
+                    tmp_pos,
+                    *k_caches,
+                    *v_caches,
+                )
             atten_mask, pos, k_caches, v_caches = updater(
                 ar_len, atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
             )
@@ -647,10 +651,6 @@ def compile(args, pte_filename, tokenizer):
     if args.ptq:
         start_quantize_ts = time.time()
         custom_annotations = (annotate_matmul_16a8w,)
-        if args.llama_model == "stories110m":
-            custom_annotations = custom_annotations + (
-                annotate_linear_16a8w_in_affine_layer,
-            )
         kv_quant_attrs = {}
         for i, llama_instance in enumerate(llama_instance_list):
             llama_instance.quantize(

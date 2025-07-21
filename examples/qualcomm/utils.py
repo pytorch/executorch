@@ -374,6 +374,7 @@ def build_executorch_binary(
     online_prepare=False,
     optrace=False,
     op_package_options: QnnExecuTorchOpPackageOptions = None,
+    use_seq_mse=False,
 ):
     """
     A function to generate an ExecuTorch binary for Qualcomm platforms.
@@ -397,10 +398,14 @@ def build_executorch_binary(
         optrace (bool, optional): Enable optrace mode for performance analysis if set to True.
         op_package_options: Optional structure to specify op packages
             loaded and used by the backend.
+        use_seq_mse (bool, optional): Optional flag to minimize mse error of activation range
 
     Returns:
         None: The function writes the output to a specified .pte file.
     """
+    from contextlib import nullcontext
+    from executorch.backends.qualcomm.quantizer.quantizer import qnn_ptq_manager
+
     backend_options = generate_htp_compiler_spec(
         use_fp16=False if quant_dtype else True
     )
@@ -426,7 +431,8 @@ def build_executorch_binary(
         else:
             quantizer = custom_quantizer or make_quantizer(quant_dtype=quant_dtype)
             # ptq calibration
-            annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
+            with qnn_ptq_manager(captured_model) if use_seq_mse else nullcontext():
+                annotated_model = ptq_calibrate(captured_model, quantizer, dataset)
 
         quantized_model = convert_pt2e(annotated_model)
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
