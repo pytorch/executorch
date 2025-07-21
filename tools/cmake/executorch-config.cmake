@@ -73,20 +73,23 @@ set(backend_lib_list
     vulkan_backend
 )
 
-set(lib_list
-    flatccrt
-    etdump
-    bundled_program
+set(extension_lib_list
     extension_data_loader
     extension_flat_tensor
-    portable_ops_lib
-    custom_ops
     extension_module
     extension_module_static
     extension_runner_util
     extension_tensor
     extension_threadpool
     extension_training
+)
+
+set(lib_list
+    flatccrt
+    etdump
+    bundled_program
+    portable_ops_lib
+    custom_ops
     cpuinfo
     pthreadpool
     optimized_kernels
@@ -100,7 +103,7 @@ set(lib_list
     quantized_ops_aot_lib
 )
 
-list(APPEND lib_list ${backend_lib_list})
+list(APPEND lib_list ${backend_lib_list} ${extension_lib_list})
 
 foreach(lib ${lib_list})
   # Name of the variable which stores result of the find_library search
@@ -211,5 +214,14 @@ add_library(executorch_backends INTERFACE)
 foreach(lib ${backend_lib_list})
   if(TARGET ${lib})
     target_link_options(executorch_backends INTERFACE ${lib})
+  endif()
+endforeach()
+
+# An interface target containing all available extensions.
+add_library(executorch_extensions INTERFACE)
+
+foreach(lib ${extension_lib_list})
+  if(TARGET ${lib})
+    target_link_options(executorch_extensions INTERFACE ${lib})
   endif()
 endforeach()
