@@ -66,6 +66,7 @@ set(optional_lib_list
     qnn_executorch_backend
     portable_ops_lib
     custom_ops
+    extension_evalue_util
     extension_module
     extension_module_static
     extension_runner_util
