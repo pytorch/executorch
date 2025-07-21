@@ -90,4 +90,3 @@ install_sdk() {
 
 install_prerequiresites
 install_sdk
-
