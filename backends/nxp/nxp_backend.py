@@ -45,7 +45,7 @@ class NeutronCompileSpecBuilder:
         self.output_format = None
         self.operators_not_to_delegate: List[str] = []
         self.neutron_converter_flavor = None
-        self.use_neutron_for_format_conversion = False
+        self.use_neutron_for_format_conversion = True
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -59,7 +59,7 @@ class NeutronCompileSpecBuilder:
         neutron_converter_flavor: str,
         extra_flags: Optional[str] = None,
         operators_not_to_delegate: Optional[List[str]] = None,
-        use_neutron_for_format_conversion: bool = False,
+        use_neutron_for_format_conversion: bool = True,
     ):
         """
         Generate compile spec for Neutron NPU
@@ -127,7 +127,7 @@ def generate_neutron_compile_spec(
     system_config: Optional[str] = None,
     extra_flags: Optional[str] = None,
     operators_not_to_delegate: Optional[List[str]] = None,
-    use_neutron_for_format_conversion: bool = False,
+    use_neutron_for_format_conversion: bool = True,
 ) -> List[CompileSpec]:
     return (
         NeutronCompileSpecBuilder()
