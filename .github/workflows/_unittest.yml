@@ -44,7 +44,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       runner: macos-15-xlarge
-      python-version: '3.11'
+      python-version: '3.10'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
