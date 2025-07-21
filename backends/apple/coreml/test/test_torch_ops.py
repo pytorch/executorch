@@ -3,6 +3,7 @@
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 import sys
+import platform
 import unittest
 
 import coremltools as ct
@@ -16,8 +17,10 @@ from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.runtime import Runtime
 from torchao.quantization import IntxWeightOnlyConfig, PerAxis, PerGroup, quantize_
 
-_TEST_RUNTIME = sys.platform == "darwin"
-
+_TEST_RUNTIME = (
+    sys.platform == "darwin"
+    and tuple(map(int, platform.mac_ver()[0].split("."))) >= (15, 0)
+)
 
 class TestTorchOps(unittest.TestCase):
     edge_compile_config = executorch.exir.EdgeCompileConfig()
