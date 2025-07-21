@@ -1098,22 +1098,6 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
     return can_skip_using_EDGE_DO_NOT_DECOMP
 
 
-def _replace_view_with_view_copy(program: ExportedProgram) -> ExportedProgram:
-    program = program.run_decompositions({})
-    new_gm = ReplaceViewOpsWithViewCopyOpsPass()(program.graph_module).graph_module
-    program = ExportedProgram(
-        root=new_gm,
-        graph=new_gm.graph,
-        graph_signature=_get_updated_graph_signature(program.graph_signature, new_gm),
-        state_dict=program.state_dict,
-        range_constraints=program.range_constraints,
-        module_call_graph=program.module_call_graph,
-        example_inputs=program.example_inputs,
-        constants=program.constants,
-    )
-    return program
-
-
 def _gen_edge_manager_for_partitioners(
     partitioner: Dict[str, List[Partitioner]],
     aten_programs: Dict[str, ExportedProgram],
@@ -1166,9 +1150,9 @@ def _gen_edge_manager_for_partitioners(
             # check on which ops need to be preserved and which ops need to be decomposed
             # Those which are truly preserved will be replaced with transformed ops
             if can_skip_using_EDGE_DO_NOT_DECOMP:
-                ops_set_to_not_decompose_by_program[
-                    name
-                ] = all_ops_no_decomp_needing_preservation
+                ops_set_to_not_decompose_by_program[name] = (
+                    all_ops_no_decomp_needing_preservation
+                )
             else:
                 ops_set_to_not_decompose_by_program[name] = (
                     _replace_aten_ops_with_transformed_ops(name, program, partitioner)
@@ -1179,8 +1163,6 @@ def _gen_edge_manager_for_partitioners(
             program = program.run_decompositions(_default_decomposition_table())
             _restore_transformed_ops_to_aten_ops(program)
 
-        # Edge will complain if there are view ops requested for preservation, so we replace them with view_copy
-        program = _replace_view_with_view_copy(program)
         edge_programs[name] = program
         edge_programs[name] = _generate_edge_program(
             config,
