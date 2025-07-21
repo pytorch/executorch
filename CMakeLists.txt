@@ -713,7 +713,7 @@ target_link_libraries(executorch_backends INTERFACE ${_executorch_backends})
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch gflags executorch_backends)
+  set(_executor_runner_libs executorch gflags)
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
@@ -732,27 +732,30 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
   endif()
 
+  if(EXECUTORCH_BUILD_XNNPACK)
+    list(APPEND _executor_runner_libs xnnpack_backend)
+  endif()
+
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
     list(APPEND _executor_runner_libs etdump flatccrt)
+  endif()
+
+  if(EXECUTORCH_BUILD_COREML AND APPLE)
+    list(APPEND _executor_runner_libs coremldelegate)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_link_options_gc_sections(executor_runner)
   endif()
-  target_link_libraries(executor_runner ${_executor_runner_libs})
-  target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+endif()
 
-  # Automatically set when using `emcmake cmake` for Wasm build.
-  if(EMSCRIPTEN)
-    # Directory of model pte files to embed in the wasm binary.
-    if(NOT DEFINED WASM_MODEL_DIR)
-      set(WASM_MODEL_DIR "${CMAKE_SOURCE_DIR}/models/")
-    endif()
+if(EXECUTORCH_BUILD_VULKAN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
+endif()
 
-    set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
-  endif()
+if(EXECUTORCH_BUILD_ANDROID_JNI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
 if(EXECUTORCH_BUILD_ANDROID_JNI)
