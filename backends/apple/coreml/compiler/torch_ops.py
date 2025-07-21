@@ -37,6 +37,7 @@ def unbind_copy(context, node):
     unbind(context, node)
 
 
+# https://github.com/apple/coremltools/pull/2558
 @register_torch_op(
     torch_alias=["torchao::dequantize_affine", "torchao.dequantize_affine"],
     override=False,
