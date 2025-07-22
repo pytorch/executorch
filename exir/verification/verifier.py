@@ -3,8 +3,11 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# pyre-unsafe
 
 import itertools
+import logging
 import operator
 import types
 from contextlib import nullcontext
@@ -81,16 +84,22 @@ class EXIRATenDialectVerifierBase(Verifier):
 def EXIRATenDialectVerifier(  # noqa: C901
     edge_compile_config: Optional[EdgeCompileConfig] = None,
     class_only: bool = False,
-    exception_list: Optional[List[torch._ops.OpOverload]] = None,
+    core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
+    preserve_ops: Optional[List[torch._ops.OpOverload]] = None,
 ):
     """
     Returns a verifier class that runs ATen dialect specific checks on the graph module.
     """
+    _core_aten_ops_exception_list = core_aten_ops_exception_list or []
+    _preserve_ops = preserve_ops or []
     # merge the exception list from edge_compile_config and exception_list
-    if edge_compile_config and edge_compile_config._core_aten_ops_exception_list:
-        exception_list = edge_compile_config._core_aten_ops_exception_list + (
-            exception_list or []
-        )
+    if edge_compile_config:
+        if edge_compile_config._core_aten_ops_exception_list:
+            _core_aten_ops_exception_list.extend(
+                edge_compile_config._core_aten_ops_exception_list
+            )
+        if edge_compile_config.preserve_ops:
+            _preserve_ops.extend(edge_compile_config.preserve_ops)
 
     class _EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
         dialect = "OLD_EXIR_ATEN"
@@ -98,9 +107,10 @@ def EXIRATenDialectVerifier(  # noqa: C901
         def __init__(self) -> None:
             super().__init__()
             # Note: here we are using the exception list passed from EXIRATenDialectVerifier function!
-            self._exception_list = exception_list if exception_list else []
+            self._core_aten_ops_exception_list = _core_aten_ops_exception_list
+            self._preserve_ops = _preserve_ops
 
-        def _get_exception_list(self) -> List[torch._ops.OpOverload]:
+        def _get_core_aten_ops_exception_list(self) -> List[torch._ops.OpOverload]:
             exception_list = (
                 [
                     torch.ops.aten.mkldnn_rnn_layer.default,
@@ -113,7 +123,7 @@ def EXIRATenDialectVerifier(  # noqa: C901
                 ]
                 + list(_EXECUTORCH_SYM_OPS)
                 + DISALLOW_LIST
-                + self._exception_list
+                + self._core_aten_ops_exception_list
             )
 
             return exception_list
@@ -121,7 +131,27 @@ def EXIRATenDialectVerifier(  # noqa: C901
         def check_valid_op(self, op):
             if isinstance(op, OpOverload):
                 # TODO These special ops should be removable easily.
-                if op.namespace != "aten" or op in self._get_exception_list():
+                if (
+                    op.namespace != "aten"
+                    or op in self._get_core_aten_ops_exception_list()
+                ):
+                    return
+                if op in self._preserve_ops:
+                    if op.namespace != "aten":
+                        raise RuntimeError(
+                            f"Only preserve aten ops. Received op {op} with namespace {op.namespace}."
+                        )
+                    # Preserved ops should not include mutation or view,
+                    # which may affect memory planning.
+                    if op.is_view:
+                        raise RuntimeError(
+                            f"Cannot preserve operator {op} because it is a view."
+                        )
+                    if op._schema.is_mutable:
+                        logging.warning(
+                            f"Preserving mutation ops like {op} is a no-op because run_decomposition functionalizes it and prevents it from showing up."
+                        )
+
                     return
                 if torch.Tag.core not in op.tags and torch.Tag.view_copy not in op.tags:
                     # NOTE(qihan): whether view_copy operators are marked as canonical is still under
@@ -149,7 +179,9 @@ There are a few things to try:
 def get_aten_verifier(config: EdgeCompileConfig):
     return (
         EXIRATenDialectVerifier(
-            class_only=True, exception_list=config._core_aten_ops_exception_list
+            class_only=True,
+            core_aten_ops_exception_list=config._core_aten_ops_exception_list,
+            preserve_ops=config.preserve_ops,
         )
         if config._check_ir_validity
         else EXIRATenDialectVerifierBase
@@ -210,13 +242,19 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
 def EXIREdgeDialectVerifier(  # noqa: C901
     edge_compile_config: Optional[EdgeCompileConfig] = None,
     class_only: bool = False,
-    exception_list: Optional[List[torch._ops.OpOverload]] = None,
+    core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
+    preserve_ops: Optional[List[torch._ops.OpOverload]] = None,
 ):
+    _core_aten_ops_exception_list = core_aten_ops_exception_list or []
+    _preserve_ops = preserve_ops or []
     # merge the exception list from edge_compile_config and exception_list
-    if edge_compile_config and edge_compile_config._core_aten_ops_exception_list:
-        exception_list = edge_compile_config._core_aten_ops_exception_list + (
-            exception_list or []
-        )
+    if edge_compile_config:
+        if edge_compile_config._core_aten_ops_exception_list:
+            _core_aten_ops_exception_list.extend(
+                edge_compile_config._core_aten_ops_exception_list
+            )
+        if edge_compile_config.preserve_ops:
+            _preserve_ops.extend(edge_compile_config.preserve_ops)
 
     class _EXIREdgeDialectVerifier(Verifier):
         dialect = "EDGE"
@@ -228,8 +266,12 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             self.check_edge_ops = _edge_compile_config._use_edge_ops
             self.use_dim_order = not _edge_compile_config._skip_dim_order
 
+            self._core_aten_ops_exception_list = _core_aten_ops_exception_list
+            self._preserve_ops = _preserve_ops
+
             self.aten_op_verifier = EXIRATenDialectVerifier(
-                exception_list=exception_list
+                core_aten_ops_exception_list=_core_aten_ops_exception_list,
+                preserve_ops=_preserve_ops,
             )
             self.check_valid_aten_op = self.aten_op_verifier.check_valid_op
 
@@ -237,7 +279,6 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 self.check_valid_op = self.check_valid_edge_op
             else:
                 self.check_valid_op = self.check_valid_aten_op
-            self._exception_list = exception_list if exception_list else []
 
         def allowed_getattr_types(self) -> Tuple[Type[Any], ...]:
             return (
@@ -258,7 +299,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 in [operator.getitem]
                 + DISALLOW_LIST
                 + list(_EXECUTORCH_SYM_OPS)
-                + self._exception_list
+                + self._core_aten_ops_exception_list
             ):
                 return
 
