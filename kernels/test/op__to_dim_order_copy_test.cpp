@@ -202,7 +202,7 @@ class OpToDimOrderCopyTest : public OperatorTest {
   op = "op__to_dim_order_copy_out"
   opt_setup_params = """
     bool non_blocking = false;
-    optional<MemoryFormat> memory_format;
+    std::optional<MemoryFormat> memory_format;
   """
   opt_extra_params = "non_blocking, memory_format,"
   out_args = "out_shape, dynamism"
