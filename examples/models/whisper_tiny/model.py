@@ -17,6 +17,8 @@ from ..model_base import EagerModelBase
 
 class WhisperTinyModel(EagerModelBase):
     def __init__(self):
+        #self.max_cache_length=1024
+        #self.batch_size=1
         pass
 
     def get_eager_model(self) -> torch.nn.Module:
@@ -28,13 +30,27 @@ class WhisperTinyModel(EagerModelBase):
         return model
 
     def get_example_inputs(self):
+        #input_ids = torch.tensor([[0]], dtype=torch.long)
+        #encoder_hidden_states = torch.rand(1, 1500, 384)
+        #cache_position = torch.tensor([0], dtype=torch.long)
+        #atten_mask = torch.full((1, self.max_cache_length), torch.tensor(-255.0))
+        #atten_mask *= torch.arange(self.max_cache_length) > cache_position.reshape(
+        #    -1, 1
+        #)
+        #atten_mask = atten_mask[None, None, :, :].expand(self.batch_size, 1, -1, -1)
+        #return (input_ids, atten_mask, encoder_hidden_states, cache_position)
+
         processor = AutoProcessor.from_pretrained("openai/whisper-tiny.en")
         model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-tiny.en", return_dict=False)
         ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
         inputs = processor(ds[0]["audio"]["array"], return_tensors="pt")
         input_features = inputs.input_features
+        #expected_shape = (1, processor.feature_extractor.feature_size, processor.feature_extractor.nb_max_frames)
+        #print("Expected shape: " + str(expected_shape))
+        print("Input features has shape: " + str(input_features.shape))
         #generated_ids = model.generate(inputs=input_features)
-        return (input_features[0],) #(generated_ids,)
+        #return (torch.rand(expected_shape),) #(input_features,) #(generated_ids,)
+        return (input_features,) #(generated_ids,)
 
         #feature_extractor = AutoFeatureExtractor.from_pretrained("openai/whisper-tiny")
         #ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
