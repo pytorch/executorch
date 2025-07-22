@@ -10,7 +10,7 @@ The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection 
 * `backend_coreml` - Core ML backend
 * `backend_mps` - MPS backend
 * `backend_xnnpack` - XNNPACK backend
-* `kernels_custom` - Custom kernels for LLMs
+* `kernels_llm` - Custom kernels for LLMs
 * `kernels_optimized` - Accelerated generic CPU kernels
 * `kernels_quantized` - Quantized kernels
 

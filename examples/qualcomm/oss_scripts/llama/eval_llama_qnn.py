@@ -271,7 +271,6 @@ def eval_llama(
             model=eval_wrapper,
             tasks=args.tasks,
             num_fewshot=args.num_fewshot,
-            limit=args.limit,
         )
 
     for task, res in eval_results["results"].items():
@@ -292,11 +291,6 @@ def main() -> None:
     parser.add_argument(
         "--range_setting",
         help="Choose which range setting method (e.g. mse_weight). If not specified, will do minmax for weights and activations",
-        type=str,
-    )
-    parser.add_argument(
-        "--limit",
-        help="the number of examples per task (only use this for testing), If <1, limit is a percentage of the total number of examples",
         type=str,
     )
 

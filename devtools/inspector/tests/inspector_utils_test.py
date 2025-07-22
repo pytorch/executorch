@@ -47,7 +47,7 @@ from executorch.devtools.inspector._inspector_utils import (
 )
 from executorch.devtools.inspector.numerical_comparator import L1Comparator
 from executorch.exir import to_edge
-from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY, UNSET_DEBUG_HANDLE
 from torch.export import export
 
 
@@ -278,6 +278,27 @@ class TestInspectorUtils(unittest.TestCase):
             actual_value = intermediate_outputs[key][1]
             self.assertTrue(torch.allclose(expected_value, actual_value))
 
+    def test_merge_overlapping_debug_handles_edge_cases(self):
+        intermediate_outputs = {
+            (9,): (1, "val1"),
+            (
+                9,
+                9,
+                9,
+            ): (2, "val2"),
+            (
+                9,
+                9,
+            ): (3, "val3"),
+        }
+        intermediate_outputs = merge_runtime_overlapping_debug_handles(
+            intermediate_outputs
+        )
+        expected_intermediate_outputs = {
+            (9,): (3, "val3"),
+        }
+        self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
+
     def test_map_runtime_aot_intermediate_outputs_empty_inputs(self):
         # When the inputs are empty, the output should also be empty
         aot_intermediate_outputs = {}
@@ -302,23 +323,19 @@ class TestInspectorUtils(unittest.TestCase):
         }
         self.assertEqual(actual, expected)
 
-    def test_map_runtime_aot_intermediate_outputs_exact_match(self):
-        # Exact match between aot and runtime debug_handles
-        aot_intermediate_outputs = {(0, 1): 100, (2, 3): 200, (4, 5): 300}
-        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
+    def test_map_runtime_aot_intermediate_outputs_no_overlaps(self):
+        # No overlaps between aot and runtime debug_handles
+        aot_intermediate_outputs = {(0,): 100, (4,): 300}
+        runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
-        expected = {
-            ((0, 1), 100): ((0, 1), 150),
-            ((2, 3), 200): ((2, 3), 200),
-            ((4, 5), 300): ((4, 5), 300),
-        }
+        expected = {}
         self.assertEqual(actual, expected)
 
-    def test_map_runtime_aot_intermediate_outputs_no_overlaps(self):
-        # No overlaps between aot and runtime debug_handles
-        aot_intermediate_outputs = {(0, 1): 100, (4, 5): 300}
+    def test_map_runtime_aot_intermediate_outputs_partial_match(self):
+        # Partial match between aot and runtime debug_handles will return empty
+        aot_intermediate_outputs = {(2,): 100, (9,): 300}
         runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
@@ -328,41 +345,24 @@ class TestInspectorUtils(unittest.TestCase):
 
     def test_map_runtime_aot_intermediate_outputs_multiple_aot_to_one_runtime(self):
         # Multiple aot debug_handles map to one runtime debug_handle
-        aot_intermediate_outputs = {(0, 1, 2): 100, (3, 4): 300}
-        runtime_intermediate_outputs = {(1, 2, 3): 250, (8, 9): 300}
+        aot_intermediate_outputs = {(0,): 100, (1,): 200, (2,): 300, (3,): 400}
+        runtime_intermediate_outputs = {(2, 3, 1): 250, (8, 9): 300}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
-        expected = {((0, 1, 2, 3, 4), 300): ((1, 2, 3), 250)}
-        self.assertEqual(actual, expected)
-
-    def test_map_runtime_aot_intermediate_outputs_one_aot_to_multiple_runtime(self):
-        # One aot debug_handle map to multiple runtime debug_handles
-        aot_intermediate_outputs = {(0, 1, 2, 3, 4): 100, (8, 9): 300}
-        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
-        actual = map_runtime_aot_intermediate_outputs(
-            aot_intermediate_outputs, runtime_intermediate_outputs
-        )
-        expected = {((0, 1, 2, 3, 4), 100): ((0, 1, 2, 3, 4, 5), 300)}
-        self.assertEqual(actual, expected)
-
-    def test_map_runtime_aot_intermediate_outputs_complex_chain(self):
-        # Complex chain (N-to-N mapping)
-        aot_intermediate_outputs = {(1, 2): 100, (3, 4): 200, (5, 6): 300}
-        runtime_intermediate_outputs = {(2, 3): 150, (4, 5): 250, (6, 7): 350}
-        actual = map_runtime_aot_intermediate_outputs(
-            aot_intermediate_outputs, runtime_intermediate_outputs
-        )
-        expected = {((1, 2, 3, 4, 5, 6), 300): ((2, 3, 4, 5, 6, 7), 350)}
+        expected = {((2, 3, 1), 200): ((2, 3, 1), 250)}
         self.assertEqual(actual, expected)
 
     def test_map_runtime_aot_intermediate_outputs_delegated(self):
         # Currently, runtime_intermediate_output logs all delegate call arguments
         # Test that the map function correctly extracted out the delegated outputs
         aot_intermediate_outputs = {
-            (1, 2): torch.tensor([4, 5]),
-            (3, 4): torch.tensor([10, 11, 12]),
-            (5, 6): torch.tensor([13, 14, 15, 16, 17]),
+            (1,): torch.tensor([4, 1]),
+            (2,): torch.tensor([4, 5]),
+            (3,): torch.tensor([10, 10, 13]),
+            (4,): torch.tensor([10, 11, 12]),
+            (5,): torch.tensor([13, 14, 15, 16, 21]),
+            (6,): torch.tensor([13, 14, 15, 16, 17]),
         }
         runtime_intermediate_outputs = {
             (1, 2): [torch.tensor([1, 2, 3]), torch.tensor([4, 5])],
@@ -455,7 +455,7 @@ class TestInspectorUtils(unittest.TestCase):
         )
         node.meta["debug_handle"] = 1
         debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(graph_module)
-        expected_result = {(1,): "op1"}
+        expected_result = {(1,): ["op1"]}
         self.assertEqual(debug_handle_to_op_name, expected_result)
 
     def test_get_aot_debug_handle_to_op_name_mapping_multiple_debug_handles(self):
@@ -474,8 +474,8 @@ class TestInspectorUtils(unittest.TestCase):
             (
                 1,
                 2,
-            ): "op1",
-            (3,): "op2",
+            ): ["op1"],
+            (3,): ["op2"],
         }
         self.assertEqual(debug_handle_to_op_name, expected_result)
 
@@ -555,19 +555,41 @@ class TestInspectorUtils(unittest.TestCase):
 
     def test_find_op_names_empty_debug_handle(self):
         debug_handle = ()
-        debug_handle_to_op_name = {(1, 2): "op1", (3, 4): "op2"}
+        debug_handle_to_op_name = {(1, 2): ["op1"], (3, 4): ["op2"]}
         self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
 
     def test_find_op_names_no_matching_handles(self):
         debug_handle = (1, 2)
-        debug_handle_to_op_name = {(3, 4): "op1", (5, 6): "op2"}
+        debug_handle_to_op_name = {(3, 4): ["op1"], (5, 6): ["op2"]}
         self.assertEqual(find_op_names(debug_handle, debug_handle_to_op_name), [])
 
     def test_find_op_names_matching_handles(self):
         debug_handle = (1, 2, 3)
-        debug_handle_to_op_name = {(1, 2): "op1", (2, 3): "op2", (4, 5, 6): "op3"}
+        debug_handle_to_op_name = {(1, 2): ["op1"], (2, 3): ["op2"], (4, 5, 6): ["op3"]}
         self.assertEqual(
             find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2"]
+        )
+
+    def test_find_op_names_multiple_ops_single_handle(self):
+        """Test when a single debug handle maps to multiple operator names"""
+        debug_handle = (1, 2, 3)
+        debug_handle_to_op_name = {(1, 2): ["op1", "op2", "op3"], (4, 5): ["op4"]}
+        self.assertEqual(
+            find_op_names(debug_handle, debug_handle_to_op_name), ["op1", "op2", "op3"]
+        )
+
+    def test_find_op_names_mixed_single_and_multiple_ops(self):
+        """Test mix of handles with single and multiple operator names"""
+        debug_handle = (1, 2, 3, 4, 5)
+        debug_handle_to_op_name = {
+            (1, 2): ["op1"],
+            (3,): ["op2", "op3"],
+            (4,): ["op4"],
+            (5,): ["op5", "op6", "op7"],  # Multiple ops
+        }
+        self.assertEqual(
+            find_op_names(debug_handle, debug_handle_to_op_name),
+            ["op1", "op2", "op3", "op4", "op5", "op6", "op7"],
         )
 
     def test_compare_intermediate_outputs_sequences(self):
@@ -682,8 +704,7 @@ class TestInspectorUtils(unittest.TestCase):
             )
         )
 
-        # only two add ops in the exported program will keep in edge dialect program, so the debug handles for removed op will be three
-        debug_handle_for_removed_node = 3
+        n_removed_nodes = 0
 
         for node in exported_program.graph.nodes:
             if node.name == "add":
@@ -691,9 +712,10 @@ class TestInspectorUtils(unittest.TestCase):
             elif node.name == "add_1":
                 self.assertEqual(node.meta[DEBUG_HANDLE_KEY], 2)
             elif node.op not in ("placeholder", "output"):
-                self.assertEqual(
-                    node.meta[DEBUG_HANDLE_KEY], debug_handle_for_removed_node
-                )
+                n_removed_nodes += 1
+                self.assertEqual(node.meta[DEBUG_HANDLE_KEY], UNSET_DEBUG_HANDLE)
+
+        self.assertEqual(n_removed_nodes, 2)
 
 
 def gen_mock_operator_graph_with_expected_map() -> (

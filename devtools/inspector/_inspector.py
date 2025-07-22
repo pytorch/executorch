@@ -1159,7 +1159,7 @@ class Inspector:
 
     def _get_aot_intermediate_outputs_and_op_names(
         self,
-    ) -> Tuple[Dict[DebugHandle, Any], Dict[DebugHandle, str]]:
+    ) -> Tuple[Dict[DebugHandle, Any], Dict[DebugHandle, List[str]]]:
         """
         Capture intermediate outputs only if _representative_inputs are provided
         when using bundled program to create the etrecord
@@ -1180,13 +1180,13 @@ class Inspector:
     # TODO: Make it more extensible to further merge overlapping debug handles
     def _get_runtime_intermediate_outputs_and_op_names(
         self,
-    ) -> Tuple[Dict[DebugHandle, Any], Dict[DebugHandle, str]]:
+    ) -> Tuple[Dict[DebugHandle, Any], Dict[DebugHandle, List[str]]]:
         """
         Retrieve the runtime intermediate outputs(debug handles and intermediate values mappings)
         from the event blocks, along with the corresponding debug handles and op names mapping.
         """
         debug_handle_to_output = {}
-        debug_handle_to_op_name = {}
+        debug_handle_to_op_names = {}
         for event_block in self.event_blocks:
             for event in event_block.events:
                 # Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax
@@ -1208,12 +1208,15 @@ class Inspector:
                         event._instruction_id,
                         event.debug_data,
                     )
-                    debug_handle_to_op_name[debug_handle] = event.name
+                    # TODO: One debug handle can be associated with multiple op names
+                    debug_handle_to_op_names[debug_handle] = [event.name]
 
-        merge_runtime_overlapping_debug_handles(debug_handle_to_output)
+        debug_handle_to_output = merge_runtime_overlapping_debug_handles(
+            debug_handle_to_output
+        )
         return {
             k: v[1] for k, v in debug_handle_to_output.items()
-        }, debug_handle_to_op_name
+        }, debug_handle_to_op_names
 
     def to_dataframe(
         self,
@@ -1385,15 +1388,15 @@ class Inspector:
             pd.DataFrame: A DataFrame listing corresponding operator outputs from
                           both stages and their computed numerical gaps.
         """
-        aot_intermediate_outputs, aot_debug_handle_to_op_name = (
+        aot_intermediate_outputs, aot_debug_handle_to_op_names = (
             self._get_aot_intermediate_outputs_and_op_names()
         )
-        if len(aot_intermediate_outputs) == 0 or len(aot_debug_handle_to_op_name) == 0:
+        if len(aot_intermediate_outputs) == 0 or len(aot_debug_handle_to_op_names) == 0:
             raise ValueError(
                 "Missing etrecord or missing representative inputs within etrecord, both of which are required for calculating numerical gap"
             )
         # The runtime_op_names will be used later to map runtime debug_handle to op_name
-        runtime_intermediate_outputs, runtime_debug_handle_to_op_name = (
+        runtime_intermediate_outputs, runtime_debug_handle_to_op_names = (
             self._get_runtime_intermediate_outputs_and_op_names()
         )
         mapping = map_runtime_aot_intermediate_outputs(
@@ -1419,11 +1422,11 @@ class Inspector:
             rows.append(
                 {
                     "aot_ops": find_op_names(
-                        aot_debug_handle, aot_debug_handle_to_op_name
+                        aot_debug_handle, aot_debug_handle_to_op_names
                     ),
                     "aot_intermediate_output": aot_intermediate_output,
                     "runtime_ops": find_op_names(
-                        runtime_debug_handle, runtime_debug_handle_to_op_name
+                        runtime_debug_handle, runtime_debug_handle_to_op_names
                     ),
                     "runtime_intermediate_output": runtime_intermediate_output,
                     "gap": compare_intermediate_outputs(
