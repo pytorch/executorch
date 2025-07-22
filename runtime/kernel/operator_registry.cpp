@@ -81,17 +81,20 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
       et_pal_get_shared_library_name(kernels.data());
 
   for (const auto& kernel : kernels) {
+    bool duplicate = false;
     // Linear search. This is fine if the number of kernels is small.
     for (size_t i = 0; i < num_registered_kernels; i++) {
       Kernel k = registered_kernels[i];
       if (strcmp(kernel.name_, k.name_) == 0 &&
           kernel.kernel_key_ == k.kernel_key_) {
-        ET_LOG(Error, "Re-registering %s, from %s", k.name_, lib_name);
+        ET_LOG(Error, "! Re-registering %s, from %s", k.name_, lib_name);
         ET_LOG_KERNEL_KEY(k.kernel_key_);
-        return Error::RegistrationAlreadyRegistered;
+        //return Error::RegistrationAlreadyRegistered;
+        duplicate = true;
       }
     }
-    registered_kernels[num_registered_kernels++] = kernel;
+    if (!duplicate)
+      registered_kernels[num_registered_kernels++] = kernel;
   }
   ET_LOG(
       Debug,
@@ -238,9 +241,12 @@ Result<OpFunction> get_op_function_from_registry(
     return err;
   }
   KernelKey kernel_key = KernelKey(key_string.data());
+  //ET_LOG(Debug, "get_op_function_from_registry: name %s", name);
+  ET_LOG_TENSOR_META(meta_list);
 
   int32_t fallback_idx = -1;
   for (size_t idx = 0; idx < num_registered_kernels; idx++) {
+    ET_LOG(Info, "get_op_function_from_registry Checking kernel %s", registered_kernels[idx].name_);
     if (strcmp(registered_kernels[idx].name_, name) == 0) {
       if (registered_kernels[idx].kernel_key_ == kernel_key) {
         return registered_kernels[idx].op_;
@@ -250,7 +256,9 @@ Result<OpFunction> get_op_function_from_registry(
       }
     }
   }
+
   if (fallback_idx != -1) {
+    ET_LOG(Info, "get_op_function_from_registry: fallback kernel %s", registered_kernels[fallback_idx].name_);
     return registered_kernels[fallback_idx].op_;
   }
   ET_LOG(Error, "kernel '%s' not found.", name);

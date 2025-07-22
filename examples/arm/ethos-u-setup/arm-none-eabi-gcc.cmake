@@ -73,11 +73,11 @@ elseif(
   OR CMAKE_SYSTEM_PROCESSOR MATCHES "cortex-m55(\\+|$)"
   OR CMAKE_SYSTEM_PROCESSOR MATCHES "cortex-m85(\\+|$)"
 )
-  set(FLOAT hard)
+  set(FLOAT soft)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "cortex-m4(\\+|$)"
        OR CMAKE_SYSTEM_PROCESSOR MATCHES "cortex-m7(\\+|$)"
 )
-  set(FLOAT hard)
+  set(FLOAT soft)
   set(FPU_CONFIG "fpv4-sp-d16")
   add_compile_options(-mfpu=${FPU_CONFIG})
   add_link_options(-mfpu=${FPU_CONFIG})
