@@ -1,8 +1,8 @@
-load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_unittest(
+runtime.python_test(
     name = "executorch_export",
     srcs = [
         "test_executorch_export.py",
@@ -12,5 +12,17 @@ python_unittest(
         "//executorch/export:lib",
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/runtime:runtime",
+    ]
+)
+
+runtime.python_test(
+    name = "test_export_recipe",
+    srcs = [
+        "test_recipe_provider.py",
+        "test_recipe_registry.py",
+        "test_export_recipe.py",
+    ],
+    deps = [
+        "//executorch/export:lib",
     ]
 )

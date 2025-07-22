@@ -34,7 +34,7 @@ TEST_F(KernelDoubleRegistrationTest, Basic) {
       "aten::add.out",
       "v1/7;0,1,2,3|7;0,1,2,3|7;0,1,2,3",
       [](KernelRuntimeContext&, EValue**) {})};
-  Error err = Error::InvalidArgument;
+  Error err = Error::RegistrationAlreadyRegistered;
 
   ET_EXPECT_DEATH(
       { (void)register_kernels({kernels}); },

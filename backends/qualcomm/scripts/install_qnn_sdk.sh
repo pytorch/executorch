@@ -1,10 +1,3 @@
-#!/bin/bash
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 set -ex
 
 # Get the absolute path of this script
@@ -93,51 +86,66 @@ install_qnn() {
 setup_libcpp() {
   clang_version=$1
   LLVM_VERSION="14.0.0"
-  INSTALL_DIR="/usr/local/libcxx-${LLVM_VERSION}"
+  INSTALL_DIR="/tmp/libcxx-${LLVM_VERSION}"
 
-  # Check if libc++ is already installed
-  if [ -d "/usr/include/c++/v1" ] && \
-     [ -f "/usr/lib/libc++.so.1" ] && \
-     [ -f "/usr/lib/libc++abi.so.1" ]; then
-    echo "libc++-${clang_version}-dev is already installed - skipping"
+  # Check if we already have a local installation
+  if [ -d "${INSTALL_DIR}/include" ] && [ -d "${INSTALL_DIR}/lib" ]; then
+    echo "Local libc++ already installed at ${INSTALL_DIR} - skipping"
+    # Set environment variables
+    export CPLUS_INCLUDE_PATH="${INSTALL_DIR}/include:$CPLUS_INCLUDE_PATH"
+    export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:$LD_LIBRARY_PATH"
+    export LIBRARY_PATH="${INSTALL_DIR}/lib:$LIBRARY_PATH"
     return
   fi
 
-  echo "Installing libc++-${clang_version}-dev manually from LLVM releases"
+  echo "Installing libc++ manually to ${INSTALL_DIR}"
 
   # Create temporary directory
   TEMP_DIR=$(mktemp -d)
-  pushd "${TEMP_DIR}"
+  # Ensure cleanup on exit or return
+  trap 'rm -rf "$TEMP_DIR"' RETURN
 
-  # Download and extract LLVM binaries
-  LLVM_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/clang+llvm-${LLVM_VERSION}-x86_64-linux-gnu-ubuntu-20.04.tar.xz"
-  curl -LO "${LLVM_URL}"
-  tar -xf "clang+llvm-${LLVM_VERSION}-x86_64-linux-gnu-ubuntu-20.04.tar.xz"
+  pushd "${TEMP_DIR}" >/dev/null
 
-  # Create necessary directories
-  sudo mkdir -p "${INSTALL_DIR}/include"
-  sudo mkdir -p "${INSTALL_DIR}/lib"  # FIX: Create lib directory
+  BASE_NAME="clang+llvm-${LLVM_VERSION}-x86_64-linux-gnu-ubuntu-18.04"
+  LLVM_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/${BASE_NAME}.tar.xz"
+
+  echo "Downloading LLVM from ${LLVM_URL}"
+  curl -fLO "${LLVM_URL}" || {
+      echo "Error: Failed to download LLVM"
+      exit 1
+  }
+
+  echo "Extracting ${BASE_NAME}.tar.xz"
+  tar -xf "${BASE_NAME}.tar.xz" || {
+      echo "Error: Failed to extract LLVM archive"
+      exit 1
+  }
+
+  # Create installation directory
+  mkdir -p "${INSTALL_DIR}/include"
+  mkdir -p "${INSTALL_DIR}/lib"
 
   # Copy libc++ headers and libraries
-  sudo cp -r clang+llvm*/include/c++/v1/* "${INSTALL_DIR}/include/"
-  sudo cp -r clang+llvm*/lib/*.so* "${INSTALL_DIR}/lib/"
+  cp -r "${BASE_NAME}/include/c++/v1/"* "${INSTALL_DIR}/include/"
+  cp -r "${BASE_NAME}/lib/"*.so* "${INSTALL_DIR}/lib/"
 
-  # Create system symlinks
-  sudo mkdir -p /usr/include/c++
-  sudo ln -sf "${INSTALL_DIR}/include" /usr/include/c++/v1
-  sudo ln -sf "${INSTALL_DIR}/lib/libc++.so.1.0" /usr/lib/libc++.so.1
-  sudo ln -sf "${INSTALL_DIR}/lib/libc++.so.1" /usr/lib/libc++.so
-  sudo ln -sf "${INSTALL_DIR}/lib/libc++abi.so.1.0" /usr/lib/libc++abi.so.1
-  sudo ln -sf "${INSTALL_DIR}/lib/libc++abi.so.1" /usr/lib/libc++abi.so
+  popd >/dev/null
 
-  # Update library cache
-  sudo ldconfig
+  # Create necessary symlinks locally
+  pushd "${INSTALL_DIR}/lib" >/dev/null
+  ln -sf libc++.so.1.0 libc++.so.1
+  ln -sf libc++.so.1 libc++.so
+  ln -sf libc++abi.so.1.0 libc++abi.so.1
+  ln -sf libc++abi.so.1 libc++abi.so
+  popd >/dev/null
 
-  # Cleanup
-  popd
-  rm -rf "${TEMP_DIR}"
+  # Set environment variables
+  export CPLUS_INCLUDE_PATH="${INSTALL_DIR}/include:$CPLUS_INCLUDE_PATH"
+  export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:$LD_LIBRARY_PATH"
+  export LIBRARY_PATH="${INSTALL_DIR}/lib:$LIBRARY_PATH"
 
-  echo "libc++-${clang_version}-dev installed to ${INSTALL_DIR}"
+  echo "libc++ installed to ${INSTALL_DIR}"
 }
 
 setup_libcpp 12
