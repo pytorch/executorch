@@ -15,4 +15,5 @@ public enum ModelType {
   LLAVA_1_5,
   LLAMA_GUARD_3,
   QWEN_3,
+  SMOLLM_3,
 }
