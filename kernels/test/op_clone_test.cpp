@@ -26,7 +26,7 @@ class OpCloneTest : public OperatorTest {
  protected:
   Tensor& op_clone_out(
       const Tensor& self,
-      optional<MemoryFormat> memory_format,
+      std::optional<MemoryFormat> memory_format,
       Tensor& out) {
     return torch::executor::aten::clone_outf(
         context_, self, memory_format, out);

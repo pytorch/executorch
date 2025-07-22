@@ -44,8 +44,8 @@ class OpClampOutTest : public OperatorTest {
  protected:
   Tensor& op_clamp_out(
       const Tensor& self,
-      const optional<Scalar>& min,
-      const optional<Scalar>& max,
+      const std::optional<Scalar>& min,
+      const std::optional<Scalar>& max,
       Tensor& out) {
     return torch::executor::aten::clamp_outf(context_, self, min, max, out);
   }
@@ -291,8 +291,8 @@ class OpClampTensorOutTest : public OperatorTest {
  protected:
   Tensor& op_clamp_tensor_out(
       const Tensor& self,
-      const optional<Tensor>& min,
-      const optional<Tensor>& max,
+      const std::optional<Tensor>& min,
+      const std::optional<Tensor>& max,
       Tensor& out) {
     executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
     return torch::executor::aten::clamp_outf(context, self, min, max, out);
