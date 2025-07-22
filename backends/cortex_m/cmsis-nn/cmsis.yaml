@@ -1,0 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+- op: aten::_softmax.out
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::aten_softmax

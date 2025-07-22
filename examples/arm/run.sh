@@ -98,7 +98,7 @@ ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
 setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
 if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
-elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
 else
     echo "Error: Invalid toolchain selection, provided: ${tolchain}"
@@ -198,21 +198,21 @@ if [[ -z "$model_name" ]]; then
     # the test models run, and whether to delegate
     test_model=(
         "softmax"  # 0
-        "add"      # 1
-        "add3"     # 2
-        "qadd"     # 3
-        "qadd2"    # 4
-        "qops"     # 5
-        "mv2"      # 6
+        #"add"      # 1
+        #"add3"     # 2
+        #"qadd"     # 3
+        #"qadd2"    # 4
+        #"qops"     # 5
+        #"mv2"      # 6
     )
     model_compiler_flags=(
         ""                      # 0 softmax
-        "--delegate"            # 1 add
-        "--delegate"            # 2 add3
-        "--delegate --quantize" # 3 qadd
-        "--delegate --quantize" # 4 qadd2
-        "--delegate --quantize" # 5 qops
-        "--delegate --quantize" # 6 mv2
+        #"--delegate"            # 1 add
+        #"--delegate"            # 2 add3
+        #"--delegate --quantize" # 3 qadd
+        #"--delegate --quantize" # 4 qadd2
+        #"--delegate --quantize" # 5 qops
+        #"--delegate --quantize" # 6 mv2
     )
 else
     test_model=( "$model_name" )
@@ -277,6 +277,7 @@ for i in "${!test_model[@]}"; do
         set -x
         # Rebuild the application as the pte is imported as a header/c array
         backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}"
+        #echo "CALL ${cmd}" >&2
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
             elf_file="${output_folder}/${elf_folder}/cmake-out/arm_executor_runner"

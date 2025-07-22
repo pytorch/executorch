@@ -530,6 +530,7 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m/cmsis-nn/ops)
 endif()
 
 if(EXECUTORCH_BUILD_DEVTOOLS)
