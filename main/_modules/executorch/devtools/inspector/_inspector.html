@@ -1884,17 +1884,19 @@
             <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">graph_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">graph</span><span class="p">)</span>
         <span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_numeric_gap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">distance</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;MSE&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_numeric_gap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">distance</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;MSE&quot;</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compares logged intermediate outputs from the exported graph (in ETRecord)</span>
 <span class="sd">        with runtime outputs (in ETDump) using a user-specific numerical comparator.</span>
+<span class="sd">        To use this function, you must first generate the ETRecord using the `bundle_program`,</span>
+<span class="sd">        and then create the Inspector instance with the ETRecord and ETDump. The Inspector can then</span>
+<span class="sd">        compare the intermediate outputs from the AOT and the runtime.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            distance: the metrics the inspector will use for gap calculation. Should be one of &quot;MSE&quot;, &quot;L1&quot; and &quot;SNR&quot;.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            pd.DataFrame: A DataFrame listing corresponding operator outputs from</span>
-<span class="sd">                          both stages and their computed numerical gaps.</span>
+<span class="sd">            pd.DataFrame: A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">aot_intermediate_outputs</span><span class="p">,</span> <span class="n">aot_debug_handle_to_op_names</span> <span class="o">=</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_get_aot_intermediate_outputs_and_op_names</span><span class="p">()</span>

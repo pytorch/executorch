@@ -663,6 +663,35 @@ methods that exist in the spec will be created.</p>
 </pre></div>
 </div>
 </div>
+<div class="section" id="calculate-numeric-gap">
+<h3>calculate_numeric_gap<a class="headerlink" href="#calculate-numeric-gap" title="Permalink to this heading">¶</a></h3>
+<dl class="py function">
+<dt class="sig sig-object py" id="executorch.devtools.Inspector.calculate_numeric_gap">
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.Inspector.</span></span><span class="sig-name descname"><span class="pre">calculate_numeric_gap</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">distance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'MSE'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#executorch.devtools.Inspector.calculate_numeric_gap" title="Permalink to this definition">¶</a></dt>
+<dd><p>Compares logged intermediate outputs from the exported graph (in ETRecord)
+with runtime outputs (in ETDump) using a user-specific numerical comparator.
+To use this function, you must first generate the ETRecord using the <cite>bundle_program</cite>,
+and then create the Inspector instance with the ETRecord and ETDump. The Inspector can then
+compare the intermediate outputs from the AOT and the runtime.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>distance</strong> – the metrics the inspector will use for gap calculation. Should be one of “MSE”, “L1” and “SNR”.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p id="example-usage-4"><strong>Example Usage:</strong></p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">calculate_numeric_gap</span><span class="p">(</span><span class="s2">&quot;L1&quot;</span><span class="p">))</span>
+</pre></div>
+</div>
+<img alt="_images/calculate_numeric_gap.png" src="_images/calculate_numeric_gap.png" />
+</div>
 </div>
 <div class="section" id="inspector-attributes">
 <h2>Inspector Attributes<a class="headerlink" href="#inspector-attributes" title="Permalink to this heading">¶</a></h2>
@@ -814,6 +843,10 @@ table. This command produces the identical table output as calling the
 </li>
 <li><a class="reference internal" href="#get-exported-program">get_exported_program</a><ul>
 <li><a class="reference internal" href="#executorch.devtools.Inspector.get_exported_program"><code class="docutils literal notranslate"><span class="pre">get_exported_program()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#calculate-numeric-gap">calculate_numeric_gap</a><ul>
+<li><a class="reference internal" href="#executorch.devtools.Inspector.calculate_numeric_gap"><code class="docutils literal notranslate"><span class="pre">calculate_numeric_gap()</span></code></a></li>
 </ul>
 </li>
 </ul>
