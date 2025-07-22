@@ -37,6 +37,20 @@ class Model(str, Enum):
     EfficientSam = "efficient_sam"
     Qwen25 = "qwen2_5"
     Phi4Mini = "phi_4_mini"
+    EfficientNetB4 = "efficientnet_b4"
+    DetrResNet50 = "detr_resnet50"
+    SegformerADE = "segformer_ade"
+    Albert = "albert"
+    Swin2SR2x = "swin2sr_2x"
+    TrOCRHandwritten = "trocr_handwritten"
+    Wav2Vec2 = "wav2vec2"
+    CLIP = "clip"
+    SentenceTransformers = "sentence_transformers"
+    DistilBertQA = "distilbert_qa"
+    RealESRGAN = "real_esrgan"
+    AudioSpectrogramTransformer = "audio_spectrogram_transformer"
+    RobertaSentiment = "roberta_sentiment"
+    DepthAnythingV2 = "depth_anything_v2"
 
     def __str__(self) -> str:
         return self.value
@@ -82,6 +96,26 @@ MODEL_NAME_TO_MODEL = {
     str(Model.EfficientSam): ("efficient_sam", "EfficientSAM"),
     str(Model.Qwen25): ("qwen2_5", "Qwen2_5Model"),
     str(Model.Phi4Mini): ("phi_4_mini", "Phi4MiniModel"),
+    str(Model.EfficientNetB4): ("efficientnet_b4", "EfficientNetB4Model"),
+    str(Model.DetrResNet50): ("detr_resnet50", "DetrResNet50Model"),
+    str(Model.SegformerADE): ("segformer_ade", "SegformerADEModel"),
+    str(Model.Albert): ("albert", "AlbertModelExample"),
+    str(Model.Swin2SR2x): ("swin2sr_2x", "Swin2SR2xModel"),
+    str(Model.TrOCRHandwritten): ("trocr_handwritten", "TrOCRHandwrittenModel"),
+    str(Model.Wav2Vec2): ("wav2vec2", "Wav2Vec2Model"),
+    str(Model.CLIP): ("clip", "CLIPModel"),
+    str(Model.SentenceTransformers): (
+        "sentence_transformers",
+        "SentenceTransformersModel",
+    ),
+    str(Model.DistilBertQA): ("distilbert_qa", "DistilBertQAModel"),
+    str(Model.RealESRGAN): ("real_esrgan", "RealESRGANModel"),
+    str(Model.AudioSpectrogramTransformer): (
+        "audio_spectrogram_transformer",
+        "AudioSpectrogramTransformerModel",
+    ),
+    str(Model.RobertaSentiment): ("roberta_sentiment", "RobertaSentimentModel"),
+    str(Model.DepthAnythingV2): ("depth_anything_v2", "DepthAnythingV2Model"),
 }
 
 __all__ = [
