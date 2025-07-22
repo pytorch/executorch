@@ -68,7 +68,7 @@ def _filter_tests(
 
 def _is_test_enabled(test_case: unittest.TestCase, test_filter: TestFilter) -> bool:
     test_method = getattr(test_case, test_case._testMethodName)
-    flow: TestFlow = getattr(test_method, "_flow")
+    flow: TestFlow = test_method._flow
 
     if test_filter.backends is not None and flow.backend not in test_filter.backends:
         return False

@@ -1,8 +1,7 @@
 import logging
 
 from dataclasses import dataclass
-from math import log
-from typing import Callable, Sequence
+from typing import Callable
 
 from executorch.backends.test.harness import Tester
 
@@ -55,9 +54,9 @@ def create_coreml_flow() -> TestFlow | None:
         return None
 
 
-def all_flows() -> Sequence[TestFlow]:
+def all_flows() -> dict[str, TestFlow]:
     flows = [
         create_xnnpack_flow(),
         create_coreml_flow(),
     ]
-    return [f for f in flows if f is not None]
+    return {f.name: f for f in flows if f is not None}
