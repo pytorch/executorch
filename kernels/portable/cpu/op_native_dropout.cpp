@@ -17,7 +17,7 @@ std::tuple<Tensor&, Tensor&> native_dropout_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     double prob,
-    torch::executor::optional<bool> train,
+    torch::executor::std::optional<bool> train,
     Tensor& out,
     Tensor& mask) {
   std::tuple<Tensor&, Tensor&> ret(out, mask);

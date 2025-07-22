@@ -28,7 +28,7 @@ class OpCumSumOutTest : public OperatorTest {
   Tensor& op_cumsum_out(
       const Tensor& self,
       int64_t dim,
-      optional<ScalarType> enforced_dtype,
+      std::optional<ScalarType> enforced_dtype,
       Tensor& out) {
     return torch::executor::aten::cumsum_outf(
         context_, self, dim, enforced_dtype, out);
@@ -48,7 +48,7 @@ class OpCumSumOutTest : public OperatorTest {
     // clang-format on
 
     Tensor out = tf_out.zeros({2, 4});
-    optional<ScalarType> enforced_dtype = OUT_DTYPE;
+    std::optional<ScalarType> enforced_dtype = OUT_DTYPE;
     op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
 
     // clang-format off
@@ -85,7 +85,7 @@ class OpCumSumOutTest : public OperatorTest {
 
     Tensor in = tf_float.make({1, 2}, {1, INFINITY});
     Tensor out = tf_out.zeros({1, 2});
-    optional<ScalarType> enforced_dtype = OUT_DTYPE;
+    std::optional<ScalarType> enforced_dtype = OUT_DTYPE;
     op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
     EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {1, INFINITY}));
 
@@ -115,7 +115,7 @@ TEST_F(OpCumSumOutTest, MismatchedDimensionsDies) {
   Tensor out = tff.zeros({1, 3});
 
   // Dim out of bounds
-  optional<ScalarType> enforced_dtype;
+  std::optional<ScalarType> enforced_dtype;
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_cumsum_out(in, /*dim=*/3, enforced_dtype, out));
 
@@ -149,7 +149,7 @@ TEST_F(OpCumSumOutTest, TypeCastCornerCases) {
   // Cast floating point to int
   Tensor in = tf_float.make({1, 2}, {1.1, 2.2});
   Tensor out = tf_int.zeros({1, 2});
-  optional<ScalarType> enforced_dtype = ScalarType::Int;
+  std::optional<ScalarType> enforced_dtype = ScalarType::Int;
   op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_int.make({1, 2}, {1, 3}));
 

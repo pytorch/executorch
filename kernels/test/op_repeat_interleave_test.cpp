@@ -22,7 +22,7 @@ class OpRepeatInterleaveTensorOutTest : public OperatorTest {
  protected:
   Tensor& op_repeat_out(
       const Tensor& repeats,
-      optional<int64_t> output_size,
+      std::optional<int64_t> output_size,
       Tensor& out) {
     return torch::executor::aten::repeat_interleave_outf(
         context_, repeats, output_size, out);
