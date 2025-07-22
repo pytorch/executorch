@@ -55,6 +55,30 @@ jobs:
         # Build and test executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
+  test-models-arm-zephyr:
+    name: test-models-arm-zephyr
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        model: [add]
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        MODEL_NAME=${{ matrix.model }}
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+        .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
+        source examples/arm/ethos-u-scratch/setup_path.sh
+        pwd
+        ls
+
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
