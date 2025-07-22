@@ -29,6 +29,7 @@ from executorch.backends.arm._passes import (
     ConvertToClampPass,
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
+    DecomposeAddmmPass,
     DecomposeAsinPass,
     DecomposeAtanhPass,
     DecomposeAtanPass,
@@ -165,6 +166,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeAtanPass())
         self.add_pass(DecomposeAtanhPass())
+        self.add_pass(DecomposeAddmmPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())
@@ -257,6 +259,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeRoundPass())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSignPass())
+        self.add_pass(DecomposeAddmmPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())
