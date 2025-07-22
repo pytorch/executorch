@@ -148,15 +148,6 @@ def main() -> None:
             lambda m, fqn: isinstance(m, torch.nn.Embedding),
         )
 
-    # CoreML's op_linear_quantizer_config appears to have a bug where the quantization
-    # quality is subpar.  We use torchao APIs instead, which are now supported by CoreML
-    op_linear_quantizer_config = None
-    #     op_linear_quantizer_config = {
-    #         "mode": "linear_symmetric",
-    #         "dtype": "int4",
-    #         "granularity": "per_channel",
-    #     }
-
     if export_args.coreml_quantize == "b4w":
         quantize_(
             model,
@@ -182,7 +173,6 @@ def main() -> None:
         }[float_dtype],
         compute_unit=ct.ComputeUnit.CPU_AND_NE,
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
-        op_linear_quantizer_config=op_linear_quantizer_config,
     )
     partitioner = CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
@@ -214,7 +204,7 @@ def main() -> None:
         ep,
         partitioner=[partitioner],
         compile_config=EdgeCompileConfig(
-            _check_ir_validity=False,
+            # TODO: fix lowering when dim_order is enabled
             _skip_dim_order=True,
         ),
     )
