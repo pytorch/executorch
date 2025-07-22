@@ -85,12 +85,11 @@ class DecomposeAsinPass(ArmPass):
         return result
 
     def call_operator(self, op, args, kwargs, meta):
+        if op not in edge_asin_op:
+            return super().call_operator(op, args, kwargs, meta)
         logging.info(
             f"Approximating asin. This may introduce small numerical errors. For details, see {__file__}."
         )
-        if op not in edge_asin_op:
-            return super().call_operator(op, args, kwargs, meta)
-
         x = args[0]
         half = 0.5
         one = 1.0

@@ -45,10 +45,10 @@
 # ~~~
 #
 
-cmake_minimum_required(VERSION 3.24)
+# TODO Lower to 3.24 when XNNPACK dependency is updated to include
+# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
+cmake_minimum_required(VERSION 3.29)
 project(executorch)
-
-# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
@@ -82,6 +82,7 @@ announce_configured_options(BUCK2)
 
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
+announce_configured_options(BUILD_TESTING)
 
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
@@ -96,11 +97,6 @@ else()
   message(STATUS "ccache not found, builds will not be cached")
 endif()
 announce_configured_options(CCACHE_PROGRAM)
-
-# Print all the configs that were called with announce_configured_options.
-print_configured_options()
-
-# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -566,6 +562,10 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
 endif()
@@ -750,3 +750,6 @@ if(EXECUTORCH_BUILD_ANDROID_JNI)
 endif()
 
 include(Test.cmake)
+
+# Print all the configs that were called with announce_configured_options.
+print_configured_options()
