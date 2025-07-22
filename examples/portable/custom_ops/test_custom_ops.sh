@@ -9,7 +9,7 @@
 # EXIR to capture and export a model file. Then use `executor_runner` demo C++
 # binary to run the model.
 
-set -e
+set -ex
 
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../../../.ci/scripts/utils.sh"
