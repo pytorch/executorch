@@ -57,7 +57,7 @@ def _is_test_enabled(test_case: unittest.TestCase, backends: set[str] | None) ->
     test_method = getattr(test_case, test_case._testMethodName)
 
     if backends is not None:
-        flow: TestFlow = getattr(test_method, "_flow")
+        flow: TestFlow = test_method._flow
         return flow.backend in backends
     else:
         return True

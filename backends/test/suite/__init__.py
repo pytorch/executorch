@@ -12,7 +12,7 @@ import os
 import unittest
 
 from enum import Enum
-from typing import Callable, Sequence, Sequence
+from typing import Callable
 
 import executorch.backends.test.suite.flow
 
@@ -46,18 +46,18 @@ def is_backend_enabled(backend):
         return backend in _ENABLED_BACKENDS
 
 
-_ALL_TEST_FLOWS: Sequence[TestFlow] | None = None
+_ALL_TEST_FLOWS: dict[str, TestFlow] = {}
 
 
-def get_test_flows() -> Sequence[TestFlow]:
+def get_test_flows() -> dict[str, TestFlow]:
     global _ALL_TEST_FLOWS
 
-    if _ALL_TEST_FLOWS is None:
-        _ALL_TEST_FLOWS = [
-            f
-            for f in executorch.backends.test.suite.flow.all_flows()
+    if not _ALL_TEST_FLOWS:
+        _ALL_TEST_FLOWS = {
+            name: f
+            for name, f in executorch.backends.test.suite.flow.all_flows().items()
             if is_backend_enabled(f.backend)
-        ]
+        }
 
     return _ALL_TEST_FLOWS
 
@@ -115,7 +115,7 @@ def _create_tests(cls):
 # Expand a test into variants for each registered flow.
 def _expand_test(cls, test_name: str):
     test_func = getattr(cls, test_name)
-    for flow in get_test_flows():
+    for flow in get_test_flows().values():
         _create_test_for_backend(cls, test_func, flow)
     delattr(cls, test_name)
 
@@ -133,8 +133,8 @@ def _make_wrapped_test(
 
             test_func(self, **test_kwargs)
 
-    setattr(wrapped_test, "_name", test_name)
-    setattr(wrapped_test, "_flow", flow)
+    wrapped_test._name = test_name
+    wrapped_test._flow = flow
 
     return wrapped_test
 
