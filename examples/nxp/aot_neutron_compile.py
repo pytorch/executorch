@@ -22,6 +22,11 @@ from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 
+from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
+    CifarNet,
+    test_cifarnet_model,
+)
+
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -31,8 +36,6 @@ from executorch.extension.export_util import save_pte_program
 
 from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-
-from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
