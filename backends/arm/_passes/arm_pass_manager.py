@@ -30,6 +30,7 @@ from executorch.backends.arm._passes import (
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
     DecomposeAsinPass,
+    DecomposeAtanhPass,
     DecomposeAtanPass,
     DecomposeAvgPool2d,
     DecomposeBatchNormNoStatsPass,
@@ -65,8 +66,8 @@ from executorch.backends.arm._passes import (
     InsertCastForOpsWithInt64InputPass,
     InsertRescalePass,
     InsertTableOpsPass,
+    MatchArgDtypePass,
     MatchArgRanksPass,
-    MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
     ReplaceInfValues,
@@ -115,7 +116,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
-        self.add_pass(MatchWhereSelfDtypePass())
+        self.add_pass(MatchArgDtypePass())
         if self.tosa_spec.is_U55_subset:
             self.add_pass(CastToInt32Pass())
 
@@ -163,6 +164,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeAsinPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeAtanPass())
+        self.add_pass(DecomposeAtanhPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())
@@ -191,8 +193,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
-        self.add_pass(MatchWhereSelfDtypePass())
-
+        self.add_pass(MatchArgDtypePass())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
