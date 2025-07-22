@@ -28,7 +28,7 @@ Tensor& op_cdist_forward_out(
     const Tensor& x1,
     const Tensor& x2,
     double p,
-    optional<int64_t> compute_mode,
+    std::optional<int64_t> compute_mode,
     Tensor& out) {
   KernelRuntimeContext context{};
   return torch::executor::aten::_cdist_forward_outf(
@@ -58,7 +58,7 @@ class OpCdistForwardOutTest : public ::testing::Test {
     Tensor x2 = tf.make(
         {1, 2, 5, 3}, {0, 1, 2, 3,  5, -3, 7, 1,  6, 2, -1, 5, 1, 1,  -2,
                        4, 3, 2, -1, 5, 1,  1, -2, 1, 5, 4,  3, 2, -1, 5});
-    optional<int64_t> compute_mode = optional<int64_t>();
+    std::optional<int64_t> compute_mode = std::optional<int64_t>();
 
     Tensor out = tf.zeros({2, 2, 4, 5});
 

@@ -120,7 +120,7 @@ Tensor& _cdist_forward_out(
     const Tensor& x1,
     const Tensor& x2,
     double p,
-    optional<int64_t> compute_mode,
+    std::optional<int64_t> compute_mode,
     Tensor& out) {
   (void)ctx;
 

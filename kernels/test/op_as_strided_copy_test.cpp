@@ -31,7 +31,7 @@ class OpAsStridedCopyOutTest : public OperatorTest {
       const Tensor& self,
       ArrayRef<int64_t> size,
       ArrayRef<int64_t> stride,
-      optional<int64_t> storage_offset,
+      std::optional<int64_t> storage_offset,
       Tensor& out) {
     return torch::executor::aten::as_strided_copy_outf(
         context_, self, size, stride, storage_offset, out);
@@ -48,7 +48,7 @@ class OpAsStridedCopyOutTest : public OperatorTest {
     Tensor out = tf.zeros(out_sizes);
 
     // Valid input should give the expected output
-    optional<int64_t> storage_offset;
+    std::optional<int64_t> storage_offset;
     int64_t sizes[3] = {2, 2, 2};
     int64_t stride[3] = {1, 2, 3};
     op_as_strided_copy_out(
@@ -78,7 +78,7 @@ class OpAsStridedCopyOutTest : public OperatorTest {
 
     Tensor in = tf.ones(in_sizes);
     Tensor out = tf.zeros(out_sizes);
-    optional<int64_t> storage_offset;
+    std::optional<int64_t> storage_offset;
     int64_t sizes[3] = {2, 2, 2};
     int64_t stride[3] = {1, 2, 3};
 
@@ -149,7 +149,7 @@ void OpAsStridedCopyOutTest::test_detach_copy_out<ScalarType::Bool>() {
   Tensor out = tf.zeros(out_sizes);
 
   // Valid input should give the expected output
-  optional<int64_t> storage_offset = 2;
+  std::optional<int64_t> storage_offset = 2;
   int64_t sizes[3] = {2, 2, 2};
   int64_t stride[3] = {1, 2, 3};
   op_as_strided_copy_out(
@@ -174,7 +174,7 @@ void OpAsStridedCopyOutTest::test_detach_copy_out<ScalarType::Float>() {
   Tensor out = tf.zeros(out_sizes);
 
   // Valid input should give the expected output
-  optional<int64_t> storage_offset = 2;
+  std::optional<int64_t> storage_offset = 2;
   int64_t sizes[3] = {2, 2, 2};
   int64_t stride[3] = {1, 2, 3};
   op_as_strided_copy_out(
@@ -214,7 +214,7 @@ TEST_F(OpAsStridedCopyOutTest, MismatchedInputDtypesDies) {
 
   Tensor in = tf_byte.make(in_sizes, {1, 2, 3, 4, 5, 6, 7, 8, 9});
   Tensor out = tf_char.zeros(out_sizes);
-  optional<int64_t> storage_offset;
+  std::optional<int64_t> storage_offset;
   int64_t sizes[3] = {2, 2, 2};
   int64_t stride[3] = {1, 2, 3};
 
@@ -237,7 +237,7 @@ op = "op_as_strided_copy_out"
 opt_setup_params = f"""
   {declare_array_ref([2, 2, 2], "int64_t", "size")}
   {declare_array_ref([1, 2, 3], "int64_t", "stride")}
-  optional<int64_t> storage_offset;
+  std::optional<int64_t> storage_offset;
 """
 opt_extra_params = "size, stride, storage_offset,"
 dtype = "ScalarType::Float"
@@ -276,7 +276,7 @@ TEST_F(OpAsStridedCopyOutTest, DynamicShapeUpperBoundSameAsExpected) {
   ArrayRef<int64_t> size(sizev.data(), sizev.size());
   std::vector<int64_t> stridev = {1, 2, 3};
   ArrayRef<int64_t> stride(stridev.data(), stridev.size());
-  optional<int64_t> storage_offset;
+  std::optional<int64_t> storage_offset;
 
   Tensor out =
       tf.zeros({2, 2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -317,7 +317,7 @@ TEST_F(OpAsStridedCopyOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   ArrayRef<int64_t> size(sizev.data(), sizev.size());
   std::vector<int64_t> stridev = {1, 2, 3};
   ArrayRef<int64_t> stride(stridev.data(), stridev.size());
-  optional<int64_t> storage_offset;
+  std::optional<int64_t> storage_offset;
 
   Tensor out =
       tf.zeros({5, 5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -361,7 +361,7 @@ TEST_F(OpAsStridedCopyOutTest, DynamicShapeUnbound) {
   ArrayRef<int64_t> size(sizev.data(), sizev.size());
   std::vector<int64_t> stridev = {1, 2, 3};
   ArrayRef<int64_t> stride(stridev.data(), stridev.size());
-  optional<int64_t> storage_offset;
+  std::optional<int64_t> storage_offset;
 
   Tensor out = tf.zeros(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
