@@ -1,4 +1,5 @@
 import argparse
+import importlib
 import unittest
 
 from typing import Callable
@@ -6,6 +7,7 @@ from typing import Callable
 import torch
 
 from executorch.backends.test.harness import Tester
+from executorch.backends.test.suite.discovery import discover_tests
 from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
@@ -13,6 +15,12 @@ from executorch.backends.test.suite.reporting import (
     TestCaseSummary,
     TestResult,
 )
+
+
+# A list of all runnable test suites and the corresponding python package.
+NAMED_SUITES = {
+    "operators": "executorch.backends.test.suite.operators",
+}
 
 
 def run_test(  # noqa: C901
@@ -130,8 +138,28 @@ def parse_args():
         prog="ExecuTorch Backend Test Suite",
         description="Run ExecuTorch backend tests.",
     )
-    parser.add_argument("test_path", nargs="?", help="Prefix filter for tests to run.")
+    parser.add_argument(
+        "suite",
+        nargs="*",
+        help="The test suite to run.",
+        choices=NAMED_SUITES.keys(),
+        default=["operators"],
+    )
+    parser.add_argument(
+        "-b", "--backend", nargs="*", help="The backend or backends to test."
+    )
     return parser.parse_args()
+
+
+def test(suite):
+    if isinstance(suite, unittest.TestSuite):
+        print(f"Suite: {suite}")
+        for t in suite:
+            test(t)
+    else:
+        print(f"Leaf: {type(suite)} {suite}")
+        print(f" {suite.__name__}")
+        print(f" {callable(suite)}")
 
 
 def runner_main():
@@ -139,11 +167,13 @@ def runner_main():
 
     begin_test_session()
 
-    test_path = args.test_path or "executorch.backends.test.suite.operators"
+    if len(args.suite) > 1:
+        raise NotImplementedError("TODO Support multiple suites.")
 
-    loader = unittest.TestLoader()
-    suite = loader.loadTestsFromName(test_path)
-    unittest.TextTestRunner().run(suite)
+    test_path = NAMED_SUITES[args.suite[0]]
+    test_root = importlib.import_module(test_path)
+    suite = discover_tests(test_root, args.backend)
+    unittest.TextTestRunner(verbosity=2).run(suite)
 
     summary = complete_test_session()
     print_summary(summary)
