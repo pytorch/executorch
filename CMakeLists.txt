@@ -45,7 +45,9 @@
 # ~~~
 #
 
-cmake_minimum_required(VERSION 3.24)
+# TODO Lower to 3.24 when XNNPACK dependency is updated to include
+# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
+cmake_minimum_required(VERSION 3.29)
 project(executorch)
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
@@ -159,6 +161,10 @@ endif()
 
 if(EXECUTORCH_BUILD_TESTS)
   include(CTest)
+else()
+  # It looks like some of our third-party deps will try to turn this on if it's
+  # not explicitly set, leading to confusing behavior.
+  set(BUILD_TESTING OFF)
 endif()
 
 add_subdirectory(third-party)
@@ -560,6 +566,10 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
 endif()
@@ -731,7 +741,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     endif()
 
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+    target_link_options(
+      executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file
+      "${WASM_MODEL_DIR}@/"
+    )
   endif()
 endif()
 

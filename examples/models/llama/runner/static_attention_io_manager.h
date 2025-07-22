@@ -48,12 +48,14 @@ class StaticKVCache {
       size_t cache_len,
       size_t head_dim,
       size_t max_input_len = 1,
+      size_t n_heads_per_cache = 1,
       bool transpose = false,
       StaticAttentionUpdateStyle style =
           StaticAttentionUpdateStyle::SLIDING_CACHE)
       : n_caches_(n_caches),
         cache_len_(cache_len),
         max_input_len_(max_input_len),
+        n_heads_per_cache_(n_heads_per_cache),
         head_dim_(head_dim),
         transpose_(transpose),
         style_(style),
@@ -63,13 +65,21 @@ class StaticKVCache {
       throw std::runtime_error("Not implemented.");
     }
 
+    if (style_ == StaticAttentionUpdateStyle::SLIDING_CACHE &&
+        n_heads_per_cache_ > 1) {
+      throw std::runtime_error(
+          "Sliding cache update strategy doesn't support more than one head per cache tensor.");
+    }
+
     if (style_ == StaticAttentionUpdateStyle::SLIDING_CACHE) {
       // Allocates on extra copy to accomodate caches sliding forward.
       cache_data_size_ = (n_caches_ + 1) * cache_len_ * head_dim_;
     } else {
-      cache_data_size_ = n_caches_ * cache_len_ * head_dim_;
+      cache_data_size_ =
+          n_caches_ * n_heads_per_cache_ * cache_len_ * head_dim_;
     }
-    update_data_size_ = n_caches_ * max_input_len_ * head_dim_;
+    update_data_size_ =
+        n_caches_ * n_heads_per_cache_ * max_input_len_ * head_dim_;
 
     cache_data_ = allocator_.allocate(cache_data_size_);
     update_data_ = allocator_.allocate(update_data_size_);
@@ -111,14 +121,40 @@ class StaticKVCache {
       auto outSizes = outMeta->sizes();
       ET_CHECK_MSG(inSizes[0] == 1, "Only support batch size 1.");
       ET_CHECK_MSG(outSizes[0] == 1, "Only support batch size 1.");
-      if (transpose_) {
-        ET_CHECK_MSG(inSizes[1] == head_dim_, "KV head dim mismatch.");
-        ET_CHECK_MSG(outSizes[1] == head_dim_, "KV head dim mismatch.");
-        ET_CHECK_MSG(inSizes[2] == cache_len_, "Cache length dim mismatch.");
+      if (n_heads_per_cache_ > 1) {
+        // More than 1 head per cache, meaning regular MHA is used. Tensor shape
+        // is (1, n_heads, seq_len, head_dim).
+        ET_CHECK_MSG(
+            inSizes.size() == 4, "Cache input tensor expected to have rank 4.");
+        ET_CHECK_MSG(
+            outSizes.size() == 4,
+            "Cache input tensor expected to have rank 4.");
+        ET_CHECK_MSG(
+            inSizes[1] == n_heads_per_cache_,
+            "Number of heads per cache mismatch.");
+        ET_CHECK_MSG(
+            outSizes[1] == n_heads_per_cache_,
+            "Number of heads per cache mismatch.");
       } else {
-        ET_CHECK_MSG(inSizes[2] == head_dim_, "KV head dim mismatch.");
-        ET_CHECK_MSG(outSizes[2] == head_dim_, "KV head dim mismatch.");
-        ET_CHECK_MSG(inSizes[1] == cache_len_, "Cache length dim mismatch.");
+        // 1 head per cache, meaning MHA is split up into multiple SHAs for QNN.
+        // Tensor shape is (1, seq_len, head_dim).
+        ET_CHECK_MSG(
+            inSizes.size() == 3, "Cache input tensor expected to have rank 3.");
+        ET_CHECK_MSG(
+            outSizes.size() == 3,
+            "Cache input tensor expected to have rank 3.");
+      }
+      auto ndim = inSizes.size();
+      if (transpose_) {
+        ET_CHECK_MSG(inSizes[ndim - 2] == head_dim_, "KV head dim mismatch.");
+        ET_CHECK_MSG(outSizes[ndim - 2] == head_dim_, "KV head dim mismatch.");
+        ET_CHECK_MSG(
+            inSizes[ndim - 1] == cache_len_, "Cache length dim mismatch.");
+      } else {
+        ET_CHECK_MSG(inSizes[ndim - 1] == head_dim_, "KV head dim mismatch.");
+        ET_CHECK_MSG(outSizes[ndim - 1] == head_dim_, "KV head dim mismatch.");
+        ET_CHECK_MSG(
+            inSizes[ndim - 2] == cache_len_, "Cache length dim mismatch.");
       }
 
       auto impl = ::executorch::runtime::etensor::TensorImpl(
@@ -180,8 +216,10 @@ class StaticKVCache {
     input_ptrs_.resize(n_caches_);
     output_ptrs_.resize(n_caches_);
     for (size_t i = 0; i < n_caches_; i++) {
-      input_ptrs_[i] = cache_data_ + i * cache_len_ * head_dim_;
-      output_ptrs_[i] = update_data_ + i * max_input_len_ * head_dim_;
+      input_ptrs_[i] =
+          cache_data_ + i * n_heads_per_cache_ * cache_len_ * head_dim_;
+      output_ptrs_[i] =
+          update_data_ + i * n_heads_per_cache_ * max_input_len_ * head_dim_;
     }
   }
 
@@ -213,10 +251,15 @@ class StaticKVCache {
       const auto& updateTensor =
           method.get_output(output_indices[i]).toTensor();
       ET_CHECK(output_ptrs_[i] == updateTensor.mutable_data_ptr<T>());
-      std::copy(
-          output_ptrs_[i] + update_pos * head_dim_,
-          output_ptrs_[i] + (update_pos + update_len) * head_dim_,
-          input_ptrs_[i] + valid_len_ * head_dim_);
+      auto update_seq_len = updateTensor.size(updateTensor.dim() - 2);
+      for (size_t j = 0; j < n_heads_per_cache_; j++) {
+        auto* update_head = output_ptrs_[i] + update_seq_len * head_dim_ * j;
+        auto* cache_head = input_ptrs_[i] + cache_len_ * head_dim_ * j;
+        std::copy(
+            update_head + update_pos * head_dim_,
+            update_head + (update_pos + update_len) * head_dim_,
+            cache_head + valid_len_ * head_dim_);
+      }
     }
     valid_len_ += update_len;
   }
@@ -224,6 +267,7 @@ class StaticKVCache {
   size_t n_caches_;
   size_t cache_len_;
   size_t max_input_len_;
+  size_t n_heads_per_cache_;
   size_t head_dim_;
   bool transpose_;
   StaticAttentionUpdateStyle style_;
@@ -414,6 +458,7 @@ class StaticAttentionIOManager {
     size_t cache_len{};
     size_t head_dim{};
     size_t max_input_len{};
+    size_t n_heads_per_cache{};
     size_t attn_mask_input_index{};
     size_t rope_freqs_cos_input_index{};
     size_t rope_freqs_sin_input_index{};
@@ -434,6 +479,7 @@ class StaticAttentionIOManager {
             config_.cache_len,
             config_.head_dim,
             config_.max_input_len,
+            config_.n_heads_per_cache,
             false,
             config_.style),
         vCaches_(
@@ -441,6 +487,7 @@ class StaticAttentionIOManager {
             config_.cache_len,
             config_.head_dim,
             config_.max_input_len,
+            config_.n_heads_per_cache,
             false,
             config_.style) {
     ET_LOG(
