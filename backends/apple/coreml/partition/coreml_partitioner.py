@@ -157,7 +157,9 @@ class CoreMLPartitioner(Partitioner):
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
             _OperatorsSupportedForCoreMLBackend(
-                self.skip_ops_for_coreml_delegation, self.lower_full_graph, log=True,
+                self.skip_ops_for_coreml_delegation,
+                self.lower_full_graph,
+                log=True,
             ),
             allows_single_node_partition=True,
         )
@@ -194,7 +196,9 @@ class CoreMLPartitioner(Partitioner):
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         do_not_decompose = []
         op_support = _OperatorsSupportedForCoreMLBackend(
-            self.skip_ops_for_coreml_delegation, self.lower_full_graph, log=False,
+            self.skip_ops_for_coreml_delegation,
+            self.lower_full_graph,
+            log=False,
         )
 
         # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace
