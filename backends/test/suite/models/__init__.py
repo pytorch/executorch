@@ -6,21 +6,21 @@
 
 # pyre-unsafe
 
+import itertools
+import os
+import unittest
+from typing import Any, Callable
+
+import torch
 from executorch.backends.test.harness import Tester
 from executorch.backends.test.suite import get_test_flows
 from executorch.backends.test.suite.context import get_active_test_context, TestContext
 from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.reporting import log_test_summary
-from executorch.backends.test.suite.runner import run_test 
-from typing import Any, Callable
-
-import itertools
-import os
-import torch
-import unittest
+from executorch.backends.test.suite.runner import run_test
 
 
-DTYPES = [
+DTYPES: list[torch.dtype] = [
     torch.float16,
     torch.float32,
     torch.float64,
@@ -37,10 +37,10 @@ def load_tests(loader, suite, pattern):
 
 
 def _create_test(
-    cls, 
-    test_func: Callable, 
-    flow: TestFlow, 
-    dtype: torch.dtype, 
+    cls,
+    test_func: Callable,
+    flow: TestFlow,
+    dtype: torch.dtype,
     use_dynamic_shapes: bool,
 ):
     def wrapped_test(self):
@@ -50,15 +50,15 @@ def _create_test(
         }
         with TestContext(test_name, flow.name, params):
             test_func(self, dtype, use_dynamic_shapes, flow.tester_factory)
-    
+
     dtype_name = str(dtype)[6:]  # strip "torch."
     test_name = f"{test_func.__name__}_{flow.name}_{dtype_name}"
     if use_dynamic_shapes:
         test_name += "_dynamic_shape"
 
-    setattr(wrapped_test, "_name", test_func.__name__)
-    setattr(wrapped_test, "_flow", flow)
-    
+    wrapped_test._name = test_func.__name__  # type: ignore
+    wrapped_test._flow = flow  # type: ignore
+
     setattr(cls, test_name, wrapped_test)
 
 
@@ -67,25 +67,37 @@ def _expand_test(cls, test_name: str) -> None:
     test_func = getattr(cls, test_name)
     supports_dynamic_shapes = getattr(test_func, "supports_dynamic_shapes", True)
     dynamic_shape_values = [True, False] if supports_dynamic_shapes else [False]
+    dtypes = getattr(test_func, "dtypes", DTYPES)
 
-    for flow, dtype, use_dynamic_shapes in itertools.product(get_test_flows(), DTYPES, dynamic_shape_values):
+    for flow, dtype, use_dynamic_shapes in itertools.product(
+        get_test_flows().values(), dtypes, dynamic_shape_values
+    ):
         _create_test(cls, test_func, flow, dtype, use_dynamic_shapes)
     delattr(cls, test_name)
 
 
 def model_test_cls(cls) -> Callable | None:
-    """ Decorator for model tests. Handles generating test variants for each test flow and configuration. """
+    """Decorator for model tests. Handles generating test variants for each test flow and configuration."""
     for key in dir(cls):
         if key.startswith("test_"):
             _expand_test(cls, key)
     return cls
 
 
-def model_test_params(supports_dynamic_shapes: bool) -> Callable:
-    """ Optional parameter decorator for model tests. Specifies test pararameters. Only valid with a class decorated by model_test_cls. """
+def model_test_params(
+    supports_dynamic_shapes: bool = True,
+    dtypes: list[torch.dtype] | None = None,
+) -> Callable:
+    """Optional parameter decorator for model tests. Specifies test pararameters. Only valid with a class decorated by model_test_cls."""
+
     def inner_decorator(func: Callable) -> Callable:
-        setattr(func, "supports_dynamic_shapes", supports_dynamic_shapes)
+        func.supports_dynamic_shapes = supports_dynamic_shapes  # type: ignore
+
+        if dtypes is not None:
+            func.dtypes = dtypes  # type: ignore
+
         return func
+
     return inner_decorator
 
 
@@ -94,11 +106,11 @@ def run_model_test(
     inputs: tuple[Any],
     dtype: torch.dtype,
     dynamic_shapes: Any | None,
-    tester_factory: Callable[[], Tester],    
+    tester_factory: Callable[[], Tester],
 ):
     model = model.to(dtype)
     context = get_active_test_context()
-    
+
     # This should be set in the wrapped test. See _create_test above.
     assert context is not None, "Missing test context."
 
@@ -111,7 +123,7 @@ def run_model_test(
         context.params,
         dynamic_shapes=dynamic_shapes,
     )
-    
+
     log_test_summary(run_summary)
 
     if not run_summary.result.is_success():

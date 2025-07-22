@@ -72,7 +72,7 @@ def _is_test_enabled(test_case: unittest.TestCase, test_filter: TestFilter) -> b
     if not hasattr(test_method, "_flow"):
         print(f"Test missing flow: {test_method}")
 
-    flow: TestFlow = getattr(test_method, "_flow")
+    flow: TestFlow = test_method._flow
 
     if test_filter.backends is not None and flow.backend not in test_filter.backends:
         return False
