@@ -54,6 +54,8 @@ def run_test(  # noqa: C901
     
     model.eval()
 
+    model.eval()
+
     # Ensure the model can run in eager mode.
     try:
         model(*inputs)
