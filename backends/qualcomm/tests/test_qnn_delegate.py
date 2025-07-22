@@ -1521,20 +1521,7 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_block(self):
-        import numpy as np
-
-        np.random.seed(1)
         o_ch, i_ch, kernel, padding = 32, 512, (1, 1), 0
-        input = (
-            torch.from_numpy(np.random.uniform(-3, 3, size=(1, 1, 32, i_ch)))
-            .to(torch.float)
-            .permute(0, 3, 1, 2)
-        )
-        weight = (
-            torch.from_numpy(np.random.uniform(-3, 3, size=(1, 1, i_ch, o_ch)))
-            .to(torch.float)
-            .permute(3, 2, 0, 1)
-        )
 
         modules = [
             Conv2dSingle(  # noqa: F405
@@ -1551,20 +1538,18 @@ class TestQNNQuantizedOperator(TestQNN):
                 padding=padding,
             ),
         ]
-        for module in modules:
-            module.conv.weight = torch.nn.Parameter(weight)
 
-        sample_input = (input,)
+        sample_input = (torch.randn(1, i_ch, 1, o_ch),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 # update block size for convolution weight (OIHW)
                 # channel dimension(O) is defaultly sliced in QNN
-                # divide dimension(I) into 4 groups
+                # divide dimension(I) into 16 groups
                 module = self.get_qdq_module(
                     module,
                     sample_input,
                     quant_dtype=QuantDtype.use_16a4w_block,
-                    block_size_map={"conv2d": (1, 128, 1, 1)},
+                    block_size_map={"conv2d": (1, 32, 1, 1)},
                 )
                 self.lower_module_and_test_output(module, sample_input)
 
