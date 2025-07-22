@@ -12,12 +12,12 @@ Before you begin, make sure you have:
    - For HuggingFace tokenizers, this is a JSON file `tokenizer.json`
    - For SentencePiece tokenizers, this is is a `tokenizer.model` file and normally live alongside the weights file
 3. CMake and a C++ compiler installed
-   - CMake version 3.24 or higher
+   - CMake version 3.29 or higher
    - g++ or clang compiler
 
 ## Model Metadata
 
-The metadata includes several important configuration parameters to be included during export step:
+The metadata includes several important configuration parameters to be included during export step, which will be used by the runner library:
 
 1. **`enable_dynamic_shape`**: Whether the model supports dynamic input shapes
 2. **`max_seq_len`**: Maximum sequence length the model can handle
@@ -62,6 +62,39 @@ target_link_libraries(your_app PRIVATE extension_llm_runner)
 ## Building the Llama Runner
 
 ExecuTorch provides a complete example of a C++ runner for Llama models in the [`examples/models/llama`](https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md#step-3-run-on-your-computer-to-validate) directory. This runner demonstrates how to use the LLM runner library to run Llama models exported to the `.pte` format.
+
+Please note that this runner library is not limited to Llama models and can be used with any text-only decoder-only LLM model that has been exported to the `.pte`.
+
+## Basic Usage Example
+
+Here's a simplified example of using the runner:
+
+```cpp
+#include <executorch/extension/llm/runner/text_llm_runner.h>
+
+using namespace executorch::extension::llm;
+
+int main() {
+  // Load tokenizer and create runner
+  auto tokenizer = load_tokenizer("path/to/tokenizer.json", nullptr, std::nullopt, 0, 0);
+  auto runner = create_text_llm_runner("path/to/model.pte", std::move(tokenizer));
+
+  // Load the model
+  runner->load();
+
+  // Configure generation
+  GenerationConfig config;
+  config.max_new_tokens = 100;
+  config.temperature = 0.8f;
+
+  // Generate text with streaming output
+  runner->generate("Hello, world!", config,
+    [](const std::string& token) { std::cout << token << std::flush; },
+    nullptr);
+
+  return 0;
+}
+```
 
 ## The Runner API Architecture
 
@@ -220,36 +253,6 @@ Supported tokenizer formats include:
 
 For custom tokenizers, you can find implementations in the [pytorch-labs/tokenizers](https://github.com/pytorch-labs/tokenizers) repository.
 
-## Basic Usage Example
-
-Here's a simplified example of using the runner:
-
-```cpp
-#include <executorch/extension/llm/runner/text_llm_runner.h>
-
-using namespace executorch::extension::llm;
-
-int main() {
-  // Load tokenizer and create runner
-  auto tokenizer = load_tokenizer("path/to/tokenizer.json", nullptr, std::nullopt, 0, 0);
-  auto runner = create_text_llm_runner("path/to/model.pte", std::move(tokenizer));
-
-  // Load the model
-  runner->load();
-
-  // Configure generation
-  GenerationConfig config;
-  config.max_new_tokens = 100;
-  config.temperature = 0.8f;
-
-  // Generate text with streaming output
-  runner->generate("Hello, world!", config,
-    [](const std::string& token) { std::cout << token << std::flush; },
-    nullptr);
-
-  return 0;
-}
-```
 
 ## Other APIs
 
