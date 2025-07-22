@@ -85,11 +85,15 @@ public:
 
 Let's examine each method in detail:
 
-#### `bool is_loaded() const`
+```c++
+bool is_loaded() const
+```
 
 Checks if the model and all necessary resources have been loaded into memory and are ready for inference. This method is useful for verifying the runner's state before attempting to generate text.
 
-#### `runtime::Error load()`
+```c++
+runtime::Error load()
+```
 
 Loads the model and prepares it for inference. This includes:
 - Loading the model weights from the `.pte` file
@@ -98,8 +102,13 @@ Loads the model and prepares it for inference. This includes:
 
 This method should be called before any generation attempts. It returns an `Error` object indicating success or failure.
 
-#### `runtime::Error generate(const std::string& prompt, const GenerationConfig& config, std::function<void(const std::string&)> token_callback, std::function<void(const Stats&)> stats_callback)`
-
+```c++
+runtime::Error generate(
+   const std::string& prompt,
+   const GenerationConfig& config,
+   std::function<void(const std::string&)> token_callback,
+   std::function<void(const Stats&)> stats_callback)
+```
 The primary method for text generation. It takes:
 
 - `prompt`: The input text to generate from
@@ -109,11 +118,20 @@ The primary method for text generation. It takes:
 
 The token callback is called for each token as it's generated, allowing for streaming output. The stats callback provides detailed performance metrics after generation completes.
 
-#### `runtime::Error generate_from_pos(const std::string& prompt, int64_t start_pos, const GenerationConfig& config, std::function<void(const std::string&)> token_callback, std::function<void(const Stats&)> stats_callback)`
+```c++
+runtime::Error generate_from_pos(
+   const std::string& prompt,
+   int64_t start_pos,
+   const GenerationConfig& config,
+   std::function<void(const std::string&)> token_callback,
+   std::function<void(const Stats&)> stats_callback)
+```
 
 An advanced version of `generate()` that allows starting generation from a specific position in the KV cache. This is useful for continuing generation from a previous state.
 
-#### `void stop()`
+```c++
+void stop()
+```
 
 Immediately stops the generation loop. This is typically called from another thread to interrupt a long-running generation.
 
