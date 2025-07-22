@@ -1123,6 +1123,9 @@ def _gen_edge_manager_for_partitioners(
     ops_set_to_not_decompose_by_program = {}
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
+        # Functionalize program before asking partitioners to preserve ops
+        program = program.run_decompositions({})
+
         if partitioner is not None:
             # preserve all ops listed by all partitioners first
             all_ops_no_decomp = set()
