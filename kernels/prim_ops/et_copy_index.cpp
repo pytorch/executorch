@@ -68,6 +68,18 @@ void et_copy_index(KernelRuntimeContext& context, EValue** stack) {
   (void)context;
   SizesType expected_output_size[kTensorDimensionLimit];
 
+  // Verify that the arguments exist with the expected types.
+  ET_CHECK_MSG(stack != nullptr, "Stack pointer is null.");
+  ET_CHECK_MSG(
+      stack[0] != nullptr && (*stack[0]).isTensor(),
+      "copy_to is null, or not a tensor.");
+  ET_CHECK_MSG(
+      stack[1] != nullptr && (*stack[1]).isTensor(),
+      "copy_from is null, or not a tensor.");
+  ET_CHECK_MSG(
+      stack[2] != nullptr && (*stack[2]).isInt(),
+      "index is null, or not an integer.");
+
   auto copy_to = (*stack[0]).toTensor();
   auto copy_from = (*stack[1]).toTensor();
   auto index = (*stack[2]).toInt();
