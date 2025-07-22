@@ -4313,7 +4313,7 @@ class TestExampleLLMScript(TestQNN):
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
 
-    def test_qwen2_5(self):
+    def test_static_qwen2_5(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
 
@@ -4338,11 +4338,14 @@ class TestExampleLLMScript(TestQNN):
             "--decoder_model",
             "qwen2_5",
             "--model_mode",
-            "hybrid",
-            "--prefill_ar_len",
-            "32",
+            "kv",
             "--max_seq_len",
-            "128",
+            "1024",
+            "--eval_perplexity",
+            "--tasks",
+            "wikitext",
+            "--limit",
+            "1",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -4355,8 +4358,6 @@ class TestExampleLLMScript(TestQNN):
         if self.pre_gen_pte:
             cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
-        # Accuracy is bad for now. Just check user's prompt is returned.
-        golden_start_with = "My favourite condiment is "
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -4365,12 +4366,13 @@ class TestExampleLLMScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                model_out = msg["result"][0]
-                self.assertTrue(
-                    model_out.startswith(golden_start_with),
-                    f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
-                )
-                self.assertGreaterEqual(msg["inference_speed"], 95)  # Lanai
+                inference_speed_ref = {"SM8650": 110, "SM8750": 130}
+                self.assertLessEqual(msg["wiki_ppl"], 25)
+                self.assertLessEqual(msg["pte_size"], 800000000)  # 800mb
+                if self.model in inference_speed_ref:
+                    self.assertGreaterEqual(
+                        msg["inference_speed"], inference_speed_ref[self.model]
+                    )
 
 
 class TestExampleOssScript(TestQNN):
