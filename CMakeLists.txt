@@ -45,10 +45,10 @@
 # ~~~
 #
 
-cmake_minimum_required(VERSION 3.24)
+# TODO Lower to 3.24 when XNNPACK dependency is updated to include
+# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
+cmake_minimum_required(VERSION 3.29)
 project(executorch)
-
-# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
@@ -82,6 +82,7 @@ announce_configured_options(BUCK2)
 
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
+announce_configured_options(BUILD_TESTING)
 
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
@@ -97,11 +98,6 @@ else()
 endif()
 announce_configured_options(CCACHE_PROGRAM)
 
-# Print all the configs that were called with announce_configured_options.
-print_configured_options()
-
-# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Setup RPATH. See
@@ -112,11 +108,12 @@ set(CMAKE_SKIP_BUILD_RPATH OFF)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 # Automatically add all linked folders that are NOT in the build directory to
 # the rpath (per library?)
-# TODO: Doesn't work for us right now because we are
-# not installing .so's into the correct locations. For example we have
-# libcustom_ops_aot_lib.so depending on _portable_lib.so, which was eventually
-# put under <site-packages>/executorch/extension/pybindings/ but this rpath is
-# not automatically added because at build time it seems `portable_lib` is being
+#
+# TODO: Doesn't work for us right now because we are not installing .so's into
+# the correct locations. For example we have libcustom_ops_aot_lib.so depending
+# on _portable_lib.so, which was eventually put under
+# <site-packages>/executorch/extension/pybindings/ but this rpath is not
+# automatically added because at build time it seems `portable_lib` is being
 # built under the same directory, so no extra rpath is being added. To properly
 # fix this we need to install `portable_lib` into the correct path.
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
@@ -321,8 +318,9 @@ if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
            " -fprofile-instr-generate -fcoverage-mapping"
     )
   else()
-    message(FATAL_ERROR
-            "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
+    message(
+      FATAL_ERROR
+        "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
     )
   endif()
 endif()
@@ -564,6 +562,10 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
 endif()
@@ -633,8 +635,8 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here otherwise
-    # uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
+    # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
     list(APPEND _dep_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   endif()
 
@@ -748,3 +750,6 @@ if(EXECUTORCH_BUILD_ANDROID_JNI)
 endif()
 
 include(Test.cmake)
+
+# Print all the configs that were called with announce_configured_options.
+print_configured_options()
