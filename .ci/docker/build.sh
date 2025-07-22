@@ -7,8 +7,10 @@
 
 set -exu
 
-IMAGE_NAME="$1"
+FULL_IMAGE_NAME="$1"
 shift
+
+IMAGE_NAME=$(echo "${FULL_IMAGE_NAME}" | sed 's/ci-image://')
 
 echo "Building ${IMAGE_NAME} Docker image"
 
