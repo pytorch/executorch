@@ -748,14 +748,23 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_link_options_gc_sections(executor_runner)
   endif()
+  target_link_libraries(executor_runner ${_executor_runner_libs})
+  target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+
+  # Automatically set when using `emcmake cmake` for Wasm build.
+  if(EMSCRIPTEN)
+    # Directory of model pte files to embed in the wasm binary.
+    if(NOT DEFINED WASM_MODEL_DIR)
+      set(WASM_MODEL_DIR "${CMAKE_SOURCE_DIR}/models/")
+    endif()
+
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
-endif()
-
-if(EXECUTORCH_BUILD_ANDROID_JNI)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
 if(EXECUTORCH_BUILD_ANDROID_JNI)
