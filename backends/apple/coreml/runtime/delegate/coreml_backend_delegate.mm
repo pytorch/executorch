@@ -37,6 +37,8 @@ using executorch::runtime::ArrayRef;
 using executorch::runtime::Backend;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendOptionContext;
+using executorch::runtime::BackendOption;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::DelegateHandle;
 using executorch::runtime::EValue;
@@ -45,6 +47,7 @@ using executorch::runtime::EventTracerDebugLogLevel;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::get_backend_class;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::aten::SizesType;
 using executorch::aten::Tensor;
 using executorch::runtime::kTensorDimensionLimit;
@@ -269,6 +272,16 @@ bool CoreMLBackendDelegate::is_available() const {
 void CoreMLBackendDelegate::destroy(DelegateHandle* handle) const {
     ET_LOG(Debug, "%s: destroy called.", ETCoreMLStrings.delegateIdentifier.UTF8String);
     impl_->destroy(handle);
+}
+
+Error set_option(BackendOptionContext& context, const Span<BackendOption>& backend_options) {
+    ET_LOG(Debug, "%s: set_option called.", ETCoreMLStrings.delegateIdentifier.UTF8String);
+    return Error::Ok;
+}
+
+Error get_option(BackendOptionContext& context, Span<BackendOption>& backend_options) {
+    ET_LOG(Debug, "%s: get_option called.", ETCoreMLStrings.delegateIdentifier.UTF8String);
+    return Error::Ok;
 }
 
 bool CoreMLBackendDelegate::purge_models_cache() const noexcept {
