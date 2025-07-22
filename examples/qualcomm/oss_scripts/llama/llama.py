@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 import time
+import types
 from functools import partial
 from multiprocessing.connection import Client
 
@@ -63,6 +64,14 @@ from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.range_setting_pt2e import (
+    compute_scales,
+    make_custom_quantizer,
+    reverse_quantize_module_swap,
+    set_scales,
+    WrappedLlamaModel,
+)
+
 from executorch.examples.qualcomm.utils import (
     make_output_dir,
     make_quantizer,
@@ -81,6 +90,8 @@ from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
 from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
+
+from torchao.prototype.spinquant import apply_spinquant
 
 from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -380,15 +391,18 @@ class SingleLlama:
 
         return quant_io_type
 
-    def quantize(self, quant_dtype, args, tokenizer, custom_annotations=()):
+    def quantize(
+        self,
+        quant_dtype,
+        args,
+        tokenizer,
+        custom_annotations=(),
+        scales_state_dict=None,
+    ):
         self.quant_dtype = quant_dtype
-        quantizer = make_quantizer(
-            quant_dtype=quant_dtype,
-            per_channel_conv=True,
-            per_channel_linear=True,
-            act_observer=MinMaxObserver,
+        quantizer = make_custom_quantizer(
+            quant_dtype, args.range_setting, custom_annotations
         )
-        quantizer.add_custom_quant_annotations(custom_annotations)
 
         self.has_quant_io = True
         fx_graph_module = None
@@ -408,6 +422,7 @@ class SingleLlama:
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
 
         logging.info("Quantizing the model...")
+
         calibrate(
             self.get_example_inputs(self.llama_meta["get_use_kv_cache"]),
             args.prompt[0],
@@ -418,6 +433,11 @@ class SingleLlama:
             kv_updater=args.kv_updater,
             use_i64_token=args.embedding_quantize is not None,
         )
+
+        if scales_state_dict:
+            set_scales(
+                fx_graph_module, scales_state_dict, self.llama_graph_module.head_dim
+            )
 
         self.llama_graph_module = convert_pt2e(fx_graph_module)
 
@@ -597,6 +617,55 @@ def compile(args, pte_filename, tokenizer):
     end_load_ts = time.time()
     logging.info(f"Time for loading checkpoint: {end_load_ts - start_ts}")
 
+    if args.spinquant:
+        config = types.SimpleNamespace(
+            dim=prefill_config.dim,
+            head_dim=prefill_config.dim // prefill_config.n_heads,
+            n_local_heads=prefill_config.n_heads,
+            intermediate_size=4 * prefill_config.dim,
+        )
+        for llama_instance in llama_instance_list:
+            model = llama_instance
+            model.config = config
+            # Currently this script is on CPU: run with CUDA_VISIBLE_DEVICES=-1
+            apply_spinquant(
+                model,
+                use_r1=True,
+                use_r2=True,
+                use_r4=False,
+                pretrained_rotation_path=None,
+                qkv_split=True,
+            )
+            logging.info("Applied SpinQuant to the model")
+
+    scales_state_dict = dict()
+    if args.range_setting == "mse_with_act_loss":
+        try:
+            scales_state_dict = torch.load(
+                "scales_state_dict.pth", map_location=torch.device("cpu")
+            )
+            logging.info("Loaded scales_state_dict from file")
+        except:
+            logging.info("Computing scales using activation loss range setting")
+            model = llama_instance_list[1]
+            model.to(torch.float)
+            ar_len, model.ar_len = model.ar_len, model.max_seq_len
+            tokens, atten_mask = model.get_example_inputs(use_kv_cache=False)
+            atten_mask.to(torch.float)
+            wrapped_model = WrappedLlamaModel(
+                model, atten_mask, model.use_kv_cache, args.max_seq_len, args.device
+            )
+            act_bits, weight_bits = {
+                "8a8w": (8, 8),
+                "16a4w": (16, 4),
+                "16a4w_block": (16, 4),
+            }[args.ptq]
+            scales_state_dict = compute_scales(
+                wrapped_model, tokens, weight_bits, act_bits, 1600
+            )
+            reverse_quantize_module_swap(wrapped_model)
+            model.ar_len = ar_len
+
     for llama_instance in llama_instance_list:
         for layer in llama_instance.layers:
             if getattr(layer.attention, "prepare_sha", None):
@@ -658,6 +727,7 @@ def compile(args, pte_filename, tokenizer):
                 args=args,
                 tokenizer=tokenizer,
                 custom_annotations=custom_annotations,
+                scales_state_dict=scales_state_dict,
             )
             # If hybrid and lookahead mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
             if i == 0 and args.model_mode in ["hybrid", "lookahead"]:
@@ -673,7 +743,7 @@ def compile(args, pte_filename, tokenizer):
                         annotate_prefill_kv_output,
                         kv_quant_attrs=kv_quant_attrs,
                     ),
-                )
+                )  # temporarily remove annotate_prefill_kv_output
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                 "get_quant_io_dtype_fn"
@@ -1060,6 +1130,18 @@ def _build_parser():
         help="Represents the maximum number of speculations or candidate n-grams that the algorithm considers in each step for verification. It balances the trade-off between computation efficiency and exploring more possibilities.",
         default=8,
         type=int,
+    )
+    # TODO: remove mse_weight_only (doesn't help much), only keep mse_with_act_loss (=SeqMSE)
+    parser.add_argument(
+        "--range_setting",
+        help="Choose which range setting method for weight quantization (e.g. mse_weight_only or mse_with_act_loss). If not specified, defaults to minmax",
+        type=str,
+    )
+
+    parser.add_argument(
+        "--spinquant",
+        help="Apply SpinQuant (R1+R2) to the model. Uses random Hadamard matrices for rotations",
+        action="store_true",
     )
 
     parser.add_argument("-v", "--verbose", action="store_true")
