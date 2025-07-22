@@ -6,6 +6,7 @@
 from copy import copy
 
 import torch
+from executorch.backends.arm.tosa_quant_utils import QuantArgs
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -48,7 +49,40 @@ class DecomposeGroupedConv(ExportPass):
                     torch.ops.aten.cat.default,
                 )
             case _:
-                raise RuntimeError("Unvalid op for grouped conv decomposition.")
+                raise RuntimeError("Invalid op for grouped conv decomposition")
+
+    @staticmethod
+    def _split_per_channel_qparams(qarg, index, output_slice_size):
+        if qarg is not None and qarg.per_channel:
+            start_index = index * output_slice_size
+            stop_index = (index + 1) * output_slice_size
+            return QuantArgs(
+                scale=qarg.scale[start_index:stop_index],
+                zp=qarg.zp[start_index:stop_index],
+                qmin=qarg.qmin,
+                qmax=qarg.qmax,
+                dtype=qarg.dtype,
+                axis=qarg.axis,
+                per_channel=qarg.per_channel,
+            )
+        return qarg
+
+    @staticmethod
+    def _get_meta_copy(meta, i, output_slice_size):
+        meta_copy = meta.copy()
+        if "input_qparams" in meta.data and len(meta.data["input_qparams"]) > 0:
+            # Handle per-channel quantization by splitting quantization params
+            # similarly to how activations/weights/biases are split.
+            new_qparams = meta.data.get("input_qparams").copy()
+            # Get quantization params of the weights and slice them.
+            qarg = new_qparams[1]
+            new_qparams[1] = DecomposeGroupedConv._split_per_channel_qparams(
+                qarg, index=i, output_slice_size=output_slice_size
+            )
+
+            meta_copy.data["input_qparams"] = new_qparams
+
+        return meta_copy
 
     def call_operator(self, op, args, kwargs, meta):
         if op == exir_ops.edge.aten.convolution.default:
@@ -105,7 +139,6 @@ class DecomposeGroupedConv(ExportPass):
             if bias_node is None:
                 bias_slices.append(None)
             else:
-
                 start_index = i * output_slice_size
                 stop_index = (i + 1) * output_slice_size
                 slice_args = (bias_node, 0, start_index, stop_index)
@@ -115,20 +148,23 @@ class DecomposeGroupedConv(ExportPass):
                 )
 
         output_slices = []
-        for input_slice, filter_slice, bias_slice in zip(
-            input_slices, filter_slices, bias_slices
+        for i, (input_slice, filter_slice, bias_slice) in enumerate(
+            zip(input_slices, filter_slices, bias_slices)
         ):
+
+            meta_copy = DecomposeGroupedConv._get_meta_copy(meta, i, output_slice_size)
 
             if op == exir_ops.edge.aten.convolution.default:
                 conv_args = (input_slice, filter_slice, bias_slice, *args[3:8], 1)
             elif op == torch.ops.aten.conv2d.default:
                 conv_args = (input_slice, filter_slice, bias_slice, *args[3:6], 1)
             else:
-                raise RuntimeError("Unvalid op for grouped conv decomposition.")
+                raise RuntimeError("Invalid op for grouped conv decomposition")
 
             output_slices.append(
-                super().call_operator(conv_op, conv_args, kwargs, meta)
+                super().call_operator(conv_op, conv_args, kwargs, meta_copy)
             )
 
         cat_args = (output_slices, 1)
-        return super().call_operator(cat_op, cat_args, kwargs, no_q_dq_meta)
+        # propagate original metadata (including quantization params) to the concatenated output
+        return super().call_operator(cat_op, cat_args, kwargs, meta)

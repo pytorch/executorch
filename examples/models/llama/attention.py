@@ -330,10 +330,6 @@ class AttentionMHA(Attention):
         args: ModelArgs,
         layer_id: int,
         rope: Rope,
-        wq: Optional[nn.Module] = None,
-        wk: Optional[nn.Module] = None,
-        wv: Optional[nn.Module] = None,
-        wo: Optional[nn.Module] = None,
     ):
         """
         Multi-head attention layer.
@@ -342,10 +338,6 @@ class AttentionMHA(Attention):
             args (ModelArgs): Model configuration parameters.
             layer_id (int): Layer index.
             rope (Rope): Rotary position embedding module.
-            wq (Optional[nn.Module]): Query projection module. If None, use regular nn.Linear.
-            wk (Optional[nn.Module]): Key projection module. If None, use regular nn.Linear.
-            wv (Optional[nn.Module]): Value projection module. If None, use regular nn.Linear.
-            wo (Optional[nn.Module]): Output projection module. If None, use regular nn.Linear.
         """
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
@@ -372,29 +364,61 @@ class AttentionMHA(Attention):
             self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
 
         self.wq = (
-            wq
-            if wq is not None
+            LoRALinear(
+                in_dim=args.dim,
+                out_dim=args.n_heads * args.head_dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
+                dropout=0.0,
+                use_bias=args.attention_qkv_bias,
+            )
+            if args.target_modules is not None
+            and "q_proj" in args.target_modules
             else nn.Linear(
                 self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
             )
         )
         self.wk = (
-            wk
-            if wk is not None
+            LoRALinear(
+                in_dim=args.dim,
+                out_dim=args.n_kv_heads * args.head_dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
+                dropout=0.0,
+                use_bias=args.attention_qkv_bias,
+            )
+            if args.target_modules is not None
+            and "k_proj" in args.target_modules
             else nn.Linear(
                 self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
             )
         )
         self.wv = (
-            wv
-            if wv is not None
+            LoRALinear(
+                in_dim=args.dim,
+                out_dim=args.n_kv_heads * args.head_dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
+                dropout=0.0,
+                use_bias=args.attention_qkv_bias,
+            )
+            if args.target_modules is not None
+            and "v_proj" in args.target_modules
             else nn.Linear(
                 self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
             )
         )
         self.wo = (
-            wo
-            if wo is not None
+            LoRALinear(
+                in_dim=args.n_kv_heads * args.head_dim,
+                out_dim=args.dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
+                dropout=0.0,
+                use_bias=args.attention_qkv_bias,
+            )
+            if args.target_modules is not None
+            and "output_proj" in args.target_modules
             else nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
         )
 

@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -10,11 +16,14 @@ from executorch.exir.program import (
     ExecutorchProgramManager,
     to_edge_transform_and_lower,
 )
+from executorch.exir.program._program import _transform
 from executorch.exir.schema import Program
 from executorch.extension.export_util.utils import save_pte_program
 from executorch.runtime import Runtime, Verification
 from tabulate import tabulate
 from torch import nn
+
+from torch._export.pass_base import PassType
 from torch.export import ExportedProgram
 from torchao.quantization import quantize_
 from torchao.quantization.pt2e import allow_exported_model_train_eval
@@ -95,9 +104,7 @@ class ExportStage(Stage):
 
     def __init__(
         self,
-        pre_edge_transform_passes: Optional[
-            Callable[[ExportedProgram], ExportedProgram]
-        ] = None,
+        pre_edge_transform_passes: Optional[List[PassType]] = None,
     ) -> None:
         self._exported_program: Dict[str, ExportedProgram] = {}
         self._pre_edge_transform_passes = pre_edge_transform_passes
@@ -153,10 +160,10 @@ class ExportStage(Stage):
                 )
 
                 # Apply pre-edge transform passes if available
-                if self._pre_edge_transform_passes is not None:
-                    for pre_edge_transform_pass in self._pre_edge_transform_passes:
-                        self._exported_program[method_name] = pre_edge_transform_pass(
-                            self._exported_program[method_name]
+                if pre_edge_transform_passes := self._pre_edge_transform_passes or []:
+                    for pass_ in pre_edge_transform_passes:
+                        self._exported_program[method_name] = _transform(
+                            self._exported_program[method_name], pass_
                         )
 
     def get_artifacts(self) -> Dict[str, ExportedProgram]:

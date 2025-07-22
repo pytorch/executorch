@@ -1,4 +1,5 @@
-# Copyright 2024 NXP
+# Copyright (c) 2024-2025 NXP
+# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,6 +19,7 @@ class Conv2dModule(torch.nn.Module):
         out_channels: int = 8,
         padding: Union[str, int, Collection[int]] = 0,
         stride: Union[int, tuple[int, int]] = 2,
+        group: int = 1,
     ):
         super().__init__()
 
@@ -29,6 +31,7 @@ class Conv2dModule(torch.nn.Module):
             padding=padding,
             dilation=dilation,
             bias=bias,
+            groups=group,
         )
 
     def forward(self, x):
@@ -236,3 +239,16 @@ class Conv2dPermuteModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return torch.permute(x, [0, 2, 1, 3])
+
+
+class Conv2dReLUMaxPoolModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 64, 2, bias=False)
+        self.relu = torch.nn.ReLU()
+        self.pool = torch.nn.MaxPool2d(2, 2)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.relu(x)
+        return self.pool(x)

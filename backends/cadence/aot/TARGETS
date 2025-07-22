@@ -185,6 +185,34 @@ python_library(
 )
 
 python_library(
+    name = "program_builder",
+    srcs = [
+        "program_builder.py",
+    ],
+    typing = True,
+    deps = [
+        ":graph_builder",
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:lib",
+        "fbcode//executorch/exir:pass_base",
+        "fbcode//executorch/exir/verification:verifier",
+    ],
+)
+
+python_unittest(
+    name = "test_program_builder",
+    srcs = [
+        "tests/test_program_builder.py",
+    ],
+    typing = True,
+    deps = [
+        ":program_builder",
+        "//caffe2:torch",
+        "//later:lib",
+    ],
+)
+
+python_library(
     name = "fuse_ops",
     srcs = [
         "fuse_ops.py",
@@ -508,6 +536,7 @@ python_unittest(
         ":typing_stubs",
         ":ops_registrations",
         ":pass_utils",
+        ":program_builder",
         "//caffe2:torch",
         "//executorch/exir:memory",
         "//executorch/exir/dialects:lib",
@@ -523,8 +552,10 @@ python_unittest(
     ],
     typing = True,
     deps = [
+        ":program_builder",
         "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/runtime:runtime",
         "//later:lib",
     ],
 )
