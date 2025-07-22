@@ -31,7 +31,8 @@ class Quantize(Stage):
         self.calibrate = calibrate
         self.calibration_samples = calibration_samples
 
-        self.quantizer.set_global(self.quantization_config)
+        if self.quantization_config is not None:
+            self.quantizer.set_global(self.quantization_config)
 
         self.converted_graph = None
         self.is_qat = is_qat

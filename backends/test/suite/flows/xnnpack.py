@@ -1,0 +1,36 @@
+from executorch.backends.test.harness.stages import Quantize
+from executorch.backends.test.suite.flow import TestFlow
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import get_symmetric_quantization_config
+from executorch.backends.xnnpack.test.tester import (
+    Quantize as XnnpackQuantize,
+    Tester as XnnpackTester
+)
+from typing import Callable
+
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+def _create_xnnpack_flow_base(name: str, quantize_stage_factory: Callable[..., Quantize] | None = None) -> TestFlow:
+    return TestFlow(
+        name,
+        backend="xnnpack",
+        tester_factory=XnnpackTester,
+        quantize=True,
+        quantize_stage_factory=quantize_stage_factory,
+    )
+    
+def _create_xnnpack_flow() -> TestFlow:
+    return _create_xnnpack_flow_base("xnnpack")
+
+def _create_xnnpack_static_int8_flow() -> TestFlow:
+    def create_quantize_stage() -> Quantize:
+        qparams = get_symmetric_quantization_config(is_per_channel=True) 
+        return XnnpackQuantize(
+            quantization_config=qparams,
+        )
+    return _create_xnnpack_flow_base("xnnpack_static_int8", create_quantize_stage)
+
+XNNPACK_TEST_FLOW = _create_xnnpack_flow()
+XNNPACK_STATIC_INT8_TEST_FLOW = _create_xnnpack_static_int8_flow()

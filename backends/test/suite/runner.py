@@ -10,6 +10,7 @@ import torch
 from executorch.backends.test.harness import Tester
 from executorch.backends.test.harness.stages import StageType
 from executorch.backends.test.suite.discovery import discover_tests, TestFilter
+from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
@@ -29,9 +30,8 @@ NAMED_SUITES = {
 def run_test(  # noqa: C901
     model: torch.nn.Module,
     inputs: Any,
-    tester_factory: Callable[[], Tester],
+    flow: TestFlow,
     test_name: str,
-    flow_name: str,
     params: dict | None,
     dynamic_shapes: Any | None = None,
 ) -> TestCaseSummary:
@@ -46,14 +46,12 @@ def run_test(  # noqa: C901
     ) -> TestCaseSummary:
         return TestCaseSummary(
             name=test_name,
-            flow=flow_name,
+            flow=flow.name,
             params=params,
             result=result,
             error=error,
         )
     
-    model.eval()
-
     model.eval()
 
     # Ensure the model can run in eager mode.
@@ -63,10 +61,16 @@ def run_test(  # noqa: C901
         return build_result(TestResult.EAGER_FAIL, e)
 
     try:
-        tester = tester_factory(model, inputs)
+        tester = flow.tester_factory(model, inputs)
     except Exception as e:
         return build_result(TestResult.UNKNOWN_FAIL, e)
-
+    
+    if flow.quantize:
+        try:
+            tester.quantize(flow.quantize_stage_factory() if flow.quantize_stage_factory else None)
+        except Exception as e:
+            return build_result(TestResult.QUANTIZE_FAIL, e)
+    
     try:
         # TODO Use Tester dynamic_shapes parameter once input generation can properly handle derived dims.
         tester.export(
@@ -128,6 +132,9 @@ def print_summary(summary: RunSummary):
 
     print()
     print("[Failure]")
+    print(
+        f"{summary.aggregated_results.get(TestResult.QUANTIZE_FAIL, 0):>5} Quantization Fail"
+    )
     print(
         f"{summary.aggregated_results.get(TestResult.LOWER_FAIL, 0):>5} Lowering Fail"
     )
