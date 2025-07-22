@@ -365,60 +365,60 @@ class AttentionMHA(Attention):
 
         self.wq = (
             LoRALinear(
-                in_dim=model_args.dim,
-                out_dim=model_args.n_heads * model_args.head_dim,
-                rank=model_args.r,
-                alpha=model_args.lora_alpha,
+                in_dim=args.dim,
+                out_dim=args.n_heads * args.head_dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
                 dropout=0.0,
-                use_bias=model_args.attention_qkv_bias,
+                use_bias=args.attention_qkv_bias,
             )
-            if model_args.target_modules is not None
-            and "q_proj" in model_args.target_modules
+            if args.target_modules is not None
+            and "q_proj" in args.target_modules
             else nn.Linear(
                 self.dim, self.n_heads * self.head_dim, bias=self.attention_qkv_bias
             )
         )
         self.wk = (
             LoRALinear(
-                in_dim=model_args.dim,
-                out_dim=model_args.n_kv_heads * model_args.head_dim,
-                rank=model_args.r,
-                alpha=model_args.lora_alpha,
+                in_dim=args.dim,
+                out_dim=args.n_kv_heads * args.head_dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
                 dropout=0.0,
-                use_bias=model_args.attention_qkv_bias,
+                use_bias=args.attention_qkv_bias,
             )
-            if model_args.target_modules is not None
-            and "k_proj" in model_args.target_modules
+            if args.target_modules is not None
+            and "k_proj" in args.target_modules
             else nn.Linear(
                 self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
             )
         )
         self.wv = (
             LoRALinear(
-                in_dim=model_args.dim,
-                out_dim=model_args.n_kv_heads * model_args.head_dim,
-                rank=model_args.r,
-                alpha=model_args.lora_alpha,
+                in_dim=args.dim,
+                out_dim=args.n_kv_heads * args.head_dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
                 dropout=0.0,
-                use_bias=model_args.attention_qkv_bias,
+                use_bias=args.attention_qkv_bias,
             )
-            if model_args.target_modules is not None
-            and "v_proj" in model_args.target_modules
+            if args.target_modules is not None
+            and "v_proj" in args.target_modules
             else nn.Linear(
                 self.dim, self.n_kv_heads * self.head_dim, bias=self.attention_qkv_bias
             )
         )
         self.wo = (
             LoRALinear(
-                in_dim=model_args.n_kv_heads * model_args.head_dim,
-                out_dim=model_args.dim,
-                rank=model_args.r,
-                alpha=model_args.lora_alpha,
+                in_dim=args.n_kv_heads * args.head_dim,
+                out_dim=args.dim,
+                rank=args.r,
+                alpha=args.lora_alpha,
                 dropout=0.0,
-                use_bias=model_args.attention_qkv_bias,
+                use_bias=args.attention_qkv_bias,
             )
-            if model_args.target_modules is not None
-            and "output_proj" in model_args.target_modules
+            if args.target_modules is not None
+            and "output_proj" in args.target_modules
             else nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
         )
 
