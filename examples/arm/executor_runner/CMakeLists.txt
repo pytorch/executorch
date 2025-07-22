@@ -539,6 +539,18 @@ set_property(
   PROPERTY IMPORTED_LOCATION
            "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_kernels.a"
 )
+add_library(cortex_m_cmsis_nn_ops_lib STATIC IMPORTED)
+set_property(
+  TARGET cortex_m_cmsis_nn_ops_lib
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/cortex_m/cmsis-nn/ops/libcortex_m_cmsis_nn_ops_lib.a"
+)
+add_library(cortex_m_cmsis_kernels STATIC IMPORTED)
+set_property(
+  TARGET cortex_m_cmsis_kernels
+   PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/cortex_m/cmsis-nn/ops/libcortex_m_cmsis_kernels.a"
+)
 add_library(extension_runner_util STATIC IMPORTED)
 set_property(
   TARGET extension_runner_util
@@ -580,11 +592,13 @@ list(APPEND arm_executor_runner_link
   "-Wl,--whole-archive"
   executorch_delegate_ethos_u
   cortex_m_ops_lib
+  cortex_m_cmsis_nn_ops_lib
   quantized_ops_lib
   portable_ops_lib
   quantized_kernels
-  cortex_m_kernels
   portable_kernels
+  cortex_m_kernels
+  cortex_m_cmsis_kernels
   "-Wl,--no-whole-archive"
   -Xlinker -Map=arm_executor_runner.map
 )
