@@ -111,10 +111,21 @@ void et_copy_index(KernelRuntimeContext& context, EValue** stack) {
   // If we've reached here, it means the copy_to tensor has been
   // successfully resized so we can now copy over the data from
   // copy_from into the copy_to tensor.
+
+  // Check for overflow in the offset.
+  size_t offset = index * size_copy_from;
+  ET_CHECK_MSG(
+      offset / size_copy_from == static_cast<size_t>(index),
+      "Integer overflow: index * size_copy_from calculation overflows.");
+
+  // Check that the destination has enough space for the copy.
+  size_t copy_to_size = copy_to.element_size() * copy_to.numel();
+  ET_CHECK_MSG(
+      offset + size_copy_from <= copy_to_size,
+      "Buffer overflow: copy_to tensor is smaller than copy_from tensor.");
+
   memcpy(
-      (void*)((uintptr_t)copy_to_ptr + index * size_copy_from),
-      copy_from_ptr,
-      size_copy_from);
+      (void*)((uintptr_t)copy_to_ptr + offset), copy_from_ptr, size_copy_from);
 }
 
 } // namespace function
