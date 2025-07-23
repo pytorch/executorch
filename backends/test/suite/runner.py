@@ -51,6 +51,8 @@ def run_test(  # noqa: C901
             result=result,
             error=error,
         )
+    
+    model.eval()
 
     model.eval()
 
