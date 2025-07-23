@@ -23,15 +23,20 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
 functions_converters = {
+    exir_ops.edge.aten.abs.default: AbsConverter,  # noqa F405
+    exir_ops.edge.aten._adaptive_avg_pool2d.default: AdaptiveAvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.addmm.default: AddMMConverter,  # noqa F405
+    exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,  # noqa F405
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
+    exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
     exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
-    exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
 }

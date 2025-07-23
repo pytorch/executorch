@@ -59,7 +59,7 @@ def trace(
     dump_graphs: bool = False,
 ) -> ExportedProgram:
     """
-    Trace the model with export_for_training and return an ExportedProgram.
+    Trace the model with export and return an ExportedProgram.
     """
 
     # Make the model inference mode by calling model.eval()
@@ -83,9 +83,9 @@ def trace(
     remove_decompositions(decomp_table, ops_to_keep)
 
     # Export with dynamo
-    program = torch.export.export_for_training(
-        model, inputs, strict=True
-    ).run_decompositions(decomp_table)
+    program = torch.export.export(model, inputs, strict=True).run_decompositions(
+        decomp_table
+    )
 
     if dump_graphs:
         logging.info("Graph before quantization:")
