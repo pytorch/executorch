@@ -38,8 +38,12 @@ def _create_xnnpack_static_int8_per_channel_flow() -> TestFlow:
             quantization_config=qparams,
         )
 
-    return _create_xnnpack_flow_base("xnnpack_static_int8_per_channel", create_quantize_stage)
+    return _create_xnnpack_flow_base(
+        "xnnpack_static_int8_per_channel", create_quantize_stage
+    )
 
 
 XNNPACK_TEST_FLOW = _create_xnnpack_flow()
-XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW = _create_xnnpack_static_int8_per_channel_flow()
+XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW = (
+    _create_xnnpack_static_int8_per_channel_flow()
+)
