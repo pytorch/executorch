@@ -116,7 +116,7 @@ target_include_directories(
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third-party/cpuinfo/include
 )
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
-target_link_options_shared_lib(xnnpack_backend)
+executorch_target_link_options_shared_lib(xnnpack_backend)
 
 install(
   TARGETS xnnpack_backend
