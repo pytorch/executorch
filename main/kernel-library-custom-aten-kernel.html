@@ -753,7 +753,7 @@
 <h4>Compile and link the custom kernel<a class="headerlink" href="#compile-and-link-the-custom-kernel" title="Permalink to this heading">¶</a></h4>
 <p>Link it into ExecuTorch runtime: In our <code class="docutils literal notranslate"><span class="pre">CMakeLists.txt</span></code> that builds the binary/application, we need to add custom_linear.h/cpp into the binary target. We can build a dynamically loaded library (.so or .dylib) and link it as well.</p>
 <p>Here’s an example to do it:</p>
-<div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="c"># For target_link_options_shared_lib</span>
+<div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="c"># For executorch_target_link_options_shared_lib</span>
 <span class="nb">include</span><span class="p">(</span><span class="o">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="o">}</span><span class="s">/tools/cmake/Utils.cmake</span><span class="p">)</span>
 
 <span class="c"># Add a custom op library</span>
@@ -769,7 +769,7 @@
 <span class="nb">add_executable</span><span class="p">(</span><span class="s">custom_op_runner</span><span class="w"> </span><span class="s">PUBLIC</span><span class="w"> </span><span class="s">main.cpp</span><span class="p">)</span>
 
 <span class="c"># Link this library with --whole-archive !! IMPORTANT !! this is to avoid the operators being stripped by linker</span>
-<span class="nb">target_link_options_shared_lib</span><span class="p">(</span><span class="s">custom_op_lib</span><span class="p">)</span>
+<span class="nb">executorch_target_link_options_shared_lib</span><span class="p">(</span><span class="s">custom_op_lib</span><span class="p">)</span>
 
 <span class="c"># Link custom op lib</span>
 <span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">custom_op_runner</span><span class="w"> </span><span class="s">PUBLIC</span><span class="w"> </span><span class="s">custom_op_lib</span><span class="p">)</span>
