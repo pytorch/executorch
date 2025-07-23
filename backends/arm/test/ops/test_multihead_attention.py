@@ -112,6 +112,7 @@ def test_multihead_attention_u85_BI(test_data: input_t1):
     "test_data",
     test_suite,
 )
+@common.SkipIfNoModelConverter
 def test_multihead_attention_vgf_FP(test_data: input_t1):
     test_data_vals, module = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -128,6 +129,7 @@ def test_multihead_attention_vgf_FP(test_data: input_t1):
     "test_data",
     test_suite,
 )
+@common.SkipIfNoModelConverter
 def test_multihead_attention_vgf_INT(test_data: input_t1):
     test_data_vals, module = test_data()
     pipeline = VgfPipeline[input_t1](
