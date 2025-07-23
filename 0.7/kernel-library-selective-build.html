@@ -41,7 +41,7 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Llama on ExecuTorch" href="llm/llama.html" />
+    <link rel="next" title="Deploying LLMs to ExecuTorch" href="llm/getting-started.html" />
     <link rel="prev" title="Kernel Registration" href="kernel-library-custom-aten-kernel.html" />
 
 
@@ -353,6 +353,8 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -377,6 +379,7 @@
 <li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
 <li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -389,6 +392,7 @@
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul class="current">
@@ -398,11 +402,13 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
 <ul>
@@ -528,15 +534,18 @@
 </div>
 <div class="section" id="apis">
 <h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
-<p>We expose a CMake macro <code class="docutils literal notranslate"><span class="pre">[gen_selected_ops](https://github.com/pytorch/executorch/blob/main/tools/cmake/Codegen.cmake#L12)</span></code>, to allow users specifying op info:</p>
+<p>We expose a CMake macro <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/tools/cmake/Codegen.cmake#L12">gen_selected_ops</a>, to allow users specifying op info:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">gen_selected_ops</span><span class="p">(</span>
-  <span class="n">LIB_NAME</span>         <span class="c1"># the name of the selective build operator library to be generated</span>
-  <span class="n">OPS_SCHEMA_YAML</span>  <span class="c1"># path to a yaml file containing operators to be selected</span>
-  <span class="n">ROOT_OPS</span>         <span class="c1"># comma separated operator names to be selected</span>
-  <span class="n">INCLUDE_ALL_OPS</span>  <span class="c1"># boolean flag to include all operators</span>
+  <span class="n">LIB_NAME</span>              <span class="c1"># the name of the selective build operator library to be generated</span>
+  <span class="n">OPS_SCHEMA_YAML</span>       <span class="c1"># path to a yaml file containing operators to be selected</span>
+  <span class="n">ROOT_OPS</span>              <span class="c1"># comma separated operator names to be selected</span>
+  <span class="n">INCLUDE_ALL_OPS</span>       <span class="c1"># boolean flag to include all operators</span>
+  <span class="n">OPS_FROM_MODEL</span>        <span class="c1"># path to a pte file of model to select operators from</span>
+  <span class="n">DTYPE_SELECTIVE_BUILD</span> <span class="c1"># boolean flag to enable dtye selection</span>
 <span class="p">)</span>
 </pre></div>
 </div>
+<p>The macro makes a call to gen_oplist.py, which requires a <a class="reference external" href="https://github.com/BujSet/executorch/blob/main/codegen/tools/gen_oplist.py#L222-L228">distinct selection</a> of API choice. <code class="docutils literal notranslate"><span class="pre">OPS_SCHEMA_YAML</span></code>, <code class="docutils literal notranslate"><span class="pre">ROOT_OPS</span></code>, <code class="docutils literal notranslate"><span class="pre">INCLUDE_ALL_OPS</span></code>, and <code class="docutils literal notranslate"><span class="pre">OPS_FROM_MODEL</span></code> are mutually exclusive options, and should not be used in conjunction.</p>
 <div class="section" id="select-all-ops">
 <h3>Select all ops<a class="headerlink" href="#select-all-ops" title="Permalink to this heading">¶</a></h3>
 <p>If this input is set to true, it means we are registering all the kernels from all the kernel libraries linked into the application. If set to true it is effectively turning off selective build mode.</p>
@@ -549,30 +558,47 @@
 <h3>Select root ops from operator list<a class="headerlink" href="#select-root-ops-from-operator-list" title="Permalink to this heading">¶</a></h3>
 <p>This API lets users pass in a list of operator names. Note that this API can be combined with the API above and we will create a allowlist from the union of both API inputs.</p>
 </div>
+<div class="section" id="select-ops-from-model">
+<h3>Select ops from model<a class="headerlink" href="#select-ops-from-model" title="Permalink to this heading">¶</a></h3>
+<p>This API lets users pass in a pte file of an exported model. When used, the pte file will be parsed to generate a yaml file that enumerates the operators and dtypes used in the model.</p>
+</div>
+<div class="section" id="dtype-selective-build">
+<h3>Dtype Selective Build<a class="headerlink" href="#dtype-selective-build" title="Permalink to this heading">¶</a></h3>
+<p>Beyond pruning the binary to remove unused operators, the binary size can further reduced by removing unused dtypes. For example, if your model only uses floats for the <code class="docutils literal notranslate"><span class="pre">add</span></code> operator, then including variants of the <code class="docutils literal notranslate"><span class="pre">add</span></code> operators for <code class="docutils literal notranslate"><span class="pre">doubles</span></code> and <code class="docutils literal notranslate"><span class="pre">ints</span></code> is unnecessary. The flag <code class="docutils literal notranslate"><span class="pre">DTYPE_SELECTIVE_BUILD</span></code> can be set to <code class="docutils literal notranslate"><span class="pre">ON</span></code> to support this additional optimization. Currently, dtype selective build is only supported with the model API described above. Once enabled, a header file that specifies only the operators and dtypes used by the model is created and linked against a rebuild of the <code class="docutils literal notranslate"><span class="pre">portable_kernels</span></code> lib. This feature is only supported for the portable kernels library; it’s not supported for optimized, quantized or custom kernel libraries.</p>
+</div>
 </div>
 <div class="section" id="example-walkthrough">
 <h2>Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permalink to this heading">¶</a></h2>
-<p>In CMakeLists.txt we have the following logic:</p>
-<div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="nb">set</span><span class="p">(</span><span class="s">_kernel_lib</span><span class="p">)</span>
-<span class="nb">if</span><span class="p">(</span><span class="s">SELECT_ALL_OPS</span><span class="p">)</span>
-<span class="w">  </span><span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;${SELECT_ALL_OPS}&quot;</span><span class="p">)</span>
-<span class="nb">elseif</span><span class="p">(</span><span class="s">SELECT_OPS_LIST</span><span class="p">)</span>
-<span class="w">  </span><span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;${SELECT_OPS_LIST}&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
-<span class="nb">elseif</span><span class="p">(</span><span class="s">SELECT_OPS_YAML</span><span class="p">)</span>
-<span class="w"> </span><span class="nb">set</span><span class="p">(</span><span class="s">_custom_ops_yaml</span><span class="w"> </span><span class="o">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="o">}</span><span class="s">/examples/portable/custom_ops/custom_ops.yaml</span><span class="p">)</span>
-<span class="w">  </span><span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;${_custom_ops_yaml}&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
-<span class="nb">endif</span><span class="p">()</span>
-</pre></div>
-</div>
-<p>Then when calling CMake, we can do:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cmake -D… -DSELECT_OPS_LIST=&quot;aten::add.out,aten::mm.out”
-</pre></div>
-</div>
-<p>Or</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cmake -D… -DSELECT_OPS_YAML=ON
-</pre></div>
-</div>
-<p>To select from either an operator name list or a schema yaml from kernel library.</p>
+<p>In <a class="reference external" href="https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L48-L72">CMakeLists.txt</a>, we have the following cmake config options:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_YAML</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_ALL_OPS</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_FROM_MODEL</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_DTYPE_SELECTIVE_BUILD</span></code></p></li>
+</ol>
+<p>These options allow a user to tailor the cmake build process to utilize the different APIs, and results in different invocations on the <code class="docutils literal notranslate"><span class="pre">gen_selected_ops</span></code> <a class="reference external" href="https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L110-L123">function</a>. The following table describes some examples of how the invocation changes when these configs are set:</p>
+<table class="colwidths-auto docutils align-default">
+<thead>
+<tr class="row-odd"><th class="text-center head"><p>Example cmake Call</p></th>
+<th class="text-center head"><p>Resultant <code class="docutils literal notranslate"><span class="pre">gen_selected_ops</span></code> Invocation</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td class="text-center"><p><code><br>  cmake -D… -DSELECT_OPS_LIST=”aten::add.out,aten::mm.out” <br></code></p></td>
+<td class="text-center"><p><code><br>  gen_selected_ops(“” “${SELECT_OPS_LIST}” “” “” “”) <br></code></p></td>
+</tr>
+<tr class="row-odd"><td class="text-center"><p><code><br> cmake -D… -DSELECT_OPS_YAML=ON <br></code></p></td>
+<td class="text-center"><p><code><br>  set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml) <br> gen_selected_ops(“${_custom_ops_yaml}” “” “”) <br></code></p></td>
+</tr>
+<tr class="row-even"><td class="text-center"><p><code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL=”model.pte.out” <br></code></p></td>
+<td class="text-center"><p><code><br> gen_selected_ops(“” “” “” “${_model_path}” “”) <br></code></p></td>
+</tr>
+<tr class="row-odd"><td class="text-center"><p><code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL=”model.pte.out” -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON<br></code></p></td>
+<td class="text-center"><p><code><br> gen_selected_ops(“” “” “” “${_model_path}” “ON”) <br></code></p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </div>
 
@@ -584,7 +610,7 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="llm/llama.html" class="btn btn-neutral float-right" title="Llama on ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="llm/getting-started.html" class="btn btn-neutral float-right" title="Deploying LLMs to ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
         <a href="kernel-library-custom-aten-kernel.html" class="btn btn-neutral" title="Kernel Registration" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
@@ -628,6 +654,8 @@
 <li><a class="reference internal" href="#select-all-ops">Select all ops</a></li>
 <li><a class="reference internal" href="#select-ops-from-schema-yaml">Select ops from schema yaml</a></li>
 <li><a class="reference internal" href="#select-root-ops-from-operator-list">Select root ops from operator list</a></li>
+<li><a class="reference internal" href="#select-ops-from-model">Select ops from model</a></li>
+<li><a class="reference internal" href="#dtype-selective-build">Dtype Selective Build</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#example-walkthrough">Example Walkthrough</a></li>

@@ -351,6 +351,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../backends-nxp.html">NXP eIQ Neutron Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -375,6 +377,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../portable-cpp-programming.html">Portable C++ Programming</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -387,6 +390,7 @@
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
@@ -396,11 +400,13 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../../llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../../llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../llm/run-on-ios.html">Running on iOS</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
 <ul>
@@ -1865,17 +1871,19 @@
             <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">graph_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">graph</span><span class="p">)</span>
         <span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_numeric_gap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">distance</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;MSE&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_numeric_gap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">distance</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;MSE&quot;</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compares logged intermediate outputs from the exported graph (in ETRecord)</span>
 <span class="sd">        with runtime outputs (in ETDump) using a user-specific numerical comparator.</span>
+<span class="sd">        To use this function, you must first generate the ETRecord using the `bundle_program`,</span>
+<span class="sd">        and then create the Inspector instance with the ETRecord and ETDump. The Inspector can then</span>
+<span class="sd">        compare the intermediate outputs from the AOT and the runtime.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            distance: the metrics the inspector will use for gap calculation. Should be one of &quot;MSE&quot;, &quot;L1&quot; and &quot;SNR&quot;.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            pd.DataFrame: A DataFrame listing corresponding operator outputs from</span>
-<span class="sd">                          both stages and their computed numerical gaps.</span>
+<span class="sd">            pd.DataFrame: A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">aot_intermediate_outputs</span><span class="p">,</span> <span class="n">aot_debug_handle_to_op_name</span> <span class="o">=</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_get_aot_intermediate_outputs_and_op_names</span><span class="p">()</span>

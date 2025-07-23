@@ -353,6 +353,8 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -377,6 +379,7 @@
 <li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
 <li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -389,6 +392,7 @@
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
@@ -398,11 +402,13 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
 <ul>
@@ -506,7 +512,7 @@
               
   <div class="section" id="model-export-and-lowering">
 <h1>Model Export and Lowering<a class="headerlink" href="#model-export-and-lowering" title="Permalink to this heading">¶</a></h1>
-<p>The section describes the process of taking a PyTorch model and converting to the runtime format used by ExecuTorch. This process is commonly known as “exporting”, as it uses the PyTorch export functionality to convert a PyTorch model into a format suitable for on-device execution. This process yields a .pte file which is optimized for on-device execution using a particular backend.</p>
+<p>The section describes the process of taking a PyTorch model and converting to the runtime format used by ExecuTorch. This process is commonly known as “exporting”, as it uses the PyTorch export functionality to convert a PyTorch model into a format suitable for on-device execution. This process yields a .pte file which is optimized for on-device execution using a particular backend. If using program-data separation, it also yields a corresponding .ptd file containing only the weights/constants from the model.</p>
 <div class="section" id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
 <p>Exporting requires the ExecuTorch python libraries to be installed, typically by running <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">executorch</span></code>. See <a class="reference internal" href="getting-started.html#installation"><span class="std std-ref">Installation</span></a> for more information. This process assumes you have a PyTorch model, can instantiate it from Python, and can provide example input tensors to run the model.</p>
@@ -561,7 +567,7 @@
             <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">AdaptiveAvgPool2d</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
        <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">linear</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
-    
+
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">seq</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
@@ -595,7 +601,7 @@
             <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">AdaptiveAvgPool2d</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">linear</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
-    
+
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">seq</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
         <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
@@ -622,6 +628,28 @@
 </pre></div>
 </div>
 <p>This yields a <code class="docutils literal notranslate"><span class="pre">model.pte</span></code> file which can be run on mobile devices.</p>
+<p>To generate a <code class="docutils literal notranslate"><span class="pre">model.pte</span></code>, <code class="docutils literal notranslate"><span class="pre">model.ptd</span></code> pair with the weights inside <code class="docutils literal notranslate"><span class="pre">model.ptd</span></code>, add the following transform function to tag constants as external:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.external_constants_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">delegate_external_constants_pass</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">partial_function</span> <span class="o">=</span> <span class="n">partial</span><span class="p">(</span>
+    <span class="n">delegate_external_constants_pass</span><span class="p">,</span>
+    <span class="n">ep</span><span class="o">=</span><span class="n">exported_program</span><span class="p">,</span>
+    <span class="n">gen_tag_fn</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="s2">&quot;model&quot;</span><span class="p">,</span> <span class="c1"># This is the filename the weights will be saved to. In this case, weights will be saved as &quot;model.ptd&quot;</span>
+<span class="p">)</span>
+
+<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">exported_program</span><span class="p">,</span>
+    <span class="n">transform_passes</span> <span class="o">=</span> <span class="p">[</span><span class="n">partial_function</span><span class="p">],</span>
+    <span class="n">partitioner</span> <span class="o">=</span> <span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()]</span>
+<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>To save the PTD file:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">executorch_program</span><span class="o">.</span><span class="n">write_tensor_data_to_file</span><span class="p">(</span><span class="n">output_directory</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>It will be saved to the file <code class="docutils literal notranslate"><span class="pre">model.ptd</span></code>, with the file name coming from <code class="docutils literal notranslate"><span class="pre">gen_tag_fn</span></code> in the transform pass.</p>
 <div class="section" id="supporting-varying-input-sizes-dynamic-shapes">
 <h3>Supporting Varying Input Sizes (Dynamic Shapes)<a class="headerlink" href="#supporting-varying-input-sizes-dynamic-shapes" title="Permalink to this heading">¶</a></h3>
 <p>The PyTorch export process uses the example inputs provided to trace through the model and reason about the size and type of tensors at each step. Unless told otherwise, export will assume a fixed input size equal to the example inputs and will use this information to optimize the model.</p>
@@ -656,6 +684,7 @@
 <span class="n">outputs</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">execute</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])</span>
 </pre></div>
 </div>
+<p>Pybindings currently does not support loading program and data. To run a model with PTE and PTD components, please use the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Extension Module</span></a>. There is also an E2E demo in <a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/program-data-separation">executorch-examples</a>.</p>
 <p>For more information, see <a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a>.</p>
 </div>
 <div class="section" id="advanced-topics">
@@ -713,7 +742,7 @@ decoding.</p>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span>
-    
+
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 

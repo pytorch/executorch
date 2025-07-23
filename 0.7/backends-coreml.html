@@ -356,6 +356,8 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -380,6 +382,7 @@
 <li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
 <li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -392,6 +395,7 @@
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
@@ -401,11 +405,13 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
 <ul>
@@ -598,12 +604,13 @@
 </div>
 <div class="section" id="bit-quantization-using-the-pt2e-flow">
 <h3>8-bit Quantization using the PT2E Flow<a class="headerlink" href="#bit-quantization-using-the-pt2e-flow" title="Permalink to this heading">¶</a></h3>
-<p>To perform 8-bit quantization with the PT2E flow, perform the following steps:</p>
+<p>Quantization with the CoreML backend requires exporting the model for iOS17 or later.
+To perform 8-bit quantization with the PT2E flow, perform the following steps:</p>
 <ol class="arabic simple">
 <li><p>Define <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig">coremltools.optimize.torch.quantization.LinearQuantizerConfig</a> and use to to create an instance of a <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p></li>
 <li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export_for_training</span></code> to export a graph module that will be prepared for quantization.</p></li>
 <li><p>Call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> to prepare the model for quantization.</p></li>
-<li><p>For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
+<li><p>Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
 <li><p>Call <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> to quantize the model.</p></li>
 <li><p>Export and lower the model using the standard flow.</p></li>
 </ol>
@@ -622,18 +629,17 @@
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
 <span class="c1"># Step 1: Define a LinearQuantizerConfig and create an instance of a CoreMLQuantizer</span>
-<span class="n">quantization_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="o">.</span><span class="n">from_dict</span><span class="p">(</span>
-    <span class="p">{</span>
-        <span class="s2">&quot;global_config&quot;</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s2">&quot;quantization_scheme&quot;</span><span class="p">:</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">QuantizationScheme</span><span class="o">.</span><span class="n">symmetric</span><span class="p">,</span>
-            <span class="s2">&quot;milestones&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span>
-            <span class="s2">&quot;activation_dtype&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">quint8</span><span class="p">,</span>
-            <span class="s2">&quot;weight_dtype&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
-            <span class="s2">&quot;weight_per_channel&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-        <span class="p">}</span>
-    <span class="p">}</span>
+<span class="c1"># Note that linear here does not mean only linear layers are quantized, but that linear (aka affine) quantization</span>
+<span class="c1"># is being performed</span>
+<span class="n">static_8bit_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="p">(</span>
+    <span class="n">global_config</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">ModuleLinearQuantizerConfig</span><span class="p">(</span>
+        <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">&quot;symmetric&quot;</span><span class="p">,</span>
+        <span class="n">activation_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">quint8</span><span class="p">,</span>
+        <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
+        <span class="n">weight_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
 <span class="p">)</span>
-<span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">quantization_config</span><span class="p">)</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">static_8bit_config</span><span class="p">)</span>
 
 <span class="c1"># Step 2: Export the model for training</span>
 <span class="n">training_gm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
@@ -663,7 +669,21 @@
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 </pre></div>
 </div>
-<p>See <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
+<p>The above does static quantization (activations and weights are quantized).</p>
+<p>You can see a full description of available quantization configs in the <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig">coremltools documentation</a>.  For example, the config below will perform weight-only quantization:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">weight_only_8bit_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="p">(</span>
+    <span class="n">global_config</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">ModuleLinearQuantizerConfig</span><span class="p">(</span>
+        <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">&quot;symmetric&quot;</span><span class="p">,</span>
+        <span class="n">activation_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
+        <span class="n">weight_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">weight_only_8bit_config</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling convert_pt2e, even for data-free weight-only quantization.</p>
+<p>See <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
 </div>
 </div>
 <hr class="docutils" />
@@ -711,6 +731,13 @@
 raise RuntimeError(“BlobWriter not loaded”)</p></li>
 </ol>
 <p>If you’re using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13, see this <a class="reference external" href="https://github.com/apple/coremltools/issues/2487">issue</a>.</p>
+</div>
+<div class="section" id="at-runtime">
+<h3>At runtime<a class="headerlink" href="#at-runtime" title="Permalink to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>[ETCoreMLModelCompiler.mm:55] [Core ML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 “Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset ‘CoreML7’.” UserInfo={NSLocalizedDescription=Failed to par$</p></li>
+</ol>
+<p>This means the model requires the the CoreML opset ‘CoreML7’, which requires running the model on iOS17/macOS14 or later.</p>
 </div>
 </div>
 </div>
@@ -781,6 +808,7 @@ raise RuntimeError(“BlobWriter not loaded”)</p></li>
 </li>
 <li><a class="reference internal" href="#common-issues-and-what-to-do">Common issues and what to do</a><ul>
 <li><a class="reference internal" href="#during-lowering">During lowering</a></li>
+<li><a class="reference internal" href="#at-runtime">At runtime</a></li>
 </ul>
 </li>
 </ul>

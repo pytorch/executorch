@@ -352,6 +352,8 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
 <ul>
@@ -376,6 +378,7 @@
 <li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
 <li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -388,6 +391,7 @@
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
@@ -397,11 +401,13 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama.html">Llama</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Llama on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-ios.html">Llama on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Llama on Android via Qualcomm backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Intro to LLMs in Executorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
 <ul>
@@ -525,8 +531,7 @@ utilizing full hardware capabilities such as CPUs, NPUs, and DSPs.</p></li>
 <li><p><strong>Strong Model Support</strong> LLMs (Large Language Models),
 CV (Computer Vision), ASR (Automatic Speech Recognition), TTS (Text To Speech)</p></li>
 <li><p><strong>All Major Platforms</strong> Android, Mac, Linux, Windows</p></li>
-<li><p><strong>Rich Acceleration Support</strong> Apple, Arm, Cadence, MediaTek,
-Qualcomm, Vulkan, XNNPACK</p></li>
+<li><p><strong>Rich Acceleration Support</strong> Apple, Arm, Cadence, MediaTek, NXP, OpenVino, Qualcomm, Vulkan, XNNPACK</p></li>
 </ul>
 <div class="section" id="documentation-navigation">
 <h3>Documentation Navigation<a class="headerlink" href="#documentation-navigation" title="Permalink to this heading">¶</a></h3>
@@ -550,6 +555,7 @@ Qualcomm, Vulkan, XNNPACK</p></li>
 <li><p><a class="reference internal" href="using-executorch-runtime-integration.html"><span class="doc std std-doc">Runtime Integration</span></a></p></li>
 <li><p><a class="reference internal" href="using-executorch-troubleshooting.html"><span class="doc std std-doc">Troubleshooting</span></a></p></li>
 <li><p><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building from Source</span></a></p></li>
+<li><p><a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Quantization</span></a></p></li>
 <li><p><a class="reference internal" href="using-executorch-faqs.html"><span class="doc std std-doc">FAQs</span></a></p></li>
 </ul>
 </div>
@@ -573,6 +579,8 @@ Qualcomm, Vulkan, XNNPACK</p></li>
 <li><p><a class="reference internal" href="backends-qualcomm.html"><span class="doc std std-doc">Qualcomm</span></a></p></li>
 <li><p><a class="reference internal" href="backends-mediatek.html"><span class="doc std std-doc">MediaTek</span></a></p></li>
 <li><p><a class="reference internal" href="backends-cadence.html"><span class="doc std std-doc">Cadence</span></a></p></li>
+<li><p><a class="reference internal" href="build-run-openvino.html"><span class="doc std std-doc">OpenVINO</span></a></p></li>
+<li><p><span class="xref myst">NXP</span></p></li>
 </ul>
 </div>
 <div class="section" id="developer-tools">
@@ -605,6 +613,7 @@ Qualcomm, Vulkan, XNNPACK</p></li>
 <h4>Portable C++ Programming<a class="headerlink" href="#portable-c-programming" title="Permalink to this heading">¶</a></h4>
 <ul class="simple">
 <li><p><a class="reference internal" href="pte-file-format.html"><span class="doc std std-doc">PTE File Format</span></a></p></li>
+<li><p><a class="reference internal" href="ptd-file-format.html"><span class="doc std std-doc">PTD File Format</span></a></p></li>
 </ul>
 </div>
 <div class="section" id="api-reference">
@@ -615,12 +624,6 @@ Qualcomm, Vulkan, XNNPACK</p></li>
 <li><p><a class="reference internal" href="runtime-python-api-reference.html"><span class="doc std std-doc">Runtime Python API Reference</span></a></p></li>
 <li><p><a class="reference internal" href="api-life-cycle.html"><span class="doc std std-doc">API Life Cycle</span></a></p></li>
 <li><p><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></p></li>
-</ul>
-</div>
-<div class="section" id="quantization">
-<h4>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h4>
-<ul class="simple">
-<li><p><a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Overview</span></a></p></li>
 </ul>
 </div>
 <div class="section" id="kernel-library">
@@ -634,11 +637,13 @@ Qualcomm, Vulkan, XNNPACK</p></li>
 <div class="section" id="working-with-llms">
 <h4>Working with LLMs<a class="headerlink" href="#working-with-llms" title="Permalink to this heading">¶</a></h4>
 <ul class="simple">
-<li><p><a class="reference internal" href="llm/llama.html"><span class="doc std std-doc">Llama</span></a></p></li>
-<li><p><a class="reference internal" href="llm/llama-demo-android.html"><span class="doc std std-doc">Llama on Android</span></a></p></li>
-<li><p><a class="reference internal" href="llm/llama-demo-ios.html"><span class="doc std std-doc">Llama on iOS</span></a></p></li>
-<li><p><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">Llama on Android via Qualcomm backend</span></a></p></li>
-<li><p><a class="reference internal" href="llm/getting-started.html"><span class="doc std std-doc">Intro to LLMs in Executorch</span></a></p></li>
+<li><p><a class="reference internal" href="llm/getting-started.html"><span class="doc std std-doc">Getting Started</span></a></p></li>
+<li><p><a class="reference internal" href="llm/export-llm.html"><span class="doc std std-doc">Exporting LLMs</span></a></p></li>
+<li><p><a class="reference internal" href="llm/export-custom-llm.html"><span class="doc std std-doc">Exporting custom LLMs</span></a></p></li>
+<li><p><a class="reference internal" href="llm/run-with-c-plus-plus.html"><span class="doc std std-doc">Running with C++</span></a></p></li>
+<li><p><a class="reference internal" href="llm/llama-demo-android.html"><span class="doc std std-doc">Running on Android (XNNPack)</span></a></p></li>
+<li><p><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">Running on Android (QNN)</span></a></p></li>
+<li><p><a class="reference internal" href="llm/run-on-ios.html"><span class="doc std std-doc">Running on iOS</span></a></p></li>
 </ul>
 </div>
 <div class="section" id="backend-development">
@@ -758,7 +763,6 @@ Qualcomm, Vulkan, XNNPACK</p></li>
 <li><a class="reference internal" href="#runtime">Runtime</a></li>
 <li><a class="reference internal" href="#portable-c-programming">Portable C++ Programming</a></li>
 <li><a class="reference internal" href="#api-reference">API Reference</a></li>
-<li><a class="reference internal" href="#quantization">Quantization</a></li>
 <li><a class="reference internal" href="#kernel-library">Kernel Library</a></li>
 <li><a class="reference internal" href="#working-with-llms">Working with LLMs</a></li>
 <li><a class="reference internal" href="#backend-development">Backend Development</a></li>
