@@ -83,10 +83,6 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension" BOOL
-  OFF
-)
-define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" BOOL OFF
 )
 define_overridable_option(
@@ -177,6 +173,14 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" BOOL
   ${_default_executorch_build_executor_runner}
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL "Build the EValue util extension" BOOL
+  ${_default_executorch_build_executor_runner}
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension" BOOL
+  ${_default_executorch_build_executor_runner}
+)
 
 # NB: Enabling this will serialize execution of delegate instances Keeping this
 # OFF by default to maintain existing behavior, to be revisited.
@@ -213,6 +217,11 @@ check_required_options_on(
   IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
 )
 
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXECUTOR_RUNNER REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL
+  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
+)
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR REQUIRES
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
