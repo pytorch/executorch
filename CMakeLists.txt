@@ -224,7 +224,7 @@ if(EXECUTORCH_BUILD_CPUINFO)
   install(
     TARGETS cpuinfo
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
@@ -267,7 +267,7 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   install(
     TARGETS pthreadpool pthreadpool_interface fxdiv
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
