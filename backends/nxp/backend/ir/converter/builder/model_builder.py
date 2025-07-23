@@ -481,7 +481,9 @@ class ModelBuilder:
             self._make_outputs_channels_first()
 
         # Apply optimizations to the internal TFLite model.
-        optimizer.Optimizer(self, self.conversion_config).optimize(
+        optimizer.Optimizer(
+            self, self.conversion_config, self.neutron_target_spec
+        ).optimize(
             self.conversion_config.optimization_whitelist,
             self.conversion_config.optimization_blacklist,
         )
