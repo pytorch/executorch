@@ -19,12 +19,12 @@ from executorch.examples.apple.coreml.llama.utils import (
     replace_linear_with_split_linear,
 )
 
+from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.utils import format_delegated_graph
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.exir.program._program import to_edge_transform_and_lower
 from executorch.extension.export_util.utils import save_pte_program
 
 from torchao.quantization.granularity import PerAxis, PerGroup
