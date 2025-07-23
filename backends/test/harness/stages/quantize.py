@@ -25,13 +25,14 @@ class Quantize(Stage):
         calibrate: bool = True,
         calibration_samples: Optional[Sequence[Any]] = None,
         is_qat: Optional[bool] = False,
+        set_global: bool = True,
     ):
         self.quantizer = quantizer
         self.quantization_config = quantization_config
         self.calibrate = calibrate
         self.calibration_samples = calibration_samples
 
-        if self.quantization_config is not None:
+        if self.quantization_config is not None and set_global:
             self.quantizer.set_global(self.quantization_config)
 
         self.converted_graph = None

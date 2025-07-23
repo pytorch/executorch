@@ -154,9 +154,7 @@ class TorchVision(unittest.TestCase):
         model = torchvision.models.swin_v2_t()
         self._test_cv_model(model, flow, dtype, use_dynamic_shapes)
 
-    def test_vgg11(
-        self, flow: TestFlow, dtype: torch.dtype, use_dynamic_shapes: bool
-    ):
+    def test_vgg11(self, flow: TestFlow, dtype: torch.dtype, use_dynamic_shapes: bool):
         model = torchvision.models.vgg11()
         self._test_cv_model(model, flow, dtype, use_dynamic_shapes)
 

@@ -14,7 +14,7 @@ class TestResult(IntEnum):
 
     EAGER_FAIL = 2
     """ The test failed due to the model failing to run in eager mode. """
-    
+
     QUANTIZE_FAIL = 3
     """ The test failed due to the quantization stage failing. """
 
