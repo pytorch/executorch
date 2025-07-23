@@ -8,6 +8,7 @@
 #pragma once
 #include <mutex>
 #include <unordered_set>
+#include <string>
 
 namespace executorch {
 namespace backends {
