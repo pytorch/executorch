@@ -957,4 +957,8 @@ class CadenceRemoveNops:
         RemoveNopAddOpPass,
         RemoveNopLinalgVectorNormOpPass,
         RemoveBranchedQuantDequant,
+        RemoveNopSelectOpPass,
+        RemovePermutesAroundElementwiseOps,
+        RemoveSqueezeViewBeforeElementwiseOps,
+        RemoveCatFromSliceCopyPass,
     ]
