@@ -27,9 +27,7 @@ class TestGLU(OperatorTest):
     @dtype_test
     def test_glu_dtype(self, flow: TestFlow, dtype) -> None:
         # Input must have even number of elements in the specified dimension
-        self._test_op(
-            Model(), ((torch.rand(2, 10) * 10 - 5).to(dtype),), flow
-        )
+        self._test_op(Model(), ((torch.rand(2, 10) * 10 - 5).to(dtype),), flow)
 
     def test_glu_f32_dim_last(self, flow: TestFlow) -> None:
         # Default dim is -1 (last dimension)

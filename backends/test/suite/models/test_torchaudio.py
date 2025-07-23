@@ -7,7 +7,7 @@
 # pyre-unsafe
 
 import unittest
-from typing import Callable, Tuple
+from typing import Tuple
 
 import torch
 import torchaudio
@@ -92,7 +92,10 @@ class TorchAudio(unittest.TestCase):
 
     @unittest.skip("This model times out on all backends.")
     def test_wavernn(
-        self, flow: TestFlow, dtype: torch.dtype, use_dynamic_shapes: bool,
+        self,
+        flow: TestFlow,
+        dtype: torch.dtype,
+        use_dynamic_shapes: bool,
     ):
         model = torchaudio.models.WaveRNN(
             upsample_scales=[5, 5, 8], n_classes=512, hop_length=200
