@@ -1,0 +1,1122 @@
+<!DOCTYPE HTML>
+<!-- NewPage -->
+<html lang="en"><head>
+    <title>Tensor </title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="dc.created" content="2020-03-25">
+    <link rel="stylesheet" type="text/css" href="../../../stylesheet.css" title="Style">
+    <link rel="stylesheet" type="text/css" href="../../../dokka-javadoc-stylesheet.css" title="Style">
+    <link rel="stylesheet" type="text/css" href="../../../jquery/jquery-ui.css" title="Style">
+    <script type="text/javascript" src="../../../jquery/jquery-3.3.1.js"></script>
+    <script type="text/javascript" src="../../../jquery/jquery-migrate-3.0.1.js"></script>
+    <script type="text/javascript" src="../../../jquery/jquery-ui.js"></script>
+
+    <script type="text/javascript" src="../../../search.js"></script>
+    <script async type="text/javascript" src="../../../module-search-index.js"></script>
+    <script async type="text/javascript" src="../../../package-search-index.js"></script>
+    <script async type="text/javascript" src="../../../type-search-index.js"></script>
+    <script async type="text/javascript" src="../../../member-search-index.js"></script>
+    <script async type="text/javascript" src="../../../tag-search-index.js"></script>
+</head><body>
+<script type="text/javascript">
+var pathtoroot = "../../../";
+</script>
+<noscript>
+    <div>JavaScript is disabled on your browser.</div>
+</noscript><header role="banner">
+    <nav role="navigation">
+        <div class="fixedNav">
+            <!-- ========= START OF TOP NAVBAR ======= -->
+            <div class="topNav"><a id="navbar.top">
+                <!--   -->
+            </a>
+                <div class="skipNav"><a href="#skip.navbar.top" title="Skip navigation links">Skip navigation links</a>
+                </div>
+                <a id="navbar.top.firstrow">
+                    <!--   -->
+                </a>
+                <ul class="navList" title="Navigation">
+    <li><a href="../../../index.html">Overview</a></li>
+    
+    <li><a href="package-summary.html">Package</a></li>
+    
+    <li class="navBarCell1Rev">Class</li>
+    
+    <li><a href="package-tree.html">Tree</a></li>
+    
+    <li><a href="../../../deprecated.html">Deprecated</a></li>
+    <li><a href="../../../index-files/index-1.html">Index</a></li>
+    <li>Help</li>
+</ul></div>
+            <div class="subNav">
+<ul class="navList" id="allclasses_navbar_top" style="display: block;">
+    <li><a href="../../../allclasses.html">All&nbsp;Classes</a></li>
+</ul>
+
+<ul class="navListSearch">
+<li><label for="search">SEARCH:</label>
+<input type="text" id="search" value="search" class="ui-autocomplete-input" autocomplete="off" placeholder="Search">
+<input type="reset" id="reset" value="reset">
+</li>
+</ul>
+<div>
+<script type="text/javascript"><!--
+  allClassesLink = document.getElementById("allclasses_navbar_top");
+  if(window==top) {
+    allClassesLink.style.display = "block";
+  }
+  else {
+    allClassesLink.style.display = "none";
+  }
+  //-->
+</script>
+<noscript>
+<div>JavaScript is disabled on your browser.</div>
+</noscript>
+</div>
+<a id="skip.navbar.top">
+<!--   -->
+</a></div><!-- ========= END OF TOP NAVBAR ========= -->
+        </div>
+        <div class="navPadding">&nbsp;</div>
+        <script type="text/javascript"><!--
+        $('.navPadding').css('padding-top', $('.fixedNav').css("height"));
+        //-->
+        </script>
+    </nav>
+</header>
+
+<main role="main">
+    <div class="header">
+        <div class="subTitle"><span class="packageLabelInType">Package</span>&nbsp;<a href="package-summary.html"></a></div>
+        <h2 title="Class Tensor" class="title">Class Tensor</h2>
+    </div>
+    <div class="contentContainer">
+        <!-- <ul class="inheritance">
+            <li>java.lang.Object</li>
+            <li>
+                <ul class="inheritance">
+                    <li>adaptation.Adaptation</li>
+                </ul>
+            </li>
+        </ul> TODO inheritance tree -->
+        <div class="description">
+            <ul class="blockList">
+                <li class="blockList">
+                    
+                    <hr>
+                    <pre class="wrap-overflow">
+
+public abstract class <span class="typeNameLabel"><a href=Tensor.html>Tensor</a></span>
+
+                    </pre>
+                    <div class="block"><p>Representation of an ExecuTorch Tensor. Behavior is similar to PyTorch's tensor objects. </p><p>Most tensors will be constructed as <code>{@code Tensor.fromBlob(data, shape)}</code>, where <code>{@code data}</code> can be an array or a direct <a href=https://developer.android.com/reference/kotlin/java/nio/Buffer.html>Buffer</a> (of the proper subclass). Helper methods are provided to allocate buffers properly. </p><p>To access Tensor data, see <a href=Tensor.html#dtype()>dtype</a>, <a href=Tensor.html#shape()>shape</a>, and various <code>{@code getDataAs*}</code> methods. </p><p>When constructing <code>{@code Tensor}</code> objects with <code>{@code data}</code> as an array, it is not specified whether this data is copied or retained as a reference so it is recommended not to modify it after constructing. <code>{@code data}</code> passed as a <a href=https://developer.android.com/reference/kotlin/java/nio/Buffer.html>Buffer</a> is not copied, so it can be modified between <a href=Module.html>Module</a> calls to avoid reallocation. Data retrieved from <code>{@code Tensor}</code> objects may be copied or may be a reference to the <code>{@code Tensor}</code>'s internal data buffer. <code>{@code shape}</code> is always copied. </p><p>Warning: These APIs are experimental and subject to change without notice</p></div>
+                </li>
+            </ul>
+        </div>
+        <div class="summary">
+            <ul class="blockList">
+                <li class="blockList">
+                <!-- ======== NESTED CLASS SUMMARY ======== -->
+                    
+                    <!-- =========== FIELD SUMMARY =========== -->
+                    
+                    <!-- ======== CONSTRUCTOR SUMMARY ======== -->
+                    
+                    <!-- =========== ENUM CONSTANT SUMMARY =========== -->
+                    
+                    <!-- ========== METHOD SUMMARY =========== -->
+                    
+                    <section role="region">
+                        <ul class="blockList">
+                            <li class="blockList"><a id="method.summary">
+                                <!--   -->
+                            </a>
+                                <h3>Method Summary</h3>
+                                <div class="memberSummary">
+                                    <div role="tablist" aria-orientation="horizontal">
+                                        <button role="tab" aria-selected="true" aria-controls="memberSummary_tabpanel" tabindex="0" onkeydown="switchTab(event)" id="t0" class="activeTableTab">All Methods</button>
+                                        <!-- TODO: Instance and Concrete Methods #1118 -->
+                                    </div>
+                                    <div id="memberSummary_tabpanel" role="tabpanel">
+                                    <table aria-labelledby="t0">
+                                        <tr>
+                                            <th class="colFirst" scope="col">Modifier and Type</th>
+                                            <th class="colSecond" scope="col">Method</th>
+                                            <th class="colLast" scope="col">Description</th>
+                                        </tr>
+                                        
+                                        <tr id="i0" class="altColor">
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateByteBuffer(int)>allocateByteBuffer</a>(int numElements) </code>
+                                            </th>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>, <a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)></a>.</td>
+                                        </tr>
+                                        
+                                        <tr id="i1" class="rowColor">
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateIntBuffer(int)>allocateIntBuffer</a>(int numElements) </code>
+                                            </th>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>.</td>
+                                        </tr>
+                                        
+                                        <tr id="i2" class="altColor">
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateFloatBuffer(int)>allocateFloatBuffer</a>(int numElements) </code>
+                                            </th>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>.</td>
+                                        </tr>
+                                        
+                                        <tr id="i3" class="rowColor">
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateLongBuffer(int)>allocateLongBuffer</a>(int numElements) </code>
+                                            </th>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>.</td>
+                                        </tr>
+                                        
+                                        <tr id="i4" class="altColor">
+                                            <td class="colFirst"><code>static <a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#allocateDoubleBuffer(int)>allocateDoubleBuffer</a>(int numElements) </code>
+                                            </th>
+                                            <td class="colLast">Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>.</td>
+                                        </tr>
+                                        
+                                        <tr id="i5" class="rowColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlobUnsigned(Array,Array)>fromBlobUnsigned</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.uint8 with specified shape and data as array ofbytes.</td>
+                                        </tr>
+                                        
+                                        <tr id="i6" class="altColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(Array,Array)>fromBlob</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.int8 with specified shape and data as array ofbytes.</td>
+                                        </tr>
+                                        
+                                        <tr id="i7" class="rowColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(Array,Array)>fromBlob</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.int32 with specified shape and data as array ofints.</td>
+                                        </tr>
+                                        
+                                        <tr id="i8" class="altColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(Array,Array)>fromBlob</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;float&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.float32 with specified shape and data as arrayof floats.</td>
+                                        </tr>
+                                        
+                                        <tr id="i9" class="rowColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(Array,Array)>fromBlob</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.int64 with specified shape and data as array oflongs.</td>
+                                        </tr>
+                                        
+                                        <tr id="i10" class="altColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(Array,Array)>fromBlob</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;double&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.float64 with specified shape and data as arrayof doubles.</td>
+                                        </tr>
+                                        
+                                        <tr id="i11" class="rowColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)>fromBlobUnsigned</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.uint8 with specified shape and data.</td>
+                                        </tr>
+                                        
+                                        <tr id="i12" class="altColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.int8 with specified shape and data.</td>
+                                        </tr>
+                                        
+                                        <tr id="i13" class="rowColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.int32 with specified shape and data.</td>
+                                        </tr>
+                                        
+                                        <tr id="i14" class="altColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.float32 with specified shape and data.</td>
+                                        </tr>
+                                        
+                                        <tr id="i15" class="rowColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.int64 with specified shape and data.</td>
+                                        </tr>
+                                        
+                                        <tr id="i16" class="altColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Creates a new Tensor instance with dtype torch.float64 with specified shape and data.</td>
+                                        </tr>
+                                        
+                                        <tr id="i17" class="rowColor">
+                                            <td class="colFirst"><code>long</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#numel()>numel</a>() </code>
+                                            </th>
+                                            <td class="colLast">Returns the number of elements in this tensor.</td>
+                                        </tr>
+                                        
+                                        <tr id="i18" class="altColor">
+                                            <td class="colFirst"><code>static long</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#numel(Array)>numel</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape) </code>
+                                            </th>
+                                            <td class="colLast">Calculates the number of elements in a tensor with the specified shape.</td>
+                                        </tr>
+                                        
+                                        <tr id="i19" class="rowColor">
+                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt;</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#shape()>shape</a>() </code>
+                                            </th>
+                                            <td class="colLast">Returns the shape of this tensor.</td>
+                                        </tr>
+                                        
+                                        <tr id="i20" class="altColor">
+                                            <td class="colFirst"><code>abstract <a href=DType.html>DType</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#dtype()>dtype</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr id="i21" class="rowColor">
+                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt;</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsByteArray()>getDataAsByteArray</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr id="i22" class="altColor">
+                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt;</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsUnsignedByteArray()>getDataAsUnsignedByteArray</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr id="i23" class="rowColor">
+                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt;</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsIntArray()>getDataAsIntArray</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr id="i24" class="altColor">
+                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;float&gt;</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsFloatArray()>getDataAsFloatArray</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr id="i25" class="rowColor">
+                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt;</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsLongArray()>getDataAsLongArray</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr id="i26" class="altColor">
+                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;double&gt;</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#getDataAsDoubleArray()>getDataAsDoubleArray</a>() </code>
+                                            </th>
+                                            <td class="colLast"></td>
+                                        </tr>
+                                        
+                                        <tr id="i27" class="rowColor">
+                                            <td class="colFirst"><code><a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt;</code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#toByteArray()>toByteArray</a>() </code>
+                                            </th>
+                                            <td class="colLast">Serializes a <code>{@code Tensor}</code> into a byte array.</td>
+                                        </tr>
+                                        
+                                        <tr id="i28" class="altColor">
+                                            <td class="colFirst"><code>static <a href=Tensor.html>Tensor</a></code>
+                                            </td>
+                                            <th class="colSecond" scope="row"><code><a href=Tensor.html#fromByteArray(Array)>fromByteArray</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; bytes) </code>
+                                            </th>
+                                            <td class="colLast">Deserializes a <code>{@code Tensor}</code> from a byte[].</td>
+                                        </tr>
+                                        
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <ul class="blockList">
+                                
+                                    <li class="blockList"><a id="methods.inherited.from.class.java.lang.Object">
+                                        <!--   -->
+                                    </a>
+                                        <h3>Methods inherited from class&nbsp;java.lang.Object</h3>
+                                        <code>clone, equals, finalize, getClass, hashCode, notify, notifyAll, toString,
+                                            wait, wait, wait</code></li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </section>
+                    
+                </li>
+            </ul>
+        </div>
+        <div class="details">
+            <ul class="blockList">
+                <li class="blockList">
+                    <!-- ========= CONSTRUCTOR DETAIL ======== -->
+                    
+                    <!-- ============ METHOD DETAIL ========== -->
+                    
+                    <section role="region">
+                        <ul class="blockList">
+                            <li class="blockList"><a id="method.detail">
+                                <!--   -->
+                            </a>
+                                <h3>Method Detail</h3>
+                                
+                                <a id="allocateByteBuffer(int)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>allocateByteBuffer</h4>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> <a href=Tensor.html#allocateByteBuffer(int)>allocateByteBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>, <a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)></a>.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>numElements</code> - capacity (number of elements) of result buffer.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="allocateIntBuffer(int)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>allocateIntBuffer</h4>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> <a href=Tensor.html#allocateIntBuffer(int)>allocateIntBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>numElements</code> - capacity (number of elements) of result buffer.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="allocateFloatBuffer(int)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>allocateFloatBuffer</h4>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> <a href=Tensor.html#allocateFloatBuffer(int)>allocateFloatBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>numElements</code> - capacity (number of elements) of result buffer.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="allocateLongBuffer(int)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>allocateLongBuffer</h4>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> <a href=Tensor.html#allocateLongBuffer(int)>allocateLongBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>numElements</code> - capacity (number of elements) of result buffer.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="allocateDoubleBuffer(int)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>allocateDoubleBuffer</h4>
+                                        <pre class="methodSignature"> static <a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> <a href=Tensor.html#allocateDoubleBuffer(int)>allocateDoubleBuffer</a>(int numElements)</pre>
+                                        <div class="block"><p>Allocates a new direct <a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> with native byte order with specified capacity thatcan be used in <a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>numElements</code> - capacity (number of elements) of result buffer.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlobUnsigned(Array,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlobUnsigned</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlobUnsigned(Array,Array)>fromBlobUnsigned</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.uint8 with specified shape and data as array ofbytes.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Tensor elements</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlob(Array,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlob</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(Array,Array)>fromBlob</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.int8 with specified shape and data as array ofbytes.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Tensor elements</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlob(Array,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlob</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(Array,Array)>fromBlob</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.int32 with specified shape and data as array ofints.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Tensor elements</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlob(Array,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlob</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(Array,Array)>fromBlob</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;float&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.float32 with specified shape and data as arrayof floats.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Tensor elements</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlob(Array,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlob</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(Array,Array)>fromBlob</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.int64 with specified shape and data as array oflongs.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Tensor elements</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlob(Array,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlob</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(Array,Array)>fromBlob</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;double&gt; data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.float64 with specified shape and data as arrayof doubles.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Tensor elements</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlobUnsigned(ByteBuffer,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlobUnsigned</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlobUnsigned(ByteBuffer,Array)>fromBlobUnsigned</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.uint8 with specified shape and data.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Direct buffer with native byte order that contains <code>{@code Tensor.numel(shape)}</code> elements.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlob(ByteBuffer,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlob</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(ByteBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/ByteBuffer.html>ByteBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.int8 with specified shape and data.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Direct buffer with native byte order that contains <code>{@code Tensor.numel(shape)}</code> elements.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlob(IntBuffer,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlob</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(IntBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/IntBuffer.html>IntBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.int32 with specified shape and data.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Direct buffer with native byte order that contains <code>{@code Tensor.numel(shape)}</code> elements.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlob(FloatBuffer,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlob</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(FloatBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/FloatBuffer.html>FloatBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.float32 with specified shape and data.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Direct buffer with native byte order that contains <code>{@code Tensor.numel(shape)}</code> elements.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlob(LongBuffer,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlob</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(LongBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/LongBuffer.html>LongBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.int64 with specified shape and data.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Direct buffer with native byte order that contains <code>{@code Tensor.numel(shape)}</code> elements.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromBlob(DoubleBuffer,Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromBlob</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromBlob(DoubleBuffer,Array)>fromBlob</a>(<a href=https://developer.android.com/reference/kotlin/java/nio/DoubleBuffer.html>DoubleBuffer</a> data, <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Creates a new Tensor instance with dtype torch.float64 with specified shape and data.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>data</code> - Direct buffer with native byte order that contains <code>{@code Tensor.numel(shape)}</code> elements.</dd>
+                                            
+                                            
+                                            
+                                            <dd><code>shape</code> - Tensor shape</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="numel()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>numel</h4>
+                                        <pre class="methodSignature"> long <a href=Tensor.html#numel()>numel</a>()</pre>
+                                        <div class="block"><p>Returns the number of elements in this tensor.</p></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="numel(Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>numel</h4>
+                                        <pre class="methodSignature"> static long <a href=Tensor.html#numel(Array)>numel</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; shape)</pre>
+                                        <div class="block"><p>Calculates the number of elements in a tensor with the specified shape.</p></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="shape()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>shape</h4>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; <a href=Tensor.html#shape()>shape</a>()</pre>
+                                        <div class="block"><p>Returns the shape of this tensor. (The array is a fresh copy.)</p></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="dtype()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>dtype</h4>
+                                        <pre class="methodSignature"> abstract <a href=DType.html>DType</a> <a href=Tensor.html#dtype()>dtype</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getDataAsByteArray()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getDataAsByteArray</h4>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; <a href=Tensor.html#getDataAsByteArray()>getDataAsByteArray</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getDataAsUnsignedByteArray()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getDataAsUnsignedByteArray</h4>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; <a href=Tensor.html#getDataAsUnsignedByteArray()>getDataAsUnsignedByteArray</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getDataAsIntArray()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getDataAsIntArray</h4>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; <a href=Tensor.html#getDataAsIntArray()>getDataAsIntArray</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getDataAsFloatArray()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getDataAsFloatArray</h4>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;float&gt; <a href=Tensor.html#getDataAsFloatArray()>getDataAsFloatArray</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getDataAsLongArray()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getDataAsLongArray</h4>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;long&gt; <a href=Tensor.html#getDataAsLongArray()>getDataAsLongArray</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="getDataAsDoubleArray()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>getDataAsDoubleArray</h4>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;double&gt; <a href=Tensor.html#getDataAsDoubleArray()>getDataAsDoubleArray</a>()</pre>
+                                        <div class="block"></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="toByteArray()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>toByteArray</h4>
+                                        <pre class="methodSignature"> <a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; <a href=Tensor.html#toByteArray()>toByteArray</a>()</pre>
+                                        <div class="block"><p>Serializes a <code>{@code Tensor}</code> into a byte array. Note: This method is experimental and subject tochange without notice. This does NOT supoprt list type.</p></div>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="fromByteArray(Array)">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockListLast"
+                                          >
+                                    <li class="blockList">
+                                        <h4>fromByteArray</h4>
+                                        <pre class="methodSignature"> static <a href=Tensor.html>Tensor</a> <a href=Tensor.html#fromByteArray(Array)>fromByteArray</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;byte&gt; bytes)</pre>
+                                        <div class="block"><p>Deserializes a <code>{@code Tensor}</code> from a byte[]. Note: This method is experimental and subject tochange without notice. This does NOT supoprt list type.</p></div>
+                                        
+                                        <dl>
+                                            <dt><span class="paramLabel">Parameters:</span></dt>
+                                            
+                                            
+                                            <dd><code>bytes</code> - The byte array to deserialize from.</dd>
+                                            
+                                            
+                                        </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                            </li>
+                        </ul>
+                    </section>
+                    
+                </li>
+            </ul>
+        </div>
+    </div>
+</main>
+<footer role="contentinfo">
+    <nav role="navigation">
+        <!-- ======= START OF BOTTOM NAVBAR ====== -->
+        <div class="bottomNav"><a id="navbar.bottom">
+            <!--   -->
+        </a>
+            <div class="skipNav"><a href="#skip.navbar.bottom" title="Skip navigation links">Skip navigation links</a>
+            </div>
+            <a id="navbar.bottom.firstrow">
+                <!--   -->
+            </a>
+            <ul class="navList" title="Navigation">
+    <li><a href="../../../index.html">Overview</a></li>
+    
+    <li><a href="package-summary.html">Package</a></li>
+    
+    <li class="navBarCell1Rev">Class</li>
+    
+    <li><a href="package-tree.html">Tree</a></li>
+    
+    <li><a href="../../../deprecated.html">Deprecated</a></li>
+    <li><a href="../../../index-files/index-1.html">Index</a></li>
+    <li>Help</li>
+</ul></div>
+        <a id="skip.navbar.bottom">
+            <!--   -->
+        </a>
+        <div class="subNav">
+<ul class="navList" id="allclasses_navbar_top" style="display: block;">
+    <li><a href="../../../allclasses.html">All&nbsp;Classes</a></li>
+</ul>
+<div>
+<script type="text/javascript"><!--
+  allClassesLink = document.getElementById("allclasses_navbar_top");
+  if(window==top) {
+    allClassesLink.style.display = "block";
+  }
+  else {
+    allClassesLink.style.display = "none";
+  }
+  //-->
+</script>
+<noscript>
+<div>JavaScript is disabled on your browser.</div>
+</noscript>
+</div>
+<a id="skip.navbar.top">
+<!--   -->
+</a></div><!-- ======== END OF BOTTOM NAVBAR ======= -->
+    </nav>
+</footer><ul class="ui-autocomplete ui-front ui-menu ui-widget ui-widget-content" id="ui-id-1" tabindex="0"
+    style="display: none;"></ul>
+<span role="status" aria-live="assertive" aria-relevant="additions" class="ui-helper-hidden-accessible"></span>
+</body>
+</html>
