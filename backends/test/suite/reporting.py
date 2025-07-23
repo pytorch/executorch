@@ -15,22 +15,25 @@ class TestResult(IntEnum):
     EAGER_FAIL = 2
     """ The test failed due to the model failing to run in eager mode. """
 
-    EXPORT_FAIL = 3
+    QUANTIZE_FAIL = 3
+    """ The test failed due to the quantization stage failing. """
+
+    EXPORT_FAIL = 4
     """ The test failed due to the model failing to export. """
 
-    LOWER_FAIL = 4
+    LOWER_FAIL = 5
     """ The test failed due to a failure in partitioning or lowering. """
 
-    PTE_LOAD_FAIL = 5
+    PTE_LOAD_FAIL = 6
     """ The test failed due to the resulting PTE failing to load. """
 
-    PTE_RUN_FAIL = 6
+    PTE_RUN_FAIL = 7
     """ The test failed due to the resulting PTE failing to run. """
 
-    OUTPUT_MISMATCH_FAIL = 7
+    OUTPUT_MISMATCH_FAIL = 8
     """ The test failed due to a mismatch between runtime and reference outputs. """
 
-    UNKNOWN_FAIL = 8
+    UNKNOWN_FAIL = 9
     """ The test failed in an unknown or unexpected manner. """
 
     def is_success(self):
@@ -49,6 +52,8 @@ class TestResult(IntEnum):
             return "Success (Undelegated)"
         elif self == TestResult.EAGER_FAIL:
             return "Fail (Eager)"
+        elif self == TestResult.QUANTIZE_FAIL:
+            return "Fail (Quantize)"
         elif self == TestResult.EXPORT_FAIL:
             return "Fail (Export)"
         elif self == TestResult.LOWER_FAIL:

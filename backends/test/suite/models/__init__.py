@@ -12,7 +12,6 @@ import unittest
 from typing import Any, Callable
 
 import torch
-from executorch.backends.test.harness import Tester
 from executorch.backends.test.suite import get_test_flows
 from executorch.backends.test.suite.context import get_active_test_context, TestContext
 from executorch.backends.test.suite.flow import TestFlow
@@ -49,7 +48,7 @@ def _create_test(
             "use_dynamic_shapes": use_dynamic_shapes,
         }
         with TestContext(test_name, flow.name, params):
-            test_func(self, dtype, use_dynamic_shapes, flow.tester_factory)
+            test_func(self, flow, dtype, use_dynamic_shapes)
 
     dtype_name = str(dtype)[6:]  # strip "torch."
     test_name = f"{test_func.__name__}_{flow.name}_{dtype_name}"
@@ -104,9 +103,9 @@ def model_test_params(
 def run_model_test(
     model: torch.nn.Module,
     inputs: tuple[Any],
+    flow: TestFlow,
     dtype: torch.dtype,
     dynamic_shapes: Any | None,
-    tester_factory: Callable[[], Tester],
 ):
     model = model.to(dtype)
     context = get_active_test_context()
@@ -117,9 +116,8 @@ def run_model_test(
     run_summary = run_test(
         model,
         inputs,
-        tester_factory,
+        flow,
         context.test_name,
-        context.flow_name,
         context.params,
         dynamic_shapes=dynamic_shapes,
     )
