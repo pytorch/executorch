@@ -835,4 +835,5 @@ class CadenceReorderOpsInGraph:
         # These passes work on branches instead of linear chains to advance
         # quantize op beyond their def.
         AdvanceQuantizeOpAboveDefInBranchPass,
+        PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
     ]
