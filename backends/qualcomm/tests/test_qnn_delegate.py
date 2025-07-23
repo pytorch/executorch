@@ -152,6 +152,11 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_argmax(self):
+        module = Argmax()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 4, 4),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_argmin(self):
         module = Argmin()  # noqa: F405
         sample_input = (torch.randn(16, 3, 4, 4),)
@@ -861,6 +866,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_max_dim(self):
+        module = MaxDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_max_pool2d(self):
         module = MaxPool2d()  # noqa: F405
         sample_input = (torch.randn(4, 3, 24, 24),)
@@ -882,6 +892,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_minimum(self):
         module = Minimum()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_min_dim(self):
+        module = MinDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_neg(self):
@@ -1423,6 +1438,12 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_argmax(self):
+        module = Argmax()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 4, 4),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_argmin(self):
         module = Argmin()  # noqa: F405
@@ -2219,6 +2240,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_max_dim(self):
+        module = MaxDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_max_pool2d(self):
         module = MaxPool2d()  # noqa: F405
         sample_input = (torch.randn(4, 3, 24, 24),)
@@ -2242,6 +2269,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_minimum(self):
         module = Minimum()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_min_dim(self):
+        module = MinDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
