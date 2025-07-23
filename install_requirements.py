@@ -118,8 +118,13 @@ def install_requirements(use_pytorch_nightly):
     # Install packages directly from local copy instead of pypi.
     # This is usually not recommended.
     new_env = os.environ.copy()
-    if "USE_CPP" not in new_env:
+    if ("ET_BUILD_TORCHAO_KERNELS" not in new_env) or (
+        new_env["ET_BUILD_TORCHAO_KERNELS"] == "0"
+    ):
         new_env["USE_CPP"] = "0"
+    else:
+        assert new_env["ET_BUILD_TORCHAO_KERNELS"] == "1"
+        new_env["USE_CPP"] = "1"
     subprocess.run(
         [
             sys.executable,
