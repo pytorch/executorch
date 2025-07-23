@@ -884,6 +884,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_min_dim(self):
+        module = MinDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10), )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_neg(self):
         module = Neg()  # noqa: F405
         sample_input = (torch.randn(1, 4, 16, 16),)
