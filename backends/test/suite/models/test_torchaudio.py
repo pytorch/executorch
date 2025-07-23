@@ -20,7 +20,9 @@ from executorch.backends.test.suite.models import (
 from torch.export import Dim
 
 #
-# This file contains model integration tests for supported torchaudio models.
+# This file contains model integration tests for supported torchaudio models. As many torchaudio
+# models are not export-compatible, this suite contains a subset of the available models and may
+# grow over time.
 #
 
 
