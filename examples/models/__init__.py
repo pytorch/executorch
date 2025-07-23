@@ -37,6 +37,7 @@ class Model(str, Enum):
     EfficientSam = "efficient_sam"
     Qwen25 = "qwen2_5"
     Phi4Mini = "phi_4_mini"
+    WhisperTiny = "whisper_tiny"
 
     def __str__(self) -> str:
         return self.value
@@ -82,6 +83,7 @@ MODEL_NAME_TO_MODEL = {
     str(Model.EfficientSam): ("efficient_sam", "EfficientSAM"),
     str(Model.Qwen25): ("qwen2_5", "Qwen2_5Model"),
     str(Model.Phi4Mini): ("phi_4_mini", "Phi4MiniModel"),
+    str(Model.WhisperTiny): ("whisper_tiny", "WhisperTinyModel"),
 }
 
 __all__ = [
