@@ -39,9 +39,7 @@ class TestHardtanh(OperatorTest):
         self._test_op(Model(), (torch.randn(2, 3, 4, 5),), flow)
 
     def test_hardtanh_f32_custom_range(self, flow: TestFlow) -> None:
-        self._test_op(
-            Model(min_val=-2.0, max_val=2.0), (torch.randn(3, 4, 5),), flow
-        )
+        self._test_op(Model(min_val=-2.0, max_val=2.0), (torch.randn(3, 4, 5),), flow)
 
     def test_hardtanh_f32_inplace(self, flow: TestFlow) -> None:
         self._test_op(Model(inplace=True), (torch.randn(3, 4, 5),), flow)

@@ -12,7 +12,6 @@ import unittest
 from typing import Any, Callable
 
 import torch
-from executorch.backends.test.harness import Tester
 from executorch.backends.test.suite import get_test_flows
 from executorch.backends.test.suite.context import get_active_test_context, TestContext
 from executorch.backends.test.suite.flow import TestFlow
