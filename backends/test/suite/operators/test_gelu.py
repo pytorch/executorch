@@ -26,9 +26,7 @@ class Model(torch.nn.Module):
 class TestGELU(OperatorTest):
     @dtype_test
     def test_gelu_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            Model(), ((torch.rand(2, 10) * 10 - 5).to(dtype),), flow
-        )
+        self._test_op(Model(), ((torch.rand(2, 10) * 10 - 5).to(dtype),), flow)
 
     def test_gelu_f32_single_dim(self, flow: TestFlow) -> None:
         self._test_op(Model(), (torch.randn(20),), flow)
@@ -37,9 +35,7 @@ class TestGELU(OperatorTest):
         self._test_op(Model(), (torch.randn(2, 3, 4, 5),), flow)
 
     def test_gelu_f32_tanh_approximation(self, flow: TestFlow) -> None:
-        self._test_op(
-            Model(approximate="tanh"), (torch.randn(3, 4, 5),), flow
-        )
+        self._test_op(Model(approximate="tanh"), (torch.randn(3, 4, 5),), flow)
 
     def test_gelu_f32_boundary_values(self, flow: TestFlow) -> None:
         # Test with specific values spanning negative and positive ranges

@@ -30,9 +30,7 @@ class Model(torch.nn.Module):
 class TestThreshold(OperatorTest):
     @dtype_test
     def test_threshold_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            Model(), ((torch.rand(2, 10) * 10 - 5).to(dtype),), flow
-        )
+        self._test_op(Model(), ((torch.rand(2, 10) * 10 - 5).to(dtype),), flow)
 
     def test_threshold_f32_single_dim(self, flow: TestFlow) -> None:
         self._test_op(Model(), (torch.randn(20),), flow)
@@ -46,12 +44,8 @@ class TestThreshold(OperatorTest):
     def test_threshold_f32_custom_value(self, flow: TestFlow) -> None:
         self._test_op(Model(value=2.0), (torch.randn(3, 4, 5),), flow)
 
-    def test_threshold_f32_custom_threshold_value(
-        self, flow: TestFlow
-    ) -> None:
-        self._test_op(
-            Model(threshold=0.5, value=1.0), (torch.randn(3, 4, 5),), flow
-        )
+    def test_threshold_f32_custom_threshold_value(self, flow: TestFlow) -> None:
+        self._test_op(Model(threshold=0.5, value=1.0), (torch.randn(3, 4, 5),), flow)
 
     def test_threshold_f32_inplace(self, flow: TestFlow) -> None:
         self._test_op(Model(inplace=True), (torch.randn(3, 4, 5),), flow)

@@ -4,12 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import functools
 from typing import Any, List, Optional, Sequence, Tuple
 
 import coremltools as ct
 import executorch
 import executorch.backends.test.harness.stages as BaseStages
-import functools
 import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
@@ -21,7 +21,7 @@ from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.partitioner import Partitioner
 
 
-def _get_static_int8_qconfig():
+def _get_static_int8_linear_qconfig():
     return ct.optimize.torch.quantization.LinearQuantizerConfig(
         global_config=ct.optimize.torch.quantization.ModuleLinearQuantizerConfig(
             quantization_scheme="symmetric",
@@ -42,22 +42,23 @@ class Quantize(BaseStages.Quantize):
         is_qat: Optional[bool] = False,
     ):
         super().__init__(
-            quantizer=quantizer or CoreMLQuantizer(quantization_config or _get_static_int8_qconfig()),
+            quantizer=quantizer
+            or CoreMLQuantizer(quantization_config or _get_static_int8_linear_qconfig()),
             calibrate=calibrate,
             calibration_samples=calibration_samples,
             is_qat=is_qat,
         )
 
 
-
 class Partition(BaseStages.Partition):
     def __init__(
-        self, 
+        self,
         partitioner: Optional[Partitioner] = None,
         minimum_deployment_target: Optional[Any] = ct.target.iOS15,
     ):
         super().__init__(
-            partitioner=partitioner or CoreMLPartitioner(
+            partitioner=partitioner
+            or CoreMLPartitioner(
                 compile_specs=CoreMLBackend.generate_compile_specs(
                     minimum_deployment_target=minimum_deployment_target
                 )
@@ -74,9 +75,9 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
     ):
         super().__init__(
             default_partitioner_cls=lambda: CoreMLPartitioner(
-               compile_specs=CoreMLBackend.generate_compile_specs(
+                compile_specs=CoreMLBackend.generate_compile_specs(
                     minimum_deployment_target=minimum_deployment_target
-                ) 
+                )
             ),
             partitioners=partitioners,
             edge_compile_config=edge_compile_config,
@@ -96,8 +97,13 @@ class CoreMLTester(TesterBase):
             executorch.backends.test.harness.Tester.default_stage_classes()
             | {
                 StageType.QUANTIZE: Quantize,
-                StageType.PARTITION: functools.partial(Partition, minimum_deployment_target=minimum_deployment_target),
-                StageType.TO_EDGE_TRANSFORM_AND_LOWER: functools.partial(ToEdgeTransformAndLower, minimum_deployment_target=minimum_deployment_target),
+                StageType.PARTITION: functools.partial(
+                    Partition, minimum_deployment_target=minimum_deployment_target
+                ),
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER: functools.partial(
+                    ToEdgeTransformAndLower,
+                    minimum_deployment_target=minimum_deployment_target,
+                ),
             }
         )
 

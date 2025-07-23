@@ -38,9 +38,7 @@ class TestLeakyReLU(OperatorTest):
         self._test_op(Model(), (torch.randn(2, 3, 4, 5),), flow)
 
     def test_leaky_relu_f32_custom_slope(self, flow: TestFlow) -> None:
-        self._test_op(
-            Model(negative_slope=0.1), (torch.randn(3, 4, 5),), flow
-        )
+        self._test_op(Model(negative_slope=0.1), (torch.randn(3, 4, 5),), flow)
 
     def test_leaky_relu_f32_inplace(self, flow: TestFlow) -> None:
         self._test_op(Model(inplace=True), (torch.randn(3, 4, 5),), flow)

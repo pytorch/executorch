@@ -22,9 +22,7 @@ class Model(torch.nn.Module):
 class TestTanh(OperatorTest):
     @dtype_test
     def test_tanh_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            Model(), ((torch.rand(2, 10) * 10 - 5).to(dtype),), flow
-        )
+        self._test_op(Model(), ((torch.rand(2, 10) * 10 - 5).to(dtype),), flow)
 
     def test_tanh_f32_single_dim(self, flow: TestFlow) -> None:
         self._test_op(Model(), (torch.randn(20),), flow)

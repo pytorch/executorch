@@ -3,11 +3,10 @@ import importlib
 import re
 import unittest
 
-from typing import Any, Callable
+from typing import Any
 
 import torch
 
-from executorch.backends.test.harness import Tester
 from executorch.backends.test.harness.stages import StageType
 from executorch.backends.test.suite.discovery import discover_tests, TestFilter
 from executorch.backends.test.suite.flow import TestFlow
@@ -62,13 +61,15 @@ def run_test(  # noqa: C901
         tester = flow.tester_factory(model, inputs)
     except Exception as e:
         return build_result(TestResult.UNKNOWN_FAIL, e)
-    
+
     if flow.quantize:
         try:
-            tester.quantize(flow.quantize_stage_factory() if flow.quantize_stage_factory else None)
+            tester.quantize(
+                flow.quantize_stage_factory() if flow.quantize_stage_factory else None
+            )
         except Exception as e:
             return build_result(TestResult.QUANTIZE_FAIL, e)
-    
+
     try:
         # TODO Use Tester dynamic_shapes parameter once input generation can properly handle derived dims.
         tester.export(
