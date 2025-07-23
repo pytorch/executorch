@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from copy import copy
 from math import prod
 
 import torch
@@ -75,35 +76,47 @@ class DecomposeMeanDimPass(ArmPass):
             return super().call_operator(op, args, kwargs, meta)
 
         x = get_node_arg(args, 0)
-        input_shape = x.data.size()
-        output_shape = meta["val"].size()
+        input_shape = list(x.data.shape)
+        output_shape = list(meta["val"].shape)
         dims_to_reduce = get_node_arg(args, 1)
         dims_to_reduce = [dim % len(input_shape) for dim in dims_to_reduce]
+        dims_to_reduce = [dim for dim in dims_to_reduce if input_shape[dim] != 1]
 
         dtype = meta["val"].dtype
         view_op = get_view(op)
 
-        if len(input_shape) > 4:
-            raise NotImplementedError(
-                f"{op} with rank > 4 is currently not supported for the TOSA backend."
-            )
+        # Reshape to 4D
+        if len(input_shape) != 4:
+            new_shape = copy(input_shape)
 
-        # Unsqueeze to 4D
-        if len(input_shape) < 4:
-            pad_n = 4 - len(input_shape)
-            new_shape = [1] * pad_n + list(input_shape)
-            dims_to_reduce = [dim + pad_n for dim in dims_to_reduce]
+            while len(new_shape) < 4:
+                new_shape.insert(0, 1)
+                dims_to_reduce = [dim + 1 for dim in dims_to_reduce]
+
+            while len(new_shape) > 4:
+                i = new_shape.pop(0)
+                new_shape[0] = new_shape[0] * i
+                dims_to_reduce = [dim - 1 for dim in dims_to_reduce]
 
             x = super().call_operator(view_op, (x, new_shape), {}, meta, True)
 
         # Reduce (h,w) dims by avg pool if possible
         x, dims_to_reduce = self._reduce_by_average_pool(op, x, dims_to_reduce, meta)
 
+        # Reshape back to 5D if necessary
+        if len(input_shape) > 4:
+            original_dims = input_shape[0:-3]
+            temp_shape = list(x.data.shape)[1:]
+            temp_shape = original_dims + temp_shape
+            dims_to_reduce = [dim + len(original_dims) - 1 for dim in dims_to_reduce]
+
+            x = super().call_operator(view_op, (x, temp_shape), {}, meta, True)
+
         # Reduce remaining dims by sum
         x = self._reduce_by_sum(op, x, dims_to_reduce, meta, dtype)
 
         # Reshape to correct output shape if necessary
-        if x.data.size() != output_shape:
+        if list(x.data.shape) != output_shape:
             x = super().call_operator(view_op, (x, output_shape), {}, meta, True)
 
         return x
