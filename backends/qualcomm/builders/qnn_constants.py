@@ -15,6 +15,13 @@ QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 
 
 @dataclass(init=False, frozen=True)
+class OpArgmax:
+    op_name: str = "Argmax"
+    param_axis: str = "axis"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpArgmin:
     op_name: str = "Argmin"
     param_axis: str = "axis"
@@ -395,6 +402,13 @@ class OpReduceMax:
 @dataclass(init=False, frozen=True)
 class OpReduceMean:
     op_name: str = "ReduceMean"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
+class OpReduceMin:
+    op_name: str = "ReduceMin"
     param_axes: str = "axes"
     param_keep_dims: str = "keep_dims"
 
