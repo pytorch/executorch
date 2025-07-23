@@ -1,9 +1,5 @@
-import coremltools
-import functools
-
 from executorch.backends.vulkan.test.tester import VulkanTester
 from executorch.backends.test.suite.flow import TestFlow
-from typing import Any
 
 def _create_vulkan_flow(
     name: str, 
