@@ -21,6 +21,16 @@ from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.partitioner import Partitioner
 
 
+def _create_default_partitioner(
+    minimum_deployment_target: Any = ct.target.iOS15,
+) -> CoreMLPartitioner:
+    return CoreMLPartitioner(
+        compile_specs=CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=minimum_deployment_target
+        )
+    )
+
+
 def _get_static_int8_linear_qconfig():
     return ct.optimize.torch.quantization.LinearQuantizerConfig(
         global_config=ct.optimize.torch.quantization.ModuleLinearQuantizerConfig(
@@ -43,7 +53,9 @@ class Quantize(BaseStages.Quantize):
     ):
         super().__init__(
             quantizer=quantizer
-            or CoreMLQuantizer(quantization_config or _get_static_int8_linear_qconfig()),
+            or CoreMLQuantizer(
+                quantization_config or _get_static_int8_linear_qconfig()
+            ),
             calibrate=calibrate,
             calibration_samples=calibration_samples,
             is_qat=is_qat,
@@ -58,11 +70,7 @@ class Partition(BaseStages.Partition):
     ):
         super().__init__(
             partitioner=partitioner
-            or CoreMLPartitioner(
-                compile_specs=CoreMLBackend.generate_compile_specs(
-                    minimum_deployment_target=minimum_deployment_target
-                )
-            ),
+            or _create_default_partitioner(minimum_deployment_target),
         )
 
 
@@ -74,10 +82,8 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         minimum_deployment_target: Optional[Any] = ct.target.iOS15,
     ):
         super().__init__(
-            default_partitioner_cls=lambda: CoreMLPartitioner(
-                compile_specs=CoreMLBackend.generate_compile_specs(
-                    minimum_deployment_target=minimum_deployment_target
-                )
+            default_partitioner_cls=lambda: _create_default_partitioner(
+                minimum_deployment_target
             ),
             partitioners=partitioners,
             edge_compile_config=edge_compile_config,
