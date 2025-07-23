@@ -1,9 +1,9 @@
-#include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/platform.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
 
 void et_pal_init(void) {}
 
@@ -31,7 +31,7 @@ void et_pal_emit_log_message(
     const char* function,
     size_t line,
     const char* message,
-     size_t length) {
+    size_t length) {
   fprintf(
       stderr,
       "%c [executorch:%s:%zu %s()] %s\n",
@@ -46,6 +46,6 @@ void* et_pal_allocate(size_t size) {
   return k_malloc(size);
 }
 
-void et_pal_free( void* ptr) {
+void et_pal_free(void* ptr) {
   k_free(ptr);
 }
