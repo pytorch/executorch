@@ -7,13 +7,13 @@ from typing import Any, Callable
 
 import torch
 
-from executorch.backends.test.harness import Tester
 from executorch.backends.test.harness.stages import StageType
 from executorch.backends.test.suite.discovery import discover_tests, TestFilter
 from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
+    generate_csv_report,
     RunSummary,
     TestCaseSummary,
     TestResult,
@@ -32,6 +32,7 @@ def run_test(  # noqa: C901
     inputs: Any,
     flow: TestFlow,
     test_name: str,
+    test_base_name: str,
     params: dict | None,
     dynamic_shapes: Any | None = None,
 ) -> TestCaseSummary:
@@ -45,8 +46,10 @@ def run_test(  # noqa: C901
         result: TestResult, error: Exception | None = None
     ) -> TestCaseSummary:
         return TestCaseSummary(
-            name=test_name,
+            backend=flow.backend,
+            base_name=test_base_name,
             flow=flow.name,
+            name=test_name,
             params=params,
             result=result,
             error=error,
@@ -169,6 +172,9 @@ def parse_args():
     parser.add_argument(
         "-f", "--filter", nargs="?", help="A regular expression filter for test names."
     )
+    parser.add_argument(
+        "-r", "--report", nargs="?", help="A file to write the test report to, in CSV format."
+    )
     return parser.parse_args()
 
 
@@ -196,6 +202,11 @@ def runner_main():
 
     summary = complete_test_session()
     print_summary(summary)
+    
+    if args.report is not None:
+        with open(args.report, "w") as f:
+            print(f"Writing CSV report to {args.report}.")
+            generate_csv_report(summary, f)
 
 
 if __name__ == "__main__":
