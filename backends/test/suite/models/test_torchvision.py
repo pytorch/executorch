@@ -20,7 +20,9 @@ from executorch.backends.test.suite.models import (
 from torch.export import Dim
 
 #
-# This file contains model integration tests for supported torchvision models.
+# This file contains model integration tests for supported torchvision models. This
+# suite intends to include all export-compatible torchvision models. For models with
+# multiple size variants, one small or medium variant is used.
 #
 
 
