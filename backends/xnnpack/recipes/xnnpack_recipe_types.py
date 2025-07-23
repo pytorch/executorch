@@ -15,7 +15,6 @@ class XNNPackRecipeType(RecipeType):
     FP32 = "fp32"
     # INT8 Dynamic Quantization
     INT8_DYNAMIC_PER_CHANNEL = "int8_dynamic_per_channel"
-    INT8_DYNAMIC_PER_TENSOR = "int8_dynamic_per_tensor"
     # INT8 Dynamic Activations INT4 Weight Quantization, Axis = 0
     INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_CHANNEL = "int8da_int4w_per_channel"
     # INT8 Dynamic Activations INT4 Weight Quantization, default group_size = 32
