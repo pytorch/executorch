@@ -20,6 +20,7 @@ from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.reporting import log_test_summary
 from executorch.backends.test.suite.runner import run_test
 
+
 def load_tests(loader, suite, pattern):
     package_dir = os.path.dirname(__file__)
     discovered_suite = loader.discover(

@@ -10,9 +10,13 @@
 from typing import Optional
 
 import torch
-
-from executorch.backends.test.suite.operators import dtype_test, operator_test, OperatorTest
 from executorch.backends.test.suite.flow import TestFlow
+
+from executorch.backends.test.suite.operators import (
+    dtype_test,
+    operator_test,
+    OperatorTest,
+)
 
 
 class Model(torch.nn.Module):
