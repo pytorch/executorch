@@ -17,7 +17,7 @@ def _create_xnnpack_flow_base(name: str, quantize_stage_factory: Callable[..., Q
         name,
         backend="xnnpack",
         tester_factory=XnnpackTester,
-        quantize=True,
+        quantize=quantize_stage_factory is not None,
         quantize_stage_factory=quantize_stage_factory,
     )
     
