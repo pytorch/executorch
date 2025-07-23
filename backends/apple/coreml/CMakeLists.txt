@@ -105,17 +105,17 @@ endif()
 
 add_library(coreml_util ${UTIL_SOURCES})
 target_include_directories(
-  coreml_util PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/util> $<INSTALL_INTERFACE:include/executorch/backends/apple/coreml/runtime/util>
+  coreml_util
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/util>
+    $<INSTALL_INTERFACE:include/executorch/backends/apple/coreml/runtime/util>
 )
 if(APPLE)
   target_link_libraries(coreml_util PRIVATE ${FOUNDATION_FRAMEWORK})
 endif()
 target_compile_options(coreml_util PUBLIC -fPIC)
 
-install(
-  TARGETS coreml_util
-  DESTINATION lib
-)
+install(TARGETS coreml_util DESTINATION lib)
 
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
@@ -139,7 +139,10 @@ endif()
 
 add_library(coreml_inmemoryfs ${INMEMORYFS_SOURCES})
 target_include_directories(
-  coreml_inmemoryfs PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs> $<INSTALL_INTERFACE:include/executorch/backends/apple/coreml/runtime/inmemoryfs>
+  coreml_inmemoryfs
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs>
+    $<INSTALL_INTERFACE:include/executorch/backends/apple/coreml/runtime/inmemoryfs>
 )
 if(APPLE)
   target_link_libraries(
