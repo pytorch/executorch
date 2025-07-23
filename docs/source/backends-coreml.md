@@ -70,7 +70,7 @@ A list of `CompileSpec`s is constructed with [`CoreMLBackend.generate_compile_sp
     - `coremltools.ComputeUnit.CPU_ONLY` (uses the CPU only)
     - `coremltools.ComputeUnit.CPU_AND_GPU` (uses both the CPU and GPU, but not the ANE)
     - `coremltools.ComputeUnit.CPU_AND_NE` (uses both the CPU and ANE, but not the GPU)
-- `minimum_deployment_target`: The minimum iOS deployment target (e.g., coremltools.target.iOS18).  The default value is coremltools.target.iOS15.
+- `minimum_deployment_target`: The minimum iOS deployment target (e.g., `coremltools.target.iOS18`).  The default value is `coremltools.target.iOS15`.
 - `compute_precision`: The compute precision used by CoreML (`coremltools.precision.FLOAT16` or `coremltools.precision.FLOAT32`).  The default value is `coremltools.precision.FLOAT16`.  Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model.  For example, an FP32 PyTorch model will be converted to FP16 when delegating to the CoreML backend by default.  Also note that the ANE only supports FP16 precision.
 - `model_type`: Whether the model should be compiled to the CoreML [mlmodelc format](https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device) during .pte creation ([`CoreMLBackend.MODEL_TYPE.COMPILED_MODEL`](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L71)), or whether it should be compiled to mlmodelc on device ([`CoreMLBackend.MODEL_TYPE.MODEL`](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L70)).  Using `CoreMLBackend.MODEL_TYPE.COMPILED_MODEL` and doing compilation ahead of time should improve the first time on-device model load time.
 
@@ -169,7 +169,7 @@ weight_only_8bit_config = ct.optimize.torch.quantization.LinearQuantizerConfig(
 quantizer = CoreMLQuantizer(weight_only_8bit_config)
 ```
 
-Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling convert_pt2e, even for data-free weight-only quantization.
+Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling `convert_pt2e`, even for data-free weight-only quantization.
 
 See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
 
@@ -182,7 +182,7 @@ To run the model on device, use the standard ExecuTorch runtime APIs. See [Runni
 
 When building from source, pass `-DEXECUTORCH_BUILD_COREML=ON` when configuring the CMake build to compile the CoreML backend.
 
-Due to the use of static initializers for registration, it may be necessary to use whole-archive to link against the `coremldelegate` target. . This can typically be done by passing `"$<LINK_LIBRARY:WHOLE_ARCHIVE,coremldelegate>"` to `target_link_libraries`.
+Due to the use of static initializers for registration, it may be necessary to use whole-archive to link against the `coremldelegate` target. This can typically be done by passing `"$<LINK_LIBRARY:WHOLE_ARCHIVE,coremldelegate>"` to `target_link_libraries`.
 
 ```
 # CMakeLists.txt
