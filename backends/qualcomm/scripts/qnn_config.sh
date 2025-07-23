@@ -5,9 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -ex
-
-source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_qnn_sdk.sh"
-
-setup_libcpp 12
-install_qnn
+# QNN SDK Configuration
+QNN_VERSION="2.28.0.241029"
+QNN_ZIP_URL="https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v${QNN_VERSION}.zip"
