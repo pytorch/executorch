@@ -84,7 +84,7 @@ class MemoryAllocator {
 
     // If the end of this allocation exceeds the end of this allocator, print
     // error messages and return nullptr
-    if (end > end_) {
+    if (end > end_ || end < start) {
       ET_LOG(
           Error,
           "Memory allocation failed: %zuB requested (adjusted for alignment), %zuB available",
