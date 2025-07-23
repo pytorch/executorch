@@ -254,6 +254,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.asin.default,
             exir_ops.edge.aten.atanh.default,
             exir_ops.edge.aten.addmm.default,
+            exir_ops.edge.aten.masked_fill.Scalar,
         ]
 
         return supported

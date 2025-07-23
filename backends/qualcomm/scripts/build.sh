@@ -98,7 +98,7 @@ if [ "$BUILD_AARCH64" = true ]; then
     cmake --build $BUILD_ROOT -j$BUILD_JOB_NUMBER --target install
 
     EXAMPLE_ROOT=examples/qualcomm
-    CMAKE_PREFIX_PATH="${BUILD_ROOT}"
+    CMAKE_PREFIX_PATH="${BUILD_ROOT};${BUILD_ROOT}/third-party/gflags;"
 
     cmake $PRJ_ROOT/$EXAMPLE_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
@@ -150,7 +150,7 @@ if [ "$BUILD_X86_64" = true ]; then
     cp -fv "$PRJ_ROOT/schema/scalar_type.fbs" "$PRJ_ROOT/exir/_serialize/scalar_type.fbs"
 
    EXAMPLE_ROOT=examples/qualcomm
-   CMAKE_PREFIX_PATH="${BUILD_ROOT}"
+   CMAKE_PREFIX_PATH="${BUILD_ROOT};${BUILD_ROOT}/third-party/gflags;"
 
    echo "Update tokenizers submodule..."
    pushd $PRJ_ROOT/extension/llm/tokenizers
