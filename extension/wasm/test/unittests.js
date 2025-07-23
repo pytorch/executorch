@@ -8,7 +8,7 @@
 
 let et;
 beforeAll((done) => {
-    et = require("./executorch_wasm_test_lib");
+    et = Module;
     et.onRuntimeInitialized = () => {
         done();
     }
@@ -91,6 +91,14 @@ describe("Module", () => {
     test("loadMethod does not exist", () => {
         const module = et.Module.load("add.pte");
         expect(() => module.loadMethod("does_not_exist")).toThrow();
+        module.delete();
+    });
+
+    test("load from buffer", () => {
+        const data = FS.readFile('add.pte');
+        const module = et.Module.load(data);
+        const methods = module.getMethods();
+        expect(methods).toEqual(["forward"]);
         module.delete();
     });
 

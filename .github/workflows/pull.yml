@@ -773,7 +773,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -789,7 +789,7 @@ jobs:
         source .ci/scripts/setup-emscripten.sh
 
         # Test selective build
-        scripts/build_wasm_tests.sh
+        bash scripts/build_wasm_tests.sh
 
         # Install Jest
         cd cmake-out-wasm/extension/wasm/test
