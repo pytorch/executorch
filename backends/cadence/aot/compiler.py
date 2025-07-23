@@ -54,7 +54,7 @@ default_quantizer = CadenceDefaultQuantizer()
 # if the quantizer here is different from the quantizer used to convert. It is
 # however useful for unit tests to separate the converted model from the fused
 # model, to be able to get reference numerics.
-# If this does not apply, please use quantize_and_fuse_pt2 instead.
+# If this does not apply, please use quantize_pt2 instead.
 def trace(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
@@ -85,6 +85,29 @@ def trace(
 
 
 def prepare_pt2(
+    model: torch.nn.Module,
+    inputs: tuple[object, ...],
+    quantizer: CadenceQuantizer,
+    dump_graphs: bool = False,
+) -> torch.fx.GraphModule:
+    """
+    Trace and Prepare a model using the given quantizer.
+    The quantizer must be supplied and be the same as the one used to
+    fuse the model later, if applicable. If you do not expect that behavior,
+    please use quantize_pt2 instead, which will instantiate a
+    default quantizer for you if needed.
+    Returns a GraphModule with the prepared model.
+    """
+
+    traced_program = trace(model, inputs, dump_graphs=dump_graphs)
+    prepared_program = prepare_traced_pt2(
+        traced_program, quantizer, dump_graphs=dump_graphs
+    )
+
+    return prepared_program
+
+
+def prepare_traced_pt2(
     program: ExportedProgram,
     quantizer: CadenceQuantizer,
     dump_graphs: bool = False,
@@ -93,7 +116,7 @@ def prepare_pt2(
     Prepare a model using the given quantizer.
     The quantizer must be supplied and be the same as the one used to
     fuse the model later, if applicable. If you do not expect that behavior,
-    please use quantize_and_fuse_pt2 instead, which will instantiate a
+    please use quantize_pt2 instead, which will instantiate a
     default quantizer for you if needed.
     Returns a GraphModule with the prepared model.
     """
@@ -137,7 +160,7 @@ def fuse_pt2(
     """
     Fuse a converted graph module using the given quantizer.
     The quantizer must be the same as the one used to convert the model.
-    If you do not expect that behavior, please use quantize_and_fuse_pt2 instead,
+    If you do not expect that behavior, please use quantize_pt2 instead,
     which will instantiate a default quantizer for you if needed.
     Returns a GraphModule with the fused model.
     """
@@ -179,7 +202,7 @@ def quantize_pt2(
         logging.info(program.graph.print_tabular())
 
     # Get prepared graph module
-    prepared_gm = prepare_pt2(program, quantizer, dump_graphs=dump_graphs)
+    prepared_gm = prepare_pt2(model, inputs, quantizer, dump_graphs=dump_graphs)
 
     # Calibrate
     # If no calibration data is provided, use the inputs
