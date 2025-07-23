@@ -69,7 +69,7 @@ add_dependencies(program_schema common_schema)
 install(
   TARGETS common_schema program_schema
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

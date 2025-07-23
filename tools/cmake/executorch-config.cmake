@@ -96,9 +96,10 @@ foreach(lib ${optional_lib_list})
   endif()
 endforeach()
 
-# The ARM baremetal size test doesn't use a CMAKE_TOOLCHAIN_FILE, so our
-# attempts to detect if the system has libdl will succeed when building
-# ExecuTorch but then fail when building for the actual final baremetal.
+# The ARM baremetal size test's CMAKE_TOOLCHAIN_FILE apparently doesn't prevent
+# our attempts to find_library(dl) from succeeding when building ExecuTorch, but
+# that call finds the host system's libdl and there is no actual libdl available
+# when building for the actual final baremetal.
 get_property(
   FIXED_EXECUTORCH_CORE_LINK_LIBRARIES
   TARGET executorch_core

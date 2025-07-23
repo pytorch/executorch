@@ -118,11 +118,11 @@ target_include_directories(
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
 executorch_target_link_options_shared_lib(xnnpack_backend)
 
-move_interface_include_directories_to_build_time_only(XNNPACK)
+executorch_move_interface_include_directories_to_build_time_only(XNNPACK)
 install(
   TARGETS xnnpack_backend xnnpack_schema
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
@@ -132,9 +132,11 @@ install(
 set_target_properties(XNNPACK PROPERTIES PUBLIC_HEADER "")
 
 set_target_properties(cpuinfo PROPERTIES PUBLIC_HEADER "")
-move_interface_include_directories_to_build_time_only(fxdiv)
-move_interface_include_directories_to_build_time_only(pthreadpool)
-move_interface_include_directories_to_build_time_only(pthreadpool_interface)
+executorch_move_interface_include_directories_to_build_time_only(fxdiv)
+executorch_move_interface_include_directories_to_build_time_only(pthreadpool)
+executorch_move_interface_include_directories_to_build_time_only(
+  pthreadpool_interface
+)
 install(
   TARGETS XNNPACK
           xnnpack-base
@@ -158,7 +160,7 @@ install(
           xnnpack-reference-ukernels
           xnnpack-logging
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 if(BUILD_TESTING)
   add_subdirectory(test)

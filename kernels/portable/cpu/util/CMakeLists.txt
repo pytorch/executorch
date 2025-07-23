@@ -36,5 +36,5 @@ target_compile_options(kernels_util_all_deps PUBLIC ${_common_compile_options})
 install(
   TARGETS kernels_util_all_deps
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )

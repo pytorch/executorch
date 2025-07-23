@@ -129,7 +129,7 @@ def _make_wrapped_test(
     def wrapped_test(self):
         with TestContext(test_name, flow.name, params):
             test_kwargs = params or {}
-            test_kwargs["tester_factory"] = flow.tester_factory
+            test_kwargs["flow"] = flow
 
             test_func(self, **test_kwargs)
 
@@ -175,7 +175,7 @@ def load_tests(loader, suite, pattern):
 
 
 class OperatorTest(unittest.TestCase):
-    def _test_op(self, model, inputs, tester_factory):
+    def _test_op(self, model, inputs, flow: TestFlow):
         context = get_active_test_context()
 
         # This should be set in the wrapped test. See _make_wrapped_test above.
@@ -184,9 +184,8 @@ class OperatorTest(unittest.TestCase):
         run_summary = run_test(
             model,
             inputs,
-            tester_factory,
+            flow,
             context.test_name,
-            context.flow_name,
             context.params,
         )
 

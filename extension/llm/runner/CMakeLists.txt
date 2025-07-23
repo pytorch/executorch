@@ -47,31 +47,29 @@ set_target_properties(
 )
 
 target_include_directories(
-  extension_llm_runner
-  INTERFACE ${_common_include_directories}
+  extension_llm_runner INTERFACE ${_common_include_directories}
 )
 
 install(
   TARGETS extension_llm_runner
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/
-  DESTINATION include/executorch/extension/llm/runner
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/llm/runner
   FILES_MATCHING
   PATTERN "*.h"
 )
 # TODO: remove this once we create a proper CMake setup for sampler.
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../sampler/
-  DESTINATION include/executorch/extension/llm/sampler
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/llm/sampler
   FILES_MATCHING
   PATTERN "*.h"
 )
-
 
 if(BUILD_TESTING)
   add_subdirectory(test)

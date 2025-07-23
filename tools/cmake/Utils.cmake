@@ -281,7 +281,9 @@ endmacro()
 
 # Modify ${targetName}'s INTERFACE_INCLUDE_DIRECTORIES by wrapping each entry in
 # $<BUILD_INTERFACE:...> so that they work with CMake EXPORT.
-function(move_interface_include_directories_to_build_time_only targetName)
+function(executorch_move_interface_include_directories_to_build_time_only
+         targetName
+)
   get_property(
     OLD_INTERFACE_INCLUDE_DIRECTORIES
     TARGET "${targetName}"
@@ -297,7 +299,7 @@ function(move_interface_include_directories_to_build_time_only targetName)
   )
 endfunction()
 
-function(add_prefix_to_public_headers targetName prefix)
+function(executorch_add_prefix_to_public_headers targetName prefix)
   get_property(
     OLD_PUBLIC_HEADERS
     TARGET "${targetName}"

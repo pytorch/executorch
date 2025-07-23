@@ -176,7 +176,7 @@ if(NOT DEFINED FXDIV_SOURCE_DIR)
   )
   set(FXDIV_SOURCE_DIR "backends/xnnpack/third-party/FXdiv")
   add_subdirectory("${FXDIV_SOURCE_DIR}")
-  move_interface_include_directories_to_build_time_only(fxdiv)
+  executorch_move_interface_include_directories_to_build_time_only(fxdiv)
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
@@ -220,7 +220,7 @@ if(EXECUTORCH_BUILD_CPUINFO)
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
-  add_prefix_to_public_headers(cpuinfo "${CPUINFO_SOURCE_DIR}/")
+  executorch_add_prefix_to_public_headers(cpuinfo "${CPUINFO_SOURCE_DIR}/")
   install(
     TARGETS cpuinfo
     EXPORT ExecuTorchTargets
@@ -260,8 +260,10 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
     )
   endif()
   add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
-  move_interface_include_directories_to_build_time_only(pthreadpool)
-  move_interface_include_directories_to_build_time_only(pthreadpool_interface)
+  executorch_move_interface_include_directories_to_build_time_only(pthreadpool)
+  executorch_move_interface_include_directories_to_build_time_only(
+    pthreadpool_interface
+  )
   install(
     TARGETS pthreadpool pthreadpool_interface fxdiv
     EXPORT ExecuTorchTargets
@@ -514,7 +516,7 @@ install(
   TARGETS executorch executorch_core
   EXPORT ExecuTorchTargets
   INCLUDES
-  DESTINATION include
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 install(FILES tools/cmake/executorch-config.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch

@@ -108,7 +108,7 @@ target_include_directories(
   coreml_util
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/util>
-    $<INSTALL_INTERFACE:include/executorch/backends/apple/coreml/runtime/util>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreml/runtime/util>
 )
 if(APPLE)
   target_link_libraries(coreml_util PRIVATE ${FOUNDATION_FRAMEWORK})
@@ -119,7 +119,8 @@ install(TARGETS coreml_util DESTINATION lib)
 
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
-  DESTINATION include/executorch/backends/apple/coreml/runtime/util
+  DESTINATION
+    ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreml/runtime/util
   FILES_MATCHING
   PATTERN "*.h"
 )
@@ -142,7 +143,7 @@ target_include_directories(
   coreml_inmemoryfs
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs>
-    $<INSTALL_INTERFACE:include/executorch/backends/apple/coreml/runtime/inmemoryfs>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreml/runtime/inmemoryfs>
 )
 if(APPLE)
   target_link_libraries(
@@ -160,7 +161,8 @@ install(
 
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
-  DESTINATION include/executorch/backends/apple/coreml/runtime/inmemoryfs
+  DESTINATION
+    ${CMAKE_INSTALL_INCLUDE_DIR}/executorch/backends/apple/coreml/runtime/inmemoryfs
   FILES_MATCHING
   PATTERN "*.h"
 )
@@ -251,6 +253,6 @@ if(APPLE)
     EXPORT ExecuTorchTargets
     DESTINATION lib
     INCLUDES
-    DESTINATION include
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
 endif()

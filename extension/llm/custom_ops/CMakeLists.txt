@@ -39,8 +39,10 @@ set(_common_include_directories
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..,${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR},${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core/portable_type/c10>
 )
-# REVIEW: are we installing AO? will this mess up EXPORT?
-list(APPEND _common_include_directories $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/ao>)
+
+list(APPEND _common_include_directories
+     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/ao>
+)
 
 # Custom op libraries
 set(custom_ops_libs pthreadpool)
