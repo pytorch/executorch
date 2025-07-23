@@ -247,7 +247,7 @@ Exporting custom LLMs <llm/export-custom-llm>
 Running with C++ <llm/run-with-c-plus-plus>
 Running on Android <XNNPack> <llm/llama-demo-android>
 Running on Android <QNN> <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
-Running on iOS <llm/llama-demo-ios>
+Running on iOS <llm/run-on-ios>
 ```
 
 ```{toctree}
