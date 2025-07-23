@@ -26,9 +26,7 @@ class Model(torch.nn.Module):
 class TestPReLU(OperatorTest):
     @dtype_test
     def test_prelu_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            Model().to(dtype), ((torch.rand(2, 10) * 2 - 1).to(dtype),), flow
-        )
+        self._test_op(Model().to(dtype), ((torch.rand(2, 10) * 2 - 1).to(dtype),), flow)
 
     def test_prelu_f32_single_dim(self, flow: TestFlow) -> None:
         self._test_op(Model(), (torch.randn(20),), flow)
@@ -41,15 +39,11 @@ class TestPReLU(OperatorTest):
 
     def test_prelu_f32_channel_shared(self, flow: TestFlow) -> None:
         # Default num_parameters=1 means the parameter is shared across all channels
-        self._test_op(
-            Model(num_parameters=1), (torch.randn(2, 3, 4, 5),), flow
-        )
+        self._test_op(Model(num_parameters=1), (torch.randn(2, 3, 4, 5),), flow)
 
     def test_prelu_f32_per_channel_parameter(self, flow: TestFlow) -> None:
         # num_parameters=3 means each channel has its own parameter (for dim=1)
-        self._test_op(
-            Model(num_parameters=3), (torch.randn(2, 3, 4, 5),), flow
-        )
+        self._test_op(Model(num_parameters=3), (torch.randn(2, 3, 4, 5),), flow)
 
     def test_prelu_f32_boundary_values(self, flow: TestFlow) -> None:
         # Test with specific positive and negative values
