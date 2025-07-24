@@ -88,6 +88,12 @@ TEST_F(TrainingModuleTest, JointGraphTest) {
   ASSERT_EQ(param.find("linear.weight")->second.dim(), 2);
   ASSERT_EQ(param.find("linear.bias")->second.sizes()[0], 3);
   ASSERT_EQ(param.find("linear.bias")->second.dim(), 1);
+
+  // Test attributes for pte only model
+  auto attributes_res = mod.named_attributes("forward");
+  ASSERT_EQ(attributes_res.error(), Error::Ok);
+  auto& attributes = attributes_res.get();
+  ASSERT_EQ(attributes.size(), 0);
 }
 
 TEST_F(TrainingModuleTest, NonTrainingModuleTest) {
@@ -152,4 +158,18 @@ TEST_F(TrainingModuleTest, SeperateDataTest) {
   auto res = mod.execute_forward_backward("forward", inputs);
   ASSERT_EQ(res.error(), Error::Ok);
   ASSERT_EQ(res.get().size(), 1);
+
+  // Test Attributes for pte + ptd model
+  auto attributes_res = mod.named_attributes("forward");
+  ASSERT_EQ(attributes_res.error(), Error::Ok);
+  auto& attributes = attributes_res.get();
+  ASSERT_EQ(attributes.size(), 2);
+  ASSERT_NE(attributes.find("linear.weight"), attributes.end());
+  ASSERT_NE(attributes.find("linear.bias"), attributes.end());
+
+  ASSERT_EQ(attributes.find("linear.weight")->second.sizes()[0], 3);
+  ASSERT_EQ(attributes.find("linear.weight")->second.sizes()[1], 3);
+  ASSERT_EQ(attributes.find("linear.weight")->second.dim(), 2);
+  ASSERT_EQ(attributes.find("linear.bias")->second.sizes()[0], 3);
+  ASSERT_EQ(attributes.find("linear.bias")->second.dim(), 1);
 }
