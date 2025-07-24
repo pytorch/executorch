@@ -64,6 +64,7 @@ def all_flows() -> dict[str, TestFlow]:
 
     try:
         from executorch.backends.test.suite.flows.vulkan import VULKAN_TEST_FLOW
+
         flows += [
             VULKAN_TEST_FLOW,
         ]
@@ -72,6 +73,7 @@ def all_flows() -> dict[str, TestFlow]:
 
     try:
         from executorch.backends.test.suite.flows.qualcomm import QUALCOMM_TEST_FLOW
+
         flows += [
             QUALCOMM_TEST_FLOW,
         ]
