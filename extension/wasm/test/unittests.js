@@ -17,21 +17,21 @@ beforeAll((done) => {
 describe("Tensor", () => {
     test("ones", () => {
         const tensor = et.Tensor.ones([2, 2]);
-        expect(tensor.data).toEqual([1, 1, 1, 1]);
+        expect(tensor.data).toEqual(new Float32Array([1, 1, 1, 1]));
         expect(tensor.sizes).toEqual([2, 2]);
         tensor.delete();
     });
 
     test("zeros", () => {
         const tensor = et.Tensor.zeros([2, 2]);
-        expect(tensor.data).toEqual([0, 0, 0, 0]);
+        expect(tensor.data).toEqual(new Float32Array([0, 0, 0, 0]));
         expect(tensor.sizes).toEqual([2, 2]);
         tensor.delete();
     });
 
     test("fromArray", () => {
         const tensor = et.Tensor.fromArray([2, 2], [1, 2, 3, 4]);
-        expect(tensor.data).toEqual([1, 2, 3, 4]);
+        expect(tensor.data).toEqual(new Float32Array([1, 2, 3, 4]));
         expect(tensor.sizes).toEqual([2, 2]);
         tensor.delete();
     });
@@ -42,7 +42,7 @@ describe("Tensor", () => {
 
     test("full", () => {
         const tensor = et.Tensor.full([2, 2], 3);
-        expect(tensor.data).toEqual([3, 3, 3, 3]);
+        expect(tensor.data).toEqual(new Float32Array([3, 3, 3, 3]));
         expect(tensor.sizes).toEqual([2, 2]);
         tensor.delete();
     });
@@ -56,7 +56,7 @@ describe("Tensor", () => {
 
     test("long tensor", () => {
         const tensor = et.Tensor.ones([2, 2], et.ScalarType.Long);
-        expect(tensor.data).toEqual([1n, 1n, 1n, 1n]);
+        expect(tensor.data).toEqual(new BigInt64Array([1n, 1n, 1n, 1n]));
         expect(tensor.sizes).toEqual([2, 2]);
         // ScalarType can only be checked by strict equality.
         expect(tensor.scalarType).toBe(et.ScalarType.Long);
@@ -66,7 +66,7 @@ describe("Tensor", () => {
     test("infer long tensor", () => {
         // Number cannot be converted to Long, so we use BigInt instead.
         const tensor = et.Tensor.fromArray([2, 2], [1n, 2n, 3n, 4n]);
-        expect(tensor.data).toEqual([1n, 2n, 3n, 4n]);
+        expect(tensor.data).toEqual(new BigInt64Array([1n, 2n, 3n, 4n]));
         expect(tensor.sizes).toEqual([2, 2]);
         // ScalarType can only be checked by strict equality.
         expect(tensor.scalarType).toBe(et.ScalarType.Long);
@@ -206,7 +206,7 @@ describe("Module", () => {
             const output = module.execute("forward", inputs);
 
             expect(output.length).toEqual(1);
-            expect(output[0].data).toEqual([2]);
+            expect(output[0].data).toEqual(new Float32Array([2]));
             expect(output[0].sizes).toEqual([1]);
 
             inputs.forEach((input) => input.delete());
@@ -220,7 +220,7 @@ describe("Module", () => {
             const output = module.execute("forward", inputs);
 
             expect(output.length).toEqual(1);
-            expect(output[0].data).toEqual([3, 3, 3, 3]);
+            expect(output[0].data).toEqual(new Float32Array([3, 3, 3, 3]));
             expect(output[0].sizes).toEqual([2, 2]);
 
             inputs.forEach((input) => input.delete());
@@ -234,7 +234,7 @@ describe("Module", () => {
             const output = module.forward(inputs);
 
             expect(output.length).toEqual(1);
-            expect(output[0].data).toEqual([3, 3, 3, 3]);
+            expect(output[0].data).toEqual(new Float32Array([3, 3, 3, 3]));
             expect(output[0].sizes).toEqual([2, 2]);
 
             inputs.forEach((input) => input.delete());
@@ -284,14 +284,14 @@ describe("Module", () => {
             const output = module.forward(inputs);
 
             expect(output.length).toEqual(1);
-            expect(output[0].data).toEqual([3, 3, 3, 3]);
+            expect(output[0].data).toEqual(new Float32Array([3, 3, 3, 3]));
             expect(output[0].sizes).toEqual([2, 2]);
 
             const inputs2 = [output[0], output[0], output[0]];
             const output2 = module.forward(inputs2);
 
             expect(output2.length).toEqual(1);
-            expect(output2[0].data).toEqual([21, 21, 21, 21]);
+            expect(output2[0].data).toEqual(new Float32Array([21, 21, 21, 21]));
             expect(output2[0].sizes).toEqual([2, 2]);
 
             inputs.forEach((input) => input.delete());

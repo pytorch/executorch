@@ -102,13 +102,12 @@ class JsTensor {
   ScalarType get_scalar_type() const {
     return tensor_->scalar_type();
   }
-  val_array<val> get_data() const {
+  val get_data() const {
     switch (get_scalar_type()) {
 #define JS_CASE_TENSOR_TO_VAL_TYPE(T, NAME) \
   case ScalarType::NAME:                    \
-    return val::array(                      \
-        get_tensor().data_ptr<T>(),         \
-        get_tensor().data_ptr<T>() + get_tensor().numel());
+    return val(                             \
+        typed_memory_view(get_tensor().numel(), get_tensor().data_ptr<T>()));
       JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_CASE_TENSOR_TO_VAL_TYPE)
       default:
         THROW_JS_ERROR(
