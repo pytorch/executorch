@@ -1,12 +1,12 @@
+import csv
 from collections import Counter
 from dataclasses import dataclass
 from enum import IntEnum
 from functools import reduce
 from typing import TextIO
 
-import csv
-
 from executorch.backends.test.harness.error_statistics import ErrorStatistics
+
 
 class TestResult(IntEnum):
     """Represents the result of a test case run, indicating success or a specific failure reason."""
@@ -80,13 +80,13 @@ class TestCaseSummary:
     """
     Contains summary results for the execution of a single test case.
     """
-    
+
     backend: str
     """ The name of the target backend. """
 
     base_name: str
     """ The base name of the test, not including flow or parameter suffixes. """
-    
+
     flow: str
     """ The backend-specific flow name. Corresponds to flows registered in backends/test/suite/__init__.py. """
 
@@ -101,7 +101,7 @@ class TestCaseSummary:
 
     error: Exception | None
     """ The Python exception object, if any. """
-    
+
     tensor_error_statistics: list[ErrorStatistics]
     """ 
     Statistics about the error between the backend and reference outputs. Each element of this list corresponds to
@@ -180,8 +180,9 @@ def complete_test_session() -> RunSummary:
 
     return summary
 
+
 def generate_csv_report(summary: RunSummary, output: TextIO):
-    """ Write a run summary report to a file in CSV format. """
+    """Write a run summary report to a file in CSV format."""
 
     field_names = [
         "Test ID",
@@ -190,30 +191,38 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
         "Flow",
         "Result",
     ]
-    
+
     # Tests can have custom parameters. We'll want to report them here, so we need
     # a list of all unique parameter names.
     param_names = reduce(
         lambda a, b: a.union(b),
-        (set(s.params.keys()) for s in summary.test_case_summaries if s.params is not None),
-        set()
+        (
+            set(s.params.keys())
+            for s in summary.test_case_summaries
+            if s.params is not None
+        ),
+        set(),
     )
     field_names += (s.capitalize() for s in param_names)
 
     # Add tensor error statistic field names for each output index.
-    max_outputs = max(len(s.tensor_error_statistics) for s in summary.test_case_summaries)
+    max_outputs = max(
+        len(s.tensor_error_statistics) for s in summary.test_case_summaries
+    )
     for i in range(max_outputs):
-        field_names.extend([
-            f"Output {i} Error Max",
-            f"Output {i} Error MAE",
-            f"Output {i} Error MSD",
-            f"Output {i} Error L2",
-            f"Output {i} SQNR",
-        ])
+        field_names.extend(
+            [
+                f"Output {i} Error Max",
+                f"Output {i} Error MAE",
+                f"Output {i} Error MSD",
+                f"Output {i} Error L2",
+                f"Output {i} SQNR",
+            ]
+        )
 
     writer = csv.DictWriter(output, field_names)
     writer.writeheader()
-    
+
     for record in summary.test_case_summaries:
         row = {
             "Test ID": record.name,
@@ -223,10 +232,8 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
             "Result": record.result.display_name(),
         }
         if record.params is not None:
-            row.update({
-                k.capitalize(): v for k, v in record.params.items()
-            })
-            
+            row.update({k.capitalize(): v for k, v in record.params.items()})
+
         for output_idx, error_stats in enumerate(record.tensor_error_statistics):
             row[f"Output {output_idx} Error Max"] = error_stats.error_max
             row[f"Output {output_idx} Error MAE"] = error_stats.error_mae

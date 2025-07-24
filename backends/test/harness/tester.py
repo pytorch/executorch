@@ -324,16 +324,22 @@ class Tester:
             # Output from running artifact at stage
             stage_output = self.stages[stage].run_artifact(inputs_to_run)
             self._compare_outputs(
-                reference_output, stage_output, quantization_scale, atol, rtol, qtol, statistics_callback
+                reference_output,
+                stage_output,
+                quantization_scale,
+                atol,
+                rtol,
+                qtol,
+                statistics_callback,
             )
 
         return self
 
     @staticmethod
     def _assert_outputs_equal(
-        model_output, 
-        ref_output, 
-        atol=1e-03, 
+        model_output,
+        ref_output,
+        atol=1e-03,
         rtol=1e-03,
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
@@ -351,7 +357,7 @@ class Tester:
         for i in range(len(model_output)):
             model = model_output[i]
             ref = ref_output[i]
-            
+
             error_stats = ErrorStatistics.from_tensors(model, ref)
             if statistics_callback is not None:
                 statistics_callback(error_stats)
@@ -410,7 +416,7 @@ class Tester:
         # atol by qtol quant units.
         if quantization_scale is not None:
             atol += quantization_scale * qtol
-            
+
         Tester._assert_outputs_equal(
             stage_output,
             reference_output,

@@ -41,7 +41,7 @@ def run_test(  # noqa: C901
     Top-level test run function for a model, input set, and tester. Handles test execution
     and reporting.
     """
-    
+
     error_statistics: list[ErrorStatistics] = []
 
     # Helper method to construct the summary.
@@ -111,7 +111,7 @@ def run_test(  # noqa: C901
         # AssertionErrors to catch output mismatches, but this might catch more than that.
         try:
             tester.run_method_and_compare_outputs(
-                statistics_callback = lambda stats: error_statistics.append(stats)
+                statistics_callback=lambda stats: error_statistics.append(stats)
             )
         except AssertionError as e:
             return build_result(TestResult.OUTPUT_MISMATCH_FAIL, e)
@@ -179,7 +179,10 @@ def parse_args():
         "-f", "--filter", nargs="?", help="A regular expression filter for test names."
     )
     parser.add_argument(
-        "-r", "--report", nargs="?", help="A file to write the test report to, in CSV format."
+        "-r",
+        "--report",
+        nargs="?",
+        help="A file to write the test report to, in CSV format.",
     )
     return parser.parse_args()
 
@@ -208,7 +211,7 @@ def runner_main():
 
     summary = complete_test_session()
     print_summary(summary)
-    
+
     if args.report is not None:
         with open(args.report, "w") as f:
             print(f"Writing CSV report to {args.report}.")

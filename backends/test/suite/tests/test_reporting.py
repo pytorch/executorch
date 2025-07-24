@@ -1,9 +1,17 @@
-import torch
 import unittest
 
 from csv import DictReader
-from ..reporting import TestResult, TestCaseSummary, RunSummary, TestSessionState, generate_csv_report
 from io import StringIO
+
+import torch
+
+from ..reporting import (
+    generate_csv_report,
+    RunSummary,
+    TestCaseSummary,
+    TestResult,
+    TestSessionState,
+)
 
 # Test data for simulated test results.
 TEST_CASE_SUMMARIES = [
@@ -45,16 +53,17 @@ TEST_CASE_SUMMARIES = [
     ),
 ]
 
+
 class Reporting(unittest.TestCase):
     def test_csv_report_simple(self):
         # Verify the format of a simple CSV run report.
         session_state = TestSessionState()
         session_state.test_case_summaries.extend(TEST_CASE_SUMMARIES)
         run_summary = RunSummary.from_session(session_state)
-        
+
         strio = StringIO()
         generate_csv_report(run_summary, strio)
-        
+
         # Attempt to deserialize and validate the CSV report.
         report = DictReader(StringIO(strio.getvalue()))
         records = list(report)
@@ -95,7 +104,3 @@ class Reporting(unittest.TestCase):
         self.assertEqual(records[3]["Result"], "Fail (Export)")
         self.assertEqual(records[3]["Dtype"], "")
         self.assertEqual(records[3]["Use_dynamic_shapes"], "True")
-
-
-        
-        
