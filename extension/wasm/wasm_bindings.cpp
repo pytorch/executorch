@@ -96,7 +96,10 @@ std::vector<T> convertJSGeneratorToNumberVector(val generator) {
   return data;
 }
 
-class JsTensor {
+/**
+ * EXPERIMENTAL: JavaScript wrapper for ExecuTorch Tensor.
+ */
+class ET_EXPERIMENTAL JsTensor {
  public:
   JsTensor() = delete;
   JsTensor(const JsTensor&) = delete;
@@ -312,8 +315,10 @@ val to_val(EValue v) {
   }
 }
 
-// JS object containing tensor metadata.
-struct JsTensorInfo {
+/**
+ * EXPERIMENTAL: JavaScript object containing tensor metadata.
+ */
+struct ET_EXPERIMENTAL JsTensorInfo {
   val_array<int32_t> sizes;
   val_array<uint8_t> dim_order;
   ScalarType scalar_type;
@@ -332,8 +337,10 @@ struct JsTensorInfo {
   }
 };
 
-// JS object containing method metadata.
-struct JsMethodMeta {
+/**
+ * EXPERIMENTAL: JavaScript object containing method metadata.
+ */
+struct ET_EXPERIMENTAL JsMethodMeta {
   std::string name;
   val_array<Tag> input_tags;
   val_array<JsTensorInfo> input_tensor_meta;
@@ -385,8 +392,10 @@ struct JsMethodMeta {
   }
 };
 
-// Wrapper around extension/Module.
-class JsModule final {
+/**
+ * EXPERIMENTAL: Wrapper around extension/Module for JavaScript.
+ */
+class ET_EXPERIMENTAL JsModule final {
  public:
   JsModule() = delete;
   JsModule(const JsModule&) = delete;
