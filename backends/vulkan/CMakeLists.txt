@@ -24,10 +24,10 @@ if(NOT RUNTIME_PATH)
   set(RUNTIME_PATH ${CMAKE_CURRENT_SOURCE_DIR}/runtime)
 endif()
 
-# Include this file to access target_link_options_shared_lib This is required to
-# provide access to target_link_options_shared_lib which allows libraries to be
-# linked with the --whole-archive flag. This is required for libraries that
-# perform dynamic registration via static initialization.
+# Include this file to access executorch_target_link_options_shared_lib This is
+# required to provide access to executorch_target_link_options_shared_lib which
+# allows libraries to be linked with the --whole-archive flag. This is required
+# for libraries that perform dynamic registration via static initialization.
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 include(cmake/ShaderLibrary.cmake)
@@ -113,7 +113,7 @@ target_include_directories(
 target_link_libraries(vulkan_backend PRIVATE vulkan_schema executorch_core)
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 # Link this library with --whole-archive due to dynamic backend registration
-target_link_options_shared_lib(vulkan_backend)
+executorch_target_link_options_shared_lib(vulkan_backend)
 
 set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 
