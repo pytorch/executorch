@@ -7,6 +7,7 @@ from typing import Any
 
 import torch
 
+from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import StageType
 from executorch.backends.test.suite.discovery import discover_tests, TestFilter
 from executorch.backends.test.suite.flow import TestFlow
@@ -40,6 +41,8 @@ def run_test(  # noqa: C901
     Top-level test run function for a model, input set, and tester. Handles test execution
     and reporting.
     """
+    
+    error_statistics: list[ErrorStatistics] = []
 
     # Helper method to construct the summary.
     def build_result(
@@ -53,6 +56,7 @@ def run_test(  # noqa: C901
             params=params,
             result=result,
             error=error,
+            tensor_error_statistics=error_statistics,
         )
 
     # Ensure the model can run in eager mode.
@@ -106,7 +110,9 @@ def run_test(  # noqa: C901
         # the cause of a failure in run_method_and_compare_outputs. We can look for
         # AssertionErrors to catch output mismatches, but this might catch more than that.
         try:
-            tester.run_method_and_compare_outputs()
+            tester.run_method_and_compare_outputs(
+                statistics_callback = lambda stats: error_statistics.append(stats)
+            )
         except AssertionError as e:
             return build_result(TestResult.OUTPUT_MISMATCH_FAIL, e)
         except Exception as e:
