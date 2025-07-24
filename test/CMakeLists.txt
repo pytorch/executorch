@@ -60,7 +60,7 @@ endif()
 # size_test_all_ops: binary with portable ops and no delegate backend
 #
 add_executable(size_test_all_ops ${_size_test__srcs})
-target_link_options_shared_lib(portable_ops_lib)
+executorch_target_link_options_shared_lib(portable_ops_lib)
 target_link_libraries(
   size_test_all_ops executorch portable_ops_lib portable_kernels
 )
@@ -73,7 +73,7 @@ endif()
 #
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   add_executable(size_test_all_optimized_ops ${_size_test__srcs})
-  target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
   target_link_libraries(
     size_test_all_optimized_ops executorch optimized_native_cpu_ops_lib
   )
