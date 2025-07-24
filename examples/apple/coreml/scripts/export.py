@@ -139,7 +139,7 @@ def get_pte_base_name(args: argparse.Namespace) -> str:
     pte_name = args.model_name
     if args.compile:
         pte_name += "_compiled"
-    pte_name = f"{pte_name}_{args.compute_unit}"
+    pte_name = f"{pte_name}_coreml_{args.compute_unit}"
     return pte_name
 
 
