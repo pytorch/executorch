@@ -727,7 +727,7 @@ cmake<span class="w"> </span>../examples/qualcomm<span class="w"> </span><span c
 cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
 
 <span class="c1"># qnn_executor_runner can be found under examples/qualcomm</span>
-<span class="c1"># The full path is $EXECUTORCH_ROOT/build-android/examples/qualcomm/qnn_executor_runner</span>
+<span class="c1"># The full path is $EXECUTORCH_ROOT/build-android/examples/qualcomm/executor_runner/qnn_executor_runner</span>
 ls<span class="w"> </span>examples/qualcomm
 </pre></div>
 </div>
@@ -776,9 +776,9 @@ cmake<span class="w"> </span>../examples/qualcomm<span class="w"> </span><span c
 
 cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
 
-<span class="c1"># qnn_executor_runner can be found under examples/qualcomm</span>
-<span class="c1"># The full path is $EXECUTORCH_ROOT/build-x86/examples/qualcomm/qnn_executor_runner</span>
-ls<span class="w"> </span>examples/qualcomm/
+<span class="c1"># qnn_executor_runner can be found under examples/qualcomm/executor_runner</span>
+<span class="c1"># The full path is $EXECUTORCH_ROOT/build-x86/examples/qualcomm/executor_runner/qnn_executor_runner</span>
+ls<span class="w"> </span>examples/qualcomm/executor_runner
 </pre></div>
 </div>
 <p>To run the HTP emulator, the dynamic linker need to access QNN libraries and <code class="docutils literal notranslate"><span class="pre">libqnn_executorch_backend.so</span></code>.
@@ -792,7 +792,7 @@ We set the below two paths to <code class="docutils literal notranslate"><span c
 <p>So, we can run <code class="docutils literal notranslate"><span class="pre">./deeplab_v3/dlv3_qnn.pte</span></code> by:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/build-x86
 <span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="nv">$EXECUTORCH_ROOT</span>/build-x86/lib/:<span class="nv">$LD_LIBRARY_PATH</span>
-examples/qualcomm/qnn_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>../deeplab_v3/dlv3_qnn.pte
+examples/qualcomm/executor_runner/qnn_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>../deeplab_v3/dlv3_qnn.pte
 </pre></div>
 </div>
 <p>We should see some outputs like the below. Note that the emulator can take some time to finish.</p>
