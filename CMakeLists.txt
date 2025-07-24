@@ -573,7 +573,7 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     FILES_MATCHING
     PATTERN "*.h"
   )
-list(APPEND _executorch_extensions extension_module_static)
+  list(APPEND _executorch_extensions extension_module_static)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
@@ -782,7 +782,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     endif()
 
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+    target_link_options(
+      executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file
+      "${WASM_MODEL_DIR}@/"
+    )
   endif()
 endif()
 
