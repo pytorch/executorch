@@ -576,7 +576,7 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     FILES_MATCHING
     PATTERN "*.h"
   )
-list(APPEND _executorch_extensions extension_module_static)
+  list(APPEND _executorch_extensions extension_module_static)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
@@ -735,7 +735,10 @@ target_link_libraries(executorch_extensions INTERFACE ${_executorch_extensions})
 
 # A target containing all configured kernels, with selective build, if enabled.
 add_library(executorch_kernels INTERFACE)
-if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL "" OR NOT EXECUTORCH_SELECT_OPS_LIST STREQUAL "" OR NOT EXECUTORCH_SELECT_OPS_MODEL STREQUAL "")
+if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
+   OR NOT EXECUTORCH_SELECT_OPS_LIST STREQUAL ""
+   OR NOT EXECUTORCH_SELECT_OPS_MODEL STREQUAL ""
+)
   gen_selected_ops(
     LIB_NAME
     "executorch_selected_kernels"
@@ -837,7 +840,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     endif()
 
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+    target_link_options(
+      executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file
+      "${WASM_MODEL_DIR}@/"
+    )
   endif()
 endif()
 
