@@ -765,7 +765,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     endif()
 
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+    target_link_options(
+      executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file
+      "${WASM_MODEL_DIR}@/"
+    )
   endif()
 endif()
 
