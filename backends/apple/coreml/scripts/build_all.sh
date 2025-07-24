@@ -15,7 +15,7 @@ SCRIPT_DIR_PATH="$(
 EXECUTORCH_ROOT_PATH=$(realpath "$SCRIPT_DIR_PATH/../../../../")
 COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
 COREML_EXAMPLES_DIR_PATH="$EXECUTORCH_ROOT_PATH/examples/apple/coreml"
-TEST_MODEL_PATH="$COREML_DIR_PATH/runtime/test/models/mv3_coreml_all.pte"
+TEST_MODEL_PATH="$COREML_DIR_PATH/runtime/test/models/mv3_coreml_float16_all.pte"
 
 red=`tput setaf 1`
 green=`tput setaf 2`

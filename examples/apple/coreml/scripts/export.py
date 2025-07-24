@@ -135,15 +135,15 @@ def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     return exec_prog
 
 
-def get_pte_name(args: argparse.Namespace) -> str:
+def get_pte_base_name(args: argparse.Namespace) -> str:
     pte_name = f"{args.model_name}_coreml_{args.compute_precision}_{args.compute_unit}"
     if args.compile:
         pte_name += "_compiled"
     return pte_name
 
 
-def save_processed_bytes(processed_bytes, model_name, compute_unit):
-    filename = f"{model_name}_coreml_{compute_unit}.bin"
+def save_processed_bytes(processed_bytes, base_name: str):
+    filename = f"{base_name}.bin"
     print(f"Saving processed bytes to {filename}")
     with open(filename, "wb") as file:
         file.write(processed_bytes)
@@ -219,7 +219,7 @@ def main():
         dynamic_shapes = None
 
     compile_specs = generate_compile_specs_from_args(args)
-    pte_name = get_pte_name(args)
+    pte_base_name = get_pte_base_name(args)
     if args.use_partitioner:
         model.eval()
         assert not args.generate_etrecord, "ETRecord is not supported with partitioner"
@@ -234,7 +234,7 @@ def main():
             partitioner=[CoreMLPartitioner(compile_specs=compile_specs)],
         )
         exec_program = delegated_program.to_executorch()
-        save_pte_program(exec_program, pte_name)
+        save_pte_program(exec_program, pte_base_name)
         if args.run_with_pybindings:
             run_with_pybindings(
                 executorch_program=exec_program,
@@ -252,15 +252,14 @@ def main():
             lowered_module,
             example_args,
         )
-        save_pte_program(exec_program, pte_name)
+        save_pte_program(exec_program, pte_base_name)
         if args.generate_etrecord:
-            generate_etrecord(
-                f"{args.model_name}_coreml_etrecord.bin", edge_copy, exec_program
-            )
+            generate_etrecord(f"{pte_base_name}_etrecord.bin", edge_copy, exec_program)
 
         if args.save_processed_bytes:
             save_processed_bytes(
-                lowered_module.processed_bytes, args.model_name, args.compute_unit
+                lowered_module.processed_bytes,
+                pte_base_name,
             )
         if args.run_with_pybindings:
             run_with_pybindings(
