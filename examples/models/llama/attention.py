@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
 

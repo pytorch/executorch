@@ -18,7 +18,6 @@ from executorch.examples.models.llama.attention import (
     ForwardOptions,
 )
 
-from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
