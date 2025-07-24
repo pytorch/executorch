@@ -105,6 +105,8 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
     mps_executor_runner
     bundled_program
     executorch
+    extension_evalue_util
+    extension_runner_util
     gflags
     etdump
     flatccrt
