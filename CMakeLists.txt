@@ -357,6 +357,9 @@ set(_executorch_backends "")
 # A list of all configured extensions.
 set(_executorch_extensions "")
 
+# A list of all configured kernel libraries.
+set(_executorch_kernels "")
+
 target_link_libraries(executorch_core PRIVATE program_schema)
 if(ANDROID)
   target_link_libraries(executorch_core PUBLIC log)
@@ -706,11 +709,13 @@ endif()
 if(EXECUTORCH_BUILD_KERNELS_LLM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops)
+  list(APPEND _executorch_kernels custom_ops_aot_lib)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
   target_link_options_shared_lib(quantized_ops_lib)
+  list(APPEND _executorch_kernels quantized_ops_lib)
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
@@ -728,8 +733,58 @@ target_link_libraries(executorch_backends INTERFACE ${_executorch_backends})
 add_library(executorch_extensions INTERFACE)
 target_link_libraries(executorch_extensions INTERFACE ${_executorch_extensions})
 
+# A target containing all configured kernels, with selective build, if enabled.
+add_library(executorch_kernels INTERFACE)
+if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL "" OR NOT EXECUTORCH_SELECT_OPS_LIST STREQUAL "" OR NOT EXECUTORCH_SELECT_OPS_MODEL STREQUAL "")
+  gen_selected_ops(
+    LIB_NAME
+    "executorch_selected_kernels"
+    OPS_SCHEMA_YAML
+    "${EXECUTORCH_SELECT_OPS_LIB}"
+    ROOT_OPS
+    "${EXECUTORCH_SELECT_OPS_LIST}"
+    INCLUDE_ALL_OPS
+    FALSE
+    OPS_FROM_MODEL
+    "${EXECUTORCH_SELECT_OPS_MODEL}"
+    DTYPE_SELECTIVE_BUILD
+    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
+  )
+
+  generate_bindings_for_kernels(
+    LIB_NAME
+    "executorch_selected_kernels"
+    FUNCTIONS_YAML
+    ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+    CUSTOM_OPS_YAML
+    ""
+    DTYPE_SELECTIVE_BUILD
+    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
+  )
+
+  gen_operators_lib(
+    LIB_NAME
+    "executorch_selected_kernels"
+    KERNEL_LIBS
+    "portable_kernels"
+    DEPS
+    executorch_core
+    DTYPE_SELECTIVE_BUILD
+    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
+  )
+  list(APPEND _executorch_kernels executorch_selected_kernels)
+else()
+  # No selective build - link the full library.
+  if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+    list(APPEND _executorch_kernels optimized_native_cpu_ops_lib)
+  else()
+    list(APPEND _executorch_kernels portable_ops_lib)
+  endif()
+endif()
+target_link_libraries(executorch_kernels INTERFACE ${_executorch_kernels})
+
 install(
-  TARGETS executorch_backends executorch_extensions
+  TARGETS executorch_backends executorch_extensions executorch_kernels
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
