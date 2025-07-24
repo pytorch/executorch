@@ -3,12 +3,14 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import IntEnum, unique
 from functools import partial
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import torch
+from executorch.backends.qualcomm._passes import InsertSeqMse, RemoveSeqMse
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 from torch._ops import OpOverload
@@ -427,3 +429,12 @@ def get_submodule_name_predicate(module_name_str):
         return False
 
     return predicate
+
+
+@contextmanager
+def qnn_ptq_manager(prepared_gm):
+    prepared_gm = InsertSeqMse()(prepared_gm).graph_module
+    try:
+        yield
+    finally:
+        prepared_gm = RemoveSeqMse()(prepared_gm).graph_module

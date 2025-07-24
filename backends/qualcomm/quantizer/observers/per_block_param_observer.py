@@ -34,6 +34,7 @@ class PerBlockParamObserver(AffineQuantizedMinMaxObserver):
             eps=eps,
             **kwargs,
         )
+        self.dtype = dtype
         self.block_size = block_size
         self.calibrated = False
 
