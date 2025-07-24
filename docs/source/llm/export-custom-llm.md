@@ -316,16 +316,11 @@ lowered graph():
     return [aten_view_copy_default_1]
 ```
 
-### Performance Analysis
+### Further Model Analysis and Debugging
 
-Through the ExecuTorch Developer Tools, users are able to profile model execution, giving timing information for each operator in the model.
-
-#### Prerequisites
-
-##### ETRecord generation (Optional)
+Through the [ExecuTorch's Developer Tools](getting-started.md#performance-analysis), users are able to profile model execution, giving timing information for each operator in the model, doing model numeric debugging, etc.
 
 An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [the ETRecord docs](../etrecord.rst).
-
 
 In your export script, after calling `to_edge()` and `to_executorch()`, call `generate_etrecord()` with the `EdgeProgramManager` from `to_edge()` and the `ExecuTorchProgramManager` from `to_executorch()`. Make sure to copy the `EdgeProgramManager`, as the call to `to_edge_transform_and_lower()` mutates the graph in-place.
 
@@ -346,79 +341,4 @@ generate_etrecord(etrecord_path, edge_manager_copy, et_program)
 
 Run the export script and the ETRecord will be generated as `etrecord.bin`.
 
-##### ETDump generation
-
-An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see [the ETDump docs](../etdump.md).
-
-Include the ETDump header and namespace in your code.
-```cpp
-// main.cpp
-
-#include <executorch/devtools/etdump/etdump_flatcc.h>
-
-using executorch::etdump::ETDumpGen;
-using torch::executor::etdump_result;
-```
-
-Create an Instance of the ETDumpGen class and pass it to the Module constructor.
-```cpp
-std::unique_ptr<ETDumpGen> etdump_gen_ = std::make_unique<ETDumpGen>();
-Module model("nanogpt.pte", Module::LoadMode::MmapUseMlockIgnoreErrors, std::move(etdump_gen_));
-```
-
-After calling `generate()`, save the ETDump to a file. You can capture multiple
-model runs in a single trace, if desired.
-```cpp
-ETDumpGen* etdump_gen = static_cast<ETDumpGen*>(model.event_tracer());
-
-ET_LOG(Info, "ETDump size: %zu blocks", etdump_gen->get_num_blocks());
-etdump_result result = etdump_gen->get_etdump_data();
-if (result.buf != nullptr && result.size > 0) {
-    // On a device with a file system, users can just write it to a file.
-    FILE* f = fopen("etdump.etdp", "w+");
-    fwrite((uint8_t*)result.buf, 1, result.size, f);
-    fclose(f);
-    free(result.buf);
-}
-```
-
-Additionally, update CMakeLists.txt to build with Developer Tools and enable events to be traced and logged into ETDump:
-
-```
-option(EXECUTORCH_ENABLE_EVENT_TRACER "" ON)
-option(EXECUTORCH_BUILD_DEVTOOLS "" ON)
-
-# ...
-
-target_link_libraries(
-    # ... omit existing ones
-    etdump) # Provides event tracing and logging
-
-target_compile_options(executorch PUBLIC -DET_EVENT_TRACER_ENABLED)
-target_compile_options(portable_ops_lib PUBLIC -DET_EVENT_TRACER_ENABLED)
-```
-Build and run the runner, you will see a file named “etdump.etdp” is generated. (Note that this time we build in release mode to get around a flatccrt build limitation.)
-```bash
-(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DCMAKE_BUILD_TYPE=Release ..)
-cmake --build cmake-out -j10
-./cmake-out/nanogpt_runner
-```
-
-## Performance debugging and profiling
-
-Once you’ve collected debug artifacts ETDump (and optionally an ETRecord), you can use the Inspector API to view performance information.
-
-```python
-from executorch.devtools import Inspector
-
-inspector = Inspector(etdump_path="etdump.etdp")
-# If you also generated an ETRecord, then pass that in as well: `inspector = Inspector(etdump_path="etdump.etdp", etrecord="etrecord.bin")`
-
-with open("inspector_out.txt", "w") as file:
-    inspector.print_data_tabular(file)
-```
-This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event. Top rows look like this:
-![](../_static/img/llm_manual_print_data_tabular.png)
-<a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a>
-
-To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](../model-inspector.rst).
+To learn more about ExecuTorch's Developer Tools, see the [Introduction to the ExecuTorch Developer Tools](../devtools-overview.md).
