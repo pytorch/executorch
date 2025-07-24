@@ -122,6 +122,8 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 # Instead please use `find_package(executorch REQUIRED)` in the example
 # directory and add a new executable in the example `CMakeLists.txt`.
 
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
   # will set the compiler flag for all targets in this directory, and for all
