@@ -157,5 +157,5 @@ endif()
 target_link_libraries(
   selective_build_test PRIVATE executorch_core gflags select_build_lib
 )
-target_link_options_shared_lib(select_build_lib)
+executorch_target_link_options_shared_lib(select_build_lib)
 target_compile_options(selective_build_test PUBLIC ${_common_compile_options})
