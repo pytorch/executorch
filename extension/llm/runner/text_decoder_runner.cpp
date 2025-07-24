@@ -66,11 +66,6 @@ TextDecoderRunner::TextDecoderRunner(Module* module) : module_(module) {}
       start_pos_tensor = from_blob(
           &start_pos, sizes_vec, ::executorch::aten::ScalarType::Long);
     }
-    ET_LOG(
-        Info,
-        "Start pos tensor numel: %zu, tokens numel: %zu",
-        start_pos_tensor->numel(),
-        tokens->numel());
     auto outputs_res = module_->forward({tokens, start_pos_tensor});
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_CHECK_MSG(
