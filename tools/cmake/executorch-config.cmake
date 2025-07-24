@@ -183,7 +183,7 @@ set(shared_lib_list
 )
 foreach(lib ${shared_lib_list})
   if(TARGET ${lib})
-    target_link_options_shared_lib(${lib})
+    executorch_target_link_options_shared_lib(${lib})
   endif()
 endforeach()
 
@@ -196,5 +196,5 @@ if(TARGET xnnpack_backend)
   set_target_properties(
     xnnpack_backend PROPERTIES INTERFACE_LINK_LIBRARIES "${_deps}"
   )
-  target_link_options_shared_lib(xnnpack_backend)
+  executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
