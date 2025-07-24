@@ -590,12 +590,20 @@ jobs:
         echo "Finishing installing coreml."
 
         # Build and test coreml model
-        MODELS=(mv3 ic4 resnet50 edsr mobilebert w2l)
-        for MODEL_NAME in "${MODELS[@]}"; do
+        for MODEL_NAME in dl3 edsr emformer_join ic3 ic4 mobilebert mv2 mv3 resnet50 vit w2l; do
           echo "::group::Exporting coreml model: $MODEL_NAME"
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "coreml"
+          if [[ "${MODEL_NAME}" == "mobilebert" ]]; then
+            # mobilebert has nan output on FP16
+            BACKEND="coreml"
+          else
+            BACKEND="coreml-pybind"
+          fi
+
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
           echo "::endgroup::"
 
+        # Build and test mps model
+        for MODEL_NAME in mv3 ic4 resnet50 edsr mobilebert w2l; do
           echo "::group::Exporting mps model: $MODEL_NAME"
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "mps"
           echo "::endgroup::"
