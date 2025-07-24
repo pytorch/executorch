@@ -36,6 +36,16 @@ describe("Tensor", () => {
         tensor.delete();
     });
 
+    test("fromGenerator", () => {
+        function* generator() {
+            yield* [1, 2, 3, 4];
+        }
+        const tensor = et.Tensor.fromIter([2, 2], generator());
+        expect(tensor.data).toEqual(new Float32Array([1, 2, 3, 4]));
+        expect(tensor.sizes).toEqual([2, 2]);
+        tensor.delete();
+    });
+
     test("fromArray wrong size", () => {
         expect(() => et.Tensor.fromArray([3, 2], [1, 2, 3, 4])).toThrow();
     });
