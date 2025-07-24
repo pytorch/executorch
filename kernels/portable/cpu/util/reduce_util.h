@@ -832,7 +832,7 @@ template <typename Func>
     std::optional<ArrayRef<int64_t>> dim_list,
     const Tensor& out,
     const Func& func) {
-#ifdef ET_UE_THREADPOOL
+#ifdef ET_USE_THREADPOOL
   const ssize_t reduction_size = get_reduced_dim_product(in, dim_list);
   const auto grain_size = std::max(
       static_cast<ssize_t>(1),
