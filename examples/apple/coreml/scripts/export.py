@@ -136,9 +136,10 @@ def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
 
 
 def get_pte_base_name(args: argparse.Namespace) -> str:
-    pte_name = f"{args.model_name}_coreml_{args.compute_precision}_{args.compute_unit}"
+    pte_name = args.model_name
     if args.compile:
         pte_name += "_compiled"
+    pte_name = f"{pte_name}_{args.compute_unit}"
     return pte_name
 
 
@@ -254,7 +255,9 @@ def main():
         )
         save_pte_program(exec_program, pte_base_name)
         if args.generate_etrecord:
-            generate_etrecord(f"{pte_base_name}_etrecord.bin", edge_copy, exec_program)
+            generate_etrecord(
+                f"{args.model_name}_coreml_etrecord.bin", edge_copy, exec_program
+            )
 
         if args.save_processed_bytes:
             save_processed_bytes(
