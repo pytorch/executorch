@@ -498,6 +498,7 @@ install(FILES tools/cmake/Utils.cmake tools/cmake/executorch-config.cmake
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/arm/rp_pi)
 endif()
 
 if(EXECUTORCH_BUILD_CADENCE)
