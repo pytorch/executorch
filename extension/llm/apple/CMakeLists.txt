@@ -50,3 +50,8 @@ set_source_files_properties(${OBJC_SOURCES} PROPERTIES COMPILE_FLAGS
   "-fno-exceptions"
   "-fno-rtti"
 )
+
+set_target_properties(extension_llm_apple PROPERTIES
+  XCODE_ATTRIBUTE_BUILD_LIBRARY_FOR_DISTRIBUTION YES
+)
+
