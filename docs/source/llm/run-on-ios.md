@@ -124,6 +124,3 @@ runner.stop()
 ## Demo
 
 Get hands-on with our [LLaMA iOS Demo App](llama-demo-ios.md) to see the LLM runtime APIs in action.
-
-
-
