@@ -77,7 +77,7 @@ install_prerequiresites() {
         chmod +x kitware-archive.sh && \
         ./kitware-archive.sh && \
         rm -f kitware-archive.sh
-    useradd -d /home/zephyruser -m -s /bin/bash zephyruser
+    pip_install --no-cache-dir west
 }
 
 install_sdk() {
