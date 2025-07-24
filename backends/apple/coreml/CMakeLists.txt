@@ -162,7 +162,7 @@ install(
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
   DESTINATION
-    ${CMAKE_INSTALL_INCLUDE_DIR}/executorch/backends/apple/coreml/runtime/inmemoryfs
+    ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreml/runtime/inmemoryfs
   FILES_MATCHING
   PATTERN "*.h"
 )
