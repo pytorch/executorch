@@ -360,9 +360,9 @@ The operator now should be functional for Qualcomm backends. For operator to wor
 ## Operator Support Status
 Please help update following table if you are contributing new operators:
 
-| Operators | HTP - 80/116 Enabled |
+| Operators | HTP - 82/116 Enabled |
 |-----------|---------|
-| Argmax | &cross; |
+| Argmax | &check; |
 | Argmin | &check; |
 | BatchNorm | &check; |
 | BatchToSpace | &cross; |
@@ -449,7 +449,7 @@ Please help update following table if you are contributing new operators:
 | Quantize | &check; |
 | ReduceMax | &check; |
 | ReduceMean | &check; |
-| ReduceMin | &cross; |
+| ReduceMin | &check; |
 | ReduceSum | &check; |
 | Relu | &check; |
 | Relu1 | &cross; |
