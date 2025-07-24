@@ -51,6 +51,6 @@ target_include_directories(
 )
 target_link_libraries(executorch_wasm PUBLIC ${link_libraries})
 
-if(BUILD_TESTING)
+if(EXECUTORCH_BUILD_WASM_TESTS)
   add_subdirectory(test)
 endif()
