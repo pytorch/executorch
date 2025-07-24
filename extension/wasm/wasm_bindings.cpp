@@ -266,6 +266,9 @@ class JsTensor {
 
 // Converts JS value to EValue.
 EValue to_evalue(val v) {
+  if (v.isUndefined()) {
+    THROW_JS_ERROR(TypeError, "Value cannot be undefined");
+  }
   if (v.isNull()) {
     return EValue();
   } else if (v.isNumber()) {
