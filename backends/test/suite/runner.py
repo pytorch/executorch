@@ -1,8 +1,10 @@
 import argparse
 import importlib
 import re
+import time
 import unittest
 
+from datetime import timedelta
 from typing import Any
 
 import torch
@@ -43,6 +45,7 @@ def run_test(  # noqa: C901
     """
 
     error_statistics: list[ErrorStatistics] = []
+    extra_stats = {}
 
     # Helper method to construct the summary.
     def build_result(
@@ -57,6 +60,7 @@ def run_test(  # noqa: C901
             result=result,
             error=error,
             tensor_error_statistics=error_statistics,
+            **extra_stats,
         )
 
     # Ensure the model can run in eager mode.
@@ -71,11 +75,16 @@ def run_test(  # noqa: C901
         return build_result(TestResult.UNKNOWN_FAIL, e)
 
     if flow.quantize:
+        start_time = time.perf_counter()
         try:
             tester.quantize(
                 flow.quantize_stage_factory() if flow.quantize_stage_factory else None
             )
+            elapsed = time.perf_counter() - start_time
+            extra_stats["quantize_time"] = timedelta(seconds=elapsed)
         except Exception as e:
+            elapsed = time.perf_counter() - start_time
+            extra_stats["quantize_time"] = timedelta(seconds=elapsed)
             return build_result(TestResult.QUANTIZE_FAIL, e)
 
     try:
@@ -86,9 +95,14 @@ def run_test(  # noqa: C901
     except Exception as e:
         return build_result(TestResult.EXPORT_FAIL, e)
 
+    lower_start_time = time.perf_counter()
     try:
         tester.to_edge_transform_and_lower()
+        elapsed = time.perf_counter() - lower_start_time
+        extra_stats["lower_time"] = timedelta(seconds=elapsed)
     except Exception as e:
+        elapsed = time.perf_counter() - lower_start_time
+        extra_stats["lower_time"] = timedelta(seconds=elapsed)
         return build_result(TestResult.LOWER_FAIL, e)
 
     is_delegated = any(
@@ -183,6 +197,7 @@ def parse_args():
         "--report",
         nargs="?",
         help="A file to write the test report to, in CSV format.",
+        default="backend_test_report.csv",
     )
     return parser.parse_args()
 
