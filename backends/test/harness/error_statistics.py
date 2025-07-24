@@ -33,7 +33,7 @@ class TensorStatistics:
         return cls(
             shape=tensor.shape,
             numel=tensor.numel(),
-            median=flattened.median().item(),
+            median=torch.quantile(flattened, q=0.5).item(),
             mean=flattened.mean().item(),
             max=flattened.max().item(),
             min=flattened.min().item(),
@@ -70,6 +70,9 @@ class ErrorStatistics:
         cls, actual: torch.Tensor, reference: torch.Tensor
     ) -> "ErrorStatistics":
         """Creates an ErrorStatistics object from two tensors."""
+        actual = actual.to(torch.float64)
+        reference = reference.to(torch.float64)
+
         if actual.shape != reference.shape:
             return cls(
                 reference_stats=TensorStatistics.from_tensor(reference),
@@ -81,7 +84,7 @@ class ErrorStatistics:
                 sqnr=None,
             )
 
-        error = actual.to(torch.float64) - reference.to(torch.float64)
+        error = actual - reference
         flat_error = torch.flatten(error)
 
         return cls(
@@ -91,5 +94,6 @@ class ErrorStatistics:
             error_mae=torch.mean(torch.abs(flat_error)).item(),
             error_max=torch.max(torch.abs(flat_error)).item(),
             error_msd=torch.mean(flat_error).item(),
-            sqnr=compute_sqnr(actual, reference).item(),
+            # Torch sqnr implementation requires float32 due to decorator logic
+            sqnr=compute_sqnr(actual.to(torch.float), reference.to(torch.float)).item(),
         )
