@@ -722,10 +722,12 @@ endif()
 
 # A target containing all configured backends.
 add_library(executorch_backends INTERFACE)
+add_library(executorch::backends ALIAS executorch_backends)
 target_link_libraries(executorch_backends INTERFACE ${_executorch_backends})
 
 # A target containing all configured extensions.
 add_library(executorch_extensions INTERFACE)
+add_library(executorch::extensions ALIAS executorch_extensions)
 target_link_libraries(executorch_extensions INTERFACE ${_executorch_extensions})
 
 install(
