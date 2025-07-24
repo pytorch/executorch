@@ -14,7 +14,7 @@
 
 #define THROW_JS_ERROR(errorType, message, ...)                 \
   ({                                                            \
-    char msg_buf[128];                                          \
+    char msg_buf[256];                                          \
     snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
     EM_ASM(throw new errorType(UTF8ToString($0)), msg_buf);     \
     __builtin_unreachable();                                    \
@@ -96,18 +96,20 @@ class JsTensor {
       : tensor_(std::make_shared<Tensor>(tensor)) {}
 
   const Tensor& get_tensor() const {
+    THROW_IF_FALSE(tensor_, "Tensor is null");
     return *tensor_;
   }
 
   ScalarType get_scalar_type() const {
+    THROW_IF_FALSE(tensor_, "Tensor is null");
     return tensor_->scalar_type();
   }
   val get_data() const {
     switch (get_scalar_type()) {
-#define JS_CASE_TENSOR_TO_VAL_TYPE(T, NAME) \
-  case ScalarType::NAME:                    \
-    return val(                             \
-        typed_memory_view(get_tensor().numel(), get_tensor().data_ptr<T>()));
+#define JS_CASE_TENSOR_TO_VAL_TYPE(T, NAME)                        \
+  case ScalarType::NAME:                                           \
+    THROW_IF_FALSE(tensor_->data_ptr<T>(), "Tensor data is null"); \
+    return val(typed_memory_view(tensor_->numel(), tensor_->data_ptr<T>()));
       JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_CASE_TENSOR_TO_VAL_TYPE)
       default:
         THROW_JS_ERROR(
@@ -246,7 +248,7 @@ val to_val(EValue v) {
     return val(std::move(wrapper));
   } else {
     char tag_buf[32];
-    runtime::tag_to_string(v.tag, tag_buf, 32);
+    runtime::tag_to_string(v.tag, tag_buf, sizeof(tag_buf));
     THROW_JS_ERROR(TypeError, "Unsupported EValue type: %s", tag_buf);
   }
 }
@@ -340,6 +342,9 @@ class JsModule final {
       : buffer_(std::move(buffer)), module_(std::move(module)) {}
 
   static std::unique_ptr<JsModule> load(val data) {
+    if (data.isNull() || data.isUndefined()) {
+      THROW_JS_ERROR(TypeError, "Data cannot be null or undefined");
+    }
     if (data.isString()) {
       return std::make_unique<JsModule>(
           std::make_unique<Module>(data.as<std::string>()));
