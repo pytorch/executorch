@@ -393,6 +393,36 @@ jobs:
         # Run test
         ${CONDA_RUN} sh .ci/scripts/test_llama_torchao_lowbit.sh
 
+  test-llama-torchao-lowbit:
+    name: test-models-optimum-executorch-coreml
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-15-xlarge
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
+
+        # Install requirements
+        ${CONDA_RUN} python install_executorch.py
+
+        # Install optimum-executorch
+        OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        git clone https://github.com/huggingface/optimum-executorch
+        pushd optimum-executorch
+        # There is no release yet, for CI stability, always test from the same commit on main
+        git checkout $OPTIMUM_ET_COMMIT
+        ${CONDA_RUN} python install_dev.py --skip_override_torch
+        popd
+
+        for model in smollm qwen3 olmo llama3 bert roberta distilbert whisper vit; do
+          echo "Testing $model"
+          ${CONDA_RUN} python .ci/scripts/test_model_optimum_executorch.py --model_name $model
+        done
+
   test-llama-runner-linux:
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
