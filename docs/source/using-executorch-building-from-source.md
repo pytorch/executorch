@@ -257,9 +257,9 @@ Output 0: tensor(sizes=[1], [2.])
 
 To link against the ExecuTorch framework from CMake, the following top-level targets are exposed:
 
- * `executorch_backends`: Contains all configured backends.
- * `executorch_extensions`: Contains all configured extensions.
- * `executorch_kernels`: Contains all configured kernel libraries.
+ * `executorch::backends`: Contains all configured backends.
+ * `executorch::extensions`: Contains all configured extensions.
+ * `executorch::kernels`: Contains all configured kernel libraries.
 
 The backends, extensions, and kernels included in these targets are controlled by the various `EXECUTORCH_` CMake options specified by the build.
 

@@ -49,9 +49,9 @@ add_subdirectory("executorch")
 target_link_libraries(
     my_target
     PRIVATE executorch
-    executorch_backends
-    executorch_extensions
-    executorch_kernels)
+    executorch::backends
+    executorch::extensions
+    executorch::kernels)
 ```
 
 See [Building from Source](using-executorch-building-from-source.md) for more information on the CMake build process.
