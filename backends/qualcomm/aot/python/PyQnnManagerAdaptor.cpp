@@ -7,6 +7,7 @@
  */
 #include <executorch/backends/qualcomm/aot/python/PyQnnManagerAdaptor.h>
 #include <pybind11/pybind11.h>
+#include "QnnSdkBuildId.h"
 
 namespace py = pybind11;
 namespace executorch {
@@ -19,6 +20,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
   // TODO: Add related documents for configurations listed below
   using namespace qnn_delegate;
 
+  m.def("GetQnnSdkBuildId", []() { return std::string(QNN_SDK_BUILD_ID); });
   py::class_<QnnExecuTorchContextBinary>(m, "QnnExecuTorchContextBinary")
       .def(py::init<>());
 

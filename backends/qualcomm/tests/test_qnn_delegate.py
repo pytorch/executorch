@@ -46,16 +46,13 @@ from executorch.backends.qualcomm.utils.utils import (
     from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    is_qnn_sdk_version_less_than,
     PyQnnManagerAdaptor,
     rewrite_prepared_observer,
     skip_annotation,
     to_edge_transform_and_lower_to_qnn,
     update_spill_fill_size,
 )
-
-from executorch.examples.models.llama.llama_transformer import MOEFeedForward
-
-from executorch.examples.models.llama.model_args import ModelArgs
 
 from executorch.examples.qualcomm.utils import (
     make_quantizer,
@@ -131,6 +128,13 @@ class TestQNNFloatingPointOperator(TestQNN):
 
     def test_qnn_backend_amax(self):
         modules = [AMax(dim=1, keepdim=False), AMax(dim=1, keepdim=True)]  # noqa: F405
+        sample_input = (torch.randn(4, 4),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_amin(self):
+        modules = [AMin(dim=1, keepdim=False), AMin(dim=1, keepdim=True)]  # noqa: F405
         sample_input = (torch.randn(4, 4),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -1227,6 +1231,9 @@ class TestQNNFloatingPointModel(TestQNN):
 
     @unittest.skip("Fail because of bad accuracy")
     def test_qnn_backend_moe_feed_forward(self):
+        from executorch.examples.models.llama.llama_transformer import MOEFeedForward
+        from executorch.examples.models.llama.model_args import ModelArgs
+
         args = ModelArgs()
         args.dim = 32
         args.n_heads = 8
@@ -1415,6 +1422,14 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_amax(self):
         modules = [AMax(dim=1, keepdim=False), AMax(dim=1, keepdim=True)]  # noqa: F405
+        sample_input = (torch.randn(4, 4),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_amin(self):
+        modules = [AMin(dim=1, keepdim=False), AMin(dim=1, keepdim=True)]  # noqa: F405
         sample_input = (torch.randn(4, 4),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -2643,8 +2658,57 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    @unittest.skipIf(is_qnn_sdk_version_less_than("2.35"), "UT pass after QNN 2.35")
+    def test_qnn_backend_masked_softmax(self):
+        if self.enable_x86_64:
+            self.skipTest(
+                "At the moment, testing is only being conducted on the device."
+            )
+        module = MaskedSoftmax()  # noqa: F405
+        kv_arange = torch.arange(128)
+        reshaped_cache_position = torch.tensor([[0]])
+
+        # Simplest and most efficient way to obtain a causal mask
+        causal_mask = kv_arange <= reshaped_cache_position
+        atten_mask = torch.full((1, 128), torch.tensor(-65535.0))
+        atten_mask = atten_mask.masked_fill(causal_mask, 0)
+        atten_mask = atten_mask[None, None, :, :].expand(1, -1, -1, -1)
+        sample_input = (atten_mask, torch.randn([1, 1, 1, 128]))
+        # Masked softmax is only support in quantized model
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_16a8w
+        )
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            optrace=True,
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module, sample_input, compiler_spec
+            ).to_executorch()
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as f:
+                edge_prog_mgr.write_to_file(f)
+            adb = self.get_adb_tool(pte_path)
+            binaries_trace = generate_optrace(
+                tmp_dir, self.chipset_table[self.model], adb, pte_path, sample_input
+            )
+            has_masked_softmax = False
+            for _, (_, qhas) in binaries_trace.items():
+                with open(qhas, "r") as qhas_file:
+                    qhas_data = json.load(qhas_file)
+                    for row in qhas_data["data"]["htp_op_types"]["data"]:
+                        if "MaskedSoftmax" in row["op"]:
+                            has_masked_softmax = True
+            self.assertTrue(has_masked_softmax)
+
     @unittest.skip("UT pass before QNN 2.26, segfault during partitioner")
     def test_qnn_backend_moe_feed_forward(self):
+        from executorch.examples.models.llama.llama_transformer import MOEFeedForward
+        from executorch.examples.models.llama.model_args import ModelArgs
+
         args = ModelArgs()
         args.dim = 32
         args.n_heads = 8

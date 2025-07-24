@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import operator
+import re
 import warnings
 from collections import defaultdict, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -11,7 +12,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
 import executorch.exir as exir
-
 import torch
 
 from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
@@ -1167,3 +1167,19 @@ def rewrite_prepared_observer(
             continue
         for target_name in module_name_list[old_module]:
             setattr(graph_module, target_name, new_observer)
+
+
+def is_qnn_sdk_version_less_than(target_version):
+    current_version = PyQnnManagerAdaptor.GetQnnSdkBuildId()
+
+    match = re.search(r"v(\d+)\.(\d+)", current_version)
+    if match:
+        current_major, current_minor = map(int, match.groups()[:2])
+    else:
+        raise ValueError(
+            f"Failed to get current major and minor version from QNN sdk Build id {current_version}"
+        )
+
+    target_major, target_minor = map(int, target_version.split(".")[:2])
+
+    return current_major == target_major and current_minor < target_minor

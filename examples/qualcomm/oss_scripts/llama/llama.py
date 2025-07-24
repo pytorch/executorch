@@ -52,6 +52,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_soc_to_chipset_map,
+    is_qnn_sdk_version_less_than,
     to_edge_transform_and_lower_to_qnn,
     update_spill_fill_size,
 )
@@ -515,9 +516,9 @@ def compile(args, pte_filename, tokenizer):
         kv_config.max_batch_size = 1
         kv_config.max_seq_len = args.max_seq_len
         kv_config.use_kv_cache = True
+        kv_config.enable_masked_softmax = args.enable_masked_softmax
 
         prefill_config = copy.copy(kv_config)
-        prefill_config.max_seq_len = args.max_seq_len
         prefill_config.use_kv_cache = (
             False if args.max_seq_len == args.prefill_ar_len else True
         )
@@ -1144,6 +1145,12 @@ def _build_parser():
         action="store_true",
     )
 
+    parser.add_argument(
+        "--enable_masked_softmax",
+        help="The MaskedSoftmax feature is designed to optimize the LLMs accuracy and performance executed on HTP backend. Note that it is only supported starting from QNN 2.35.",
+        action="store_true",
+    )
+
     parser.add_argument("-v", "--verbose", action="store_true")
 
     return parser
@@ -1196,6 +1203,12 @@ def export_llama(args) -> None:
         args.kv_updater = shift_pointer_updater
     else:
         raise RuntimeError(f"Using an unknown kv update {args.kv_updater}")
+
+    if args.enable_masked_softmax and is_qnn_sdk_version_less_than("2.35"):
+        logging.warning(
+            "Masked softmax is supported after QNN SDK 2.35. Override enable_masked_softmax to False."
+        )
+        args.enable_masked_softmax = False
 
     if args.pre_gen_pte:
         inference(args, pte_filename, runtime_tokenizer_path, args.pre_gen_pte)
