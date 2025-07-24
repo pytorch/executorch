@@ -598,9 +598,9 @@ jobs:
           else
             BACKEND="coreml-pybind"
           fi
-
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
           echo "::endgroup::"
+        done
 
         # Build and test mps model
         for MODEL_NAME in mv3 ic4 resnet50 edsr mobilebert w2l; do
