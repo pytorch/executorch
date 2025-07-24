@@ -416,7 +416,7 @@ target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch PUBLIC ${_common_compile_options})
-target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(executorch)
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
@@ -548,6 +548,16 @@ if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util)
+  install(
+    DIRECTORY extension/evalue_util/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/evalue_util
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
 endif()
@@ -576,6 +586,12 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
+  install(
+    DIRECTORY extension/runner_util/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/runner_util
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
@@ -651,8 +667,7 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # util lib
   add_library(
-    util ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp
-         ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
+    util ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
   )
   target_include_directories(
     util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
@@ -690,12 +705,14 @@ endif()
 
 if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
-  target_link_options_shared_lib(quantized_ops_lib)
+  executorch_target_link_options_shared_lib(quantized_ops_lib)
 endif()
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch gflags)
+  set(_executor_runner_libs executorch extension_evalue_util
+                            extension_runner_util gflags
+  )
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
