@@ -23,17 +23,12 @@ cmake_install_executorch_lib() {
   update_tokenizers_git_submodule
   local EXTRA_BUILD_ARGS="${@}"
 
-  if [[ "$EXTRA_BUILD_ARGS" == *"-DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"* ]]; then
-      local BUILD_DATA_LOADER="OFF"
-  else
-      local BUILD_DATA_LOADER=ON
-  fi
   CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
-          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=${BUILD_DATA_LOADER} \
+          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
           -DEXECUTORCH_OPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           ${EXTRA_BUILD_ARGS} \
