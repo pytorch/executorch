@@ -358,6 +358,9 @@ add_library(executorch_no_prim_ops ALIAS executorch_core)
 # A list of all configured backends.
 set(_executorch_backends "")
 
+# A list of all configured extensions.
+set(_executorch_extensions "")
+
 target_link_libraries(executorch_core PRIVATE program_schema)
 if(ANDROID)
   target_link_libraries(executorch_core PUBLIC log)
@@ -553,10 +556,12 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
+  list(APPEND _executorch_extensions apple_extension)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  list(APPEND _executorch_extensions extension_data_loader)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL)
@@ -571,6 +576,7 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
+  list(APPEND _executorch_extensions extension_flat_tensor)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
@@ -581,18 +587,22 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     FILES_MATCHING
     PATTERN "*.h"
   )
+  list(APPEND _executorch_extensions extension_module_static)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
+  list(APPEND _executorch_extensions tokenizers)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
+  list(APPEND _executorch_extensions extension_llm_apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
+  list(APPEND _executorch_extensions extension_llm_runner)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -603,10 +613,12 @@ if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
     FILES_MATCHING
     PATTERN "*.h"
   )
+  list(APPEND _executorch_extensions extension_runner_util)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
+  list(APPEND _executorch_extensions extension_tensor)
 endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
@@ -707,6 +719,7 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
+  list(APPEND _executorch_extensions extension_training)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_LLM)
@@ -725,14 +738,19 @@ if(EXECUTORCH_BUILD_VULKAN)
 endif()
 
 # Top-level interface targets.
-add_library(executorch_backends INTERFACE)
-add_library(executorch::backends ALIAS executorch_backends)
 
 # A target containing all configured backends.
+add_library(executorch_backends INTERFACE)
+add_library(executorch::backends ALIAS executorch_backends)
 target_link_libraries(executorch_backends INTERFACE ${_executorch_backends})
 
+# A target containing all configured extensions.
+add_library(executorch_extensions INTERFACE)
+add_library(executorch::extensions ALIAS executorch_extensions)
+target_link_libraries(executorch_extensions INTERFACE ${_executorch_extensions})
+
 install(
-  TARGETS executorch_backends
+  TARGETS executorch_backends executorch_extensions
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
