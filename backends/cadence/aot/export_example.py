@@ -56,6 +56,13 @@ def export_model(
     for samples in [example_inputs]:
         prepared_gm(*samples)
 
+    # Prepare the model
+    prepared_gm = prepare_pt2(ep, quantizer)
+
+    # Calibrate the model
+    for samples in [example_inputs]:
+        prepared_gm(*samples)
+
     # Convert the model
     converted_model = convert_pt2(prepared_gm)
 
