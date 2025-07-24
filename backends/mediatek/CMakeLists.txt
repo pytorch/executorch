@@ -40,6 +40,6 @@ target_sources(
           ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronExecutor.cpp
           ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronBufferAllocator.cpp
 )
-target_link_options_shared_lib(neuron_backend)
+executorch_target_link_options_shared_lib(neuron_backend)
 
 install(TARGETS neuron_backend DESTINATION lib)
