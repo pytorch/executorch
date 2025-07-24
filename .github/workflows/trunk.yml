@@ -387,7 +387,7 @@ jobs:
         eval "$(conda shell.bash hook)"
 
         # Install requirements
-        ${CONDA_RUN} python install_executorch.py
+        ${CONDA_RUN} EXECUTORCH_BUILD_TORCHAO=1 python install_executorch.py
         ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
 
         # Run test
