@@ -125,7 +125,12 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
 
   add_executable(vulkan_executor_runner ${VULKAN_RUNNER_SRCS})
   target_link_libraries(
-    vulkan_executor_runner ${_executor_runner_libs} vulkan_schema
+    vulkan_executor_runner
+    gflags
+    executorch
+    executorch_extensions
+    executorch_kernels
+    vulkan_schema
     vulkan_backend
   )
   target_compile_options(vulkan_executor_runner PUBLIC ${VULKAN_CXX_FLAGS})
