@@ -213,10 +213,13 @@ def annotate_amax(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.argmax.default])
+def annotate_argmax(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.argmin.default])
 def annotate_argmin(node: Node, quantization_config: QuantizationConfig) -> None:
-    if _is_annotated([node]):
-        return
     annotate_single_in(node, quantization_config)
 
 
@@ -275,7 +278,9 @@ def annotate_masked_fill(node: Node, quantization_config: QuantizationConfig) ->
     )
 
 
-@register_annotator([torch.ops.aten.mul, torch.ops.aten.mul.Tensor])
+@register_annotator(
+    [torch.ops.aten.mul, torch.ops.aten.mul.Tensor, torch.ops.aten.mul_.Tensor]
+)
 def annotate_mul(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
@@ -285,9 +290,19 @@ def annotate_max(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.max.dim])
+def annotate_max_dim(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.min.other, torch.ops.aten.minimum.default])
 def annotate_min(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.min.dim])
+def annotate_min_dim(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in(node, quantization_config)
 
 
 @register_annotator(
@@ -1298,7 +1313,7 @@ def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
     )
 
 
-@register_annotator([torch.ops.aten.zeros.default])
+@register_annotator([torch.ops.aten.zeros.default, torch.ops.aten.zeros_like.default])
 def annotate_zeros(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]) or not _is_float_tensor(node):
         return
