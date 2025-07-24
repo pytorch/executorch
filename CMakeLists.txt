@@ -707,6 +707,7 @@ endif()
 
 # Top-level interface targets.
 add_library(executorch_backends INTERFACE)
+add_library(executorch::backends ALIAS executorch_backends)
 
 # A target containing all configured backends.
 target_link_libraries(executorch_backends INTERFACE ${_executorch_backends})
