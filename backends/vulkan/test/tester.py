@@ -10,9 +10,9 @@ import executorch
 import executorch.backends.test.harness.stages as BaseStages
 
 import torch
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import StageType
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.partitioner import Partitioner
 
@@ -33,7 +33,8 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         super().__init__(
             default_partitioner_cls=VulkanPartitioner,
             partitioners=partitioners,
-            edge_compile_config=edge_compile_config or EdgeCompileConfig(_check_ir_validity=False),
+            edge_compile_config=edge_compile_config
+            or EdgeCompileConfig(_check_ir_validity=False),
         )
 
 

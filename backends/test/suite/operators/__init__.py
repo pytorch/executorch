@@ -117,7 +117,9 @@ def _create_test_for_backend(
 
     if test_type == TestType.STANDARD:
         test_name = f"{test_func.__name__}_{flow.name}"
-        wrapped_test = _make_wrapped_test(test_func, test_name, test_func.__name__, flow)
+        wrapped_test = _make_wrapped_test(
+            test_func, test_name, test_func.__name__, flow
+        )
         setattr(cls, test_name, wrapped_test)
     elif test_type == TestType.DTYPE:
         for dtype in DTYPES:

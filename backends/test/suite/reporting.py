@@ -1,11 +1,10 @@
+import csv
 from collections import Counter
 from dataclasses import dataclass
 from enum import IntEnum
 from functools import reduce
-from re import A
 from typing import TextIO
 
-import csv
 
 class TestResult(IntEnum):
     """Represents the result of a test case run, indicating success or a specific failure reason."""
@@ -79,13 +78,13 @@ class TestCaseSummary:
     """
     Contains summary results for the execution of a single test case.
     """
-    
+
     backend: str
     """ The name of the target backend. """
 
     base_name: str
     """ The base name of the test, not including flow or parameter suffixes. """
-    
+
     flow: str
     """ The backend-specific flow name. Corresponds to flows registered in backends/test/suite/__init__.py. """
 
@@ -173,8 +172,9 @@ def complete_test_session() -> RunSummary:
 
     return summary
 
+
 def generate_csv_report(summary: RunSummary, output: TextIO):
-    """ Write a run summary report to a file in CSV format. """
+    """Write a run summary report to a file in CSV format."""
 
     field_names = [
         "Test ID",
@@ -183,19 +183,23 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
         "Flow",
         "Result",
     ]
-    
+
     # Tests can have custom parameters. We'll want to report them here, so we need
     # a list of all unique parameter names.
     param_names = reduce(
         lambda a, b: a.union(b),
-        (set(s.params.keys()) for s in summary.test_case_summaries if s.params is not None),
-        set()
+        (
+            set(s.params.keys())
+            for s in summary.test_case_summaries
+            if s.params is not None
+        ),
+        set(),
     )
     field_names += (s.capitalize() for s in param_names)
 
     writer = csv.DictWriter(output, field_names)
     writer.writeheader()
-    
+
     for record in summary.test_case_summaries:
         row = {
             "Test ID": record.name,
@@ -205,7 +209,5 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
             "Result": record.result.display_name(),
         }
         if record.params is not None:
-            row.update({
-                k.capitalize(): v for k, v in record.params.items()
-            })
+            row.update({k.capitalize(): v for k, v in record.params.items()})
         writer.writerow(row)

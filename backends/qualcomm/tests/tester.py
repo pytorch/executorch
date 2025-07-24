@@ -13,8 +13,8 @@ import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.utils.utils import (
-    generate_qnn_executorch_compiler_spec,
     generate_htp_compiler_spec,
+    generate_qnn_executorch_compiler_spec,
     get_soc_to_chipset_map,
 )
 from executorch.backends.test.harness import Tester as TesterBase
@@ -36,7 +36,7 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         self,
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
-        soc_model: str = "SM8650"
+        soc_model: str = "SM8650",
     ):
         backend_options = generate_htp_compiler_spec(use_fp16=True)
         self.chipset = get_soc_to_chipset_map()[soc_model]
@@ -47,7 +47,8 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
 
         super().__init__(
             partitioners=partitioners or [QnnPartitioner(self.compiler_specs)],
-            edge_compile_config=edge_compile_config or EdgeCompileConfig(_check_ir_validity=False),
+            edge_compile_config=edge_compile_config
+            or EdgeCompileConfig(_check_ir_validity=False),
             default_partitioner_cls=QnnPartitioner,
         )
 
@@ -69,7 +70,7 @@ class QualcommTester(TesterBase):
         module: torch.nn.Module,
         example_inputs: Tuple[torch.Tensor],
         dynamic_shapes: Optional[Tuple[Any]] = None,
-    ): 
+    ):
         # Specialize for Qualcomm
         stage_classes = (
             executorch.backends.test.harness.Tester.default_stage_classes()
