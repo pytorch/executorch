@@ -454,7 +454,7 @@ void test_vulkan_linear_qga4w_impl(
   ValueRef staging_out = graph.set_output_tensor(r_out);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 
@@ -549,7 +549,7 @@ void test_vulkan_linear_qcs4w_impl(
   ValueRef staging_out = graph.set_output_tensor(r_out);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 
@@ -683,7 +683,7 @@ void test_vulkan_linear_qta8a_qga4w_impl(
   ValueRef staging_out = graph.set_output_tensor(r_out);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 

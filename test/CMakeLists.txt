@@ -60,7 +60,7 @@ endif()
 # size_test_all_ops: binary with portable ops and no delegate backend
 #
 add_executable(size_test_all_ops ${_size_test__srcs})
-target_link_options_shared_lib(portable_ops_lib)
+executorch_target_link_options_shared_lib(portable_ops_lib)
 target_link_libraries(
   size_test_all_ops executorch portable_ops_lib portable_kernels
 )
@@ -72,11 +72,12 @@ endif()
 # size_test_all_optimized_ops: binary with optimized ops and no delegate backend
 #
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
-add_executable(size_test_all_optimized_ops ${_size_test__srcs})
-target_link_options_shared_lib(optimized_native_cpu_ops_lib)
-target_link_libraries(
-  size_test_all_optimized_ops executorch optimized_native_cpu_ops_lib)
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options_gc_sections(size_test_all_optimized_ops)
-endif()
+  add_executable(size_test_all_optimized_ops ${_size_test__srcs})
+  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  target_link_libraries(
+    size_test_all_optimized_ops executorch optimized_native_cpu_ops_lib
+  )
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_options_gc_sections(size_test_all_optimized_ops)
+  endif()
 endif()

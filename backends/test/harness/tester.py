@@ -1,6 +1,6 @@
 import random
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 
@@ -33,7 +33,7 @@ class Tester:
         self,
         module: torch.nn.Module,
         example_inputs: Tuple[torch.Tensor],
-        stage_classes: Dict[StageType, Type],
+        stage_classes: Dict[StageType, Callable],
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         module.eval()
@@ -81,7 +81,7 @@ class Tester:
         self.stage_output = None
 
     @staticmethod
-    def default_stage_classes() -> Dict[StageType, Type]:
+    def default_stage_classes() -> Dict[StageType, Callable]:
         """
         Returns a map of StageType to default Stage implementation.
         """
@@ -366,11 +366,11 @@ class Tester:
                     f"Output {i} does not match reference output.\n"
                     f"\tGiven atol: {atol}, rtol: {rtol}.\n"
                     f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
+                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref).to(torch.double))}.\n"
                     f"\t-- Model vs. Reference --\n"
                     f"\t Numel: {model.numel()}, {ref.numel()}\n"
                     f"\tMedian: {model.median()}, {ref.median()}\n"
-                    f"\t  Mean: {model.mean()}, {ref.mean()}\n"
+                    f"\t  Mean: {model.to(torch.double).mean()}, {ref.to(torch.double).mean()}\n"
                     f"\t   Max: {model.max()}, {ref.max()}\n"
                     f"\t   Min: {model.min()}, {ref.min()}\n"
                 )
