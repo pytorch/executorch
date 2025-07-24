@@ -172,7 +172,7 @@ target_link_libraries(
   executorch_core
 )
 
-target_link_options_shared_lib(test_backend_compiler_lib)
+executorch_target_link_options_shared_lib(test_backend_compiler_lib)
 
 install(
   TARGETS test_backend_compiler_lib

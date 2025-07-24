@@ -242,21 +242,16 @@ def test_add_scalar_u85_BI():
 
 
 # SUB MI ------------------------------------------------------
-mi_sub_xfails = {
-    "int_r1_ts": "TypeError: All IO needs to have the same data type, got input 1: 8, input 2: 6 and output: 8",
-    "int_r4_ts": "TypeError: All IO needs to have the same data type, got input 1: 8, input 2: 6 and output: 8",
-    **xfails,
-}
 
 
-@common.parametrize("test_data", tensor_scalar_tests, xfails=mi_sub_xfails)
+@common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_sub_tensor_tosa_MI_scalar(test_data):
     """Tests regular sub with one scalar input."""
     pipeline = TosaPipelineMI[input_t1](Sub(), test_data, aten_op=Sub.aten_op)
     pipeline.run()
 
 
-@common.parametrize("test_data", tensor_scalar_tests, xfails=mi_sub_xfails)
+@common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_sub_tensor_tosa_MI_inplace(test_data):
     """Tests inplace sub with one scalar input."""
     pipeline = TosaPipelineMI[input_t1](SubInplace(), test_data, aten_op=[])

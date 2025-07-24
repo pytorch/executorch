@@ -88,7 +88,7 @@ jobs:
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc11-aarch64
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -163,7 +163,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -194,7 +194,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
-      docker-image: executorch-ubuntu-22.04-arm-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -229,7 +229,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-arm-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -310,7 +310,7 @@ jobs:
       contents: read
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-arm-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -387,7 +387,7 @@ jobs:
         eval "$(conda shell.bash hook)"
 
         # Install requirements
-        ${CONDA_RUN} python install_executorch.py
+        ${CONDA_RUN} EXECUTORCH_BUILD_TORCHAO=1 python install_executorch.py
         ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
 
         # Run test
@@ -430,7 +430,7 @@ jobs:
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ${{ matrix.docker-image }}
+      docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -529,7 +529,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-qnn-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -555,7 +555,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-qnn-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -623,7 +623,7 @@ jobs:
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.2xlarge.memory
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -738,7 +738,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-qnn-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -771,4 +771,4 @@ jobs:
     with:
       build-mode: Release
       build-tool: cmake
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
