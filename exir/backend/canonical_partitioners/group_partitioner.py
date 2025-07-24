@@ -204,6 +204,10 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         partitions_order,
     ):
         """Merge partitions when possible."""
+        # Map each partition ID to a set of partition IDs it can't be merged with
+        unmergeable_with = collections.defaultdict(set)
+
+        # Continue until no more merges are possible
         merged = True
         while merged:
             merged = False
@@ -213,12 +217,23 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
                 if p1 not in partitions_by_id:
                     continue
 
-                for p2 in partition_ids[i + 1 :]:
-                    if p2 not in partitions_by_id:
+                for p2 in partition_ids[i + 1:]:
+                    if p2 not in partitions_by_id or p2 in unmergeable_with[p1]:
                         continue
 
                     # Try to merge partitions if it doesn't create cycles
                     if self._can_merge_partitions(p1, p2, partitions_by_id):
+                        # Before merging, transfer unmergeable relationships from p2 to p1
+                        unmergeable_with[p1] = unmergeable_with[p1].union(unmergeable_with[p2])
+
+                        # Update all other partitions' unmergeable sets to replace p2 with p1
+                        for pid in partition_ids:
+                            if pid != p1 and pid != p2 and pid in partitions_by_id:
+                                if p2 in unmergeable_with[pid]:
+                                    unmergeable_with[pid].remove(p2)
+                                    unmergeable_with[pid].add(p1)
+
+                        # Perform the merge
                         self._perform_partition_merge(
                             p1,
                             p2,
@@ -228,8 +243,17 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
                             partition_map,
                             partitions_order,
                         )
+
+                        # Clean up p2's unmergeable set
+                        if p2 in unmergeable_with:
+                            del unmergeable_with[p2]
+
                         merged = True
                         break
+                    else:
+                        # Mark these partitions as unmergeable with each other
+                        unmergeable_with[p1].add(p2)
+                        unmergeable_with[p2].add(p1)
 
                 if merged:
                     break
