@@ -9,7 +9,7 @@
 # cmake-format -i CMakeLists.txt
 # ~~~
 
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.29)
 
 project(executorch_wasm)
 
@@ -27,7 +27,7 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options -Wno-deprecated-declarations -fPIC -Wall -Werror)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 set(link_libraries)
