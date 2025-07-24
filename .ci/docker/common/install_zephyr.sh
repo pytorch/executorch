@@ -88,5 +88,16 @@ install_sdk() {
          ./setup.sh -c -t arm-zephyr-eabi
 }
 
+init_zephyr() {
+    git clone https://github.com/BujSet/zephyr.git
+    cd zephyr/
+    git switch -c executorch-module-integration origin/executorch-module-integration
+    cd ../
+    west init -l zephyr
+    west config manifest.project-filter -- +executorch
+    west -v update
+}
+
 install_prerequiresites
 install_sdk
+init_zephyr
