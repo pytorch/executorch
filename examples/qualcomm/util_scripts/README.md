@@ -77,3 +77,40 @@ This tool aims for users who want to deploy models with ExecuTorch runtime. It's
 * Artifacts for .pte file and figure of graph information
   - `cli_example/execute_output/output_{data_index}_{output_index}.pt`.<br/>
   `data_index` represents the sequence of dataset, `output_index` stands for the order of graph output.
+
+# Generate ET Record
+This section describes how to generate an ET record for a .pte program using the provided script.
+  * Generate ET record for .pte using the provided script:
+    ```bash
+    # Example usage to generate ET record and inspect execution statistics
+    PYTHONPATH=.. python -m examples.qualcomm.util_scripts.gen_etrecord \
+      -b build-android \
+      --device $DEVICE_SERIAL \
+      --model SM8750 \
+    ```
+  * This script will:
+    - Quantize and compile a sample model to generate `.pte` file.
+    - Push the model and input data to the device and execute the program.
+    - Retrieve the execution dump from the device and generate an ET record (`etrecord.bin`).
+    - Use the Inspector API to display execution statistics.
+
+  * Artifacts generated:
+    - `qnn_simple_model.pte`: Compiled program.
+    - `etdump.etdp`: Execution dump from device.
+    - `etrecord.bin`: ET record for analysis.
+    - Printed statistics table in the console.
+
+  * refer to the [runtime-profiling](https://docs.pytorch.org/executorch/stable/runtime-profiling.html) for more details.
+
+## Example console output:
+| event_block_name | event_name                                      | raw       | p10 (cycles) | p50 (cycles) | p90 (cycles) | avg (cycles) | min (cycles) | max (cycles) | op_types | delegate_debug_identifier             | stack_traces | module_hierarchy | is_delegated_op | delegate_backend_name | debug_data | start_time |
+|------------------|--------------------------------------------------|-----------|--------------|--------------|--------------|---------------|---------------|---------------|----------|----------------------------------------|---------------|------------------|------------------|------------------------|------------|-------------|
+| ...              | ...                                  | ...           | ...                    |        |
+| Execute          | aten_relu_default_3:OpId_60 (cycles)            | [2045.0]  | 2045.0       | 2045.0       | 2045.0       | 2045.0        | 2045.0        | 2045.0        | []       | aten_relu_default_3:OpId_60 (cycles)         | {}        | {}               | True             | QnnBackend             | []         | [0]         |
+| Execute          | aten_add_tensor:OpId_61 (cycles)                | [10271.0] | 10271.0      | 10271.0      | 10271.0      | 10271.0       | 10271.0       | 10271.0       | []       | aten_add_tensor:OpId_61 (cycles)             | {}        | {}               | True             | QnnBackend             | []         | [0]         |
+| Execute          | aten_permute_copy_default_4:OpId_63 (cycles)    | [31959.0] | 31959.0      | 31959.0      | 31959.0      | 31959.0       | 31959.0       | 31959.0       | []       | aten_permute_copy_default_4:OpId_63 (cycles) | {}        | {}               | True             | QnnBackend             | []         | [0]         |
+| Execute          | aten_mean_dim:OpId_65 (cycles)                  | [11008.0] | 11008.0      | 11008.0      | 11008.0      | 11008.0       | 11008.0       | 11008.0       | []       | aten_mean_dim:OpId_65 (cycles)               | {}        | {}               | True             | QnnBackend             | []         | [0]         |
+| Execute          | aten_view_copy_default:OpId_67 (cycles)         | [5893.0]  | 5893.0       | 5893.0       | 5893.0       | 5893.0        | 5893.0        | 5893.0        | []       | aten_view_copy_default:OpId_67 (cycles)      | {}        | {}               | True             | QnnBackend             | []         | [0]         |
+| Execute          | aten_linear_default:OpId_70 (cycles)            | [0.0]     | 0.0          | 0.0          | 0.0          | 0.0           | 0.0           | 0.0           | []       | aten_linear_default:OpId_70 (cycles)         | {}        | {}               | True             | QnnBackend             | []         | [0]         |
+| Execute          | aten_hardtanh_default:OpId_72 (cycles)          | [9799.0]  | 9799.0       | 9799.0       | 9799.0       | 9799.0        | 9799.0        | 9799.0        | []       | aten_hardtanh_default:OpId_72 (cycles)       | {}        | {}               | True             | QnnBackend             | []         | [0]         |
+| ...              | ...                                  | ...        | ...                    |
