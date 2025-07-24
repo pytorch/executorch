@@ -23,15 +23,71 @@ function loadModelFile(file) {
         const buffer = event.target.result;
 
         const mod = et.Module.load(new Uint8Array(buffer));
+        const modelText = document.getElementById("model_text");
+
         try {
             mod.loadMethod("forward");
         } catch (e) {
-            document.getElementById("model_text").textContent = "Failed to load forward method: " + e;
+            modelText.textContent = "Failed to load forward method: " + e;
+            return;
+        }
+
+        const methodMeta = mod.getMethodMeta("forward");
+        if (methodMeta.inputTags.length != 1) {
+            modelText.textContent = "Error: Expected input size of 1, got " + methodMeta.inputTags.length;
+            modelText.style.color = "red";
+            return;
+        }
+
+        if (methodMeta.inputTags[0] !== et.Tag.Tensor) {
+            modelText.textContent = "Error: Expected input type to be tensor (type 1), got " + methodMeta.inputTags[0].value;
+            modelText.style.color = "red";
+            return;
+        }
+
+        const inputMeta = methodMeta.inputTensorMeta[0];
+
+        if (inputMeta.sizes[0] != 1 || inputMeta.sizes[1] != 3 || inputMeta.sizes[2] != 224 || inputMeta.sizes[3] != 224) {
+            modelText.textContent = "Error: Expected input shape to be [1, 3, 224, 224], got " + inputMeta.sizes;
+            modelText.style.color = "red";
+            return;
+        }
+
+        if (inputMeta.scalarType !== et.ScalarType.Float) {
+            modelText.textContent = "Error: Expected input type to be float (type 6), got " + inputMeta.scalarType.value;
+            modelText.style.color = "red";
+            return;
+        }
+
+        if (methodMeta.outputTags.length != 1) {
+            modelText.textContent = "Error: Expected output size of 1, got " + methodMeta.outputTags.length;
+            modelText.style.color = "red";
+            return;
+        }
+
+        if (methodMeta.outputTags[0] !== et.Tag.Tensor) {
+            modelText.textContent = "Error: Expected output type to be tensor (type 1), got " + methodMeta.outputTags[0].value;
+            modelText.style.color = "red";
+            return;
+        }
+
+        const outputMeta = methodMeta.outputTensorMeta[0];
+
+        if (outputMeta.sizes[0] != 1 || outputMeta.sizes[1] != 1000) {
+            modelText.textContent = "Error: Expected output shape to be [1, 1000], got " + outputMeta.sizes;
+            modelText.style.color = "red";
+            return;
+        }
+
+        if (outputMeta.scalarType !== et.ScalarType.Float) {
+            modelText.textContent = "Error: Expected output type to be float (type 6), got " + outputMeta.scalarType.value;
+            modelText.style.color = "red";
             return;
         }
 
         module = mod;
-        document.getElementById("model_text").textContent = 'Uploaded model: ' + file.name;
+        modelText.textContent = 'Uploaded model: ' + file.name;
+        modelText.style.color = null;
         document.getElementById("upload_image_button").disabled = false;
     };
     reader.readAsArrayBuffer(file);
