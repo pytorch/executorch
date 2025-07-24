@@ -25,6 +25,15 @@ add_custom_command(
 )
 
 add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/classes.js
+  COMMAND
+    ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/classes.js
+    ${CMAKE_CURRENT_BINARY_DIR}/classes.js
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/classes.js
+  COMMENT "Copying classes.js to build output directory"
+)
+
+add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/demo.html
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/demo.html
           ${CMAKE_CURRENT_BINARY_DIR}/demo.html
@@ -35,6 +44,7 @@ add_custom_command(
 add_custom_target(
   executorch_wasm_demo
   DEPENDS executorch_wasm_demo_lib
+          ${CMAKE_CURRENT_BINARY_DIR}/classes.js
           ${CMAKE_CURRENT_BINARY_DIR}/demo.js
           ${CMAKE_CURRENT_BINARY_DIR}/demo.html
 )

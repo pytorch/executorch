@@ -9,12 +9,16 @@
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>title</title>
+    <title>Executorch Wasm Demo</title>
 </head>
 <body>
-    <p id="p1">🙂</p>
-    <button type="button" id="button">Select pte file</button>
+    <button type="button" id="upload_model_button">Upload pte file</button>
+    <button disabled type="button" id="upload_image_button">Upload image file</button>
+    <p id="model_text">No model uploaded</p>
+    <canvas id="canvas" width="224" height="224"></canvas>
+    <p id="class_text"></p>
     <script src="executorch_wasm_demo_lib.js"></script>
-    <script src="demo.js"></script><p id="p2"></p>
+    <script src="classes.js"></script>
+    <script src="demo.js"></script>
 </body>
 </html>
