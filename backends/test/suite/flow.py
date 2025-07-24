@@ -62,4 +62,13 @@ def all_flows() -> dict[str, TestFlow]:
     except Exception as e:
         logger.info(f"Skipping Core ML flow registration: {e}")
 
+    try:
+        from executorch.backends.test.suite.flows.vulkan import VULKAN_TEST_FLOW
+
+        flows += [
+            VULKAN_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping Vulkan flow registration: {e}")
+
     return {f.name: f for f in flows if f is not None}
