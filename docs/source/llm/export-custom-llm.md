@@ -341,4 +341,4 @@ generate_etrecord(etrecord_path, edge_manager_copy, et_program)
 
 Run the export script and the ETRecord will be generated as `etrecord.bin`.
 
-To learn more about other components and rich functionality ExecuTorch Developer Tools provides, see the [Introduction to the ExecuTorch Developer Tools](../devtools-overview.md).
+To learn more about ExecuTorch's Developer Tools, see the [Introduction to the ExecuTorch Developer Tools](../devtools-overview.md).

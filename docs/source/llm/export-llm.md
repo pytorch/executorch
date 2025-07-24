@@ -166,10 +166,13 @@ In the logs, there will be a table of all ops in the graph, and which ones were 
 
 Here is an example:
 <details>
-```
-Total delegated subgraphs: 368
-Number of delegated nodes: 2588
-Number of non-delegated nodes: 2513
+<summary>Click to see delegation details</summary>
+
+Total delegated subgraphs: 368 <br/>
+Number of delegated nodes: 2588 <br/>
+Number of non-delegated nodes: 2513 <br/>
+
+
 |    |  op_type                                 |  # in_delegated_graphs  |  # in_non_delegated_graphs  |
 |----|---------------------------------|------- |-----|
 |  0  |  _assert_scalar  |  0  |  167  |
@@ -188,7 +191,7 @@ Number of non-delegated nodes: 2513
 |      |  ...  |    |    |
 |  41  |  torchao_quantize_affine_default  |  183  |  0  |
 |  42  |  Total  |  2588  |  2513  |
-```
+
 </details>
 <br/>
 
@@ -212,4 +215,4 @@ A few examples ones:
 - `profile_memory`: Used to generate activation memory profile in chrome trace format. It allows one to visualize the lifetimes of different intermediate tensors of a model, how their lifetimes overlap, where these tensors come from, and how they impact the  memory footprint of the model during its execution. Click [here](https://github.com/pytorch/executorch/blob/dd4488d720d676a1227450e8ea0c0c97beed900c/docs/source/memory-planning-inspection.md?plain=1#L19) for more details on memory profiling.
 - `profile_path`: Used to generate time profile of various components of export_llm. Such components include `torch.export`, quantization, `to_edge`, delegation via to_backend APIs etc. This option generate a .html file that gives you time profile in flamegraph/icicle format. It is helpful to understand what part of `export_llm` takes the most time. Largely useful for developers and contributors of ExecuTorch. For more details on flamegraph one can checkout https://www.parca.dev/docs/icicle-graph-anatomy/
 
-To learn more about other components and rich functionality ExecuTorch Developer Tools provides, see the [Introduction to the ExecuTorch Developer Tools](../devtools-overview.md).
+To learn more about ExecuTorch's Developer Tools, see the [Introduction to the ExecuTorch Developer Tools](../devtools-overview.md).
