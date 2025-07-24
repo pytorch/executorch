@@ -204,35 +204,37 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         partitions_order,
     ):
         """Merge partitions when possible."""
-        merged = True
-        while merged:
-            merged = False
-            partition_ids = list(partitions_by_id.keys())
+        # Get current partition IDs
+        partition_ids = list(partitions_by_id.keys())
 
-            for i, p1 in enumerate(partition_ids):
-                if p1 not in partitions_by_id:
+        # Set to track removed partitions from initial static list so we can skip them
+        already_merged = set()
+
+        # Try to merge each pair of partitions
+        for i, p1 in enumerate(partition_ids):
+            # Skip if this partition has been already merged
+            if p1 in already_merged:
+                continue
+
+            for p2 in partition_ids[i + 1 :]:
+                # Skip if this partition has been already merged
+                if p2 in already_merged:
                     continue
 
-                for p2 in partition_ids[i + 1 :]:
-                    if p2 not in partitions_by_id:
-                        continue
+                # Try to merge partitions if it doesn't create cycles
+                if self._can_merge_partitions(p1, p2, partitions_by_id):
+                    self._perform_partition_merge(
+                        p1,
+                        p2,
+                        partitions_by_id,
+                        assignment,
+                        partition_users,
+                        partition_map,
+                        partitions_order,
+                    )
 
-                    # Try to merge partitions if it doesn't create cycles
-                    if self._can_merge_partitions(p1, p2, partitions_by_id):
-                        self._perform_partition_merge(
-                            p1,
-                            p2,
-                            partitions_by_id,
-                            assignment,
-                            partition_users,
-                            partition_map,
-                            partitions_order,
-                        )
-                        merged = True
-                        break
-
-                if merged:
-                    break
+                    # Mark p2 as merged
+                    already_merged.add(p2)
 
     def _perform_partition_merge(
         self,
