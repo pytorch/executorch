@@ -60,11 +60,6 @@ target_compile_options(
   full_portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED
 )
 
-add_subdirectory(
-  ${EXECUTORCH_ROOT}/extension/llm/runner
-  ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/runner
-)
-
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories
     ${EXECUTORCH_ROOT}/..
