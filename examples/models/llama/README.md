@@ -339,7 +339,12 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 
 ## Running with low-bit kernels
 
-We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac.  Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
+We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac, and install executorch from source with the environment variable EXECUTORCH_BUILD_TORCHAO=1 defined:
+```
+EXECUTORCH_BUILD_TORCHAO=1 python install_executorch.py
+```
+
+Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
 
 First export your model for lowbit quantization (step 2 above):
 

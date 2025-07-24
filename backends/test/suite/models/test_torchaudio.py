@@ -7,11 +7,12 @@
 # pyre-unsafe
 
 import unittest
-from typing import Callable, Tuple
+from typing import Tuple
 
 import torch
 import torchaudio
 
+from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.models import (
     model_test_cls,
     model_test_params,
@@ -50,7 +51,7 @@ class PatchedConformer(torch.nn.Module):
 class TorchAudio(unittest.TestCase):
     @model_test_params(dtypes=[torch.float32], supports_dynamic_shapes=False)
     def test_conformer(
-        self, dtype: torch.dtype, use_dynamic_shapes: bool, tester_factory: Callable
+        self, flow: TestFlow, dtype: torch.dtype, use_dynamic_shapes: bool
     ):
         inner_model = torchaudio.models.Conformer(
             input_dim=80,
@@ -70,11 +71,11 @@ class TorchAudio(unittest.TestCase):
             encoder_padding_mask,
         )
 
-        run_model_test(model, inputs, dtype, None, tester_factory)
+        run_model_test(model, inputs, flow, dtype, None)
 
     @model_test_params(dtypes=[torch.float32])
     def test_wav2letter(
-        self, dtype: torch.dtype, use_dynamic_shapes: bool, tester_factory: Callable
+        self, flow: TestFlow, dtype: torch.dtype, use_dynamic_shapes: bool
     ):
         model = torchaudio.models.Wav2Letter()
         inputs = (torch.randn(1, 1, 1024, dtype=dtype),)
@@ -87,11 +88,14 @@ class TorchAudio(unittest.TestCase):
             if use_dynamic_shapes
             else None
         )
-        run_model_test(model, inputs, dtype, dynamic_shapes, tester_factory)
+        run_model_test(model, inputs, flow, dtype, dynamic_shapes)
 
     @unittest.skip("This model times out on all backends.")
     def test_wavernn(
-        self, dtype: torch.dtype, use_dynamic_shapes: bool, tester_factory: Callable
+        self,
+        flow: TestFlow,
+        dtype: torch.dtype,
+        use_dynamic_shapes: bool,
     ):
         model = torchaudio.models.WaveRNN(
             upsample_scales=[5, 5, 8], n_classes=512, hop_length=200
@@ -103,4 +107,4 @@ class TorchAudio(unittest.TestCase):
             torch.randn(1, 1, 128, 64),  # specgram
         )
 
-        run_model_test(model, inputs, dtype, None, tester_factory)
+        run_model_test(model, inputs, flow, dtype, None)
