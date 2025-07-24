@@ -16,7 +16,7 @@ target_include_directories(
   custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../include"
 )
 target_link_libraries(custom_ops PUBLIC full_portable_ops_lib)
-target_link_options_shared_lib(custom_ops)
+executorch_target_link_options_shared_lib(custom_ops)
 
 # preprocess qnn runner src files for llama
 set(_llama_runner__srcs ${_llama_runner__srcs})
@@ -55,7 +55,7 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/include
 )
 
-target_link_options_shared_lib(quantized_ops_lib)
+executorch_target_link_options_shared_lib(quantized_ops_lib)
 
 target_link_libraries(
   qnn_llama_runner
