@@ -278,6 +278,7 @@ def main(  # noqa: C901
             return x[0]
 
         quantized_model = quantize_model(
+            # type: ignore[redundant-cast]
             cast(torch.fx.GraphModule, aten_dialect.module()),
             calibration_dataset,
             subset_size=subset_size,
