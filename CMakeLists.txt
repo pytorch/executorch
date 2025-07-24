@@ -711,6 +711,12 @@ add_library(executorch_backends INTERFACE)
 # A target containing all configured backends.
 target_link_libraries(executorch_backends INTERFACE ${_executorch_backends})
 
+install(
+  TARGETS executorch_backends
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)
+
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch gflags)

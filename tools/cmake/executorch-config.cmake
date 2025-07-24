@@ -57,28 +57,18 @@ set(EXECUTORCH_FOUND ON)
 
 target_link_libraries(executorch INTERFACE executorch_core)
 
-set(backend_lib_list
-    coreml_util
-    coreml_inmemoryfs
-    coremldelegate
-    mpsdelegate
-    neuron_backend
-    qnn_executorch_backend
-    # Start XNNPACK Lib Deps
-    XNNPACK
-    xnnpack-microkernels-prod
-    kleidiai
-    # End XNNPACK Lib Deps
-    xnnpack_backend
-    vulkan_backend
-)
-
 set(lib_list
     flatccrt
     etdump
     bundled_program
     extension_data_loader
     extension_flat_tensor
+    coreml_util
+    coreml_inmemoryfs
+    coremldelegate
+    mpsdelegate
+    neuron_backend
+    qnn_executorch_backend
     portable_ops_lib
     custom_ops
     extension_module
@@ -87,8 +77,15 @@ set(lib_list
     extension_tensor
     extension_threadpool
     extension_training
+    xnnpack_backend
+    # Start XNNPACK Lib Deps
+    XNNPACK
+    xnnpack-microkernels-prod
+    kleidiai
+    # End XNNPACK Lib Deps
     cpuinfo
     pthreadpool
+    vulkan_backend
     optimized_kernels
     optimized_portable_kernels
     cpublas
@@ -99,9 +96,6 @@ set(lib_list
     quantized_ops_lib
     quantized_ops_aot_lib
 )
-
-list(APPEND lib_list ${backend_lib_list})
-
 foreach(lib ${lib_list})
   # Name of the variable which stores result of the find_library search
   set(lib_var "LIB_${lib}")
@@ -204,12 +198,3 @@ if(TARGET xnnpack_backend)
   )
   target_link_options_shared_lib(xnnpack_backend)
 endif()
-
-# An interface target containing all available backends.
-add_library(executorch_backends INTERFACE)
-
-foreach(lib ${backend_lib_list})
-  if(TARGET ${lib})
-    target_link_options(executorch_backends INTERFACE ${lib})
-  endif()
-endforeach()
