@@ -728,6 +728,12 @@ target_link_libraries(executorch_backends INTERFACE ${_executorch_backends})
 add_library(executorch_extensions INTERFACE)
 target_link_libraries(executorch_extensions INTERFACE ${_executorch_extensions})
 
+install(
+  TARGETS executorch_backends executorch_extensions
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)
+
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch gflags)
