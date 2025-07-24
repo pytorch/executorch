@@ -91,8 +91,10 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.logical_not.default,
         exir_ops.edge.aten.lt.Scalar,
         exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.max.dim,
         exir_ops.edge.aten.maximum.default,
         exir_ops.edge.aten.mean.dim,
+        exir_ops.edge.aten.min.dim,
         exir_ops.edge.aten.minimum.default,
         exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.ne.Scalar,
@@ -167,10 +169,12 @@ class LayoutTransform(ExportPass):
         return node.target in self.layout_sensitive_ops
 
     def is_layout_agnostic(self, node: torch.fx.Node) -> bool:
-        if node.target in [
+        if node.target in {
+            exir_ops.edge.aten.max.dim,
             exir_ops.edge.aten.mean.dim,
+            exir_ops.edge.aten.min.dim,
             exir_ops.edge.aten.sum.dim_IntList,
-        ]:
+        }:
             # if dimemsion is not kept, we'll have no clue how to do layout transform
             if len(node.args) < 3 or not node.args[2]:
                 return False
