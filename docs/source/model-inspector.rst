@@ -106,6 +106,21 @@ get_exported_program
     Equality constraints: []
 
 
+calculate_numeric_gap
+~~~~~~~~~~~~~~~~~~
+
+.. autofunction:: executorch.devtools.Inspector.calculate_numeric_gap
+
+.. _example-usage-4:
+
+**Example Usage:**
+
+.. code:: python
+
+    print(inspector.calculate_numeric_gap("L1"))
+
+.. image:: _static/img/calculate_numeric_gap.png
+
 Inspector Attributes
 --------------------
 
