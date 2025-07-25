@@ -45,8 +45,9 @@ from types import ModuleType
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union
 
 try:
-    from executorch.extension.pybindings.portable_lib import (
-        ExecuTorchModule,
+    from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]
+        ExecuTorchMethod,
+        ExecuTorchProgram,
         MethodMeta,
         Verification,
     )
@@ -62,10 +63,8 @@ class Method:
     This can be used to execute the method with inputs.
     """
 
-    def __init__(self, method_name: str, module: ExecuTorchModule) -> None:
-        # TODO: This class should be pybind to the C++ counterpart instead of hosting ExecuTorchModule.
-        self._method_name = method_name
-        self._module = module
+    def __init__(self, method: ExecuTorchMethod) -> None:
+        self._method = method
 
     def execute(self, inputs: Sequence[Any]) -> Sequence[Any]:
         """Executes the method with the given inputs.
@@ -76,7 +75,7 @@ class Method:
         Returns:
             The outputs of the method.
         """
-        return self._module.run_method(self._method_name, inputs)
+        return self._method(inputs)
 
     @property
     def metadata(self) -> MethodMeta:
@@ -85,7 +84,7 @@ class Method:
         Returns:
             The metadata for the method.
         """
-        return self._module.method_meta(self._method_name)
+        return self._method.method_meta()
 
 
 class Program:
@@ -94,17 +93,15 @@ class Program:
     This can be used to load the methods/models defined by the program.
     """
 
-    def __init__(self, module: ExecuTorchModule, data: Optional[bytes]) -> None:
+    def __init__(self, program: ExecuTorchProgram, data: Optional[bytes]) -> None:
         # Hold the data so the program is not freed.
         self._data = data
-        self._module = module
-        self._methods: Dict[str, Method] = {}
-        # ExecuTorchModule already pre-loads all Methods when created, so this
-        # doesn't do any extra work. TODO: Don't load a given Method until
-        # load_method() is called. Create a separate Method instance each time,
-        # to allow multiple independent instances of the same model.
-        for method_name in self._module.method_names():
-            self._methods[method_name] = Method(method_name, self._module)
+        self._program = program
+        self._methods: Dict[str, Optional[Method]] = {}
+        # The names of the methods are preemptively added to the dictionary,
+        # but only map to None until they are loaded.
+        for method_idx in range(self._program.num_methods()):
+            self._methods[self._program.get_method_name(method_idx)] = None
 
     @property
     def method_names(self) -> Set[str]:
@@ -122,7 +119,23 @@ class Program:
         Returns:
             The loaded method.
         """
-        return self._methods.get(name, None)
+
+        method = self._methods[name]
+        if method is None:
+            method = Method(self._program.load_method(name))
+            self._methods[name] = method
+        return method
+
+    def metadata(self, method_name: str) -> MethodMeta:
+        """Gets the metadata for the specified method.
+
+        Args:
+            method_name: The name of the method.
+
+        Returns:
+            The outputs of the method.
+        """
+        return self._program.method_meta(method_name)
 
 
 class BackendRegistry:
@@ -172,7 +185,7 @@ class Runtime:
     @functools.lru_cache(maxsize=1)
     def get() -> "Runtime":
         """Gets the Runtime singleton."""
-        import executorch.extension.pybindings.portable_lib as legacy_module
+        import executorch.extension.pybindings.portable_lib as legacy_module  # type: ignore[import-not-found]
 
         return Runtime(legacy_module=legacy_module)
 
@@ -199,13 +212,13 @@ class Runtime:
             The loaded program.
         """
         if isinstance(data, (Path, str)):
-            m = self._legacy_module._load_for_executorch(
+            p = self._legacy_module._load_program(
                 str(data),
                 enable_etdump=False,
                 debug_buffer_size=0,
                 program_verification=verification,
             )
-            return Program(m, data=None)
+            return Program(p, data=None)
         elif isinstance(data, BinaryIO):
             data_bytes = data.read()
         elif isinstance(data, bytearray):
@@ -216,11 +229,11 @@ class Runtime:
             raise TypeError(
                 f"Expected data to be bytes, bytearray, a path to a .pte file, or a file-like object, but got {type(data).__name__}."
             )
-        m = self._legacy_module._load_for_executorch_from_buffer(
+        p = self._legacy_module._load_program_from_buffer(
             data_bytes,
             enable_etdump=False,
             debug_buffer_size=0,
             program_verification=verification,
         )
 
-        return Program(m, data=data_bytes)
+        return Program(p, data=data_bytes)

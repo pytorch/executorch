@@ -14,10 +14,12 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/rpc_mem.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
+#include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
+#include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 
 #include <algorithm>
@@ -31,6 +33,7 @@ using executorch::extension::llm::time_in_ms;
 using executorch::runtime::Error;
 using executorch::runtime::MethodMeta;
 using executorch::runtime::Result;
+namespace llm = ::executorch::extension::llm;
 
 namespace example {
 namespace {
@@ -52,7 +55,15 @@ void print_performance_report(
 }
 } // namespace
 
+std::unique_ptr<::tokenizers::Tokenizer> load_llama_tokenizer(
+    const std::string& tokenizer_path,
+    Version version) {
+  auto special_tokens = get_special_tokens(version);
+  return llm::load_tokenizer(tokenizer_path, std::move(special_tokens));
+}
+
 Runner::Runner(
+    const std::string& decoder_model_version,
     const std::string& model_path,
     const std::string& tokenizer_path,
     const std::string& performance_output_path,
@@ -61,14 +72,16 @@ Runner::Runner(
     const std::string& kv_updater,
     const int ngram,
     const int window,
-    const int gcap)
-    : tokenizer_path_(tokenizer_path),
+    const int gcap,
+    std::unique_ptr<tokenizers::Tokenizer> tokenizer)
+    : ngram_(ngram),
+      window_(window),
+      gcap_(gcap),
+      tokenizer_path_(tokenizer_path),
       performance_output_path_(performance_output_path),
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
-      ngram_(ngram),
-      window_(window),
-      gcap_(gcap) {
+      tokenizer_(std::move(tokenizer)) {
   module_ = std::make_unique<Module>(
       model_path, Module::LoadMode::MmapUseMlockIgnoreErrors);
   stats_.reset();
@@ -79,6 +92,17 @@ Runner::Runner(
   } else {
     ET_CHECK_MSG(false, "kv updater (%s) not found", kv_updater.c_str());
   }
+
+  if (decoder_model_version == "llama2") {
+    decoder_model_version_ = DecoderModelVersion::kLlama2;
+  } else if (decoder_model_version == "llama3") {
+    decoder_model_version_ = DecoderModelVersion::kLlama3;
+  } else if (decoder_model_version == "qwen2_5") {
+    decoder_model_version_ = DecoderModelVersion::kQwen2_5;
+  } else {
+    ET_CHECK_MSG(false, "Unsupported Decoder Model");
+  }
+
   ET_LOG(Info, "creating module: model_path=%s", model_path.c_str());
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
   ET_LOG(Info, "eval mode=%d", eval_mode_);
@@ -115,40 +139,32 @@ Error Runner::load() {
       break;
   }
 
-  // load tokenizer. Assuming tiktoken is the default tokenizer
-  tokenizer_ = get_tiktoken_for_llama();
-  auto err = tokenizer_->load(tokenizer_path_);
-  auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>();
-  // Rely on tiktoken to throw error if the artifact is incompatible. Then we
-  // fallback to BPE tokenizer.
-  if (err != tokenizers::Error::Ok) {
-    ET_LOG(
-        Info,
-        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
-        tokenizer_path_.c_str());
-    tokenizer_.reset();
-    tokenizer_ = std::make_unique<tokenizers::Llama2cTokenizer>();
-    err = tokenizer_->load(tokenizer_path_);
-    llama_version_ = LlamaVersion::kLlama2;
-    ET_CHECK_MSG(
-        err == tokenizers::Error::Ok,
-        "failed to load tokenizer %s",
-        tokenizer_path_.c_str());
-  } else {
-    eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
-    llama_version_ = LlamaVersion::kLlama3;
+  tokenizer_ = load_llama_tokenizer(tokenizer_path_, Version::Default);
+  if (tokenizer_ == nullptr) {
+    ET_LOG(Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());
+    return Error::Internal;
   }
-  eos_ids->insert(tokenizer_->eos_tok());
-  int32_t vocab_size = tokenizer_->vocab_size();
+
+  auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
+      std::unordered_set<uint64_t>{tokenizer_->eos_tok()});
+
+  if (decoder_model_version_ == DecoderModelVersion::kLlama3) {
+    eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+  }
+  // Try avoid getMetadataHelper as it is time consuming.
+  Result<MethodMeta> method_meta =
+      module_->method_meta(token_generator_method_name);
+
+  // For some tokenizer.json, runtime vocab_size might be different, use output
+  // shape to get vocab size.
+  int32_t vocab_size = method_meta->output_tensor_meta(0)->sizes()[2];
   decoder_runner_ =
       std::make_unique<DecoderRunner>(module_.get(), vocab_size, temperature_);
 
   ET_CHECK_OK_OR_RETURN_ERROR(decoder_runner_->load(method_names));
 
   ET_LOG(Info, "Reading metadata from model");
-  // Try avoid getMetadataHelper as it is time consuming.
-  Result<MethodMeta> method_meta =
-      module_->method_meta(token_generator_method_name);
+
   // retrieve any method meta, can be either prefill or kv
   int64_t num_layers =
       ET_UNWRAP(module_->get("get_n_layers")).toScalar().to<int64_t>();
@@ -258,7 +274,6 @@ Error Runner::load() {
       module_->method_meta(prompt_processor_method_name));
   token_generator_->init_io(
       buffer_manager_.get(), module_->method_meta(token_generator_method_name));
-
   return Error::Ok;
 }
 
@@ -296,7 +311,6 @@ Error Runner::generate(
   if (token_callback) {
     token_callback(prompt);
   }
-
   auto prefill_res = prompt_processor_->prefill(prompt_tokens, cur_pos_);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
@@ -338,13 +352,13 @@ Error Runner::generate(
   return Error::Ok;
 }
 
-Result<LlamaVersion> Runner::get_llama_version() {
+Result<DecoderModelVersion> Runner::get_decoder_model_version() {
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
     stats_.model_load_end_ms = time_in_ms();
   }
-  return llama_version_;
+  return decoder_model_version_;
 }
 
 } // namespace example

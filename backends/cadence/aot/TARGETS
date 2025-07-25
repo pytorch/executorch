@@ -41,6 +41,7 @@ python_library(
         ":ops_registrations",
         ":passes",
         ":replace_ops",
+        ":compiler_funcs",
         ":utils",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
@@ -185,6 +186,34 @@ python_library(
 )
 
 python_library(
+    name = "program_builder",
+    srcs = [
+        "program_builder.py",
+    ],
+    typing = True,
+    deps = [
+        ":graph_builder",
+        "fbcode//caffe2:torch",
+        "fbcode//executorch/exir:lib",
+        "fbcode//executorch/exir:pass_base",
+        "fbcode//executorch/exir/verification:verifier",
+    ],
+)
+
+python_unittest(
+    name = "test_program_builder",
+    srcs = [
+        "tests/test_program_builder.py",
+    ],
+    typing = True,
+    deps = [
+        ":program_builder",
+        "//caffe2:torch",
+        "//later:lib",
+    ],
+)
+
+python_library(
     name = "fuse_ops",
     srcs = [
         "fuse_ops.py",
@@ -299,6 +328,21 @@ python_library(
         "typing_stubs.py",
     ],
     typing = True,
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+    ],
+)
+
+python_library(
+    name = "compiler_funcs",
+    srcs = [
+        "compiler_funcs.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
 )
 
 
@@ -327,7 +371,6 @@ python_unittest(
     supports_static_listing = False,
     typing = True,
     deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
         ":compiler",
         ":typing_stubs",
         ":replace_ops",
@@ -349,7 +392,6 @@ python_unittest(
     supports_static_listing = False,
     typing = True,
     deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
         ":compiler",
         ":decompose_ops",
         "//caffe2:torch",
@@ -371,7 +413,6 @@ python_unittest(
     supports_static_listing = False,
     typing = True,
     deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
         ":compiler",
         ":typing_stubs",
         "//caffe2:torch",
@@ -393,7 +434,6 @@ python_unittest(
     supports_static_listing = False,
     typing = True,
     deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
         "fbsource//third-party/pypi/pyre-extensions:pyre-extensions",
         ":typing_stubs",
         ":compiler",
@@ -417,7 +457,6 @@ python_unittest(
     typing = True,
     deps = [
         ":typing_stubs",
-        "fbsource//third-party/pypi/parameterized:parameterized",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:compiler",
         "//executorch/backends/cadence/aot:graph_builder",
@@ -510,9 +549,9 @@ python_unittest(
         ":typing_stubs",
         ":ops_registrations",
         ":pass_utils",
+        ":program_builder",
         "//caffe2:torch",
         "//executorch/exir:memory",
-        "fbsource//third-party/pypi/parameterized:parameterized",
         "//executorch/exir/dialects:lib",
         "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/exir/tests:models",
@@ -526,8 +565,10 @@ python_unittest(
     ],
     typing = True,
     deps = [
+        ":program_builder",
         "//executorch/backends/cadence/aot:graph_builder",
         "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/runtime:runtime",
         "//later:lib",
     ],
 )

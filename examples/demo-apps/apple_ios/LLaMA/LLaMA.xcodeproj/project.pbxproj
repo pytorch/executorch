@@ -30,12 +30,10 @@
 		03CF439E2CEC5CEC00C7113B /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF439D2CEC5CEC00C7113B /* backend_xnnpack */; };
 		03CF43A02CEC5CEC00C7113B /* backend_xnnpack_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF439F2CEC5CEC00C7113B /* backend_xnnpack_debug */; };
 		03CF43A22CEC5CEC00C7113B /* executorch_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A12CEC5CEC00C7113B /* executorch_debug */; };
-		03CF43A42CEC5CEC00C7113B /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A32CEC5CEC00C7113B /* kernels_custom */; };
-		03CF43A62CEC5CEC00C7113B /* kernels_custom_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */; };
+		03CF43A42CEC5CEC00C7113B /* kernels_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A32CEC5CEC00C7113B /* kernels_llm */; };
+		03CF43A62CEC5CEC00C7113B /* kernels_llm_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A52CEC5CEC00C7113B /* kernels_llm_debug */; };
 		03CF43A82CEC5CEC00C7113B /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A72CEC5CEC00C7113B /* kernels_optimized */; };
 		03CF43AA2CEC5CEC00C7113B /* kernels_optimized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43A92CEC5CEC00C7113B /* kernels_optimized_debug */; };
-		03CF43AC2CEC5CEC00C7113B /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AB2CEC5CEC00C7113B /* kernels_portable */; };
-		03CF43AE2CEC5CEC00C7113B /* kernels_portable_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */; };
 		03CF43B02CEC5CEC00C7113B /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43AF2CEC5CEC00C7113B /* kernels_quantized */; };
 		03CF43B22CEC5CEC00C7113B /* kernels_quantized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43B12CEC5CEC00C7113B /* kernels_quantized_debug */; };
 		03D151B82E0E0908007A38BE /* LLaVARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03D151B72E0E0908007A38BE /* LLaVARunner.mm */; };
@@ -46,7 +44,6 @@
 		03D151D02E0E9ACB007A38BE /* text_llm_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151CD2E0E9ACB007A38BE /* text_llm_runner.cpp */; };
 		03D151D12E0E9ACB007A38BE /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151CC2E0E9ACB007A38BE /* text_decoder_runner.cpp */; };
 		03D151D92E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03D151D42E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm */; };
-		03D151DA2E0E9E43007A38BE /* BUCK in Resources */ = {isa = PBXBuildFile; fileRef = 03D151D72E0E9E43007A38BE /* BUCK */; };
 		03D151DB2E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D151D32E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h */; };
 		03D151DC2E0E9E43007A38BE /* ExecuTorchLLM.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D151D22E0E9E43007A38BE /* ExecuTorchLLM.h */; };
 		26A6A4282C8A3769005A761E /* ImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26A6A4272C8A3769005A761E /* ImagePicker.swift */; };
@@ -66,6 +63,7 @@
 		306A71512DC1DC3D00936B1F /* pre_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A71472DC1DC3D00936B1F /* pre_tokenizer.cpp */; };
 		306A71522DC1DC3D00936B1F /* token_decoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 306A714B2DC1DC3D00936B1F /* token_decoder.cpp */; };
 		3072D5232DC3EA280083FC83 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3072D5222DC3EA280083FC83 /* Constants.swift */; };
+		F24909E82E207004001E5B69 /* normalizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F24909E72E207004001E5B69 /* normalizer.cpp */; };
 		F292B0752D88B0C200BE6839 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B06F2D88B0C200BE6839 /* tiktoken.cpp */; };
 		F292B0762D88B0C200BE6839 /* llama2c_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B06C2D88B0C200BE6839 /* llama2c_tokenizer.cpp */; };
 		F292B0772D88B0C200BE6839 /* bpe_tokenizer_base.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F292B06A2D88B0C200BE6839 /* bpe_tokenizer_base.cpp */; };
@@ -136,7 +134,6 @@
 		03D151D22E0E9E43007A38BE /* ExecuTorchLLM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExecuTorchLLM.h; sourceTree = "<group>"; };
 		03D151D32E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExecuTorchTextLLMRunner.h; sourceTree = "<group>"; };
 		03D151D42E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ExecuTorchTextLLMRunner.mm; sourceTree = "<group>"; };
-		03D151D72E0E9E43007A38BE /* BUCK */ = {isa = PBXFileReference; lastKnownFileType = text; path = BUCK; sourceTree = "<group>"; };
 		26A6A4272C8A3769005A761E /* ImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePicker.swift; sourceTree = "<group>"; };
 		306A71352DC1DC0F00936B1F /* hf_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = hf_tokenizer.h; sourceTree = "<group>"; };
 		306A71362DC1DC0F00936B1F /* pcre2_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pcre2_regex.h; sourceTree = "<group>"; };
@@ -154,6 +151,7 @@
 		306A714A2DC1DC3D00936B1F /* std_regex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = std_regex.cpp; path = src/std_regex.cpp; sourceTree = "<group>"; };
 		306A714B2DC1DC3D00936B1F /* token_decoder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = token_decoder.cpp; path = src/token_decoder.cpp; sourceTree = "<group>"; };
 		3072D5222DC3EA280083FC83 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		F24909E72E207004001E5B69 /* normalizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = normalizer.cpp; path = src/normalizer.cpp; sourceTree = "<group>"; };
 		F292B06A2D88B0C200BE6839 /* bpe_tokenizer_base.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = bpe_tokenizer_base.cpp; path = src/bpe_tokenizer_base.cpp; sourceTree = "<group>"; };
 		F292B06C2D88B0C200BE6839 /* llama2c_tokenizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = llama2c_tokenizer.cpp; path = src/llama2c_tokenizer.cpp; sourceTree = "<group>"; };
 		F292B06F2D88B0C200BE6839 /* tiktoken.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = tiktoken.cpp; path = src/tiktoken.cpp; sourceTree = "<group>"; };
@@ -187,12 +185,10 @@
 				03CF439E2CEC5CEC00C7113B /* backend_xnnpack in Frameworks */,
 				03CF43A02CEC5CEC00C7113B /* backend_xnnpack_debug in Frameworks */,
 				03CF43A22CEC5CEC00C7113B /* executorch_debug in Frameworks */,
-				03CF43A42CEC5CEC00C7113B /* kernels_custom in Frameworks */,
-				03CF43A62CEC5CEC00C7113B /* kernels_custom_debug in Frameworks */,
+				03CF43A42CEC5CEC00C7113B /* kernels_llm in Frameworks */,
+				03CF43A62CEC5CEC00C7113B /* kernels_llm_debug in Frameworks */,
 				03CF43A82CEC5CEC00C7113B /* kernels_optimized in Frameworks */,
 				03CF43AA2CEC5CEC00C7113B /* kernels_optimized_debug in Frameworks */,
-				03CF43AC2CEC5CEC00C7113B /* kernels_portable in Frameworks */,
-				03CF43AE2CEC5CEC00C7113B /* kernels_portable_debug in Frameworks */,
 				03CF43B02CEC5CEC00C7113B /* kernels_quantized in Frameworks */,
 				03CF43B22CEC5CEC00C7113B /* kernels_quantized_debug in Frameworks */,
 			);
@@ -313,6 +309,7 @@
 		03729F0E2BB203D700152F2E /* tokenizers */ = {
 			isa = PBXGroup;
 			children = (
+				F24909E72E207004001E5B69 /* normalizer.cpp */,
 				F292B06A2D88B0C200BE6839 /* bpe_tokenizer_base.cpp */,
 				306A71452DC1DC3D00936B1F /* hf_tokenizer.cpp */,
 				F292B1002D88B20C00BE6839 /* llama_tiktoken.cpp */,
@@ -363,11 +360,10 @@
 			isa = PBXGroup;
 			children = (
 				03D151D62E0E9E43007A38BE /* ExecuTorchLLM */,
-				03D151D72E0E9E43007A38BE /* BUCK */,
 			);
 			name = apple;
-			path = /Users/shoumikhin/executorch/extension/llm/apple;
-			sourceTree = "<absolute>";
+			path = ../../../../../../extension/llm/apple;
+			sourceTree = "<group>";
 		};
 		F292B0842D88B0D200BE6839 /* tokenizers */ = {
 			isa = PBXGroup;
@@ -485,12 +481,10 @@
 				03CF439D2CEC5CEC00C7113B /* backend_xnnpack */,
 				03CF439F2CEC5CEC00C7113B /* backend_xnnpack_debug */,
 				03CF43A12CEC5CEC00C7113B /* executorch_debug */,
-				03CF43A32CEC5CEC00C7113B /* kernels_custom */,
-				03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */,
+				03CF43A32CEC5CEC00C7113B /* kernels_llm */,
+				03CF43A52CEC5CEC00C7113B /* kernels_llm_debug */,
 				03CF43A72CEC5CEC00C7113B /* kernels_optimized */,
 				03CF43A92CEC5CEC00C7113B /* kernels_optimized_debug */,
-				03CF43AB2CEC5CEC00C7113B /* kernels_portable */,
-				03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */,
 				03CF43AF2CEC5CEC00C7113B /* kernels_quantized */,
 				03CF43B12CEC5CEC00C7113B /* kernels_quantized_debug */,
 			);
@@ -551,7 +545,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03D151DA2E0E9E43007A38BE /* BUCK in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -604,6 +597,7 @@
 			files = (
 				03D151B82E0E0908007A38BE /* LLaVARunner.mm in Sources */,
 				03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */,
+				F24909E82E207004001E5B69 /* normalizer.cpp in Sources */,
 				0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */,
 				03D151CA2E0E98C4007A38BE /* sentencepiece.cpp in Sources */,
 				03D151D92E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm in Sources */,
@@ -954,7 +948,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = "swiftpm-0.6.0";
+				branch = "swiftpm-0.8.0.20250724";
 				kind = branch;
 			};
 		};
@@ -996,15 +990,15 @@
 			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = executorch_debug;
 		};
-		03CF43A32CEC5CEC00C7113B /* kernels_custom */ = {
+		03CF43A32CEC5CEC00C7113B /* kernels_llm */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_custom;
+			productName = kernels_llm;
 		};
-		03CF43A52CEC5CEC00C7113B /* kernels_custom_debug */ = {
+		03CF43A52CEC5CEC00C7113B /* kernels_llm_debug */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_custom_debug;
+			productName = kernels_llm_debug;
 		};
 		03CF43A72CEC5CEC00C7113B /* kernels_optimized */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1015,16 +1009,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = kernels_optimized_debug;
-		};
-		03CF43AB2CEC5CEC00C7113B /* kernels_portable */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_portable;
-		};
-		03CF43AD2CEC5CEC00C7113B /* kernels_portable_debug */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03CF43942CEC5CEC00C7113B /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = kernels_portable_debug;
 		};
 		03CF43AF2CEC5CEC00C7113B /* kernels_quantized */ = {
 			isa = XCSwiftPackageProductDependency;

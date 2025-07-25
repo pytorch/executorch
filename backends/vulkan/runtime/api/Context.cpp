@@ -38,7 +38,8 @@ Context::Context(vkapi::Adapter* adapter, const ContextConfig& config)
       querypool_(config_.query_pool_config, nullptr),
       // Command buffer submission
       cmd_mutex_{},
-      cmd_(VK_NULL_HANDLE, 0u),
+      cmd_(VK_NULL_HANDLE, VK_NULL_HANDLE, 0u),
+      prev_semaphore_(VK_NULL_HANDLE),
       submit_count_{0u},
       // Memory Management
       buffer_clearlist_mutex_{},
@@ -195,17 +196,28 @@ void Context::register_blit(
 }
 
 void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
+  // Wait semaphore would be previous command buffer's signal semaphore
+  VkSemaphore wait_semaphore = prev_semaphore_;
+  // Signal semaphore for the the current command buffer
+  VkSemaphore signal_semaphore = cmd_.get_signal_semaphore();
+  // Next command buffer would wait on this command buffer's signal semaphore
+  prev_semaphore_ = signal_semaphore;
+
   if (cmd_) {
     cmd_.end();
     adapter_p_->submit_cmd(
-        queue_, cmd_.get_submit_handle(final_use), fence_handle);
+        queue_,
+        cmd_.get_submit_handle(final_use),
+        fence_handle,
+        wait_semaphore,
+        signal_semaphore);
 
     submit_count_ = 0u;
   }
 }
 
 void Context::flush() {
-  VK_CHECK(vkQueueWaitIdle(queue()));
+  VK_CHECK(vkQueueWaitIdle(queue().handle));
 
   command_pool_.flush();
   descriptor_pool_.flush();
@@ -214,6 +226,8 @@ void Context::flush() {
   if (cmd_) {
     cmd_.invalidate();
   }
+  // Reset previous command buffer semaphore
+  prev_semaphore_ = VK_NULL_HANDLE;
 
   std::lock_guard<std::mutex> bufferlist_lock(buffer_clearlist_mutex_);
   std::lock_guard<std::mutex> imagelist_lock(image_clearlist_mutex_);

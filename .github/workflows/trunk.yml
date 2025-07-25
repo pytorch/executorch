@@ -88,7 +88,7 @@ jobs:
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc11-aarch64
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -163,7 +163,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -194,10 +194,10 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
-      docker-image: executorch-ubuntu-22.04-arm-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+      timeout: 120
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -223,9 +223,13 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    strategy:
+      matrix:
+        os: [bare_metal, zephyr-preset]
+      fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-arm-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -234,35 +238,62 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        cxx_flags="-fno-exceptions -fno-rtti -Wall -Werror -Wno-int-in-bool-context -DET_HAVE_PREAD=0"
+        setup_script_args=""
+        if [[ ${{ matrix.os}} == "bare_metal" ]]; then
+          toolchain_prefix=arm-none-eabi-
+          threshold="104000" # should be ~103.7KB, set threshold to 104KB.
+          toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
+          setup_script_args="--target-toolchain zephyr"
+          toolchain_prefix=arm-zephyr-eabi-
+          threshold="133120" # should be ~125KB, set threshold to 130KB
+          toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+        else
+          echo "Fail unsupport OS selection ${{ matrix.os }}"
+          exit 1
+        fi
+
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
-        .ci/scripts/setup-arm-baremetal-tools.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh ${setup_script_args}
         source examples/arm/ethos-u-scratch/setup_path.sh
 
-        # User baremetal toolchain
-        arm-none-eabi-c++ --version
-        toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
+        # User toolchain
+        ${toolchain_prefix}c++ --version
+
+        # Setup cmake target to desired toolchain
         toolchain_cmake=$(realpath ${toolchain_cmake})
 
-        # Build and test size test
-        bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+        # Build and run size test
+        if [[ ${{ matrix.os}} == "bare_metal" ]]; then
+          bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
+        elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
+          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
+          cmake --build cmake-out -j9 --target install --config Release
+          CXXFLAGS=${cxx_flags}  cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
+          cmake --build cmake-out/test -j9 --config Release
+        else
+          echo "Fail unsupport OS selection ${{ matrix.os }}"
+          exit 1
+        fi
+
         elf="cmake-out/test/size_test"
 
         # Dump basic info
         ls -al ${elf}
-        arm-none-eabi-size ${elf}
+        ${toolchain_prefix}size ${elf}
 
-        # Dump symbols
+        # Dump symbol
         python .github/scripts/run_nm.py -e ${elf}
-        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "arm-none-eabi-"
-        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "arm-none-eabi-"
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "${toolchain_prefix}"
+        python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "${toolchain_prefix}"
 
         # Add basic guard - TODO: refine this!
-        arm-none-eabi-strip ${elf}
+        ${toolchain_prefix}strip ${elf}
         output=$(ls -la ${elf})
         arr=($output)
         size=${arr[4]}
-        threshold="103268" # ~100KiB
         echo "size: $size, threshold: $threshold"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
@@ -270,6 +301,37 @@ jobs:
           echo "Fail $size > $threshold"
           exit 1
         fi
+
+  test-arm-ootb-linux:
+    name: test-arm-ootb-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Follow the steps required before running the notebooks
+        # Try to mirror these as closely as possible
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh
+        source examples/arm/ethos-u-scratch/setup_path.sh
+
+        # Install requirements for converting notebooks
+        pip install notebook
+
+        # Run OOTB tests
+        backends/arm/test/test_arm_ootb.sh
 
   test-coreml-delegate:
     name: test-coreml-delegate
@@ -325,7 +387,7 @@ jobs:
         eval "$(conda shell.bash hook)"
 
         # Install requirements
-        ${CONDA_RUN} python install_executorch.py
+        ${CONDA_RUN} EXECUTORCH_BUILD_TORCHAO=1 python install_executorch.py
         ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
 
         # Run test
@@ -368,7 +430,7 @@ jobs:
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ${{ matrix.docker-image }}
+      docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -467,7 +529,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-qnn-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -493,7 +555,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-qnn-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -561,7 +623,7 @@ jobs:
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.2xlarge.memory
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -584,7 +646,7 @@ jobs:
           -DEXECUTORCH_BUILD_XNNPACK=ON \
           -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
           -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-          -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+          -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
           -DEXECUTORCH_BUILD_DEVTOOLS=ON \
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -Bcmake-out .
@@ -676,7 +738,7 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-qnn-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -709,33 +771,4 @@ jobs:
     with:
       build-mode: Release
       build-tool: cmake
-      docker-image: executorch-ubuntu-22.04-clang12
-
-  unittest-nxp-neutron:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        set -eux
-
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        # Build and install Executorch
-        PYTHON_EXECUTABLE=python \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON" \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"
-
-        # Install test requirements
-        pip install -r backends/nxp/requirements-tests.txt
-
-        # Run pytest
-        PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12

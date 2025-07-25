@@ -8,14 +8,15 @@
     },
     {
       "name": "macos",
-      "displayName": "Build everything buildable on macOS",
+      "displayName": "Build ExecuTorch for macOS",
       "inherits": ["common"],
       "generator": "Xcode",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/macos.cmake",
         "PLATFORM": "MAC_ARM64",
-        "DEPLOYMENT_TARGET": "12.0"
+        "DEPLOYMENT_TARGET": "12.0",
+        "CMAKE_MACOSX_BUNDLE": "OFF"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -25,7 +26,7 @@
     },
     {
       "name": "ios",
-      "displayName": "Build everything buildable on iOS",
+      "displayName": "Build ExecuTorch for iOS",
       "inherits": ["common"],
       "generator": "Xcode",
       "cacheVariables": {
@@ -42,7 +43,7 @@
     },
     {
       "name": "ios-simulator",
-      "displayName": "Build everything buildable on iOS simulator",
+      "displayName": "Build ExecuTorch for iOS Simulator",
       "inherits": ["common"],
       "generator": "Xcode",
       "cacheVariables": {
@@ -59,7 +60,7 @@
     },
     {
       "name": "linux",
-      "displayName": "Build everything buildable on Linux",
+      "displayName": "Build ExecuTorch for Linux",
       "inherits": ["common"],
       "cacheVariables": {
         "CMAKE_SYSTEM_NAME": "Linux",
@@ -88,9 +89,7 @@
     {
         "name": "llm",
         "displayName": "Build LLM libraries",
-        "inherits": [
-            "common"
-        ],
+        "inherits": ["common"],
         "cacheVariables": {
             "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/llm.cmake",
             "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
@@ -98,11 +97,16 @@
         "condition": {
             "type": "inList",
             "string": "${hostSystemName}",
-            "list": [
-                "Darwin",
-                "Linux",
-                "Windows"
-            ]
+            "list": ["Darwin", "Linux", "Windows"]
+        }
+    },
+    {
+        "name": "zephyr",
+        "displayName": "Build ExecuTorch for Zephyr RTOS",
+        "inherits": ["common"],
+        "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/zephyr.cmake",
+            "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake"
         }
     }
   ]

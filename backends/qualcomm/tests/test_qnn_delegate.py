@@ -152,9 +152,19 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_argmax(self):
+        module = Argmax()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 4, 4),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_argmin(self):
         module = Argmin()  # noqa: F405
         sample_input = (torch.randn(16, 3, 4, 4),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_atan(self):
+        sample_input = (torch.randn(3, 4),)
+        module = Atan()  # noqa: F405
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool2d(self):
@@ -515,6 +525,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = ExpM1()  # noqa: F405
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_floor(self):
+        sample_input = (torch.randn(3, 4),)
+        module = Floor()  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_fold(self):
         sample_input = (torch.randn(3, 512, 256),)
         module = Fold()  # noqa: F405
@@ -622,17 +637,57 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_index_copy(self):
         test_comb = [
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=False
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
                 ),
             },
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=True
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
                 ),
             },
         ]
@@ -811,6 +866,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_max_dim(self):
+        module = MaxDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_max_pool2d(self):
         module = MaxPool2d()  # noqa: F405
         sample_input = (torch.randn(4, 3, 24, 24),)
@@ -832,6 +892,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_minimum(self):
         module = Minimum()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_min_dim(self):
+        module = MinDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_neg(self):
@@ -927,6 +992,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_round(self):
+        module = Round()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rsqrt(self):
         module = Rsqrt()  # noqa: F405
@@ -1369,9 +1439,21 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_argmax(self):
+        module = Argmax()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 4, 4),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_argmin(self):
         module = Argmin()  # noqa: F405
         sample_input = (torch.randn(16, 3, 4, 4),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_atan(self):
+        sample_input = (torch.randn(3, 4),)
+        module = Atan()  # noqa: F405
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1460,20 +1542,7 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_block(self):
-        import numpy as np
-
-        np.random.seed(1)
         o_ch, i_ch, kernel, padding = 32, 512, (1, 1), 0
-        input = (
-            torch.from_numpy(np.random.uniform(-3, 3, size=(1, 1, 32, i_ch)))
-            .to(torch.float)
-            .permute(0, 3, 1, 2)
-        )
-        weight = (
-            torch.from_numpy(np.random.uniform(-3, 3, size=(1, 1, i_ch, o_ch)))
-            .to(torch.float)
-            .permute(3, 2, 0, 1)
-        )
 
         modules = [
             Conv2dSingle(  # noqa: F405
@@ -1490,20 +1559,18 @@ class TestQNNQuantizedOperator(TestQNN):
                 padding=padding,
             ),
         ]
-        for module in modules:
-            module.conv.weight = torch.nn.Parameter(weight)
 
-        sample_input = (input,)
+        sample_input = (torch.randn(1, i_ch, 1, o_ch),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 # update block size for convolution weight (OIHW)
                 # channel dimension(O) is defaultly sliced in QNN
-                # divide dimension(I) into 4 groups
+                # divide dimension(I) into 16 groups
                 module = self.get_qdq_module(
                     module,
                     sample_input,
                     quant_dtype=QuantDtype.use_16a4w_block,
-                    block_size_map={"conv2d": (1, 128, 1, 1)},
+                    block_size_map={"conv2d": (1, 32, 1, 1)},
                 )
                 self.lower_module_and_test_output(module, sample_input)
 
@@ -1788,6 +1855,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_floor(self):
+        sample_input = (torch.randn(3, 4),)
+        module = Floor()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_fold(self):
         sample_input = (torch.randn(3, 512, 256),)
         module = Fold()  # noqa: F405
@@ -1907,17 +1980,57 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_index_copy(self):
         test_comb = [
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=False),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=False
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
                 ),
             },
             {
-                QCOM_MODULE: IndexCopy(skip_mutable_buffer=True),  # noqa: F405
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=False
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=1, skip_mutable_buffer=True
+                ),
                 QCOM_SAMPLE_INPUTS: (
                     torch.tensor([2], dtype=torch.int64),
                     torch.randn([1, 1, 12, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2], dtype=torch.int64),
+                    torch.randn([1, 1024, 1, 64]),
+                ),
+            },
+            {
+                QCOM_MODULE: IndexCopy(  # noqa: F405
+                    copy_dim=2, skip_mutable_buffer=True
+                ),
+                QCOM_SAMPLE_INPUTS: (
+                    torch.tensor([2, 5], dtype=torch.int64),
+                    torch.randn([1, 1024, 2, 64]),
                 ),
             },
         ]
@@ -2127,6 +2240,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_max_dim(self):
+        module = MaxDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_max_pool2d(self):
         module = MaxPool2d()  # noqa: F405
         sample_input = (torch.randn(4, 3, 24, 24),)
@@ -2150,6 +2269,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_minimum(self):
         module = Minimum()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_min_dim(self):
+        module = MinDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -2260,6 +2385,12 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_round(self):
+        module = Round()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_rsqrt(self):
         module = Rsqrt()  # noqa: F405
@@ -3271,6 +3402,38 @@ class TestQNNQuantizedUtils(TestQNN):
         quantized_module = convert_pt2e(prepared)
         self.lower_module_and_test_output(quantized_module, sample_input)
 
+    def test_qnn_backend_saver_backend(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            saver=True,
+        )
+        module = Relu()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+
+        from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+            flatbuffer_to_option,
+            option_to_flatbuffer,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            option = flatbuffer_to_option(TestQNN.compiler_specs[0].value)
+            option.saver_output_dir = f"{tmp_dir}/saver_output"
+            TestQNN.compiler_specs[0].value = option_to_flatbuffer(option)
+
+            with self.assertRaises(SystemExit):
+                self.lower_module_and_test_output(module, sample_input)
+            self.assertTrue(
+                os.path.isfile(f"{tmp_dir}/saver_output/params.bin"),
+                "failed to find params.bin",
+            )
+            self.assertTrue(
+                os.path.isfile(f"{tmp_dir}/saver_output/saver_output.c"),
+                "failed to find saver_output.c",
+            )
+
     def test_qnn_backend_skip_node_id_partitioner(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
@@ -3886,7 +4049,7 @@ class TestExampleLLMScript(TestQNN):
             "16a4w",
             "--temperature",
             "0",
-            "--llama_model",
+            "--decoder_model",
             "llama3_2",
             "--model_mode",
             "hybrid",
@@ -3966,7 +4129,7 @@ class TestExampleLLMScript(TestQNN):
             "16a4w",
             "--temperature",
             "0",
-            "--llama_model",
+            "--decoder_model",
             "stories110m",
             "--model_mode",
             "hybrid",
@@ -4007,6 +4170,65 @@ class TestExampleLLMScript(TestQNN):
                     self.assertLessEqual(pte_size, 130000000)
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
+
+    def test_qwen2_5(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "My favourite condiment is "
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a8w",
+            "--decoder_model",
+            "qwen2_5",
+            "--model_mode",
+            "hybrid",
+            "--prefill_ar_len",
+            "32",
+            "--max_seq_len",
+            "128",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        # Accuracy is bad for now. Just check user's prompt is returned.
+        golden_start_with = "My favourite condiment is "
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                model_out = msg["result"][0]
+                self.assertTrue(
+                    model_out.startswith(golden_start_with),
+                    f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                )
+                self.assertGreaterEqual(msg["inference_speed"], 95)  # Lanai
 
 
 class TestExampleOssScript(TestQNN):
@@ -4908,6 +5130,73 @@ class TestExampleOssScript(TestQNN):
             else:
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 80)
+
+    def test_t5(self):
+        if not self.required_envs([self.qa_dataset]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/t5/t5.py",
+            "--dataset",
+            self.sentence_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["f1"], 0.7)
+
+    def test_whisper(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/whisper/whisper.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertLessEqual(msg["wer"], 0.25)
 
 
 class TestExampleQaihubScript(TestQNN):
