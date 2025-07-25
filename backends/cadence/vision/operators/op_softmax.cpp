@@ -20,7 +20,7 @@ using torch::executor::Error;
 
 namespace cadence {
 namespace impl {
-namespace vision {
+namespace MV130 {
 namespace native {
 
 Tensor& _softmax_out(
@@ -99,12 +99,12 @@ Tensor& _softmax_out(
     outer_stride = size;
 
     float* ptr_out =
-        (float*)kernels::allocate_temp_memory(ctx, out.numel() * sizeof(float));
+        (float*)vision::kernels::allocate_temp_memory(ctx, out.numel() * sizeof(float));
 
     ET_KERNEL_CHECK(ctx, ptr_out != nullptr, MemoryAllocationFailed, out);
 
     float* ptr_out1 =
-        (float*)kernels::allocate_temp_memory(ctx, out.numel() * sizeof(float));
+        (float*)vision::kernels::allocate_temp_memory(ctx, out.numel() * sizeof(float));
 
     ET_KERNEL_CHECK(ctx, ptr_out1 != nullptr, MemoryAllocationFailed, out);
 
@@ -189,6 +189,6 @@ Tensor& _softmax_out(
 }
 
 } // namespace native
-} // namespace vision
+} // namespace MV130
 } // namespace impl
 } // namespace cadence

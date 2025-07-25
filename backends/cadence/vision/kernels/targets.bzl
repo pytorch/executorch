@@ -12,4 +12,8 @@ def define_common_targets():
             "//executorch/backends/cadence/...",
         ],
         platforms = CXX,
+        deps = [
+            "//executorch/backends/cadence/vision/third-party:vision-nnlib",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
     )
