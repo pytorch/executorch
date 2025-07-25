@@ -30,7 +30,8 @@ endif()
 # etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
-find_package(gflags REQUIRED)
+# some toolchains might contain their own gflags, skip them here
+find_package(gflags REQUIRED NO_CMAKE_FIND_ROOT_PATH)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 

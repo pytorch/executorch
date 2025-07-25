@@ -64,8 +64,9 @@ class SimpleADB:
         error_only (bool): Redirect stdio and leave error messages only
         shared_buffer (bool): Apply zero-copy mechanism in runtime
         runner (str): Runtime executor binary
-        expected_input_shape (Tuple[torch.Size]): input shape of dynamic graph
-        expected_output_shape (Tuple[torch.Size]): output shape of dynamic graph
+        target (str): Target toolchain name
+        expected_input_shape (Tuple[torch.Size]): Input shape of dynamic graph
+        expected_output_shape (Tuple[torch.Size]): Output shape of dynamic graph
     """
 
     def __init__(
@@ -415,7 +416,7 @@ def build_executorch_binary(
         None: The function writes the output to a specified .pte file.
     """
     backend_options = generate_htp_compiler_spec(
-        use_fp16=False if quant_dtype else True
+        use_fp16=False if quant_dtype is not None else True
     )
     compile_spec = generate_qnn_executorch_compiler_spec(
         soc_model=getattr(QcomChipset, soc_model),
@@ -871,6 +872,25 @@ def setup_common_args_and_variables():
         "--seed",
         help="Set the seed for generating random numbers in both torch and random.",
         type=int,
+    )
+
+    parser.add_argument(
+        "-t",
+        "--target",
+        help="Target platform for deployment",
+        choices=[
+            "aarch64-android",
+            "aarch64-oe-linux-gcc9.3",
+            "aarch64-oe-linux-gcc11.2",
+        ],
+        default="aarch64-android",
+        type=str,
+    )
+
+    parser.add_argument(
+        "--pre_gen_pte",
+        help="Run the pre-generated pte in the given directory.",
+        type=str,
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
