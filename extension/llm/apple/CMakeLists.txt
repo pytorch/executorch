@@ -27,9 +27,9 @@ target_sources(extension_llm_apple PRIVATE ${OBJC_SOURCES})
 target_include_directories(extension_llm_apple PUBLIC ExecuTorchLLM/Exported)
 
 if(NOT TARGET extension_llm_runner)
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/extension/llm/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/../runner
+  message(
+    FATAL_ERROR
+      "EXECUTORCH_BUILD_EXTENSION_LLM_APPLE requires EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER."
   )
 endif()
 

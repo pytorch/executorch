@@ -23,14 +23,18 @@ foreach(schema_file ${_schema_files})
   )
 endforeach()
 
-file(MAKE_DIRECTORY ${DEVTOOLS_INCLUDE_DIR}/executorch/devtools/etdump)
+file(MAKE_DIRECTORY
+     ${DEVTOOLS_INCLUDE_DIR_NO_BUILD_INTERFACE}/executorch/devtools/etdump
+)
 add_custom_command(
   OUTPUT ${_schema_outputs}
-  COMMAND # Note that the flatcc project actually writes its outputs into the
-          # source tree instead of under the binary directory, and there's no
-          # way to change that behavior.
-          flatcc_cli -cwr -o ${DEVTOOLS_INCLUDE_DIR}/executorch/devtools/etdump
-          ${_etdump_schema__srcs}
+  COMMAND
+    # Note that the flatcc project actually writes its outputs into the source
+    # tree instead of under the binary directory, and there's no way to change
+    # that behavior.
+    flatcc_cli -cwr -o
+    ${DEVTOOLS_INCLUDE_DIR_NO_BUILD_INTERFACE}/executorch/devtools/etdump
+    ${_etdump_schema__srcs}
   DEPENDS flatcc_cli ${_etdump_schema__srcs}
   COMMENT "Generating etdump headers"
 )
@@ -51,12 +55,14 @@ target_link_libraries(
   PRIVATE executorch
 )
 target_include_directories(
-  etdump PUBLIC ${DEVTOOLS_INCLUDE_DIR}
-                ${PROJECT_SOURCE_DIR}/third-party/flatcc/include
+  etdump
+  PUBLIC ${DEVTOOLS_INCLUDE_DIR}
+         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third-party/flatcc/include>
 )
 
 install(
-  TARGETS etdump
+  TARGETS etdump flatccrt
+  EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_BINARY_DIR}/lib
   INCLUDES
   DESTINATION ${_common_include_directories}

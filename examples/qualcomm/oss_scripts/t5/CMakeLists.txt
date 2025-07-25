@@ -18,10 +18,7 @@ set(_qnn_t5_runner__srcs
 
 # build qnn t5 runner
 add_executable(qnn_t5_runner ${_qnn_t5_runner__srcs})
-target_include_directories(
-  qnn_t5_runner PUBLIC ${_common_include_directories}
-                       ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
-)
+target_include_directories(qnn_t5_runner PUBLIC ${_common_include_directories})
 
 target_link_libraries(
   qnn_t5_runner
@@ -29,10 +26,11 @@ target_link_libraries(
   executorch_core
   extension_data_loader
   extension_flat_tensor
+  extension_llm_runner
   extension_module
   extension_tensor
   gflags
-  tokenizers
+  tokenizers::tokenizers
 )
 
 target_compile_options(qnn_t5_runner PUBLIC ${_common_compile_options})

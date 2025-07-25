@@ -80,6 +80,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM_APPLE "Build the LLM Apple extension" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER "Build the LLM runner extension" BOOL
+  OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" BOOL OFF
 )
 define_overridable_option(
@@ -227,6 +231,16 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_LLM_APPLE REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_LLM
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_MODULE REQUIRES
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
 )
@@ -253,6 +267,11 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_TESTS REQUIRES EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_XNNPACK REQUIRES EXECUTORCH_BUILD_CPUINFO
+  EXECUTORCH_BUILD_PTHREADPOOL
 )
 
 check_conflicting_options_on(
