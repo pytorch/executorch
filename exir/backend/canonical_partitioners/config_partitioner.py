@@ -18,7 +18,6 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 
-from sympy.logic.boolalg import disjuncts
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.fx.passes.infra.partitioner import Partition
 
