@@ -137,6 +137,37 @@ init_command = [
 ]
 
 [[linter]]
+code = 'CMAKEFORMAT'
+include_patterns = [
+    "**/*.cmake",
+    "**/*.cmake.in",
+    "**/CMakeLists.txt",
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+# NOTE: We can remove our copy of this linter once lintrunner-adapters
+# has a release including
+# https://github.com/justinchuby/lintrunner-adapters/pull/117 and we
+# update to it.
+command = [
+    'python',
+    'tools/linter/adapters/cmake_format_linter.py',
+    '--',
+    '@{{PATHSFILE}}',
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
 code = 'ETCAPITAL'
 include_patterns = [
     '**/*.py',
