@@ -141,8 +141,7 @@ let package = Package(
       ],
       linkerSettings: [
         .unsafeFlags([
-          "-Xlinker", "-force_load",
-          "-Xlinker", "cmake-out/kernels_optimized.xcframework/macos-arm64/libkernels_optimized_macos.a",
+          "-Xlinker", "-all_load",
         ])
       ]
     )
