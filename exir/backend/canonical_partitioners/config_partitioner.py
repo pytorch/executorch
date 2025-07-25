@@ -17,10 +17,6 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-
-from exir.backend.canonical_partitioners.pattern_op_partitioner import (
-    generate_grouped_partitions_from_list_of_nodes,
-)
 from torch.fx.passes.infra.partitioner import Partition
 
 

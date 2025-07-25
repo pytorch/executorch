@@ -86,7 +86,7 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         )
         self.node_to_group = collections.defaultdict(int)
         self.all_nodes_in_groups = set()
-        if node_groups:
+        if self.node_groups:
             for i, group in enumerate(self.node_groups):
                 for node in group:
                     # Node is in multiple groups - not allowed
@@ -139,10 +139,6 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         if not self.node_groups:
             return group_to_partition_id
 
-        node_to_group_index = {}
-        for idx, group in enumerate(self.node_groups):
-            for node in group:
-                node_to_group_index[node] = idx
 
         processed_nodes = set()
 
@@ -153,13 +149,13 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         # if a user provides grouped nodes with operatorsupport, then this will
         # faile
         for node in reversed(self.graph_module.graph.nodes):
-            if node not in node_to_group_index:
+            if node not in self.node_to_group:
                 continue
 
             if node in processed_nodes:
                 continue
 
-            group_idx = node_to_group_index[node]
+            group_idx = self.node_to_group[node]
             group = self.node_groups[group_idx]
 
             # Create a partition for group
