@@ -532,7 +532,7 @@ def register_reduce_op(features: OpFeatures):
 
     def check_reduce_node(node: torch.fx.Node) -> bool:
         dim_list = node.args[1]
-        if isinstance(dim_list, list) and len(dim_list) != 1:
+        if isinstance(dim_list, list) and len(dim_list) > 2:
             return False
 
         keepdim = node.args[2]
