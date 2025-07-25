@@ -632,6 +632,14 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
+  if(EXECUTORCH_BUILD_EXTENSION_MODULE)
+    if(CMAKE_TOOLCHAIN_IOS OR CMAKE_TOOLCHAIN_ANDROID OR APPLE)
+      list(APPEND _dep_libs extension_module_static)
+    else()
+      list(APPEND _dep_libs extension_module)
+    endif()
+  endif()
+
   if(EXECUTORCH_BUILD_TESTS)
     list(APPEND _dep_libs test_backend_compiler_lib)
   endif()
@@ -688,6 +696,17 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
+
+  # Set RPATH for portable_lib to find libextension_module.so
+  if(APPLE)
+    set_target_properties(portable_lib PROPERTIES
+                          BUILD_RPATH "@loader_path"
+                          INSTALL_RPATH "@loader_path")
+  else()
+    set_target_properties(portable_lib PROPERTIES
+                          BUILD_RPATH "$ORIGIN"
+                          INSTALL_RPATH "$ORIGIN")
+  endif()
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
