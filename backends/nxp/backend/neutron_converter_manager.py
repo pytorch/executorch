@@ -1,11 +1,24 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import importlib
+import logging
+import multiprocessing
 import pkgutil
 
 from executorch.backends.nxp.backend.ir.converter.node_converter import Target
+
+
+def convert_unsafe(neutron_converter, tflite_model, cctx, queue):
+    """
+    Run neutron_converter on given tflite_model with compilation context cctx.
+    This routine is supposed to run in a separate process.
+    If properly finished, the output queue contains the converted model,
+    otherwise the neutron_converter exits and the output queue is empty.
+    """
+    model_converted = neutron_converter.convertModel(list(tflite_model), cctx)
+    queue.put(model_converted)
 
 
 class NeutronConverterManager:
@@ -52,6 +65,23 @@ class NeutronConverterManager:
         cctx.targetOpts = neutron_converter.getNeutronTarget(target)
         # New switch since Neutron Converter SDK_25.06
         cctx.compilationOpts.minNumOpsPerGraph = 1
-        model_converted = neutron_converter.convertModel(list(tflite_model), cctx)
 
+        logger = multiprocessing.log_to_stderr()
+        logger.setLevel(logging.WARNING)
+        queue = multiprocessing.Manager().Queue()
+
+        process = multiprocessing.Process(
+            target=convert_unsafe, args=(neutron_converter, tflite_model, cctx, queue)
+        )
+        process.start()
+        process.join()  # waits until the subprocess is complete
+
+        if queue.empty():  # signals the unsafe task did not run till the end
+            raise RuntimeError(
+                f"Neutron converter module terminated unexpectedly with exit code {process.exitcode}"
+            )
+
+        model_converted = queue.get()
+
+        process.close()
         return bytes(model_converted)
