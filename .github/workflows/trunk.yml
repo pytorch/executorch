@@ -74,11 +74,23 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-
         pwd
         ls
+        cd ../
+        pwd
+        ls
+        git clone https://github.com/BujSet/zephyr.git
+        cd zephyr/
+        git switch -c executorch-module-integration origin/executorch-module-integration
+        cd ../
+        west init -l zephyr
+        west config manifest.project-filter -- +executorch
+        west -v update
+        pwd
+        ls
+
         cd modules/lib/executorch
-        python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
+        #python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
         ./install_executorch.sh
         ./examples/arm/setup.sh --i-agree-to-the-contained-eula  --target-toolchain zephyr
         source examples/arm/ethos-u-scratch/setup_path.sh
