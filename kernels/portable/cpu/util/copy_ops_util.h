@@ -210,6 +210,13 @@ bool check__to_dim_order_copy_args(
     executorch::aten::OptionalArrayRef<int64_t> dim_order,
     Tensor& out);
 
+// TODO Create shared helper - check__to_dim_order_copy_args()
+bool check__clone_dim_order_args(
+    const Tensor& input,
+    bool non_blocking,
+    executorch::aten::OptionalArrayRef<int64_t> dim_order,
+    Tensor& out);
+
 bool check_unsqueeze_copy_args(
     const Tensor input,
     int64_t dim,
