@@ -18,6 +18,7 @@ runtime.cxx_test(
     srcs = ["test_text_decoder_runner.cpp"],
     deps = [
         "//executorch/extension/llm/runner:runner_lib",
+        "//executorch/extension/llm/runner/io_manager:io_manager",
         "//executorch/kernels/portable:generated_lib",
         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],
