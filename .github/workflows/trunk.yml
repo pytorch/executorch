@@ -76,9 +76,6 @@ jobs:
         source .ci/scripts/utils.sh
         pwd
         ls
-        cd ../
-        pwd
-        ls
         git clone https://github.com/BujSet/zephyr.git
         cd zephyr/
         git switch -c executorch-module-integration origin/executorch-module-integration
