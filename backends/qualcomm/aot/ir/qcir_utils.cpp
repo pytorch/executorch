@@ -322,7 +322,9 @@ Qnn_Tensor_t ToTensor(const tensor_type& tensor, const uint8_t* data_ptr) {
     return type < QNN_TENSOR_TYPE_STATIC;
   };
 
-  Qnn_Tensor_t t({.version = QNN_TENSOR_VERSION_2, .v2 = QNN_TENSOR_V2_INIT});
+  Qnn_Tensor_t t;
+  t.version = QNN_TENSOR_VERSION_2;
+  t.v2 = QNN_TENSOR_V2_INIT;
   QNN_TENSOR_VER_PTR(t)->name = tensor->name()->c_str();
   QNN_TENSOR_VER_PTR(t)->type = ToTensorType(tensor->type());
   QNN_TENSOR_VER_PTR(t)->dataType = ToDataType(tensor->dtype());
