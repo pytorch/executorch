@@ -89,7 +89,7 @@ target_compile_options(custom_ops PUBLIC ${_common_compile_options})
 install(
   TARGETS custom_ops
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
 if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)

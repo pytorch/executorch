@@ -45,5 +45,5 @@ executorch_target_link_options_shared_lib(neuron_backend)
 install(
   TARGETS neuron_backend
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )

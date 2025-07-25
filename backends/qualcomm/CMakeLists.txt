@@ -232,7 +232,7 @@ add_subdirectory(
 install(
   TARGETS qnn_executorch_backend
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
 # QNN pybind
