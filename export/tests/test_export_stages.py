@@ -11,12 +11,13 @@ from unittest.mock import Mock, patch
 
 import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
-from executorch.export import ExportRecipe, QuantizationRecipe
-from executorch.export.export import (
+from executorch.export import (
     EdgeTransformAndLowerStage,
     ExecutorchStage,
+    ExportRecipe,
     ExportSession,
     ExportStage,
+    QuantizationRecipe,
     QuantizeStage,
     SourceTransformStage,
 )
@@ -263,7 +264,7 @@ class TestExportSession(unittest.TestCase):
         actual_stages = [stage.name for stage in session._pipeline]
         self.assertEqual(actual_stages, expected_stages)
 
-    @patch("executorch.export.export.ExportSession._run_pipeline")
+    @patch("executorch.export.ExportSession._run_pipeline")
     def test_export_session_export_calls_pipeline(
         self, mock_run_pipeline: Mock
     ) -> None:
@@ -369,9 +370,9 @@ class TestExportSessionPipelineExecution(unittest.TestCase):
         self.model = SimpleTestModel()
         self.example_inputs = [(torch.randn(2, 10),)]
 
-    @patch("executorch.export.export.ExecutorchStage")
-    @patch("executorch.export.export.EdgeTransformAndLowerStage")
-    @patch("executorch.export.export.ExportStage")
+    @patch("executorch.export.ExecutorchStage")
+    @patch("executorch.export.EdgeTransformAndLowerStage")
+    @patch("executorch.export.ExportStage")
     def test_pipeline_execution_order_fp32(
         self,
         mock_export_stage_class: Mock,
@@ -412,10 +413,10 @@ class TestExportSessionPipelineExecution(unittest.TestCase):
         mock_edge_stage.run.assert_called_once()
         mock_executorch_stage.run.assert_called_once()
 
-    @patch("executorch.export.export.ExecutorchStage")
-    @patch("executorch.export.export.EdgeTransformAndLowerStage")
-    @patch("executorch.export.export.ExportStage")
-    @patch("executorch.export.export.QuantizeStage")
+    @patch("executorch.export.ExecutorchStage")
+    @patch("executorch.export.EdgeTransformAndLowerStage")
+    @patch("executorch.export.ExportStage")
+    @patch("executorch.export.QuantizeStage")
     def test_pipeline_execution_order_quantized(
         self,
         mock_quantize_stage_class: Mock,
@@ -474,7 +475,7 @@ class TestExportFunction(unittest.TestCase):
         self.model = SimpleTestModel()
         self.example_inputs = [(torch.randn(2, 10),)]
 
-    @patch("executorch.export.export.ExportSession")
+    @patch("executorch.export.ExportSession")
     def test_export_function_creates_session_and_exports(
         self, mock_session_class: Mock
     ) -> None:

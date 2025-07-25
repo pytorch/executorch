@@ -14,18 +14,31 @@ to the ExecuTorch format, including configuration, quantization, and
 export management.
 """
 
-from .export import export, ExportSession
+from .export import (
+    EdgeTransformAndLowerStage,
+    ExecutorchStage,
+    export,
+    ExportSession,
+    ExportStage,
+    QuantizeStage,
+    SourceTransformStage,
+)
 from .recipe import ExportRecipe, QuantizationRecipe, RecipeType
 from .recipe_provider import BackendRecipeProvider
 from .recipe_registry import recipe_registry
 
 
 __all__ = [
+    "EdgeTransformAndLowerStage",
+    "ExecutorchStage",
     "ExportRecipe",
-    "QuantizationRecipe",
     "ExportSession",
+    "ExportStage",
     "export",
+    "QuantizationRecipe",
+    "QuantizeStage",
     "BackendRecipeProvider",
     "recipe_registry",
     "RecipeType",
+    "SourceTransformStage",
 ]
