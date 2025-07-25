@@ -8,6 +8,9 @@
 
 set -ex
 
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+
 # Double check if the NDK version is set
 [ -n "${ZEPHYR_SDK}" ]
 
