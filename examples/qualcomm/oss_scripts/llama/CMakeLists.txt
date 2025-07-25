@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 # model sharding with custom op
 set(CUSTOM_OP_SRCS_FILE
     "${EXECUTORCH_SOURCE_DIR}/extension/llm/custom_ops/op_fallback.cpp"
@@ -50,9 +49,7 @@ list(APPEND _llama_runner__srcs)
 # build qnn llama runner
 add_executable(qnn_llama_runner ${_llama_runner__srcs})
 target_include_directories(
-  qnn_llama_runner
-  PUBLIC
-    ${_common_include_directories}
+  qnn_llama_runner PUBLIC ${_common_include_directories}
 )
 
 executorch_target_link_options_shared_lib(quantized_ops_lib)
@@ -66,7 +63,6 @@ target_link_libraries(
   extension_llm_runner
   extension_module
   extension_tensor
-  tokenizers
   gflags
   custom_ops
   quantized_ops_lib
@@ -75,8 +71,7 @@ target_link_libraries(
 )
 
 target_include_directories(
-  qnn_llama_runner
-  PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+  qnn_llama_runner PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 
 target_compile_options(qnn_llama_runner PUBLIC ${_common_compile_options})
