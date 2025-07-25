@@ -10,10 +10,10 @@ import subprocess
 import sys
 
 from lintrunner_adapters import (
-    LintMessage,
-    LintSeverity,
     add_default_options,
     as_posix,
+    LintMessage,
+    LintSeverity,
     run_command,
 )
 
@@ -121,9 +121,7 @@ def main() -> None:
         level=(
             logging.NOTSET
             if args.verbose
-            else logging.DEBUG
-            if len(args.filenames) < 1000
-            else logging.INFO
+            else logging.DEBUG if len(args.filenames) < 1000 else logging.INFO
         ),
         stream=sys.stderr,
     )
