@@ -69,8 +69,17 @@ def _filter_tests(
 def _is_test_enabled(test_case: unittest.TestCase, test_filter: TestFilter) -> bool:
     test_method = getattr(test_case, test_case._testMethodName)
 
+    # Handle import / discovery failures - leave them enabled to report nicely at the
+    # top level. There might be a better way to do this. Internally, unittest seems to
+    # replace it with a stub method to report the failure.
+    if "testFailure" in str(test_method):
+        print(f"Warning: Test {test_case._testMethodName} failed to import.")
+        return True
+
     if not hasattr(test_method, "_flow"):
-        print(f"Test missing flow: {test_method}")
+        raise RuntimeError(
+            f"Test missing flow: {test_case._testMethodName} {test_method}"
+        )
 
     flow: TestFlow = test_method._flow
 
