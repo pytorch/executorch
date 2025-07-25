@@ -269,7 +269,7 @@ jobs:
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           bash test/build_size_test.sh "-DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON"
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
-          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
+          CXXFLAGS=${cxx_flags} cmake --preset zephyr -DCMAKE_BUILD_TYPE=Release -DEXECUTORCH_OPTIMIZE_SIZE=ON -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out .
           cmake --build cmake-out -j9 --target install --config Release
           CXXFLAGS=${cxx_flags}  cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out -Bcmake-out/test test
           cmake --build cmake-out/test -j9 --config Release
