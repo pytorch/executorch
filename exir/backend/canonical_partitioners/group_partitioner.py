@@ -139,7 +139,6 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         if not self.node_groups:
             return group_to_partition_id
 
-
         processed_nodes = set()
 
         # We have to create the partitions in reverse topological order
