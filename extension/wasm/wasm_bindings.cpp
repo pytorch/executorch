@@ -409,6 +409,16 @@ class ET_EXPERIMENTAL JsModule final {
   explicit JsModule(std::vector<uint8_t> buffer, std::unique_ptr<Module> module)
       : buffer_(std::move(buffer)), module_(std::move(module)) {}
 
+  static std::unique_ptr<JsModule> load_from_uint8_array(val data) {
+    size_t length = data["length"].as<size_t>();
+    std::vector<uint8_t> buffer(length);
+    val memory_view = val(typed_memory_view(length, buffer.data()));
+    memory_view.call<void>("set", data);
+    auto loader = std::make_unique<BufferDataLoader>(buffer.data(), length);
+    return std::make_unique<JsModule>(
+        std::move(buffer), std::make_unique<Module>(std::move(loader)));
+  }
+
   static std::unique_ptr<JsModule> load(val data) {
     if (data.isNull() || data.isUndefined()) {
       THROW_JS_ERROR(TypeError, "Data cannot be null or undefined");
@@ -417,13 +427,9 @@ class ET_EXPERIMENTAL JsModule final {
       return std::make_unique<JsModule>(
           std::make_unique<Module>(data.as<std::string>()));
     } else if (data.instanceof (val::global("Uint8Array"))) {
-      size_t length = data["length"].as<size_t>();
-      std::vector<uint8_t> buffer(length);
-      val memory_view = val(typed_memory_view(length, buffer.data()));
-      memory_view.call<void>("set", data);
-      auto loader = std::make_unique<BufferDataLoader>(buffer.data(), length);
-      return std::make_unique<JsModule>(
-          std::move(buffer), std::make_unique<Module>(std::move(loader)));
+      return load_from_uint8_array(data);
+    } else if (data.instanceof (val::global("ArrayBuffer"))) {
+      return load_from_uint8_array(val::global("Uint8Array").new_(data));
     } else {
       THROW_JS_ERROR(
           TypeError,
