@@ -843,9 +843,9 @@ jobs:
         pushd optimum-executorch
         # There is no release yet, for CI stability, always test from the same commit on main
         git checkout $OPTIMUM_ET_COMMIT
-        python install_dev.py --skip_override_torch
+        ${CONDA_RUN} python install_dev.py --skip_override_torch
         popd
-        pip list
+        ${CONDA_RUN} pip list
         echo "::endgroup::"
 
         echo "::group::Export to ExecuTorch"
@@ -863,7 +863,7 @@ jobs:
           "--output_dir" "${OUTPUT_DIR}"
         )
 
-        optimum-cli export executorch "${ARGS[@]}"
+        ${CONDA_RUN} optimum-cli export executorch "${ARGS[@]}"
 
         ls -FlAGhp ${OUTPUT_DIR}
         popd
@@ -871,7 +871,7 @@ jobs:
 
         echo "::group::Inference using python API"
         pushd optimum-executorch
-        python -c "
+        ${CONDA_RUN} python -c "
         import os
         from optimum.executorch import ExecuTorchModelForCausalLM
         from transformers import AutoTokenizer
