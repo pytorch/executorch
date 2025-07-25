@@ -188,6 +188,7 @@ def inference_mimi_encoder(
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
     )
     adb.push(inputs=encoder_inputs, input_list=encoder_input_list)
     adb.execute()
@@ -365,6 +366,7 @@ def inference_static_mimi_decoder(
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
+        target=args.target,
         runner="examples/qualcomm/oss_scripts/moshi/qnn_mimi_decoder_runner",
     )
     adb.push(inputs=encoded_results, input_list=encoded_results_list)
