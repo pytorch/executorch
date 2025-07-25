@@ -17,7 +17,16 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
+
+from sympy.logic.boolalg import disjuncts
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.fx.passes.infra.partitioner import Partition
+
+
+def is_constant_data(ep: ExportedProgram, node: torch.fx.Node) -> bool:
+    return (
+        is_param(ep, node) or is_buffer(ep, node) or is_lifted_tensor_constant(ep, node)
+    )
 
 
 def format_target_name(target_name: str) -> str:
@@ -100,6 +109,35 @@ class PartitionerConfig(ABC):
         pass
 
 
+class DSJ:
+    """
+    Disjoint set union data structure used to find connected components in the graph.
+    """
+
+    def __init__(self):
+        self.parent = {}
+
+    def find(self, x):
+        self.parent.setdefault(x, x)
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])
+        return self.parent[x]
+
+    def union(self, x, y):
+        self.parent[self.find(x)] = self.find(y)
+
+    def contains(self, x):
+        return x in self.parent
+
+    def gen_groups(self):
+        groups = {}
+        for node in self.parent.keys():
+            root = self.find(node)
+            groups.setdefault(root, set()).add(node)
+
+        return [list(group) for group in groups.values()]
+
+
 class ConfigerationBasedPartitioner(Partitioner):
     def __init__(
         self,
@@ -162,17 +200,8 @@ class ConfigerationBasedPartitioner(Partitioner):
     def get_matched_nodes_from_configs(
         self, ep: ExportedProgram
     ) -> List[List[torch.fx.Node]]:
-        # disjoint set union
-        parent = {}
-
-        def find(x):
-            parent.setdefault(x, x)
-            if parent[x] != x:
-                parent[x] = find(parent[x])
-            return parent[x]
-
-        def union(x, y):
-            parent[find(x)] = find(y)
+        # disjoint set union for merging partitions
+        dsj = DSJ()
 
         # gather supported nodes
         gm = ep.graph_module
@@ -188,18 +217,22 @@ class ConfigerationBasedPartitioner(Partitioner):
             if not node_config.check_constraints(node, ep):
                 continue
 
-            partition = node_config.get_partition(node, ep)
+            partition_candidate = node_config.get_partition(node, ep)
+            partition = []
+            for node in partition_candidate:
+                # partitioner infra copies constant data across partitions, so it
+                # is ok if this partition doesn't have it
+                if is_constant_data(ep, node) and dsj.contains(node):
+                    continue
+                partition.append(node)
+
+            # Union overlaps into a single group
             if len(partition) > 0:
-                parent[partition[0]] = partition[0]
+                dsj.find(partition[0])
                 for i in range(1, len(partition)):
-                    union(partition[0], partition[i])
+                    dsj.union(partition[0], partition[i])
 
-        groups = {}
-        for node in parent.keys():
-            root = find(node)
-            groups.setdefault(root, set()).add(node)
-
-        return [list(group) for group in groups.values()]
+        return dsj.gen_groups()
 
     def generate_partitions(self, ep: ExportedProgram) -> List[Partition]:
         matched_nodes = self.get_matched_nodes_from_configs(ep)
