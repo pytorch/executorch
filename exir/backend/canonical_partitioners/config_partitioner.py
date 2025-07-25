@@ -193,9 +193,10 @@ class ConfigerationBasedPartitioner(Partitioner):
                 continue
 
             partition = node_config.get_partition(node, ep)
-            parent[partition[0]] = partition[0]
-            for i in range(1, len(partition)):
-                union(partition[0], partition[i])
+            if len(partition) > 0:
+                parent[partition[0]] = partition[0]
+                for i in range(1, len(partition)):
+                    union(partition[0], partition[i])
 
         groups = {}
         for node in parent.keys():
