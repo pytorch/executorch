@@ -232,11 +232,12 @@ void add_reduce2d_node(
       const ValueRef dim_ref = graph.get_or_add_value_for_int(dim_val);  \
       return add_reduce_node(                                            \
           graph, args[0], dim_ref, args[out_arg_idx], #op_name);         \
-    } else if (dims_list.size() == 2) {                                  \
+    }
+    if (dims_list.size() == 2) {                                  \
       return add_reduce2d_node(                                          \
           graph, args[0], args[1], args[out_arg_idx], #op_name);         \
-    } else {                                                             \
-      VK_CHECK_COND(false, "Only 1 or 2 dimensions supported");          \
+    }
+    VK_CHECK_COND(false, "Only 1 or 2 dimensions supported");          \
     }                                                                    \
   }
 
