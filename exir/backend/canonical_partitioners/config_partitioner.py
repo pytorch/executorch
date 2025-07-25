@@ -10,12 +10,16 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 import torch
 from executorch.exir.backend.backend_details import ExportedProgram
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
-    generate_partitions_from_list_of_nodes,
+    generate_grouped_partitions_from_list_of_nodes,
 )
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
     PartitionResult,
+)
+
+from exir.backend.canonical_partitioners.pattern_op_partitioner import (
+    generate_grouped_partitions_from_list_of_nodes,
 )
 from torch.fx.passes.infra.partitioner import Partition
 
@@ -162,23 +166,48 @@ class ConfigerationBasedPartitioner(Partitioner):
     def get_matched_nodes_from_configs(
         self, ep: ExportedProgram
     ) -> List[List[torch.fx.Node]]:
+        # disjoint set union
+        parent = {}
+
+        def find(x):
+            parent.setdefault(x, x)
+            if parent[x] != x:
+                parent[x] = find(parent[x])
+            return parent[x]
+
+        def union(x, y):
+            parent[find(x)] = find(y)
+
         # gather supported nodes
-        matched_nodes = []
         gm = ep.graph_module
         for node in gm.graph.nodes:
-            if node.op == "call_function":
-                target = format_target_name(node.target.__name__)
-                if target in self.target_partitioner_configs:
-                    node_config = self.target_partitioner_configs[target]
-                    if node_config.check_constraints(node, ep):
-                        matched_nodes.append(node_config.get_partition(node, ep))
+            if node.op != "call_function":
+                continue
+            target = format_target_name(node.target.__name__)
 
-        return matched_nodes
+            if target not in self.target_partitioner_configs:
+                continue
+
+            node_config = self.target_partitioner_configs[target]
+            if not node_config.check_constraints(node, ep):
+                continue
+
+            partition = node_config.get_partition(node, ep)
+            parent[partition[0]] = partition[0]
+            for i in range(1, len(partition)):
+                union(partition[0], partition[i])
+
+        groups = {}
+        for node in parent.keys():
+            root = find(node)
+            groups.setdefault(root, set()).add(node)
+
+        return [list(group) for group in groups.values()]
 
     def generate_partitions(self, ep: ExportedProgram) -> List[Partition]:
         matched_nodes = self.get_matched_nodes_from_configs(ep)
         # create partitions
-        partitions = generate_partitions_from_list_of_nodes(
+        partitions = generate_grouped_partitions_from_list_of_nodes(
             ep.graph_module,
             matched_nodes,
         )
