@@ -22,7 +22,7 @@ function loadModelFile(file) {
     reader.onload = function(event) {
         const buffer = event.target.result;
 
-        const mod = et.Module.load(new Uint8Array(buffer));
+        const mod = et.Module.load(buffer);
         const modelText = document.getElementById("model_text");
 
         try {
