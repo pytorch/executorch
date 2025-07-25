@@ -41,7 +41,7 @@ from executorch.exir.serde.schema import (
 )
 from torch._export.verifier import load_verifier
 from torch.fx.experimental import symbolic_shapes
-from torch.fx.traceback import NodeSource, NodeSourceAction
+from torch.fx.traceback import NodeSource
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
     def _make_from_node_json_acceptable(self, from_node: Optional[List[NodeSource]]):
         """
-        Recursively serialize from_node metadata which can be a list of NodeSource objects.
+        Serialize from_node metadata from a list of NodeSource objects to a list of dictionaries.
         """
         if from_node is None:
             return None
