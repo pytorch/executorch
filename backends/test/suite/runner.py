@@ -16,11 +16,13 @@ from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
+    count_ops,
     generate_csv_report,
     RunSummary,
     TestCaseSummary,
     TestResult,
 )
+from executorch.exir import EdgeProgramManager
 
 
 # A list of all runnable test suites and the corresponding python package.
@@ -104,6 +106,14 @@ def run_test(  # noqa: C901
         elapsed = time.perf_counter() - lower_start_time
         extra_stats["lower_time"] = timedelta(seconds=elapsed)
         return build_result(TestResult.LOWER_FAIL, e)
+
+    edge_manager: EdgeProgramManager = tester.get_artifact()
+    edge_op_counts = count_ops(edge_manager.original_edge_programs)
+    undelegated_op_counts = count_ops(edge_manager._edge_programs)
+    delegated_op_counts = edge_op_counts - undelegated_op_counts
+
+    extra_stats["delegated_op_counts"] = delegated_op_counts
+    extra_stats["undelegated_op_counts"] = undelegated_op_counts
 
     is_delegated = any(
         n.target == torch._higher_order_ops.executorch_call_delegate

@@ -5,7 +5,10 @@ from io import StringIO
 
 import torch
 
+from executorch.exir import to_edge
+
 from ..reporting import (
+    count_ops,
     generate_csv_report,
     RunSummary,
     TestCaseSummary,
@@ -23,6 +26,7 @@ TEST_CASE_SUMMARIES = [
         params=None,
         result=TestResult.SUCCESS,
         error=None,
+        tensor_error_statistics=[],
     ),
     TestCaseSummary(
         backend="backend2",
@@ -32,6 +36,7 @@ TEST_CASE_SUMMARIES = [
         params=None,
         result=TestResult.LOWER_FAIL,
         error=None,
+        tensor_error_statistics=[],
     ),
     TestCaseSummary(
         backend="backend1",
@@ -41,6 +46,7 @@ TEST_CASE_SUMMARIES = [
         params={"dtype": torch.float32},
         result=TestResult.SUCCESS_UNDELEGATED,
         error=None,
+        tensor_error_statistics=[],
     ),
     TestCaseSummary(
         backend="backend2",
@@ -50,6 +56,7 @@ TEST_CASE_SUMMARIES = [
         params={"use_dynamic_shapes": True},
         result=TestResult.EXPORT_FAIL,
         error=None,
+        tensor_error_statistics=[],
     ),
 ]
 
@@ -104,3 +111,32 @@ class Reporting(unittest.TestCase):
         self.assertEqual(records[3]["Result"], "Fail (Export)")
         self.assertEqual(records[3]["Dtype"], "")
         self.assertEqual(records[3]["Use_dynamic_shapes"], "True")
+
+    def test_count_ops(self):
+        """
+        Verify that the count_ops function correctly counts operator occurances in the edge graph.
+        """
+
+        class Model1(torch.nn.Module):
+            def forward(self, x, y):
+                return x + y
+
+        class Model2(torch.nn.Module):
+            def forward(self, x, y):
+                return x + y * y
+
+        args = (torch.randn(2), torch.randn(2))
+        ep1 = torch.export.export(Model1(), args)
+        ep2 = torch.export.export(Model2(), args)
+
+        ep = to_edge({"forward1": ep1, "forward2": ep2})
+
+        op_counts = count_ops(ep._edge_programs)
+
+        self.assertEqual(
+            op_counts,
+            {
+                "aten::add.Tensor": 2,
+                "aten::mul.Tensor": 1,
+            },
+        )

@@ -1179,6 +1179,7 @@ def _gen_edge_manager_for_partitioners(
         config,
         list(set().union(*ops_set_to_not_decompose_by_program.values())),
     )
+
     return edge_manager
 
 
@@ -1410,6 +1411,8 @@ class EdgeProgramManager:
     Manages the second link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
 
+    original_edge_programs: dict[str, ExportedProgram] | None = None
+
     def __init__(
         self,
         edge_programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
@@ -1558,11 +1561,16 @@ class EdgeProgramManager:
 
         new_edge_programs = to_backend(method_to_programs_and_partitioners)
         config = EdgeCompileConfig(_check_ir_validity=False)
-        return EdgeProgramManager(
+        new_edge_manager = EdgeProgramManager(
             new_edge_programs,
             copy.deepcopy(self._config_methods),
             config,
         )
+
+        # Placeholder - not for land
+        new_edge_manager.original_edge_programs = copy.deepcopy(self._edge_programs)
+
+        return new_edge_manager
 
     @et_logger("to_executorch")
     def to_executorch(
