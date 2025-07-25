@@ -25,6 +25,7 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
     Quantizer,
 )
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 @dataclass(eq=True, frozen=True)
@@ -67,10 +68,7 @@ class AddQuantizer(Quantizer):
             ]:
                 continue
 
-            if (
-                "quantization_annotation" in node.meta
-                and node.meta["quantization_annotation"]._annotated
-            ):
+            if Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated:
                 continue
 
             input_qspec_map = {
@@ -78,7 +76,7 @@ class AddQuantizer(Quantizer):
                 node.args[1]: config.input_activation,
             }
 
-            node.meta["quantization_annotation"] = QuantizationAnnotation(
+            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
                 input_qspec_map=input_qspec_map,
                 output_qspec=config.output_activation,
                 _annotated=True,
