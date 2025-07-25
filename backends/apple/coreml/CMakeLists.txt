@@ -199,7 +199,7 @@ if(APPLE)
       ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
     )
 
-    target_link_options_shared_lib(libprotobuf-lite)
+    executorch_target_link_options_shared_lib(libprotobuf-lite)
     target_link_libraries(coremldelegate PRIVATE libprotobuf-lite)
   endif()
 
@@ -210,7 +210,7 @@ if(APPLE)
             ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
 
-  target_link_options_shared_lib(coremldelegate)
+  executorch_target_link_options_shared_lib(coremldelegate)
 
   if(EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER)
     target_link_libraries(

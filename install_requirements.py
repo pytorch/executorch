@@ -118,7 +118,14 @@ def install_requirements(use_pytorch_nightly):
     # Install packages directly from local copy instead of pypi.
     # This is usually not recommended.
     new_env = os.environ.copy()
-    new_env["USE_CPP"] = "1"  # install torchao kernels
+    if ("EXECUTORCH_BUILD_TORCHAO" not in new_env) or (
+        new_env["EXECUTORCH_BUILD_TORCHAO"] == "0"
+    ):
+        new_env["USE_CPP"] = "0"
+    else:
+        assert new_env["EXECUTORCH_BUILD_TORCHAO"] == "1"
+        new_env["USE_CPP"] = "1"
+        new_env["CMAKE_POLICY_VERSION_MINIMUM"] = "3.5"
     subprocess.run(
         [
             sys.executable,

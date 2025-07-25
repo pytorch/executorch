@@ -198,6 +198,17 @@ deps = [
   "executorch_core",
 ]
 
+[targets.extension_evalue_util]
+buck_targets = [
+  "//extension/evalue_util:print_evalue",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch_core",
+]
+
 [targets.extension_flat_tensor_schema]
 buck_targets = [
   "//extension/flat_tensor/serialize:generated_headers",
@@ -340,6 +351,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_evalue_util",
+  "extension_runner_util",
   "extension_threadpool",
   "kernels_util_all_deps",
   "portable_kernels",
@@ -376,6 +389,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_evalue_util",
+  "extension_runner_util",
   "extension_threadpool",
   "kernels_util_all_deps",
   "portable_kernels",
@@ -417,6 +432,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_evalue_util",
+  "extension_runner_util",
   "extension_threadpool",
   "kernels_util_all_deps",
   "xnnpack_backend",

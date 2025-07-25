@@ -209,7 +209,7 @@ target_link_libraries(
 #
 # add linker option
 #
-target_link_options_shared_lib(qnn_executorch_backend)
+executorch_target_link_options_shared_lib(qnn_executorch_backend)
 
 #
 # add sources

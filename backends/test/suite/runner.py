@@ -3,12 +3,13 @@ import importlib
 import re
 import unittest
 
-from typing import Callable
+from typing import Any
 
 import torch
 
-from executorch.backends.test.harness import Tester
+from executorch.backends.test.harness.stages import StageType
 from executorch.backends.test.suite.discovery import discover_tests, TestFilter
+from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
@@ -20,17 +21,18 @@ from executorch.backends.test.suite.reporting import (
 
 # A list of all runnable test suites and the corresponding python package.
 NAMED_SUITES = {
+    "models": "executorch.backends.test.suite.models",
     "operators": "executorch.backends.test.suite.operators",
 }
 
 
 def run_test(  # noqa: C901
     model: torch.nn.Module,
-    inputs: any,
-    tester_factory: Callable[[], Tester],
+    inputs: Any,
+    flow: TestFlow,
     test_name: str,
-    flow_name: str,
     params: dict | None,
+    dynamic_shapes: Any | None = None,
 ) -> TestCaseSummary:
     """
     Top-level test run function for a model, input set, and tester. Handles test execution
@@ -43,7 +45,7 @@ def run_test(  # noqa: C901
     ) -> TestCaseSummary:
         return TestCaseSummary(
             name=test_name,
-            flow=flow_name,
+            flow=flow.name,
             params=params,
             result=result,
             error=error,
@@ -56,12 +58,23 @@ def run_test(  # noqa: C901
         return build_result(TestResult.EAGER_FAIL, e)
 
     try:
-        tester = tester_factory(model, inputs)
+        tester = flow.tester_factory(model, inputs)
     except Exception as e:
         return build_result(TestResult.UNKNOWN_FAIL, e)
 
+    if flow.quantize:
+        try:
+            tester.quantize(
+                flow.quantize_stage_factory() if flow.quantize_stage_factory else None
+            )
+        except Exception as e:
+            return build_result(TestResult.QUANTIZE_FAIL, e)
+
     try:
-        tester.export()
+        # TODO Use Tester dynamic_shapes parameter once input generation can properly handle derived dims.
+        tester.export(
+            tester._get_default_stage(StageType.EXPORT, dynamic_shapes=dynamic_shapes),
+        )
     except Exception as e:
         return build_result(TestResult.EXPORT_FAIL, e)
 
@@ -118,6 +131,9 @@ def print_summary(summary: RunSummary):
 
     print()
     print("[Failure]")
+    print(
+        f"{summary.aggregated_results.get(TestResult.QUANTIZE_FAIL, 0):>5} Quantization Fail"
+    )
     print(
         f"{summary.aggregated_results.get(TestResult.LOWER_FAIL, 0):>5} Lowering Fail"
     )
