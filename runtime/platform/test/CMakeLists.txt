@@ -29,10 +29,12 @@ et_cxx_test(
   executor_pal_static_runtime_override_test.cpp
 )
 
-# TODO: Re-enable this test on OSS et_cxx_test(platform_death_test SOURCES
-# executor_pal_death_test.cpp)
+# TODO: Re-enable this test on OSS
+#
+# et_cxx_test(platform_death_test SOURCES executor_pal_death_test.cpp)
 
 et_cxx_test(logging_test SOURCES logging_test.cpp)
 
-# TODO: Re-enable this test on OSS et_cxx_test(clock_test SOURCES clock_test.cpp
-# stub_platform.cpp)
+# TODO: Re-enable this test on OSS
+#
+# et_cxx_test(clock_test SOURCES clock_test.cpp stub_platform.cpp)
