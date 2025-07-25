@@ -42,6 +42,7 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
     Quantizer,
 )
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 act_qspec_asym8s = QuantizationSpec(
@@ -127,7 +128,7 @@ class CadenceAtenQuantizer(Quantizer):
 
             for output, *custom_spec in anchors.output:
                 # pyre-ignore[16]: no attribute
-                output.meta["quantization_annotation"] = QuantizationAnnotation(
+                output.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
                     # pyre-ignore[6]: incompatible parameter type
                     output_qspec=(custom_spec[0] if custom_spec else output_act_qspec),
                     _annotated=True,
@@ -143,7 +144,7 @@ class CadenceAtenQuantizer(Quantizer):
                 for node, idx, *custom_spec in inputs:
                     # pyre-ignore[16]: no attribute
                     annotation = node.meta.get(
-                        "quantization_annotation",
+                        Q_ANNOTATION_KEY,
                         QuantizationAnnotation(_annotated=True),
                     )
                     arg = (
@@ -157,7 +158,7 @@ class CadenceAtenQuantizer(Quantizer):
                         custom_spec[0] if custom_spec else spec
                     )
                     # pyre-ignore[16]: no attribute
-                    node.meta["quantization_annotation"] = annotation
+                    node.meta[Q_ANNOTATION_KEY] = annotation
 
             def annotate_weights_or_biases(
                 weights_or_biases: List[Tuple[fx.Node, int]],
@@ -165,13 +166,13 @@ class CadenceAtenQuantizer(Quantizer):
             ) -> None:
                 for node, idx, *custom_spec in weights_or_biases:
                     annotation = node.meta.get(
-                        "quantization_annotation",
+                        Q_ANNOTATION_KEY,
                         QuantizationAnnotation(_annotated=True),
                     )
                     annotation.input_qspec_map[node.args[idx]] = (
                         custom_spec[0] if custom_spec else spec
                     )
-                    node.meta["quantization_annotation"] = annotation
+                    node.meta[Q_ANNOTATION_KEY] = annotation
 
             # pyre-ignore[6]: incompatible parameter type
             annotate_inputs(anchors.inputs, input_act_qspec)
