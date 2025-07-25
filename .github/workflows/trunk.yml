@@ -74,8 +74,10 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
+        mkdir -p zephyr_scratch/
         pwd
         ls
+        cd zephyr_scratch
         git clone https://github.com/BujSet/zephyr.git
         cd zephyr/
         git switch -c executorch-module-integration origin/executorch-module-integration
