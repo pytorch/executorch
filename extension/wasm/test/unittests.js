@@ -101,9 +101,17 @@ describe("Module", () => {
         module.delete();
     });
 
-    test("load from buffer", () => {
+    test("load from Uint8Array", () => {
         const data = FS.readFile('add.pte');
         const module = et.Module.load(data);
+        const methods = module.getMethods();
+        expect(methods).toEqual(["forward"]);
+        module.delete();
+    });
+
+    test("load from ArrayBuffer", () => {
+        const data = FS.readFile('add.pte');
+        const module = et.Module.load(data.buffer);
         const methods = module.getMethods();
         expect(methods).toEqual(["forward"]);
         module.delete();
