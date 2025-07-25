@@ -59,8 +59,7 @@ describe("Tensor", () => {
 
     test("scalar type", () => {
         const tensor = et.Tensor.ones([2, 2]);
-        // ScalarType can only be checked by strict equality.
-        expect(tensor.scalarType).toBe(et.ScalarType.Float);
+        expect(tensor.scalarType).toEqual(et.ScalarType.Float);
         tensor.delete();
     });
 
@@ -68,8 +67,7 @@ describe("Tensor", () => {
         const tensor = et.Tensor.ones([2, 2], et.ScalarType.Long);
         expect(tensor.data).toEqual(new BigInt64Array([1n, 1n, 1n, 1n]));
         expect(tensor.sizes).toEqual([2, 2]);
-        // ScalarType can only be checked by strict equality.
-        expect(tensor.scalarType).toBe(et.ScalarType.Long);
+        expect(tensor.scalarType).toEqual(et.ScalarType.Long);
         tensor.delete();
     });
 
@@ -78,8 +76,7 @@ describe("Tensor", () => {
         const tensor = et.Tensor.fromArray([2, 2], [1n, 2n, 3n, 4n]);
         expect(tensor.data).toEqual(new BigInt64Array([1n, 2n, 3n, 4n]));
         expect(tensor.sizes).toEqual([2, 2]);
-        // ScalarType can only be checked by strict equality.
-        expect(tensor.scalarType).toBe(et.ScalarType.Long);
+        expect(tensor.scalarType).toEqual(et.ScalarType.Long);
         tensor.delete();
     });
 });
@@ -124,8 +121,7 @@ describe("Module", () => {
             const module = et.Module.load("add_mul.pte");
             const methodMeta = module.getMethodMeta("forward");
             expect(methodMeta.inputTags.length).toEqual(3);
-            // Tags can only be checked by strict equality.
-            methodMeta.inputTags.forEach((tag) => expect(tag).toBe(et.Tag.Tensor));
+            expect(methodMeta.inputTags).toEqual([et.Tag.Tensor, et.Tag.Tensor, et.Tag.Tensor]);
             module.delete();
         });
 
@@ -133,8 +129,7 @@ describe("Module", () => {
             const module = et.Module.load("add_mul.pte");
             const methodMeta = module.getMethodMeta("forward");
             expect(methodMeta.outputTags.length).toEqual(1);
-            // Tags can only be checked by strict equality.
-            expect(methodMeta.outputTags[0]).toBe(et.Tag.Tensor);
+            expect(methodMeta.outputTags).toEqual([et.Tag.Tensor]);
             module.delete();
         });
 
@@ -183,8 +178,7 @@ describe("Module", () => {
                 const module = et.Module.load("add_mul.pte");
                 const methodMeta = module.getMethodMeta("forward");
                 methodMeta.inputTensorMeta.forEach((tensorInfo) => {
-                    // ScalarType can only be checked by strict equality.
-                    expect(tensorInfo.scalarType).toBe(et.ScalarType.Float);
+                    expect(tensorInfo.scalarType).toEqual(et.ScalarType.Float);
                 });
                 module.delete();
             });
@@ -309,5 +303,13 @@ describe("Module", () => {
             output2.forEach((output) => output.delete());
             module.delete();
         });
+    });
+});
+
+describe("sanity", () => {
+    // Emscripten enums are equal by default for some reason.
+    test("different enums are not equal", () => {
+        expect(et.ScalarType.Float).not.toEqual(et.ScalarType.Long);
+        expect(et.Tag.Int).not.toEqual(et.Tag.Double);
     });
 });
