@@ -39,8 +39,8 @@ function loadModelFile(file) {
             return;
         }
 
-        if (methodMeta.inputTags[0] !== et.Tag.Tensor) {
-            modelText.textContent = "Error: Expected input type to be tensor (type 1), got " + methodMeta.inputTags[0].value;
+        if (methodMeta.inputTags[0] != et.Tag.Tensor) {
+            modelText.textContent = "Error: Expected input type to be Tensor, got " + methodMeta.inputTags[0].name;
             modelText.style.color = "red";
             return;
         }
@@ -53,8 +53,8 @@ function loadModelFile(file) {
             return;
         }
 
-        if (inputMeta.scalarType !== et.ScalarType.Float) {
-            modelText.textContent = "Error: Expected input type to be float (type 6), got " + inputMeta.scalarType.value;
+        if (inputMeta.scalarType != et.ScalarType.Float) {
+            modelText.textContent = "Error: Expected input type to be Float, got " + inputMeta.scalarType.name;
             modelText.style.color = "red";
             return;
         }
@@ -65,8 +65,8 @@ function loadModelFile(file) {
             return;
         }
 
-        if (methodMeta.outputTags[0] !== et.Tag.Tensor) {
-            modelText.textContent = "Error: Expected output type to be tensor (type 1), got " + methodMeta.outputTags[0].value;
+        if (methodMeta.outputTags[0] != et.Tag.Tensor) {
+            modelText.textContent = "Error: Expected output type to be Tensor, got " + methodMeta.outputTags[0].name;
             modelText.style.color = "red";
             return;
         }
@@ -79,8 +79,8 @@ function loadModelFile(file) {
             return;
         }
 
-        if (outputMeta.scalarType !== et.ScalarType.Float) {
-            modelText.textContent = "Error: Expected output type to be float (type 6), got " + outputMeta.scalarType.value;
+        if (outputMeta.scalarType != et.ScalarType.Float) {
+            modelText.textContent = "Error: Expected output type to be Float, got " + outputMeta.scalarType.name;
             modelText.style.color = "red";
             return;
         }
