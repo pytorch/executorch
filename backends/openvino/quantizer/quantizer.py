@@ -30,8 +30,7 @@ from torchao.quantization.pt2e.quantizer import (
     Quantizer,
     SharedQuantizationSpec,
 )
-
-QUANT_ANNOTATION_KEY = "quantization_annotation"
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 class QuantizationMode(Enum):
@@ -174,8 +173,8 @@ class OpenVINOQuantizer(Quantizer):
                 self._fill_torch_ao_annotation(edge_or_node, qspec, annotation)
 
         for node, annotation in node_vs_torch_annotation.items():
-            assert QUANT_ANNOTATION_KEY not in node.meta
-            node.meta[QUANT_ANNOTATION_KEY] = annotation
+            assert Q_ANNOTATION_KEY not in node.meta
+            node.meta[Q_ANNOTATION_KEY] = annotation
         return model
 
     @staticmethod
