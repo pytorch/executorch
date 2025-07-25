@@ -22,10 +22,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # Linux-specific code here
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL "WIN32")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
+                                               "WIN32"
+)
   # Windows or other OS-specific code here
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
   # Android-specific code here
 else()
-  message(FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for LLM: ${CMAKE_SYSTEM_NAME}")
+  message(
+    FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for LLM: ${CMAKE_SYSTEM_NAME}"
+  )
 endif()

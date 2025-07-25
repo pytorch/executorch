@@ -60,18 +60,16 @@ if(NOT TARGET extension_llm_runner)
   )
 endif()
 
-set(llama_runner_deps executorch_core extension_data_loader extension_module
-                      extension_tensor extension_flat_tensor extension_llm_runner
+set(llama_runner_deps
+    executorch_core extension_data_loader extension_module extension_tensor
+    extension_flat_tensor extension_llm_runner
 )
 
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
 
-target_link_libraries(
-  llama_runner PUBLIC tokenizers
-)
+target_link_libraries(llama_runner PUBLIC tokenizers)
 
 target_include_directories(
-  llama_runner
-  PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+  llama_runner PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 target_compile_options(llama_runner PUBLIC ${_preprocessor_flag})

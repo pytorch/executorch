@@ -20,18 +20,11 @@ endif()
 
 add_library(extension_llm_apple)
 
-file(GLOB OBJC_SOURCES
-  ExecuTorchLLM/Exported/*.m
-  ExecuTorchLLM/Exported/*.mm
-)
+file(GLOB OBJC_SOURCES ExecuTorchLLM/Exported/*.m ExecuTorchLLM/Exported/*.mm)
 
-target_sources(extension_llm_apple PRIVATE
-  ${OBJC_SOURCES}
-)
+target_sources(extension_llm_apple PRIVATE ${OBJC_SOURCES})
 
-target_include_directories(extension_llm_apple
-  PUBLIC ExecuTorchLLM/Exported
-)
+target_include_directories(extension_llm_apple PUBLIC ExecuTorchLLM/Exported)
 
 if(NOT TARGET extension_llm_runner)
   add_subdirectory(
@@ -41,16 +34,16 @@ if(NOT TARGET extension_llm_runner)
 endif()
 
 find_library(FOUNDATION_FRAMEWORK Foundation)
-target_link_libraries(extension_llm_apple
-  PRIVATE extension_llm_runner ${FOUNDATION_FRAMEWORK}
+target_link_libraries(
+  extension_llm_apple PRIVATE extension_llm_runner ${FOUNDATION_FRAMEWORK}
 )
 
-set_source_files_properties(${OBJC_SOURCES} PROPERTIES COMPILE_FLAGS
-  "-fobjc-arc"
-  "-fno-exceptions"
-  "-fno-rtti"
+set_source_files_properties(
+  ${OBJC_SOURCES} PROPERTIES COMPILE_FLAGS "-fobjc-arc" "-fno-exceptions"
+                                                        "-fno-rtti"
 )
 
-set_target_properties(extension_llm_apple PROPERTIES
-  XCODE_ATTRIBUTE_BUILD_LIBRARY_FOR_DISTRIBUTION YES
+set_target_properties(
+  extension_llm_apple PROPERTIES XCODE_ATTRIBUTE_BUILD_LIBRARY_FOR_DISTRIBUTION
+                                 YES
 )

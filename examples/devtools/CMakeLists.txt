@@ -81,12 +81,10 @@ if(EXECUTORCH_BUILD_COREML)
     NO_DEFAULT_PATH
   )
 
-  target_link_libraries(
-    example_runner "-Wl,-force_load" coremldelegate
-  )
+  target_link_libraries(example_runner "-Wl,-force_load" coremldelegate)
 
   target_link_libraries(
-    example_runner ${PROTOBUF_LITE} ${ACCELERATE_FRAMEWORK}
-    ${COREML_FRAMEWORK} ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
+    example_runner ${PROTOBUF_LITE} ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
+    ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
 endif()

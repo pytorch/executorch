@@ -16,7 +16,9 @@ add_compile_options("-Wall" "-Werror")
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
-set(_common_include_directories ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
 # Third-party folder and Ethos-U driver inclued
