@@ -278,3 +278,38 @@ macro(find_package_torch)
     find_package(Torch CONFIG REQUIRED)
   endif()
 endmacro()
+
+# Modify ${targetName}'s INTERFACE_INCLUDE_DIRECTORIES by wrapping each entry in
+# $<BUILD_INTERFACE:...> so that they work with CMake EXPORT.
+function(executorch_move_interface_include_directories_to_build_time_only
+         targetName
+)
+  get_property(
+    OLD_INTERFACE_INCLUDE_DIRECTORIES
+    TARGET "${targetName}"
+    PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+  )
+  set(FIXED_INTERFACE_INCLUDE_DIRECTORIES)
+  foreach(dir ${OLD_INTERFACE_INCLUDE_DIRECTORIES})
+    list(APPEND FIXED_INTERFACE_INCLUDE_DIRECTORIES $<BUILD_INTERFACE:${dir}>)
+  endforeach()
+  set_property(
+    TARGET "${targetName}" PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+                                    ${FIXED_INTERFACE_INCLUDE_DIRECTORIES}
+  )
+endfunction()
+
+function(executorch_add_prefix_to_public_headers targetName prefix)
+  get_property(
+    OLD_PUBLIC_HEADERS
+    TARGET "${targetName}"
+    PROPERTY PUBLIC_HEADER
+  )
+  set(FIXED_PUBLIC_HEADERS)
+  foreach(header ${OLD_PUBLIC_HEADERS})
+    list(APPEND FIXED_PUBLIC_HEADERS "${prefix}${header}")
+  endforeach()
+  set_property(
+    TARGET "${targetName}" PROPERTY PUBLIC_HEADER ${FIXED_PUBLIC_HEADERS}
+  )
+endfunction()

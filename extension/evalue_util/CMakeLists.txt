@@ -23,6 +23,7 @@ target_compile_options(extension_evalue_util PUBLIC ${_common_compile_options})
 # Install libraries
 install(
   TARGETS extension_evalue_util
+  EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_BINARY_DIR}/lib
   INCLUDES
   DESTINATION ${_common_include_directories}

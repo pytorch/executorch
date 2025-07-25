@@ -17,21 +17,21 @@ target_sources(
 # qnn_executorch_backend
 target_sources(
   qnn_executorch_backend
-  INTERFACE ${CMAKE_CURRENT_LIST_DIR}/QnnExecuTorchBackend.h
+  INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/QnnExecuTorchBackend.h>
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnExecuTorchBackend.cpp
 )
 
 # qnn_manager
 target_sources(
   qnn_manager
-  INTERFACE ${CMAKE_CURRENT_LIST_DIR}/QnnManager.h
+  INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/QnnManager.h>
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnManager.cpp
 )
 
 # logging
 target_sources(
   qnn_executorch_logging
-  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/Logging.h
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/Logging.h>
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/Logging.cpp
 )
 

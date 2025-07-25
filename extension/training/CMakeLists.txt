@@ -23,7 +23,6 @@ target_include_directories(
   extension_training PUBLIC ${_common_include_directories}
 )
 
-target_include_directories(extension_training PUBLIC ${EXECUTORCH_ROOT}/..)
 target_compile_options(extension_training PUBLIC ${_common_compile_options})
 target_link_libraries(
   extension_training
@@ -83,6 +82,7 @@ endif()
 # Install libraries
 install(
   TARGETS extension_training
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

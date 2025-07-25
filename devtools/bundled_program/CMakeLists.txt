@@ -39,12 +39,15 @@ add_library(
 )
 target_link_libraries(bundled_program PUBLIC executorch)
 target_include_directories(
-  bundled_program PUBLIC ${DEVTOOLS_INCLUDE_DIR}
-                         ${PROJECT_SOURCE_DIR}/third-party/flatbuffers/include
+  bundled_program
+  PUBLIC
+    ${DEVTOOLS_INCLUDE_DIR}
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third-party/flatbuffers/include>
 )
 
 install(
   TARGETS bundled_program
+  EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_BINARY_DIR}/lib
   INCLUDES
   DESTINATION ${_common_include_directories}

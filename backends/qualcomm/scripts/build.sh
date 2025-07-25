@@ -80,6 +80,8 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
@@ -97,7 +99,7 @@ if [ "$BUILD_AARCH64" = true ]; then
     cmake --build $BUILD_ROOT -j$BUILD_JOB_NUMBER --target install
 
     EXAMPLE_ROOT=examples/qualcomm
-    CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"
+    CMAKE_PREFIX_PATH="${BUILD_ROOT};${BUILD_ROOT}/third-party/gflags;"
 
     cmake $PRJ_ROOT/$EXAMPLE_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
@@ -132,6 +134,8 @@ if [ "$BUILD_X86_64" = true ]; then
         -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
@@ -151,7 +155,7 @@ if [ "$BUILD_X86_64" = true ]; then
     cp -fv "$PRJ_ROOT/schema/scalar_type.fbs" "$PRJ_ROOT/exir/_serialize/scalar_type.fbs"
 
    EXAMPLE_ROOT=examples/qualcomm
-   CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"
+   CMAKE_PREFIX_PATH="${BUILD_ROOT};${BUILD_ROOT}/third-party/gflags;"
 
    echo "Update tokenizers submodule..."
    pushd $PRJ_ROOT/extension/llm/tokenizers
