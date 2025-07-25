@@ -8,7 +8,9 @@ import unittest
 from typing import List
 
 import torch
-from exir.backend.canonical_partitioners.group_partitioner import GroupBasedPartitioner
+from executorch.exir.backend.canonical_partitioners.group_partitioner import (
+    GroupBasedPartitioner,
+)
 
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase

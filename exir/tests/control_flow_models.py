@@ -20,9 +20,7 @@ class FTCondBasic(Module):
         def false_branch(x):
             return x * x
 
-        return torch.ops.higher_order.cond(
-            inp.sum() > 4, true_branch, false_branch, [inp]
-        )
+        return torch.cond(inp.sum() > 4, true_branch, false_branch, [inp])
 
     def get_random_inputs(self):
         return (torch.rand(5),)
@@ -39,9 +37,7 @@ class FTCondDynShape(Module):
         def false_branch(x):
             return x * x * x
 
-        return torch.ops.higher_order.cond(
-            inp.sum() > 4, true_branch, false_branch, [inp]
-        )
+        return torch.cond(inp.sum() > 4, true_branch, false_branch, [inp])
 
     def get_upper_bound_inputs(self):
         return (torch.rand(8),)
@@ -72,9 +68,7 @@ class FTCondDeadCode(Module):
         def false_branch(x):
             return x * 2
 
-        return torch.ops.higher_order.cond(
-            inp.sum() > 4, true_branch, false_branch, [inp]
-        )
+        return torch.cond(inp.sum() > 4, true_branch, false_branch, [inp])
 
     def get_random_inputs(self):
         return (torch.eye(5) * 2,)

@@ -26,7 +26,7 @@ CUSTOM_EDGE_OPS = [
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 
 # Add all targets and TOSA profiles we support here.
-TARGETS = ["tosa_MI", "tosa_BI", "u55_BI", "u85_BI"]
+TARGETS = ["tosa_MI", "tosa_BI", "u55_BI", "u85_BI", "vgf_INT", "vgf_FP"]
 
 
 def get_op_name_map():

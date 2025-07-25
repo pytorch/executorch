@@ -45,10 +45,10 @@
 # ~~~
 #
 
-cmake_minimum_required(VERSION 3.24)
+# TODO Lower to 3.24 when XNNPACK dependency is updated to include
+# https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
+cmake_minimum_required(VERSION 3.29)
 project(executorch)
-
-# MARK: - Start EXECUTORCH_H12025_BUILD_MIGRATION
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
@@ -82,6 +82,7 @@ announce_configured_options(BUCK2)
 
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
+announce_configured_options(BUILD_TESTING)
 
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
@@ -97,11 +98,6 @@ else()
 endif()
 announce_configured_options(CCACHE_PROGRAM)
 
-# Print all the configs that were called with announce_configured_options.
-print_configured_options()
-
-# MARK: - End EXECUTORCH_H12025_BUILD_MIGRATION
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Setup RPATH. See
@@ -112,11 +108,12 @@ set(CMAKE_SKIP_BUILD_RPATH OFF)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 # Automatically add all linked folders that are NOT in the build directory to
 # the rpath (per library?)
-# TODO: Doesn't work for us right now because we are
-# not installing .so's into the correct locations. For example we have
-# libcustom_ops_aot_lib.so depending on _portable_lib.so, which was eventually
-# put under <site-packages>/executorch/extension/pybindings/ but this rpath is
-# not automatically added because at build time it seems `portable_lib` is being
+#
+# TODO: Doesn't work for us right now because we are not installing .so's into
+# the correct locations. For example we have libcustom_ops_aot_lib.so depending
+# on _portable_lib.so, which was eventually put under
+# <site-packages>/executorch/extension/pybindings/ but this rpath is not
+# automatically added because at build time it seems `portable_lib` is being
 # built under the same directory, so no extra rpath is being added. To properly
 # fix this we need to install `portable_lib` into the correct path.
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
@@ -164,6 +161,10 @@ endif()
 
 if(EXECUTORCH_BUILD_TESTS)
   include(CTest)
+else()
+  # It looks like some of our third-party deps will try to turn this on if it's
+  # not explicitly set, leading to confusing behavior.
+  set(BUILD_TESTING OFF)
 endif()
 
 add_subdirectory(third-party)
@@ -321,8 +322,9 @@ if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
            " -fprofile-instr-generate -fcoverage-mapping"
     )
   else()
-    message(FATAL_ERROR
-            "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
+    message(
+      FATAL_ERROR
+        "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
     )
   endif()
 endif()
@@ -414,7 +416,7 @@ target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_definitions(executorch PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 target_compile_options(executorch PUBLIC ${_common_compile_options})
-target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(executorch)
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
@@ -546,6 +548,16 @@ if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util)
+  install(
+    DIRECTORY extension/evalue_util/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/evalue_util
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
 endif()
@@ -564,12 +576,22 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
+  install(
+    DIRECTORY extension/runner_util/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/runner_util
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
@@ -633,8 +655,8 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here otherwise
-    # uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
+    # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
     list(APPEND _dep_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   endif()
 
@@ -645,8 +667,7 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # util lib
   add_library(
-    util ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp
-         ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
+    util ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
   )
   target_include_directories(
     util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
@@ -684,12 +705,14 @@ endif()
 
 if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
-  target_link_options_shared_lib(quantized_ops_lib)
+  executorch_target_link_options_shared_lib(quantized_ops_lib)
 endif()
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch gflags)
+  set(_executor_runner_libs executorch extension_evalue_util
+                            extension_runner_util gflags
+  )
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
@@ -735,7 +758,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     endif()
 
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    target_link_options(executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file "${WASM_MODEL_DIR}@/")
+    target_link_options(
+      executor_runner PUBLIC -sALLOW_MEMORY_GROWTH --embed-file
+      "${WASM_MODEL_DIR}@/"
+    )
   endif()
 endif()
 
@@ -748,3 +774,6 @@ if(EXECUTORCH_BUILD_ANDROID_JNI)
 endif()
 
 include(Test.cmake)
+
+# Print all the configs that were called with announce_configured_options.
+print_configured_options()

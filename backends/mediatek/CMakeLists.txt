@@ -24,13 +24,9 @@ include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include)
 # targets
 add_library(neuron_backend SHARED)
 target_compile_options(neuron_backend PRIVATE "-frtti" "-fexceptions")
-target_link_libraries(neuron_backend
-    PRIVATE
-    executorch_core
-    portable_ops_lib
-    portable_kernels
-    android
-    log
+target_link_libraries(
+  neuron_backend PRIVATE executorch_core portable_ops_lib portable_kernels
+                         android log
 )
 target_sources(
   neuron_backend
@@ -44,6 +40,6 @@ target_sources(
           ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronExecutor.cpp
           ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronBufferAllocator.cpp
 )
-target_link_options_shared_lib(neuron_backend)
+executorch_target_link_options_shared_lib(neuron_backend)
 
 install(TARGETS neuron_backend DESTINATION lib)

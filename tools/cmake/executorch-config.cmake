@@ -23,7 +23,7 @@
 # executorch-config.cmake in executorch pip package gives, but we wanted to keep
 # the contract of exposing these CMake variables.
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.24)
 include("${CMAKE_CURRENT_LIST_DIR}/Utils.cmake")
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
@@ -71,6 +71,7 @@ set(lib_list
     qnn_executorch_backend
     portable_ops_lib
     custom_ops
+    extension_evalue_util
     extension_module
     extension_module_static
     extension_runner_util
@@ -150,7 +151,9 @@ if(TARGET coremldelegate)
 endif()
 
 if(TARGET etdump)
-  set_target_properties(etdump PROPERTIES INTERFACE_LINK_LIBRARIES "flatccrt;executorch")
+  set_target_properties(
+    etdump PROPERTIES INTERFACE_LINK_LIBRARIES "flatccrt;executorch"
+  )
 endif()
 
 if(TARGET optimized_native_cpu_ops_lib)
@@ -174,15 +177,25 @@ if(TARGET extension_threadpool)
 endif()
 
 set(shared_lib_list
-  # executorch -- size tests fail due to regression if we include this and I'm not sure it's needed.
-  optimized_native_cpu_ops_lib
-  portable_ops_lib
-  quantized_ops_lib
-  xnnpack_backend
-  vulkan_backend
-  quantized_ops_aot_lib)
+    # executorch -- size tests fail due to regression if we include this and I'm
+    # not sure it's needed.
+    optimized_native_cpu_ops_lib portable_ops_lib quantized_ops_lib
+    xnnpack_backend vulkan_backend quantized_ops_aot_lib
+)
 foreach(lib ${shared_lib_list})
   if(TARGET ${lib})
-    target_link_options_shared_lib(${lib})
+    executorch_target_link_options_shared_lib(${lib})
   endif()
 endforeach()
+
+if(TARGET xnnpack_backend)
+  if(TARGET kleidiai)
+    set(_deps "XNNPACK;xnnpack-microkernels-prod;kleidiai")
+  else()
+    set(_deps "XNNPACK;xnnpack-microkernels-prod")
+  endif()
+  set_target_properties(
+    xnnpack_backend PROPERTIES INTERFACE_LINK_LIBRARIES "${_deps}"
+  )
+  executorch_target_link_options_shared_lib(xnnpack_backend)
+endif()
