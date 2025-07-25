@@ -18,7 +18,7 @@ from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.examples.xnnpack import MODEL_NAME_TO_OPTIONS, QuantType
 from executorch.exir.schema import DelegateCall, Program
-from executorch.export import export, ExportRecipe
+from executorch.export import export, ExportRecipe, recipe_registry
 from torch import nn
 from torch.testing._internal.common_quantization import TestHelperModules
 
@@ -27,6 +27,7 @@ class TestXnnpackRecipes(unittest.TestCase):
     def setUp(self) -> None:
         torch._dynamo.reset()
         super().setUp()
+        recipe_registry.register_backend_recipe_provider(XNNPACKRecipeProvider())
 
     def tearDown(self) -> None:
         super().tearDown()
