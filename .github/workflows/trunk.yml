@@ -90,10 +90,9 @@ jobs:
 
         cd modules/lib/executorch
         #python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
-        ./install_executorch.sh
-        ./examples/arm/setup.sh --i-agree-to-the-contained-eula  --target-toolchain zephyr
+        install_executorch "--use-pt-pinned-commit"
+        .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
         source examples/arm/ethos-u-scratch/setup_path.sh
-        python3 -m pip install west
         cd ../
         source zephyr/zephyr-env.sh
         cd /zephyr/samples/modules/executorch/arm/hello_world
