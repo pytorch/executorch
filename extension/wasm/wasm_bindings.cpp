@@ -539,6 +539,15 @@ EMSCRIPTEN_BINDINGS(WasmBindings) {
           &JsMethodMeta::memory_planned_buffer_sizes)
       .field("backends", &JsMethodMeta::backends)
       .field("numInstructions", &JsMethodMeta::num_instructions);
+
+// For some reason Embind doesn't make it easy to get the names of enums.
+// Additionally, different enums of the same type are considered to be equal.
+// Assigning the name field fixes both of these issues.
+#define JS_ASSIGN_SCALAR_TYPE_NAME(T, NAME) \
+  EM_ASM(Module.ScalarType.NAME.name = #NAME);
+  JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_ASSIGN_SCALAR_TYPE_NAME)
+#define JS_ASSIGN_TAG_NAME(NAME) EM_ASM(Module.Tag.NAME.name = #NAME);
+  EXECUTORCH_FORALL_TAGS(JS_ASSIGN_TAG_NAME)
 }
 
 } // namespace wasm
