@@ -12,6 +12,7 @@ from typing import Union
 import torch
 
 import torchvision
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -23,11 +24,15 @@ from executorch.exir.dim_order_utils import (
 )
 from executorch.exir.pass_base import ExportPass, ProxyValue
 
+from executorch.exir.passes.memory_format_ops_pass import MemoryFormatOpsPass
+
 from executorch.exir.tests.test_memory_format_ops_pass_utils import (
     AmbiguousDimOrderError,
     MemoryFormatOpsPassTestUtils,
     MemoryFormatTestSet,
     PropagateToCopyChannalsLastModule,
+    SimpleCloneChannelsLastModule,
+    SimpleCloneContiguousModule,
     SimpleEmptyChannelLastModule,
     SimpleEmptyContiguoustModule,
     SimpleToCopyChannelsLastModule,
@@ -389,3 +394,39 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                 rtol=1e-3,
             ),
         )
+
+    def test_clone_preserves_contiguous(self) -> None:
+        model = SimpleCloneContiguousModule()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                op=torch.ops.aten.clone.default,
+                sample_input=(torch.randn((1, 3, 16, 16), dtype=torch.float32),),
+                target_memory_format=torch.contiguous_format,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+        )
+
+    def test_clone_preserves_channels_last(self) -> None:
+        model = SimpleCloneChannelsLastModule()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                op=torch.ops.aten.clone.default,
+                sample_input=(torch.randn((1, 3, 16, 16), dtype=torch.float32),),
+                target_memory_format=torch.channels_last,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+        )
+
+    def test_clone_contiguous_to_channels_last(self):
+        model = SimpleCloneChannelsLastModule()
+        x = torch.randn(1, 3, 24, 24).to(memory_format=torch.contiguous_format)
+        exported = export(model.eval(), (x,), strict=True)
+        epm = to_edge(exported, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+        epm = epm.transform([MemoryFormatOpsPass()])
+        epm = epm.transform([RemoveCloneOpsTransform()])
+        out = epm.exported_program().module()(x)
+        assert is_channel_last_dim_order(out)
