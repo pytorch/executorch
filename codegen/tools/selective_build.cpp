@@ -108,7 +108,7 @@ get_kernel_tensor_metadatas_from_execution_plan(
         }
 
         // create an empty entry if current kernel is not in the map.
-        if (op_io_metadata.count(op_overload_name) == 0) {
+        if (!op_io_metadata.contains(op_overload_name)) {
           op_io_metadata.insert(
               std::make_pair(op_overload_name, OpIOMetaData()));
         }
@@ -215,7 +215,7 @@ py::dict _get_io_metadata_for_program_operators(
 
     for (const auto& op_io_metadata : plan_op_io_metadata) {
       std::string op_name = op_io_metadata.first;
-      if (program_op_io_metadata.count(op_name) == 0) {
+      if (!program_op_io_metadata.contains(op_name)) {
         program_op_io_metadata.insert(std::make_pair(op_name, OpIOMetaData()));
       }
       program_op_io_metadata[op_name].insert(
