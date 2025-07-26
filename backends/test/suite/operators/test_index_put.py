@@ -1,22 +1,27 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-# pyre-strict
+# pyre-unsafe
 
-from typing import Callable, List, Tuple
 
 import torch
+from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.compliance_suite import (
+from executorch.backends.test.suite.operators import (
     dtype_test,
     operator_test,
     OperatorTest,
 )
 
+
 class IndexPutModel(torch.nn.Module):
     def __init__(self, accumulate=False):
         super().__init__()
         self.accumulate = accumulate
-        
+
     def forward(self, x, indices, values):
         # Clone the input to avoid modifying it in-place
         result = x.clone()
@@ -24,92 +29,129 @@ class IndexPutModel(torch.nn.Module):
         result.index_put_(indices, values, self.accumulate)
         return result
 
+
 @operator_test
-class TestIndexPut(OperatorTest):
+class IndexPut(OperatorTest):
     @dtype_test
-    def test_index_put_dtype(self, dtype, tester_factory: Callable) -> None:
-        # Test with different dtypes
+    def test_index_put_dtype(self, flow: TestFlow, dtype) -> None:
         indices = (torch.tensor([0, 2]),)
         values = torch.tensor([10.0, 20.0]).to(dtype)
-        model = IndexPutModel()
-        self._test_op(model, ((torch.rand(5, 2) * 100).to(dtype), indices, values), tester_factory, use_random_test_inputs=False)
-        
-    def test_index_put_basic(self, tester_factory: Callable) -> None:
-        # Basic test with default parameters
+        self._test_op(
+            IndexPutModel(),
+            ((torch.rand(5, 2) * 100).to(dtype), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_put_basic(self, flow: TestFlow) -> None:
         indices = (torch.tensor([0, 2]),)
         values = torch.tensor([10.0, 20.0])
-        self._test_op(IndexPutModel(), (torch.randn(5, 2), indices, values), tester_factory, use_random_test_inputs=False)
-        
-    def test_index_put_accumulate(self, tester_factory: Callable) -> None:
-        # Test with accumulate=True and accumulate=False
-        
-        # Without accumulation (replace values)
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(5, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_put_accumulate(self, flow: TestFlow) -> None:
         indices = (torch.tensor([0, 2]),)
         values = torch.tensor([10.0, 20.0])
-        self._test_op(IndexPutModel(accumulate=False), 
-                     (torch.ones(5, 2), indices, values), tester_factory, use_random_test_inputs=False)
-        
-        # With accumulation (add values)
+        self._test_op(
+            IndexPutModel(accumulate=False),
+            (torch.ones(5, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = (torch.tensor([0, 2]),)
         values = torch.tensor([10.0, 20.0])
-        self._test_op(IndexPutModel(accumulate=True), 
-                     (torch.ones(5, 2), indices, values), tester_factory, use_random_test_inputs=False)
-        
-    def test_index_put_shapes(self, tester_factory: Callable) -> None:
-        # Test with different tensor shapes
-        
-        # 1D tensor
+        self._test_op(
+            IndexPutModel(accumulate=True),
+            (torch.ones(5, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_put_shapes(self, flow: TestFlow) -> None:
         indices = (torch.tensor([0, 2]),)
         values = torch.tensor([10.0, 20.0])
-        self._test_op(IndexPutModel(), 
-                     (torch.randn(5), indices, values), tester_factory, use_random_test_inputs=False)
-        
-        # 2D tensor
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(5), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = (torch.tensor([0, 2]), torch.tensor([1, 1]))
         values = torch.tensor([10.0, 20.0])
-        self._test_op(IndexPutModel(), 
-                     (torch.randn(5, 2), indices, values), tester_factory, use_random_test_inputs=False)
-        
-        # 3D tensor
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(5, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = (torch.tensor([0, 2]), torch.tensor([1, 1]), torch.tensor([0, 1]))
         values = torch.tensor([10.0, 20.0])
-        self._test_op(IndexPutModel(), 
-                     (torch.randn(5, 3, 2), indices, values), tester_factory, use_random_test_inputs=False)
-        
-        # 4D tensor
-        indices = (torch.tensor([0, 2]), torch.tensor([1, 1]), 
-                  torch.tensor([0, 1]), torch.tensor([2, 3]))
-        values = torch.tensor([10.0,])
-        self._test_op(IndexPutModel(), 
-                     (torch.randn(5, 3, 2, 4), indices, values), tester_factory, use_random_test_inputs=False)
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(5, 3, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
 
-    def test_index_put_indices(self, tester_factory: Callable) -> None:
-        # Test with different index patterns
-        
-        # Single index
+        indices = (
+            torch.tensor([0, 2]),
+            torch.tensor([1, 1]),
+            torch.tensor([0, 1]),
+            torch.tensor([2, 3]),
+        )
+        values = torch.tensor(
+            [
+                10.0,
+            ]
+        )
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(5, 3, 2, 4), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_put_indices(self, flow: TestFlow) -> None:
         indices = (torch.tensor([2]),)
         values = torch.tensor([10.0])
-        self._test_op(IndexPutModel(), 
-                     (torch.randn(5, 2), indices, values), tester_factory, use_random_test_inputs=False)
-        
-        # Multiple indices
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(5, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = (torch.tensor([0, 2, 4]),)
         values = torch.tensor([10.0, 20.0, 30.0])
-        self._test_op(IndexPutModel(), 
-                     (torch.randn(5, 3), indices, values), tester_factory, use_random_test_inputs=False)
-        
-        # Repeated indices with accumulate=True (values add up)
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(5, 3), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = (torch.tensor([1, 1, 3, 3]),)
         values = torch.tensor([10.0, 20.0, 30.0, 40.0])
-        self._test_op(IndexPutModel(accumulate=True), 
-                     (torch.randn(5), indices, values), tester_factory, use_random_test_inputs=False)
-        
-    def test_index_put_edge_cases(self, tester_factory: Callable) -> None:
-        # Test edge cases
-        
-        # Put values in all positions
+        self._test_op(
+            IndexPutModel(accumulate=True),
+            (torch.randn(5), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_put_edge_cases(self, flow: TestFlow) -> None:
         indices = (torch.tensor([0, 1, 2, 3, 4]),)
         values = torch.tensor([10.0, 20.0, 30.0, 40.0, 50.0])
-        self._test_op(IndexPutModel(), 
-                     (torch.randn(5, 5), indices, values), tester_factory, use_random_test_inputs=False)
-        
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(5, 5), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
