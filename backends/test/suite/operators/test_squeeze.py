@@ -6,8 +6,6 @@
 
 # pyre-unsafe
 
-from typing import Tuple, Union
-
 import torch
 from executorch.backends.test.suite.flow import TestFlow
 
