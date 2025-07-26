@@ -133,7 +133,9 @@ def _create_test_for_backend(
 
 
 class OperatorTest(unittest.TestCase):
-    def _test_op(self, model, inputs, flow: TestFlow):
+    def _test_op(
+        self, model, inputs, flow: TestFlow, generate_random_test_inputs: bool = True
+    ):
         context = get_active_test_context()
 
         # This should be set in the wrapped test. See _make_wrapped_test above.
@@ -145,6 +147,7 @@ class OperatorTest(unittest.TestCase):
             flow,
             context.test_name,
             context.params,
+            generate_random_test_inputs=generate_random_test_inputs,
         )
 
         log_test_summary(run_summary)
