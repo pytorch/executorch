@@ -395,33 +395,39 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ),
         )
 
-    def test_clone_preserves_contiguous(self) -> None:
+    def test_clone_transforms_to_contiguous(self) -> None:
         model = SimpleCloneContiguousModule()
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
             MemoryFormatTestSet(
                 module=model.eval(),
                 op=torch.ops.aten.clone.default,
-                sample_input=(torch.randn((1, 3, 16, 16), dtype=torch.float32),),
+                sample_input=(
+                    torch.randn((1, 3, 16, 16)).to(memory_format=torch.channels_last),
+                ),
                 target_memory_format=torch.contiguous_format,
                 _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
             ),
         )
 
-    def test_clone_preserves_channels_last(self) -> None:
+    def test_clone_transforms_to_channels_last(self) -> None:
         model = SimpleCloneChannelsLastModule()
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
             MemoryFormatTestSet(
                 module=model.eval(),
                 op=torch.ops.aten.clone.default,
-                sample_input=(torch.randn((1, 3, 16, 16), dtype=torch.float32),),
+                sample_input=(
+                    torch.randn((1, 3, 16, 16)).to(
+                        memory_format=torch.contiguous_format
+                    ),
+                ),
                 target_memory_format=torch.channels_last,
                 _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
             ),
         )
 
-    def test_clone_contiguous_to_channels_last(self):
+    def test_clone_dim_order_survives_clone_removal(self):
         model = SimpleCloneChannelsLastModule()
         x = torch.randn(1, 3, 24, 24).to(memory_format=torch.contiguous_format)
         exported = export(model.eval(), (x,), strict=True)
