@@ -1,104 +1,170 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-# pyre-strict
+# pyre-unsafe
 
-from typing import Callable
 
 import torch
+from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.compliance_suite import (
+from executorch.backends.test.suite.operators import (
     dtype_test,
     operator_test,
     OperatorTest,
 )
 
+
 class IndexSelectModel(torch.nn.Module):
     def __init__(self, dim=0):
         super().__init__()
         self.dim = dim
-        
+
     def forward(self, x, indices):
         return torch.index_select(x, self.dim, indices)
 
+
 @operator_test
-class TestIndexSelect(OperatorTest):
+class IndexSelect(OperatorTest):
     @dtype_test
-    def test_index_select_dtype(self, dtype, tester_factory: Callable) -> None:
-        # Test with different dtypes
+    def test_index_select_dtype(self, flow: TestFlow, dtype) -> None:
         indices = torch.tensor([0, 2], dtype=torch.int64)
-        model = IndexSelectModel(dim=0)
-        self._test_op(model, ((torch.rand(5, 3) * 100).to(dtype), indices), tester_factory, use_random_test_inputs=False)
-        
-    def test_index_select_basic(self, tester_factory: Callable) -> None:
-        # Basic test with default parameters
+        self._test_op(
+            IndexSelectModel(dim=0),
+            ((torch.rand(5, 3) * 100).to(dtype), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_select_basic(self, flow: TestFlow) -> None:
         indices = torch.tensor([0, 2], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-    def test_index_select_dimensions(self, tester_factory: Callable) -> None:
-        # Test selecting along different dimensions
-        
-        # Select along dim 0
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_select_dimensions(self, flow: TestFlow) -> None:
         indices = torch.tensor([0, 2], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-        # Select along dim 1
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = torch.tensor([0, 1], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=1), (torch.randn(5, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-        # Select along dim 2 in a 3D tensor
+        self._test_op(
+            IndexSelectModel(dim=1),
+            (torch.randn(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = torch.tensor([0, 2], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=2), (torch.randn(3, 4, 5), indices), tester_factory, use_random_test_inputs=False)
-        
-    def test_index_select_shapes(self, tester_factory: Callable) -> None:
-        # Test with different tensor shapes
+        self._test_op(
+            IndexSelectModel(dim=2),
+            (torch.randn(3, 4, 5), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_select_shapes(self, flow: TestFlow) -> None:
         indices = torch.tensor([0, 1], dtype=torch.int64)
-        
-        # 1D tensor
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5), indices), tester_factory, use_random_test_inputs=False)
-        
-        # 2D tensor
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-        # 3D tensor
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5, 3, 2), indices), tester_factory, use_random_test_inputs=False)
-        
-        # 4D tensor
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5, 3, 2, 4), indices), tester_factory, use_random_test_inputs=False)
-        
-    def test_index_select_indices(self, tester_factory: Callable) -> None:
-        # Test with different index patterns
-        
-        # Single index
+
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5, 3, 2), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5, 3, 2, 4), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_select_indices(self, flow: TestFlow) -> None:
         indices = torch.tensor([2], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-        # Multiple indices
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = torch.tensor([0, 2, 4], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-        # Repeated indices
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = torch.tensor([1, 1, 3, 3], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-        # Reversed indices
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = torch.tensor([4, 3, 2, 1, 0], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-    def test_index_select_edge_cases(self, tester_factory: Callable) -> None:
-        # Test edge cases
-        
-        # Select all indices
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_select_edge_cases(self, flow: TestFlow) -> None:
         indices = torch.tensor([0, 1, 2, 3, 4], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(5, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-        # Select from a dimension with size 1
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = torch.tensor([0], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=0), (torch.randn(1, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-        # Select from a tensor with all zeros
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.randn(1, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = torch.tensor([0, 1], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=0), (torch.zeros(5, 3), indices), tester_factory, use_random_test_inputs=False)
-        
-        # Select from a tensor with all ones
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.zeros(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
         indices = torch.tensor([0, 1], dtype=torch.int64)
-        self._test_op(IndexSelectModel(dim=0), (torch.ones(5, 3), indices), tester_factory, use_random_test_inputs=False)
+        self._test_op(
+            IndexSelectModel(dim=0),
+            (torch.ones(5, 3), indices),
+            flow,
+            generate_random_test_inputs=False,
+        )

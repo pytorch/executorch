@@ -1,26 +1,32 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-# pyre-strict
+# pyre-unsafe
 
-from typing import Callable, Union, Tuple
+from typing import Tuple, Union
 
 import torch
+from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.compliance_suite import (
+from executorch.backends.test.suite.operators import (
     dtype_test,
     operator_test,
     OperatorTest,
 )
+
 
 class Model(torch.nn.Module):
     def __init__(
         self,
         in_channels=3,
         out_channels=6,
-        kernel_size=3,
-        stride=1,
-        padding=0,
-        dilation=1,
+        kernel_size: Union[int, Tuple[int, int, int]] = 3,
+        stride: Union[int, Tuple[int, int, int]] = 1,
+        padding: Union[int, Tuple[int, int, int]] = 0,
+        dilation: Union[int, Tuple[int, int, int]] = 1,
         groups=1,
         bias=True,
         padding_mode="zeros",
@@ -37,59 +43,113 @@ class Model(torch.nn.Module):
             bias=bias,
             padding_mode=padding_mode,
         )
-        
+
     def forward(self, x):
         return self.conv(x)
 
+
 @operator_test
-class TestConv3d(OperatorTest):
+class Conv3d(OperatorTest):
     @dtype_test
-    def test_conv3d_dtype(self, dtype, tester_factory: Callable) -> None:
-        # Input shape: (batch_size, in_channels, depth, height, width)
-        self._test_op(Model().to(dtype), ((torch.rand(2, 3, 4, 4, 4) * 10).to(dtype),), tester_factory)
-        
-    def test_conv3d_basic(self, tester_factory: Callable) -> None:
-        # Basic test with default parameters
-        self._test_op(Model(), (torch.randn(2, 3, 4, 4, 4),), tester_factory)
-        
-    def test_conv3d_kernel_size(self, tester_factory: Callable) -> None:
-        # Test with different kernel sizes
-        self._test_op(Model(kernel_size=1), (torch.randn(2, 3, 4, 4, 4),), tester_factory)
-        self._test_op(Model(kernel_size=(1, 3, 3)), (torch.randn(2, 3, 4, 4, 4),), tester_factory)
-        
-    def test_conv3d_stride(self, tester_factory: Callable) -> None:
-        # Test with different stride values
-        self._test_op(Model(stride=2), (torch.randn(2, 3, 6, 6, 6),), tester_factory)
-        self._test_op(Model(stride=(1, 2, 2)), (torch.randn(2, 3, 4, 6, 6),), tester_factory)
-        
-    def test_conv3d_padding(self, tester_factory: Callable) -> None:
-        # Test with different padding values
-        self._test_op(Model(padding=1), (torch.randn(2, 3, 4, 4, 4),), tester_factory)
-        self._test_op(Model(padding=(0, 1, 1)), (torch.randn(2, 3, 4, 4, 4),), tester_factory)
-        
-    def test_conv3d_dilation(self, tester_factory: Callable) -> None:
-        # Test with different dilation values
-        self._test_op(Model(dilation=2), (torch.randn(2, 3, 6, 6, 6),), tester_factory)
-        self._test_op(Model(dilation=(1, 2, 2)), (torch.randn(2, 3, 4, 6, 6),), tester_factory)
-        
-    def test_conv3d_groups(self, tester_factory: Callable) -> None:
-        # Test with groups=3 (in_channels must be divisible by groups)
-        self._test_op(Model(in_channels=6, out_channels=6, groups=3), (torch.randn(2, 6, 4, 4, 4),), tester_factory)
-        
-    def test_conv3d_no_bias(self, tester_factory: Callable) -> None:
-        # Test without bias
-        self._test_op(Model(bias=False), (torch.randn(2, 3, 4, 4, 4),), tester_factory)
-        
-    def test_conv3d_padding_modes(self, tester_factory: Callable) -> None:
-        # Test different padding modes
+    def test_conv3d_dtype(self, flow: TestFlow, dtype) -> None:
+        self._test_op(
+            Model().to(dtype),
+            ((torch.rand(2, 3, 4, 4, 4) * 10).to(dtype),),
+            flow,
+        )
+
+    def test_conv3d_basic(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(),
+            (torch.randn(2, 3, 4, 4, 4),),
+            flow,
+        )
+
+    def test_conv3d_kernel_size(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(kernel_size=1),
+            (torch.randn(2, 3, 4, 4, 4),),
+            flow,
+        )
+        self._test_op(
+            Model(kernel_size=(1, 3, 3)),
+            (torch.randn(2, 3, 4, 4, 4),),
+            flow,
+        )
+
+    def test_conv3d_stride(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(stride=2),
+            (torch.randn(2, 3, 6, 6, 6),),
+            flow,
+        )
+        self._test_op(
+            Model(stride=(1, 2, 2)),
+            (torch.randn(2, 3, 4, 6, 6),),
+            flow,
+        )
+
+    def test_conv3d_padding(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(padding=1),
+            (torch.randn(2, 3, 4, 4, 4),),
+            flow,
+        )
+        self._test_op(
+            Model(padding=(0, 1, 1)),
+            (torch.randn(2, 3, 4, 4, 4),),
+            flow,
+        )
+
+    def test_conv3d_dilation(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(dilation=2),
+            (torch.randn(2, 3, 6, 6, 6),),
+            flow,
+        )
+        self._test_op(
+            Model(dilation=(1, 2, 2)),
+            (torch.randn(2, 3, 4, 6, 6),),
+            flow,
+        )
+
+    def test_conv3d_groups(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(in_channels=6, out_channels=6, groups=3),
+            (torch.randn(2, 6, 4, 4, 4),),
+            flow,
+        )
+
+    def test_conv3d_no_bias(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(bias=False),
+            (torch.randn(2, 3, 4, 4, 4),),
+            flow,
+        )
+
+    def test_conv3d_padding_modes(self, flow: TestFlow) -> None:
         for mode in ["zeros", "reflect", "replicate", "circular"]:
-            self._test_op(Model(padding=1, padding_mode=mode), (torch.randn(2, 3, 4, 4, 4),), tester_factory)
-            
-    def test_conv3d_channels(self, tester_factory: Callable) -> None:
-        # Test with different channel configurations
-        self._test_op(Model(in_channels=1, out_channels=1), (torch.randn(2, 1, 4, 4, 4),), tester_factory)
-        self._test_op(Model(in_channels=5, out_channels=10), (torch.randn(2, 5, 4, 4, 4),), tester_factory)
-        
-    def test_conv3d_different_spatial_dims(self, tester_factory: Callable) -> None:
-        # Test with different depth, height, and width
-        self._test_op(Model(), (torch.randn(2, 3, 3, 4, 5),), tester_factory)
+            self._test_op(
+                Model(padding=1, padding_mode=mode),
+                (torch.randn(2, 3, 4, 4, 4),),
+                flow,
+            )
+
+    def test_conv3d_channels(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(in_channels=1, out_channels=1),
+            (torch.randn(2, 1, 4, 4, 4),),
+            flow,
+        )
+        self._test_op(
+            Model(in_channels=5, out_channels=10),
+            (torch.randn(2, 5, 4, 4, 4),),
+            flow,
+        )
+
+    def test_conv3d_different_spatial_dims(self, flow: TestFlow) -> None:
+        self._test_op(
+            Model(),
+            (torch.randn(2, 3, 3, 4, 5),),
+            flow,
+        )
