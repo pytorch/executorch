@@ -8,6 +8,9 @@
 
 set -ex
 
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+
 # Double check if the NDK version is set
 [ -n "${ZEPHYR_SDK}" ]
 
@@ -77,7 +80,7 @@ install_prerequiresites() {
         chmod +x kitware-archive.sh && \
         ./kitware-archive.sh && \
         rm -f kitware-archive.sh
-    useradd -d /home/zephyruser -m -s /bin/bash zephyruser
+    pip_install --no-cache-dir west
 }
 
 install_sdk() {
