@@ -1,69 +1,98 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-# pyre-strict
+# pyre-unsafe
 
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Tuple, Union
 
 import torch
+from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.compliance_suite import (
+from executorch.backends.test.suite.operators import (
     dtype_test,
     operator_test,
     OperatorTest,
 )
 
+
 class SqueezeModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        
+
     def forward(self, x):
         return torch.squeeze(x)
+
 
 class SqueezeDimModel(torch.nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
-        
+
     def forward(self, x):
         return torch.squeeze(x, dim=self.dim)
 
+
 @operator_test
-class TestSqueeze(OperatorTest):
+class Squeeze(OperatorTest):
     @dtype_test
-    def test_squeeze_dtype(self, dtype, tester_factory: Callable) -> None:
-        # Test with different dtypes
-        model = SqueezeModel()
-        self._test_op(model, (torch.rand(1, 3, 1, 5).to(dtype),), tester_factory)
-        
-    def test_squeeze_basic(self, tester_factory: Callable) -> None:
-        # Basic test with default parameters (remove all dimensions of size 1)
-        self._test_op(SqueezeModel(), (torch.randn(1, 3, 1, 5),), tester_factory)
-        
-    def test_squeeze_specific_dimension(self, tester_factory: Callable) -> None:
-        # Test squeezing specific dimensions
-        
-        # Squeeze first dimension (size 1)
-        self._test_op(SqueezeDimModel(dim=0), (torch.randn(1, 3, 5),), tester_factory)
-        
-        # Squeeze middle dimension (size 1)
-        self._test_op(SqueezeDimModel(dim=2), (torch.randn(3, 4, 1, 5),), tester_factory)
-        
-        # Squeeze last dimension (size 1)
-        self._test_op(SqueezeDimModel(dim=-1), (torch.randn(3, 4, 5, 1),), tester_factory)
-        
-    def test_squeeze_no_effect(self, tester_factory: Callable) -> None:
-        # Test cases where squeeze has no effect
-        
-        # Dimension specified is not size 1
-        self._test_op(SqueezeDimModel(dim=1), (torch.randn(3, 4, 5),), tester_factory)
-        
-        # No dimensions of size 1
-        self._test_op(SqueezeModel(), (torch.randn(3, 4, 5),), tester_factory)
-        
-    def test_squeeze_multiple_dims(self, tester_factory: Callable) -> None:
-        # Test squeezing multiple dimensions of size 1
-        
-        # Multiple dimensions of size 1 (all removed with default parameters)
-        self._test_op(SqueezeModel(), (torch.randn(1, 3, 1, 5, 1),), tester_factory)
-        
-        self._test_op(SqueezeDimModel(dim=(0, 1)), (torch.randn(1, 1, 1),), tester_factory)
+    def test_squeeze_dtype(self, flow: TestFlow, dtype) -> None:
+        self._test_op(
+            SqueezeModel(),
+            (torch.rand(1, 3, 1, 5).to(dtype),),
+            flow,
+        )
+
+    def test_squeeze_basic(self, flow: TestFlow) -> None:
+        self._test_op(
+            SqueezeModel(),
+            (torch.randn(1, 3, 1, 5),),
+            flow,
+        )
+
+    def test_squeeze_specific_dimension(self, flow: TestFlow) -> None:
+        self._test_op(
+            SqueezeDimModel(dim=0),
+            (torch.randn(1, 3, 5),),
+            flow,
+        )
+
+        self._test_op(
+            SqueezeDimModel(dim=2),
+            (torch.randn(3, 4, 1, 5),),
+            flow,
+        )
+
+        self._test_op(
+            SqueezeDimModel(dim=-1),
+            (torch.randn(3, 4, 5, 1),),
+            flow,
+        )
+
+    def test_squeeze_no_effect(self, flow: TestFlow) -> None:
+        self._test_op(
+            SqueezeDimModel(dim=1),
+            (torch.randn(3, 4, 5),),
+            flow,
+        )
+
+        self._test_op(
+            SqueezeModel(),
+            (torch.randn(3, 4, 5),),
+            flow,
+        )
+
+    def test_squeeze_multiple_dims(self, flow: TestFlow) -> None:
+        self._test_op(
+            SqueezeModel(),
+            (torch.randn(1, 3, 1, 5, 1),),
+            flow,
+        )
+
+        self._test_op(
+            SqueezeDimModel(dim=(0, 1)),
+            (torch.randn(1, 1, 1),),
+            flow,
+        )
