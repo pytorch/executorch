@@ -113,7 +113,7 @@ Error QnnImplementation::StartBackend(
   //   library_path=libQnnHtp_2.so
   // for different QnnBackend instances.
   // So we warning out here.
-  if (loaded_backend_.count(backend_id) > 0) {
+  if (loaded_backend_.contains(backend_id)) {
     QNN_EXECUTORCH_LOG_WARN(
         "lib_path %s is loaded, but backend %d "
         "already exists. Overwriting previous loaded backend...",
@@ -122,7 +122,7 @@ Error QnnImplementation::StartBackend(
   }
   loaded_backend_[backend_id] = provider_list[0];
 
-  if (loaded_lib_handle_.count(backend_id) > 0) {
+  if (loaded_lib_handle_.contains(backend_id)) {
     QNN_EXECUTORCH_LOG_WARN("closing %pK...", loaded_lib_handle_[backend_id]);
 
     int dlclose_error = dlclose(loaded_lib_handle_[backend_id]);
@@ -183,7 +183,7 @@ Error QnnImplementation::Load(const QnnSaver_Config_t** saver_config) {
   {
     const std::lock_guard<std::mutex> lock(be_init_mutex_);
 
-    if (lib_path_to_backend_id_.count(lib_path_) == 0) {
+    if (!lib_path_to_backend_id_.contains(lib_path_)) {
       Error st = StartBackend(lib_path_, saver_config);
       ET_CHECK_OR_RETURN_ERROR(
           st == Error::Ok, Internal, "Fail to start backend");
@@ -193,15 +193,15 @@ Error QnnImplementation::Load(const QnnSaver_Config_t** saver_config) {
     backend_id = lib_path_to_backend_id_[lib_path_];
 
     // really don't expect.
-    if (loaded_backend_.count(backend_id) == 0 ||
-        loaded_lib_handle_.count(backend_id) == 0) {
+    if (!loaded_backend_.contains(backend_id) ||
+        !loaded_lib_handle_.contains(backend_id)) {
       QNN_EXECUTORCH_LOG_ERROR(
           "library %s is loaded but "
           "loaded backend count=%zu, "
           "loaded lib_handle count=%zu",
           lib_path_.c_str(),
-          loaded_backend_.count(backend_id),
-          loaded_lib_handle_.count(backend_id));
+          loaded_backend_.contains(backend_id),
+          loaded_lib_handle_.contains(backend_id));
       return Error::Internal;
     }
   } // be_init_mutex_ release.
