@@ -116,7 +116,7 @@ Error QnnExecuTorchBackend::execute(
     DelegateHandle* handle,
     EValue** args) const {
   ET_CHECK_OR_RETURN_ERROR(
-      delegate_map_rev_.count(handle) != 0,
+      delegate_map_rev_.contains(handle),
       Internal,
       "DelegateHandle has been deleted");
   QnnManager* qnn_manager = static_cast<QnnManager*>(handle);

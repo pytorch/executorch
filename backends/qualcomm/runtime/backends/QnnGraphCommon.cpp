@@ -22,7 +22,7 @@ Error QnnGraph::Configure(const std::string& graph_name) {
       Internal,
       "Fail to make graph config.");
 
-  if (handle_.count(graph_name)) {
+  if (handle_.contains(graph_name)) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Graph '%s' has been configured.", graph_name.c_str());
     return Error::Ok;
@@ -75,7 +75,7 @@ Qnn_ErrorHandle_t QnnGraph::GraphExecute(
     const std::string& graph_name,
     const std::vector<Qnn_Tensor_t>& input_tensor_structs,
     std::vector<Qnn_Tensor_t>& output_tensor_structs) {
-  if (!handle_.count(graph_name)) {
+  if (!handle_.contains(graph_name)) {
     QNN_EXECUTORCH_LOG_ERROR(
         "graph name: %s does not exist.", graph_name.c_str());
     return QNN_COMMON_ERROR_GENERAL;

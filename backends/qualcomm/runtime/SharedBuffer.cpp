@@ -147,7 +147,7 @@ int32_t SharedBuffer::MemToFd(void* buf) {
 void SharedBuffer::FreeMem(void* buf) {
   if (!initialize_) {
     QNN_EXECUTORCH_LOG_ERROR("Shared memory not initialized.");
-  } else if (restore_map_.count(buf) == 0) {
+  } else if (!restore_map_.contains(buf)) {
     QNN_EXECUTORCH_LOG_WARN("Don't free an unallocated tensor.");
   } else {
     rpc_mem_free_(restore_map_[buf]);
@@ -156,7 +156,7 @@ void SharedBuffer::FreeMem(void* buf) {
 }
 
 bool SharedBuffer::IsAllocated(void* buf) {
-  return restore_map_.count(buf) != 0U;
+  return restore_map_.contains(buf);
 }
 
 Error SharedBuffer::Load() {

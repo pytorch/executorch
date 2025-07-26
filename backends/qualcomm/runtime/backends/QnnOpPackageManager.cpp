@@ -19,7 +19,7 @@ bool QnnOpPackageManager::Add(std::string qnn_op_name) {
 
 bool QnnOpPackageManager::Has(std::string qnn_op_name) {
   const std::lock_guard<std::mutex> lock(table_mutex_);
-  return qnn_op_package_path_set_.count(qnn_op_name) > 0;
+  return qnn_op_package_path_set_.contains(qnn_op_name);
 }
 
 bool QnnOpPackageManager::Erase(std::string qnn_op_name) {
