@@ -56,6 +56,10 @@ Tensor& _clone_dim_order_out(
     OptionalArrayRef<int64_t> dim_order,
     Tensor& out) {
   (void)ctx;
+
+  ET_KERNEL_CHECK(
+      ctx, self.scalar_type() == out.scalar_type(), InvalidArgument, out);
+
   ET_KERNEL_CHECK(
       ctx,
       check__clone_dim_order_args(self, non_blocking, dim_order, out),
@@ -77,15 +81,8 @@ Tensor& _clone_dim_order_out(
       self.scalar_type(),
       ctx,
       "dim_order_ops::_clone_dim_order.out",
-      CTYPE_IN,
-      [&] {
-        ET_SWITCH_REALHBBF16_TYPES(
-            out.scalar_type(),
-            ctx,
-            "dim_order_ops::_clone_dim_order.out",
-            CTYPE_OUT,
-            [&] { _clone_dim_order_impl<CTYPE_IN, CTYPE_OUT>(self, out); });
-      });
+      CTYPE,
+      [&] { _clone_dim_order_impl<CTYPE, CTYPE>(self, out); });
 
   return out;
 }
