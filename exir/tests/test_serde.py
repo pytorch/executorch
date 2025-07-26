@@ -275,3 +275,37 @@ class TestSerde(unittest.TestCase):
         )
         self.assertEqual(metadata[0], metadata_serde[0])
         self.assertEqual(list(metadata[1].keys()), list(metadata_serde[1].keys()))
+
+    def test_meta_debug_handle_and_from_node(self) -> None:
+        class Model(nn.Module):
+            def __init__(self):
+                super(Model, self).__init__()
+                self.conv_layer = nn.Conv2d(
+                    in_channels=1, out_channels=64, kernel_size=3, padding=1
+                )
+
+            def forward(self, x):
+                return self.conv_layer(x)
+
+        m = Model()
+        inputs = (torch.randn(1, 1, 32, 32),)
+
+        edge = to_edge(export(m, inputs, strict=True))
+        edge_new = deserialize(serialize(edge.exported_program()))
+        for node, node_new in zip(
+            edge.exported_program().graph_module.graph.nodes,
+            edge_new.graph_module.graph.nodes,
+        ):
+            if node.op not in {"placeholder", "output"}:
+                self.assertIsNotNone(node.meta.get("debug_handle"))
+                self.assertIsNotNone(node.meta.get("from_node"))
+                self.assertEqual(
+                    node.meta.get("debug_handle"), node_new.meta.get("debug_handle")
+                )
+                self.assertEqual(
+                    len(node.meta.get("from_node")), len(node_new.meta.get("from_node"))
+                )
+                for node_source, node_source_new in zip(
+                    node.meta.get("from_node"), node_new.meta.get("from_node")
+                ):
+                    self.assertEqual(node_source.to_dict(), node_source_new.to_dict())
