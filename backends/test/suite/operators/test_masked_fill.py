@@ -1,141 +1,171 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-# pyre-strict
+# pyre-unsafe
 
-from typing import Callable, List, Union
+from typing import Union
 
 import torch
+from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.compliance_suite import (
+from executorch.backends.test.suite.operators import (
     dtype_test,
     operator_test,
     OperatorTest,
 )
 
+
 class MaskedFillModel(torch.nn.Module):
     def __init__(self, value: Union[float, int]):
         super().__init__()
         self.value = value
-        
+
     def forward(self, x, mask):
         return x.masked_fill(mask, self.value)
 
+
 @operator_test
-class TestMaskedFill(OperatorTest):
+class MaskedFill(OperatorTest):
     @dtype_test
-    def test_masked_fill_dtype(self, dtype, tester_factory: Callable) -> None:
-        # Test with different dtypes
-        model = MaskedFillModel(value=0.0)
+    def test_masked_fill_dtype(self, flow: TestFlow, dtype) -> None:
         self._test_op(
-            model, 
+            MaskedFillModel(value=0.0),
             (
                 torch.rand(3, 4).to(dtype),
-                torch.tensor([[True, False, True, False], [False, True, False, True], [True, True, False, False]]),
-            ), 
-            tester_factory
+                torch.tensor(
+                    [
+                        [True, False, True, False],
+                        [False, True, False, True],
+                        [True, True, False, False],
+                    ]
+                ),
+            ),
+            flow,
         )
-        
-    def test_masked_fill_basic(self, tester_factory: Callable) -> None:
-        # Basic test with default parameters
-        # Fill with 0.0 where mask is True
+
+    def test_masked_fill_basic(self, flow: TestFlow) -> None:
         self._test_op(
-            MaskedFillModel(value=0.0), 
+            MaskedFillModel(value=0.0),
             (
                 torch.randn(3, 4),
-                torch.tensor([[True, False, True, False], [False, True, False, True], [True, True, False, False]]),
-            ), 
-            tester_factory
+                torch.tensor(
+                    [
+                        [True, False, True, False],
+                        [False, True, False, True],
+                        [True, True, False, False],
+                    ]
+                ),
+            ),
+            flow,
         )
-        
-    def test_masked_fill_different_values(self, tester_factory: Callable) -> None:
-        # Test with different fill values
-        
-        # Fill with a positive value
+
+    def test_masked_fill_different_values(self, flow: TestFlow) -> None:
         self._test_op(
-            MaskedFillModel(value=5.0), 
+            MaskedFillModel(value=5.0),
             (
                 torch.randn(3, 4),
-                torch.tensor([[True, False, True, False], [False, True, False, True], [True, True, False, False]]),
-            ), 
-            tester_factory
+                torch.tensor(
+                    [
+                        [True, False, True, False],
+                        [False, True, False, True],
+                        [True, True, False, False],
+                    ]
+                ),
+            ),
+            flow,
         )
-        
-        # Fill with a negative value
+
         self._test_op(
-            MaskedFillModel(value=-5.0), 
+            MaskedFillModel(value=-5.0),
             (
                 torch.randn(3, 4),
-                torch.tensor([[True, False, True, False], [False, True, False, True], [True, True, False, False]]),
-            ), 
-            tester_factory
+                torch.tensor(
+                    [
+                        [True, False, True, False],
+                        [False, True, False, True],
+                        [True, True, False, False],
+                    ]
+                ),
+            ),
+            flow,
         )
-        
-        # Fill with an integer value
+
         self._test_op(
-            MaskedFillModel(value=1), 
+            MaskedFillModel(value=1),
             (
                 torch.randn(3, 4),
-                torch.tensor([[True, False, True, False], [False, True, False, True], [True, True, False, False]]),
-            ), 
-            tester_factory
+                torch.tensor(
+                    [
+                        [True, False, True, False],
+                        [False, True, False, True],
+                        [True, True, False, False],
+                    ]
+                ),
+            ),
+            flow,
         )
-        
-    def test_masked_fill_different_shapes(self, tester_factory: Callable) -> None:
-        # Test with tensors of different shapes
-        
-        # 1D tensor
+
+    def test_masked_fill_different_shapes(self, flow: TestFlow) -> None:
         self._test_op(
-            MaskedFillModel(value=0.0), 
+            MaskedFillModel(value=0.0),
             (
                 torch.randn(5),
                 torch.tensor([True, False, True, False, True]),
-            ), 
-            tester_factory
+            ),
+            flow,
         )
-        
-        # 3D tensor
+
         self._test_op(
-            MaskedFillModel(value=0.0), 
+            MaskedFillModel(value=0.0),
             (
                 torch.randn(2, 3, 4),
-                torch.tensor([
-                    [[True, False, True, False], [False, True, False, True], [True, True, False, False]],
-                    [[False, False, True, True], [True, False, True, False], [False, True, False, True]]
-                ]),
-            ), 
-            tester_factory
+                torch.tensor(
+                    [
+                        [
+                            [True, False, True, False],
+                            [False, True, False, True],
+                            [True, True, False, False],
+                        ],
+                        [
+                            [False, False, True, True],
+                            [True, False, True, False],
+                            [False, True, False, True],
+                        ],
+                    ]
+                ),
+            ),
+            flow,
         )
-        
-    def test_masked_fill_all_true(self, tester_factory: Callable) -> None:
-        # Test with all mask values set to True
+
+    def test_masked_fill_all_true(self, flow: TestFlow) -> None:
         self._test_op(
-            MaskedFillModel(value=0.0), 
+            MaskedFillModel(value=0.0),
             (
                 torch.randn(3, 4),
                 torch.ones(3, 4, dtype=torch.bool),
-            ), 
-            tester_factory
+            ),
+            flow,
         )
-        
-    def test_masked_fill_all_false(self, tester_factory: Callable) -> None:
-        # Test with all mask values set to False
+
+    def test_masked_fill_all_false(self, flow: TestFlow) -> None:
         self._test_op(
-            MaskedFillModel(value=0.0), 
+            MaskedFillModel(value=0.0),
             (
                 torch.randn(3, 4),
                 torch.zeros(3, 4, dtype=torch.bool),
-            ), 
-            tester_factory
+            ),
+            flow,
         )
-        
-    def test_masked_fill_broadcast(self, tester_factory: Callable) -> None:
-        # Test with broadcasting mask
-        # A 1D mask can be broadcast to a 2D tensor
+
+    def test_masked_fill_broadcast(self, flow: TestFlow) -> None:
         self._test_op(
-            MaskedFillModel(value=0.0), 
+            MaskedFillModel(value=0.0),
             (
                 torch.randn(3, 4),
                 torch.tensor([True, False, True, False]),
-            ), 
-            tester_factory
+            ),
+            flow,
         )
