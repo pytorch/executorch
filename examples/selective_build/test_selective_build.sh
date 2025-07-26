@@ -171,7 +171,7 @@ test_cmake_select_ops_in_dict() {
     rm -rf ${build_dir}
     retry cmake -DCMAKE_BUILD_TYPE=Release \
             -DMAX_KERNEL_NUM=22 \
-            -DEXECUTORCH_SELECT_OPS_LIST='{"aten::add": [Scalar.Float.name]}'
+            -DEXECUTORCH_SELECT_OPS_DICT="{'aten::add': [Scalar.Float.name]}" \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
             -B${build_dir} \
@@ -235,8 +235,8 @@ then
     #test_cmake_select_all_ops
     #test_cmake_select_ops_in_list
     #test_cmake_select_ops_in_yaml
-    #test_cmake_select_ops_in_model
-    test_cmake_select_ops_in_dict
+    test_cmake_select_ops_in_model
+    #test_cmake_select_ops_in_dict
 elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops
