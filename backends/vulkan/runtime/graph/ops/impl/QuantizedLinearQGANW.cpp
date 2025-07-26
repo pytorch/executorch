@@ -124,7 +124,7 @@ utils::uvec3 linear_qga4w_global_wg_size(
     utils::uvec3 global_wg_size = graph->logical_limits_of(out);
     global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
 
-    global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(3));
+    global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(4));
     return global_wg_size;
   }
 
@@ -162,18 +162,13 @@ void add_linear_qga4w_node(
   check_linear_qga4w_args(
       graph, mat1, mat2_data, group_size, scales_and_zeros_data, out);
 
-  bool is_gemv = should_use_coop_algorithm(&graph, mat1);
   const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);
 
-  ValueRef mat2 = is_gemv
-      ? prepack_int4_linear_weight_transposed_block_4x8(graph, mat2_data)
-      : prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
+  ValueRef mat2 =
+      prepack_int4_linear_weight_transposed_block_4x8(graph, mat2_data);
 
-  ValueRef scales_and_zeros = is_gemv
-      ? prepack_standard(
-            graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked)
-      : prepack_standard_hw_transposed(
-            graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
+  ValueRef scales_and_zeros = prepack_standard(
+      graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
