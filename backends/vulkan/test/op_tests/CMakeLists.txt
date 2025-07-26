@@ -29,10 +29,10 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 endif()
 
-# Include this file to access executorch_target_link_options_shared_lib This is required to
-# provide access to executorch_target_link_options_shared_lib which allows libraries to be
-# linked with the --whole-archive flag. This is required for libraries that
-# perform dynamic registration via static initialization.
+# Include this file to access executorch_target_link_options_shared_lib This is
+# required to provide access to executorch_target_link_options_shared_lib which
+# allows libraries to be linked with the --whole-archive flag. This is required
+# for libraries that perform dynamic registration via static initialization.
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 get_torch_base_path(TORCH_BASE_PATH)

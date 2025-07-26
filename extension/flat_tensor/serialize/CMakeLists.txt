@@ -10,8 +10,12 @@
 # ~~~
 
 # The include directory that will contain the generated schema headers.
-set(_flat_tensor_schema__include_dir "${CMAKE_BINARY_DIR}/extension/flat_tensor/include")
-set(_flat_tensor_schema__output_dir "${_flat_tensor_schema__include_dir}/executorch/extension/flat_tensor/serialize")
+set(_flat_tensor_schema__include_dir
+    "${CMAKE_BINARY_DIR}/extension/flat_tensor/include"
+)
+set(_flat_tensor_schema__output_dir
+    "${_flat_tensor_schema__include_dir}/executorch/extension/flat_tensor/serialize"
+)
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -29,9 +33,8 @@ function(generate_flat_tensor_schema _schema_srcs _schema_name)
   # Generate the headers from the .fbs files.
   add_custom_command(
     OUTPUT ${_schema_outputs}
-    COMMAND
-      flatc --cpp --cpp-std c++11 --gen-mutable --scoped-enums -o
-      "${_flat_tensor_schema__output_dir}" ${_schema_srcs}
+    COMMAND flatc --cpp --cpp-std c++11 --gen-mutable --scoped-enums -o
+            "${_flat_tensor_schema__output_dir}" ${_schema_srcs}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     DEPENDS flatc ${_schema_srcs}
     COMMENT "Generating ${_schema_name} headers"
@@ -45,7 +48,8 @@ function(generate_flat_tensor_schema _schema_srcs _schema_name)
   # and some users need an alignment larger than the default, which is typically
   # 32.
   target_compile_definitions(
-    ${_schema_name} INTERFACE FLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}
+    ${_schema_name}
+    INTERFACE FLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}
   )
 
   target_include_directories(

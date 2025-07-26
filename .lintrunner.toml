@@ -137,6 +137,36 @@ init_command = [
 ]
 
 [[linter]]
+code = 'CMAKEFORMAT'
+include_patterns = [
+    "**/*.cmake",
+    "**/*.cmake.in",
+    "**/CMakeLists.txt",
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'cmake_format_linter',
+    '--',
+    '@{{PATHSFILE}}',
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
 code = 'ETCAPITAL'
 include_patterns = [
     '**/*.py',

@@ -43,7 +43,7 @@ set(CMAKE_CXX_COMPILER ${TOOLCHAIN_HOME}/bin/${CROSS_COMPILE_TARGET}-clang++)
 
 set(CMAKE_C_FLAGS_INIT "-stdlib=libc++ -mtext-section-literals -mlongcalls")
 set(CMAKE_CXX_FLAGS_INIT "-stdlib=libc++ -mtext-section-literals -mlongcalls")
-#workaround for larger compilation time
+# workaround for larger compilation time
 set(CMAKE_CXX_FLAGS_INIT "${CMAKE_CXX_FLAGS_INIT} -fno-strict-aliasing")
 
 set(CMAKE_SYSROOT ${TOOLCHAIN_HOME}/${SYSROOT_TARGET})

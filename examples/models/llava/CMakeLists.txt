@@ -21,7 +21,6 @@ project(llava)
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
-
 include(CMakeDependentOption)
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
