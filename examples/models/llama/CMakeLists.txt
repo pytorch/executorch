@@ -15,7 +15,7 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.24)  # 3.24 is required for WHOLE_ARCHIVE
+cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
 project(llama_runner)
 
 # Duplicating options as root CMakeLists.txt
@@ -117,7 +117,9 @@ endif()
 
 if(EXECUTORCH_BUILD_TORCHAO)
   # Currently only enable this on Arm-based Macs
-  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL
+                                             "arm64"
+  )
     set(TORCHAO_BUILD_ATEN_OPS OFF)
     set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
     set(TORCHAO_BUILD_CPU_AARCH64 ON)
@@ -131,7 +133,8 @@ if(EXECUTORCH_BUILD_TORCHAO)
     if(EXECUTORCH_BUILD_MPS)
       add_subdirectory(
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
-        ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
+        ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
+      )
       executorch_target_link_options_shared_lib(torchao_ops_mps_executorch)
       list(APPEND link_libraries torchao_ops_mps_executorch)
     endif()
@@ -218,9 +221,6 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   endif()
 endif()
 
-target_include_directories(
-  llama_main
-  PUBLIC ${_common_include_directories}
-)
+target_include_directories(llama_main PUBLIC ${_common_include_directories})
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})

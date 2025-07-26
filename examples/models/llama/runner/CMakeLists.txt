@@ -23,13 +23,10 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
-# The buck-based executorch_srcs.cmake setup was crossing package
-# boundaries and trying to build stuff from
-# executorch/extension/llm/runner and tokenizers. Just set up sources
-# manually.
-set(llama_runner_srcs
-  runner.cpp
-  ../tokenizer/llama_tiktoken.cpp)
+# The buck-based executorch_srcs.cmake setup was crossing package boundaries and
+# trying to build stuff from executorch/extension/llm/runner and tokenizers.
+# Just set up sources manually.
+set(llama_runner_srcs runner.cpp ../tokenizer/llama_tiktoken.cpp)
 
 if(CMAKE_TOOLCHAIN_IOS
    OR ANDROID
@@ -59,6 +56,6 @@ target_link_libraries(llama_runner PUBLIC tokenizers::tokenizers)
 
 target_include_directories(
   llama_runner PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
-  ${EXECUTORCH_ROOT}/..
+                      ${EXECUTORCH_ROOT}/..
 )
 target_compile_options(llama_runner PUBLIC ${_preprocessor_flag})
