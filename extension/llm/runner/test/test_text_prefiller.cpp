@@ -24,7 +24,7 @@ using executorch::runtime::testing::TensorFactory;
 // Mock class for TextDecoderRunner
 class MockTextDecoderRunner : public TextDecoderRunner {
  public:
-  MockTextDecoderRunner() : TextDecoderRunner(nullptr) {}
+  MockTextDecoderRunner() : TextDecoderRunner(nullptr, nullptr) {}
   MOCK_METHOD(
       Result<executorch::aten::Tensor>,
       step,
