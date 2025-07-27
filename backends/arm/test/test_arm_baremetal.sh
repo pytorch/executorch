@@ -117,7 +117,6 @@ test_pytest_ops_ethosu_fvp() { # Same as test_pytest but also sometime verify us
 
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
-    backends/arm/scripts/build_portable_kernels.sh
     # Build semihosting version of the runner used by pytest testing. This builds:
     # arm_test/arm_semihosting_executor_runner_corstone-300
     # arm_test/arm_semihosting_executor_runner_corstone-320
@@ -133,7 +132,6 @@ test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify
 
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
-    backends/arm/scripts/build_portable_kernels.sh
     # Build semihosting version of the runner used by pytest testing. This builds:
     # arm_test/arm_semihosting_executor_runner_corstone-300
     # arm_test/arm_semihosting_executor_runner_corstone-320

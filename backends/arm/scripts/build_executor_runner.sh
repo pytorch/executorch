@@ -25,6 +25,7 @@ output_folder_set=false
 output_folder="."
 et_build_root="${et_root_dir}/arm_test"
 ethosu_tools_dir=${et_root_dir}/examples/arm/ethos-u-scratch
+select_ops_list=""
 
 build_bundleio_flags=" -DET_BUNDLE_IO=OFF "
 build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=OFF "
@@ -47,7 +48,10 @@ help() {
     echo "  --et_build_root=<FOLDER>        Build output root folder to use, defaults to ${et_build_root}"
     echo "  --ethosu_tools_dir=<FOLDER>     Path to your Ethos-U tools dir if you not using default: ${ethosu_tools_dir}"
     echo "  --toolchain=<TOOLCHAIN>         Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc"
-    exit 0
+    echo "  --select_ops_list=<OPS>         Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
+    echo "                                     NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
+    echo "                                     See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
+   exit 0
 }
 
 for arg in "$@"; do
@@ -65,6 +69,7 @@ for arg in "$@"; do
       --et_build_root=*) et_build_root="${arg#*=}";;
       --ethosu_tools_dir=*) ethosu_tools_dir="${arg#*=}";;
       --toolchain=*) toolchain="${arg#*=}";;
+      --select_ops_list=*) select_ops_list="${arg#*=}";;
       *)
       ;;
     esac
@@ -157,6 +162,7 @@ cmake \
     -DPYTHON_EXECUTABLE=$(which python3)        \
     -DSYSTEM_CONFIG=${system_config}            \
     -DMEMORY_MODE=${memory_mode}                \
+    -DEXECUTORCH_SELECT_OPS_LIST="${select_ops_list}" \
     ${extra_build_flags}                        \
     -B ${output_folder}/cmake-out
 
