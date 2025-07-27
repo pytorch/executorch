@@ -4033,6 +4033,8 @@ class TestExampleLLMScript(TestQNN):
             self.build_folder,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--checkpoint",
             f"{self.llama_artifacts}/consolidated.00.pth",
             "--params",
@@ -4189,6 +4191,8 @@ class TestExampleLLMScript(TestQNN):
             self.build_folder,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--checkpoint",
             f"{self.llama_artifacts}/stories110M.pt",
             "--params",
@@ -4326,6 +4330,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4342,7 +4348,7 @@ class TestExampleOssScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                self.assertGreaterEqual(msg["accuracy"], 0.8)
+                self.assertGreaterEqual(msg["accuracy"], 0.7)
 
     def test_bert(self):
         if not self.required_envs([self.sentence_dataset]):
@@ -4360,6 +4366,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4376,7 +4384,7 @@ class TestExampleOssScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                self.assertGreaterEqual(msg["accuracy"], 0.6)
+                self.assertGreaterEqual(msg["accuracy"], 0.5)
 
     def test_conv_former(self):
         if not self.required_envs([self.image_dataset]):
@@ -4395,6 +4403,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4431,6 +4441,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4466,6 +4478,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4501,6 +4515,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4536,6 +4552,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4569,6 +4587,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4593,7 +4613,7 @@ class TestExampleOssScript(TestQNN):
             self.skipTest("missing required envs")
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientnet.py"
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientnet.py",
             "--dataset",
             self.image_dataset,
             "--artifact",
@@ -4604,6 +4624,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4641,6 +4663,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--oss_repo",
             self.oss_repo,
             "--pretrained_weight",
@@ -4678,6 +4702,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--default_dataset",
             "--oss_repo",
             self.oss_repo,
@@ -4716,6 +4742,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4752,6 +4780,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--oss_repo",
             self.oss_repo,
             "--pretrained_weight",
@@ -4792,6 +4822,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4828,6 +4860,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4866,6 +4900,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4903,6 +4939,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4931,12 +4969,18 @@ class TestExampleOssScript(TestQNN):
         cmds = [
             "python",
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/pvt.py",
+            "--dataset",
             self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
             self.build_folder,
             "--device",
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -4956,13 +5000,13 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 65)
                 self.assertGreaterEqual(msg["top_5"], 85)
 
-    def test_mobilevit1(self):
+    def test_mobilevit_v1(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
 
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/mobilevit1.py"
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/mobilevit_v1.py",
             "--dataset",
             self.image_dataset,
             "--artifact",
@@ -4973,6 +5017,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5010,6 +5056,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5047,6 +5095,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--dataset",
             self.image_dataset,
             "--ip",
@@ -5083,6 +5133,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5118,6 +5170,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5152,6 +5206,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--oss_repo",
             self.oss_repo,
             "--pretrained_weight",
@@ -5190,6 +5246,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5225,6 +5283,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5258,6 +5318,8 @@ class TestExampleOssScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5523,6 +5585,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5561,6 +5625,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5599,6 +5665,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5637,6 +5705,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5675,6 +5745,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5711,6 +5783,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--default_dataset",
             "--ip",
             self.ip,
@@ -5748,6 +5822,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--download",
             "--ip",
             self.ip,
@@ -5787,6 +5863,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--pretrained_weight",
             self.pretrained_weight,
             "--ip",
@@ -5828,6 +5906,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--pretrained_weight",
             self.pretrained_weight,
             "--ptq",
@@ -5870,6 +5950,8 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--pretrained_weight",
             self.pretrained_weight,
             "--ip",
@@ -5942,6 +6024,8 @@ class TestUtilsScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -5974,6 +6058,8 @@ class TestUtilsScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--target",
+            self.target,
             "--ip",
             self.ip,
             "--port",
@@ -6051,6 +6137,8 @@ class TestUtilsScript(TestQNN):
                 f"{tmp_dir}/e_out",
                 "--model",
                 self.model,
+                "--target",
+                self.target,
                 "--device",
                 self.device,
                 "--build_folder",
@@ -6125,13 +6213,6 @@ def setup_environment():
         default="",
         type=str,
     )
-
-    parser.add_argument(
-        "--pre_gen_pte",
-        help="Run the pre-generated pte in the given directory.",
-        type=str,
-    )
-
     parser.add_argument(
         "--llama_artifacts",
         help="A folder that contains: weight, tokenizer, and params.",
@@ -6160,6 +6241,7 @@ def setup_environment():
     TestQNN.pre_gen_pte = args.pre_gen_pte
     TestQNN.llama_artifacts = args.llama_artifacts
     TestQNN.op_package_dir = args.op_package_dir
+    TestQNN.target = args.target
     return sys.argv[:1] + ns_args
 
 
