@@ -460,49 +460,15 @@ endif()
 
 
 # Dependencies from the ExecuTorch build
-add_library(executorch STATIC IMPORTED)
-set_property(
-  TARGET executorch PROPERTY IMPORTED_LOCATION
-                             "${ET_BUILD_DIR_PATH}/libexecutorch.a"
+find_package(
+  executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
 )
 
-add_library(executorch_core STATIC IMPORTED)
+add_library(arm_portable_ops_lib STATIC IMPORTED)
 set_property(
-  TARGET executorch_core
-  PROPERTY IMPORTED_LOCATION "${ET_BUILD_DIR_PATH}/libexecutorch_core.a"
-)
-target_link_libraries(executorch INTERFACE executorch_core)
-
-add_library(executorch_delegate_ethos_u STATIC IMPORTED)
-set_property(
-  TARGET executorch_delegate_ethos_u
-  PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/backends/arm/libexecutorch_delegate_ethos_u.a"
-)
-
-add_library(portable_ops_lib STATIC IMPORTED)
-set_property(
-  TARGET portable_ops_lib
+  TARGET arm_portable_ops_lib
   PROPERTY IMPORTED_LOCATION
            "${ET_BUILD_DIR_PATH}/examples/arm/libarm_portable_ops_lib.a"
-)
-add_library(portable_kernels STATIC IMPORTED)
-set_property(
-  TARGET portable_kernels
-  PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_kernels.a"
-)
-add_library(quantized_ops_lib STATIC IMPORTED)
-set_property(
-  TARGET quantized_ops_lib
-  PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/kernels/quantized/libquantized_ops_lib.a"
-)
-add_library(quantized_kernels STATIC IMPORTED)
-set_property(
-  TARGET quantized_kernels
-  PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/kernels/quantized/libquantized_kernels.a"
 )
 add_library(cortex_m_ops_lib STATIC IMPORTED)
 set_property(
@@ -515,13 +481,6 @@ set_property(
   TARGET cortex_m_kernels
   PROPERTY IMPORTED_LOCATION
            "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_kernels.a"
-)
-add_library(extension_runner_util STATIC IMPORTED)
-set_property(
-  TARGET extension_runner_util
-  PROPERTY
-    IMPORTED_LOCATION
-    "${ET_BUILD_DIR_PATH}/extension/runner_util/libextension_runner_util.a"
 )
 
 # Convert pte to header
@@ -554,11 +513,11 @@ list(APPEND arm_executor_runner_link
   extension_runner_util
   ethosu_target_init
   executorch
+  quantized_ops_lib
   "-Wl,--whole-archive"
   executorch_delegate_ethos_u
   cortex_m_ops_lib
-  quantized_ops_lib
-  portable_ops_lib
+  arm_portable_ops_lib
   quantized_kernels
   cortex_m_kernels
   portable_kernels
@@ -569,42 +528,11 @@ list(APPEND arm_executor_runner_link
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   target_compile_options(arm_executor_runner PUBLIC -DET_EVENT_TRACER_ENABLED)
 
-  add_library(etdump STATIC IMPORTED)
-  set_property(
-      TARGET etdump
-      PROPERTY IMPORTED_LOCATION
-            "${ET_BUILD_DIR_PATH}/lib/libetdump.a"
-  )
-
-  if(CMAKE_BUILD_TYPE MATCHES "Debug")
-    set(FLATCCRT_LIB flatccrt_d)
-  else()
-    set(FLATCCRT_LIB flatccrt)
-  endif()
-
-  add_library(${FLATCCRT_LIB} STATIC IMPORTED)
-  set_property(
-      TARGET ${FLATCCRT_LIB}
-      PROPERTY IMPORTED_LOCATION
-            "${ET_BUILD_DIR_PATH}/lib/lib${FLATCCRT_LIB}.a"
-  )
-
-  list(APPEND arm_executor_runner_link
-    etdump
-    ${FLATCCRT_LIB}
-  )
+  list(APPEND arm_executor_runner_link etdump flatccrt)
 endif()
 
 if(ET_BUNDLE_IO)
-  add_library(bundled_program STATIC IMPORTED)
-  set_property(
-    TARGET bundled_program
-    PROPERTY IMPORTED_LOCATION
-        "${ET_BUILD_DIR_PATH}/lib/libbundled_program.a"
-  )
-  list(APPEND arm_executor_runner_link
-    bundled_program
-  )
+  list(APPEND arm_executor_runner_link bundled_program)
 endif()
 
 # Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
