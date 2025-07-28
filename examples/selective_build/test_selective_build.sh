@@ -172,6 +172,7 @@ test_cmake_select_ops_in_dict() {
     retry cmake -DCMAKE_BUILD_TYPE=Release \
             -DMAX_KERNEL_NUM=22 \
             -DEXECUTORCH_SELECT_OPS_FROM_DICT='{\"aten::add\":[\"v1/3;0,1|3;0,1|3;0,1|3;0,1\"],\"aten::mul\":[],\"aten::bmm\":[\"Float\"]}' \
+            -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
             -B${build_dir} \
@@ -188,7 +189,7 @@ test_cmake_select_ops_in_dict() {
 }
 
 test_cmake_select_ops_in_model() {
-    local model_name="add_mul"
+    local model_name="mv3"
     local model_export_name="${model_name}.pte"
     echo "Exporting ${model_name}"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="${model_name}"
@@ -207,10 +208,8 @@ test_cmake_select_ops_in_model() {
     echo "Building ${example_dir}"
     cmake --build ${build_dir} -j9 --config $CMAKE_BUILD_TYPE
 
-    echo 'Running selective build test'
-    ${build_dir}/selective_build_test --model_path="./${model_export_name}"
-
-    echo "Removing ${model_export_name}"
+    strip ${build_dir}/selective_build_test
+    echo $(stat --format=%s ${build_dir}/selective_build_test)
     rm "./${model_export_name}"
 }
 
@@ -235,8 +234,8 @@ then
     #test_cmake_select_all_ops
     #test_cmake_select_ops_in_list
     #test_cmake_select_ops_in_yaml
-    #test_cmake_select_ops_in_model
-    test_cmake_select_ops_in_dict
+    test_cmake_select_ops_in_model
+    #test_cmake_select_ops_in_dict
 elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops

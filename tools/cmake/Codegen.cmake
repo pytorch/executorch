@@ -26,11 +26,11 @@ function(gen_selected_ops)
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
 
-  if(GEN_DTYPE_SELECTIVE_BUILD)
-    if(NOT GEN_OPS_FROM_MODEL)
-      message(FATAL_ERROR "  DTYPE_SELECTIVE_BUILD is only support with model API, please pass in a model")
-    endif()
-  endif()
+  #if(GEN_DTYPE_SELECTIVE_BUILD)
+  #  if(NOT GEN_OPS_FROM_MODEL)
+  #    message(FATAL_ERROR "  DTYPE_SELECTIVE_BUILD is only support with model API, please pass in a model")
+  #  endif()
+  #endif()
 
   set(_oplist_yaml
     ${_out_dir}/selected_operators.yaml
