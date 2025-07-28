@@ -54,6 +54,7 @@ include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 include(ExternalProject)
+include(GNUInstallDirs)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -177,6 +178,7 @@ if(NOT DEFINED FXDIV_SOURCE_DIR)
   )
   set(FXDIV_SOURCE_DIR "backends/xnnpack/third-party/FXdiv")
   add_subdirectory("${FXDIV_SOURCE_DIR}")
+  executorch_move_interface_include_directories_to_build_time_only(fxdiv)
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
@@ -188,7 +190,9 @@ if(EXECUTORCH_BUILD_CPUINFO)
       ${CMAKE_POSITION_INDEPENDENT_CODE}
   )
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
+  set(CPUINFO_SOURCE_DIR
+      "${CMAKE_CURRENT_LIST_DIR}/backends/xnnpack/third-party/cpuinfo"
+  )
   set(CPUINFO_BUILD_TOOLS
       OFF
       CACHE BOOL ""
@@ -217,6 +221,14 @@ if(EXECUTORCH_BUILD_CPUINFO)
   add_subdirectory("${CPUINFO_SOURCE_DIR}")
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  )
+  executorch_add_prefix_to_public_headers(cpuinfo "${CPUINFO_SOURCE_DIR}/")
+  install(
+    TARGETS cpuinfo
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+    INCLUDES
+    DESTINATION ${_common_include_directories}
   )
 endif()
 
@@ -250,6 +262,17 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
     )
   endif()
   add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
+  executorch_move_interface_include_directories_to_build_time_only(pthreadpool)
+  executorch_move_interface_include_directories_to_build_time_only(
+    pthreadpool_interface
+  )
+  install(
+    TARGETS pthreadpool pthreadpool_interface fxdiv
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+    INCLUDES
+    DESTINATION ${_common_include_directories}
+  )
   set(CMAKE_POSITION_INDEPENDENT_CODE
       ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
   )
@@ -273,8 +296,10 @@ if(NOT "${_repo_dir_name}" STREQUAL "executorch")
   )
 endif()
 set(_common_include_directories
-    ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core/portable_type/c10>
 )
 
 #
@@ -458,53 +483,54 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 # ${CMAKE_INSTALL_PREFIX}/
 install(
   DIRECTORY runtime/core/
-  DESTINATION include/executorch/runtime/core
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY runtime/executor/
-  DESTINATION include/executorch/runtime/executor
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/executor
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY runtime/kernel/
-  DESTINATION include/executorch/runtime/kernel
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/kernel
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY runtime/platform/
-  DESTINATION include/executorch/runtime/platform
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/platform
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY extension/kernel_util/
-  DESTINATION include/executorch/extension/kernel_util
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/kernel_util
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY extension/tensor/
-  DESTINATION include/executorch/extension/tensor
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/tensor
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   DIRECTORY extension/threadpool/
-  DESTINATION include/executorch/extension/threadpool
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/threadpool
   FILES_MATCHING
   PATTERN "*.h"
 )
 install(
   TARGETS executorch executorch_core
+  EXPORT ExecuTorchTargets
   INCLUDES
-  DESTINATION ${_common_include_directories}
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
-install(FILES tools/cmake/Utils.cmake tools/cmake/executorch-config.cmake
-        DESTINATION lib/cmake/ExecuTorch
+install(FILES tools/cmake/executorch-config.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
@@ -566,6 +592,12 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  install(
+    DIRECTORY extension/data_loader/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/data_loader
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
   list(APPEND _executorch_extensions extension_data_loader)
 endif()
 
@@ -588,7 +620,7 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
   install(
     DIRECTORY extension/module/
-    DESTINATION include/executorch/extension/module
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/module
     FILES_MATCHING
     PATTERN "*.h"
   )
@@ -596,7 +628,22 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+    set(SUPPORT_REGEX_LOOKAHEAD ON)
+    # llama/runner/CMakeLists.txt builds a shared library libllama_runner.so
+    # that transitively depends on tokenizers. Need to build tokenizers with
+    # -fPIC.
+    set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+        ${CMAKE_POSITION_INDEPENDENT_CODE}
+    )
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
+  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+    set(CMAKE_POSITION_INDEPENDENT_CODE
+        ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+    )
+  endif()
   list(APPEND _executorch_extensions tokenizers)
 endif()
 
@@ -608,6 +655,10 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
   list(APPEND _executorch_extensions extension_llm_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -717,8 +768,10 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
-  install(TARGETS portable_lib
-          LIBRARY DESTINATION executorch/extension/pybindings
+  install(
+    TARGETS portable_lib
+    EXPORT ExecuTorchTargets
+    LIBRARY DESTINATION executorch/extension/pybindings
   )
 endif()
 
@@ -741,8 +794,15 @@ endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
-  list(APPEND _executorch_backends vulkan_backend)
+  list(APPEND _executorch_backends vulkan_backend vulkan_schema)
 endif()
+
+if(EXECUTORCH_BUILD_VGF)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
+  list(APPEND _executorch_backends vgf_backend)
+endif()
+endif()
+
 
 # Top-level interface targets.
 
@@ -871,6 +931,12 @@ if(EXECUTORCH_BUILD_ANDROID_JNI)
 endif()
 
 include(Test.cmake)
+
+install(
+  EXPORT ExecuTorchTargets
+  FILE ExecuTorchTargets.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
+)
 
 # Print all the configs that were called with announce_configured_options.
 print_configured_options()
