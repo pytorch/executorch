@@ -83,13 +83,4 @@ install_prerequiresites() {
     pip_install --no-cache-dir west
 }
 
-install_sdk() {
-    wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.16.0/zephyr-sdk-0.16.0_linux-x86_64.tar.xz && \
-         tar -xf zephyr-sdk-0.16.0_linux-x86_64.tar.xz && \
-         rm -f zephyr-sdk-0.16.0_linux-x86_64.tar.xz && \
-         cd zephyr-sdk-0.16.0/ && \
-         ./setup.sh -c -t arm-zephyr-eabi
-}
-
 install_prerequiresites
-install_sdk
