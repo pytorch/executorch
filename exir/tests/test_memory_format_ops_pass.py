@@ -395,7 +395,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ),
         )
 
-    def test_clone_transforms_to_contiguous(self) -> None:
+    def test_clone_to_contiguous(self) -> None:
         model = SimpleCloneContiguousModule()
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
@@ -403,14 +403,14 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                 module=model.eval(),
                 op=torch.ops.aten.clone.default,
                 sample_input=(
-                    torch.randn((1, 3, 16, 16)).to(memory_format=torch.channels_last),
+                    torch.randn((3, 4, 5, 6)).to(memory_format=torch.channels_last),
                 ),
                 target_memory_format=torch.contiguous_format,
                 _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
             ),
         )
 
-    def test_clone_transforms_to_channels_last(self) -> None:
+    def test_clone_to_channels_last(self) -> None:
         model = SimpleCloneChannelsLastModule()
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
@@ -418,21 +418,62 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                 module=model.eval(),
                 op=torch.ops.aten.clone.default,
                 sample_input=(
-                    torch.randn((1, 3, 16, 16)).to(
-                        memory_format=torch.contiguous_format
-                    ),
+                    torch.randn((3, 4, 5, 6)).to(memory_format=torch.contiguous_format),
                 ),
                 target_memory_format=torch.channels_last,
                 _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
             ),
         )
 
-    def test_clone_dim_order_survives_clone_removal(self):
+    def test_clone_to_channels_last_survives(self):
+        clone_dim_order_op_str = (
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
+        )
+
         model = SimpleCloneChannelsLastModule()
-        x = torch.randn(1, 3, 24, 24).to(memory_format=torch.contiguous_format)
+        x = torch.randn(3, 4, 5, 6).to(memory_format=torch.contiguous_format)
+
         exported = export(model.eval(), (x,), strict=True)
-        epm = to_edge(exported, compile_config=EdgeCompileConfig(_skip_dim_order=False))
-        epm = epm.transform([MemoryFormatOpsPass()])
-        epm = epm.transform([RemoveCloneOpsTransform()])
-        out = epm.exported_program().module()(x)
-        assert is_channel_last_dim_order(out)
+        before_epm = to_edge(
+            exported, compile_config=EdgeCompileConfig(_skip_dim_order=False)
+        )
+
+        updated_epm = before_epm.transform([MemoryFormatOpsPass()])
+        updated_epm = updated_epm.transform([RemoveCloneOpsTransform()])
+
+        FileCheck().check_count(clone_dim_order_op_str, 1, exactly=True).run(
+            updated_epm.exported_program().graph_module.code
+        )
+
+        expected = before_epm.exported_program().module()(x)
+        actual = updated_epm.exported_program().module()(x)
+        assert torch.allclose(actual, expected)
+        assert is_channel_last_dim_order(actual)
+
+    def test_clone_removed_when_layout_unchanged(self):
+        clone_dim_order_op_str = (
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
+        )
+
+        model = SimpleCloneChannelsLastModule()
+        x = torch.randn(3, 4, 5, 6).to(memory_format=torch.channels_last)
+
+        exported = export(model.eval(), (x,), strict=True)
+        before_epm = to_edge(
+            exported, compile_config=EdgeCompileConfig(_skip_dim_order=False)
+        )
+
+        updated_epm = before_epm.transform([MemoryFormatOpsPass()])
+        FileCheck().check_count(clone_dim_order_op_str, 1, exactly=True).run(
+            updated_epm.exported_program().graph_module.code
+        )
+
+        updated_epm = updated_epm.transform([RemoveCloneOpsTransform()])
+        FileCheck().check_not(clone_dim_order_op_str).run(
+            updated_epm.exported_program().graph_module.code
+        )
+
+        expected = before_epm.exported_program().module()(x)
+        actual = updated_epm.exported_program().module()(x)
+        assert torch.allclose(actual, expected)
+        assert is_channel_last_dim_order(actual)
