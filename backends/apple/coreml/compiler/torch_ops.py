@@ -38,6 +38,7 @@ def unbind_copy(context, node):
     unbind(context, node)
 
 
+# https://github.com/apple/coremltools/pull/2563
 @register_torch_op(override=False)
 def split_copy(context, node):
     split(context, node)
