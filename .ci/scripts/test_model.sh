@@ -196,6 +196,9 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=bert
   elif [[ "${MODEL_NAME}" == "distilbert" ]]; then
     EXPORT_SCRIPT=distilbert
+  elif [[ "${MODEL_NAME}" == "conv_former" ]]; then
+    EXPORT_SCRIPT=conv_former
+    EXTRA_FLAGS="--dataset imagenet-mini/val"
   elif [[ "${MODEL_NAME}" == "eurobert" ]]; then
     EXPORT_SCRIPT=eurobert
   else
@@ -212,7 +215,7 @@ test_model_with_qnn() {
     "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
         SCRIPT_FOLDER=scripts
         ;;
-    "albert"|"bert"|"distilbert")
+    "albert"|"bert"|"distilbert" | "conv_former")
         pip install evaluate
         SCRIPT_FOLDER=oss_scripts
         # Bert models running in 16bit will encounter op validation fail on some operations,
