@@ -19,6 +19,7 @@ from torchao.quantization.pt2e.quantizer import (
     FixedQParamsQuantizationSpec,
     SharedQuantizationSpec,
 )
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 @dataclass
@@ -90,7 +91,7 @@ class SharedSpecPattern(QuantizationPattern):
         prev_node = fused_partition[0].input_nodes[0]
 
         # Previous node was not quantized => we are not able to share q-params
-        if "quantization_annotation" not in prev_node.meta:
+        if Q_ANNOTATION_KEY not in prev_node.meta:
             return None
 
         qspec = SharedQuantizationSpec(prev_node)
