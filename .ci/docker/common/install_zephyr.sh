@@ -81,6 +81,7 @@ install_prerequiresites() {
         ./kitware-archive.sh && \
         rm -f kitware-archive.sh
     pip_install --no-cache-dir west
+    pip_install pyelftools
 }
 
 install_prerequiresites
