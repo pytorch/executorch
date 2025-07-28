@@ -195,7 +195,6 @@ class NamedArgument:
 
 @dataclass
 class Node:
-    name: str
     target: str
     inputs: List[NamedArgument]
     outputs: List[Argument]

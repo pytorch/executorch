@@ -840,7 +840,9 @@ class StaticAttention(Attention):
 
         return y.transpose(1, 2).contiguous().view(bsz, seq_len, -1), out_cache_state
 
-    def load_weights_from_attention_mha(self, other: AttentionMHA):
+    def load_weights_from_attention_mha(
+        self, other: AttentionMHA, rms_norm_class=torch.nn.RMSNorm
+    ):
         if self.split_mha:
             for i in range(self.n_heads):
                 self.wqs[i].weight.data.copy_(
@@ -864,9 +866,13 @@ class StaticAttention(Attention):
         if other.use_qk_norm:
             self.use_qk_norm = True
             self.qk_norm_before_rope = other.qk_norm_before_rope
-            self.q_norm = torch.nn.RMSNorm(other.q_norm_fn.dim, other.q_norm_fn.eps)
+            self.q_norm = rms_norm_class(other.q_norm_fn.dim, other.q_norm_fn.eps).to(
+                other.q_norm_fn.weight.dtype
+            )
             self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
-            self.k_norm = torch.nn.RMSNorm(other.k_norm_fn.dim, other.k_norm_fn.eps)
+            self.k_norm = rms_norm_class(other.k_norm_fn.dim, other.k_norm_fn.eps).to(
+                other.k_norm_fn.weight.dtype
+            )
             self.k_norm.load_state_dict(other.k_norm_fn.state_dict())
 
     def adopt_hf_rope(self):
