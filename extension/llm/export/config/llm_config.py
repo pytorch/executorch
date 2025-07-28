@@ -73,10 +73,16 @@ class BaseConfig:
             if it is a Llama model or the weights will be downloaded from HuggingFace
             if it is a non-Llama model.
         checkpoint_dir: Path to directory containing sharded checkpoint files.
+        adapter_checkpoint: Path to the adapter.pt file from torchtune. Used if
+            the model has trained LoRA adapters. Must provide
+            adapter_config.json.
+        adapter_config: Path to the adapter_config.json file from torchtune.
+            Used if the model has trained LoRA adapters. Must provide adapter.pt.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
             e.g. '"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
-        use_lora: Rank of the LoRA, if set to 0 then this means no LoRA. For use with QAT.
+        use_lora: Only for use with QAT. Rank of the LoRA adapter, disabled
+            if set to 0.
         fairseq2: For legacy internal use cases, this is safe to ignore.
         preq_mode: Legacy option to specify how prequantized weights are loaded.
             Going forward, ExecuTorch supports loading weights prequantized through
@@ -90,6 +96,8 @@ class BaseConfig:
     params: Optional[str] = None
     checkpoint: Optional[str] = None
     checkpoint_dir: Optional[str] = None
+    adapter_checkpoint: Optional[str] = None
+    adapter_config: Optional[str] = None
     tokenizer_path: Optional[str] = None
     metadata: Optional[str] = None
     use_lora: int = 0
