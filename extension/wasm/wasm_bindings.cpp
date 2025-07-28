@@ -14,12 +14,19 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <numeric>
 
-#define THROW_JS_ERROR(errorType, message, ...)                 \
-  ({                                                            \
-    char msg_buf[256];                                          \
-    snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
-    EM_ASM(throw new errorType(UTF8ToString($0)), msg_buf);     \
-    __builtin_unreachable();                                    \
+#define THROW_JS_ERROR(errorType, message, ...)                           \
+  ({                                                                      \
+    char msg_buf[256];                                                    \
+    int len = snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
+    if (len < sizeof(msg_buf)) {                                          \
+      EM_ASM(throw new errorType(UTF8ToString($0)), msg_buf);             \
+    } else {                                                              \
+      std::string msg;                                                    \
+      msg.resize(len);                                                    \
+      snprintf(&msg[0], len + 1, message, ##__VA_ARGS__);                 \
+      EM_ASM(throw new errorType(UTF8ToString($0)), msg.c_str());         \
+    }                                                                     \
+    __builtin_unreachable();                                              \
   })
 
 /// Throws a JavaScript Error with the provided message if `error` is not `Ok`.
