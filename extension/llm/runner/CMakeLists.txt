@@ -52,8 +52,39 @@ add_subdirectory(
   ${EXECUTORCH_ROOT}/extension/llm/tokenizers
   ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/tokenizers
 )
-
 set(runner_deps executorch_core extension_module extension_tensor tokenizers)
+
+if(EXECUTORCH_BUILD_PYBIND)
+  # Pybind library.
+  set(runner_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch util
+                                torch extension_llm_runner
+  )
+
+  if(EXECUTORCH_BUILD_XNNPACK)
+    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
+    # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+    list(APPEND runner_dep_libs xnnpack_backend XNNPACK
+         xnnpack-microkernels-prod
+    )
+  endif()
+
+  # pybind training
+  pybind11_add_module(
+    runner SHARED
+    ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings.cpp
+  )
+
+  target_include_directories(runner PRIVATE ${TORCH_INCLUDE_DIRS})
+  target_compile_options(
+    runner PUBLIC -Wno-deprecated-declarations -fPIC -frtti -fexceptions
+  )
+  target_link_libraries(runner PRIVATE ${runner_dep_libs})
+
+  install(TARGETS extension_llm_runner
+          LIBRARY DESTINATION executorch/extension/training/pybindings
+  )
+endif()
+
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
 set_target_properties(extension_llm_runner PROPERTIES POSITION_INDEPENDENT_CODE ON)

@@ -733,7 +733,8 @@ class CustomBuild(build):
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_TRAINING"):
             cmake_build_args += ["--target", "_training_lib"]
-
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
+            cmake_build_args += ["--target", "runner"]
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREML"):
             cmake_build_args += ["--target", "executorchcoreml"]
 
@@ -790,6 +791,11 @@ setup(
             src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
             modpath="executorch.extension.training.pybindings._training_lib",
             dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_TRAINING"],
+        ),
+        BuiltExtension(
+            src="extension/llm/runner/python_bindings*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
+            modpath="executorch.extension.llm.runner",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_RUNNER"],
         ),
         BuiltExtension(
             src="codegen/tools/selective_build.*",
