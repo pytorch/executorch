@@ -647,11 +647,6 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _executorch_extensions tokenizers)
 endif()
 
-if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
-  list(APPEND _executorch_extensions extension_llm_apple)
-endif()
-
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
   list(APPEND _executorch_extensions extension_llm_runner)
@@ -659,6 +654,7 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
+  list(APPEND _executorch_extensions extension_llm_apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -802,7 +798,6 @@ if(EXECUTORCH_BUILD_VGF)
   list(APPEND _executorch_backends vgf_backend)
 endif()
 
-
 # Top-level interface targets.
 
 # A target containing all configured backends.
@@ -869,17 +864,10 @@ else()
 endif()
 target_link_libraries(executorch_kernels INTERFACE ${_executorch_kernels})
 
-install(
-  TARGETS executorch_backends executorch_extensions executorch_kernels
-  INCLUDES
-  DESTINATION ${_common_include_directories}
-)
-
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch extension_evalue_util
-                            extension_runner_util gflags
-                            executorch_backends
+                            extension_runner_util gflags executorch_backends
   )
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
