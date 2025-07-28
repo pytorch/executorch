@@ -35,9 +35,7 @@ class IntermediateOutputCapturer(Interpreter):
 
         def capture_run_node(n: torch.fx.Node) -> Any:
             result = super(IntermediateOutputCapturer, self).run_node(n)
-            print(f"n: {n}, result: {result}")
             if all(filter.matches(n) for filter in self.node_filters):
-                print("matched")
                 debug_handle = n.meta["debug_handle"]
                 # Convert the debug handle to a tuple to use as a dictionary key
                 key = (

@@ -486,7 +486,7 @@ class TestInspector(unittest.TestCase):
             input_tensor = torch.tensor(
                 [[[[1.0, 2.0], [3.0, 4.0]]]], requires_grad=True
             )
-            aten_model: ExportedProgram = export(mod, (input_tensor,))
+            aten_model: ExportedProgram = export(mod, (input_tensor,), strict=True)
             edge_program_manager: EdgeProgramManager = to_edge(
                 aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
             )
