@@ -589,8 +589,15 @@ jobs:
 
         # Set model specific overrides
         if [[ "${MODEL_NAME}" == "mobilebert" ]]; then
+          # See https://github.com/pytorch/executorch/issues/12907
           # mobilebert has nan output on FP16, and high MSE on fp32, so we disable runtime test now
-          BACKEND="coreml-pybind-float32"
+          BACKEND="coreml"
+        fi
+
+        if [[ "${MODEL_NAME}" == "efficient_sam" ]]; then
+          # See https://github.com/pytorch/executorch/issues/12906
+          # efficient_sam fails to run on CoreML
+          BACKEND="coreml"
         fi
 
         bash .ci/scripts/setup-conda.sh
