@@ -79,6 +79,22 @@ describe("Tensor", () => {
         expect(tensor.scalarType).toEqual(et.ScalarType.Long);
         tensor.delete();
     });
+
+    test("with dim order and strides", () => {
+        const tensor = et.Tensor.fromArray([2, 2], [1, 2, 3, 4], et.ScalarType.Float, [0, 1], [2, 1]);
+        expect(tensor.data).toEqual(new Float32Array([1, 2, 3, 4]));
+        expect(tensor.sizes).toEqual([2, 2]);
+        tensor.delete();
+    });
+
+    test("incorrect dim order", () => {
+        expect(() => et.Tensor.fromArray([2, 2], [1, 2, 3, 4], et.ScalarType.Float, [1])).toThrow();
+        expect(() => et.Tensor.fromArray([2, 2], [1, 2, 3, 4], et.ScalarType.Float, [1, 2])).toThrow();
+    });
+
+    test("incorrect strides", () => {
+        expect(() => et.Tensor.fromArray([2, 2], [1, 2, 3, 4], et.ScalarType.Float, [1, 1], [2, 1])).toThrow();
+    });
 });
 
 describe("Module", () => {
