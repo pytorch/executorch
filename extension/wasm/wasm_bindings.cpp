@@ -11,13 +11,22 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <numeric>
 
-#define THROW_JS_ERROR(errorType, message, ...)                 \
-  ({                                                            \
-    char msg_buf[256];                                          \
-    snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
-    EM_ASM(throw new errorType(UTF8ToString($0)), msg_buf);     \
-    __builtin_unreachable();                                    \
+#define THROW_JS_ERROR(errorType, message, ...)                           \
+  ({                                                                      \
+    char msg_buf[256];                                                    \
+    int len = snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
+    if (len < sizeof(msg_buf)) {                                          \
+      EM_ASM(throw new errorType(UTF8ToString($0)), msg_buf);             \
+    } else {                                                              \
+      std::string msg;                                                    \
+      msg.resize(len);                                                    \
+      snprintf(&msg[0], len + 1, message, ##__VA_ARGS__);                 \
+      EM_ASM(throw new errorType(UTF8ToString($0)), msg.c_str());         \
+    }                                                                     \
+    __builtin_unreachable();                                              \
   })
 
 /// Throws a JavaScript Error with the provided message if `error` is not `Ok`.
@@ -83,6 +92,8 @@ inline void assert_valid_numel(
       data.size());
 }
 
+constexpr size_t MAX_ELEMENTS = 8 * 1024 * 1024;
+
 template <typename T>
 std::vector<T> convertJSGeneratorToNumberVector(val generator) {
   std::vector<T> data;
@@ -92,8 +103,59 @@ std::vector<T> convertJSGeneratorToNumberVector(val generator) {
       break;
     }
     data.push_back(next["value"].as<T>());
+    if (data.size() >= MAX_ELEMENTS) {
+      THROW_JS_ERROR(
+          RangeError,
+          "Generator exceeded maximum element count of %zu",
+          MAX_ELEMENTS);
+    }
   }
   return data;
+}
+
+// make_tensor_ptr() assertions will abort the program if they fail.
+// These checks will throw a JS error instead.
+void assert_dim_order_and_strides_valid(
+    const std::vector<executorch::aten::SizesType>& sizes,
+    std::vector<executorch::aten::DimOrderType>& dim_order,
+    std::vector<executorch::aten::StridesType>& strides) {
+  THROW_IF_FALSE(
+      dim_order.size() == 0 || dim_order.size() == sizes.size(),
+      "dim_order size must match sizes or be empty.");
+  THROW_IF_FALSE(
+      strides.size() == 0 || strides.size() == sizes.size(),
+      "strides size must match sizes or be empty.");
+
+  if (dim_order.empty()) {
+    dim_order.resize(sizes.size());
+    std::iota(dim_order.begin(), dim_order.end(), 0);
+    if (!strides.empty()) {
+      std::sort(dim_order.begin(), dim_order.end(), [&](size_t a, size_t b) {
+        return strides[a] > strides[b];
+      });
+    }
+  }
+  std::vector<executorch::aten::StridesType> computed_strides(sizes.size());
+
+  auto error = runtime::dim_order_to_stride(
+      sizes.data(), dim_order.data(), sizes.size(), computed_strides.data());
+  THROW_IF_ERROR(error, "Failed to compute strides.");
+
+  if (!strides.empty()) {
+    for (size_t i = 0; i < sizes.size(); i++) {
+      THROW_IF_FALSE(
+          strides[i] == computed_strides[i] || sizes[i] == 1,
+          "invalid strides for dim %zu: %" ET_PRI_SIZES_AND_STRIDES
+          "!= %" ET_PRI_SIZES_AND_STRIDES
+          " while its size is %" ET_PRI_SIZES_AND_STRIDES " != 1",
+          i,
+          strides[i],
+          computed_strides[i],
+          sizes[i]);
+    }
+  }
+
+  strides = std::move(computed_strides);
 }
 
 /**
@@ -136,13 +198,20 @@ class ET_EXPERIMENTAL JsTensor {
     return val::array(get_tensor().sizes().begin(), get_tensor().sizes().end());
   }
 
+  static std::unique_ptr<JsTensor> full(val_array<int> sizes, val fill_value) {
+    // If type is unspecified, infer the type from the fill value.
+    // Assume it is a Bigint if not Number.
+    return full(
+        sizes,
+        fill_value,
+        fill_value.isNumber() ? ScalarType::Float : ScalarType::Long);
+  }
+
   static std::unique_ptr<JsTensor>
-  full(val_array<int> sizes, val fill_value, val type = val::undefined()) {
+  full(val_array<int> sizes, val fill_value, ScalarType type) {
     auto sizes_vec =
         convertJSArrayToNumberVector<executorch::aten::SizesType>(sizes);
-    ScalarType scalar_type =
-        type.isUndefined() ? ScalarType::Float : type.as<ScalarType>();
-    switch (scalar_type) {
+    switch (type) {
 #define JS_CASE_FULL_VECTOR_TYPE(T, NAME)                                 \
   case ScalarType::NAME: {                                                \
     TensorPtr tensor =                                                    \
@@ -151,57 +220,76 @@ class ET_EXPERIMENTAL JsTensor {
   }
       JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_CASE_FULL_VECTOR_TYPE)
       default:
-        THROW_JS_ERROR(TypeError, "Unsupported Tensor type: %d", scalar_type);
+        THROW_JS_ERROR(TypeError, "Unsupported Tensor type: %d", type);
     }
+  }
+
+  static std::unique_ptr<JsTensor> zeros(val_array<int> sizes) {
+    return zeros(sizes, ScalarType::Float);
   }
 
   static std::unique_ptr<JsTensor> zeros(
       val_array<int> sizes,
-      val type = val::undefined()) {
+      ScalarType type) {
     auto sizes_vec =
         convertJSArrayToNumberVector<executorch::aten::SizesType>(sizes);
-    ScalarType scalar_type =
-        type.isUndefined() ? ScalarType::Float : type.as<ScalarType>();
-    TensorPtr tensor = extension::zeros(sizes_vec, scalar_type);
+    TensorPtr tensor = extension::zeros(sizes_vec, type);
     return std::make_unique<JsTensor>(std::move(tensor));
   }
 
-  static std::unique_ptr<JsTensor> ones(
-      val_array<int> sizes,
-      val type = val::undefined()) {
+  static std::unique_ptr<JsTensor> ones(val_array<int> sizes) {
+    return ones(sizes, ScalarType::Float);
+  }
+
+  static std::unique_ptr<JsTensor> ones(val_array<int> sizes, ScalarType type) {
     auto sizes_vec =
         convertJSArrayToNumberVector<executorch::aten::SizesType>(sizes);
-    ScalarType scalar_type =
-        type.isUndefined() ? ScalarType::Float : type.as<ScalarType>();
-    TensorPtr tensor = extension::ones(sizes_vec, scalar_type);
+    TensorPtr tensor = extension::ones(sizes_vec, type);
     return std::make_unique<JsTensor>(std::move(tensor));
   }
 
   static std::unique_ptr<JsTensor> from_array(
       val_array<int> sizes,
+      val_array<val> data) {
+    // If type is unspecified, infer the type from the data.
+    // Assume it is a Bigint if not Number.
+    return from_array(
+        sizes,
+        data,
+        data["length"].as<size_t>() == 0 || data[0].isNumber()
+            ? ScalarType::Float
+            : ScalarType::Long);
+  }
+
+  static std::unique_ptr<JsTensor>
+  from_array(val_array<int> sizes, val_array<val> data, ScalarType type) {
+    return from_array(sizes, data, type, val::array());
+  }
+
+  static std::unique_ptr<JsTensor> from_array(
+      val_array<int> sizes,
       val_array<val> data,
-      val type = val::undefined(),
-      val_array<int> dim_order = val::undefined(),
-      val_array<int> strides = val::undefined()) {
+      ScalarType type,
+      val_array<int> dim_order) {
+    return from_array(sizes, data, type, dim_order, val::array());
+  }
+
+  static std::unique_ptr<JsTensor> from_array(
+      val_array<int> sizes,
+      val_array<val> data,
+      ScalarType type,
+      val_array<int> dim_order,
+      val_array<int> strides) {
     auto sizes_vec =
         convertJSArrayToNumberVector<executorch::aten::SizesType>(sizes);
 
-    auto dim_order_vec = dim_order.isUndefined()
-        ? std::vector<executorch::aten::DimOrderType>()
-        : convertJSArrayToNumberVector<executorch::aten::DimOrderType>(
-              dim_order);
-    auto strides_vec = strides.isUndefined()
-        ? std::vector<executorch::aten::StridesType>()
-        : convertJSArrayToNumberVector<executorch::aten::StridesType>(strides);
+    auto dim_order_vec =
+        convertJSArrayToNumberVector<executorch::aten::DimOrderType>(dim_order);
+    auto strides_vec =
+        convertJSArrayToNumberVector<executorch::aten::StridesType>(strides);
 
-    // If type is undefined, infer the type from the data.
-    // Assume it is a Bigint if not Number.
-    ScalarType scalar_type = type.isUndefined()
-        ? (data["length"].as<size_t>() == 0 || data[0].isNumber()
-               ? ScalarType::Float
-               : ScalarType::Long)
-        : type.as<ScalarType>();
-    switch (scalar_type) {
+    assert_dim_order_and_strides_valid(sizes_vec, dim_order_vec, strides_vec);
+    switch (type) {
 #define JS_CASE_FROM_ARRAY_VECTOR_TYPE(T, NAME)            \
   case ScalarType::NAME: {                                 \
     auto data_vec = convertJSArrayToNumberVector<T>(data); \
@@ -216,35 +304,45 @@ class ET_EXPERIMENTAL JsTensor {
   }
       JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_CASE_FROM_ARRAY_VECTOR_TYPE)
       default:
-        THROW_JS_ERROR(TypeError, "Unsupported Tensor type: %d", scalar_type);
+        THROW_JS_ERROR(TypeError, "Unsupported Tensor type: %d", type);
     }
   }
 
   static std::unique_ptr<JsTensor> from_iter(
       val_array<int> sizes,
+      val_array<val> data) {
+    return from_iter(sizes, data, ScalarType::Float);
+  }
+
+  static std::unique_ptr<JsTensor>
+  from_iter(val_array<int> sizes, val_array<val> data, ScalarType type) {
+    return from_iter(sizes, data, type, val::array());
+  }
+
+  static std::unique_ptr<JsTensor> from_iter(
+      val_array<int> sizes,
       val_array<val> data,
-      val type = val::undefined(),
-      val_array<int> dim_order = val::undefined(),
-      val_array<int> strides = val::undefined()) {
+      ScalarType type,
+      val_array<int> dim_order) {
+    return from_iter(sizes, data, type, dim_order, val::array());
+  }
+
+  static std::unique_ptr<JsTensor> from_iter(
+      val_array<int> sizes,
+      val_array<val> data,
+      ScalarType type,
+      val_array<int> dim_order,
+      val_array<int> strides) {
     auto sizes_vec =
         convertJSArrayToNumberVector<executorch::aten::SizesType>(sizes);
+    auto dim_order_vec =
+        convertJSArrayToNumberVector<executorch::aten::DimOrderType>(dim_order);
+    auto strides_vec =
+        convertJSArrayToNumberVector<executorch::aten::StridesType>(strides);
 
-    auto dim_order_vec = dim_order.isUndefined()
-        ? std::vector<executorch::aten::DimOrderType>()
-        : convertJSArrayToNumberVector<executorch::aten::DimOrderType>(
-              dim_order);
-    auto strides_vec = strides.isUndefined()
-        ? std::vector<executorch::aten::StridesType>()
-        : convertJSArrayToNumberVector<executorch::aten::StridesType>(strides);
+    assert_dim_order_and_strides_valid(sizes_vec, dim_order_vec, strides_vec);
 
-    // If type is undefined, infer the type from the data.
-    // Assume it is a Bigint if not Number.
-    ScalarType scalar_type = type.isUndefined()
-        ? (data["length"].as<size_t>() == 0 || data[0].isNumber()
-               ? ScalarType::Float
-               : ScalarType::Long)
-        : type.as<ScalarType>();
-    switch (scalar_type) {
+    switch (type) {
 #define JS_CASE_FROM_ITER_VECTOR_TYPE(T, NAME)                 \
   case ScalarType::NAME: {                                     \
     auto data_vec = convertJSGeneratorToNumberVector<T>(data); \
@@ -259,7 +357,7 @@ class ET_EXPERIMENTAL JsTensor {
   }
       JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_CASE_FROM_ITER_VECTOR_TYPE)
       default:
-        THROW_JS_ERROR(TypeError, "Unsupported Tensor type: %d", scalar_type);
+        THROW_JS_ERROR(TypeError, "Unsupported Tensor type: %d", type);
     }
   }
 
@@ -294,7 +392,7 @@ EValue to_evalue(val v) {
 }
 
 // Converts EValue to JS value.
-val to_val(EValue v) {
+val to_val(EValue&& v) {
   if (v.isNone()) {
     return val::null();
   } else if (v.isInt()) {
@@ -304,7 +402,7 @@ val to_val(EValue v) {
   } else if (v.isBool()) {
     return val(v.toBool());
   } else if (v.isTensor()) {
-    Tensor tensor = v.toTensor();
+    Tensor tensor = std::move(v).toTensor();
     std::unique_ptr<JsTensor> wrapper =
         std::make_unique<JsTensor>(std::move(tensor));
     return val(std::move(wrapper));
@@ -518,11 +616,59 @@ EMSCRIPTEN_BINDINGS(WasmBindings) {
       .function("execute", &JsModule::execute)
       .function("forward", &JsModule::forward);
   class_<JsTensor>("Tensor")
-      .class_function("zeros", &JsTensor::zeros)
-      .class_function("ones", &JsTensor::ones)
-      .class_function("full", &JsTensor::full)
-      .class_function("fromArray", &JsTensor::from_array)
-      .class_function("fromIter", &JsTensor::from_iter)
+      .class_function(
+          "zeros",
+          select_overload<std::unique_ptr<JsTensor>(val)>(&JsTensor::zeros))
+      .class_function(
+          "zeros",
+          select_overload<std::unique_ptr<JsTensor>(val, ScalarType)>(
+              &JsTensor::zeros))
+      .class_function(
+          "ones",
+          select_overload<std::unique_ptr<JsTensor>(val)>(&JsTensor::ones))
+      .class_function(
+          "ones",
+          select_overload<std::unique_ptr<JsTensor>(val, ScalarType)>(
+              &JsTensor::ones))
+      .class_function(
+          "full",
+          select_overload<std::unique_ptr<JsTensor>(val, val)>(&JsTensor::full))
+      .class_function(
+          "full",
+          select_overload<std::unique_ptr<JsTensor>(val, val, ScalarType)>(
+              &JsTensor::full))
+      .class_function(
+          "fromArray",
+          select_overload<std::unique_ptr<JsTensor>(val, val)>(
+              &JsTensor::from_array))
+      .class_function(
+          "fromArray",
+          select_overload<std::unique_ptr<JsTensor>(val, val, ScalarType)>(
+              &JsTensor::from_array))
+      .class_function(
+          "fromArray",
+          select_overload<std::unique_ptr<JsTensor>(val, val, ScalarType, val)>(
+              &JsTensor::from_array))
+      .class_function(
+          "fromArray",
+          select_overload<std::unique_ptr<JsTensor>(
+              val, val, ScalarType, val, val)>(&JsTensor::from_array))
+      .class_function(
+          "fromIter",
+          select_overload<std::unique_ptr<JsTensor>(val, val)>(
+              &JsTensor::from_iter))
+      .class_function(
+          "fromIter",
+          select_overload<std::unique_ptr<JsTensor>(val, val, ScalarType)>(
+              &JsTensor::from_iter))
+      .class_function(
+          "fromIter",
+          select_overload<std::unique_ptr<JsTensor>(val, val, ScalarType, val)>(
+              &JsTensor::from_iter))
+      .class_function(
+          "fromIter",
+          select_overload<std::unique_ptr<JsTensor>(
+              val, val, ScalarType, val, val)>(&JsTensor::from_iter))
       .property("scalarType", &JsTensor::get_scalar_type)
       .property("data", &JsTensor::get_data)
       .property("sizes", &JsTensor::get_sizes);
