@@ -18,8 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-models-macos:
-    name: test-models-macos
+  test-models-macos-cpu:
+    name: test-models-macos-cpu
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
@@ -568,8 +568,42 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
-  test-apple-model:
-    name: test-apple-model
+  test-models-macos-coreml:
+    name: test-models-macos-coreml
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      matrix:
+        model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
+      fail-fast: false
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=cmake
+        BACKEND="coreml-pybind"
+
+
+        # Set model specific overrides
+        if [[ "${MODEL_NAME}" == "mobilebert" ]]; then
+          # mobilebert has nan output on FP16, and high MSE on fp32, so we disable runtime test now
+          BACKEND="coreml-pybind-float32"
+        fi
+
+        bash .ci/scripts/setup-conda.sh
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
+        echo "Finishing installing coreml."
+
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+
+  test-models-macos-mps:
+    name: test-models-macos-mps
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       fail-fast: false
@@ -581,26 +615,10 @@ jobs:
       timeout: 90
       script: |
         BUILD_TOOL=cmake
-
         bash .ci/scripts/setup-conda.sh
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
-        echo "Finishing installing coreml."
-
-        # Build and test coreml model
-        for MODEL_NAME in dl3 edsr emformer_join ic3 ic4 mobilebert mv2 mv3 resnet50 vit w2l; do
-          echo "::group::Exporting coreml model: $MODEL_NAME"
-          if [[ "${MODEL_NAME}" == "mobilebert" ]]; then
-            # mobilebert has nan output on FP16
-            BACKEND="coreml"
-          else
-            BACKEND="coreml-pybind"
-          fi
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
-          echo "::endgroup::"
-        done
 
         # Build and test mps model
         for MODEL_NAME in mv3 ic4 resnet50 edsr mobilebert w2l; do

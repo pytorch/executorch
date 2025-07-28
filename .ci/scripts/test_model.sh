@@ -233,6 +233,7 @@ test_model_with_qnn() {
 test_model_with_coreml() {
   local should_test="$1"
   local test_with_pybindings="$2"
+  local dtype="$3"
 
   if [[ "${BUILD_TOOL}" != "cmake" ]]; then
     echo "coreml only supports cmake."
@@ -245,7 +246,7 @@ test_model_with_coreml() {
     export RUN_WITH_PYBINDINGS="--run_with_pybindings"
   fi
 
-  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision float16 --use_partitioner ${RUN_WITH_PYBINDINGS}
+  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision ${dtype} --use_partitioner ${RUN_WITH_PYBINDINGS}
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 
   if [ -n "$EXPORTED_MODEL" ]; then
@@ -309,7 +310,11 @@ elif [[ "${BACKEND}" == *"coreml"* ]]; then
   if [[ "${BACKEND}" == *"pybind"* ]]; then
     test_with_pybindings=true
   fi
-  test_model_with_coreml "${should_test_coreml}" "${test_with_pybindings}"
+  dtype=float16
+  if [[ "${BACKEND}" == *"float32"* ]]; then
+    dtype=float32
+  fi
+  test_model_with_coreml "${should_test_coreml}" "${test_with_pybindings}" "${dtype}"
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
