@@ -9,6 +9,7 @@
 #pragma once
 #include <c10/util/irange.h>
 
+#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -74,6 +75,29 @@ void as_strided_copy(
     out_data[0] = in_data[0];
   } else {
     _as_strided_copy<CTYPE>(in_data, out_data, out, size, stride, 0);
+  }
+}
+
+/**
+ * Copies and casts a tensor while preserving input dim_order.
+ */
+template <typename SELF_CTYPE, typename OUT_CTYPE>
+void _to_dim_order_copy_impl(const Tensor& self, Tensor& out) {
+  auto self_data = self.mutable_data_ptr<SELF_CTYPE>();
+  auto out_data = out.mutable_data_ptr<OUT_CTYPE>();
+
+  // Here we make a slightly off-label use of
+  // BroadcastIndexesRange. It always assumes it doesn't have to care
+  // about different dim_order between input and output, but we can
+  // just force it to respect strides (and thus dim_order) for its
+  // inputs using support_noncontiguous_input_tensors=true, and then pretend
+  // the output is just another input.
+  for (const auto [unused_index, self_data_index, out_data_index] :
+       BroadcastIndexesRange<2, /*support_noncontiguous_input_tensors=*/true>(
+           /*dummy output*/ self, self, out)) {
+    (void)unused_index;
+    out_data[out_data_index] =
+        static_cast<OUT_CTYPE>(self_data[self_data_index]);
   }
 }
 
@@ -205,13 +229,6 @@ bool check_to_copy_args(
     Tensor& out);
 
 bool check__to_dim_order_copy_args(
-    const Tensor& input,
-    bool non_blocking,
-    executorch::aten::OptionalArrayRef<int64_t> dim_order,
-    Tensor& out);
-
-// TODO Create shared helper - check__to_dim_order_copy_args()
-bool check__clone_dim_order_args(
     const Tensor& input,
     bool non_blocking,
     executorch::aten::OptionalArrayRef<int64_t> dim_order,
