@@ -146,6 +146,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_VGF "Build the Arm VGF backend" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." BOOL
   OFF
 )
