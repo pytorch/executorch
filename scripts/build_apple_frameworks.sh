@@ -160,8 +160,8 @@ set_cmake_options_override() {
       "-DEXECUTORCH_BUILD_MPS=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
-      "-DEXECUTORCH_BUILD_XNNPACK=OFF"
       "-DEXECUTORCH_BUILD_KERNELS_TORCHAO=OFF"
+      "-DEXECUTORCH_BUILD_XNNPACK=OFF"
     )
   fi
 
@@ -218,14 +218,14 @@ for preset_index in "${!PRESETS[@]}"; do
     # Do NOT add options here. Update the respective presets instead.
     cmake -S "${SOURCE_ROOT_DIR}" \
           -B "${preset_output_dir}" \
-          --fresh \
           -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
           -DCMAKE_BUILD_TYPE="${mode}" \
           ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
           --preset "${preset}"
 
     cmake --build "${preset_output_dir}" \
-          --config "${mode}"
+          --config "${mode}" \
+          -j$(sysctl -n hw.ncpu)
   done
 done
 
@@ -238,7 +238,7 @@ mkdir -p "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 "$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
   //extension/module: \
   //extension/tensor: \
-| rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
+  rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_ABSOLUTE_PATH/executorch"
 
 # HACK: XCFrameworks don't appear to support exporting any build
 # options, but we need the following:
@@ -248,31 +248,18 @@ mkdir -p "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
 ' \
-"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
-"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h" \
-"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Export.h"
+  "$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
+  "$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h" \
+  "$HEADERS_ABSOLUTE_PATH/executorch/runtime/core/portable_type/c10/torch/standalone/macros/Export.h"
 
 cp -r $FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/"
 cp -r $FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/"
 
 cp "$SOURCE_ROOT_DIR/extension/apple/$FRAMEWORK_EXECUTORCH_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 
-cat > "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/module.modulemap" << EOF
-module ${FRAMEWORK_EXECUTORCH_MODULE_NAME} {
-  umbrella header "${FRAMEWORK_EXECUTORCH_MODULE_NAME}/${FRAMEWORK_EXECUTORCH_MODULE_NAME}.h"
-  export *
-}
-EOF
-
-# FRAMEWORK_EXECUTORCH_LLM
-
-mkdir -p "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME"
-
-cp "$SOURCE_ROOT_DIR/extension/llm/apple/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME"
-
-cat > "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME/module.modulemap" << EOF
-module ${FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME} {
-  umbrella header "${FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME}.h"
+cat > "$HEADERS_ABSOLUTE_PATH/module.modulemap" << 'EOF'
+module ExecuTorch {
+  umbrella header "ExecuTorch/ExecuTorch.h"
   export *
 }
 EOF
@@ -294,10 +281,10 @@ append_framework_flag() {
   fi
 
   if [[ -n "$mode" && "$mode" != "Release" ]]; then
-    local name spec
-    name=$(echo "$framework" | cut -d: -f1)
-    spec=$(echo "$framework" | cut -d: -f2-)
-    framework="${name}_$(echo "$mode" | tr '[:upper:]' '[:lower:]'):${spec}"
+      local name spec
+      name=$(echo "$framework" | cut -d: -f1)
+      spec=$(echo "$framework" | cut -d: -f2-)
+      framework="${name}_$(echo "$mode" | tr '[:upper:]' '[:lower:]'):${spec}"
   fi
   echo "Adding framework: ${framework}"
   FRAMEWORK_FLAGS+=("--framework=$framework")
