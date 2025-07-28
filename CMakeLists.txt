@@ -801,7 +801,6 @@ if(EXECUTORCH_BUILD_VGF)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
   list(APPEND _executorch_backends vgf_backend)
 endif()
-endif()
 
 
 # Top-level interface targets.
