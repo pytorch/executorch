@@ -7,6 +7,8 @@
 # keep sorted
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM ON)
