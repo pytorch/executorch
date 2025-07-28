@@ -49,7 +49,7 @@ if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
 elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
 else
-    echo "Error: Invalid toolchain selection, provided: ${tolchain}"
+    echo "Error: Invalid toolchain selection, provided: ${toolchain}"
     echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
     exit 1;
 fi
