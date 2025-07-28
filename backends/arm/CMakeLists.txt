@@ -80,7 +80,7 @@ target_compile_options(vgf_backend PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOL
 
 target_link_libraries(vgf_backend PRIVATE executorch_core)
 target_link_libraries(vgf_backend PRIVATE vgf)
-target_link_options_shared_lib(vgf_backend)
+executorch_target_link_options_shared_lib(vgf_backend)
 
 # end config for VGF builds
 endif()
