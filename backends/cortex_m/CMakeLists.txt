@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Kernel library for Cortex-M operators. Please keep this file formatted by running:
+# Kernel library for Cortex-M operators. Please keep this file formatted by
+# running:
 # ~~~
 # cmake-format -i CMakeLists.txt
 # ~~~
@@ -29,8 +30,8 @@ set(_cortex_m_kernels__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
 )
 
-# Generate C++ bindings to register kernels into Executorch (for runtime).
-# Here select all ops in operators.yaml
+# Generate C++ bindings to register kernels into Executorch (for runtime). Here
+# select all ops in operators.yaml
 set(_yaml_file ${CMAKE_CURRENT_LIST_DIR}/ops/operators.yaml)
 gen_selected_ops(LIB_NAME "cortex_m_ops_lib" OPS_SCHEMA_YAML "${_yaml_file}")
 

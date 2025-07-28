@@ -37,8 +37,9 @@ add_custom_command(
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
     --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
-    ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules "ModuleAddMul"
-    --backend_id "StubBackend" --outdir "${CMAKE_CURRENT_BINARY_DIR}/delegated/" || true
+    ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules
+    "ModuleAddMul" --backend_id "StubBackend" --outdir
+    "${CMAKE_CURRENT_BINARY_DIR}/delegated/" || true
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
@@ -161,20 +162,11 @@ target_include_directories(
 
 list(TRANSFORM _test_backend_compiler_lib__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(
-  test_backend_compiler_lib
-  STATIC
-  ${_test_backend_compiler_lib__srcs}
+  test_backend_compiler_lib STATIC ${_test_backend_compiler_lib__srcs}
 )
 
-target_link_libraries(
-  test_backend_compiler_lib
-  PUBLIC
-  executorch_core
-)
+target_link_libraries(test_backend_compiler_lib PUBLIC executorch_core)
 
 executorch_target_link_options_shared_lib(test_backend_compiler_lib)
 
-install(
-  TARGETS test_backend_compiler_lib
-  DESTINATION lib
-)
+install(TARGETS test_backend_compiler_lib DESTINATION lib)
