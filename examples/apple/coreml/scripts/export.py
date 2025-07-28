@@ -222,7 +222,7 @@ def main():
     compile_specs = generate_compile_specs_from_args(args)
     pte_base_name = get_pte_base_name(args)
     if args.use_partitioner:
-        model.eval()
+        model = model.eval()
         assert not args.generate_etrecord, "ETRecord is not supported with partitioner"
         ep = torch.export.export(
             model,
@@ -230,6 +230,7 @@ def main():
             kwargs=example_kwargs,
             dynamic_shapes=dynamic_shapes,
         )
+        print(ep)
         delegated_program = exir.to_edge_transform_and_lower(
             ep,
             partitioner=[CoreMLPartitioner(compile_specs=compile_specs)],
