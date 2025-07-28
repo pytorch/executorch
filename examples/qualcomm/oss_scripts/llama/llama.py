@@ -616,6 +616,9 @@ def compile(args, pte_filename, tokenizer):
         if "model" in state_dict:
             state_dict = state_dict["model"]
 
+        if args.decoder_model == "stories260k":
+            state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+
         # Change to HuggingFace weight to improve the performance of RoPE in HTP backend.
         def permute(w, heads):
             dim_0 = w.size(0)
@@ -751,7 +754,7 @@ def compile(args, pte_filename, tokenizer):
                 annotate_conv=args.ptq != "16a8w",
             ),
         )
-        if args.decoder_model == "stories110m":
+        if args.decoder_model == {"stories110m", "stories260k"}:
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
@@ -946,7 +949,7 @@ def inference(args, pte_filename, runtime_tokenizer_path, decoder_model_version)
                 f"--model_path {pte_path}",
                 f"--seq_len {seq_len}",
                 f"--output_path {args.artifact}/outputs/outputs.txt",
-                f"--performance_output_path {performance_output_path}",
+                f"--performance_output_path {args.artifact}/{performance_output_path}",
                 f"--kv_updater ShiftPointer",
                 runner_args,
             ]
@@ -995,7 +998,9 @@ def inference(args, pte_filename, runtime_tokenizer_path, decoder_model_version)
         adb.pull(output_path=args.artifact, callback=post_process)
     if args.ip and args.port != -1:
         inference_speed = 0
-        with open(f"{args.artifact}/{performance_output_path}", "r") as f:
+        with open(
+            f"{os.path.abspath(args.artifact)}/{performance_output_path}", "r"
+        ) as f:
             inference_speed = float(f.read())
 
         pte_size = os.path.getsize(pte_path)
@@ -1033,8 +1038,8 @@ def _build_parser():
 
     parser.add_argument(
         "--decoder_model",
-        choices=["stories110m", "llama3_2", "qwen2_5"],
-        help="The Llama model to export. Current available options are: [stories110m, llama3_2, qwen2_5]",
+        choices=["stories260k", "stories110m", "llama3_2", "qwen2_5"],
+        help="The Llama model to export. Current available options are: [stories260k, stories110m, llama3_2, qwen2_5]",
         required=True,
     )
 
@@ -1208,16 +1213,19 @@ def export_llama(args) -> None:
     else:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
+    if args.decoder_model == "stories260k":
+        pte_filename = f"{args.decoder_model}_" + pte_filename
+
     tokenizer = None
     runtime_tokenizer_path, decoder_model_version = "", ""
-    if args.decoder_model == "stories110m":
+    if args.decoder_model in {"stories110m", "stories260k"}:
         tokenizer = get_tokenizer(args.tokenizer_model)
         assert isinstance(
             tokenizer, SentencePieceTokenizer
-        ), f"Wrong tokenizer provided for stories110m."
+        ), f"Wrong tokenizer provided for stories."
         assert (
             args.tokenizer_bin is not None
-        ), "Please provide tokenizer_bin for stories110m."
+        ), "Please provide tokenizer_bin for stories."
         runtime_tokenizer_path = args.tokenizer_bin
         decoder_model_version = "llama2"
     elif args.decoder_model == "llama3_2":
