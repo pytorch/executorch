@@ -70,7 +70,8 @@ class QuantizationRecipe:
     This class holds the configuration parameters for quantizing a model.
 
     Attributes:
-        quantizer: Optional quantizer for model quantization
+        quantizers: Optional list of quantizers for model quantization
+        ao_base_config: Optional list of AO base configurations
     """
 
     quantizers: Optional[List[Quantizer]] = None
@@ -78,10 +79,10 @@ class QuantizationRecipe:
 
     def get_quantizers(self) -> Optional[List[Quantizer]]:
         """
-        Get the quantizer associated with this recipe.
+        Get the quantizers associated with this recipe.
 
         Returns:
-            The quantizer if one is set, otherwise None
+            The quantizers if any are set, otherwise None
         """
         return self.quantizers
 
