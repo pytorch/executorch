@@ -122,27 +122,6 @@ executorch_target_link_options_shared_lib(vulkan_backend)
 
 set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 
-# Executor Runner
-
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
-  set(VULKAN_RUNNER_SRCS ${_executor_runner__srcs})
-  list(TRANSFORM VULKAN_RUNNER_SRCS PREPEND "${EXECUTORCH_ROOT}/")
-
-  set(VGF_BACKEND )
-  if(EXECUTORCH_BUILD_VGF)
-  set(VGF_BACKEND vgf_backend)
-  endif()
-
-  add_executable(vulkan_executor_runner ${VULKAN_RUNNER_SRCS})
-  target_link_libraries(
-    vulkan_executor_runner ${_executor_runner_libs} vulkan_schema
-    vulkan_backend
-    ${VGF_BACKEND}
-  )
-
-  target_compile_options(vulkan_executor_runner PUBLIC ${VULKAN_CXX_FLAGS})
-endif()
-
 # Test targets
 
 install(

@@ -380,6 +380,9 @@ add_library(executorch_core ${_executorch_core__srcs})
 # Legacy name alias.
 add_library(executorch_no_prim_ops ALIAS executorch_core)
 
+# A list of all configured backends.
+set(_executorch_backends "")
+
 target_link_libraries(executorch_core PRIVATE program_schema)
 if(ANDROID)
   target_link_libraries(executorch_core PUBLIC log)
@@ -524,6 +527,7 @@ install(FILES tools/cmake/executorch-config.cmake
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
+  list(APPEND _executorch_backends executorch_delegate_ethos_u)
 endif()
 
 if(EXECUTORCH_BUILD_CADENCE)
@@ -532,30 +536,37 @@ endif()
 
 if(EXECUTORCH_BUILD_NXP_NEUTRON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/nxp)
+  list(APPEND _executorch_backends executorch_delegate_neutron)
 endif()
 
 if(EXECUTORCH_BUILD_COREML)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
+  list(APPEND _executorch_backends coremldelegate)
 endif()
 
 if(EXECUTORCH_BUILD_MPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
+  list(APPEND _executorch_backends mpsdelegate)
 endif()
 
 if(EXECUTORCH_BUILD_NEURON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
+  list(APPEND _executorch_backends neuron_backend)
 endif()
 
 if(EXECUTORCH_BUILD_OPENVINO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/openvino)
+  list(APPEND _executorch_backends openvino_backend)
 endif()
 
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
+  list(APPEND _executorch_backends qnn_executorch_backend)
 endif()
 
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+  list(APPEND _executorch_backends xnnpack_backend)
 endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
@@ -757,10 +768,35 @@ if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
   executorch_target_link_options_shared_lib(quantized_ops_lib)
 endif()
 
+if(EXECUTORCH_BUILD_VULKAN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
+  list(APPEND _executorch_backends vulkan_backend vulkan_schema)
+endif()
+
+if(EXECUTORCH_BUILD_VGF)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
+  list(APPEND _executorch_backends vgf_backend)
+endif()
+
+
+# Top-level interface targets.
+add_library(executorch_backends INTERFACE)
+add_library(executorch::backends ALIAS executorch_backends)
+
+# A target containing all configured backends.
+target_link_libraries(executorch_backends INTERFACE ${_executorch_backends})
+
+install(
+  TARGETS executorch_backends
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)
+
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch extension_evalue_util
                             extension_runner_util gflags
+                            executorch_backends
   )
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
@@ -780,16 +816,8 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
   endif()
 
-  if(EXECUTORCH_BUILD_XNNPACK)
-    list(APPEND _executor_runner_libs xnnpack_backend)
-  endif()
-
   if(EXECUTORCH_ENABLE_EVENT_TRACER)
     list(APPEND _executor_runner_libs etdump flatccrt)
-  endif()
-
-  if(EXECUTORCH_BUILD_COREML AND APPLE)
-    list(APPEND _executor_runner_libs coremldelegate)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
@@ -813,14 +841,6 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     )
   endif()
 endif()
-
-if(EXECUTORCH_BUILD_VULKAN)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
-endif()
-if(EXECUTORCH_BUILD_VGF)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
-endif()
-
 
 if(EXECUTORCH_BUILD_ANDROID_JNI)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
