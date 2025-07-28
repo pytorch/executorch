@@ -25,6 +25,8 @@ from .stages import (
     SourceTransformStage,
     Stage,
     StageType,
+    ToBackendStage,
+    ToEdgeStage,
     TorchExportStage,
 )
 
@@ -151,9 +153,12 @@ class ExportSession:
             StageType.SOURCE_TRANSFORM: [StageType.QUANTIZE, StageType.TORCH_EXPORT],
             StageType.QUANTIZE: [StageType.TORCH_EXPORT],
             StageType.TORCH_EXPORT: [
+                StageType.TO_EDGE,
                 StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             ],
             StageType.TO_EDGE_TRANSFORM_AND_LOWER: [StageType.TO_EXECUTORCH],
+            StageType.TO_EDGE: [StageType.TO_BACKEND],
+            StageType.TO_BACKEND: [StageType.TO_EXECUTORCH],
             StageType.TO_EXECUTORCH: [],
         }
 
@@ -198,6 +203,15 @@ class ExportSession:
                     partitioners=self._export_recipe.partitioners,
                     transform_passes=self._export_recipe.edge_transform_passes,
                     compile_config=self._export_recipe.edge_compile_config,
+                )
+            elif stage_type == StageType.TO_EDGE:
+                stage = ToEdgeStage(
+                    edge_compile_config=self._export_recipe.edge_compile_config
+                )
+            elif stage_type == StageType.TO_BACKEND:
+                stage = ToBackendStage(
+                    partitioners=self._export_recipe.partitioners,
+                    transform_passes=self._export_recipe.edge_transform_passes,
                 )
             elif stage_type == StageType.TO_EXECUTORCH:
                 stage = ExecutorchStage(self._export_recipe.executorch_backend_config)
