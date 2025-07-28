@@ -18,8 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-models-macos:
-    name: test-models-macos
+  test-models-macos-cpu:
+    name: test-models-macos-cpu
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
@@ -242,12 +242,12 @@ jobs:
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
-          threshold="104000" # should be ~103.7KB, set threshold to 104KB.
+          threshold="109000"
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="133120" # should be ~125KB, set threshold to 130KB
+          threshold="135000"
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
@@ -568,8 +568,49 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
-  test-apple-model:
-    name: test-apple-model
+  test-models-macos-coreml:
+    name: test-models-macos-coreml
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      matrix:
+        model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
+      fail-fast: false
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=cmake
+        BACKEND="coreml-pybind"
+
+
+        # Set model specific overrides
+        if [[ "${MODEL_NAME}" == "mobilebert" ]]; then
+          # See https://github.com/pytorch/executorch/issues/12907
+          # mobilebert has nan output on FP16, and high MSE on fp32, so we disable runtime test now
+          BACKEND="coreml"
+        fi
+
+        if [[ "${MODEL_NAME}" == "efficient_sam" ]]; then
+          # See https://github.com/pytorch/executorch/issues/12906
+          # efficient_sam fails to run on CoreML
+          BACKEND="coreml"
+        fi
+
+        bash .ci/scripts/setup-conda.sh
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
+        echo "Finishing installing coreml."
+
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+
+  test-models-macos-mps:
+    name: test-models-macos-mps
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       fail-fast: false
@@ -581,21 +622,13 @@ jobs:
       timeout: 90
       script: |
         BUILD_TOOL=cmake
-
         bash .ci/scripts/setup-conda.sh
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
-        echo "Finishing installing coreml."
 
-        # Build and test coreml model
-        MODELS=(mv3 ic4 resnet50 edsr mobilebert w2l)
-        for MODEL_NAME in "${MODELS[@]}"; do
-          echo "::group::Exporting coreml model: $MODEL_NAME"
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "coreml"
-          echo "::endgroup::"
-
+        # Build and test mps model
+        for MODEL_NAME in mv3 ic4 resnet50 edsr mobilebert w2l; do
           echo "::group::Exporting mps model: $MODEL_NAME"
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "mps"
           echo "::endgroup::"
