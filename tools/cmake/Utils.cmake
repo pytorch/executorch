@@ -21,7 +21,7 @@
 # This is the funtion to use -Wl, --whole-archive to link static library NB:
 # target_link_options is broken for this case, it only append the interface link
 # options of the first library.
-function(kernel_link_options target_name)
+function(executorch_kernel_link_options target_name)
   # target_link_options(${target_name} INTERFACE
   # "$<LINK_LIBRARY:WHOLE_ARCHIVE,target_name>")
   target_link_options(
@@ -31,16 +31,16 @@ function(kernel_link_options target_name)
   )
 endfunction()
 
-# Same as kernel_link_options but it's for MacOS linker
-function(macos_kernel_link_options target_name)
+# Same as executorch_kernel_link_options but it's for MacOS linker
+function(executorch_macos_kernel_link_options target_name)
   target_link_options(
     ${target_name} INTERFACE
     "SHELL:LINKER:-force_load,$<TARGET_FILE:${target_name}>"
   )
 endfunction()
 
-# Same as kernel_link_options but it's for MSVC linker
-function(msvc_kernel_link_options target_name)
+# Same as executorch_kernel_link_options but it's for MSVC linker
+function(executorch_msvc_kernel_link_options target_name)
   target_link_options(
     ${target_name} INTERFACE
     "SHELL:LINKER:/WHOLEARCHIVE:$<TARGET_FILE:${target_name}>"
@@ -49,13 +49,13 @@ endfunction()
 
 # Ensure that the load-time constructor functions run. By default, the linker
 # would remove them since there are no other references to them.
-function(target_link_options_shared_lib target_name)
+function(executorch_target_link_options_shared_lib target_name)
   if(APPLE)
-    macos_kernel_link_options(${target_name})
+    executorch_macos_kernel_link_options(${target_name})
   elseif(MSVC)
-    msvc_kernel_link_options(${target_name})
+    executorch_msvc_kernel_link_options(${target_name})
   else()
-    kernel_link_options(${target_name})
+    executorch_kernel_link_options(${target_name})
   endif()
 endfunction()
 
@@ -278,3 +278,38 @@ macro(find_package_torch)
     find_package(Torch CONFIG REQUIRED)
   endif()
 endmacro()
+
+# Modify ${targetName}'s INTERFACE_INCLUDE_DIRECTORIES by wrapping each entry in
+# $<BUILD_INTERFACE:...> so that they work with CMake EXPORT.
+function(executorch_move_interface_include_directories_to_build_time_only
+         targetName
+)
+  get_property(
+    OLD_INTERFACE_INCLUDE_DIRECTORIES
+    TARGET "${targetName}"
+    PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+  )
+  set(FIXED_INTERFACE_INCLUDE_DIRECTORIES)
+  foreach(dir ${OLD_INTERFACE_INCLUDE_DIRECTORIES})
+    list(APPEND FIXED_INTERFACE_INCLUDE_DIRECTORIES $<BUILD_INTERFACE:${dir}>)
+  endforeach()
+  set_property(
+    TARGET "${targetName}" PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+                                    ${FIXED_INTERFACE_INCLUDE_DIRECTORIES}
+  )
+endfunction()
+
+function(executorch_add_prefix_to_public_headers targetName prefix)
+  get_property(
+    OLD_PUBLIC_HEADERS
+    TARGET "${targetName}"
+    PROPERTY PUBLIC_HEADER
+  )
+  set(FIXED_PUBLIC_HEADERS)
+  foreach(header ${OLD_PUBLIC_HEADERS})
+    list(APPEND FIXED_PUBLIC_HEADERS "${prefix}${header}")
+  endforeach()
+  set_property(
+    TARGET "${targetName}" PROPERTY PUBLIC_HEADER ${FIXED_PUBLIC_HEADERS}
+  )
+endfunction()

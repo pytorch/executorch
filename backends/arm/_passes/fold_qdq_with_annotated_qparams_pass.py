@@ -75,7 +75,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
      node.
      The quantization parameters from the DQ/Q nodes are stored as meta values to be
      accessible for later lowering and serialization passes.
-     The assumption is that the quantization annotatation adds DQ nodes for all tensor
+     The assumption is that the quantization annotation adds DQ nodes for all tensor
      inputs to the target one Q node to the output.
 
      Example ('executorch_exir_dialects_edge__ops_' prefix removed from operators for readability):
@@ -95,7 +95,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
 
         output_dq: "f32[5]" = quantized_decomposed_dequantize_per_tensor_default(aten_add_tensor_q, 0.05487706884741783, -128, -128, 127, torch.int8)
 
-    The quantization parameters for x_dq and aten_add_tensor_q are store in meta for the aten_add_tensor node.
+    The quantization parameters for x_dq and aten_add_tensor_q are stored in meta for the aten_add_tensor node.
 
     """
 
@@ -132,7 +132,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 nodes_to_remove.add(arg)
             if input_qparams is not None and input_qparams != arg_quant_params:
                 # Two args are quantized differently
-                raise RuntimeError("Input qparams does not match!")
+                raise RuntimeError("Input qparams do not match")
             input_qparams = arg_quant_params
         if input_qparams is not None:
             node.meta["input_qparams"][i] = input_qparams

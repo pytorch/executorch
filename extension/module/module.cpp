@@ -230,6 +230,7 @@ runtime::Error Module::load_method(
 
 ET_NODISCARD runtime::Result<Method*> Module::method(
     const std::string& method_name) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   ET_CHECK_OR_RETURN_ERROR(
       methods_.count(method_name) > 0,
       InvalidArgument,

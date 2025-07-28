@@ -41,6 +41,10 @@ exit_code1=$?
 $PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_110m --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir . --llama_artifacts . --enable_x86_64
 exit_code2=$?
 
+# Check BC
+bash backends/qualcomm/bc/test_qnn_static_llama_bc.sh
+exit_code3=$?
+
 # Check the exit codes and print messages
 if [ $exit_code1 -ne 0 ]; then
     echo "Static Llama compile only with weight sharing test failed. $exit_code1."
@@ -50,8 +54,12 @@ if [ $exit_code2 -ne 0 ]; then
     echo "Static Llama accuracy test failed. $exit_code2."
 fi
 
+if [ $exit_code3 -ne 0 ]; then
+    echo "Static Llama BACKWARD COMPATIBILITY test failed. $exit_code3."
+fi
+
 # Return failure if either program failed
-if [ $exit_code1 -ne 0 ] || [ $exit_code2 -ne 0 ]; then
+if [ $exit_code1 -ne 0 ] || [ $exit_code2 -ne 0 ] || [ $exit_code3 -ne 0 ]; then
     exit 1
 else
     exit 0

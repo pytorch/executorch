@@ -18,22 +18,21 @@ from torch._subclasses import FakeTensor
 from torch.fx import GraphModule, Node
 
 from torchao.quantization.pt2e.quantizer import QuantizationAnnotation
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 def is_annotated(node: Node) -> bool:
     """Given a node return whether the node is annotated."""
     return (
-        "quantization_annotation" in node.meta
-        and cast(
-            QuantizationAnnotation, node.meta["quantization_annotation"]
-        )._annotated
+        Q_ANNOTATION_KEY in node.meta
+        and cast(QuantizationAnnotation, node.meta[Q_ANNOTATION_KEY])._annotated
     )
 
 
 def is_output_annotated(node: Node) -> bool:
     """Given a node, return whether the output of the node is annotated."""
-    if "quantization_annotation" in node.meta:
-        annotation = cast(QuantizationAnnotation, node.meta["quantization_annotation"])
+    if Q_ANNOTATION_KEY in node.meta:
+        annotation = cast(QuantizationAnnotation, node.meta[Q_ANNOTATION_KEY])
         return annotation._annotated and annotation.output_qspec is not None
     else:
         return False
@@ -43,9 +42,9 @@ def mark_node_as_annotated(node: Node) -> None:
     """Marks node as annotated. If needed, an empty  QuantizationAnnotation is added
     to the quantization_annotation node meta entry.
     """
-    if "quantization_annotation" not in node.meta:
-        node.meta["quantization_annotation"] = QuantizationAnnotation()
-    node.meta["quantization_annotation"]._annotated = True
+    if Q_ANNOTATION_KEY not in node.meta:
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation()
+    node.meta[Q_ANNOTATION_KEY]._annotated = True
 
 
 def is_ok_for_quantization(node: Node, gm: GraphModule):

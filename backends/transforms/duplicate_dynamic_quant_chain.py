@@ -13,6 +13,7 @@ from torch.fx.node import map_arg
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 from torchao.quantization.pt2e.quantizer import is_valid_annotation
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 from torchao.quantization.pt2e.utils import _filter_sym_size_users
 
 
@@ -126,7 +127,7 @@ def _maybe_duplicate_dynamic_quantize_chain(
     num_dq_users = len(dq_node.users)
     dq_node_users = list(dq_node.users.copy())
     for user in dq_node_users:
-        annotation = user.meta.get("quantization_annotation", None)
+        annotation = user.meta.get(Q_ANNOTATION_KEY, None)
         if not is_valid_annotation(annotation):
             return
         with gm.graph.inserting_after(dq_node):

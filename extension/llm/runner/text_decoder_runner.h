@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -21,7 +22,7 @@ namespace llm {
 
 class ET_EXPERIMENTAL TextDecoderRunner {
  public:
-  explicit TextDecoderRunner(Module* module);
+  explicit TextDecoderRunner(Module* module, IOManager* io_manager);
 
   virtual ~TextDecoderRunner() = default;
 
@@ -94,13 +95,14 @@ class ET_EXPERIMENTAL TextDecoderRunner {
 
  protected:
   /**
-   * Note: TextDecoderRunner does not own the Module instance. It is expected
-   * that the outer class (likely Runner) manages the lifecycle of the Module.
-   * This means that the responsibility for creating, maintaining, and
+   * Note: TextDecoderRunner does not own the Module or IOManager instance. It
+   * is expected that the outer class (likely Runner) manages the lifecycle of
+   * them. This means that the responsibility for creating, maintaining, and
    * destroying the Module lies outside of TextDecoderRunner. Ensure that the
    * Module remains valid for the duration of TextDecoderRunner's usage.
    */
   Module* module_;
+  IOManager* io_manager_;
   bool should_stop_{false};
 };
 

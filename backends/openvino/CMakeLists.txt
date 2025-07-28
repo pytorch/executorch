@@ -46,7 +46,7 @@ target_link_libraries(openvino_backend PRIVATE openvino::runtime executorch_core
 # Add source files for OpenVINO backend
 target_sources(openvino_backend PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/OpenvinoBackend.cpp)
 
-target_link_options_shared_lib(openvino_backend)
+executorch_target_link_options_shared_lib(openvino_backend)
 
 if(EXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER)
     # Build executor runner binary for openvino backend

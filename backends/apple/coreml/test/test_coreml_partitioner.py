@@ -16,7 +16,6 @@ import torchvision
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.exir.backend.utils import format_delegated_graph
-from executorch.runtime import Runtime
 
 
 @torch.library.custom_op("unsupported::linear", mutates_args=())
@@ -37,7 +36,13 @@ def _(
     return torch.ops.aten.linear.default(x, w, b)
 
 
-_TEST_RUNTIME = sys.platform == "darwin"
+def is_fbcode():
+    return not hasattr(torch.version, "git_version")
+
+
+_TEST_RUNTIME = (sys.platform == "darwin") and not is_fbcode()
+if _TEST_RUNTIME:
+    from executorch.runtime import Runtime
 
 
 class TestCoreMLPartitioner(unittest.TestCase):

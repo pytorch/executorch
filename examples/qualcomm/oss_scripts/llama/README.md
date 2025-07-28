@@ -1,10 +1,11 @@
 # Summary
 
 ## Overview
-This file provides you the instructions to run LLAMA model with different parameters via Qualcomm HTP backend. We currently support the following models:
+This file provides you the instructions to run LLM Decoder model with different parameters via Qualcomm HTP backend. We currently support the following models:
  1. LLAMA2 Stories 110M
  2. LLAMA3.2 1B
  3. LLAMA3.2 3B
+ 4. QWEN2.5 0.5B
 
 We offer the following modes to execute the model:
 

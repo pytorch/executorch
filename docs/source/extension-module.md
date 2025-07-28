@@ -43,6 +43,11 @@ Creating a `Module` object is a fast operation that does not involve significant
 Module module("/path/to/model.pte");
 ```
 
+For a model with data separated into a PTD file, load them together:
+```cpp
+Module module("/path/to/model.pte", "/path/to/model.ptd");
+```
+
 ### Force-Loading a Method
 
 To force-load the `Module` (and thus the underlying ExecuTorch `Program`) at any time, use the `load()` function:

@@ -145,7 +145,7 @@ def EXIRATenDialectVerifier(  # noqa: C901
                     # which may affect memory planning.
                     if op.is_view:
                         raise RuntimeError(
-                            f"Cannot preserve operator {op} because it is a view or mutation."
+                            f"Cannot preserve operator {op} because it is a view."
                         )
                     if op._schema.is_mutable:
                         logging.warning(

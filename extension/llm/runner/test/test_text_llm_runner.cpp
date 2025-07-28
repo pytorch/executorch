@@ -7,6 +7,7 @@
  * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
  */
 
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
@@ -63,7 +64,7 @@ class MockModule : public ::executorch::extension::Module {
 
 class MockTextDecoderRunner : public TextDecoderRunner {
  public:
-  MockTextDecoderRunner() : TextDecoderRunner(nullptr) {}
+  MockTextDecoderRunner() : TextDecoderRunner(nullptr, nullptr) {}
   MOCK_METHOD(
       Result<executorch::aten::Tensor>,
       step,
@@ -219,6 +220,7 @@ TEST_F(RunnerTest, GenerateCallsCallbackExactlyMaxNewTokensTimes) {
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
+      std::make_unique<executorch::extension::llm::IOManager>(),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -278,6 +280,7 @@ TEST_F(RunnerTest, WarmupCallsGenerateWithWarmingFlag) {
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
+      std::make_unique<executorch::extension::llm::IOManager>(),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -312,6 +315,7 @@ TEST_F(RunnerTest, IsLoadedReturnsTrueWhenComponentsInitialized) {
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
+      std::make_unique<executorch::extension::llm::IOManager>(),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -356,6 +360,7 @@ TEST_F(RunnerTest, GenerateFromPosErrorsWithNegativeMaxNewTokens) {
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
+      std::make_unique<executorch::extension::llm::IOManager>(),
       std::move(text_token_generator),
       std::move(stats));
 

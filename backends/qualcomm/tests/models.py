@@ -119,6 +119,15 @@ class Arange(torch.nn.Module):
         )
 
 
+class Argmax(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = torch.argmax(x, dim=0, keepdim=True)
+        return x
+
+
 class Argmin(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1146,12 +1155,30 @@ class MaskedFill(torch.nn.Module):
         )
 
 
+class MaxDim(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logits):
+        max_logits, max_indices = torch.max(logits, dim=1)
+        return max_logits, max_indices
+
+
 class Maximum(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x, y):
         return torch.maximum(x, y)
+
+
+class MinDim(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logits):
+        min_logits, min_indices = torch.min(logits, dim=1)
+        return min_logits, min_indices
 
 
 class Minimum(torch.nn.Module):

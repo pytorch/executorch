@@ -1463,9 +1463,7 @@ class TestPasses(unittest.TestCase):
                 out = torch.nn.functional.linear(
                     x, self.w.to(torch.float16).to(torch.float32)
                 )
-                return torch.ops.higher_order.cond(
-                    pred, self.true_fn, self.false_fn, [out]
-                )
+                return torch.cond(pred, self.true_fn, self.false_fn, [out])
 
         mod = Module()
         x = torch.randn([3, 3])

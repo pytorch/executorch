@@ -21,7 +21,6 @@ set(_qnn_whisper_runner__srcs
 add_executable(qnn_whisper_runner ${_qnn_whisper_runner__srcs})
 target_include_directories(
     qnn_whisper_runner PUBLIC ${_common_include_directories}
-    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
 
 
@@ -35,7 +34,7 @@ target_link_libraries(
   extension_tensor
   full_portable_ops_lib
   gflags
-  tokenizers
+  tokenizers::tokenizers
 )
 
 target_compile_options(

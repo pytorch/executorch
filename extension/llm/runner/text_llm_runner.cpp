@@ -10,6 +10,7 @@
 // A simple llama2 runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
 
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -39,6 +40,7 @@ TextLLMRunner::TextLLMRunner(
     std::unique_ptr<::executorch::extension::Module> module,
     std::unique_ptr<TextDecoderRunner> text_decoder_runner,
     std::unique_ptr<TextPrefiller> text_prefiller,
+    std::unique_ptr<IOManager> io_manager,
     std::unique_ptr<TextTokenGenerator> text_token_generator,
     std::unique_ptr<Stats> stats,
     float temperature)
@@ -47,6 +49,7 @@ TextLLMRunner::TextLLMRunner(
       module_(std::move(module)),
       text_decoder_runner_(std::move(text_decoder_runner)),
       text_prefiller_(std::move(text_prefiller)),
+      io_manager_(std::move(io_manager)),
       text_token_generator_(std::move(text_token_generator)),
       stats_(std::move(stats)),
       temperature_(temperature) {
@@ -63,6 +66,14 @@ Error TextLLMRunner::load() {
     return Error::Ok;
   }
   ET_CHECK_OK_OR_RETURN_ERROR(text_prefiller_->load());
+  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
+  auto method_res = module_->method("forward");
+
+  Program& program = *module_->program();
+
+  ET_CHECK_OK_OR_RETURN_ERROR(method_res.error());
+  auto& forward = *(method_res.get());
+  ET_CHECK_OK_OR_RETURN_ERROR(io_manager_->load(program, forward, forward));
   ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
   return Error::Ok;
 }
@@ -393,9 +404,13 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
       llm::get_eos_ids(tokenizer.get(), module.get()));
 
+  // Create IOManager
+  std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>();
+
   // Create text_decoder_runner. Use a shared_ptr so that it can be shared with
   // TextPrefiller and TextTokenGenerator
-  auto text_decoder_runner = std::make_unique<TextDecoderRunner>(module.get());
+  auto text_decoder_runner =
+      std::make_unique<TextDecoderRunner>(module.get(), io_manager.get());
 
   // Create text_prefiller
   auto text_prefiller = std::make_unique<TextPrefiller>(
@@ -420,6 +435,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       std::move(module),
       std::move(text_decoder_runner),
       std::move(text_prefiller),
+      std::move(io_manager),
       std::move(text_token_generator),
       std::move(stats),
       temperature);

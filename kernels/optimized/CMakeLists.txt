@@ -79,9 +79,10 @@ gen_operators_lib(
 )
 
 install(
-  TARGETS cpublas optimized_kernels optimized_ops_lib
+  # eigen_blas doesn't export itself, so we have to do our own install to export
+  # it.
+  TARGETS cpublas optimized_kernels optimized_ops_lib eigen_blas
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   PUBLIC_HEADER DESTINATION include/executorch/kernels/optimized/
 )
-
-install(TARGETS cpublas DESTINATION lib)

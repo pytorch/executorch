@@ -18,7 +18,7 @@ Below are the minimum OS requirements on various hardware for running a CoreML-d
 ## Development Requirements
 To develop you need:
 
-- [macOS](https://developer.apple.com/macos) >= 13.0.
+- [macOS](https://developer.apple.com/macos) >= 13.0
 - [Xcode](https://developer.apple.com/documentation/xcode) >= 14.1
 
 
@@ -55,41 +55,41 @@ with open("mv2_coreml.pte", "wb") as file:
 
 ### Partitioner API
 
-The CoreML partitioner API allows for configuration of the model delegation to CoreML. Passing an `CoreMLPartitioner` instance with no additional parameters will run as much of the model as possible on the CoreML backend with default settings. This is the most common use-case. For advanced use cases, the partitioner exposes the following options via the [constructor](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/partition/coreml_partitioner.py#L60):
+The CoreML partitioner API allows for configuration of the model delegation to CoreML. Passing a `CoreMLPartitioner` instance with no additional parameters will run as much of the model as possible on the CoreML backend with default settings. This is the most common use case. For advanced use cases, the partitioner exposes the following options via the [constructor](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/partition/coreml_partitioner.py#L60):
 
 
  - `skip_ops_for_coreml_delegation`: Allows you to skip ops for delegation by CoreML.  By default, all ops that CoreML supports will be delegated.  See [here](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/test/test_coreml_partitioner.py#L42) for an example of skipping an op for delegation.
-- `compile_specs`: A list of CompileSpec for the CoreML backend.  These control low-level details of CoreML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32).  These are discussed more below.
-- `take_over_mutable_buffer`: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to [CoreML MLState](https://developer.apple.com/documentation/coreml/mlstate).  If set to false, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the CoreML lowered module under the hood.  Generally setting take_over_mutable_buffer to true will result in better performance, but using MLState requires iOS >= 18.0, macOS >= 15.0, and XCode >= 16.0.
+- `compile_specs`: A list of `CompileSpec`s for the CoreML backend.  These control low-level details of CoreML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32).  These are discussed more below.
+- `take_over_mutable_buffer`: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to [CoreML `MLState`](https://developer.apple.com/documentation/coreml/mlstate).  If set to `False`, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the CoreML lowered module under the hood.  Generally, setting `take_over_mutable_buffer` to true will result in better performance, but using `MLState` requires iOS >= 18.0, macOS >= 15.0, and Xcode >= 16.0.
 
 #### CoreML CompileSpec
 
-A list of CompileSpec is constructed with [CoreMLBackend.generate_compile_specs](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L210).  Below are the available options:
-- `compute_unit`: this controls the compute units (CPU, GPU, ANE) that are used by CoreML.  The default value is coremltools.ComputeUnit.ALL.  The available options from coremltools are:
-    - coremltools.ComputeUnit.ALL (uses the CPU, GPU, and ANE)
-    - coremltools.ComputeUnit.CPU_ONLY (uses the CPU only)
-    - coremltools.ComputeUnit.CPU_AND_GPU (uses both the CPU and GPU, but not the ANE)
-    - coremltools.ComputeUnit.CPU_AND_NE (uses both the CPU and ANE, but not the GPU)
-- `minimum_deployment_target`: The minimum iOS deployment target (e.g., coremltools.target.iOS18).  The default value is coremltools.target.iOS15.
-- `compute_precision`: The compute precision used by CoreML (coremltools.precision.FLOAT16, coremltools.precision.FLOAT32).  The default value is coremltools.precision.FLOAT16.  Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model.  For example, an FP32 PyTorch model will be converted to FP16 when delegating to the CoreML backend by default.  Also note that the ANE only supports FP16 precision.
-- `model_type`: Whether the model should be compiled to the CoreML [mlmodelc format](https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device) during .pte creation ([CoreMLBackend.MODEL_TYPE.COMPILED_MODEL](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L71)), or whether it should be compiled to mlmodelc on device ([CoreMLBackend.MODEL_TYPE.MODEL](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L70)).  Using CoreMLBackend.MODEL_TYPE.COMPILED_MODEL and doing compilation ahead of time should improve the first time on-device model load time.
+A list of `CompileSpec`s is constructed with [`CoreMLBackend.generate_compile_specs`](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L210).  Below are the available options:
+- `compute_unit`: this controls the compute units (CPU, GPU, ANE) that are used by CoreML.  The default value is `coremltools.ComputeUnit.ALL`.  The available options from coremltools are:
+    - `coremltools.ComputeUnit.ALL` (uses the CPU, GPU, and ANE)
+    - `coremltools.ComputeUnit.CPU_ONLY` (uses the CPU only)
+    - `coremltools.ComputeUnit.CPU_AND_GPU` (uses both the CPU and GPU, but not the ANE)
+    - `coremltools.ComputeUnit.CPU_AND_NE` (uses both the CPU and ANE, but not the GPU)
+- `minimum_deployment_target`: The minimum iOS deployment target (e.g., `coremltools.target.iOS18`).  The default value is `coremltools.target.iOS15`.
+- `compute_precision`: The compute precision used by CoreML (`coremltools.precision.FLOAT16` or `coremltools.precision.FLOAT32`).  The default value is `coremltools.precision.FLOAT16`.  Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model.  For example, an FP32 PyTorch model will be converted to FP16 when delegating to the CoreML backend by default.  Also note that the ANE only supports FP16 precision.
+- `model_type`: Whether the model should be compiled to the CoreML [mlmodelc format](https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device) during .pte creation ([`CoreMLBackend.MODEL_TYPE.COMPILED_MODEL`](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L71)), or whether it should be compiled to mlmodelc on device ([`CoreMLBackend.MODEL_TYPE.MODEL`](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L70)).  Using `CoreMLBackend.MODEL_TYPE.COMPILED_MODEL` and doing compilation ahead of time should improve the first time on-device model load time.
 
 ### Testing the Model
 
-After generating the CoreML-delegated .pte, the model can be tested from Python using the ExecuTorch runtime python bindings. This can be used to sanity check the model and evaluate numerical accuracy. See [Testing the Model](using-executorch-export.md#testing-the-model) for more information.
+After generating the CoreML-delegated .pte, the model can be tested from Python using the ExecuTorch runtime Python bindings. This can be used to quickly check the model and evaluate numerical accuracy. See [Testing the Model](using-executorch-export.md#testing-the-model) for more information.
 
 ----
 
 ### Quantization
 
-To quantize a PyTorch model for the CoreML backend, use the `CoreMLQuantizer`. `Quantizers` are backend specific, and the `CoreMLQuantizer` is configured to quantize models to leverage the available quantization for the CoreML backend.
+To quantize a PyTorch model for the CoreML backend, use the `CoreMLQuantizer`.
 
 ### 8-bit Quantization using the PT2E Flow
 
-Quantization with the CoreML backend requires exporting the model for iOS17 or later.
-To perform 8-bit quantization with the PT2E flow, perform the following steps:
+Quantization with the CoreML backend requires exporting the model for iOS 17 or later.
+To perform 8-bit quantization with the PT2E flow, follow these steps:
 
-1) Define [coremltools.optimize.torch.quantization.LinearQuantizerConfig](https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig) and use to to create an instance of a `CoreMLQuantizer`.
+1) Create a [`coremltools.optimize.torch.quantization.LinearQuantizerConfig`](https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig) and use to to create an instance of a `CoreMLQuantizer`.
 2) Use `torch.export.export_for_training` to export a graph module that will be prepared for quantization.
 3) Call `prepare_pt2e` to prepare the model for quantization.
 4) Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
@@ -113,7 +113,7 @@ mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFA
 sample_inputs = (torch.randn(1, 3, 224, 224), )
 
 # Step 1: Define a LinearQuantizerConfig and create an instance of a CoreMLQuantizer
-# Note that linear here does not mean only linear layers are quantized, but that linear (aka affine) quantization
+# Note that "linear" here does not mean only linear layers are quantized, but that linear (aka affine) quantization
 # is being performed
 static_8bit_config = ct.optimize.torch.quantization.LinearQuantizerConfig(
     global_config=ct.optimize.torch.quantization.ModuleLinearQuantizerConfig(
@@ -169,7 +169,7 @@ weight_only_8bit_config = ct.optimize.torch.quantization.LinearQuantizerConfig(
 quantizer = CoreMLQuantizer(weight_only_8bit_config)
 ```
 
-Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling convert_pt2e, even for data-free weight-only quantization.
+Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling `convert_pt2e`, even for data-free weight-only quantization.
 
 See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
 
@@ -178,11 +178,11 @@ See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/ma
 
 ## Runtime integration
 
-To run the model on-device, use the standard ExecuTorch runtime APIs. See [Running on Device](getting-started.md#running-on-device) for more information, including building the iOS frameworks.
+To run the model on device, use the standard ExecuTorch runtime APIs. See [Running on Device](getting-started.md#running-on-device) for more information, including building the iOS frameworks.
 
 When building from source, pass `-DEXECUTORCH_BUILD_COREML=ON` when configuring the CMake build to compile the CoreML backend.
 
-To link against the `coremldelegate` target. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing `"$<LINK_LIBRARY:WHOLE_ARCHIVE,coremldelegate>"` to `target_link_libraries`.
+Due to the use of static initializers for registration, it may be necessary to use whole-archive to link against the `coremldelegate` target. This can typically be done by passing `"$<LINK_LIBRARY:WHOLE_ARCHIVE,coremldelegate>"` to `target_link_libraries`.
 
 ```
 # CMakeLists.txt
@@ -194,7 +194,7 @@ target_link_libraries(
     extension_module_static
     extension_tensor
     optimized_native_cpu_ops_lib
-    coremldelegate)
+    $<LINK_LIBRARY:WHOLE_ARHIVE,coremldelegate>)
 ```
 
 No additional steps are necessary to use the backend beyond linking the target. A CoreML-delegated .pte file will automatically run on the registered backend.
@@ -217,14 +217,14 @@ Note that if the ExecuTorch model has graph breaks, there may be multiple extrac
 ### During lowering
 1. "ValueError: In op, of type [X], named [Y], the named input [Z] must have the same data type as the named input x. However, [Z] has dtype fp32 whereas x has dtype fp16."
 
-This happens because the model is in FP16, but CoreML interprets some of the arguments as FP32, which leads to a type mismatch.  The solution is to keep the PyTorch model in FP32.  Note that the model will be still be converted to FP16 during lowering to CoreML unless specified otherwise in the compute_precision [CoreML CompileSpec](#coreml-compilespec).  Also see the [related issue in coremltools](https://github.com/apple/coremltools/issues/2480).
+This happens because the model is in FP16, but CoreML interprets some of the arguments as FP32, which leads to a type mismatch.  The solution is to keep the PyTorch model in FP32.  Note that the model will be still be converted to FP16 during lowering to CoreML unless specified otherwise in the compute_precision [CoreML `CompileSpec`](#coreml-compilespec).  Also see the [related issue in coremltools](https://github.com/apple/coremltools/issues/2480).
 
 2. coremltools/converters/mil/backend/mil/load.py", line 499, in export
     raise RuntimeError("BlobWriter not loaded")
 
-If you're using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13, see this [issue](https://github.com/apple/coremltools/issues/2487).
+If you're using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13 per [coremltools issue #2487](https://github.com/apple/coremltools/issues/2487).
 
 ### At runtime
 1. [ETCoreMLModelCompiler.mm:55] [Core ML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 "Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset 'CoreML7'." UserInfo={NSLocalizedDescription=Failed to par$
 
-This means the model requires the the CoreML opset 'CoreML7', which requires running the model on iOS17/macOS14 or later.
+This means the model requires the the CoreML opset 'CoreML7', which requires running the model on iOS >= 17 or macOS >= 14.

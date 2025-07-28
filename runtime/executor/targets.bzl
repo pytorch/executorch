@@ -133,6 +133,7 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/schema:program",
+                "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit"
             ],
             visibility = [
                 "//executorch/runtime/executor/...",

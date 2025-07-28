@@ -126,6 +126,17 @@ class Program:
             self._methods[name] = method
         return method
 
+    def metadata(self, method_name: str) -> MethodMeta:
+        """Gets the metadata for the specified method.
+
+        Args:
+            method_name: The name of the method.
+
+        Returns:
+            The outputs of the method.
+        """
+        return self._program.method_meta(method_name)
+
 
 class BackendRegistry:
     """The registry of backends that are available to the runtime."""

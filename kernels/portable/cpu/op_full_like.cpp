@@ -50,7 +50,7 @@ Tensor& full_like_out(
 
   ScalarType out_type = out.scalar_type();
 
-  constexpr auto name = "scalar_tensor.out";
+  constexpr auto name = "full_like.out";
 
   ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
     auto opt_val_casted =

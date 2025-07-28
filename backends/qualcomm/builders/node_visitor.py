@@ -163,10 +163,10 @@ class NodeVisitor:
             max_scale = scales[ch].reshape(1, -1).amax(dim=-1) / num_steps
             q_scales = torch.clamp(
                 input=scales[ch] / max_scale,
-                min=torch.iinfo(quant_scales_dtype).min,
-                max=torch.iinfo(quant_scales_dtype).max,
+                min=1,
+                max=2**bitwidth_of_scale,
             ).to(quant_scales_dtype)
-            quantized_scales.append(torch.where(q_scales == 0, 1, q_scales))
+            quantized_scales.append(q_scales)
             # symmetric quantization is required
             scale_offset.append(PyQnnWrapper.Qnn_ScaleOffset_t(max_scale, 0))
 

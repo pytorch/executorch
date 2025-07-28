@@ -21,7 +21,7 @@ foreach(schema_file ${_schema_files})
   list(APPEND _schema_outputs "${DEVTOOLS_INCLUDE_DIR}/executorch/devtools/etdump/${generated_builder}")
 endforeach()
 
-file(MAKE_DIRECTORY ${DEVTOOLS_INCLUDE_DIR}/executorch/devtools/etdump)
+file(MAKE_DIRECTORY ${DEVTOOLS_INCLUDE_DIR_NO_BUILD_INTERFACE}/executorch/devtools/etdump)
 add_custom_command(
   OUTPUT ${_schema_outputs}
   COMMAND
@@ -29,7 +29,7 @@ add_custom_command(
     # tree instead of under the binary directory, and there's no way to change
     # that behavior.
     flatcc_cli -cwr -o
-    ${DEVTOOLS_INCLUDE_DIR}/executorch/devtools/etdump
+    ${DEVTOOLS_INCLUDE_DIR_NO_BUILD_INTERFACE}/executorch/devtools/etdump
     ${_etdump_schema__srcs}
   DEPENDS flatcc_cli ${_etdump_schema__srcs}
   COMMENT "Generating etdump headers"
@@ -56,11 +56,12 @@ target_include_directories(
   etdump
   PUBLIC
     ${DEVTOOLS_INCLUDE_DIR}
-    ${PROJECT_SOURCE_DIR}/third-party/flatcc/include
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third-party/flatcc/include>
 )
 
 install(
-  TARGETS etdump
+  TARGETS etdump flatccrt
+  EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_BINARY_DIR}/lib
   INCLUDES
   DESTINATION ${_common_include_directories}

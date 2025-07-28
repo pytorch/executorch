@@ -30,18 +30,18 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 # find `executorch` libraries Same as for gflags
 find_package(executorch CONFIG REQUIRED PATHS ${EXECUTORCH_ROOT}/cmake-out)
-target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(executorch)
 
 add_subdirectory(${EXECUTORCH_ROOT}/third-party/gflags gflags)
 set(link_libraries gflags)
 list(APPEND link_libraries portable_ops_lib portable_kernels)
-target_link_options_shared_lib(portable_ops_lib)
+executorch_target_link_options_shared_lib(portable_ops_lib)
 
 
 if(USE_XNNPACK_BACKEND)
   set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
   list(APPEND link_libraries ${xnnpack_backend_libs})
-  target_link_options_shared_lib(xnnpack_backend)
+  executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
 
 if(USE_OPENVINO_BACKEND)
@@ -54,7 +54,7 @@ if(USE_OPENVINO_BACKEND)
               ${CMAKE_CURRENT_BINARY_DIR}/../../lib
   )
   list(APPEND link_libraries openvino_backend)
-  target_link_options_shared_lib(openvino_backend)
+  executorch_target_link_options_shared_lib(openvino_backend)
 endif()
 
 list(APPEND link_libraries extension_threadpool pthreadpool)

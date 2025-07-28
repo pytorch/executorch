@@ -23,14 +23,15 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.INFO)
 
 
-class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
+class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
     def __init__(
         self,
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         lower_full_graph: bool = False,
+        log: bool = False,
     ) -> None:
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
@@ -38,10 +39,11 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
         self.lower_full_graph = lower_full_graph
         self._logged_msgs = set()
+        self._log = log
 
     def log_once(self, msg: str) -> None:
-        if msg not in self._logged_msgs:
-            logging.info(msg)
+        if self._log and msg not in self._logged_msgs:
+            logger.info(msg)
             self._logged_msgs.add(msg)
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
@@ -154,8 +156,10 @@ class CoreMLPartitioner(Partitioner):
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            OperatorsSupportedForCoreMLBackend(
-                self.skip_ops_for_coreml_delegation, self.lower_full_graph
+            _OperatorsSupportedForCoreMLBackend(
+                self.skip_ops_for_coreml_delegation,
+                self.lower_full_graph,
+                log=True,
             ),
             allows_single_node_partition=True,
         )
@@ -191,8 +195,10 @@ class CoreMLPartitioner(Partitioner):
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         do_not_decompose = []
-        op_support = OperatorsSupportedForCoreMLBackend(
-            self.skip_ops_for_coreml_delegation, self.lower_full_graph
+        op_support = _OperatorsSupportedForCoreMLBackend(
+            self.skip_ops_for_coreml_delegation,
+            self.lower_full_graph,
+            log=False,
         )
 
         # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace

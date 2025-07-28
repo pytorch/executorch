@@ -60,7 +60,7 @@ fi
 
 # Vela
 vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="8cac2b9a7204b57125a8718049519b091a98846c"
+vela_rev="d37febc1715edf0d236c2ff555739a8a9aadcf9a"
 
 # MLSDK dependencies
 mlsdk_manifest_dir="ml-sdk-for-vulkan-manifest"

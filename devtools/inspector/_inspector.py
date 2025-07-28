@@ -1376,17 +1376,19 @@ class Inspector:
             else self._etrecord.graph_map.get(graph)
         )
 
-    def calculate_numeric_gap(self, distance: str = "MSE") -> pd.DataFrame:
+    def calculate_numeric_gap(self, distance: str = "MSE"):
         """
         Compares logged intermediate outputs from the exported graph (in ETRecord)
         with runtime outputs (in ETDump) using a user-specific numerical comparator.
+        To use this function, you must first generate the ETRecord using the `bundle_program`,
+        and then create the Inspector instance with the ETRecord and ETDump. The Inspector can then
+        compare the intermediate outputs from the AOT and the runtime.
 
         Args:
             distance: the metrics the inspector will use for gap calculation. Should be one of "MSE", "L1" and "SNR".
 
         Returns:
-            pd.DataFrame: A DataFrame listing corresponding operator outputs from
-                          both stages and their computed numerical gaps.
+            pd.DataFrame: A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.
         """
         aot_intermediate_outputs, aot_debug_handle_to_op_names = (
             self._get_aot_intermediate_outputs_and_op_names()

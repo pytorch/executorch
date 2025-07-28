@@ -16,11 +16,10 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <type_traits>
-#include <unordered_map>
 
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/image_prefiller.h>
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
@@ -41,6 +40,7 @@ class ET_EXPERIMENTAL MultimodalRunner {
       const float temperature = 0.8f)
       : temperature_(temperature),
         module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
+        io_manager_(std::make_unique<IOManager>()),
         tokenizer_path_(tokenizer_path) {
     ET_LOG(
         Info,
@@ -127,6 +127,7 @@ class ET_EXPERIMENTAL MultimodalRunner {
   std::unique_ptr<TextDecoderRunner> text_decoder_runner_;
   std::unique_ptr<TextPrefiller> text_prefiller_;
   std::unique_ptr<ImagePrefiller> image_prefiller_;
+  std::unique_ptr<IOManager> io_manager_;
   std::unique_ptr<TextTokenGenerator> text_token_generator_;
   std::string tokenizer_path_;
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;

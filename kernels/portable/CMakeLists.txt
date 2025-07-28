@@ -88,13 +88,16 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     LIB_NAME "optimized_portable_ops_lib" KERNEL_LIBS
     optimized_portable_kernels DEPS executorch_core
   )
-  install(TARGETS optimized_portable_kernels optimized_portable_ops_lib
-          DESTINATION lib
+  install(
+    TARGETS optimized_portable_kernels optimized_portable_ops_lib
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
   )
 endif()
 
 install(
   TARGETS portable_kernels portable_ops_lib
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   PUBLIC_HEADER DESTINATION include/executorch/kernels/portable/
 )

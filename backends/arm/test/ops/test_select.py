@@ -13,6 +13,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineBI,
     EthosU85PipelineBI,
+    OpNotSupportedPipeline,
     TosaPipelineBI,
     TosaPipelineMI,
 )
@@ -30,6 +31,10 @@ test_data_suite = {
     "select1d_0_dim_1_index": lambda: (torch.randn(10) + 10, 0, 1),
     "select1d_0_dim_0_index": lambda: (torch.randn(10) - 10, 0, 2),
     "select3d_0_dim_1_index": lambda: (torch.arange(-16, 16, 0.2), 0, 1),
+}
+
+test_data_not_delegated = {
+    "select3d_large_after_squeeze": lambda: (torch.rand(3, 64, 3, 49, 32), 0, 0),
 }
 
 aten_op_copy = "torch.ops.aten.select_copy.int"
@@ -125,6 +130,19 @@ def test_select_int_u55_BI(test_data: Tuple):
         exir_ops=[],
         run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_not_delegated)
+def test_select_int_u55_BI_not_delegated(test_data: Tuple):
+    pipeline = OpNotSupportedPipeline[input_t1](
+        SelectInt(),
+        test_data(),
+        {aten_op_copy: 0},
+        n_expected_delegates=0,
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
