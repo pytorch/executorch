@@ -12,6 +12,11 @@ from typing import Optional
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
+from executorch.backends.cadence.aot.compiler_funcs import (
+    convert as convert_fn,
+    prepare as prepare_fn,
+    trace as trace_fn,
+)
 from executorch.backends.cadence.aot.memory_planning import (
     CadenceMemoryPlanning,
     print_memory_planning_info,
@@ -35,15 +40,12 @@ from executorch.exir import (
 from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.program._program import to_edge
-from torch._inductor.decomposition import remove_decompositions
 
 from torch.export.exported_program import ExportedProgram
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .passes import apply_exir_ops_passes, apply_torch_ops_passes
 
 from .utils import print_ops_info
-
 
 default_quantizer = CadenceDefaultQuantizer()
 
@@ -62,13 +64,6 @@ def trace(
     Trace the model with export and return an ExportedProgram.
     """
 
-    # Make the model inference mode by calling model.eval()
-    model.eval()
-
-    # Get default decompositions
-    decomp_table = torch.export.default_decompositions()
-
-    # Select ops to keep
     ops_to_keep = [
         torch.ops.aten.conv1d.default,
         torch.ops.aten.conv2d.default,
@@ -78,63 +73,54 @@ def trace(
         torch.ops.aten.rms_norm.default,
     ]
 
-    # Remove decompositions for the ops we want to keep
-    # pyre-fixme[6]: For 1st argument expected `Dict[typing.Callable[..., typing.Any
-    remove_decompositions(decomp_table, ops_to_keep)
-
-    # Export with dynamo
-    program = torch.export.export(model, inputs, strict=True).run_decompositions(
-        decomp_table
+    program = trace_fn(
+        model, inputs, is_qat=False, strict=True, ops_to_keep=ops_to_keep
     )
 
     if dump_graphs:
         logging.info("Graph before quantization:")
-        logging.info(program.module().graph.print_tabular())
+        logging.info(program.graph_module.graph.print_tabular())
 
     return program
 
 
-def prepare_and_convert_pt2(
+def prepare_pt2(
     program: ExportedProgram,
-    inputs: tuple[object, ...],
     quantizer: CadenceQuantizer,
-    calibration_data: Optional[list[tuple[object, ...]]] = None,
     dump_graphs: bool = False,
 ) -> torch.fx.GraphModule:
     """
-    Prepare and convert a model using the given quantizer.
+    Prepare a model using the given quantizer.
     The quantizer must be supplied and be the same as the one used to
     fuse the model later, if applicable. If you do not expect that behavior,
     please use quantize_and_fuse_pt2 instead, which will instantiate a
     default quantizer for you if needed.
-    If calibration data is provided, it will be used to calibrate the model. If
-    not, the inputs will be used for calibration instead, which is useful for
-    unit tests but should not be used for end-to-end use cases.
+    Returns a GraphModule with the prepared model.
+    """
+
+    prepared_model = prepare_fn(program, quantizer, is_qat=False)
+
+    if dump_graphs:
+        logging.info("Graph after preparation:")
+        logging.info(prepared_model.graph.print_tabular())
+
+    return prepared_model
+
+
+def convert_pt2(
+    graph_module: torch.fx.GraphModule,
+    dump_graphs: bool = False,
+) -> torch.fx.GraphModule:
+    """
+    Convert the model
     Returns a GraphModule with the converted model.
     """
 
-    # Get the graph module from the ExportedProgram
-    model_gm = program.module()
-
-    assert isinstance(model_gm, torch.fx.GraphModule)
-
-    # Prepare
-    prepared_model = prepare_pt2e(model_gm, quantizer)
-
-    # Calibrate
-    # If no calibration data is provided, use the inputs
-    if calibration_data is None:
-        calibration_data = [inputs]
-
-    for samples in calibration_data:
-        prepared_model(*samples)
-
-    # Convert
-    converted_model = convert_pt2e(prepared_model)
+    converted_model = convert_fn(graph_module)
 
     if dump_graphs:
-        logging.info("Graph after quantization (before fusion):")
-        logging.info(model_gm.graph.print_tabular())
+        logging.info("Graph after convert:")
+        logging.info(converted_model.graph.print_tabular())
 
     return converted_model
 
@@ -192,10 +178,19 @@ def quantize_pt2(
         logging.info("Graph after trace:")
         logging.info(program.graph.print_tabular())
 
+    # Get prepared graph module
+    prepared_gm = prepare_pt2(program, quantizer, dump_graphs=dump_graphs)
+
+    # Calibrate
+    # If no calibration data is provided, use the inputs
+    if calibration_data is None:
+        calibration_data = [inputs]
+
+    for samples in calibration_data:
+        prepared_gm(*samples)
+
     # Get converted graph module
-    converted_gm = prepare_and_convert_pt2(
-        program, inputs, quantizer, calibration_data, dump_graphs=dump_graphs
-    )
+    converted_gm = convert_pt2(prepared_gm, dump_graphs=dump_graphs)
 
     # Get fused model
     fused_gm = fuse_pt2(converted_gm, quantizer)
@@ -233,6 +228,9 @@ def _lower_ep_to_edge(
     """
     Lower an ExportedProgram to an EdgeProgramManager (in edge IR).
     """
+    # Apply passes which transform the ExportedProgram before it gets lowered to edge.
+    expo_program = apply_torch_ops_passes(expo_program)
+
     # Call to_edge to convert the graph to edge IR.
     # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
     edge_prog_manager = to_edge(
@@ -267,9 +265,6 @@ def export_to_edge(
 
     # Export the model into an ExportedProgram.
     expo_program = trace(model, inputs)
-
-    # Apply passes which transform the ExportedProgram before it gets lowered to edge.
-    expo_program = apply_torch_ops_passes(expo_program)
 
     # Lower the model to edge IR.
     edge_prog_manager = _lower_ep_to_edge(

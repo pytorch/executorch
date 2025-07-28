@@ -1,6 +1,6 @@
 import random
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 
@@ -33,7 +33,7 @@ class Tester:
         self,
         module: torch.nn.Module,
         example_inputs: Tuple[torch.Tensor],
-        stage_classes: Dict[StageType, Type],
+        stage_classes: Dict[StageType, Callable],
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         module.eval()
@@ -81,7 +81,7 @@ class Tester:
         self.stage_output = None
 
     @staticmethod
-    def default_stage_classes() -> Dict[StageType, Type]:
+    def default_stage_classes() -> Dict[StageType, Callable]:
         """
         Returns a map of StageType to default Stage implementation.
         """

@@ -1,9 +1,10 @@
 import logging
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from executorch.backends.test.harness import Tester
+from executorch.backends.test.harness.stages import Quantize
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -22,41 +23,52 @@ class TestFlow:
     backend: str
     """ The name of the target backend. """
 
-    tester_factory: Callable[[], Tester]
+    tester_factory: Callable[..., Tester]
     """ A factory function that returns a Tester instance for this lowering flow. """
 
+    quantize: bool = field(default=False)
+    """ Whether to tester should run the quantize stage on the model. """
 
-def create_xnnpack_flow() -> TestFlow | None:
-    try:
-        from executorch.backends.xnnpack.test.tester import Tester as XnnpackTester
-
-        return TestFlow(
-            name="xnnpack",
-            backend="xnnpack",
-            tester_factory=XnnpackTester,
-        )
-    except Exception:
-        logger.info("Skipping XNNPACK flow registration due to import failure.")
-        return None
-
-
-def create_coreml_flow() -> TestFlow | None:
-    try:
-        from executorch.backends.apple.coreml.test.tester import CoreMLTester
-
-        return TestFlow(
-            name="coreml",
-            backend="coreml",
-            tester_factory=CoreMLTester,
-        )
-    except Exception:
-        logger.info("Skipping Core ML flow registration due to import failure.")
-        return None
+    quantize_stage_factory: Callable[..., Quantize] | None = None
+    """ A factory function which instantiates a Quantize stage. Can be None to use the tester's default. """
 
 
 def all_flows() -> dict[str, TestFlow]:
-    flows = [
-        create_xnnpack_flow(),
-        create_coreml_flow(),
-    ]
+    flows = []
+
+    try:
+        from executorch.backends.test.suite.flows.xnnpack import (
+            XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
+            XNNPACK_TEST_FLOW,
+        )
+
+        flows += [
+            XNNPACK_TEST_FLOW,
+            XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping XNNPACK flow registration: {e}")
+
+    try:
+        from executorch.backends.test.suite.flows.coreml import (
+            COREML_STATIC_INT8_TEST_FLOW,
+            COREML_TEST_FLOW,
+        )
+
+        flows += [
+            COREML_TEST_FLOW,
+            COREML_STATIC_INT8_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping Core ML flow registration: {e}")
+
+    try:
+        from executorch.backends.test.suite.flows.vulkan import VULKAN_TEST_FLOW
+
+        flows += [
+            VULKAN_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping Vulkan flow registration: {e}")
+
     return {f.name: f for f in flows if f is not None}

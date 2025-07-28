@@ -232,21 +232,24 @@ test_model_with_qnn() {
 # @param should_test If true, build and test the model using the coreml_executor_runner.
 test_model_with_coreml() {
   local should_test="$1"
+  local test_with_pybindings="$2"
+  local dtype="$3"
 
   if [[ "${BUILD_TOOL}" != "cmake" ]]; then
     echo "coreml only supports cmake."
     exit 1
   fi
 
-  DTYPE=float16
+  RUN_WITH_PYBINDINGS=""
+  if [[ "${test_with_pybindings}" == true ]]; then
+    echo \"Running with pybindings\"
+    export RUN_WITH_PYBINDINGS="--run_with_pybindings"
+  fi
 
-  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}" --use_partitioner
+  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision ${dtype} --use_partitioner ${RUN_WITH_PYBINDINGS}
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 
   if [ -n "$EXPORTED_MODEL" ]; then
-    EXPORTED_MODEL_WITH_DTYPE="${EXPORTED_MODEL%.pte}_${DTYPE}.pte"
-    mv "$EXPORTED_MODEL" "$EXPORTED_MODEL_WITH_DTYPE"
-    EXPORTED_MODEL="$EXPORTED_MODEL_WITH_DTYPE"
     echo "OK exported model: $EXPORTED_MODEL"
   else
     echo "[error] failed to export model: no .pte file found"
@@ -303,7 +306,15 @@ elif [[ "${BACKEND}" == *"coreml"* ]]; then
   if [[ "${BACKEND}" == *"test"* ]]; then
     should_test_coreml=true
   fi
-  test_model_with_coreml "${should_test_coreml}"
+  test_with_pybindings=false
+  if [[ "${BACKEND}" == *"pybind"* ]]; then
+    test_with_pybindings=true
+  fi
+  dtype=float16
+  if [[ "${BACKEND}" == *"float32"* ]]; then
+    dtype=float32
+  fi
+  test_model_with_coreml "${should_test_coreml}" "${test_with_pybindings}" "${dtype}"
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
