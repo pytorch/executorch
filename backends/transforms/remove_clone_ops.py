@@ -13,11 +13,24 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 def remove_clone_ops(graph: torch.fx.Graph) -> torch.fx.Graph:
     """
-    Remove clone op nodes and replace uses with parent node.
+    Remove clone op nodes that have the same dim_order as their input and replace their uses with the input node.
     """
     clone_op = exir_ops.edge.aten.clone.default
+    clone_dim_order_op = exir_ops.edge.dim_order_ops._clone_dim_order.default
+
     for node in graph.nodes:
-        if node.op == "call_function" and node.target == clone_op:
+        if node.op != "call_function":
+            continue
+
+        # Identify clone_dim_order ops with unchanged tensor layout.
+        noop_dim_order_clone = (
+            node.target == clone_dim_order_op
+            and "val" in node.meta
+            and "val" in node.args[0].meta
+            and node.meta["val"].dim_order() == node.args[0].meta["val"].dim_order()
+        )
+
+        if node.target == clone_op or noop_dim_order_clone:
             with graph.inserting_after(node):
                 node.replace_all_uses_with(node.args[0])
 
