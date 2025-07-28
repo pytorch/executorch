@@ -55,6 +55,20 @@ class InsertCastForOpsWithInt64InputPass(ExportPass):
 
         return True
 
+    def _insert_int32_cast_before_node(self, graph, node, original_input):
+        to_copy_op = self.get_decomposition(node.target)
+        with graph.inserting_before(node):
+            cast_before = create_node(
+                graph,
+                to_copy_op,
+                args=(original_input,),
+                kwargs={
+                    "dtype": torch.int32,
+                    "memory_format": torch.preserve_format,
+                },
+            )
+            node.replace_input_with(original_input, cast_before)
+
     def call(self, graph_module):
         graph = graph_module.graph
         modified_graph = False
@@ -73,24 +87,8 @@ class InsertCastForOpsWithInt64InputPass(ExportPass):
             ):
                 weights = args[0]
                 indices = args[1]
-                valid_for_insert = self._check_aten_embedding_within_int32(
-                    weights, indices, node
-                )
-
-                if valid_for_insert:
-                    to_copy_op = self.get_decomposition(node.target)
-                    with graph.inserting_before(node):
-                        cast_before = create_node(
-                            graph,
-                            to_copy_op,
-                            args=(indices,),
-                            kwargs={
-                                "dtype": torch.int32,
-                                "memory_format": torch.preserve_format,
-                            },
-                        )
-                        node.replace_input_with(indices, cast_before)
-
+                if self._check_aten_embedding_within_int32(weights, indices, node):
+                    self._insert_int32_cast_before_node(graph, node, indices)
                     modified_graph = True
 
             elif node.target in (
@@ -103,19 +101,7 @@ class InsertCastForOpsWithInt64InputPass(ExportPass):
                 if fake_tensor.dtype != torch.int64:
                     continue
 
-                to_copy_op = self.get_decomposition(node.target)
-                with graph.inserting_before(node):
-                    cast_before = create_node(
-                        graph,
-                        to_copy_op,
-                        args=(input_tensor,),
-                        kwargs={
-                            "dtype": torch.int32,
-                            "memory_format": torch.preserve_format,
-                        },
-                    )
-                    node.replace_input_with(input_tensor, cast_before)
-
+                self._insert_int32_cast_before_node(graph, node, input_tensor)
                 modified_graph = True
 
         if modified_graph:
