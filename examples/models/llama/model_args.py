@@ -59,7 +59,7 @@ class ModelArgs:
     lora_args: Optional[dict] = None
 
     # LoRA arguments to set up a LoRA inference model.
-    # These arguments come directly from a torchtune LoRA config.
+    # These arguments come directly from a torchtune adapter_config.json file.
     r: Optional[int] = None  # Rank.
     lora_alpha: Optional[int] = None  # Alpha.
     # Eg. q_proj, k_proj, v_proj, output_proj
