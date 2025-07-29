@@ -94,7 +94,7 @@ jobs:
         west build -p always -b mps3/corstone300/fvp
         FVP_Corstone_SSE-300_Ethos-U55 -a build/zephyr/zephyr.elf -C mps3_board.visualisation.disable-visualisation=1 -C mps3_board.telnetterminal0.start_telnet=0 -C mps3_board.uart0.out_file='sim.out'  -C cpu0.CFGITCMSZ=15 -C cpu0.CFGDTCMSZ=15 --simlimit 120
 
-        grep -q "Output[0][0]: (float) 2.000000" sim.out
+        grep -qF "Output[0][0]: (float) 2.000000" sim.out
         exit_status=$? #store 0 if found (success), 1 if not (failure)
         exit $exit_status
 
