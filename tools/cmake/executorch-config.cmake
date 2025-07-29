@@ -78,6 +78,7 @@ set(lib_list
     extension_tensor
     extension_threadpool
     extension_training
+    extension_llm_runner
     xnnpack_backend
     # Start XNNPACK Lib Deps
     XNNPACK

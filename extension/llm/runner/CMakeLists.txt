@@ -15,7 +15,7 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-
+message(STATUS "Building LLM Runner")
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
@@ -52,12 +52,20 @@ add_subdirectory(
   ${EXECUTORCH_ROOT}/extension/llm/tokenizers
   ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/tokenizers
 )
+
 set(runner_deps executorch_core extension_module extension_tensor tokenizers)
 
+target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
+set_target_properties(extension_llm_runner PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+target_include_directories(
+  extension_llm_runner
+  INTERFACE ${_common_include_directories}
+            ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+)
 if(EXECUTORCH_BUILD_PYBIND)
   # Pybind library.
-  set(runner_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch util
-                                torch extension_llm_runner
+  set(runner_dep_libs executorch_core extension_module extension_tensor tokenizers extension_llm_runner
   )
 
   if(EXECUTORCH_BUILD_XNNPACK)
@@ -71,7 +79,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   # pybind training
   pybind11_add_module(
     runner SHARED
-    ${CMAKE_CURRENT_SOURCE_DIR}/python_bindings.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/runner/python_bindings.cpp
   )
 
   target_include_directories(runner PRIVATE ${TORCH_INCLUDE_DIRS})
@@ -80,21 +88,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   )
   target_link_libraries(runner PRIVATE ${runner_dep_libs})
 
-  install(TARGETS extension_llm_runner
-          LIBRARY DESTINATION executorch/extension/training/pybindings
+  install(TARGETS runner
+          LIBRARY DESTINATION executorch/extension/llm/runner
   )
+
 endif()
-
-
-target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
-set_target_properties(extension_llm_runner PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-target_include_directories(
-  extension_llm_runner
-  INTERFACE ${_common_include_directories}
-            ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
-)
-
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()

@@ -573,7 +573,22 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+    set(SUPPORT_REGEX_LOOKAHEAD ON)
+    # llama/runner/CMakeLists.txt builds a shared library libllama_runner.so
+    # that transitively depends on tokenizers. Need to build tokenizers with
+    # -fPIC.
+    set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+        ${CMAKE_POSITION_INDEPENDENT_CODE}
+    )
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers)
+  if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+    set(CMAKE_POSITION_INDEPENDENT_CODE
+        ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+    )
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
@@ -583,6 +598,7 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
 endif()
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
