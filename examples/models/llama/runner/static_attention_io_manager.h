@@ -859,7 +859,7 @@ class StaticAttentionIOManager {
   }
 
   StaticAttentionIOConfig config_;
-  size_t input_pos_;
+  size_t input_pos_ = 0;
   StaticKVCache<CacheT, CacheAllocatorT> kCaches_;
   StaticKVCache<CacheT, CacheAllocatorT> vCaches_;
   std::unordered_map<size_t, StaticAttentionMask<MaskT, MaskAllocatorT>>
