@@ -28,6 +28,7 @@ from executorch.exir.tests.test_memory_format_ops_pass_utils import (
     MemoryFormatOpsPassTestUtils,
     MemoryFormatTestSet,
     PropagateToCopyChannalsLastModule,
+    SimpleCloneChannelsLastModule,
     SimpleEmptyChannelLastModule,
     SimpleEmptyContiguoustModule,
     SimpleToCopyChannelsLastModule,
@@ -388,4 +389,18 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                 atol=1e-3,
                 rtol=1e-3,
             ),
+        )
+
+    def test_op_clone_dim_order_replacement(self):
+        model = SimpleCloneChannelsLastModule()
+        x = torch.randn(3, 4, 5, 6).to(memory_format=torch.contiguous_format)
+        clone_dim_order_op_str = (
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
+        )
+
+        exported = export(model.eval(), (x,), strict=True)
+        epm = to_edge(exported, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+
+        FileCheck().check_count(clone_dim_order_op_str, 1, exactly=True).run(
+            epm.exported_program().graph_module.code
         )
