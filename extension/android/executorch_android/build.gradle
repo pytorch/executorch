@@ -56,10 +56,8 @@ dependencies {
     androidTestImplementation 'org.json:json:20250107'
 }
 
-import com.vanniktech.maven.publish.SonatypeHost
-
 mavenPublishing {
-  publishToMavenCentral(SonatypeHost.DEFAULT)
+  publishToMavenCentral()
   signAllPublications()
 
   coordinates("org.pytorch", "executorch-android", "0.7.0")
@@ -94,6 +92,6 @@ mavenPublishing {
 
 repositories {
     maven {
-        url "https://oss.sonatype.org/content/repositories/snapshots"
+        url "https://central.sonatype.com/repository/maven-snapshots/"
     }
 }
