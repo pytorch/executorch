@@ -168,7 +168,7 @@ LLAMA_CHECKPOINT=path/to/consolidated.00.pth
 LLAMA_PARAMS=path/to/params.json
 
 python -m extension.llm.export.export_llm \
-  --config examples/models/llamaconfig/llama_bf16.yaml \
+  --config examples/models/llama/config/llama_bf16.yaml \
   +base.model_class="llama3_2" \
   +base.checkpoint="${LLAMA_CHECKPOINT:?}" \
   +base.params="${LLAMA_PARAMS:?}" \
