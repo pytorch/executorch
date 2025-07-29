@@ -6,8 +6,6 @@
 
 # pyre-unsafe
 
-from typing import Optional
-
 import torch
 from executorch.backends.test.suite.flow import TestFlow
 
