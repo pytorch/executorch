@@ -43,16 +43,6 @@ class IndexPut(OperatorTest):
             generate_random_test_inputs=False,
         )
 
-    def test_index_put_basic(self, flow: TestFlow) -> None:
-        indices = (torch.tensor([0, 2]),)
-        values = torch.tensor([10.0, 20.0])
-        self._test_op(
-            IndexPutModel(),
-            (torch.randn(5, 2), indices, values),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
     def test_index_put_accumulate(self, flow: TestFlow) -> None:
         indices = (torch.tensor([0, 2]),)
         values = torch.tensor([10.0, 20.0])
@@ -146,12 +136,104 @@ class IndexPut(OperatorTest):
             generate_random_test_inputs=False,
         )
 
-    def test_index_put_edge_cases(self, flow: TestFlow) -> None:
-        indices = (torch.tensor([0, 1, 2, 3, 4]),)
-        values = torch.tensor([10.0, 20.0, 30.0, 40.0, 50.0])
+    def test_index_put_broadcasting(self, flow: TestFlow) -> None:
+        # Test scalar broadcasting - single value to multiple positions
+        indices = (torch.tensor([0, 2, 4]),)
+        values = torch.tensor([42.0])
         self._test_op(
             IndexPutModel(),
-            (torch.randn(5, 5), indices, values),
+            (torch.randn(5, 3), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        # Test 1D broadcasting to 2D indexed positions
+        indices = (torch.tensor([0, 1]), torch.tensor([1, 2]))
+        values = torch.tensor([10.0, 20.0])  # 1D tensor
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(3, 4), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        # Test broadcasting with compatible shapes - 1D to multiple 2D slices
+        indices = (torch.tensor([0, 2]),)
+        values = torch.tensor([5.0, 15.0])  # Will broadcast to (2, 3) shape
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(4, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        # Test 2D values broadcasting to 3D indexed positions
+        indices = (torch.tensor([0, 1]),)
+        values = torch.tensor([[1.0, 2.0], [3.0, 4.0]])  # 2D tensor
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(3, 2, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        # Test broadcasting with accumulate=True
+        indices = (torch.tensor([1, 1, 1]),)
+        values = torch.tensor([5.0])  # Scalar will be added 3 times to same position
+        self._test_op(
+            IndexPutModel(accumulate=True),
+            (torch.ones(4, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+    def test_index_put_two_indices(self, flow: TestFlow) -> None:
+        # Test basic two-index tensor indexing
+        indices = (torch.tensor([0, 1, 2]), torch.tensor([1, 0, 2]))
+        values = torch.tensor([10.0, 20.0, 30.0])
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(4, 3), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        # Test two-index with different lengths (broadcasting)
+        indices = (torch.tensor([0, 2]), torch.tensor([1, 1]))
+        values = torch.tensor([15.0, 25.0])
+        self._test_op(
+            IndexPutModel(),
+            (torch.randn(3, 3), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        # Test two-index with repeated positions and accumulate=True
+        indices = (torch.tensor([1, 1, 2]), torch.tensor([0, 0, 1]))
+        values = torch.tensor([5.0, 10.0, 15.0])
+        self._test_op(
+            IndexPutModel(accumulate=True),
+            (torch.zeros(3, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        # Test two-index with repeated positions and accumulate=False
+        indices = (torch.tensor([1, 1, 2]), torch.tensor([0, 0, 1]))
+        values = torch.tensor([5.0, 10.0, 15.0])
+        self._test_op(
+            IndexPutModel(accumulate=False),
+            (torch.zeros(3, 2), indices, values),
+            flow,
+            generate_random_test_inputs=False,
+        )
+
+        # Test two-index with index broadcast.
+        indices = (torch.tensor([1]), torch.tensor([0, 0, 1]))
+        values = torch.tensor([5.0, 10.0, 15.0])
+        self._test_op(
+            IndexPutModel(accumulate=False),
+            (torch.zeros(3, 2), indices, values),
             flow,
             generate_random_test_inputs=False,
         )
