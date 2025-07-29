@@ -649,7 +649,7 @@ Python APIs.</p>
 <h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
 <p>An example script for the below building instructions is <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh">here</a>.
 We recommend to use the script because the ExecuTorch build-command can change from time to time.
-The above script is actively used. It is updated more frquently than this tutorial.
+The above script is actively used. It is updated more frequently than this tutorial.
 An example usage is</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
 ./backends/qualcomm/scripts/build.sh
@@ -684,7 +684,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span><span class="nv">$PW
 cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/backends/qualcomm/python
 cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/backends/qualcomm/python
 
-<span class="c1"># Workaround for fbs files in exir/_serialize</span>
+<span class="c1"># Workaround for .fbs files in exir/_serialize</span>
 cp<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/schema/program.fbs<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/exir/_serialize/program.fbs
 cp<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/schema/scalar_type.fbs<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/exir/_serialize/scalar_type.fbs
 </pre></div>
@@ -692,7 +692,7 @@ cp<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/schema/scalar
 </div>
 <div class="section" id="runtime">
 <h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
-<p>A example <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> executable would be used to run the compiled <code class="docutils literal notranslate"><span class="pre">pte</span></code> model.</p>
+<p>An example <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> executable would be used to run the compiled <code class="docutils literal notranslate"><span class="pre">pte</span></code> model.</p>
 <p>Commands to build <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> for Android:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
 mkdir<span class="w"> </span>build-android
@@ -781,7 +781,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<sp
 ls<span class="w"> </span>examples/qualcomm/executor_runner
 </pre></div>
 </div>
-<p>To run the HTP emulator, the dynamic linker need to access QNN libraries and <code class="docutils literal notranslate"><span class="pre">libqnn_executorch_backend.so</span></code>.
+<p>To run the HTP emulator, the dynamic linker needs to access QNN libraries and <code class="docutils literal notranslate"><span class="pre">libqnn_executorch_backend.so</span></code>.
 We set the below two paths to <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> environment variable:</p>
 <ol class="arabic simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">$QNN_SDK_ROOT/lib/x86_64-linux-clang/</span></code></p></li>
