@@ -28,6 +28,8 @@ from executorch.exir.tests.test_memory_format_ops_pass_utils import (
     MemoryFormatOpsPassTestUtils,
     MemoryFormatTestSet,
     PropagateToCopyChannalsLastModule,
+    SimpleCloneChannelsLastModule,
+    SimpleCloneContiguousModule,
     SimpleEmptyChannelLastModule,
     SimpleEmptyContiguoustModule,
     SimpleToCopyChannelsLastModule,
@@ -87,6 +89,36 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                 op=torch.ops.aten.empty.memory_format,
                 sample_input=(torch.randn((1, 10, 24, 24), dtype=torch.float32),),
                 target_memory_format=torch.contiguous_format,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+        )
+
+    def test_op_clone_replacement_contiguous(self) -> None:
+        model = SimpleCloneContiguousModule()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                op=torch.ops.aten.clone.default,
+                sample_input=(
+                    torch.randn((3, 4, 5, 6)).to(memory_format=torch.channels_last),
+                ),
+                target_memory_format=torch.contiguous_format,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+        )
+
+    def test_op_clone_replacement_channels_last(self) -> None:
+        model = SimpleCloneChannelsLastModule()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                op=torch.ops.aten.clone.default,
+                sample_input=(
+                    torch.randn((3, 4, 5, 6)).to(memory_format=torch.contiguous_format),
+                ),
+                target_memory_format=torch.channels_last,
                 _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
             ),
         )
