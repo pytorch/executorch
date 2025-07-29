@@ -360,8 +360,8 @@ jobs:
               "--recipe" "xnnpack"
               "--use_custom_sdpa"
               "--use_custom_kv_cache"
-              "--qlinear"
-              "--qembedding"
+              "--qlinear" "8da4w"
+              "--qembedding" "8w"
               "--output_dir" ".."
             )
 
