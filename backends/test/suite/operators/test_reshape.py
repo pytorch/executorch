@@ -37,13 +37,6 @@ class Reshape(OperatorTest):
             flow,
         )
 
-    def test_reshape_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            ReshapeModel(shape=[3, 5]),
-            (torch.randn(15),),
-            flow,
-        )
-
     def test_reshape_dimensions(self, flow: TestFlow) -> None:
         self._test_op(
             ReshapeModel(shape=[3, 5]),

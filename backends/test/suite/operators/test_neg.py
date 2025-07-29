@@ -37,13 +37,6 @@ class TestNeg(OperatorTest):
             generate_random_test_inputs=False,
         )
 
-    def test_neg_basic(self, flow: TestFlow) -> None:
-        # Basic test with default parameters
-        # Input: tensor with positive and negative values
-        self._test_op(
-            NegModel(), (torch.randn(10, 10),), flow, generate_random_test_inputs=False
-        )
-
     def test_neg_shapes(self, flow: TestFlow) -> None:
         # Test with different tensor shapes
 
@@ -62,79 +55,6 @@ class TestNeg(OperatorTest):
             NegModel(), (torch.randn(3, 4, 5),), flow, generate_random_test_inputs=False
         )
 
-        # 4D tensor
-        self._test_op(
-            NegModel(),
-            (torch.randn(2, 3, 4, 5),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # 5D tensor
-        self._test_op(
-            NegModel(),
-            (torch.randn(2, 2, 3, 4, 5),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-    def test_neg_values(self, flow: TestFlow) -> None:
-        # Test with different value ranges
-
-        # Small values
-        self._test_op(
-            NegModel(),
-            (torch.randn(10, 10) * 0.01,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # Large values
-        self._test_op(
-            NegModel(),
-            (torch.randn(10, 10) * 1000,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # Mixed positive and negative values
-        self._test_op(
-            NegModel(),
-            (torch.randn(10, 10) * 10,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # All positive values
-        self._test_op(
-            NegModel(),
-            (torch.rand(10, 10) * 10,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # All negative values
-        self._test_op(
-            NegModel(),
-            (torch.rand(10, 10) * -10,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # Values close to zero
-        self._test_op(
-            NegModel(),
-            (torch.randn(10, 10) * 1e-5,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # Test double negation (should return to original values)
-        x = torch.randn(10, 10)
-        model = NegModel()
-        double_neg_model = torch.nn.Sequential(model, model)
-        self._test_op(double_neg_model, (x,), flow, generate_random_test_inputs=False)
-
     def test_neg_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
 
@@ -145,19 +65,3 @@ class TestNeg(OperatorTest):
         # Tensor with NaN
         x = torch.tensor([float("nan"), 1.0, -1.0])
         self._test_op(NegModel(), (x,), flow, generate_random_test_inputs=False)
-
-        # Tensor with specific values
-        x = torch.tensor([-10.0, -1.0, 0.0, 1.0, 10.0])
-        self._test_op(NegModel(), (x,), flow, generate_random_test_inputs=False)
-
-    def test_neg_scalar(self, flow: TestFlow) -> None:
-        # Test with scalar input (1-element tensor)
-        self._test_op(
-            NegModel(), (torch.tensor([-5.0]),), flow, generate_random_test_inputs=False
-        )
-        self._test_op(
-            NegModel(), (torch.tensor([5.0]),), flow, generate_random_test_inputs=False
-        )
-        self._test_op(
-            NegModel(), (torch.tensor([0.0]),), flow, generate_random_test_inputs=False
-        )

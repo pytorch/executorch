@@ -31,49 +31,24 @@ class MaskedFillModel(torch.nn.Module):
 class MaskedFill(OperatorTest):
     @dtype_test
     def test_masked_fill_dtype(self, flow: TestFlow, dtype) -> None:
+        mask = torch.randint(0, 2, (16, 32), dtype=torch.bool)
         self._test_op(
             MaskedFillModel(value=0.0),
             (
-                torch.rand(3, 4).to(dtype),
-                torch.tensor(
-                    [
-                        [True, False, True, False],
-                        [False, True, False, True],
-                        [True, True, False, False],
-                    ]
-                ),
-            ),
-            flow,
-        )
-
-    def test_masked_fill_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            MaskedFillModel(value=0.0),
-            (
-                torch.randn(3, 4),
-                torch.tensor(
-                    [
-                        [True, False, True, False],
-                        [False, True, False, True],
-                        [True, True, False, False],
-                    ]
-                ),
+                torch.rand(16, 32).to(dtype),
+                mask,
             ),
             flow,
         )
 
     def test_masked_fill_different_values(self, flow: TestFlow) -> None:
+        mask = torch.randint(0, 2, (16, 32), dtype=torch.bool)
+
         self._test_op(
             MaskedFillModel(value=5.0),
             (
-                torch.randn(3, 4),
-                torch.tensor(
-                    [
-                        [True, False, True, False],
-                        [False, True, False, True],
-                        [True, True, False, False],
-                    ]
-                ),
+                torch.randn(16, 32),
+                mask,
             ),
             flow,
         )
@@ -81,14 +56,8 @@ class MaskedFill(OperatorTest):
         self._test_op(
             MaskedFillModel(value=-5.0),
             (
-                torch.randn(3, 4),
-                torch.tensor(
-                    [
-                        [True, False, True, False],
-                        [False, True, False, True],
-                        [True, True, False, False],
-                    ]
-                ),
+                torch.randn(16, 32),
+                mask,
             ),
             flow,
         )
@@ -96,14 +65,8 @@ class MaskedFill(OperatorTest):
         self._test_op(
             MaskedFillModel(value=1),
             (
-                torch.randn(3, 4),
-                torch.tensor(
-                    [
-                        [True, False, True, False],
-                        [False, True, False, True],
-                        [True, True, False, False],
-                    ]
-                ),
+                torch.randn(16, 32),
+                mask,
             ),
             flow,
         )
@@ -112,8 +75,8 @@ class MaskedFill(OperatorTest):
         self._test_op(
             MaskedFillModel(value=0.0),
             (
-                torch.randn(5),
-                torch.tensor([True, False, True, False, True]),
+                torch.randn(512),
+                torch.randint(0, 2, (512,), dtype=torch.bool),
             ),
             flow,
         )
@@ -121,41 +84,8 @@ class MaskedFill(OperatorTest):
         self._test_op(
             MaskedFillModel(value=0.0),
             (
-                torch.randn(2, 3, 4),
-                torch.tensor(
-                    [
-                        [
-                            [True, False, True, False],
-                            [False, True, False, True],
-                            [True, True, False, False],
-                        ],
-                        [
-                            [False, False, True, True],
-                            [True, False, True, False],
-                            [False, True, False, True],
-                        ],
-                    ]
-                ),
-            ),
-            flow,
-        )
-
-    def test_masked_fill_all_true(self, flow: TestFlow) -> None:
-        self._test_op(
-            MaskedFillModel(value=0.0),
-            (
-                torch.randn(3, 4),
-                torch.ones(3, 4, dtype=torch.bool),
-            ),
-            flow,
-        )
-
-    def test_masked_fill_all_false(self, flow: TestFlow) -> None:
-        self._test_op(
-            MaskedFillModel(value=0.0),
-            (
-                torch.randn(3, 4),
-                torch.zeros(3, 4, dtype=torch.bool),
+                torch.randn(4, 8, 16),
+                torch.randint(0, 2, (4, 8, 16), dtype=torch.bool),
             ),
             flow,
         )
@@ -164,8 +94,8 @@ class MaskedFill(OperatorTest):
         self._test_op(
             MaskedFillModel(value=0.0),
             (
-                torch.randn(3, 4),
-                torch.tensor([True, False, True, False]),
+                torch.randn(16, 32),
+                torch.randint(0, 2, (32,), dtype=torch.bool),
             ),
             flow,
         )

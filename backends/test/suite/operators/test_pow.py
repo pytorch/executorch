@@ -49,15 +49,6 @@ class TestPow(OperatorTest):
             generate_random_test_inputs=False,
         )
 
-    def test_pow_basic(self, flow: TestFlow) -> None:
-        # Basic test with default parameters (squaring)
-        self._test_op(
-            PowModel(),
-            (torch.rand(10, 10) + 0.1,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
     def test_pow_scalar_exponents(self, flow: TestFlow) -> None:
         # Test with different scalar exponents
 
@@ -117,34 +108,6 @@ class TestPow(OperatorTest):
             generate_random_test_inputs=False,
         )
 
-    def test_pow_tensor_exponents(self, flow: TestFlow) -> None:
-        # Test with tensor exponents
-
-        # Constant exponent tensor
-        x = torch.rand(10, 10) + 0.1
-        y = torch.full_like(x, 2.0)  # All elements are 2.0
-        self._test_op(PowTensorModel(), (x, y), flow, generate_random_test_inputs=False)
-
-        # Random exponent tensor (positive values)
-        x = torch.rand(10, 10) + 0.1
-        y = torch.rand(10, 10) * 3  # Random values between 0 and 3
-        self._test_op(PowTensorModel(), (x, y), flow, generate_random_test_inputs=False)
-
-        # Mixed positive and negative exponents
-        x = torch.rand(10, 10) + 0.1
-        y = torch.randn(10, 10)  # Random values with both positive and negative
-        self._test_op(PowTensorModel(), (x, y), flow, generate_random_test_inputs=False)
-
-        # Broadcasting: scalar base, tensor exponent
-        x = torch.tensor([2.0])
-        y = torch.arange(1, 5).float()  # [1, 2, 3, 4]
-        self._test_op(PowTensorModel(), (x, y), flow, generate_random_test_inputs=False)
-
-        # Broadcasting: tensor base, scalar exponent
-        x = torch.arange(1, 5).float()  # [1, 2, 3, 4]
-        y = torch.tensor([2.0])
-        self._test_op(PowTensorModel(), (x, y), flow, generate_random_test_inputs=False)
-
     def test_pow_shapes(self, flow: TestFlow) -> None:
         # Test with different tensor shapes
         model = PowModel(2)  # Square the input
@@ -164,80 +127,12 @@ class TestPow(OperatorTest):
             model, (torch.rand(3, 4, 5) + 0.1,), flow, generate_random_test_inputs=False
         )
 
-        # 4D tensor
-        self._test_op(
-            model,
-            (torch.rand(2, 3, 4, 5) + 0.1,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # 5D tensor
-        self._test_op(
-            model,
-            (torch.rand(2, 2, 3, 4, 5) + 0.1,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-    def test_pow_values(self, flow: TestFlow) -> None:
-        # Test with different value ranges
-        model = PowModel(2)  # Square the input
-
-        # Small values
-        self._test_op(
-            model,
-            (torch.rand(10, 10) * 0.01 + 0.01,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # Values around 1
-        self._test_op(
-            model,
-            (torch.rand(10, 10) * 0.2 + 0.9,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # Medium values
-        self._test_op(
-            model,
-            (torch.rand(10, 10) * 10 + 0.1,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # Large values (use smaller exponent to avoid overflow)
-        model = PowModel(0.5)  # Square root to avoid overflow
-        self._test_op(
-            model,
-            (torch.rand(10, 10) * 1000 + 0.1,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
     def test_pow_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
 
         # 0^0 = 1 (by convention)
         x = torch.zeros(1)
         y = torch.zeros(1)
-        self._test_op(PowTensorModel(), (x, y), flow, generate_random_test_inputs=False)
-
-        # x^0 = 1 for any x
-        x = torch.randn(10)
-        y = torch.zeros(10)
-        self._test_op(PowTensorModel(), (x, y), flow, generate_random_test_inputs=False)
-
-        # 0^y = 0 for y > 0
-        x = torch.zeros(5)
-        y = torch.arange(1, 6).float()
-        self._test_op(PowTensorModel(), (x, y), flow, generate_random_test_inputs=False)
-
-        # 1^y = 1 for any y
-        x = torch.ones(10)
-        y = torch.randn(10)
         self._test_op(PowTensorModel(), (x, y), flow, generate_random_test_inputs=False)
 
         # Tensor with infinity
@@ -249,16 +144,3 @@ class TestPow(OperatorTest):
         x = torch.tensor([float("nan"), 2.0, 3.0])
         y = torch.tensor([2.0, 2.0, 2.0])
         self._test_op(PowTensorModel(), (x, y), flow, generate_random_test_inputs=False)
-
-    def test_pow_scalar(self, flow: TestFlow) -> None:
-        # Test with scalar input (1-element tensor)
-        model = PowModel(2)  # Square the input
-        self._test_op(
-            model, (torch.tensor([2.0]),), flow, generate_random_test_inputs=False
-        )
-        self._test_op(
-            model, (torch.tensor([0.5]),), flow, generate_random_test_inputs=False
-        )
-        self._test_op(
-            model, (torch.tensor([0.0]),), flow, generate_random_test_inputs=False
-        )

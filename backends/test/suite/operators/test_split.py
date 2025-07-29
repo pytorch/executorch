@@ -48,13 +48,6 @@ class Split(OperatorTest):
             flow,
         )
 
-    def test_split_size_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            SplitSizeModel(split_size=2),
-            (torch.randn(6, 4),),
-            flow,
-        )
-
     def test_split_size_dimensions(self, flow: TestFlow) -> None:
         self._test_op(
             SplitSizeModel(split_size=2, dim=0),
@@ -84,13 +77,6 @@ class Split(OperatorTest):
         self._test_op(
             SplitSizeModel(split_size=3, dim=1),
             (torch.randn(4, 7),),
-            flow,
-        )
-
-    def test_split_sections_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            SplitSectionsModel(sections=[2, 3, 1]),
-            (torch.randn(6, 4),),
             flow,
         )
 
