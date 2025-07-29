@@ -102,8 +102,6 @@ class TosaArg:
     def __init__(
         self, argument: Any, tosa_spec: Optional[TosaSpecification] = None
     ) -> None:
-        if argument is None:
-            return
         if tosa_spec is None:
             raise ValueError("tosa_spec is None")
         elif not isinstance(tosa_spec, TosaSpecification):
@@ -123,6 +121,13 @@ class TosaArg:
             return
         if isinstance(argument, torch.dtype):
             # Dtype is parsed from fake tensor
+            return
+
+        if argument is None:
+            self.name = ""
+            self.dtype = None
+            self.shape = None
+            self.dim_order = None
             return
 
         raise RuntimeError(
