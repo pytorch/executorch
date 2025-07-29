@@ -79,7 +79,7 @@ static Kernel prim_ops[] = {
     // aten::sym_size.int(Tensor self, int dim) -> SymInt
     Kernel(
         "aten::sym_size.int",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& self = *stack[0];
           EValue& dim = *stack[1];
@@ -93,7 +93,7 @@ static Kernel prim_ops[] = {
     // aten::_local_scalar_dense(Tensor self) -> Scalar
     Kernel(
         "aten::_local_scalar_dense",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& self = *stack[0];
           EValue& out = *stack[1];
@@ -112,7 +112,7 @@ static Kernel prim_ops[] = {
     // aten::sym_numel(Tensor self) -> SymInt
     Kernel(
         "aten::sym_numel",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& self = *stack[0];
           EValue& out = *stack[1];
@@ -124,7 +124,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::sym_max.Scalar(SymInt a, SymInt b) -> SymInt
     Kernel(
         "executorch_prim::sym_max.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];
@@ -145,7 +145,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::sym_min.Scalar(SymInt a, SymInt b) -> SymInt
     Kernel(
         "executorch_prim::sym_min.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];
@@ -166,7 +166,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::add.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::add.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           ALGEBRA_ET_PRIM_OP(+, stack, context);
         }),
@@ -174,14 +174,14 @@ static Kernel prim_ops[] = {
     // executorch_prim::sub.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::sub.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           ALGEBRA_ET_PRIM_OP(-, stack, context);
         }),
 
     // executorch_prim::mul.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::mul.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           ALGEBRA_ET_PRIM_OP(*, stack, context);
         }),
 
@@ -196,7 +196,7 @@ static Kernel prim_ops[] = {
      */
     Kernel(
         "executorch_prim::floordiv.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];
@@ -231,7 +231,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::floordiv.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::truediv.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           // can't use macro because of custom casting behavior
           (void)context;
           EValue& a = *stack[0];
@@ -262,7 +262,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::sym_float.Scalar(Scalar) -> Scalar
     Kernel(
         "executorch_prim::sym_float.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           // can't use macro because of custom casting behavior
           // TODO: Now that we are reliably generating conversion operators,
           // we can remove the mixed type handling for other operators
@@ -283,41 +283,41 @@ static Kernel prim_ops[] = {
     // executorch_prim::eq.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::eq.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(==, stack, context);
         }),
 
     // executorch_prim::gt.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::gt.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(>, stack, context);
         }),
 
     // executorch_prim::lt.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::lt.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(<, stack, context);
         }),
 
     // executorch_prim::ge.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::ge.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(>=, stack, context);
         }),
 
     // executorch_prim::le.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::le.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(<=, stack, context);
         }),
     // executorch_prim::neg.Scalar(Scalar) -> Scalar
     Kernel(
         "executorch_prim::neg.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& out = *stack[1];
@@ -334,7 +334,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::floordiv.int(int, int) -> int
     Kernel(
         "executorch_prim::floordiv.int",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];
@@ -345,7 +345,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::mod.int(int, int) -> int
     Kernel(
         "executorch_prim::mod.int",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];
@@ -356,7 +356,7 @@ static Kernel prim_ops[] = {
     // executorch_prim::mod.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::mod.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& b = *stack[1];
@@ -378,7 +378,7 @@ static Kernel prim_ops[] = {
     // ceil.Scalar(Scalar a) -> Scalar
     Kernel(
         "executorch_prim::ceil.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& out = *stack[1];
@@ -398,7 +398,7 @@ static Kernel prim_ops[] = {
     // round.Scalar(Scalar a) -> Scalar
     Kernel(
         "executorch_prim::round.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& out = *stack[1];
@@ -435,7 +435,7 @@ static Kernel prim_ops[] = {
     // trunc.Scalar(Scalar a) -> Scalar
     Kernel(
         "executorch_prim::trunc.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           (void)context;
           EValue& a = *stack[0];
           EValue& out = *stack[1];
@@ -450,13 +450,13 @@ static Kernel prim_ops[] = {
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
     Kernel(
         "executorch_prim::et_copy_index.tensor",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           et_copy_index(context, stack);
         }),
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
     Kernel(
         "executorch_prim::et_view.default",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           et_view(context, stack);
         }),
 
