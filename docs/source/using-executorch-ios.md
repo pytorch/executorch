@@ -7,11 +7,10 @@ ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTor
 The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
 
 * `executorch` - Core runtime components
-* `executorch_llm` - LLM-specific runtime components
 * `backend_coreml` - Core ML backend
 * `backend_mps` - MPS backend
 * `backend_xnnpack` - XNNPACK backend
-* `kernels_llm` - Custom kernels for LLMs
+* `kernels_custom` - Custom kernels for LLMs
 * `kernels_optimized` - Accelerated generic CPU kernels
 * `kernels_quantized` - Quantized kernels
 
