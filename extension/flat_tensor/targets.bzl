@@ -8,6 +8,9 @@ def define_common_targets():
             srcs = [
                 "flat_tensor_data_map.cpp",
             ],
+                compiler_flags = [
+        "-Wno-deprecated-declarations",
+    ],
             exported_headers = ["flat_tensor_data_map.h"],
             deps = [
                 "//executorch/runtime/core:core",
@@ -21,6 +24,6 @@ def define_common_targets():
                 "//executorch/extension/flat_tensor/serialize:generated_headers",
             ],
             visibility = [
-                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
             ],
         )
