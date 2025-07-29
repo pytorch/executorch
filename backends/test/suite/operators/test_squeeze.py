@@ -19,9 +19,6 @@ from executorch.backends.test.suite.operators import (
 
 
 class SqueezeModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
     def forward(self, x):
         return torch.squeeze(x)
 
@@ -42,13 +39,6 @@ class Squeeze(OperatorTest):
         self._test_op(
             SqueezeModel(),
             (torch.rand(1, 3, 1, 5).to(dtype),),
-            flow,
-        )
-
-    def test_squeeze_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            SqueezeModel(),
-            (torch.randn(1, 3, 1, 5),),
             flow,
         )
 
