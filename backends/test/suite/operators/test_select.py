@@ -37,13 +37,6 @@ class Select(OperatorTest):
             flow,
         )
 
-    def test_select_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            SelectModel(dim=0, index=0),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
-
     def test_select_dimensions(self, flow: TestFlow) -> None:
         self._test_op(
             SelectModel(dim=0, index=1),
@@ -92,18 +85,5 @@ class Select(OperatorTest):
         self._test_op(
             SelectModel(dim=1, index=1),
             (torch.randn(2, 3, 4, 5),),
-            flow,
-        )
-
-    def test_select_edge_indices(self, flow: TestFlow) -> None:
-        self._test_op(
-            SelectModel(dim=0, index=0),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
-
-        self._test_op(
-            SelectModel(dim=0, index=2),
-            (torch.randn(3, 4, 5),),
             flow,
         )

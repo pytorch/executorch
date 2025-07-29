@@ -23,6 +23,7 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
     SharedQuantizationSpec,
 )
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
@@ -32,7 +33,6 @@ from .qconfig import (
 )
 
 
-QUANT_ANNOTATION_KEY = "quantization_annotation"
 OP_ANNOTATOR: Dict[OpOverload, Callable] = {}
 
 
@@ -53,8 +53,7 @@ def _is_annotated(nodes: List[Node]):
     annotated = False
     for node in nodes:
         annotated = annotated or (
-            QUANT_ANNOTATION_KEY in node.meta
-            and node.meta[QUANT_ANNOTATION_KEY]._annotated
+            Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated
         )
     return annotated
 
@@ -74,9 +73,9 @@ def _is_float_tensor(node: Node):
 
 def _mark_nodes_as_annotated(nodes: List[Node]):
     for node in nodes:
-        if QUANT_ANNOTATION_KEY not in node.meta:
-            node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation()
-        node.meta[QUANT_ANNOTATION_KEY]._annotated = True
+        if Q_ANNOTATION_KEY not in node.meta:
+            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation()
+        node.meta[Q_ANNOTATION_KEY]._annotated = True
 
 
 def annotate_in_out_obs_sharing_op(
@@ -91,15 +90,15 @@ def annotate_in_out_obs_sharing_op(
     # only annotate input output sharing operator
     # when the output of the input node is annotated
     if (
-        QUANT_ANNOTATION_KEY not in input_act.meta
-        or not input_act.meta[QUANT_ANNOTATION_KEY]._annotated
-        or input_act.meta[QUANT_ANNOTATION_KEY].output_qspec is None
+        Q_ANNOTATION_KEY not in input_act.meta
+        or not input_act.meta[Q_ANNOTATION_KEY]._annotated
+        or input_act.meta[Q_ANNOTATION_KEY].output_qspec is None
         or not _is_float_tensor(input_act)
     ):
         return
 
     act_qspec = SharedQuantizationSpec(input_act)
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map={
             input_act: act_qspec,
         },
@@ -121,7 +120,7 @@ def annotate_single_in_share_out(
         input_qspec_map[input_act] = quantization_config.input_activation
 
     if _is_float_tensor(node):
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=SharedQuantizationSpec((input_act, node)),
             _annotated=True,
@@ -137,7 +136,7 @@ def annotate_single_in(node: Node, quantization_config: QuantizationConfig) -> N
     assert isinstance(input_act, Node)
     input_qspec_map[input_act] = quantization_config.input_activation
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         _annotated=True,
     )
@@ -156,7 +155,7 @@ def annotate_single_in_single_out(
         input_qspec_map[input_act] = quantization_config.input_activation
 
     if _is_float_tensor(node):
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -194,7 +193,7 @@ def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None
     if _is_float_tensor(input_act1):
         input_qspec_map[input_act1] = input_act_qspec
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=output_act_qspec,
         _annotated=True,
@@ -269,7 +268,7 @@ def annotate_masked_fill(node: Node, quantization_config: QuantizationConfig) ->
         if _is_float_tensor(input_node):
             input_qspec_map[input_node] = quantization_config.input_activation
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=(
             quantization_config.output_activation if _is_float_tensor(node) else None
@@ -363,7 +362,7 @@ def annotate_div(node: Node, quantization_config: QuantizationConfig) -> None:
         if _is_float_tensor(input_act0):
             input_qspec_map[input_act0] = input_act_qspec
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=output_act_qspec,
             _annotated=True,
@@ -401,7 +400,7 @@ def annotate_arange(node: Node, quantization_config: QuantizationConfig) -> None
     if _is_float_tensor(node):
         # workaround for node with kwargs could not be correctly annotated
         node.kwargs = {}
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={},
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -466,7 +465,7 @@ def annotate_scalar_tensor(node: Node, quantization_config: QuantizationConfig) 
     if _is_float_tensor(node):
         # workaround for node with kwargs could not be correctly annotated
         node.kwargs = {}
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={},
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -486,7 +485,7 @@ def annotate_full(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_float_tensor(node):
         # workaround for node with kwargs could not be correctly annotated
         node.kwargs = {}
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={},
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -781,7 +780,7 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
     )
 
     if _is_float_tensor(node):
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=out_act_quantization_spec,
             _annotated=True,
@@ -842,7 +841,7 @@ def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> N
     input_qspec_map = {}
     input_qspec_map[weight] = quantization_config.input_activation
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=SharedQuantizationSpec((weight, node)),
         _annotated=True,
@@ -866,7 +865,7 @@ def annotate_index_put(node: Node, quantization_config: QuantizationConfig) -> N
     input_qspec_map = {}
     input_qspec_map[value] = quantization_config.input_activation
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=SharedQuantizationSpec((value, node)),
         _annotated=True,
@@ -883,7 +882,7 @@ def annotate_index_copy(node: Node, quantization_config: QuantizationConfig) -> 
     input_qspec_map = {}
     input_qspec_map[value] = quantization_config.input_activation
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=SharedQuantizationSpec((value, node)),
         _annotated=True,
@@ -963,7 +962,7 @@ def annotate_stack(node: Node, quantization_config: QuantizationConfig) -> None:
             assert isinstance(input_node, Node)
             input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=share_qparams_with_input_act0_qspec,
         _annotated=True,
@@ -992,7 +991,7 @@ def annotate_matmul(node: Node, quantization_config: QuantizationConfig) -> None
         else:
             input_qspec_map[input_act1] = input_act_qspec
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=output_act_qspec,
         _annotated=True,
@@ -1021,7 +1020,7 @@ def annotate_bmm(node: Node, quantization_config: QuantizationConfig) -> None:
         else:
             input_qspec_map[input_act1] = input_act_qspec
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=output_act_qspec,
         _annotated=True,
@@ -1073,7 +1072,7 @@ def annotate_conv(node: Node, quantization_config: QuantizationConfig) -> None:
             else:
                 input_qspec_map[bias] = quantization_config.bias
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=quantization_config.output_activation,
         _annotated=True,
@@ -1234,7 +1233,7 @@ def annotate_cat(node: Node, quantization_config: QuantizationConfig) -> None:
             if _is_float_tensor(input_node):
                 input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=share_qparams_with_input_act0_qspec,
         _annotated=True,
@@ -1252,14 +1251,14 @@ def annotate_unbind(node: Node, quantization_config: QuantizationConfig) -> None
     share_qparams_with_out_node0_qspec = SharedQuantizationSpec((node.args[0], node))
     input_qspec_map[input_act] = quantization_config.input_activation
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=share_qparams_with_out_node0_qspec,
         _annotated=True,
     )
 
     for user in node.users:
-        user.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        user.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             output_qspec=share_qparams_with_out_node0_qspec,
             _annotated=True,
         )
@@ -1281,13 +1280,13 @@ def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
     assert isinstance(input_act, Node)
     input_qspec_map[input_act] = quantization_config.input_activation
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         _annotated=True,
     )
 
     for user in node.users:
-        user.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        user.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             output_qspec=quantization_config.output_activation,
             _annotated=True,
         )
@@ -1304,7 +1303,7 @@ def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
         if _is_float_tensor(input_node):
             input_qspec_map[input_node] = quantization_config.input_activation
 
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=(
             quantization_config.output_activation if _is_float_tensor(node) else None
@@ -1320,7 +1319,7 @@ def annotate_zeros(node: Node, quantization_config: QuantizationConfig) -> None:
 
     # workaround for node with kwargs could not be correctly annotated
     node.kwargs = {}
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map={},
         output_qspec=quantization_config.output_activation,
         _annotated=True,

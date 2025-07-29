@@ -20,8 +20,8 @@ from executorch.backends.test.suite.operators import (
 class Model(torch.nn.Module):
     def __init__(
         self,
-        in_features=10,
-        out_features=5,
+        in_features=64,
+        out_features=32,
         bias=True,
     ):
         super().__init__()
@@ -41,7 +41,7 @@ class Linear(OperatorTest):
     def test_linear_dtype(self, flow: TestFlow, dtype) -> None:
         self._test_op(
             Model().to(dtype),
-            ((torch.rand(2, 10) * 10).to(dtype),),
+            ((torch.rand(16, 64) * 10).to(dtype),),
             flow,
         )
 
@@ -49,83 +49,76 @@ class Linear(OperatorTest):
     def test_linear_no_bias_dtype(self, flow: TestFlow, dtype) -> None:
         self._test_op(
             Model(bias=False).to(dtype),
-            ((torch.rand(2, 10) * 10).to(dtype),),
-            flow,
-        )
-
-    def test_linear_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            Model(),
-            (torch.randn(2, 10),),
+            ((torch.rand(16, 64) * 10).to(dtype),),
             flow,
         )
 
     def test_linear_feature_sizes(self, flow: TestFlow) -> None:
         self._test_op(
-            Model(in_features=5, out_features=3),
-            (torch.randn(2, 5),),
+            Model(in_features=32, out_features=16),
+            (torch.randn(20, 32),),
             flow,
         )
         self._test_op(
-            Model(in_features=20, out_features=10),
-            (torch.randn(2, 20),),
+            Model(in_features=128, out_features=64),
+            (torch.randn(8, 128),),
             flow,
         )
         self._test_op(
-            Model(in_features=100, out_features=1),
-            (torch.randn(2, 100),),
+            Model(in_features=256, out_features=1),
+            (torch.randn(4, 256),),
             flow,
         )
         self._test_op(
-            Model(in_features=1, out_features=100),
-            (torch.randn(2, 1),),
+            Model(in_features=1, out_features=512),
+            (torch.randn(1024, 1),),
             flow,
         )
 
     def test_linear_no_bias(self, flow: TestFlow) -> None:
         self._test_op(
             Model(bias=False),
-            (torch.randn(2, 10),),
+            (torch.randn(16, 64),),
             flow,
         )
         self._test_op(
-            Model(in_features=20, out_features=15, bias=False),
-            (torch.randn(2, 20),),
+            Model(in_features=128, out_features=96, bias=False),
+            (torch.randn(8, 128),),
             flow,
         )
 
     def test_linear_batch_sizes(self, flow: TestFlow) -> None:
         self._test_op(
             Model(),
-            (torch.randn(1, 10),),
+            (torch.randn(8, 64),),
             flow,
         )
         self._test_op(
             Model(),
-            (torch.randn(5, 10),),
+            (torch.randn(32, 64),),
             flow,
         )
         self._test_op(
             Model(),
-            (torch.randn(100, 10),),
+            (torch.randn(100, 64),),
             flow,
         )
 
     def test_linear_unbatched(self, flow: TestFlow) -> None:
         self._test_op(
-            Model(),
-            (torch.randn(10),),
+            Model(in_features=512),
+            (torch.randn(512),),
             flow,
         )
 
-    def test_linear_multi_dim_input(self, flow: TestFlow) -> None:
+    def test_linear_leading_batch(self, flow: TestFlow) -> None:
         self._test_op(
             Model(),
-            (torch.randn(3, 4, 10),),
+            (torch.randn(4, 8, 64),),
             flow,
         )
         self._test_op(
             Model(),
-            (torch.randn(2, 3, 4, 10),),
+            (torch.randn(2, 4, 8, 64),),
             flow,
         )

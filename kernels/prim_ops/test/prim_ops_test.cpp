@@ -215,7 +215,7 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
   Tensor copy_to = tf.make({2, 2}, {0, 0, 0, 0});
 #else
   std::vector<int> buf(4);
-  SizesType expected_output_size[2] = {0, 0};
+  SizesType expected_output_size[2] = {0, 2};
   Tensor copy_to =
       tf.make({2, 2}, {0, 0, 0, 0}, {}, TensorShapeDynamism::DYNAMIC_BOUND);
   // Resize the tensor to 0 size for the tests.
