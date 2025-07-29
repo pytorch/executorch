@@ -287,7 +287,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   set(EXECUTORCH_LIBRARIES executorch pthreadpool extension_threadpool cpuinfo)
 
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental)
-  target_link_options_shared_lib(torchao_ops_executorch)
+  executorch_target_link_options_shared_lib(torchao_ops_executorch)
   list(APPEND _dep_libs torchao_ops_executorch)
 endif()
 
