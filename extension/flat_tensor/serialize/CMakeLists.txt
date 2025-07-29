@@ -63,3 +63,15 @@ generate_flat_tensor_schema("${scalar_type_schema_srcs}" "scalar_type_schema")
 set(flat_tensor_schema_srcs flat_tensor.fbs)
 generate_flat_tensor_schema("${flat_tensor_schema_srcs}" "flat_tensor_schema")
 add_dependencies(flat_tensor_schema scalar_type_schema)
+
+add_library(extension_flat_tensor_serialize serialize.cpp)
+target_include_directories(
+  extension_flat_tensor_serialize
+  PRIVATE ${_common_include_directories}
+          ${TORCH_INCLUDE_DIRS})
+target_compile_definitions(
+  extension_flat_tensor_serialize PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+)
+target_link_libraries(extension_flat_tensor_serialize
+  PRIVATE flat_tensor_schema
+)

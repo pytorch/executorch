@@ -14,6 +14,7 @@ import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import org.pytorch.executorch.annotations.Experimental;
@@ -116,4 +117,17 @@ public class TrainingModule {
 
   @DoNotStrip
   private native Map<String, Tensor> namedGradientsNative(String methodName);
+
+  /**
+   * Exports a map of tensors as a buffer that can be saved as a PTD file.
+   *
+   * @param tensorMap map of tensor names to tensors to export to buffer.
+   * @return buffer that contains the tensors in the PTD format.
+   */
+  public static ByteBuffer savePtd(Map<String, Tensor> tensorMap) {
+    return savePtdNative(tensorMap);
+  }
+
+  @DoNotStrip
+  private static native ByteBuffer savePtdNative(Map<String, Tensor> tensorMap);
 }
