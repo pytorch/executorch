@@ -251,6 +251,9 @@ def _lower_ep_to_edge(
     """
     Lower an ExportedProgram to an EdgeProgramManager (in edge IR).
     """
+    # Apply passes which transform the ExportedProgram before it gets lowered to edge.
+    expo_program = apply_torch_ops_passes(expo_program)
+
     # Call to_edge to convert the graph to edge IR.
     # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
     edge_prog_manager = to_edge(
@@ -285,9 +288,6 @@ def export_to_edge(
 
     # Export the model into an ExportedProgram.
     expo_program = trace(model, inputs)
-
-    # Apply passes which transform the ExportedProgram before it gets lowered to edge.
-    expo_program = apply_torch_ops_passes(expo_program)
 
     # Lower the model to edge IR.
     edge_prog_manager = _lower_ep_to_edge(
