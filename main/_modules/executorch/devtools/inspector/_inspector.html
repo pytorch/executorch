@@ -570,6 +570,7 @@
     <span class="n">map_runtime_aot_intermediate_outputs</span><span class="p">,</span>
     <span class="n">merge_runtime_overlapping_debug_handles</span><span class="p">,</span>
     <span class="n">ProgramOutput</span><span class="p">,</span>
+    <span class="n">propagate_back_debug_handle</span><span class="p">,</span>
     <span class="n">RESERVED_FRAMEWORK_EVENT_NAMES</span><span class="p">,</span>
     <span class="n">TimeScale</span><span class="p">,</span>
     <span class="n">verify_debug_data_equivalence</span><span class="p">,</span>
@@ -1674,7 +1675,18 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">{},</span> <span class="p">{}</span>
-        <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">edge_dialect_program</span>
+
+        <span class="n">export_program</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Will use the exported program to extract intermediate output if and only if exported_program has been provided, and it is the greatest ancestor of the edge_dialect_program</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span> <span class="ow">and</span> <span class="n">propagate_back_debug_handle</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">export_graph_id</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">edge_dialect_program</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">edge_dialect_program</span>
         <span class="n">graph_module</span> <span class="o">=</span> <span class="n">export_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
         <span class="n">aot_debug_handle_to_op_name</span> <span class="o">=</span> <span class="n">get_aot_debug_handle_to_op_name_mapping</span><span class="p">(</span>
             <span class="n">graph_module</span>
