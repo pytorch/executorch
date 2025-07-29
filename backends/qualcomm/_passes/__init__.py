@@ -17,6 +17,7 @@ from .decompose_col_im import DecomposeColIm
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
+from .decompose_minmaxdim import DecomposeMinMaxDim
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
 from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
@@ -54,6 +55,7 @@ __all__ = [
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
+    DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeWrapWithAutocast,

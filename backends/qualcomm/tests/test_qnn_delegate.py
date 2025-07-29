@@ -152,6 +152,11 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_argmax(self):
+        module = Argmax()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 4, 4),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_argmin(self):
         module = Argmin()  # noqa: F405
         sample_input = (torch.randn(16, 3, 4, 4),)
@@ -861,6 +866,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_max_dim(self):
+        module = MaxDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_max_pool2d(self):
         module = MaxPool2d()  # noqa: F405
         sample_input = (torch.randn(4, 3, 24, 24),)
@@ -882,6 +892,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_minimum(self):
         module = Minimum()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_min_dim(self):
+        module = MinDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_neg(self):
@@ -1423,6 +1438,12 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_argmax(self):
+        module = Argmax()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 4, 4),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_argmin(self):
         module = Argmin()  # noqa: F405
@@ -2219,6 +2240,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_max_dim(self):
+        module = MaxDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_max_pool2d(self):
         module = MaxPool2d()  # noqa: F405
         sample_input = (torch.randn(4, 3, 24, 24),)
@@ -2242,6 +2269,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_minimum(self):
         module = Minimum()  # noqa: F405
         sample_input = (torch.randn(1, 2, 3, 4), torch.randn(2, 3, 4))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_min_dim(self):
+        module = MinDim()  # noqa: F405
+        sample_input = (torch.randn(4, 10),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -4016,7 +4049,7 @@ class TestExampleLLMScript(TestQNN):
             "16a4w",
             "--temperature",
             "0",
-            "--llama_model",
+            "--decoder_model",
             "llama3_2",
             "--model_mode",
             "hybrid",
@@ -4061,6 +4094,84 @@ class TestExampleLLMScript(TestQNN):
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 66)  # Lanai
 
+    def test_llama_stories_260k(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+        assert (
+            self.llama_artifacts is not None
+        ), "Please provide path to llama artifacts"
+
+        prompt = "Once"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--checkpoint",
+            f"{self.llama_artifacts}/stories260K.pt",
+            "--params",
+            f"{self.llama_artifacts}/params.json",
+            "--tokenizer_model",
+            f"{self.llama_artifacts}/tokenizer.model",
+            "--tokenizer_bin",
+            f"{self.llama_artifacts}/tokenizer.bin",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a4w",
+            "--temperature",
+            "0",
+            "--decoder_model",
+            "stories260k",
+            "--model_mode",
+            "hybrid",
+            "--prefill_ar_len",
+            "32",
+            "--max_seq_len",
+            "128",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        golden_start_with = "Once upon a time,"
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.compile_only:
+                    model_out = msg["result"][0]
+                    print(f"Model CI result:{model_out[: len(golden_start_with)]}")
+                    self.assertTrue(
+                        model_out.startswith(golden_start_with),
+                        f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                    )
+                # x86 does not allow weight sharing, so we don't check pte size
+                if not self.enable_x86_64:
+                    pte_size = msg["pte_size"]
+                    self.assertLessEqual(pte_size, 2020000)
+                if not self.compile_only and not self.enable_x86_64:
+                    self.assertGreaterEqual(msg["inference_speed"], 1600)  # Lanai
+
     def test_llama_stories_110m(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
@@ -4096,7 +4207,7 @@ class TestExampleLLMScript(TestQNN):
             "16a4w",
             "--temperature",
             "0",
-            "--llama_model",
+            "--decoder_model",
             "stories110m",
             "--model_mode",
             "hybrid",
@@ -4137,6 +4248,65 @@ class TestExampleLLMScript(TestQNN):
                     self.assertLessEqual(pte_size, 130000000)
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
+
+    def test_qwen2_5(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "My favourite condiment is "
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a8w",
+            "--decoder_model",
+            "qwen2_5",
+            "--model_mode",
+            "hybrid",
+            "--prefill_ar_len",
+            "32",
+            "--max_seq_len",
+            "128",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        # Accuracy is bad for now. Just check user's prompt is returned.
+        golden_start_with = "My favourite condiment is "
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                model_out = msg["result"][0]
+                self.assertTrue(
+                    model_out.startswith(golden_start_with),
+                    f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                )
+                self.assertGreaterEqual(msg["inference_speed"], 95)  # Lanai
 
 
 class TestExampleOssScript(TestQNN):

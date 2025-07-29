@@ -396,7 +396,7 @@ template <typename TokenT>
 class SuffixCache {
  public:
   SuffixCache(size_t n, size_t capacity)
-      : n_(n), capacity_(capacity), pos_(0), cache_(n_ * capacity_) {}
+      : n_(n), capacity_(capacity), pos_(0), cache_((n_ - 1) * capacity_) {}
 
   void add(executorch::runtime::Span<TokenT> suffix) {
     if (suffix.size() != n_ - 1) {

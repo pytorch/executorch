@@ -164,6 +164,9 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.bitwise_and.Tensor,
             exir_ops.edge.aten.bitwise_or.Tensor,
             exir_ops.edge.aten.bitwise_xor.Tensor,
+            exir_ops.edge.aten.bitwise_and.Scalar,
+            exir_ops.edge.aten.bitwise_or.Scalar,
+            exir_ops.edge.aten.bitwise_xor.Scalar,
             exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.cat.default,
             exir_ops.edge.aten.ceil.default,
@@ -254,6 +257,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.asin.default,
             exir_ops.edge.aten.atanh.default,
             exir_ops.edge.aten.addmm.default,
+            exir_ops.edge.aten.masked_fill.Scalar,
         ]
 
         return supported

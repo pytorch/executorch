@@ -14,12 +14,20 @@ import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
-from executorch.runtime import Runtime
 from torchao.quantization import IntxWeightOnlyConfig, PerAxis, PerGroup, quantize_
 
-_TEST_RUNTIME = sys.platform == "darwin" and tuple(
-    map(int, platform.mac_ver()[0].split("."))
-) >= (15, 0)
+
+def is_fbcode():
+    return not hasattr(torch.version, "git_version")
+
+
+_TEST_RUNTIME = (
+    (sys.platform == "darwin")
+    and not is_fbcode()
+    and tuple(map(int, platform.mac_ver()[0].split("."))) >= (15, 0)
+)
+if _TEST_RUNTIME:
+    from executorch.runtime import Runtime
 
 
 class TestTorchOps(unittest.TestCase):

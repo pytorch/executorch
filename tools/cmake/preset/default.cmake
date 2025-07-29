@@ -80,11 +80,11 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM_APPLE "Build the LLM Apple extension" BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" BOOL OFF
+  EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER "Build the LLM runner extension" BOOL
+  OFF
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension" BOOL
-  OFF
+  EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" BOOL OFF
@@ -146,6 +146,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_VGF "Build the Arm VGF backend" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." BOOL
   OFF
 )
@@ -175,6 +178,14 @@ elseif(DEFINED EXECUTORCH_BUILD_PRESET_FILE)
 endif()
 define_overridable_option(
   EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" BOOL
+  ${_default_executorch_build_executor_runner}
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL "Build the EValue util extension" BOOL
+  ${_default_executorch_build_executor_runner}
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension" BOOL
   ${_default_executorch_build_executor_runner}
 )
 
@@ -214,8 +225,23 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXECUTOR_RUNNER REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL
+  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
+)
+check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR REQUIRES
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_LLM_APPLE REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_LLM
 )
 
 check_required_options_on(
@@ -247,9 +273,14 @@ check_required_options_on(
   IF_ON EXECUTORCH_BUILD_TESTS REQUIRES EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
 )
 
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_XNNPACK REQUIRES EXECUTORCH_BUILD_CPUINFO
+  EXECUTORCH_BUILD_PTHREADPOOL
+)
+
 check_conflicting_options_on(
   IF_ON EXECUTORCH_BUILD_ARM_BAREMETAL CONFLICTS_WITH
-  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER EXECUTORCH_BUILD_PTHREADPOOL
+  EXECUTORCH_BUILD_PTHREADPOOL
   EXECUTORCH_BUILD_CPUINFO
 )
 
