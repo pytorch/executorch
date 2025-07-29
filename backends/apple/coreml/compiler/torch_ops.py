@@ -9,7 +9,7 @@
 # the op to the coremltools library.
 
 import torch as _torch
-from coremltools import _logger as logger
+from coremltools import _logger
 from coremltools.converters.mil.frontend import _utils
 from coremltools.converters.mil.frontend.torch.ops import (
     _get_inputs,
@@ -88,7 +88,7 @@ def dequantize_affine(context, node):
     out_np_dtype = None
     if len(inputs) > 7:
         out_np_dtype = NUM_TO_NUMPY_DTYPE[inputs[7].val]
-        logger.warning(
+        _logger.warning(
             f"Core ML ignores output_dtype {out_np_dtype} on torchao.dequantize_affine and instead uses the native precision."
         )
 
