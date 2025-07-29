@@ -166,34 +166,39 @@ test_model_with_qnn() {
   export PYTHONPATH=$EXECUTORCH_ROOT/..
 
   EXTRA_FLAGS=""
+  # Following models are inside examples/qualcomm/scripts folder
   if [[ "${MODEL_NAME}" == "dl3" ]]; then
     EXPORT_SCRIPT=deeplab_v3
-  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
-    EXPORT_SCRIPT=mobilenet_v3
-  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
-    EXPORT_SCRIPT=mobilenet_v2
-  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
-    EXPORT_SCRIPT=inception_v4
-  elif [[ "${MODEL_NAME}" == "ic3" ]]; then
-    EXPORT_SCRIPT=inception_v3
-  elif [[ "${MODEL_NAME}" == "vit" ]]; then
-    EXPORT_SCRIPT=torchvision_vit
-  elif [[ "${MODEL_NAME}" == "mb" ]]; then
-    EXPORT_SCRIPT=mobilebert_fine_tune
-    EXTRA_FLAGS="--num_epochs 1"
-    pip install scikit-learn
-  elif [[ "${MODEL_NAME}" == "w2l" ]]; then
-    EXPORT_SCRIPT=wav2letter
   elif [[ "${MODEL_NAME}" == "edsr" ]]; then
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  elif [[ "${MODEL_NAME}" == "ic3" ]]; then
+    EXPORT_SCRIPT=inception_v3
+  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
+    EXPORT_SCRIPT=inception_v4
+  elif [[ "${MODEL_NAME}" == "mb" ]]; then
+    EXPORT_SCRIPT=mobilebert_fine_tune
+    EXTRA_FLAGS="--num_epochs 1"
+    pip install scikit-learn
+  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
+    EXPORT_SCRIPT=mobilenet_v2
+  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
+    EXPORT_SCRIPT=mobilenet_v3
+  elif [[ "${MODEL_NAME}" == "vit" ]]; then
+    EXPORT_SCRIPT=torchvision_vit
+  elif [[ "${MODEL_NAME}" == "w2l" ]]; then
+    EXPORT_SCRIPT=wav2letter
+  # Following models are inside examples/qualcomm/oss_scripts folder
   elif [[ "${MODEL_NAME}" == "albert" ]]; then
     EXPORT_SCRIPT=albert
   elif [[ "${MODEL_NAME}" == "bert" ]]; then
     EXPORT_SCRIPT=bert
   elif [[ "${MODEL_NAME}" == "distilbert" ]]; then
     EXPORT_SCRIPT=distilbert
+  elif [[ "${MODEL_NAME}" == "conv_former" ]]; then
+    EXPORT_SCRIPT=conv_former
+    EXTRA_FLAGS="--dataset imagenet-mini/val"
   elif [[ "${MODEL_NAME}" == "eurobert" ]]; then
     EXPORT_SCRIPT=eurobert
   else
@@ -210,7 +215,7 @@ test_model_with_qnn() {
     "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
         SCRIPT_FOLDER=scripts
         ;;
-    "albert"|"bert"|"distilbert")
+    "albert"|"bert"|"distilbert" | "conv_former")
         pip install evaluate
         SCRIPT_FOLDER=oss_scripts
         # Bert models running in 16bit will encounter op validation fail on some operations,
