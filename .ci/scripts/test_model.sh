@@ -166,28 +166,30 @@ test_model_with_qnn() {
   export PYTHONPATH=$EXECUTORCH_ROOT/..
 
   EXTRA_FLAGS=""
+  # Following models are inside examples/qualcomm/scripts folder
   if [[ "${MODEL_NAME}" == "dl3" ]]; then
     EXPORT_SCRIPT=deeplab_v3
-  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
-    EXPORT_SCRIPT=mobilenet_v3
-  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
-    EXPORT_SCRIPT=mobilenet_v2
-  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
-    EXPORT_SCRIPT=inception_v4
-  elif [[ "${MODEL_NAME}" == "ic3" ]]; then
-    EXPORT_SCRIPT=inception_v3
-  elif [[ "${MODEL_NAME}" == "vit" ]]; then
-    EXPORT_SCRIPT=torchvision_vit
-  elif [[ "${MODEL_NAME}" == "mb" ]]; then
-    EXPORT_SCRIPT=mobilebert_fine_tune
-    EXTRA_FLAGS="--num_epochs 1"
-    pip install scikit-learn
-  elif [[ "${MODEL_NAME}" == "w2l" ]]; then
-    EXPORT_SCRIPT=wav2letter
   elif [[ "${MODEL_NAME}" == "edsr" ]]; then
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  elif [[ "${MODEL_NAME}" == "ic3" ]]; then
+    EXPORT_SCRIPT=inception_v3
+  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
+    EXPORT_SCRIPT=inception_v4
+  elif [[ "${MODEL_NAME}" == "mb" ]]; then
+    EXPORT_SCRIPT=mobilebert_fine_tune
+    EXTRA_FLAGS="--num_epochs 1"
+    pip install scikit-learn
+  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
+    EXPORT_SCRIPT=mobilenet_v2
+  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
+    EXPORT_SCRIPT=mobilenet_v3
+  elif [[ "${MODEL_NAME}" == "vit" ]]; then
+    EXPORT_SCRIPT=torchvision_vit
+  elif [[ "${MODEL_NAME}" == "w2l" ]]; then
+    EXPORT_SCRIPT=wav2letter
+  # Following models are inside examples/qualcomm/oss_scripts folder
   elif [[ "${MODEL_NAME}" == "albert" ]]; then
     EXPORT_SCRIPT=albert
   elif [[ "${MODEL_NAME}" == "bert" ]]; then
