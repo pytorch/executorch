@@ -15,5 +15,10 @@ set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 set_overridable_option(EXECUTORCH_BUILD_DEVTOOLS ON)
+
+# Presets to build executor runner
+
 set_overridable_option(EXECUTORCH_BUILD_EXECUTOR_RUNNER ON)
 set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL ON)
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
