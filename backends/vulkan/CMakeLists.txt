@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -120,20 +121,6 @@ target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 executorch_target_link_options_shared_lib(vulkan_backend)
 
 set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
-
-# Executor Runner
-
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
-  set(VULKAN_RUNNER_SRCS ${_executor_runner__srcs})
-  list(TRANSFORM VULKAN_RUNNER_SRCS PREPEND "${EXECUTORCH_ROOT}/")
-
-  add_executable(vulkan_executor_runner ${VULKAN_RUNNER_SRCS})
-  target_link_libraries(
-    vulkan_executor_runner ${_executor_runner_libs} vulkan_schema
-    vulkan_backend
-  )
-  target_compile_options(vulkan_executor_runner PUBLIC ${VULKAN_CXX_FLAGS})
-endif()
 
 # Test targets
 
