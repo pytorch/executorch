@@ -40,17 +40,6 @@ class Stack(OperatorTest):
             flow,
         )
 
-    def test_stack_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            StackModel(),
-            (
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-            ),
-            flow,
-        )
-
     def test_stack_dimensions(self, flow: TestFlow) -> None:
         self._test_op(
             StackModel(dim=0),

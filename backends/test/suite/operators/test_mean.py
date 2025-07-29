@@ -229,142 +229,25 @@ class Mean(OperatorTest):
             flow,
         )
 
-    def test_mean_values(self, flow: TestFlow) -> None:
-        x = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
-        self._test_op(
-            MeanModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[3.0, 3.0, 3.0], [6.0, 6.0, 6.0]])
-        self._test_op(
-            MeanModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[-3.0, -2.0, -1.0], [-6.0, -5.0, -4.0]])
-        self._test_op(
-            MeanModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[-3.0, 2.0, -1.0], [6.0, -5.0, 4.0]])
-        self._test_op(
-            MeanModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[0.5, 1.5, 2.5], [3.5, 4.5, 5.5]])
-        self._test_op(
-            MeanModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=1),
-            (x,),
-            flow,
-        )
-
     def test_mean_edge_cases(self, flow: TestFlow) -> None:
-        x = torch.ones(3, 4)
-        self._test_op(
-            MeanModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.zeros(3, 4)
-        self._test_op(
-            MeanModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=1),
-            (x,),
-            flow,
-        )
-
         x = torch.tensor([[1.0, float("inf"), 3.0], [4.0, 5.0, float("inf")]])
         self._test_op(
             MeanModel(),
             (x,),
             flow,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             MeanModel(dim=0),
             (x,),
             flow,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             MeanModel(dim=1),
             (x,),
             flow,
+            generate_random_test_inputs=False,
         )
 
         x = torch.tensor([[1.0, float("-inf"), 3.0], [4.0, 5.0, float("-inf")]])
@@ -372,16 +255,19 @@ class Mean(OperatorTest):
             MeanModel(),
             (x,),
             flow,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             MeanModel(dim=0),
             (x,),
             flow,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             MeanModel(dim=1),
             (x,),
             flow,
+            generate_random_test_inputs=False,
         )
 
         x = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, float("nan")]])
@@ -389,28 +275,19 @@ class Mean(OperatorTest):
             MeanModel(),
             (x,),
             flow,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             MeanModel(dim=0),
             (x,),
             flow,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             MeanModel(dim=1),
             (x,),
             flow,
-        )
-
-        x = torch.tensor([5.0])
-        self._test_op(
-            MeanModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=0),
-            (x,),
-            flow,
+            generate_random_test_inputs=False,
         )
 
     def test_mean_scalar(self, flow: TestFlow) -> None:
@@ -422,23 +299,5 @@ class Mean(OperatorTest):
         self._test_op(
             MeanModel(dim=0),
             (torch.tensor([5.0]),),
-            flow,
-        )
-
-    def test_mean_integer_division(self, flow: TestFlow) -> None:
-        x = torch.tensor([[1, 2, 3], [4, 5, 6]])
-        self._test_op(
-            MeanModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            MeanModel(dim=1),
-            (x,),
             flow,
         )

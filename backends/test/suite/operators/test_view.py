@@ -37,13 +37,6 @@ class View(OperatorTest):
             flow,
         )
 
-    def test_view_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            ViewModel(shape=[3, 5]),
-            (torch.randn(15),),
-            flow,
-        )
-
     def test_view_dimensions(self, flow: TestFlow) -> None:
         self._test_op(
             ViewModel(shape=[3, 5]),

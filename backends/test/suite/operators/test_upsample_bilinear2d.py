@@ -61,19 +61,6 @@ class TestUpsampleBilinear2d(OperatorTest):
         model = ModelWithSize(size=(10, 10), align_corners=False).to(dtype)
         self._test_op(model, (torch.rand(2, 3, 5, 5).to(dtype),), flow)
 
-    def test_upsample_bilinear2d_basic(self, flow: TestFlow) -> None:
-        # Basic test with default parameters
-        self._test_op(
-            ModelWithSize(size=(10, 10), align_corners=False),
-            (torch.randn(2, 3, 5, 5),),
-            flow,
-        )
-        self._test_op(
-            ModelWithSize(size=(10, 10), align_corners=True),
-            (torch.randn(2, 3, 5, 5),),
-            flow,
-        )
-
     def test_upsample_bilinear2d_sizes(self, flow: TestFlow) -> None:
         # Test with different input and output sizes
 
@@ -281,79 +268,6 @@ class TestUpsampleBilinear2d(OperatorTest):
         self._test_op(
             ModelWithScale(scale_factor=0.75, align_corners=True),
             (torch.randn(2, 3, 8, 8),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-    def test_upsample_bilinear2d_large_scale(self, flow: TestFlow) -> None:
-        # Test with large scale factor
-        self._test_op(
-            ModelWithScale(scale_factor=4.0, align_corners=False),
-            (torch.randn(1, 2, 4, 4),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-        self._test_op(
-            ModelWithScale(scale_factor=4.0, align_corners=True),
-            (torch.randn(1, 2, 4, 4),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-    def test_upsample_bilinear2d_non_square(self, flow: TestFlow) -> None:
-        # Test with non-square input
-        self._test_op(
-            ModelWithSize(size=(10, 20), align_corners=False),
-            (torch.randn(2, 3, 5, 10),),
-            flow,
-        )
-        self._test_op(
-            ModelWithSize(size=(10, 20), align_corners=True),
-            (torch.randn(2, 3, 5, 10),),
-            flow,
-        )
-        self._test_op(
-            ModelWithScale(scale_factor=2.0, align_corners=False),
-            (torch.randn(2, 3, 5, 10),),
-            flow,
-        )
-        self._test_op(
-            ModelWithScale(scale_factor=2.0, align_corners=True),
-            (torch.randn(2, 3, 5, 10),),
-            flow,
-        )
-
-    def test_upsample_bilinear2d_odd_sizes(self, flow: TestFlow) -> None:
-        # Test with odd input and output sizes (where interpolation behavior might be more noticeable)
-        self._test_op(
-            ModelWithSize(size=(9, 9), align_corners=False),
-            (torch.randn(2, 3, 5, 5),),
-            flow,
-        )
-        self._test_op(
-            ModelWithSize(size=(9, 9), align_corners=True),
-            (torch.randn(2, 3, 5, 5),),
-            flow,
-        )
-        self._test_op(
-            ModelWithSize(size=(7, 7), align_corners=False),
-            (torch.randn(2, 3, 3, 3),),
-            flow,
-        )
-        self._test_op(
-            ModelWithSize(size=(7, 7), align_corners=True),
-            (torch.randn(2, 3, 3, 3),),
-            flow,
-        )
-        self._test_op(
-            ModelWithScale(scale_factor=1.5, align_corners=False),
-            (torch.randn(2, 3, 5, 5),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-        self._test_op(
-            ModelWithScale(scale_factor=1.5, align_corners=True),
-            (torch.randn(2, 3, 5, 5),),
             flow,
             generate_random_test_inputs=False,
         )

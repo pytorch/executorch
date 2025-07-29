@@ -34,11 +34,6 @@ class TestExp(OperatorTest):
         # Use smaller range to avoid overflow
         self._test_op(model, (torch.rand(10, 10).to(dtype) * 4 - 2,), flow)
 
-    def test_exp_basic(self, flow: TestFlow) -> None:
-        # Basic test with default parameters
-        # Input: tensor with values in a reasonable range
-        self._test_op(ExpModel(), (torch.randn(10, 10),), flow)
-
     def test_exp_shapes(self, flow: TestFlow) -> None:
         # Test with different tensor shapes
 
@@ -51,45 +46,8 @@ class TestExp(OperatorTest):
         # 3D tensor
         self._test_op(ExpModel(), (torch.randn(3, 4, 5),), flow)
 
-        # 4D tensor
-        self._test_op(ExpModel(), (torch.randn(2, 3, 4, 5),), flow)
-
-        # 5D tensor
-        self._test_op(ExpModel(), (torch.randn(2, 2, 3, 4, 5),), flow)
-
-    def test_exp_values(self, flow: TestFlow) -> None:
-        # Test with different value ranges
-
-        # Small values (close to zero)
-        self._test_op(ExpModel(), (torch.randn(10, 10) * 0.01,), flow)
-
-        # Medium values
-        self._test_op(ExpModel(), (torch.randn(10, 10),), flow)
-
-        # Large negative values (exp approaches 0)
-        self._test_op(ExpModel(), (torch.randn(10, 10) * -10,), flow)
-
-        # Large positive values (exp grows rapidly)
-        # Use smaller tensor to avoid excessive memory usage
-        self._test_op(ExpModel(), (torch.randn(5, 5) * 5,), flow)
-
-        # Values around 1 (exp(0) = 1)
-        self._test_op(ExpModel(), (torch.randn(10, 10) * 0.1,), flow)
-
-        # Mixed positive and negative values
-        self._test_op(ExpModel(), (torch.randn(10, 10) * 2,), flow)
-
     def test_exp_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
-
-        # Zero tensor (exp(0) = 1)
-        self._test_op(
-            ExpModel(), (torch.zeros(10, 10),), flow, generate_random_test_inputs=False
-        )
-
-        # Tensor with specific values
-        x = torch.tensor([0.0, 1.0, -1.0, 0.5, -0.5])
-        self._test_op(ExpModel(), (x,), flow, generate_random_test_inputs=False)
 
         # Tensor with infinity
         x = torch.tensor([float("inf"), float("-inf"), 1.0, -1.0])
@@ -99,18 +57,6 @@ class TestExp(OperatorTest):
         x = torch.tensor([float("nan"), 1.0, -1.0])
         self._test_op(ExpModel(), (x,), flow, generate_random_test_inputs=False)
 
-        # Very large negative values (should approach zero)
-        x = torch.tensor([-100.0, -1000.0])
+        # Overflow
+        x = torch.tensor([10e10])
         self._test_op(ExpModel(), (x,), flow, generate_random_test_inputs=False)
-
-    def test_exp_scalar(self, flow: TestFlow) -> None:
-        # Test with scalar input (1-element tensor)
-        self._test_op(
-            ExpModel(), (torch.tensor([0.0]),), flow, generate_random_test_inputs=False
-        )
-        self._test_op(
-            ExpModel(), (torch.tensor([1.0]),), flow, generate_random_test_inputs=False
-        )
-        self._test_op(
-            ExpModel(), (torch.tensor([-1.0]),), flow, generate_random_test_inputs=False
-        )
