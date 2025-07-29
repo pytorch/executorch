@@ -297,7 +297,7 @@ class ComputeCodegenUnboxedKernels:
                 f"""
 Kernel(
     "{f.namespace}::{f.func.name}",{newline + '"' + (k + '",') if k != "default" else ""}
-    []({contextArg.defn()}, EValue** stack) {{
+    []({contextArg.defn()}, Span<EValue*> stack) {{
         {code_connector.join(code_list)}
 
 {exception_boundary_begin}

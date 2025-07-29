@@ -20,8 +20,8 @@ from executorch.backends.test.suite.operators import (
 class Model(torch.nn.Module):
     def __init__(
         self,
-        in_features=64,
-        out_features=32,
+        in_features=67,
+        out_features=43,
         bias=True,
     ):
         super().__init__()

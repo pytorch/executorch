@@ -507,7 +507,7 @@ class TestComputeCodegenUnboxedKernels(unittest.TestCase):
 Kernel(
     "custom_1::op_1",
     "v1/7;0,1,2,3|7;0,1,2,3|7;0,1,2,3",
-    [](torch::executor::KernelRuntimeContext & context, EValue** stack) {
+    [](torch::executor::KernelRuntimeContext & context, Span<EValue*> stack) {
         """
             + """
 
@@ -605,7 +605,7 @@ Kernel(
             """
 Kernel(
     "custom_1::op_1",
-    [](torch::executor::KernelRuntimeContext & context, EValue** stack) {
+    [](torch::executor::KernelRuntimeContext & context, Span<EValue*> stack) {
         """
             + """
 
@@ -632,7 +632,7 @@ Kernel(
             """
 Kernel(
     "custom_1::op_1",
-    [](torch::executor::KernelRuntimeContext & context, EValue** stack) {
+    [](torch::executor::KernelRuntimeContext & context, Span<EValue*> stack) {
         """
             + """
 
@@ -675,7 +675,7 @@ Kernel(
             """
 Kernel(
     "custom_1::op_1",
-    [](torch::executor::KernelRuntimeContext & context, EValue** stack) {
+    [](torch::executor::KernelRuntimeContext & context, Span<EValue*> stack) {
         """
             + """
 
