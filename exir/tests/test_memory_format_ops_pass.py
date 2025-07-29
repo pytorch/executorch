@@ -391,7 +391,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ),
         )
 
-    def test_op_clone_dim_order_replacement(self):
+    def test_op_clone_dim_order_registration(self):
         model = SimpleCloneChannelsLastModule()
         x = torch.randn(3, 4, 5, 6).to(memory_format=torch.contiguous_format)
         clone_dim_order_op_str = (
