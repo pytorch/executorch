@@ -384,6 +384,11 @@ EValue to_evalue(val v) {
       return EValue(v.as<int64_t>());
     } else if (type_str == "object") {
       // If it is an object, assume it is a tensor.
+      THROW_IF_FALSE(
+          v.instanceof
+          (val::module_property("Tensor")),
+          "Received non-tensor object: %s",
+          val::global("JSON").call<std::string>("stringify", v).c_str());
       return EValue(v.as<JsTensor&>().get_tensor());
     }
     THROW_JS_ERROR(
@@ -696,9 +701,10 @@ EMSCRIPTEN_BINDINGS(WasmBindings) {
 // Additionally, different enums of the same type are considered to be equal.
 // Assigning the name field fixes both of these issues.
 #define JS_ASSIGN_SCALAR_TYPE_NAME(T, NAME) \
-  EM_ASM(Module.ScalarType.NAME.name = #NAME);
+  val::module_property("ScalarType")[#NAME].set("name", #NAME);
   JS_FORALL_SUPPORTED_TENSOR_TYPES(JS_ASSIGN_SCALAR_TYPE_NAME)
-#define JS_ASSIGN_TAG_NAME(NAME) EM_ASM(Module.Tag.NAME.name = #NAME);
+#define JS_ASSIGN_TAG_NAME(NAME) \
+  val::module_property("Tag")[#NAME].set("name", #NAME);
   EXECUTORCH_FORALL_TAGS(JS_ASSIGN_TAG_NAME)
 }
 
