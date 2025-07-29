@@ -27,7 +27,7 @@ namespace ET_RUNTIME_NAMESPACE {
  * Interface to access and retrieve data via name.
  * See executorch/extension/flat_tensor/ for an example.
  */
-class ET_EXPERIMENTAL NamedDataMap {
+class NamedDataMap {
  public:
   virtual ~NamedDataMap() = default;
   /**
