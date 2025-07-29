@@ -228,12 +228,14 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_SELECT_OPS_MODEL
   "Build the executorch_kernels target with only operators from the given model .pte file."
-  STRING ""
+  STRING
+  ""
 )
 define_overridable_option(
   EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD
   "Build the executorch_kernels target with only operator implementations for selected data types."
-  BOOL FALSE
+  BOOL
+  FALSE
 )
 
 # ------------------------------------------------------------------------------
@@ -248,8 +250,7 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXECUTOR_RUNNER REQUIRES
-  EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL
-  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
+  EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
 )
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR REQUIRES
@@ -296,25 +297,28 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD REQUIRES
+  EXECUTORCH_SELECT_OPS_MODEL
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_BUILD_XNNPACK REQUIRES EXECUTORCH_BUILD_CPUINFO
   EXECUTORCH_BUILD_PTHREADPOOL
 )
 
 check_conflicting_options_on(
   IF_ON EXECUTORCH_BUILD_ARM_BAREMETAL CONFLICTS_WITH
-  EXECUTORCH_BUILD_PTHREADPOOL
-  EXECUTORCH_BUILD_CPUINFO
+  EXECUTORCH_BUILD_PTHREADPOOL EXECUTORCH_BUILD_CPUINFO
 )
 
 # Selective build specifiers are mutually exclusive.
 check_conflicting_options_on(
-  IF_ON EXECUTORCH_SELECT_OPS_YAML CONFLICTS_WITH
-  EXECUTORCH_SELECT_OPS_LIST EXECUTORCH_SELECT_OPS_MODEL
+  IF_ON EXECUTORCH_SELECT_OPS_YAML CONFLICTS_WITH EXECUTORCH_SELECT_OPS_LIST
+  EXECUTORCH_SELECT_OPS_MODEL
 )
 
 check_conflicting_options_on(
-  IF_ON EXECUTORCH_SELECT_OPS_LIST CONFLICTS_WITH
-  EXECUTORCH_SELECT_OPS_MODEL
+  IF_ON EXECUTORCH_SELECT_OPS_LIST CONFLICTS_WITH EXECUTORCH_SELECT_OPS_MODEL
 )
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})
