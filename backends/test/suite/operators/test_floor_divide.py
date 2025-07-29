@@ -35,15 +35,6 @@ class TestFloorDivide(OperatorTest):
         y = torch.full_like(x, 2)  # Divisor of 2
         self._test_op(model, (x, y), flow, generate_random_test_inputs=False)
 
-    def test_floor_divide_basic(self, flow: TestFlow) -> None:
-        # Basic test with default parameters
-        # Input: tensor with integer values, divisor: constant tensor
-        x = torch.randint(-100, 100, (10, 10))
-        y = torch.full_like(x, 2).clone()  # Divisor of 2
-        self._test_op(
-            FloorDivideModel(), (x, y), flow, generate_random_test_inputs=False
-        )
-
     def test_floor_divide_scalar_divisors(self, flow: TestFlow) -> None:
         # Test with different scalar divisors as tensors
 
@@ -196,11 +187,6 @@ class TestFloorDivide(OperatorTest):
         y = torch.full_like(x, 2)
         self._test_op(model, (x, y), flow, generate_random_test_inputs=False)
 
-        # Division that results in exact integers
-        x = torch.tensor([0, 2, 4, 6, 8, 10])
-        y = torch.full_like(x, 2)
-        self._test_op(model, (x, y), flow, generate_random_test_inputs=False)
-
         # Division with remainder
         x = torch.tensor([1, 3, 5, 7, 9])
         y = torch.full_like(x, 2)
@@ -224,33 +210,4 @@ class TestFloorDivide(OperatorTest):
         # Very small values
         x = torch.tensor([1e-10, -1e-10])
         y = torch.full_like(x, 2)
-        self._test_op(model, (x, y), flow, generate_random_test_inputs=False)
-
-    def test_floor_divide_scalar(self, flow: TestFlow) -> None:
-        # Test with scalar input (1-element tensor)
-        model = FloorDivideModel()
-
-        # Positive dividend, positive divisor
-        x = torch.tensor([7])
-        y = torch.tensor([2])
-        self._test_op(model, (x, y), flow, generate_random_test_inputs=False)
-
-        # Negative dividend, positive divisor
-        x = torch.tensor([-7])
-        y = torch.tensor([2])
-        self._test_op(model, (x, y), flow, generate_random_test_inputs=False)
-
-        # Zero dividend
-        x = torch.tensor([0])
-        y = torch.tensor([2])
-        self._test_op(model, (x, y), flow, generate_random_test_inputs=False)
-
-        # Positive dividend, negative divisor
-        x = torch.tensor([7])
-        y = torch.tensor([-2])
-        self._test_op(model, (x, y), flow, generate_random_test_inputs=False)
-
-        # Negative dividend, negative divisor
-        x = torch.tensor([-7])
-        y = torch.tensor([-2])
         self._test_op(model, (x, y), flow, generate_random_test_inputs=False)

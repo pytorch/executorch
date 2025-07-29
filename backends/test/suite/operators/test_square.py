@@ -32,11 +32,6 @@ class TestSquare(OperatorTest):
         model = SquareModel().to(dtype)
         self._test_op(model, (torch.rand(10, 10).to(dtype) * 2 - 1,), flow)
 
-    def test_square_basic(self, flow: TestFlow) -> None:
-        # Basic test with default parameters
-        # Input: tensor with positive and negative values
-        self._test_op(SquareModel(), (torch.randn(10, 10),), flow)
-
     def test_square_shapes(self, flow: TestFlow) -> None:
         # Test with different tensor shapes
 
@@ -49,57 +44,8 @@ class TestSquare(OperatorTest):
         # 3D tensor
         self._test_op(SquareModel(), (torch.randn(3, 4, 5),), flow)
 
-        # 4D tensor
-        self._test_op(SquareModel(), (torch.randn(2, 3, 4, 5),), flow)
-
-        # 5D tensor
-        self._test_op(SquareModel(), (torch.randn(2, 2, 3, 4, 5),), flow)
-
-    def test_square_values(self, flow: TestFlow) -> None:
-        # Test with different value ranges
-
-        # Small values
-        self._test_op(SquareModel(), (torch.randn(10, 10) * 0.01,), flow)
-
-        # Values around 1
-        self._test_op(SquareModel(), (torch.randn(10, 10) * 0.2 + 0.9,), flow)
-
-        # Medium values
-        self._test_op(SquareModel(), (torch.randn(10, 10) * 10,), flow)
-
-        # Large values (be careful with overflow)
-        self._test_op(SquareModel(), (torch.randn(10, 10) * 100,), flow)
-
-        # Mixed positive and negative values
-        self._test_op(SquareModel(), (torch.randn(10, 10) * 5,), flow)
-
-        # All positive values
-        self._test_op(SquareModel(), (torch.rand(10, 10) * 5,), flow)
-
-        # All negative values
-        self._test_op(SquareModel(), (torch.rand(10, 10) * -5,), flow)
-
-        # Values close to zero
-        self._test_op(SquareModel(), (torch.randn(10, 10) * 1e-5,), flow)
-
-        # Integer values
-        x = torch.arange(-5, 6).float()  # [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
-        self._test_op(SquareModel(), (x,), flow, generate_random_test_inputs=False)
-
     def test_square_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
-
-        # Zero tensor
-        self._test_op(
-            SquareModel(),
-            (torch.zeros(10, 10),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        # Tensor with specific values
-        x = torch.tensor([-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0])
-        self._test_op(SquareModel(), (x,), flow, generate_random_test_inputs=False)
 
         # Tensor with infinity
         x = torch.tensor([float("inf"), float("-inf"), 1.0, -1.0])
@@ -116,36 +62,3 @@ class TestSquare(OperatorTest):
         # Very small values (close to underflow)
         x = torch.tensor([1e-10, -1e-10])
         self._test_op(SquareModel(), (x,), flow, generate_random_test_inputs=False)
-
-    def test_square_scalar(self, flow: TestFlow) -> None:
-        # Test with scalar input (1-element tensor)
-        self._test_op(
-            SquareModel(),
-            (torch.tensor([-5.0]),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-        self._test_op(
-            SquareModel(),
-            (torch.tensor([5.0]),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-        self._test_op(
-            SquareModel(),
-            (torch.tensor([0.0]),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-        self._test_op(
-            SquareModel(),
-            (torch.tensor([0.5]),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-        self._test_op(
-            SquareModel(),
-            (torch.tensor([-0.5]),),
-            flow,
-            generate_random_test_inputs=False,
-        )

@@ -1,9 +1,8 @@
-from collections import Counter, OrderedDict
-from torch.ao.ns.fx.utils import compute_sqnr
-from typing import Any, Callable, Dict, List, Optional, Tuple
-
 import math
 import random
+from collections import Counter, OrderedDict
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 import torch
 
 from executorch.backends.test.harness.stages import (
@@ -19,6 +18,7 @@ from executorch.backends.test.harness.stages import (
     ToExecutorch,
 )
 from executorch.exir.dim_order_utils import get_memory_format
+from torch.ao.ns.fx.utils import compute_sqnr
 
 from torch.export import ExportedProgram
 from torch.testing import FileCheck
@@ -311,11 +311,13 @@ class Tester:
 
         stage = stage or self.cur
 
-        #print(f"Comparing Stage {stage} with Stage {reference_stage}")
         for run_iteration in range(number_of_runs):
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
-            input_shapes = [generated_input.shape for generated_input in inputs_to_run]
-            #print(f"Run {run_iteration} with input shapes: {input_shapes}")
+            input_shapes = [
+                generated_input.shape if hasattr(generated_input, "shape") else None
+                for generated_input in inputs_to_run
+            ]
+            print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
             # Reference output (and quantization scale)
             (
@@ -328,13 +330,21 @@ class Tester:
             # Output from running artifact at stage
             stage_output = self.stages[stage].run_artifact(inputs_to_run)
             self._compare_outputs(
-                reference_output, stage_output, quantization_scale, atol, rtol, qtol, snr
+                reference_output,
+                stage_output,
+                quantization_scale,
+                atol,
+                rtol,
+                qtol,
+                snr,
             )
 
         return self
 
     @staticmethod
-    def _assert_outputs_equal(model_output, ref_output, atol=1e-03, rtol=1e-03, snr: float | None = None):
+    def _assert_outputs_equal(
+        model_output, ref_output, atol=1e-03, rtol=1e-03, snr: float | None = None
+    ):
         """
         Helper testing function that asserts that the model output and the reference output
         are equal with some tolerance. Due to numerical differences between eager mode and
@@ -362,13 +372,17 @@ class Tester:
                 computed_snr = compute_sqnr(model.to(torch.float), ref.to(torch.float))
                 snr = snr or float("-inf")
 
-                assert torch.allclose(
-                    model,
-                    ref,
-                    atol=atol,
-                    rtol=rtol,
-                    equal_nan=True,
-                ) and computed_snr >= snr or math.isnan(computed_snr), (
+                assert (
+                    torch.allclose(
+                        model,
+                        ref,
+                        atol=atol,
+                        rtol=rtol,
+                        equal_nan=True,
+                    )
+                    and computed_snr >= snr
+                    or math.isnan(computed_snr)
+                ), (
                     f"Output {i} does not match reference output.\n"
                     f"\tGiven atol: {atol}, rtol: {rtol}, snr: {snr}.\n"
                     f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
@@ -381,7 +395,6 @@ class Tester:
                     f"\t   Min: {model.min()}, {ref.min()}\n"
                     f"\t   SNR: {computed_snr}\n"
                 )
-
 
     @staticmethod
     def _compare_outputs(

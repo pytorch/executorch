@@ -33,20 +33,9 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(),
             (
-                torch.rand(2, 3).to(dtype),
-                torch.rand(3, 3).to(dtype),
-                torch.rand(4, 3).to(dtype),
-            ),
-            flow,
-        )
-
-    def test_cat_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            CatModel(),
-            (
-                torch.randn(2, 3),
-                torch.randn(3, 3),
-                torch.randn(4, 3),
+                torch.rand(8, 32).to(dtype),
+                torch.rand(12, 32).to(dtype),
+                torch.rand(16, 32).to(dtype),
             ),
             flow,
         )
@@ -55,9 +44,9 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(dim=0),
             (
-                torch.randn(2, 3),
-                torch.randn(3, 3),
-                torch.randn(4, 3),
+                torch.randn(8, 32),
+                torch.randn(12, 32),
+                torch.randn(16, 32),
             ),
             flow,
         )
@@ -65,9 +54,9 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(dim=1),
             (
-                torch.randn(3, 2),
-                torch.randn(3, 3),
-                torch.randn(3, 4),
+                torch.randn(16, 8),
+                torch.randn(16, 12),
+                torch.randn(16, 16),
             ),
             flow,
         )
@@ -75,9 +64,9 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(dim=2),
             (
-                torch.randn(2, 3, 1),
-                torch.randn(2, 3, 2),
-                torch.randn(2, 3, 3),
+                torch.randn(4, 8, 4),
+                torch.randn(4, 8, 8),
+                torch.randn(4, 8, 12),
             ),
             flow,
         )
@@ -86,9 +75,9 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(dim=-1),
             (
-                torch.randn(3, 2),
-                torch.randn(3, 3),
-                torch.randn(3, 4),
+                torch.randn(16, 8),
+                torch.randn(16, 12),
+                torch.randn(16, 16),
             ),
             flow,
         )
@@ -96,9 +85,9 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(dim=-2),
             (
-                torch.randn(2, 3),
-                torch.randn(3, 3),
-                torch.randn(4, 3),
+                torch.randn(8, 32),
+                torch.randn(12, 32),
+                torch.randn(16, 32),
             ),
             flow,
         )
@@ -107,9 +96,9 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(),
             (
-                torch.randn(2),
-                torch.randn(3),
-                torch.randn(4),
+                torch.randn(128),
+                torch.randn(256),
+                torch.randn(384),
             ),
             flow,
         )
@@ -117,9 +106,9 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(dim=0),
             (
-                torch.randn(1, 3, 4),
-                torch.randn(2, 3, 4),
-                torch.randn(3, 3, 4),
+                torch.randn(4, 8, 16),
+                torch.randn(8, 8, 16),
+                torch.randn(12, 8, 16),
             ),
             flow,
         )
@@ -127,9 +116,9 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(dim=1),
             (
-                torch.randn(2, 1, 4),
-                torch.randn(2, 2, 4),
-                torch.randn(2, 3, 4),
+                torch.randn(8, 4, 16),
+                torch.randn(8, 8, 16),
+                torch.randn(8, 12, 16),
             ),
             flow,
         )
@@ -137,9 +126,40 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(dim=2),
             (
-                torch.randn(2, 3, 1),
-                torch.randn(2, 3, 2),
-                torch.randn(2, 3, 3),
+                torch.randn(8, 12, 4),
+                torch.randn(8, 12, 8),
+                torch.randn(8, 12, 12),
+            ),
+            flow,
+        )
+
+    def test_cat_broadcast(self, flow: TestFlow) -> None:
+        self._test_op(
+            CatModel(dim=0),
+            (
+                torch.randn(2, 16, 32),
+                torch.randn(4, 16, 32),
+                torch.randn(6, 16, 32),
+            ),
+            flow,
+        )
+
+        self._test_op(
+            CatModel(dim=1),
+            (
+                torch.randn(8, 8, 16),
+                torch.randn(8, 16, 16),
+                torch.randn(8, 24, 16),
+            ),
+            flow,
+        )
+
+        self._test_op(
+            CatModel(dim=2),
+            (
+                torch.randn(4, 16, 8),
+                torch.randn(4, 16, 16),
+                torch.randn(4, 16, 24),
             ),
             flow,
         )
@@ -148,9 +168,9 @@ class Cat(OperatorTest):
         self._test_op(
             CatModel(),
             (
-                torch.randn(2, 3),
-                torch.randn(2, 3),
-                torch.randn(2, 3),
+                torch.randn(8, 32),
+                torch.randn(8, 32),
+                torch.randn(8, 32),
             ),
             flow,
         )

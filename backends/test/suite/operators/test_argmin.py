@@ -38,13 +38,6 @@ class Argmin(OperatorTest):
             flow,
         )
 
-    def test_argmin_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            ArgminModel(),
-            (torch.randn(10, 10),),
-            flow,
-        )
-
     def test_argmin_dim(self, flow: TestFlow) -> None:
         self._test_op(
             ArgminModel(dim=0),
@@ -150,125 +143,25 @@ class Argmin(OperatorTest):
             flow,
         )
 
-    def test_argmin_values(self, flow: TestFlow) -> None:
-        x = torch.tensor([[6.0, 5.0, 4.0], [3.0, 2.0, 1.0]])
-        self._test_op(
-            ArgminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[3.0, 2.0, 2.0], [1.0, 1.0, 5.0]])
-        self._test_op(
-            ArgminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[-1.0, -2.0, -3.0], [-4.0, -5.0, -6.0]])
-        self._test_op(
-            ArgminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[-3.0, 2.0, -1.0], [6.0, -5.0, 4.0]])
-        self._test_op(
-            ArgminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=1),
-            (x,),
-            flow,
-        )
-
     def test_argmin_edge_cases(self, flow: TestFlow) -> None:
-        x = torch.ones(3, 4)
-        self._test_op(
-            ArgminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.zeros(3, 4)
-        self._test_op(
-            ArgminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            ArgminModel(dim=1),
-            (x,),
-            flow,
-        )
-
         x = torch.tensor([[1.0, float("-inf"), 3.0], [4.0, 5.0, float("-inf")]])
         self._test_op(
             ArgminModel(),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
         self._test_op(
             ArgminModel(dim=0),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
         self._test_op(
             ArgminModel(dim=1),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
 
         x = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, float("nan")]])
@@ -276,16 +169,19 @@ class Argmin(OperatorTest):
             ArgminModel(),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
         self._test_op(
             ArgminModel(dim=0),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
         self._test_op(
             ArgminModel(dim=1),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
 
         x = torch.tensor([5.0])

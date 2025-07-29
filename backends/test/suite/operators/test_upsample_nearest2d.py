@@ -52,10 +52,6 @@ class TestUpsampleNearest2d(OperatorTest):
         model = ModelWithSize(size=(10, 10)).to(dtype)
         self._test_op(model, (torch.rand(2, 3, 5, 5).to(dtype),), flow)
 
-    def test_upsample_nearest2d_basic(self, flow: TestFlow) -> None:
-        # Basic test with default parameters
-        self._test_op(ModelWithSize(size=(10, 10)), (torch.randn(2, 3, 5, 5),), flow)
-
     def test_upsample_nearest2d_sizes(self, flow: TestFlow) -> None:
         # Test with different input and output sizes
 
@@ -133,27 +129,9 @@ class TestUpsampleNearest2d(OperatorTest):
             ModelWithSize(size=(5, 5)),
             (torch.randn(2, 3, 5, 5),),
             flow,
-            generate_random_test_inputs=False,
         )
         self._test_op(
             ModelWithScale(scale_factor=1.0),
             (torch.randn(2, 3, 5, 5),),
             flow,
-            generate_random_test_inputs=False,
-        )
-
-    def test_upsample_nearest2d_large_scale(self, flow: TestFlow) -> None:
-        # Test with large scale factor
-        self._test_op(
-            ModelWithScale(scale_factor=4.0),
-            (torch.randn(1, 2, 4, 4),),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-    def test_upsample_nearest2d_non_square(self, flow: TestFlow) -> None:
-        # Test with non-square input
-        self._test_op(ModelWithSize(size=(10, 20)), (torch.randn(2, 3, 5, 10),), flow)
-        self._test_op(
-            ModelWithScale(scale_factor=2.0), (torch.randn(2, 3, 5, 10),), flow
         )

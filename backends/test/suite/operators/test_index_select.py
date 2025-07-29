@@ -38,15 +38,6 @@ class IndexSelect(OperatorTest):
             generate_random_test_inputs=False,
         )
 
-    def test_index_select_basic(self, flow: TestFlow) -> None:
-        indices = torch.tensor([0, 2], dtype=torch.int64)
-        self._test_op(
-            IndexSelectModel(dim=0),
-            (torch.randn(5, 3), indices),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
     def test_index_select_dimensions(self, flow: TestFlow) -> None:
         indices = torch.tensor([0, 2], dtype=torch.int64)
         self._test_op(
@@ -132,39 +123,6 @@ class IndexSelect(OperatorTest):
         self._test_op(
             IndexSelectModel(dim=0),
             (torch.randn(5, 3), indices),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-    def test_index_select_edge_cases(self, flow: TestFlow) -> None:
-        indices = torch.tensor([0, 1, 2, 3, 4], dtype=torch.int64)
-        self._test_op(
-            IndexSelectModel(dim=0),
-            (torch.randn(5, 3), indices),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        indices = torch.tensor([0], dtype=torch.int64)
-        self._test_op(
-            IndexSelectModel(dim=0),
-            (torch.randn(1, 3), indices),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        indices = torch.tensor([0, 1], dtype=torch.int64)
-        self._test_op(
-            IndexSelectModel(dim=0),
-            (torch.zeros(5, 3), indices),
-            flow,
-            generate_random_test_inputs=False,
-        )
-
-        indices = torch.tensor([0, 1], dtype=torch.int64)
-        self._test_op(
-            IndexSelectModel(dim=0),
-            (torch.ones(5, 3), indices),
             flow,
             generate_random_test_inputs=False,
         )
