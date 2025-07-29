@@ -188,6 +188,22 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  elif [[ "${MODEL_NAME}" == "cvt" ]]; then
+    EXPORT_SCRIPT=cvt
+  elif [[ "${MODEL_NAME}" == "dit" ]]; then
+    EXPORT_SCRIPT=dit
+  elif [[ "${MODEL_NAME}" == "efficientnet" ]]; then
+    EXPORT_SCRIPT=efficientnet
+  elif [[ "${MODEL_NAME}" == "focalnet" ]]; then
+    EXPORT_SCRIPT=focalnet
+  elif [[ "${MODEL_NAME}" == "mobilevit_v1" ]]; then
+    EXPORT_SCRIPT=mobilevit_v1
+  elif [[ "${MODEL_NAME}" == "mobilevit_v2" ]]; then
+    EXPORT_SCRIPT=mobilevit_v2
+  elif [[ "${MODEL_NAME}" == "pvt" ]]; then
+    EXPORT_SCRIPT=pvt
+  elif [[ "${MODEL_NAME}" == "swin" ]]; then
+    EXPORT_SCRIPT=swin_transformer
   elif [[ "${MODEL_NAME}" == "albert" ]]; then
     EXPORT_SCRIPT=albert
   elif [[ "${MODEL_NAME}" == "bert" ]]; then
@@ -196,6 +212,8 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=distilbert
   elif [[ "${MODEL_NAME}" == "eurobert" ]]; then
     EXPORT_SCRIPT=eurobert
+  elif [[ "${MODEL_NAME}" == "roberta" ]]; then
+    EXPORT_SCRIPT=roberta
   else
     echo "Unsupported model $MODEL_NAME"
     exit 1
@@ -210,10 +228,13 @@ test_model_with_qnn() {
     "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
         SCRIPT_FOLDER=scripts
         ;;
-    "albert"|"bert"|"distilbert")
+    "cvt"|"dit"|"focalnet"|"mobilevit_v2"|"pvt"|"swin")
+        SCRIPT_FOLDER=oss_scripts
+        ;;
+    "albert"|"bert"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")
         pip install evaluate
         SCRIPT_FOLDER=oss_scripts
-        # Bert models running in 16bit will encounter op validation fail on some operations,
+        # 16bit models will encounter op validation fail on some operations,
         # which requires CHIPSET >= SM8550.
         QNN_CHIPSET=SM8550
         ;;
