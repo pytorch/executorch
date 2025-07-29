@@ -342,6 +342,7 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/exir:debug_handle_utils",
         "//executorch/exir:graph_module",
         "//executorch/exir:pass_base",
     ],

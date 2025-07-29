@@ -3,6 +3,19 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass
+from enum import Enum, EnumMeta
+from typing import List, Optional, Sequence
+
+from executorch.exir._warnings import experimental
+
+from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.pass_manager import PassType
+from torchao.core.config import AOBaseConfig
+from torchao.quantization.pt2e.quantizer import Quantizer
+
 
 """
 Export recipe definitions for ExecuTorch.
@@ -11,18 +24,29 @@ This module provides the data structures needed to configure the export process
 for ExecuTorch models, including export configurations and quantization recipes.
 """
 
-from dataclasses import dataclass
-from enum import Enum
-from typing import Callable, List, Optional, Sequence
 
-from executorch.exir._warnings import experimental
+class RecipeTypeMeta(EnumMeta, ABCMeta):
+    """Metaclass that combines EnumMeta and ABCMeta"""
 
-from executorch.exir.backend.partitioner import Partitioner
-from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
-from executorch.exir.pass_manager import PassType
-from torch.export import ExportedProgram
-from torchao.core.config import AOBaseConfig
-from torchao.quantization.pt2e.quantizer import Quantizer
+    pass
+
+
+class RecipeType(Enum, metaclass=RecipeTypeMeta):
+    """
+    Base recipe type class that backends can extend to define their own recipe types.
+    Backends should create their own enum classes that inherit from RecipeType:
+    """
+
+    @classmethod
+    @abstractmethod
+    def get_backend_name(cls) -> str:
+        """
+        Return the backend name for this recipe type.
+
+        Returns:
+            str: The backend name (e.g., "xnnpack", "qnn", etc.)
+        """
+        pass
 
 
 class Mode(str, Enum):
@@ -52,7 +76,7 @@ class QuantizationRecipe:
     quantizers: Optional[List[Quantizer]] = None
     ao_base_config: Optional[List[AOBaseConfig]] = None
 
-    def get_quantizers(self) -> Optional[Quantizer]:
+    def get_quantizers(self) -> Optional[List[Quantizer]]:
         """
         Get the quantizer associated with this recipe.
 
@@ -89,17 +113,40 @@ class ExportRecipe:
 
     name: Optional[str] = None
     quantization_recipe: Optional[QuantizationRecipe] = None
-    edge_compile_config: Optional[EdgeCompileConfig] = (
-        None  # pyre-ignore[11]: Type not defined
-    )
-    pre_edge_transform_passes: Optional[
-        Callable[[ExportedProgram], ExportedProgram]
-        | List[Callable[[ExportedProgram], ExportedProgram]]
-    ] = None
+    # pyre-ignore[11]: Type not defined
+    edge_compile_config: Optional[EdgeCompileConfig] = None
+    pre_edge_transform_passes: Optional[Sequence[PassType]] = None
     edge_transform_passes: Optional[Sequence[PassType]] = None
     transform_check_ir_validity: bool = True
     partitioners: Optional[List[Partitioner]] = None
-    executorch_backend_config: Optional[ExecutorchBackendConfig] = (
-        None  # pyre-ignore[11]: Type not defined
-    )
+    # pyre-ignore[11]: Type not defined
+    executorch_backend_config: Optional[ExecutorchBackendConfig] = None
     mode: Mode = Mode.RELEASE
+
+    @classmethod
+    def get_recipe(cls, recipe: "RecipeType", **kwargs) -> "ExportRecipe":
+        """
+        Get an export recipe from backend. Backend is automatically determined based on the
+        passed recipe type.
+
+        Args:
+            recipe: The type of recipe to create
+            **kwargs: Recipe-specific parameters
+
+        Returns:
+            ExportRecipe configured for the specified recipe type
+        """
+        from .recipe_registry import recipe_registry
+
+        if not isinstance(recipe, RecipeType):
+            raise ValueError(f"Invalid recipe type: {recipe}")
+
+        backend = recipe.get_backend_name()
+        export_recipe = recipe_registry.create_recipe(recipe, backend, **kwargs)
+        if export_recipe is None:
+            supported = recipe_registry.get_supported_recipes(backend)
+            raise ValueError(
+                f"Recipe '{recipe.value}' not supported by '{backend}'. "
+                f"Supported: {[r.value for r in supported]}"
+            )
+        return export_recipe

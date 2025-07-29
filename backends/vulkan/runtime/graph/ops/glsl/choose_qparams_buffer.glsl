@@ -29,6 +29,7 @@ $if MODE == "per_tensor":
   layout(push_constant) uniform restrict Block {
     int quant_min;
     int quant_max;
+    float eps;
   };
 $else:
   layout(push_constant) uniform restrict Block {
@@ -175,7 +176,7 @@ void choose_qparams_per_tensor() {
 
     float scale_val;
     int zero_point_val;
-    calculate_scale_and_zero_point(global_min, global_max, quant_min, quant_max, scale_val, zero_point_val);
+    calculate_scale_and_zero_point(global_min, global_max, quant_min, quant_max, eps, scale_val, zero_point_val);
 
     t_scale[0] = scale_val;
     t_zero_point[0] = zero_point_val;
@@ -260,7 +261,7 @@ void choose_qparams_per_token() {
 
       float scale_val;
       int zero_point_val;
-      calculate_scale_and_zero_point(token_min, token_max, quant_min, quant_max, scale_val, zero_point_val);
+      calculate_scale_and_zero_point(token_min, token_max, quant_min, quant_max, 1e-5, scale_val, zero_point_val);
 
       t_scale[token_id] = scale_val;
       t_zero_point[token_id] = zero_point_val;

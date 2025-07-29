@@ -23,6 +23,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55DtypeSupport,
     EthosU55NotSupported,
     EthosU55TransposeCheck,
+    EthosU55ViewCheck,
 )
 from executorch.backends.arm.tosa_quant_utils import dq_ops, q_ops
 from executorch.backends.arm.tosa_specification import TosaSpecification
@@ -133,6 +134,7 @@ def tosa_support_factory(
         negative_checks.append(EthosU55NotSupported(reporter))
         negative_checks.append(EthosU55DtypeSupport(reporter))
         negative_checks.append(EthosU55TransposeCheck(reporter))
+        negative_checks.append(EthosU55ViewCheck(reporter))
 
     return chain(
         reporter.wrap_check(
@@ -162,6 +164,9 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.bitwise_and.Tensor,
             exir_ops.edge.aten.bitwise_or.Tensor,
             exir_ops.edge.aten.bitwise_xor.Tensor,
+            exir_ops.edge.aten.bitwise_and.Scalar,
+            exir_ops.edge.aten.bitwise_or.Scalar,
+            exir_ops.edge.aten.bitwise_xor.Scalar,
             exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.cat.default,
             exir_ops.edge.aten.ceil.default,
@@ -187,6 +192,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.gt.Tensor,
             exir_ops.edge.aten.gt.Scalar,
             exir_ops.edge.aten.le.Tensor,
+            exir_ops.edge.aten.le.Scalar,
             exir_ops.edge.aten.lt.Tensor,
             exir_ops.edge.aten.lt.Scalar,
             exir_ops.edge.aten.mul.Tensor,
@@ -245,6 +251,13 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.alias_copy.default,
             exir_ops.edge.aten.sinh.default,
             exir_ops.edge.aten.atan.default,
+            exir_ops.edge.aten.acosh.default,
+            exir_ops.edge.aten._adaptive_avg_pool2d.default,
+            exir_ops.edge.aten.sign.default,
+            exir_ops.edge.aten.asin.default,
+            exir_ops.edge.aten.atanh.default,
+            exir_ops.edge.aten.addmm.default,
+            exir_ops.edge.aten.masked_fill.Scalar,
         ]
 
         return supported
@@ -285,6 +298,7 @@ class NeedsDecompositionCheck(OperatorSupportBase):
             exir_ops.edge.aten.div.Scalar: None,
             exir_ops.edge.aten.leaky_relu.default: None,
             exir_ops.edge.aten.round.default: None,
+            exir_ops.edge.aten.addmm.default: None,
         }
 
         if node.target in needs_decomp_dict:
@@ -323,6 +337,7 @@ class CheckProperQuantization(OperatorSupportBase):
         exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.upsample_nearest2d.vec,
         torch.ops.aten.scalar_tensor.default,
+        exir_ops.edge.aten.mean.dim,
         *TableOps.included_ops(),
     )
 

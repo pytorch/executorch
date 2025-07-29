@@ -1,3 +1,10 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -10,14 +17,17 @@ from executorch.exir.program import (
     ExecutorchProgramManager,
     to_edge_transform_and_lower,
 )
+from executorch.exir.program._program import _transform
 from executorch.exir.schema import Program
+from executorch.export.recipe import QuantizationRecipe
 from executorch.extension.export_util.utils import save_pte_program
 from executorch.runtime import Runtime, Verification
 from tabulate import tabulate
 from torch import nn
+
+from torch._export.pass_base import PassType
 from torch.export import ExportedProgram
 from torchao.quantization import quantize_
-from torchao.quantization.pt2e import allow_exported_model_train_eval
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer
@@ -95,9 +105,7 @@ class ExportStage(Stage):
 
     def __init__(
         self,
-        pre_edge_transform_passes: Optional[
-            Callable[[ExportedProgram], ExportedProgram]
-        ] = None,
+        pre_edge_transform_passes: Optional[List[PassType]] = None,
     ) -> None:
         self._exported_program: Dict[str, ExportedProgram] = {}
         self._pre_edge_transform_passes = pre_edge_transform_passes
@@ -153,10 +161,10 @@ class ExportStage(Stage):
                 )
 
                 # Apply pre-edge transform passes if available
-                if self._pre_edge_transform_passes is not None:
-                    for pre_edge_transform_pass in self._pre_edge_transform_passes:
-                        self._exported_program[method_name] = pre_edge_transform_pass(
-                            self._exported_program[method_name]
+                if pre_edge_transform_passes := self._pre_edge_transform_passes or []:
+                    for pass_ in pre_edge_transform_passes:
+                        self._exported_program[method_name] = _transform(
+                            self._exported_program[method_name], pass_
                         )
 
     def get_artifacts(self) -> Dict[str, ExportedProgram]:
@@ -353,8 +361,8 @@ class QuantizeStage(Stage):
     def __init__(self, quantizers: Any) -> None:
         self._quantizers = quantizers
         self._quantized_models: Dict[str, nn.Module] = {}
+        self._exported_programs: Dict[str, ExportedProgram] = {}
         self._model_dict: Dict[str, nn.Module] = {}
-        self._exported_program_dict: Dict[str, ExportedProgram] = {}
         self._example_inputs_dict: Dict[str, List[tuple[torch.Tensor, ...]]] = {}
 
     @property
@@ -363,20 +371,20 @@ class QuantizeStage(Stage):
 
     def run(
         self,
-        exported_program_data: Dict[str, Any],
+        models: Dict[str, nn.Module],
         calibration_config: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> None:
         """
-        Perform post-training quantization on the exported program.
+        Perform post-training quantization on the model.
 
         Args:
-            exported_program_data: Dictionary containing exported programs
+            models: Dictionary containing models to quantize
             calibration_config: Configuration containing example inputs for calibration
             **kwargs: Additional keyword arguments (not used)
         """
         # Store inputs
-        self._exported_program_dict = exported_program_data["exported_program"]
+        self._model_dict = models
 
         # Initialize with empty dictionaries
         self._example_inputs_dict = {}
@@ -385,7 +393,7 @@ class QuantizeStage(Stage):
             self._example_inputs_dict = calibration_config.get("example_inputs", {})
 
         # Process inputs
-        for method_name, exported_program in self._exported_program_dict.items():
+        for method_name, model in self._model_dict.items():
             # Check if method_name exists in example_inputs and has at least one element
             if (
                 method_name not in self._example_inputs_dict
@@ -395,15 +403,13 @@ class QuantizeStage(Stage):
                     f"Example inputs for method {method_name} not found or empty."
                 )
 
-            # Get the module from the exported program
-            model = exported_program.module()
+            # Export the model for training to get a captured graph
+            inputs = self._example_inputs_dict[method_name][0]
+            captured_graph = torch.export.export(model, inputs, strict=True).module()
 
             # Prepare the model for quantization
             composed_quantizer = ComposableQuantizer(self._quantizers)
-            prepared_model = prepare_pt2e(model, composed_quantizer)  # type: ignore
-
-            # Allow the model to switch between train and eval modes
-            allow_exported_model_train_eval(prepared_model)
+            prepared_model = prepare_pt2e(captured_graph, composed_quantizer)  # type: ignore
 
             # Calibrate the model with the provided calibration data
             for calibration_input in self._example_inputs_dict[method_name]:  # type: ignore
@@ -411,7 +417,7 @@ class QuantizeStage(Stage):
 
             # Convert the prepared model to a quantized model
             quantized_model = convert_pt2e(prepared_model)
-            self._quantized_models[method_name] = quantized_model  # type: ignore
+            self._quantized_models[method_name] = quantized_model
 
     def get_artifacts(self) -> Dict[str, nn.Module]:
         """
@@ -534,28 +540,36 @@ class ExportSession:
         self._artifact_dir = artifact_dir
         self._export_recipe = export_recipe
 
+        self._quant_recipe: Optional[QuantizationRecipe] = (
+            self._export_recipe.quantization_recipe
+        )
+
         # Initialize pipeline as a list of stages
         self._pipeline = []
 
         # Create the source transform stage if a quantization recipe is provided
-        if self._export_recipe.quantization_recipe is not None:
+        if self._quant_recipe is not None and self._quant_recipe.ao_base_config:
             source_transform_stage = SourceTransformStage(
                 quantization_recipe=self._export_recipe.quantization_recipe
             )
             self._pipeline.append(source_transform_stage)
 
-        # Create the export stage
-        export_stage = ExportStage(
-            pre_edge_transform_passes=self._export_recipe.pre_edge_transform_passes
+        enable_quantize_stage = (
+            self._quant_recipe is not None and self._quant_recipe.quantizers
         )
-        self._pipeline.append(export_stage)
 
         # Create the quantize stage if a quantizer is provided
-        if self._export_recipe.quantization_recipe is not None:
-            quantizers = self._export_recipe.quantization_recipe.get_quantizers()
-            if quantizers is not None:
+        if enable_quantize_stage:
+            # pyre-ignore
+            if quantizers := self._quant_recipe.quantizers:
                 quantize_stage = QuantizeStage(quantizers=quantizers)
                 self._pipeline.append(quantize_stage)
+
+        # Create the export stage
+        export_stage = ExportStage(
+            pre_edge_transform_passes=self._export_recipe.pre_edge_transform_passes,
+        )
+        self._pipeline.append(export_stage)
 
         # Create the edge transform and lower stage
         edge_transform_and_lower_stage = EdgeTransformAndLowerStage(
@@ -590,6 +604,7 @@ class ExportSession:
         # Process each stage in the pipeline
         for stage in self._pipeline:
             stage_name = stage.name
+            logging.info(f"Executing stage: {stage_name}")
             # Configure inputs for the current stage
             if stage_name == "source_transform":
                 # Run the source transform stage
@@ -597,9 +612,8 @@ class ExportSession:
                 self._model = stage.get_artifacts()
             elif stage_name == "quantize":
                 # Run the quantize stage
-                exported_program_data = {"exported_program": self._exported_program}
                 config_params = {"example_inputs": self._example_inputs}
-                stage.run(exported_program_data, config_params)
+                stage.run(self._model, config_params)
                 self._model = stage.get_artifacts()
             elif stage_name == "export":
                 # Run the export stage

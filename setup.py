@@ -737,7 +737,7 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREML"):
             cmake_build_args += ["--target", "executorchcoreml"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT"):
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
 
@@ -807,14 +807,14 @@ setup(
             src_name="custom_ops_aot_lib",
             dst="executorch/extension/llm/custom_ops/",
             is_dynamic_lib=True,
-            dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT"],
+            dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
         ),
         BuiltFile(
             src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/%BUILD_TYPE%/",
             src_name="quantized_ops_aot_lib",
             dst="executorch/kernels/quantized/",
             is_dynamic_lib=True,
-            dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT"],
+            dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
         ),
     ],
 )

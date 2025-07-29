@@ -37,6 +37,8 @@ class RegisterPrimOpsTest : public OperatorTest {
 TEST_F(RegisterPrimOpsTest, OpRegistered) {
   EXPECT_TRUE(hasOpsFn("aten::sym_size.int"));
   EXPECT_TRUE(hasOpsFn("aten::sym_numel"));
+  EXPECT_TRUE(hasOpsFn("executorch_prim::sym_max.Scalar"));
+  EXPECT_TRUE(hasOpsFn("executorch_prim::sym_min.Scalar"));
 }
 
 TEST_F(RegisterPrimOpsTest, SymSizeReturnsCorrectValue) {
@@ -79,6 +81,88 @@ TEST_F(RegisterPrimOpsTest, SymNumelReturnsCorrectValue) {
 
   int64_t expected = 15;
   EXPECT_EQ(stack[1]->toInt(), expected);
+}
+
+TEST_F(RegisterPrimOpsTest, SymMaxReturnsCorrectValue) {
+  EValue values[3];
+  int64_t a = 5;
+  int64_t b = 3;
+  int64_t out = 0;
+  values[0] = EValue(a);
+  values[1] = EValue(b);
+  values[2] = EValue(out);
+
+  EValue* stack[3];
+  for (size_t i = 0; i < 3; i++) {
+    stack[i] = &values[i];
+  }
+
+  getOpsFn("executorch_prim::sym_max.Scalar")(context_, stack);
+  EXPECT_EQ(stack[2]->toInt(), 5);
+
+  // Test with swapped values
+  values[0] = EValue(b);
+  values[1] = EValue(a);
+  values[2] = EValue(out);
+  getOpsFn("executorch_prim::sym_max.Scalar")(context_, stack);
+  EXPECT_EQ(stack[2]->toInt(), 5);
+
+  // Test with equal values
+  values[0] = EValue(a);
+  values[1] = EValue(a);
+  values[2] = EValue(out);
+  getOpsFn("executorch_prim::sym_max.Scalar")(context_, stack);
+  EXPECT_EQ(stack[2]->toInt(), 5);
+
+  // Test with negative values
+  a = -2;
+  b = -5;
+  values[0] = EValue(a);
+  values[1] = EValue(b);
+  values[2] = EValue(out);
+  getOpsFn("executorch_prim::sym_max.Scalar")(context_, stack);
+  EXPECT_EQ(stack[2]->toInt(), -2);
+}
+
+TEST_F(RegisterPrimOpsTest, SymMinReturnsCorrectValue) {
+  EValue values[3];
+  int64_t a = 5;
+  int64_t b = 3;
+  int64_t out = 0;
+  values[0] = EValue(a);
+  values[1] = EValue(b);
+  values[2] = EValue(out);
+
+  EValue* stack[3];
+  for (size_t i = 0; i < 3; i++) {
+    stack[i] = &values[i];
+  }
+
+  getOpsFn("executorch_prim::sym_min.Scalar")(context_, stack);
+  EXPECT_EQ(stack[2]->toInt(), 3);
+
+  // Test with swapped values
+  values[0] = EValue(b);
+  values[1] = EValue(a);
+  values[2] = EValue(out);
+  getOpsFn("executorch_prim::sym_min.Scalar")(context_, stack);
+  EXPECT_EQ(stack[2]->toInt(), 3);
+
+  // Test with equal values
+  values[0] = EValue(a);
+  values[1] = EValue(a);
+  values[2] = EValue(out);
+  getOpsFn("executorch_prim::sym_min.Scalar")(context_, stack);
+  EXPECT_EQ(stack[2]->toInt(), 5);
+
+  // Test with negative values
+  a = -2;
+  b = -5;
+  values[0] = EValue(a);
+  values[1] = EValue(b);
+  values[2] = EValue(out);
+  getOpsFn("executorch_prim::sym_min.Scalar")(context_, stack);
+  EXPECT_EQ(stack[2]->toInt(), -5);
 }
 
 TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
@@ -131,7 +215,7 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
   Tensor copy_to = tf.make({2, 2}, {0, 0, 0, 0});
 #else
   std::vector<int> buf(4);
-  SizesType expected_output_size[2] = {0, 0};
+  SizesType expected_output_size[2] = {0, 2};
   Tensor copy_to =
       tf.make({2, 2}, {0, 0, 0, 0}, {}, TensorShapeDynamism::DYNAMIC_BOUND);
   // Resize the tensor to 0 size for the tests.

@@ -63,6 +63,12 @@ enum class Error : error_code_t {
   /// Operator(s) missing in the operator registry.
   OperatorMissing = 0x14,
 
+  /// Registration error: Exceeding the maximum number of kernels.
+  RegistrationExceedingMaxKernels = 0x15,
+
+  /// Registration error: The kernel is already registered.
+  RegistrationAlreadyRegistered = 0x16,
+
   /*
    * Resource errors.
    */
@@ -95,8 +101,53 @@ enum class Error : error_code_t {
   DelegateMemoryAllocationFailed = 0x31,
   /// Execute stage: The handle is invalid.
   DelegateInvalidHandle = 0x32,
-
 };
+
+// Stringify the Error enum.
+constexpr const char* to_string(const Error error) {
+  switch (error) {
+    case Error::Ok:
+      return "Error::Ok";
+    case Error::Internal:
+      return "Error::Internal";
+    case Error::InvalidState:
+      return "Error::InvalidState";
+    case Error::EndOfMethod:
+      return "Error::EndOfMethod";
+    case Error::NotSupported:
+      return "Error::NotSupported";
+    case Error::NotImplemented:
+      return "Error::NotImplemented";
+    case Error::InvalidArgument:
+      return "Error::InvalidArgument";
+    case Error::InvalidType:
+      return "Error::InvalidType";
+    case Error::OperatorMissing:
+      return "Error::OperatorMissing";
+    case Error::NotFound:
+      return "Error::NotFound";
+    case Error::MemoryAllocationFailed:
+      return "Error::MemoryAllocationFailed";
+    case Error::AccessFailed:
+      return "Error::AccessFailed";
+    case Error::InvalidProgram:
+      return "Error::InvalidProgram";
+    case Error::InvalidExternalData:
+      return "Error::InvalidExternalData";
+    case Error::OutOfResources:
+      return "Error::OutOfResources";
+    case Error::DelegateInvalidCompatibility:
+      return "Error::DelegateInvalidCompatibility";
+    case Error::DelegateMemoryAllocationFailed:
+      return "Error::DelegateMemoryAllocationFailed";
+    case Error::DelegateInvalidHandle:
+      return "Error::DelegateInvalidHandle";
+    case Error::RegistrationExceedingMaxKernels:
+      return "Error::RegistrationExceedingMaxKernels";
+    case Error::RegistrationAlreadyRegistered:
+      return "Error::RegistrationAlreadyRegistered";
+  }
+}
 
 } // namespace runtime
 } // namespace executorch

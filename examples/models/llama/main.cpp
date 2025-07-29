@@ -100,12 +100,20 @@ int32_t main(int32_t argc, char** argv) {
   }
 
   if (warmup) {
-    runner->warmup(prompt, /*max_new_tokens=*/seq_len);
+    auto error = runner->warmup(prompt, /*max_new_tokens=*/seq_len);
+    if (error != executorch::runtime::Error::Ok) {
+      ET_LOG(Error, "Failed to warmup llama runner");
+      return 1;
+    }
   }
   // generate
   executorch::extension::llm::GenerationConfig config{
       .seq_len = seq_len, .temperature = temperature};
-  runner->generate(prompt, config);
+  auto error = runner->generate(prompt, config);
+  if (error != executorch::runtime::Error::Ok) {
+    ET_LOG(Error, "Failed to warmup llama runner");
+    return 1;
+  }
 
   return 0;
 }

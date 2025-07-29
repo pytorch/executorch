@@ -60,7 +60,7 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
 ## Install ExecuTorch pip package from source
    ```bash
    # Install ExecuTorch pip package and its dependencies, as well as
-   # development tools like CMake.
+   # development tools like CMake, and backend support for XNNPACK and CoreML.
    # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
    # Intel-based macOS systems require building PyTorch from source (see below)
    ./install_executorch.sh
@@ -79,10 +79,16 @@ Or alternatively, [install conda on your machine](https://conda.io/projects/cond
    ./install_executorch.sh --use-pt-pinned-commit --minimal
    ```
 
-   Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:
+  Notice that only XNNPACK and CoreML backends are supported by default. You can enable additional backends or disable default backends by setting the corresponding CMake flags:
 
   ```bash
+  # Enable the MPS backend
   CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
+  ```
+
+  ```bash
+  # Disable the XNNPACK backend
+  CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=OFF" ./install_executorch.sh
   ```
 
    For development mode, run the command with `--editable`, which allows us to modify Python source code and see changes reflected immediately.
@@ -246,6 +252,17 @@ I 00:00:00.000764 executorch:executor_runner.cpp:180] Model executed successfull
 I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs:
 Output 0: tensor(sizes=[1], [2.])
 ```
+
+### CMake Targets
+
+To link against the ExecuTorch framework from CMake, the following top-level targets are exposed:
+
+ * `executorch::backends`: Contains all configured backends.
+ * `executorch::extensions`: Contains all configured extensions.
+ * `executorch::kernels`: Contains all configured kernel libraries.
+
+The backends, extensions, and kernels included in these targets are controlled by the various `EXECUTORCH_` CMake options specified by the build.
+
 ## Build ExecuTorch for Windows
 
 This document outlines the current known working build instructions for building and validating ExecuTorch on a Windows machine.
@@ -370,7 +387,7 @@ cmake . `
   -DEXECUTORCH_BUILD_FLATC=ON `
   -DEXECUTORCH_BUILD_PYBIND=OFF `
   -DEXECUTORCH_BUILD_XNNPACK=ON `
-  -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON `
+  -DEXECUTORCH_BUILD_KERNELS_LLM=ON `
   -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON `
   -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON `
   -DEXECUTORCH_ENABLE_LOGGING=ON `

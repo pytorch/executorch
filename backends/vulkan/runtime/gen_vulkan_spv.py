@@ -545,6 +545,9 @@ def escape(line: str) -> str:
 def preprocess(
     input_text: str, variables: Dict[str, Any], input_path: str = "codegen"
 ) -> str:
+    # Workaround to handle source files using \ to extend mecros to a new line
+    input_text = re.sub(r"\\$", r"\\\\", input_text, flags=re.MULTILINE)
+
     input_lines = input_text.splitlines()
     python_lines = []
 
@@ -654,8 +657,8 @@ class SPVGenerator:
         for src_path in src_dir_paths:
             # Collect glsl source files
             src_files_list = glob.glob(
-                os.path.join(src_path, "**", "*.glsl*"), recursive=True
-            )
+                os.path.join(src_path, "**", "*.[gh]lsl*"), recursive=True
+            ) + glob.glob(os.path.join(src_path, "**", "*.h"), recursive=True)
             for file in src_files_list:
                 if len(file) > 1:
                     self.src_files[extract_filename(file, keep_ext=False)] = file
@@ -728,9 +731,16 @@ class SPVGenerator:
                 )
 
                 for variant in params_dict["shader_variants"]:
+                    default_iterated_params_names = set(
+                        default_iterated_params.keys()
+                        if default_iterated_params is not None
+                        else {}
+                    )
                     variant_params_names = set(variant.keys())
+
                     invalid_keys = (
                         variant_params_names
+                        - default_iterated_params_names
                         - params_names
                         - {"generate_variant_forall"}
                     )
@@ -758,6 +768,7 @@ class SPVGenerator:
                                     variant_name = f"{variant_name}_{param_value[1]}"
 
                             default_params_copy["NAME"] = variant_name
+                            default_params_copy["VARIANT_NAME"] = variant["NAME"]
 
                             self.shader_template_params[template_name].append(
                                 default_params_copy
@@ -843,21 +854,96 @@ class SPVGenerator:
         cache_dir: Optional[str] = None,
         force_rebuild: bool = False,
     ) -> Dict[str, str]:
-        output_file_map = {}
+        # The key of this dictionary is the full path to a generated source file. The
+        # value is a tuple that contains 3 entries:
+        #
+        # 1. A bool indicationg if the file has changed since the last compilation; this
+        #    is determined by comparing against the cached version.
+        # 2. List of other source files included by the generated file.
+        gen_file_meta: Dict[str, Tuple[bool, List[str], str]] = {}
 
-        def generate_src_file(shader_paths_pair):
-            # Extract components from the input tuple
-            # name of .glsl, .glslh, or .h to be generated
+        # Return value of the function mapping the abspath of compiled SPIR-V binaries
+        # to the abspath of the generated GLSL file they were compiled from.
+        spv_to_glsl_map: Dict[str, str] = {}
+
+        # Convert output_dir to absolute path
+        assert os.path.exists(output_dir)
+        output_dir = os.path.abspath(output_dir)
+
+        if cache_dir is not None:
+            assert os.path.exists(cache_dir)
+
+        def get_glsl_includes(glsl_text):
+            """
+            Parse GLSL text content and return a list of included files.
+
+            Args:
+                glsl_text: String containing the GLSL file content to analyze
+
+            Returns:
+                List of included file names (e.g., ["random.h"])
+            """
+            includes = []
+            for line in glsl_text.splitlines():
+                # Look for #include directives with quoted filenames
+                # Matches: #include "filename.h" or #include <filename.h>
+                include_match = re.match(
+                    r'^\s*#include\s+[<"]([^>"]+)[>"]', line.strip()
+                )
+                if include_match:
+                    includes.append(include_match.group(1))
+
+            return includes
+
+        def file_has_changed(gen_file_path, cached_file_path):
+            # If the file does not exist in the cache, then return True
+            if not os.path.exists(cached_file_path):
+                return True
+            current_checksum = self.get_md5_checksum(gen_file_path)
+            cached_checksum = self.get_md5_checksum(cached_file_path)
+            return current_checksum != cached_checksum
+
+        def any_sources_changed(gen_file_path, output_dir):
+            """
+            Given the path to a generated source file, check the gen_file_meta dict to
+            determine if the ANY of the source files contributing to the compilation of
+            this file were changed since the last successful compilation.
+            """
+            gen_file_changed, includes_list = gen_file_meta[gen_file_path]
+            any_changed = gen_file_changed
+            for included_file in includes_list:
+                included_file_path = os.path.join(output_dir, included_file)
+                any_changed = any_changed or any_sources_changed(
+                    included_file_path, output_dir
+                )
+
+            return any_changed
+
+        def generate_src_file(shader_paths_pair) -> Tuple[bool, List[str]]:
+            """
+            Given an input tuple containing the following items:
+            (src_file_name, (template_file_path, codegen_params))
+
+            This function generates src_file_name by processing
+            template_file_path with the Python preprocessor using the
+            parameters specified by codegen_params.
+
+            Then, it returns a tuple containing:
+            1. The path of the generated source file
+            2. A bool indicating if the generated source file has changed since the last
+               compilation.
+            3. A list of files included by the generated source file
+            """
+            # name of .glsl, .glslh, or .h file to be generated
             src_file_name = shader_paths_pair[0]
             # path of template file used for codegen
-            src_file_fullpath = shader_paths_pair[1][0]
+            template_file_path = shader_paths_pair[1][0]
             # args to be used for codegen
             codegen_params = shader_paths_pair[1][1]
 
             # Assume that generated files will have the same file extension as the
             # source template file.
-            src_file_ext = extract_extension(src_file_fullpath)
-            out_file_ext = src_file_ext
+            out_file_ext = extract_extension(template_file_path)
 
             # Construct generated file name
             gen_out_path = os.path.join(output_dir, f"{src_file_name}.{out_file_ext}")
@@ -867,29 +953,51 @@ class SPVGenerator:
             )
 
             # Execute codegen to generate the output file
-            with codecs.open(src_file_fullpath, "r", encoding="utf-8") as input_file:
+            with codecs.open(template_file_path, "r", encoding="utf-8") as input_file:
                 input_text = input_file.read()
                 input_text = self.maybe_replace_u16vecn(input_text)
                 output_text = preprocess(input_text, codegen_params)
 
+            included_files = get_glsl_includes(output_text)
+
             with codecs.open(gen_out_path, "w", encoding="utf-8") as output_file:
                 output_file.write(output_text)
 
-            if cache_dir is not None:
-                # Store the generated file in the cache for SPIR-V compilation
+            file_changed = (
+                file_has_changed(gen_out_path, cached_gen_out_path) or force_rebuild
+            )
+
+            # Save the generated file to cache so it can be used for future checks
+            if cache_dir is not None and file_changed:
                 shutil.copyfile(gen_out_path, cached_gen_out_path)
 
-        def compile_spirv(shader_paths_pair):
-            # Extract components from the input tuple
-            # name of generated .glsl, .glslh, or .h
+            return gen_out_path, file_changed, included_files
+
+        def compile_spirv(shader_paths_pair) -> Tuple[str, str]:
+            """
+            Given an input tuple containing the following items:
+            (src_file_name, (template_file_path, codegen_params))
+
+            Infer the path of the GLSL source file generated by generate_src_file and
+            compile a SPIR-V binary from it. Returns the path of the compiled SPIR-V
+            binary and the path of the source file used to compile it.
+
+            This function also utilizes a caching mechanism; if generate_src_file
+            reported that the source file was unchanged since the last successful
+            compilation, AND if the SPIR-V from the last successful compilation was
+            stored in the cache, then directly use the cached SPIR-V without triggering
+            a re-compilation.
+            """
+            # name of generated .glsl, .glslh, or .h from generate_src_file
             src_file_name = shader_paths_pair[0]
             # path of template file used for codegen
-            src_file_fullpath = shader_paths_pair[1][0]
+            template_file_path = shader_paths_pair[1][0]
+            # args used for codegen
+            codegen_params = shader_paths_pair[1][1]
 
             # Assume that generated files will have the same file extension as the
             # source template file.
-            src_file_ext = extract_extension(src_file_fullpath)
-            out_file_ext = src_file_ext
+            out_file_ext = extract_extension(template_file_path)
 
             # Infer name of generated file (created by generate_src_file)
             gen_out_path = os.path.join(output_dir, f"{src_file_name}.{out_file_ext}")
@@ -898,33 +1006,23 @@ class SPVGenerator:
             if out_file_ext != "glsl":
                 return (None, gen_out_path)
 
-            # Construct name of SPIR-V file to be compiled, if needed
+            # Validate that the source file actually exists
+            assert os.path.exists(gen_out_path) and gen_out_path in gen_file_meta
+
+            # Construct name of SPIR-V file to be compiled
             spv_out_path = os.path.join(output_dir, f"{src_file_name}.spv")
 
             if cache_dir is not None:
                 # Construct the file names of cached SPIR-V file to check if they exist
                 # in the cache.
-                cached_gen_out_path = os.path.join(
-                    cache_dir, f"{src_file_name}.{out_file_ext}"
-                )
                 cached_spv_out_path = os.path.join(cache_dir, f"{src_file_name}.spv")
 
-                # Only use cached artifacts if all of the expected artifacts are present
-                if (
-                    not force_rebuild
-                    and os.path.exists(cached_gen_out_path)
-                    and os.path.exists(cached_spv_out_path)
-                ):
-                    current_checksum = self.get_md5_checksum(gen_out_path)
-                    cached_checksum = self.get_md5_checksum(cached_gen_out_path)
-                    # If the cached generated GLSL file is the same as the current GLSL
-                    # generated file, then assume that the generated GLSL and SPIR-V
-                    # will not have changed. In that case, just copy over the GLSL and
-                    # SPIR-V files from the cache and return.
-                    if current_checksum == cached_checksum:
-                        shutil.copyfile(cached_spv_out_path, spv_out_path)
-                        return (spv_out_path, gen_out_path)
+                can_use_cached = not any_sources_changed(gen_out_path, output_dir)
+                if can_use_cached and os.path.exists(cached_spv_out_path):
+                    shutil.copyfile(cached_spv_out_path, spv_out_path)
+                    return (spv_out_path, gen_out_path)
 
+            vk_version = codegen_params.get("VK_VERSION", "1.1")
             # Only proceed if a GLSL compiler was specified
             if self.glslc_path is not None:
                 cmd_base = [
@@ -933,12 +1031,10 @@ class SPVGenerator:
                     gen_out_path,
                     "-o",
                     spv_out_path,
-                    "--target-env=vulkan1.1",
+                    "--target-env=vulkan{}".format(vk_version),
                     "-Werror",
-                ] + [
-                    arg
-                    for src_dir_path in self.src_dir_paths
-                    for arg in ["-I", src_dir_path]
+                    "-I",
+                    output_dir,
                 ]
                 cmd = cmd_base + self.glslc_flags
 
@@ -952,13 +1048,23 @@ class SPVGenerator:
                         try:
                             subprocess.run(cmd_no_opt, check=True, capture_output=True)
                         except subprocess.CalledProcessError as e_no_opt:
+                            # Delete any existing cached SPIR-V file if it exists
+                            if os.path.exists(cached_spv_out_path):
+                                os.remove(cached_spv_out_path)
+
                             raise RuntimeError(
                                 f"{err_msg_base} {e_no_opt.stderr}"
                             ) from e_no_opt
 
                     else:
+                        # Delete any existing cached SPIR-V file if it exists
+                        if os.path.exists(cached_spv_out_path):
+                            os.remove(cached_spv_out_path)
+
                         raise RuntimeError(f"{err_msg_base} {e.stderr}") from e
 
+                # If compilation was successful, store the compiled SPIR-V file in the
+                # cache for future use.
                 if cache_dir is not None:
                     shutil.copyfile(spv_out_path, cached_spv_out_path)
 
@@ -967,25 +1073,20 @@ class SPVGenerator:
         # Run codegen serially to ensure that all .glsl, .glslh, and .h files are up to
         # date before compilation
         for generated_file_tuple in self.output_file_map.items():
-            generate_src_file(generated_file_tuple)
+            gen_out_path, file_changed, include_list = generate_src_file(
+                generated_file_tuple
+            )
+            gen_file_meta[gen_out_path] = (file_changed, include_list)
 
         # Parallelize SPIR-V compilation to optimize build time
         with ThreadPool(os.cpu_count()) as pool:
             for spv_out_path, glsl_out_path in pool.map(
                 compile_spirv, self.output_file_map.items()
             ):
-                output_file_map[spv_out_path] = glsl_out_path
+                print(spv_to_glsl_map)
+                spv_to_glsl_map[spv_out_path] = glsl_out_path
 
-        # Save all source GLSL files to the cache. Only do this at the very end since
-        # multiple variants may use the same source file.
-        if cache_dir is not None:
-            for _, src_file_fullpath in self.src_files.items():
-                cached_src_file = os.path.join(
-                    cache_dir, os.path.basename(src_file_fullpath) + ".t"
-                )
-                shutil.copyfile(src_file_fullpath, cached_src_file)
-
-        return output_file_map
+        return spv_to_glsl_map
 
 
 ##############################################

@@ -6,6 +6,7 @@ python_library(
     deps = [
         "//executorch/backends/arm:tosa_quant_utils",
         "//executorch/backends/arm:tosa_utils",
+        "//executorch/backends/arm/tosa/dialect:lib",
         "//executorch/backends/transforms:fuse_view_copy",
         "//executorch/backends/transforms:remove_getitem_op",
         "//executorch/backends/transforms:replace_scalar_with_tensor",

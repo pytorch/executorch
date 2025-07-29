@@ -856,19 +856,32 @@ class FuseMulTensorIntoQuantPass(ExportPass):
     def attempt_fusion(
         self, graph_module: torch.fx.GraphModule, mul_node: torch.fx.Node
     ) -> None:
-        full_nodes = [
-            arg
-            for arg in mul_node.args
-            if isinstance(arg, torch.fx.Node)
-            and arg.target == exir_ops.edge.aten.full.default
-        ]
-
-        if len(full_nodes) != 1 or len(mul_node.users) != 1:
+        if len(mul_node.args) != 2 or len(mul_node.users) != 1:
             return
 
-        full_node = full_nodes[0]
+        first_arg = cast(torch.fx.Node, mul_node.args[0])
+        second_arg = cast(torch.fx.Node, mul_node.args[1])
+
+        input_node = first_arg
+        full_node = second_arg
+        if second_arg.target == exir_ops.edge.aten.full.default:
+            # Most common case, nothing to change.
+            pass
+        elif first_arg.target == exir_ops.edge.aten.full.default:
+            # Input and full nodes are swapped.
+            full_node = first_arg
+            input_node = second_arg
+        else:
+            # Full node is not found, skip.
+            return
+
+        # Ensure that the mul op does not do any broadcasting.
+        if input_node.meta["val"].shape != mul_node.meta["val"].shape:
+            return
+
         mul_user = list(mul_node.users.keys())[0]
 
+        # Ensure only the expected quant ops are using the current mul op.
         if mul_user.target not in {
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.cadence.quantize_per_tensor.default,
@@ -878,33 +891,28 @@ class FuseMulTensorIntoQuantPass(ExportPass):
         quant_node = mul_user
 
         # Calculate the new scale value.
-        prev_scale = quant_node.args[1]
-        assert isinstance(prev_scale, (int, float))
+        old_scale = quant_node.args[1]
+        assert isinstance(old_scale, (int, float))
         mul_scalar = full_node.args[1]
         assert isinstance(mul_scalar, (int, float))
-        new_scale = float(prev_scale) * float(mul_scalar)
+        """ The reason why we divide old scale by the mul value to get a new scale:
+            y = x * mul_scalar
+            q = zp + y / old_scale
+            q = zp + x * mul_scalar / old_scale
+            new_scale = old_scale / mul_scalar
+            q = zp + x / new_scale
+        """
+        new_scale = float(old_scale) / float(mul_scalar)
 
         logging.debug(
             f"Fused {mul_node} and {full_node} into {quant_node}. Updated scale from {quant_node.args[1]} to {new_scale}"
         )
 
-        # Replace the input first
-        quant_node.replace_input_with(
-            cast(torch.fx.Node, quant_node.args[0]),
-            cast(torch.fx.Node, mul_node.args[0]),
-        )
-
-        # Now update the scale in the args
-        new_quant_args = list(quant_node.args)
-        new_quant_args[1] = new_scale
-        quant_node.args = tuple(new_quant_args)
-
-        # Clean up the mul_node
-        mul_node.args = ()
-        mul_node.users = {}
-
-        graph_module.graph.erase_node(mul_node)
-        graph_module.graph.erase_node(full_node)
+        # Update quant node input and scale.
+        old_quant_input = cast(torch.fx.Node, quant_node.args[0])
+        new_quant_input = cast(torch.fx.Node, mul_node.args[0])
+        quant_node.replace_input_with(old_quant_input, new_quant_input)
+        quant_node.update_arg(1, new_scale)
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         for node in graph_module.graph.find_nodes(
@@ -1119,6 +1127,7 @@ class CadenceFuseOpsInGraph:
         FuseCascadedTransposeOrPermuteOps,
         FuseCascadedViewOps,
         FuseQuantDequantToRequantizePass,
+        FuseMulTensorIntoQuantPass,
         FuseMulTensorIntoDequantPass,
         FuseMulScalarIntoDequantPass,
         FuseFullThenReshapePass,

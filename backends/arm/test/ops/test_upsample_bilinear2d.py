@@ -10,11 +10,13 @@ from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineBI,
+    OpNotSupportedPipeline,
     TosaPipelineBI,
     TosaPipelineMI,
 )
 
 aten_op = "torch.ops.aten.upsample_bilinear2d.vec"
+exir_op = "executorch_exir_dialects_edge__ops_aten_upsample_bilinear2d_vec"
 input_t1 = Tuple[torch.Tensor]  # Input x
 
 test_data_suite_tosa = {
@@ -55,6 +57,10 @@ test_data_suite_Uxx = {
     "rand_half_size": (torch.rand(2, 4, 8, 6), (4, 3), None, False),
     "rand_one_and_half_scale": (torch.rand(2, 4, 8, 3), None, 1.5, False),
     "rand_one_and_half_size": (torch.rand(2, 4, 8, 3), (12, 4), None, False),
+}
+
+test_data_u55 = {
+    "rand_double_size": (torch.rand(2, 4, 8, 3), (16, 6), None, True),
 }
 
 
@@ -186,6 +192,60 @@ def test_upsample_bilinear2d_vec_tosa_BI_Upsample(
     )
     if not compare_outputs:
         pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_u55)
+@common.XfailIfNoCorstone300
+def test_upsample_bilinear2d_vec_U55_BI_Upsample_not_delegated(
+    test_data: torch.Tensor,
+):
+    test_data, size, scale_factor, compare_outputs = test_data
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Upsample(size, scale_factor),
+        (test_data,),
+        {exir_op: 1},
+        n_expected_delegates=0,
+        quantize=True,
+        u55_subset=True,
+    )
+
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_u55)
+@common.XfailIfNoCorstone300
+def test_upsample_bilinear2d_vec_U55_BI_Interpolate_not_delegated(
+    test_data: torch.Tensor,
+):
+    test_data, size, scale_factor, compare_outputs = test_data
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Interpolate(size, scale_factor),
+        (test_data,),
+        {exir_op: 1},
+        n_expected_delegates=0,
+        quantize=True,
+        u55_subset=True,
+    )
+
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_u55)
+@common.XfailIfNoCorstone300
+def test_upsample_bilinear2d_vec_U55_BI_UpsamplingBilinear2d_not_delegated(
+    test_data: torch.Tensor,
+):
+    test_data, size, scale_factor, compare_outputs = test_data
+    pipeline = OpNotSupportedPipeline[input_t1](
+        UpsamplingBilinear2d(size, scale_factor),
+        (test_data,),
+        {exir_op: 1},
+        n_expected_delegates=0,
+        quantize=True,
+        u55_subset=True,
+    )
+
     pipeline.run()
 
 

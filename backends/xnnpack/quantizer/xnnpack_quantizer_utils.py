@@ -29,6 +29,7 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
     SharedQuantizationSpec,
 )
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 from torchao.quantization.pt2e.utils import (
     _get_aten_graph_module_for_pattern,
     _is_conv_node,
@@ -109,8 +110,7 @@ def _is_annotated(nodes: list[Node]):
     annotated = False
     for node in nodes:
         annotated = annotated or (
-            "quantization_annotation" in node.meta
-            and node.meta["quantization_annotation"]._annotated
+            Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated
         )
     return annotated
 
@@ -118,9 +118,9 @@ def _is_annotated(nodes: list[Node]):
 def _mark_nodes_as_annotated(nodes: list[Node]):
     for node in nodes:
         if node is not None:
-            if "quantization_annotation" not in node.meta:
-                node.meta["quantization_annotation"] = QuantizationAnnotation()
-            node.meta["quantization_annotation"]._annotated = True
+            if Q_ANNOTATION_KEY not in node.meta:
+                node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation()
+            node.meta[Q_ANNOTATION_KEY]._annotated = True
 
 
 @register_annotator("linear")
@@ -221,11 +221,11 @@ def _annotate_linear_relu(
         if filter_fn and any(not filter_fn(n) for n in partition):
             continue
 
-        linear_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        linear_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             _annotated=True,
         )
-        relu_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        relu_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             output_qspec=output_act_qspec,
             _annotated=True,
         )
@@ -271,7 +271,6 @@ def _do_annotate_conv(
 
         # skip if transposed conv has more than 1 group
         skip = skip or (is_conv_transpose and num_groups != 1)
-        print(f"{skip} conv transpose and num_groups")
 
         if is_conv_transpose:
             # transposed convs per output channel quantization
@@ -309,7 +308,7 @@ def _do_annotate_conv(
         if filter_fn and any(not filter_fn(n) for n in partition):
             continue
 
-        conv_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        conv_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=get_output_act_qspec(quantization_config),
             _annotated=True,
@@ -372,10 +371,10 @@ def _do_annotate_conv_relu(
         if filter_fn and any(not filter_fn(n) for n in partition):
             continue
 
-        conv_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        conv_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map, _annotated=True
         )
-        relu_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        relu_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             output_qspec=get_output_act_qspec(quantization_config),  # type: ignore[arg-type]
             _annotated=True,
         )
@@ -609,11 +608,11 @@ def _do_annotate_conv_bn(  # noqa: C901
         input_qspec_map[weight_node] = get_weight_qspec(quantization_config)
         if bias_node is not None:
             input_qspec_map[bias_node] = get_bias_qspec(quantization_config)
-        conv_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        conv_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             _annotated=True,
         )
-        output_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        output_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             output_qspec=get_output_act_qspec(quantization_config),  # type: ignore[arg-type]
             _annotated=True,
         )
@@ -644,7 +643,7 @@ def _annotate_gru_io_only(
         input_act_user = next(iter(input_act.users.keys()))
         assert isinstance(input_act, Node)
         assert isinstance(input_act_user, Node)
-        input_act_user.meta["quantization_annotation"] = QuantizationAnnotation(
+        input_act_user.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={
                 input_act: get_input_act_qspec(quantization_config),
             },
@@ -655,7 +654,7 @@ def _annotate_gru_io_only(
         hidden_state_user = next(iter(hidden_state.users.keys()))
         assert isinstance(hidden_state, Node)
         assert isinstance(hidden_state_user, Node)
-        hidden_state_user.meta["quantization_annotation"] = QuantizationAnnotation(
+        hidden_state_user.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={
                 hidden_state: get_input_act_qspec(quantization_config),
             },
@@ -664,7 +663,7 @@ def _annotate_gru_io_only(
 
         assert len(output_nodes) == 2, "expecting GRU to have two outputs"
         for output in output_nodes:
-            output.meta["quantization_annotation"] = QuantizationAnnotation(
+            output.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
                 output_qspec=get_output_act_qspec(quantization_config),
                 _annotated=True,
             )
@@ -703,9 +702,9 @@ def _annotate_adaptive_avg_pool2d(
         # only annotate input output sharing operator
         # when the output of the input node is annotated
         if (
-            "quantization_annotation" not in input_act.meta
-            or not input_act.meta["quantization_annotation"]._annotated
-            or input_act.meta["quantization_annotation"].output_qspec is None
+            Q_ANNOTATION_KEY not in input_act.meta
+            or not input_act.meta[Q_ANNOTATION_KEY]._annotated
+            or input_act.meta[Q_ANNOTATION_KEY].output_qspec is None
         ):
             input_act_qspec = get_input_act_qspec(quantization_config)
         else:
@@ -713,7 +712,7 @@ def _annotate_adaptive_avg_pool2d(
 
         # output sharing with input
         output_act_qspec = SharedQuantizationSpec((input_act, pool_node))
-        pool_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        pool_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={
                 input_act: input_act_qspec,
             },
@@ -807,11 +806,11 @@ def _annotate_add_relu(  # noqa: C901
             partition.append(input_act1)
             input_qspec_map[input_act1] = input_act_qspec
 
-        add_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        add_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             _annotated=True,
         )
-        relu_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        relu_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             output_qspec=output_act_qspec,
             _annotated=True,
         )
@@ -863,7 +862,7 @@ def _annotate_add(
             input_qspec_map[input_act1] = input_act_qspec
             partition.append(input_act1)
 
-        add_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        add_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=output_act_qspec,
             _annotated=True,
@@ -931,11 +930,11 @@ def _annotate_mul_relu(  # noqa: C901
             partition.append(input_act1)
             input_qspec_map[input_act1] = input_act_qspec
 
-        mul_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        mul_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             _annotated=True,
         )
-        relu_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        relu_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             output_qspec=output_act_qspec,
             _annotated=True,
         )
@@ -987,7 +986,7 @@ def _annotate_mul(
             input_qspec_map[input_act1] = input_act_qspec
             partition.append(input_act0)
 
-        mul_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        mul_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=output_act_qspec,
             _annotated=True,
@@ -1003,22 +1002,15 @@ def _annotate_cat(
     quantization_config: Optional[QuantizationConfig],
     filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> Optional[list[list[Node]]]:
-    cat_partitions = get_source_partitions(gm.graph, [torch.cat], filter_fn)
-    cat_partitions = list(itertools.chain.from_iterable(cat_partitions.values()))
     annotated_partitions = []
-    for cat_partition in cat_partitions:
-        cat_node = cat_partition.output_nodes[0]
+    for cat_node in gm.graph.nodes:
+        if cat_node.target != torch.ops.aten.cat.default:
+            continue
+
         if _is_annotated([cat_node]):
             continue
 
-        if cat_node.target != torch.ops.aten.cat.default:
-            # TODO: change this to AnnotationException
-            raise Exception(  # noqa: TRY002
-                f"Expected cat node: torch.ops.aten.cat.default, but found {cat_node.target}"
-                " please check if you are calling the correct capture API"
-            )
-
-        annotated_partitions.append(cat_partition.nodes)
+        annotated_partitions.append(cat_node.all_input_nodes)
 
         input_act_qspec = get_input_act_qspec(quantization_config)
         inputs = cat_node.args[0]
@@ -1035,7 +1027,7 @@ def _annotate_cat(
 
         output_act_qspec = shared_with_input0_qspec
 
-        cat_node.meta["quantization_annotation"] = QuantizationAnnotation(
+        cat_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=output_act_qspec,
             _annotated=True,
@@ -1073,7 +1065,7 @@ def propagate_annotation(model: torch.fx.GraphModule) -> None:
         if not isinstance(prev_node, Node):
             continue
 
-        quantization_annotation = prev_node.meta.get("quantization_annotation", None)
+        quantization_annotation = prev_node.meta.get(Q_ANNOTATION_KEY, None)
         if not quantization_annotation:
             continue
 
@@ -1082,15 +1074,12 @@ def propagate_annotation(model: torch.fx.GraphModule) -> None:
             continue
 
         # make sure current node is not annotated
-        if (
-            "quantization_annotation" in n.meta
-            and n.meta["quantization_annotation"]._annotated
-        ):
+        if Q_ANNOTATION_KEY in n.meta and n.meta[Q_ANNOTATION_KEY]._annotated:
             continue
 
         shared_qspec = SharedQuantizationSpec(prev_node)
         # propagate the previous output_qspec to the current node
-        n.meta["quantization_annotation"] = QuantizationAnnotation(
+        n.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map={
                 prev_node: shared_qspec,
             },

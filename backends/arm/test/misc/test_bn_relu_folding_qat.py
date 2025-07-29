@@ -59,7 +59,9 @@ def test_qat_tosa_BI(model: torch.nn.Module):
         "quantize",
         Quantize(
             quantizer=quantizer,
-            quantization_config=get_symmetric_quantization_config(is_qat=True),
+            quantization_config=get_symmetric_quantization_config(
+                is_qat=True, is_per_channel=False
+            ),
             is_qat=True,
         ),
     )

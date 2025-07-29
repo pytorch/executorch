@@ -47,10 +47,3 @@ class TestL1Comparator(unittest.TestCase):
         expected = 14.0
         result = self.l1_comparator.compare(a, b)
         self.assertAlmostEqual(result, expected)
-
-    def test_list_of_tensors(self):
-        a = [torch.tensor([2, 4]), torch.tensor([5, 2])]
-        b = [torch.tensor([1, 2]), torch.tensor([3, 5])]
-        expected = 8.0
-        result = self.l1_comparator.compare(a, b)
-        self.assertAlmostEqual(result, expected)

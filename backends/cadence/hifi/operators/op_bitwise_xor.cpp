@@ -169,8 +169,8 @@ Tensor& bitwise_xor_Tensor_out(
     return out;
   }
 
-  return torch::executor::native::internal::bitwise_tensor_out<op_name>(
-      ctx, a, b, out);
+  return torch::executor::native::internal::
+      bitwise_tensor_out<std::bit_xor, op_name>(ctx, a, b, out);
 }
 
 Tensor& bitwise_xor_Scalar_out(
@@ -180,8 +180,8 @@ Tensor& bitwise_xor_Scalar_out(
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "bitwise_xor.Scalar_out";
-  return torch::executor::native::internal::bitwise_scalar_out<op_name>(
-      ctx, a, b, out);
+  return torch::executor::native::internal::
+      bitwise_scalar_out<std::bit_xor, op_name>(ctx, a, b, out);
 }
 
 } // namespace native

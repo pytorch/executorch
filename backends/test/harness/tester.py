@@ -1,6 +1,6 @@
 import random
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 
@@ -33,7 +33,7 @@ class Tester:
         self,
         module: torch.nn.Module,
         example_inputs: Tuple[torch.Tensor],
-        stage_classes: Dict[StageType, Type],
+        stage_classes: Dict[StageType, Callable],
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         module.eval()
@@ -81,7 +81,7 @@ class Tester:
         self.stage_output = None
 
     @staticmethod
-    def default_stage_classes() -> Dict[StageType, Type]:
+    def default_stage_classes() -> Dict[StageType, Callable]:
         """
         Returns a map of StageType to default Stage implementation.
         """
@@ -311,7 +311,10 @@ class Tester:
         print(f"Comparing Stage {stage} with Stage {reference_stage}")
         for run_iteration in range(number_of_runs):
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
-            input_shapes = [generated_input.shape for generated_input in inputs_to_run]
+            input_shapes = [
+                generated_input.shape if hasattr(generated_input, "shape") else None
+                for generated_input in inputs_to_run
+            ]
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
             # Reference output (and quantization scale)
@@ -361,15 +364,16 @@ class Tester:
                     ref,
                     atol=atol,
                     rtol=rtol,
+                    equal_nan=True,
                 ), (
                     f"Output {i} does not match reference output.\n"
                     f"\tGiven atol: {atol}, rtol: {rtol}.\n"
                     f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
+                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref).to(torch.double))}.\n"
                     f"\t-- Model vs. Reference --\n"
                     f"\t Numel: {model.numel()}, {ref.numel()}\n"
                     f"\tMedian: {model.median()}, {ref.median()}\n"
-                    f"\t  Mean: {model.mean()}, {ref.mean()}\n"
+                    f"\t  Mean: {model.to(torch.double).mean()}, {ref.to(torch.double).mean()}\n"
                     f"\t   Max: {model.max()}, {ref.max()}\n"
                     f"\t   Min: {model.min()}, {ref.min()}\n"
                 )
@@ -416,12 +420,7 @@ class Tester:
         """
 
         # Locate the output node.
-        output_node = None
-        for node in program.graph.nodes:
-            if node.op == "output":
-                output_node = node
-                break
-        assert output_node is not None
+        output_node = program.graph.output_node()
 
         # Look for a dequantization node in the output node args. Returned values are found in the first
         # argument of the output node.

@@ -17,7 +17,7 @@ from executorch.exir.backend.test.op_partitioner_demo import (
     NonDecompTestPartitioner,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.error import ExportError
+from executorch.exir.error import ExportError, InternalError
 from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
@@ -27,7 +27,6 @@ from executorch.exir.program._program import (
     ExecutorchProgramManager,
     to_edge,
     to_edge_transform_and_lower,
-    to_edge_with_preserved_ops,
 )
 from executorch.exir.tracer import _default_decomposition_table
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
@@ -313,7 +312,12 @@ class TestProgramManagers(unittest.TestCase):
         # Instantiate and export
         inp = (torch.tensor(3), torch.randn(2, 2))
         exported = export(M(), inp)
-        to_edge(exported)
+        ep = to_edge(exported)
+        # TODO(jakeszwe)
+        with self.assertRaisesRegex(
+            InternalError, "Unsupported control flow operator: while_loop"
+        ):
+            ep.to_executorch()
 
     def test_constraint_present_after_dce(self):
         import executorch.exir as exir
@@ -779,7 +783,9 @@ class TestProgramManagers(unittest.TestCase):
     def _test_to_edge_with_preserved_ops(
         self, program, preserved_ops, expected_preserved_ops
     ):
-        edge = to_edge_with_preserved_ops(program, preserve_ops=preserved_ops)
+        edge = to_edge(
+            program, compile_config=EdgeCompileConfig(preserve_ops=preserved_ops)
+        )
 
         def count_nodes(graph_module, target):
             count = 0

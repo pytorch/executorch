@@ -128,7 +128,7 @@ class BatchNorm(NodeVisitor):
             bias_tensor = self.try_dequantize(
                 bias_node, get_parameter(bias_node, self.edge_program)
             )
-            amount = (filter_tensor * mean_tensor) / torch.sqrt(var_tensor + eps)
+            amount = filter_tensor * mean_tensor
             bias_tensor = bias_tensor - amount
             self.update_encoding(bias_node, bias_tensor, eps)
             bias_tensor_wrapper = self.define_tensor(

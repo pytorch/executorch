@@ -215,6 +215,10 @@ _one_to_one = [
     torch.ops.aten.gelu.default,
     torch.ops.aten.sinh.default,
     torch.ops.aten.atan.default,
+    torch.ops.aten.acosh.default,
+    torch.ops.aten.sign.default,
+    torch.ops.aten.asin.default,
+    torch.ops.aten.atanh.default,
 ]
 
 _one_to_one_shared_input_qspec = [
@@ -496,7 +500,6 @@ def get_quant_properties(  # noqa: C901
     elif node.target in [operator.getitem]:
         if not is_output_annotated(node.args[0]):  # type: ignore[attr-defined, arg-type]
             return None
-
         shared_qspec = SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
         quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]

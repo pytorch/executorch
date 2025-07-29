@@ -14,7 +14,9 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
         "//executorch/backends/cadence/hifi/kernels:kernels",
         "//executorch/kernels/portable/cpu/util:dtype_util",
         "//executorch/kernels/portable/cpu/util:elementwise_util",
-        "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions"
+        "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+        "//executorch/backends/cadence/hifi/third-party/nnlib:nnlib-extensions",
+        "//executorch/kernels/portable/cpu/pattern:comparison_op"
     ]
     if deps == None:
         deps = []

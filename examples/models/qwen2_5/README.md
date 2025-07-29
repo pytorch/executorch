@@ -33,10 +33,10 @@ Export to XNNPack, no quantization:
 QWEN_CHECKPOINT=path/to/checkpoint.pth
 
 python -m extension.llm.export.export_llm \
-  --config examples/models/qwen2_5/config/qwen2_5_xnnpack_q8da4w.yaml
+  --config examples/models/qwen2_5/config/qwen2_5_xnnpack_q8da4w.yaml \
   +base.model_class="qwen2_5" \
   +base.checkpoint="${QWEN_CHECKPOINT:?}" \
-  +base.params="examples/models/qwen2_5/1_5b_config.json" \
+  +base.params="examples/models/qwen2_5/config/1_5b_config.json" \
   +export.output_name="qwen2_5-1_5b.pte" \
 ```
 
@@ -45,14 +45,14 @@ Run using the executor runner:
 # Currently a work in progress, just need to enable HuggingFace json tokenizer in C++.
 # In the meantime, can run with an example Python runner with pybindings:
 
-python -m examples.models.llama.runner.native
-  --model qwen2_5
-  --pte <path-to-pte>
-  -kv
-  --tokenizer <path-to-tokenizer>/tokenizer.json
-  --tokenizer_config <path-to_tokenizer>/tokenizer_config.json
-  --prompt "Who is the founder of Meta?"
-  --params examples/models/qwen2_5/1_5b_config.json
-  --max_len 64
+python -m examples.models.llama.runner.native \
+  --model qwen2_5 \
+  --pte <path-to-pte> \
+  -kv \
+  --tokenizer <path-to-tokenizer>/tokenizer.json \
+  --tokenizer_config <path-to_tokenizer>/tokenizer_config.json \
+  --prompt "Who is the founder of Meta?" \
+  --params examples/models/qwen2_5/config/1_5b_config.json \
+  --max_len 64 \
   --temperature 0
 ```

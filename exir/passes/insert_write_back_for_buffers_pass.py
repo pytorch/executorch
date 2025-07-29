@@ -30,11 +30,7 @@ def _insert_copy(
     Find the all the buffers and inputs that were mutated and insert copy_
     operators to reflect mutations.
     """
-    output_node = None
-    for node in gm.graph.nodes:
-        if node.op == "output":
-            output_node = node
-            break
+    output_node = gm.graph.output_node()
     assert output_node is not None
     outputs = pytree.tree_flatten(output_node.args)[0]
     assert len(outputs) == len(mutated_outputs)
@@ -76,16 +72,15 @@ def _is_inplace_node(node: torch.fx.Node) -> bool:
     """Check if a node is an inplace node."""
     return (
         node.op == "call_function"
-        and isinstance(node.target, torch._ops.OpOverload)
+        and hasattr(node.target, "_schema")
         and is_inplace_variant(
-            node.target._schema.name, node.target._schema.overload_name
+            node.target._schema.name, node.target._schema.overload_name  # pyre-ignore
         )
     )
 
 
 def _inplace_lineage(
     output_arg: torch.fx.Node,
-    gm: torch.fx.GraphModule,
     gs: ExportGraphSignature,
     kind: SchemaKind,
 ) -> bool:
@@ -139,11 +134,7 @@ def insert_write_back_for_buffers_pass(
         if lifted_node is not None:
             input_name_to_node[lifted_node] = input_node
 
-    output_node = None
-    for node in gm.graph.nodes:
-        if node.op == "output":
-            output_node = node
-            break
+    output_node = gm.graph.output_node()
 
     # Grab the mutable buffer nodes in the outputs,
     mutated_outputs: List[Optional[str]] = []
@@ -160,7 +151,6 @@ def insert_write_back_for_buffers_pass(
             # if the arg and target are not the same, we add a copy_ node.
             not _inplace_lineage(
                 output_node.args[0][i],
-                gm,
                 ep.graph_signature,
                 ep.graph_signature.output_specs[i].kind,
             )

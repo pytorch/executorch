@@ -63,6 +63,42 @@ def get_binary_elementwise_inputs():
         "utils::kBuffer",
         "utils::kTexture3D",
     ]
+
+    return test_suite
+
+
+# Eq requires a different test generator so it was split from the other test case.
+@register_test_suite(
+    [
+        "aten.eq.Tensor",
+        "aten.gt.Tensor",
+        "aten.lt.Tensor",
+        "aten.ge.Tensor",
+        "aten.le.Tensor",
+    ]
+)
+def get_binary_elementwise_compare_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M1, M2), (M1, M2)),
+            ((M1, M2), (M1, 1), 2.0),
+            ((M1, M2), (1, M2)),
+            ((S, S1, S2), (S, S1, S2)),
+            ((S, S1, S2), (S, S1, 1), 2.0),
+            ((S, S1, S2), (S, 1, S2), 2.0),
+            ((XS, S, S1, S2), (XS, S, 1, 1), 2.0),
+            ((3, 64, 1), (1, 64, 1)),
+        ]
+    )
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.data_gen = "make_casted_randint_tensor"
     return test_suite
 
 
@@ -722,6 +758,21 @@ def get_full_inputs():
             ([S1, S2], 42.0),
             ([M, M1, M2], 3.14),
             ([L, M, M1, M2], 2.72),
+        ]
+    )
+    return test_suite
+
+
+@register_test_suite("aten.scalar_tensor.default")
+def get_scalar_tensor_inputs():
+    test_suite = VkTestSuite(
+        [
+            (42.0,),
+            (3.14,),
+            (2.72,),
+            (0.0,),
+            (-1.0,),
+            (100.0,),
         ]
     )
     return test_suite
@@ -1475,6 +1526,7 @@ def get_var_inputs():
         "aten.leaky_relu.default",
         "aten.round.default",
         "aten.tan.default",
+        "aten.relu6.default",
     ]
 )
 def get_unary_ops_inputs():

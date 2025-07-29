@@ -433,21 +433,30 @@ void test_vulkan_choose_qparams_tensor_impl(
   const ValueRef r_scale = graph.add_tensor({}, vkapi::kFloat, out_storage);
   const ValueRef r_zero_point = graph.add_tensor({}, vkapi::kInt, out_storage);
 
-  VK_GET_OP_FN("choose_qparams.tensor")
+  // Create output tuple
+  const ValueRef r_out_tuple = graph.add_value_list({r_scale, r_zero_point});
+
+  // Add eps and dtype parameters to match ATen signature
+  const ValueRef r_eps = graph.add_scalar<double>(6.1e-5);
+  const ValueRef r_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(dtype));
+
+  VK_GET_OP_FN("quantized_decomposed.choose_qparams.tensor")
   (graph,
    {
        r_input.value,
        r_quant_min,
        r_quant_max,
-       r_scale,
-       r_zero_point,
+       r_eps,
+       r_dtype,
+       r_out_tuple,
    });
 
   ValueRef staging_scale = graph.set_output_tensor(r_scale);
   ValueRef staging_zero_point = graph.set_output_tensor(r_zero_point);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 
@@ -647,19 +656,27 @@ void test_vulkan_choose_qparams_per_token_asymmetric_impl(
   const ValueRef r_zero_point =
       graph.add_tensor(output_sizes, vkapi::kInt, out_storage);
 
-  VK_GET_OP_FN("choose_qparams_per_token_asymmetric.default")
+  // Create output tuple
+  const ValueRef r_out_tuple = graph.add_value_list({r_scale, r_zero_point});
+
+  // Add dtype parameter to match ATen signature
+  const ValueRef r_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(dtype));
+
+  VK_GET_OP_FN(
+      "quantized_decomposed.choose_qparams_per_token_asymmetric.default")
   (graph,
    {
        r_input.value,
-       r_scale,
-       r_zero_point,
+       r_dtype,
+       r_out_tuple,
    });
 
   ValueRef staging_scale = graph.set_output_tensor(r_scale);
   ValueRef staging_zero_point = graph.set_output_tensor(r_zero_point);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 

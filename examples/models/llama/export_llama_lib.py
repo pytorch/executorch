@@ -240,6 +240,18 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--adapter_checkpoint",
+        required=False,
+        help="Path to the adapter.pt file from torchtune. Used if the model has trained LoRA adapters. Must provide adapter_config.json",
+    )
+
+    parser.add_argument(
+        "--adapter_config",
+        required=False,
+        help="Path to the adapter_config.json file. Used if the model has trained LoRA adapters. Must provide adapter_checkpoint.",
+    )
+
+    parser.add_argument(
         "--use_qnn_sha",
         action="store_true",
         help="Change multi head attention to multiple single head attention for qnn backend (Qualcomm)",
@@ -1216,7 +1228,6 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
         calibration_seq_length=llm_config.quantization.calibration_seq_length,
         calibration_data=llm_config.quantization.calibration_data,
         tokenizer_path=llm_config.base.tokenizer_path,
-        use_legacy_export=llm_config.backend.qnn.enabled,
         save_exported_program=llm_config.export.export_only,
         verbose=llm_config.debug.verbose,
         metadata=_load_llama_model_metadata(

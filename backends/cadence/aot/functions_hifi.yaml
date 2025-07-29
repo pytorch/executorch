@@ -75,7 +75,7 @@
 - op: clamp.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::clamp_tensor_out
+      kernel_name: cadence::impl::HiFi::clamp_Tensor_out
 
 - op: clone.out
   kernels:
@@ -100,7 +100,7 @@
 - op: eq.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::eq_tensor_out
+      kernel_name: cadence::impl::HiFi::eq_Tensor_out
 
 - op: fmod.Tensor_out
   kernels:
@@ -120,12 +120,12 @@
 - op: ge.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::ge_scalar_out
+      kernel_name: cadence::impl::HiFi::ge_Scalar_out
 
 - op: ge.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::ge_tensor_out
+      kernel_name: cadence::impl::HiFi::ge_Tensor_out
 
 - op: gelu.out
   kernels:
@@ -135,12 +135,12 @@
 - op: gt.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::gt_scalar_out
+      kernel_name: cadence::impl::HiFi::gt_Scalar_out
 
 - op: gt.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::gt_tensor_out
+      kernel_name: cadence::impl::HiFi::gt_Tensor_out
 
 - op: hardtanh.out
   kernels:
@@ -150,27 +150,27 @@
 - op: le.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::le_scalar_out
+      kernel_name: cadence::impl::HiFi::le_Scalar_out
 
 - op: le.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::le_tensor_out
+      kernel_name: cadence::impl::HiFi::le_Tensor_out
 
 - op: lt.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::lt_scalar_out
+      kernel_name: cadence::impl::HiFi::lt_Scalar_out
 
 - op: lt.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::lt_tensor_out
+      kernel_name: cadence::impl::HiFi::lt_Tensor_out
 
 - op: masked_fill.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::masked_fill_scalar_out
+      kernel_name: cadence::impl::HiFi::masked_fill_Scalar_out
 
 - op: max_pool2d_with_indices.out
   kernels:
@@ -185,7 +185,7 @@
 - op: mean.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::mean_out   
+      kernel_name: cadence::impl::HiFi::mean_out
 
 - op: minimum.out
   kernels:
@@ -205,7 +205,7 @@
 - op: ne.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::ne_tensor_out
+      kernel_name: cadence::impl::HiFi::ne_Tensor_out
 
 - op: permute_copy.out
   kernels:
@@ -289,11 +289,11 @@
   kernels:
     - arg_meta: null
       kernel_name: cadence::impl::HiFi::dequantize_per_tensor_out
-      
+
 - func: cadence::quantized_conv.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::HiFi::quantized_conv_out      
+      kernel_name: cadence::impl::HiFi::quantized_conv_out
 
 - func: cadence::quantized_layer_norm.out(Tensor input, Tensor in_scale, Tensor in_zero_point, int[] normalized_shape, Tensor weight, Tensor bias, float eps, float output_scale, int output_zero_point, *, Tensor(a!) out) -> Tensor(a!)
   kernels:

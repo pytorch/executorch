@@ -15,6 +15,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineBI,
     EthosU85PipelineBI,
+    OpNotSupportedPipeline,
     TosaPipelineBI,
     TosaPipelineMI,
 )
@@ -42,6 +43,10 @@ class View(torch.nn.Module):
         "rand_4d_4_3": lambda: (torch.rand(5, 10, 1, 1), (1, 25, 2)),
         "rand_4d_4_2": lambda: (torch.rand(2, 50, 1, 1), (1, 100)),
         "rand_4d_2_4_same": lambda: (torch.rand(2, 3, 2, 3), (2, 3, 3, 2)),
+    }
+
+    rank_product_too_large = {
+        "rand_4d_large": lambda: (torch.rand(1, 49, 16, 128), (1, 16, 49, 128)),
     }
 
     def __init__(self, new_shape):
@@ -100,6 +105,21 @@ def test_view_u55_BI(test_data: Tuple):
         (test_tensor,),
         aten_op,
         exir_ops=[],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", View.rank_product_too_large, xfails=xfails)
+@common.XfailIfNoCorstone300
+def test_view_u55_BI_not_delegated(test_data: Tuple):
+    test_tensor, new_shape = test_data()
+    pipeline = OpNotSupportedPipeline[input_t1](
+        View(new_shape),
+        (test_tensor,),
+        {"executorch_exir_dialects_edge__ops_aten_view_copy": 1},
+        n_expected_delegates=0,
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 

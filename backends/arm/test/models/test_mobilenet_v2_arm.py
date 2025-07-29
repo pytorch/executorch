@@ -32,6 +32,12 @@ model_inputs = (normalize(torch.rand((1, 3, 224, 224))),)
 input_t = Tuple[torch.Tensor]
 
 
+quant_test_data = {
+    "per_channel_quantization=true": True,
+    "per_channel_quantization=false": False,
+}
+
+
 def test_mv2_tosa_MI():
     pipeline = TosaPipelineMI[input_t](
         mv2, model_inputs, aten_op=[], exir_op=[], use_to_edge_transform_and_lower=True
@@ -39,14 +45,15 @@ def test_mv2_tosa_MI():
     pipeline.run()
 
 
-def test_mv2_tosa_BI():
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_mv2_tosa_BI(per_channel_quantization):
     pipeline = TosaPipelineBI[input_t](
         mv2,
         model_inputs,
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-        per_channel_quantization=True,
+        per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
     )
@@ -55,7 +62,8 @@ def test_mv2_tosa_BI():
 
 @pytest.mark.slow
 @common.XfailIfNoCorstone300
-def test_mv2_u55_BI():
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_mv2_u55_BI(per_channel_quantization):
     pipeline = EthosU55PipelineBI[input_t](
         mv2,
         model_inputs,
@@ -63,7 +71,7 @@ def test_mv2_u55_BI():
         exir_ops=[],
         run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
-        per_channel_quantization=True,
+        per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
     )
@@ -72,7 +80,8 @@ def test_mv2_u55_BI():
 
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
-def test_mv2_u85_BI():
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_mv2_u85_BI(per_channel_quantization):
     pipeline = EthosU85PipelineBI[input_t](
         mv2,
         model_inputs,
@@ -80,7 +89,7 @@ def test_mv2_u85_BI():
         exir_ops=[],
         run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
-        per_channel_quantization=True,
+        per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
     )

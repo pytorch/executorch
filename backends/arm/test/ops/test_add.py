@@ -16,6 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineBI,
     TosaPipelineBI,
     TosaPipelineMI,
+    VgfPipeline,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester import Quantize
@@ -182,5 +183,27 @@ def test_add_tensor_u55_BI_2(test_data: input_t2):
 def test_add_tensor_u85_BI_2(test_data: input_t2):
     pipeline = EthosU85PipelineBI[input_t2](
         Add2(), test_data(), aten_op, exir_op, run_on_fvp=True
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
+@common.SkipIfNoModelConverter
+def test_add_tensor_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Add(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
+@common.SkipIfNoModelConverter
+def test_add_tensor_vgf_INT(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

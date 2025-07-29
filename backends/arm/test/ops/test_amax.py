@@ -97,7 +97,7 @@ def test_amax_u55_BI_not_delegated():
 fvp_xfails = {"rank_4_mult_batches": "MLETORCH-517 : Multiple batches not supported"}
 
 
-@common.parametrize("test_data", Amax.test_data, fvp_xfails)
+@common.parametrize("test_data", Amax.test_data, fvp_xfails, strict=False)
 @common.XfailIfNoCorstone320
 def test_amax_u85_BI(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()

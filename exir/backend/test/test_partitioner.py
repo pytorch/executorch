@@ -166,7 +166,7 @@ class TestPartitioner(unittest.TestCase):
                         if not is_param(edge_exported_program, node) and not is_buffer(
                             edge_exported_program, node
                         ):
-                            delegation_tag = "tag_" + str(node.meta["debug_handle"])
+                            delegation_tag = "tag_" + str(node.name)
                             node.meta["delegation_tag"] = delegation_tag
                             partition_tags[delegation_tag] = self.delegation_spec
 

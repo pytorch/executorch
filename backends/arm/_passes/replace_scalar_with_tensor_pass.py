@@ -32,7 +32,11 @@ _common_ops: Dict[
     exir_ops.edge.aten.gt.Scalar: exir_ops.edge.aten.gt.Tensor,
     exir_ops.edge.aten.ge.Scalar: exir_ops.edge.aten.ge.Tensor,
     exir_ops.edge.aten.lt.Scalar: exir_ops.edge.aten.lt.Tensor,
+    exir_ops.edge.aten.le.Scalar: exir_ops.edge.aten.le.Tensor,
     exir_ops.edge.aten.ne.Scalar: exir_ops.edge.aten.ne.Tensor,
+    exir_ops.edge.aten.bitwise_and.Scalar: exir_ops.edge.aten.bitwise_and.Tensor,
+    exir_ops.edge.aten.bitwise_or.Scalar: exir_ops.edge.aten.bitwise_or.Tensor,
+    exir_ops.edge.aten.bitwise_xor.Scalar: exir_ops.edge.aten.bitwise_xor.Tensor,
     torch.ops.aten.add.Scalar: torch.ops.aten.add.Tensor,
     torch.ops.aten.sub.Scalar: torch.ops.aten.sub.Tensor,
     torch.ops.aten.mul.Scalar: torch.ops.aten.mul.Tensor,
@@ -43,7 +47,11 @@ _common_ops: Dict[
     torch.ops.aten.gt.Scalar: torch.ops.aten.gt.Tensor,
     torch.ops.aten.ge.Scalar: torch.ops.aten.ge.Tensor,
     torch.ops.aten.lt.Scalar: torch.ops.aten.lt.Tensor,
+    torch.ops.aten.le.Scalar: torch.ops.aten.le.Tensor,
     torch.ops.aten.ne.Scalar: torch.ops.aten.ne.Tensor,
+    torch.ops.aten.bitwise_and.Scalar: torch.ops.aten.bitwise_and.Tensor,
+    torch.ops.aten.bitwise_or.Scalar: torch.ops.aten.bitwise_or.Tensor,
+    torch.ops.aten.bitwise_xor.Scalar: torch.ops.aten.bitwise_xor.Tensor,
 }
 
 

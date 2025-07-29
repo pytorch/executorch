@@ -21,8 +21,7 @@ ExecuTorch provides support for:
 * **Strong Model Support** LLMs (Large Language Models),
   CV (Computer Vision), ASR (Automatic Speech Recognition), TTS (Text To Speech)
 * **All Major Platforms** Android, Mac, Linux, Windows
-* **Rich Acceleration Support** Apple, Arm, Cadence, MediaTek,
-  Qualcomm, Vulkan, XNNPACK
+* **Rich Acceleration Support** Apple, Arm, Cadence, MediaTek, NXP, OpenVino, Qualcomm, Vulkan, XNNPACK
 
 ### Documentation Navigation
 #### Introduction
@@ -39,6 +38,7 @@ ExecuTorch provides support for:
 - [Runtime Integration](using-executorch-runtime-integration)
 - [Troubleshooting](using-executorch-troubleshooting)
 - [Building from Source](using-executorch-building-from-source)
+- [Quantization](quantization-overview)
 - [FAQs](using-executorch-faqs)
 #### Examples
 - [Android Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
@@ -54,6 +54,8 @@ ExecuTorch provides support for:
 - [Qualcomm](backends-qualcomm)
 - [MediaTek](backends-mediatek)
 - [Cadence](backends-cadence)
+- [OpenVINO](build-run-openvino)
+- [NXP](backend-nxp)
 #### Developer Tools
 - [Overview](devtools-overview)
 - [Bundled IO](bundled-io)
@@ -74,14 +76,13 @@ ExecuTorch provides support for:
 - [Platform Abstraction Layer](runtime-platform-abstraction-layer)
 #### Portable C++ Programming
 - [PTE File Format](pte-file-format)
+- [PTD File Format](ptd-file-format)
 #### API Reference
 - [Export to Executorch API Reference](export-to-executorch-api-reference)
 - [Executorch Runtime API Reference](executorch-runtime-api-reference)
 - [Runtime Python API Reference](runtime-python-api-reference)
 - [API Life Cycle](api-life-cycle)
 - [Javadoc](https://pytorch.org/executorch/main/javadoc/)
-#### Quantization
-- [Overview](quantization-overview)
 #### Kernel Library
 - [Overview](kernel-library-overview)
 - [Custom ATen Kernel](kernel-library-custom-aten-kernel)
@@ -163,6 +164,8 @@ backends-arm-ethos-u
 backends-qualcomm
 backends-mediatek
 backends-cadence
+OpenVINO Backend <build-run-openvino>
+backends-nxp
 ```
 
 ```{toctree}
@@ -197,6 +200,7 @@ runtime-backend-delegate-implementation-and-linking
 runtime-platform-abstraction-layer
 portable-cpp-programming
 pte-file-format
+ptd-file-format
 ```
 
 ```{toctree}

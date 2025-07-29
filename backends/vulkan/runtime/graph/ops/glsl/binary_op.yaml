@@ -32,3 +32,84 @@ binary_op:
       OPERATOR: floor(X / Y)
     - NAME: binary_minimum
       OPERATOR: min(X, Y)
+    - NAME: binary_eq_int32
+      OPERATOR: X == Y
+      DTYPE: int32
+    - NAME: binary_eq_buffer
+      OPERATOR: abs(X - Y) < 1e-5
+      STORAGE: buffer
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+    - NAME: binary_eq_texture3d
+      OPERATOR: all(lessThanEqual(abs(X - Y), VEC4_T(1e-5)))
+      STORAGE: texture3d
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+    - NAME: binary_lt_buffer
+      OPERATOR: X < Y
+      STORAGE: buffer
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int32
+    - NAME: binary_lt_texture3d
+      OPERATOR: all(lessThan(X, Y))
+      STORAGE: texture3d
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int32
+    - NAME: binary_le_buffer
+      OPERATOR: X <= Y
+      STORAGE: buffer
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int32
+    - NAME: binary_le_texture3d
+      OPERATOR: all(lessThanEqual(X, Y))
+      STORAGE: texture3d
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int32
+    - NAME: binary_gt_buffer
+      OPERATOR: X > Y
+      STORAGE: buffer
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int32
+    - NAME: binary_gt_texture3d
+      OPERATOR: all(greaterThan(X, Y))
+      STORAGE: texture3d
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int32
+    - NAME: binary_ge_buffer
+      OPERATOR: X >= Y
+      STORAGE: buffer
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int32
+    - NAME: binary_ge_texture3d
+      OPERATOR: all(greaterThanEqual(X, Y))
+      STORAGE: texture3d
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
+          - VALUE: int32

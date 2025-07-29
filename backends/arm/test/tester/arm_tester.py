@@ -36,12 +36,14 @@ from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_ethosu,
     is_tosa,
+    is_vgf,
 )
 from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
+    VgfQuantizer,
 )
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
@@ -60,6 +62,8 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
 from executorch.backends.arm.tosa_specification import TosaSpecification
+
+from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 
 from executorch.backends.test.harness.stages import Stage, StageType
 from executorch.backends.xnnpack.test.tester import Tester
@@ -329,6 +333,8 @@ class ArmTester(Tester):
                 quantizer = TOSAQuantizer(tosa_spec)
             elif is_ethosu(self.compile_spec):
                 quantizer = EthosUQuantizer(self.compile_spec)
+            elif is_vgf(self.compile_spec):
+                quantizer = VgfQuantizer(self.compile_spec)
             quantize_stage = tester.Quantize(
                 quantizer,
                 get_symmetric_quantization_config(),
@@ -381,6 +387,11 @@ class ArmTester(Tester):
                     )
                 elif is_ethosu(self.compile_spec):
                     arm_partitioner = EthosUPartitioner(
+                        compile_spec=self.compile_spec,
+                        additional_checks=additional_checks,
+                    )
+                elif is_vgf(self.compile_spec):
+                    arm_partitioner = VgfPartitioner(
                         compile_spec=self.compile_spec,
                         additional_checks=additional_checks,
                     )
@@ -718,7 +729,7 @@ def _get_dtype_distribution(
         if node.op == "placeholder":
             placeholder_dtypes.append(str(node.meta["val"].dtype))
         if node.op == "call_function":
-            if "val" in node.meta:
+            if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
                 dtype, _, _ = extract_tensor_meta(node.meta, tosa_spec)
                 call_function_dtypes.append(ts.DTypeNames[dtype])
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)

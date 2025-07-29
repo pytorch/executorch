@@ -33,8 +33,8 @@ class FlatTensorDataMapTest : public ::testing::Test {
     // first.
     executorch::runtime::runtime_init();
 
-    // Load data map. The eager linear model is defined at:
-    // //executorch/test/models/linear_model.py
+    // Load data map. The eager addmul model is defined at:
+    // //executorch/test/models/export_program.py
     const char* path = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
     Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);

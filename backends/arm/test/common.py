@@ -18,6 +18,7 @@ from executorch.backends.arm.test.runner_utils import (
     arm_executor_runner_exists,
     corstone300_installed,
     corstone320_installed,
+    model_converter_installed,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -83,6 +84,39 @@ def get_tosa_compile_spec_unbuilt(
     compile_spec_builder = (
         ArmCompileSpecBuilder()
         .tosa_compile_spec(tosa_spec)
+        .dump_intermediate_artifacts_to(custom_path)
+    )
+
+    return compile_spec_builder
+
+
+def get_vgf_compile_spec(
+    tosa_spec: str | TosaSpecification,
+    compiler_flags: Optional[str] = "",
+    custom_path=None,
+) -> list[CompileSpec]:
+    """
+    Default compile spec for VGF tests.
+    """
+    return get_vgf_compile_spec_unbuilt(tosa_spec, compiler_flags, custom_path).build()
+
+
+def get_vgf_compile_spec_unbuilt(
+    tosa_spec: str | TosaSpecification,
+    compiler_flags: Optional[str] = "",
+    custom_path=None,
+) -> ArmCompileSpecBuilder:
+    """Get the ArmCompileSpecBuilder for the default VGF tests, to modify
+    the compile spec before calling .build() to finalize it.
+    """
+    if not custom_path:
+        custom_path = maybe_get_tosa_collate_path()
+
+    if custom_path is not None:
+        os.makedirs(custom_path, exist_ok=True)
+    compile_spec_builder = (
+        ArmCompileSpecBuilder()
+        .vgf_compile_spec(tosa_spec, compiler_flags)
         .dump_intermediate_artifacts_to(custom_path)
     )
 
@@ -211,6 +245,13 @@ XfailIfNoCorstone320 = pytest.mark.xfail(
     reason="Did not find Corstone-320 FVP or executor_runner on path",
 )
 """Xfails a test if Corsone320 FVP is not installed, or if the executor runner is not built"""
+
+SkipIfNoModelConverter = pytest.mark.skipif(
+    condition=not (model_converter_installed()),
+    raises=FileNotFoundError,
+    reason="Did not find model-converter on path",
+)
+"""Xfails a test if model-converter is not installed"""
 
 xfail_type = str | tuple[str, type[Exception]]
 

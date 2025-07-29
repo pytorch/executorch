@@ -269,7 +269,6 @@ class ModuleNoKVCache(torch.nn.Module):
 
 def export_module_to_program(
     module_class: Type[nn.Module],
-    skip_type_promotion: bool,
     external_constants: bool = False,
 ) -> ExecutorchProgramManager:
     """Exports the module and returns the serialized program data."""
@@ -293,7 +292,6 @@ def export_module_to_program(
     module = ExportedModule.export(
         module_class,
         methods,
-        skip_type_promotion=skip_type_promotion,
         export_joint_graph=export_joint,
         external_constants=external_constants,
         export_state_names=export_state_names,
@@ -342,17 +340,11 @@ def main() -> None:
     # Export and write to the output files.
     os.makedirs(args.outdir, exist_ok=True)
     for module_name, module_class in module_names_to_classes.items():
-        skip_type_promotion = False
-        if module_name == "ModuleAddHalf":
-            # Skip type promotion to keep the model in fp16.
-            # Type promotion will convert to fp32.
-            skip_type_promotion = True
         if args.external_constants:
             module_name = f"{module_name}Program"
         outfile = os.path.join(args.outdir, f"{module_name}.pte")
         prog = export_module_to_program(
             module_class,
-            skip_type_promotion=skip_type_promotion,
             external_constants=args.external_constants,
         )
         with open(outfile, "wb") as fp:
