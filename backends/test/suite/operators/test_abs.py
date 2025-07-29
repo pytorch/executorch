@@ -49,9 +49,9 @@ class TestAbs(OperatorTest):
         # Test edge cases
 
         # Tensor with infinity
-        x = torch.tensor([float("inf"), float("-inf"), 1.0, -1.0])
+        x = (torch.tensor([float("inf"), float("-inf"), 1.0, -1.0]),)
         self._test_op(AbsModel(), (x,), flow, generate_random_test_inputs=False)
 
         # Tensor with NaN
-        x = torch.tensor([float("nan"), 1.0, -1.0])
+        x = (torch.tensor([float("nan"), 1.0, -1.0]),)
         self._test_op(AbsModel(), (x,), flow, generate_random_test_inputs=False)
