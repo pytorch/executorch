@@ -6,7 +6,7 @@ In order to support a wide variety of devices, from high-end mobile phones down 
 
 The C++ `Module` class provides the high-level interface to load and execute a model from C++. It is responsible for loading the .pte file, configuring memory allocation and placement, and running the model. The Module constructor takes a file path and provides a simplified `forward()` method to run the model.
 
-In addition the Module class, the tensor extension provides an encapsulated interface to define and manage tensor memory. It provides the `TensorPtr` class, which is a "fat" smart pointer. It provides ownership over the tensor  data and metadata, such as size and strides. The `make_tensor_ptr` and `from_blob` methods, defined in `tensor.h`, provide owning and non-owning tensor creation APIs, respectively.
+In addition to the Module class, the tensor extension provides an encapsulated interface to define and manage tensor memory. It provides the `TensorPtr` class, which is a "fat" smart pointer. It provides ownership over the tensor  data and metadata, such as size and strides. The `make_tensor_ptr` and `from_blob` methods, defined in `tensor.h`, provide owning and non-owning tensor creation APIs, respectively.
 
 ```cpp
 #include <executorch/extension/module/module.h>
@@ -40,7 +40,7 @@ Running a model using the low-level runtime APIs allows for a high-degree of con
 
 ## Building with CMake
 
-ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `extension_module_static` and `extension_tensor`, if desired.
+ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `extension_module_static` and `extension_tensor`, if desired. Note that `extension_flat_tensor` is required as a dependency of `extension_module` for [program-data separation support](ptd-file-format.md).
 
 ```
 # CMakeLists.txt
@@ -50,6 +50,7 @@ target_link_libraries(
     my_target
     PRIVATE executorch
     extension_module_static
+    extension_flat_tensor
     extension_tensor
     optimized_native_cpu_ops_lib
     xnnpack_backend)

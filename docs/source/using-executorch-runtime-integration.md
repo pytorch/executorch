@@ -18,13 +18,13 @@ cmake -b cmake-out -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=DEBUG .
 
 ## Platform Abstraction Layer (PAL)
 
-The ExecuTorch Platform Abstraction Layer, or PAL, is a glue layer responsible for providing integration with a particular host system. This includes log routing, timestamps, and abort handling. ExecuTorch provides a default implementation for POSIX-compliant targets, as well as a Android and iOS-specific implementations under the appropriate extensions.
+The ExecuTorch Platform Abstraction Layer, or PAL, is a glue layer responsible for providing integration with a particular host system. This includes log routing, timestamps, and abort handling. ExecuTorch provides a default implementation for POSIX-compliant targets, as well as Android and iOS-specific implementations under the appropriate extensions.
 
 For non-POSIX-compliant systems, a minimal no-op PAL implementation is provided. It is expected that users override the relevant PAL methods in order to enable logging, timestamps, and aborts. The minimal PAL can be selected by building with `-DEXECUTORCH_PAL_DEFAULT=minimal`.
 
 ### Overriding the PAL
 
-Overriding the default PAL implementation is commonly done to route logs to a user-specified destination or to provide PAL functionality on embedded systems. The PAL can be overriden usinn runtime APIs or at link time. Prefer the runtime API unless you specifically need link-time overrides.
+Overriding the default PAL implementation is commonly done to route logs to a user-specified destination or to provide PAL functionality on embedded systems. The PAL can be overriden using runtime APIs or at link time. Prefer the runtime API unless you specifically need link-time overrides.
 
 ### Runtime PAL Registration
 
@@ -84,7 +84,7 @@ See [runtime/platform/platform.h](https://github.com/pytorch/executorch/blob/mai
 
 During export, a model is broken down into a list of operators, each providing some fundamental computation. Adding two tensors is an operator, as is convolution. Each operator requires a corresponding operator kernel to perform the computation on the target hardware. ExecuTorch backends are the preferred way to do this, but not all operators are supported on all backends.
 
-To handle this, ExecuTorch provides two implementations - the *portable* and *optimized* kernel libraries. The portable kernel library provides full support for all operators in a platform-independent manner. The optimized library carries additional system requirements, but is able to leverage multithreading and vectorized code to achieve greater performance. Operators can be drawn for both for a single build, allowing the optimized library to be used where available with the portable library as a fallback.
+To handle this, ExecuTorch provides two implementations - the *portable* and *optimized* kernel libraries. The portable kernel library provides full support for all operators in a platform-independent manner. The optimized library carries additional system requirements, but is able to leverage multithreading and vectorized code to achieve greater performance. Operators can be drawn from both for a single build, allowing the optimized library to be used where available with the portable library as a fallback.
 
 The choice of kernel library is transparent to the user when using mobile pre-built packages. However, it is important when building from source, especially on embedded systems. On mobile, the optimized operators are preferred where available. See [Overview of ExecuTorch's Kernel Libraries](kernel-library-overview.md) for more information.
 
