@@ -150,6 +150,7 @@ cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
     retry cmake --preset llm \
+        -DBUILD_TESTING=OFF \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_QNN="$QNN" \

@@ -8,6 +8,9 @@
 
 set -ex
 
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+
 # Double check if the NDK version is set
 [ -n "${ZEPHYR_SDK}" ]
 
@@ -77,16 +80,8 @@ install_prerequiresites() {
         chmod +x kitware-archive.sh && \
         ./kitware-archive.sh && \
         rm -f kitware-archive.sh
-    useradd -d /home/zephyruser -m -s /bin/bash zephyruser
-}
-
-install_sdk() {
-    wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.16.0/zephyr-sdk-0.16.0_linux-x86_64.tar.xz && \
-         tar -xf zephyr-sdk-0.16.0_linux-x86_64.tar.xz && \
-         rm -f zephyr-sdk-0.16.0_linux-x86_64.tar.xz && \
-         cd zephyr-sdk-0.16.0/ && \
-         ./setup.sh -c -t arm-zephyr-eabi
+    pip_install --no-cache-dir west
+    pip_install pyelftools
 }
 
 install_prerequiresites
-install_sdk
