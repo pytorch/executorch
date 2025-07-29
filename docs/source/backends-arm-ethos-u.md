@@ -35,15 +35,12 @@ from executorch.exir import (
 )
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchvision.models import mobilenetv2
+import executorch.kernels.quantized
 
 mobilenet_v2 = mobilenetv2.mobilenet_v2(
     weights=mobilenetv2.MobileNet_V2_Weights.DEFAULT
 ).eval()
 example_inputs = (torch.randn(1, 3, 224, 224),)
-# .so suffix is .dylib on MacOS.
-torch.ops.load_library(
-    "cmake-out-aot-lib/kernels/quantized/libquantized_ops_aot_lib.so"
-)
 
 compile_spec = ArmCompileSpecBuilder().ethosu_compile_spec(
         "ethos-u55-128",

@@ -19,7 +19,6 @@ endif()
 set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 if(NOT ANDROID_PLATFORM)
   set(ANDROID_PLATFORM android-30)
 endif()
@@ -60,7 +59,7 @@ set_target_properties(fbjni PROPERTIES
   IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
 )
 
-target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(executorch)
 
 add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
 
@@ -94,15 +93,15 @@ if(TARGET optimized_native_cpu_ops_lib)
     link_libraries
     optimized_native_cpu_ops_lib
   )
-  target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
-  target_link_options_shared_lib(portable_ops_lib)
+  executorch_target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 if(TARGET quantized_kernels)
   list(APPEND link_libraries quantized_kernels quantized_ops_lib)
-  target_link_options_shared_lib(quantized_ops_lib)
+  executorch_target_link_options_shared_lib(quantized_ops_lib)
 endif()
 
 if(TARGET qnn_executorch_backend)
@@ -110,12 +109,15 @@ if(TARGET qnn_executorch_backend)
 endif()
 
 if(TARGET xnnpack_backend)
-  target_link_options_shared_lib(xnnpack_backend)
+  executorch_target_link_options_shared_lib(xnnpack_backend)
   list(APPEND link_libraries xnnpack_backend XNNPACK pthreadpool cpuinfo xnnpack-microkernels-prod)
+  if(TARGET kleidiai)
+    list(APPEND link_libraries kleidiai)
+  endif()
 endif()
 
 if(TARGET vulkan_backend)
-  target_link_options_shared_lib(vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
 endif()
 
