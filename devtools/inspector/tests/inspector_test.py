@@ -25,7 +25,6 @@ import torch.fx
 from executorch.devtools import generate_etrecord, parse_etrecord
 from executorch.devtools.debug_format.et_schema import OperatorNode
 from executorch.devtools.etdump.schema_flatcc import ProfileEvent
-from executorch.devtools.etrecord._etrecord import ETRecord
 from executorch.devtools.etrecord.tests.etrecord_test import TestETRecord
 
 from executorch.devtools.inspector import (
@@ -480,7 +479,7 @@ class TestInspector(unittest.TestCase):
                 events=events,
             )
 
-    def test_etrecord_populates_correct_aot_intermediate_outputs(self):
+    def test_etrecord_populates_correct_edge_dialect_aot_intermediate_outputs(self):
         with tempfile.NamedTemporaryFile(suffix=".bin") as tmp_file:
             etrecord_path = tmp_file.name
             mod = model_registry["ConvLinearModel"]()
@@ -513,15 +512,11 @@ class TestInspector(unittest.TestCase):
                     etdump_path=ETDUMP_PATH,
                     etrecord=etrecord_path,
                 )
-                etrecord = ETRecord(
-                    edge_dialect_program=inspector_instance._etrecord.edge_dialect_program,
-                    graph_map=inspector_instance._etrecord.graph_map,
-                    _debug_handle_map=inspector_instance._etrecord._debug_handle_map,
-                    _delegate_map=inspector_instance._etrecord._delegate_map,
-                    _reference_outputs=inspector_instance._etrecord._reference_outputs,
-                    _representative_inputs=aten_model.example_inputs[0],
+
+                inspector_instance._etrecord._representative_inputs = (
+                    aten_model.example_inputs[0]
                 )
-                inspector_instance._etrecord = etrecord
+
                 aot_intermediate_outputs, aot_debug_handle_to_op_names = (
                     inspector_instance._get_aot_intermediate_outputs_and_op_names()
                 )
@@ -534,7 +529,61 @@ class TestInspector(unittest.TestCase):
 
                 self.assertTrue(
                     check_if_debug_handle_to_op_names_match(
-                        "ConvLinearModel", aot_debug_handle_to_op_names
+                        aot_debug_handle_to_op_names,
+                        mod.get_edge_dialect_expected_debug_handle_to_op_names(),
+                    )
+                )
+
+    def test_etrecord_populates_correct_export_program_aot_intermediate_outputs(self):
+        with tempfile.NamedTemporaryFile(suffix=".bin") as tmp_file:
+            etrecord_path = tmp_file.name
+            mod = model_registry["ConvLinearModel"]()
+            input_tensor = mod.get_input()
+            aten_model: ExportedProgram = export(mod, (input_tensor,), strict=True)
+            edge_program_manager: EdgeProgramManager = to_edge(aten_model)
+            edge_program_manager_copy = copy.deepcopy(edge_program_manager)
+            et_program_manager: ExecutorchProgramManager = (
+                edge_program_manager.to_executorch()
+            )
+            # Generate ETRecord with the exported program
+            generate_etrecord(
+                etrecord_path,
+                edge_program_manager_copy,
+                et_program_manager,
+                exported_program=aten_model,
+            )
+            with patch.object(
+                Inspector, "_consume_etrecord", return_value=None
+            ), patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(
+                EventBlock, "_gen_from_etdump"
+            ), patch.object(
+                _inspector, "gen_graphs_from_etrecord"
+            ):
+                # Call the constructor of Inspector
+                inspector_instance = Inspector(
+                    etdump_path=ETDUMP_PATH,
+                    etrecord=etrecord_path,
+                )
+
+                inspector_instance._etrecord._representative_inputs = (
+                    aten_model.example_inputs[0]
+                )
+
+                aot_intermediate_outputs, aot_debug_handle_to_op_names = (
+                    inspector_instance._get_aot_intermediate_outputs_and_op_names()
+                )
+                self.assertTrue(
+                    check_if_intermediate_outputs_match(
+                        aot_intermediate_outputs,
+                        mod.get_exported_program_expected_intermediate_outputs(),
+                    )
+                )
+                self.assertTrue(
+                    check_if_debug_handle_to_op_names_match(
+                        aot_debug_handle_to_op_names,
+                        mod.get_exported_program_expected_debug_handle_to_op_names(),
                     )
                 )
 
