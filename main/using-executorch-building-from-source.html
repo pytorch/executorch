@@ -755,6 +755,16 @@ by the output values.</p>
 <span class="n">Output</span> <span class="mi">0</span><span class="p">:</span> <span class="n">tensor</span><span class="p">(</span><span class="n">sizes</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mf">2.</span><span class="p">])</span>
 </pre></div>
 </div>
+<div class="section" id="cmake-targets">
+<h3>CMake Targets<a class="headerlink" href="#cmake-targets" title="Permalink to this heading">¶</a></h3>
+<p>To link against the ExecuTorch framework from CMake, the following top-level targets are exposed:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch::backends</span></code>: Contains all configured backends.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch::extensions</span></code>: Contains all configured extensions.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch::kernels</span></code>: Contains all configured kernel libraries.</p></li>
+</ul>
+<p>The backends, extensions, and kernels included in these targets are controlled by the various <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_</span></code> CMake options specified by the build.</p>
+</div>
 </div>
 <div class="section" id="build-executorch-for-windows">
 <h2>Build ExecuTorch for Windows<a class="headerlink" href="#build-executorch-for-windows" title="Permalink to this heading">¶</a></h2>
@@ -1066,7 +1076,10 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
 <li><a class="reference internal" href="#build-the-runtime-components">Build the runtime components</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#use-an-example-binary-executor-runner-to-execute-a-pte-file">Use an example binary <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file</a></li>
+<li><a class="reference internal" href="#use-an-example-binary-executor-runner-to-execute-a-pte-file">Use an example binary <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file</a><ul>
+<li><a class="reference internal" href="#cmake-targets">CMake Targets</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#build-executorch-for-windows">Build ExecuTorch for Windows</a><ul>
 <li><a class="reference internal" href="#pre-requisites">Pre-requisites</a><ul>
 <li><a class="reference internal" href="#install-miniconda-for-windows">1. Install Miniconda for Windows</a></li>

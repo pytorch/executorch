@@ -701,12 +701,12 @@ are being executed via Portable operators.</p>
 <p>Now, the partially delegated model can be executed (partially) on your device’s
 GPU!</p>
 <div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="c1"># Build a model runner binary linked with the Vulkan delegate libs</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>--target<span class="w"> </span>vulkan_executor_runner<span class="w"> </span>-j32
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>--target<span class="w"> </span>executor_runner<span class="w"> </span>-j32
 
 <span class="c1"># Push model to device</span>
 adb<span class="w"> </span>push<span class="w"> </span>vk_add.pte<span class="w"> </span>/data/local/tmp/vk_add.pte
 <span class="c1"># Push binary to device</span>
-adb<span class="w"> </span>push<span class="w"> </span>cmake-android-out/backends/vulkan/vulkan_executor_runner<span class="w"> </span>/data/local/tmp/runner_bin
+adb<span class="w"> </span>push<span class="w"> </span>cmake-android-out/executor_runner<span class="w"> </span>/data/local/tmp/runner_bin
 
 <span class="c1"># Run the model</span>
 adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/runner_bin<span class="w"> </span>--model_path<span class="w"> </span>/data/local/tmp/vk_add.pte

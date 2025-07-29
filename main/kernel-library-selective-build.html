@@ -531,9 +531,24 @@
 <li><p>A _kernel resolver _takes in the linked kernel libraries as well as the merged op info yaml file, then makes a decision on which kernels to be registered into ExecuTorch runtime.</p></li>
 </ol>
 </div>
+<div class="section" id="selective-build-cmake-options">
+<h2>Selective Build CMake Options<a class="headerlink" href="#selective-build-cmake-options" title="Permalink to this heading">¶</a></h2>
+<p>To enable selective build when building the executorch kernel libraries as part of a CMake build, the following CMake options are exposed. These options affect the <code class="docutils literal notranslate"><span class="pre">executorch_kernels</span></code> CMake target. Make sure to link this target when using selective build.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_YAML</span></code>: A path to a YAML file specifying the operators to include.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code>: A string containing the operators to include.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_MODEL</span></code>: A path to a PTE file. Only operators used in this model will be included.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD</span></code>: If enabled, operators will be further specialized to only operator on the data types specified in the operator selection.</p></li>
+</ul>
+<p>Note that <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_YAML</span></code>, <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code>, and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_MODEL</span></code> are mutually exclusive. Only one operator specifier directive is allowed.</p>
+<p>As an example, to build with only operators used in mv2_xnnpack_fp32.pte, the CMake build can be configured as follows.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cmake</span> <span class="o">..</span> <span class="o">-</span><span class="n">DEXECUTORCH_SELECT_OPS_MODEL</span><span class="o">=</span><span class="n">mv2_xnnpack_fp32</span><span class="o">.</span><span class="n">pte</span>
+</pre></div>
+</div>
+</div>
 <div class="section" id="apis">
 <h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
-<p>We expose a CMake macro <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/tools/cmake/Codegen.cmake#L12">gen_selected_ops</a>, to allow users specifying op info:</p>
+<p>For fine-grained control, we expose a CMake macro <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/tools/cmake/Codegen.cmake#L12">gen_selected_ops</a> to allow users to specify op info:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">gen_selected_ops</span><span class="p">(</span>
   <span class="n">LIB_NAME</span>              <span class="c1"># the name of the selective build operator library to be generated</span>
   <span class="n">OPS_SCHEMA_YAML</span>       <span class="c1"># path to a yaml file containing operators to be selected</span>
@@ -568,7 +583,7 @@
 </div>
 <div class="section" id="example-walkthrough">
 <h2>Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permalink to this heading">¶</a></h2>
-<p>In <a class="reference external" href="https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L48-L72">CMakeLists.txt</a>, we have the following cmake config options:</p>
+<p>In <a class="reference external" href="https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L48-L72">examples/selective_build/CMakeLists.txt</a>, we have the following cmake config options:</p>
 <ol class="arabic simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_YAML</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code></p></li>
@@ -649,6 +664,7 @@
 <li><a class="reference internal" href="#">Kernel Library Selective Build</a><ul>
 <li><a class="reference internal" href="#design-principles">Design Principles</a></li>
 <li><a class="reference internal" href="#high-level-architecture">High Level Architecture</a></li>
+<li><a class="reference internal" href="#selective-build-cmake-options">Selective Build CMake Options</a></li>
 <li><a class="reference internal" href="#apis">APIs</a><ul>
 <li><a class="reference internal" href="#select-all-ops">Select all ops</a></li>
 <li><a class="reference internal" href="#select-ops-from-schema-yaml">Select ops from schema yaml</a></li>
