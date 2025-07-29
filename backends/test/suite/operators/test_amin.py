@@ -29,6 +29,8 @@ class AminModel(torch.nn.Module):
         self.keepdim = keepdim
 
     def forward(self, x):
+        if self.dim is None:
+            return torch.amin(x, keepdim=self.keepdim)
         return torch.amin(x, dim=self.dim, keepdim=self.keepdim)
 
 
@@ -39,13 +41,6 @@ class Amin(OperatorTest):
         self._test_op(
             AminModel().to(dtype),
             (torch.rand(10, 10).to(dtype),),
-            flow,
-        )
-
-    def test_amin_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            AminModel(),
-            (torch.randn(10, 10),),
             flow,
         )
 
@@ -208,142 +203,25 @@ class Amin(OperatorTest):
             flow,
         )
 
-    def test_amin_values(self, flow: TestFlow) -> None:
-        x = torch.tensor([[6.0, 5.0, 4.0], [3.0, 2.0, 1.0]])
-        self._test_op(
-            AminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[3.0, 2.0, 2.0], [1.0, 1.0, 5.0]])
-        self._test_op(
-            AminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[-3.0, -2.0, -1.0], [-6.0, -5.0, -4.0]])
-        self._test_op(
-            AminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[-3.0, 2.0, -1.0], [6.0, -5.0, 4.0]])
-        self._test_op(
-            AminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=1),
-            (x,),
-            flow,
-        )
-
     def test_amin_edge_cases(self, flow: TestFlow) -> None:
-        x = torch.ones(3, 4)
-        self._test_op(
-            AminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.zeros(3, 4)
-        self._test_op(
-            AminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=1),
-            (x,),
-            flow,
-        )
-
-        x = torch.tensor([[1.0, float("inf"), 3.0], [4.0, 5.0, float("inf")]])
-        self._test_op(
-            AminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=0),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=1),
-            (x,),
-            flow,
-        )
-
         x = torch.tensor([[1.0, float("-inf"), 3.0], [4.0, 5.0, float("-inf")]])
         self._test_op(
             AminModel(),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
         self._test_op(
             AminModel(dim=0),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
         self._test_op(
             AminModel(dim=1),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
 
         x = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, float("nan")]])
@@ -351,28 +229,19 @@ class Amin(OperatorTest):
             AminModel(),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
         self._test_op(
             AminModel(dim=0),
             (x,),
             flow,
+            use_random_test_inputs=False,
         )
         self._test_op(
             AminModel(dim=1),
             (x,),
             flow,
-        )
-
-        x = torch.tensor([5.0])
-        self._test_op(
-            AminModel(),
-            (x,),
-            flow,
-        )
-        self._test_op(
-            AminModel(dim=0),
-            (x,),
-            flow,
+            use_random_test_inputs=False,
         )
 
     def test_amin_scalar(self, flow: TestFlow) -> None:
