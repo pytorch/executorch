@@ -9,14 +9,15 @@
 import json
 import os
 import pickle
-from dataclasses import dataclass
 from typing import BinaryIO, Dict, IO, List, Optional, Union
 from zipfile import BadZipFile, ZipFile
 
-from executorch import exir
-from executorch.devtools.bundled_program.core import BundledProgram
+import torch
 
-from executorch.devtools.bundled_program.schema.bundled_program_schema import Value
+from executorch import exir
+
+from executorch.devtools.bundled_program.config import ConfigValue
+from executorch.devtools.bundled_program.core import BundledProgram
 from executorch.exir import (
     EdgeProgramManager,
     ExecutorchProgram,
@@ -29,8 +30,8 @@ from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.serde.export_serialize import SerializedArtifact
 from executorch.exir.serde.serialize import deserialize, serialize
 
-ProgramInput = List[Value]
-ProgramOutput = List[Value]
+ProgramInput = ConfigValue
+ProgramOutput = torch.Tensor
 
 try:
     # breaking change introduced in python 3.11
@@ -86,81 +87,89 @@ class ETRecord:
             path: Path where the ETRecord file will be saved to.
         """
         if isinstance(path, (str, os.PathLike)):
+            # pyre-ignore[6]: In call `os.fspath`, for 1st positional argument, expected `str` but got `Union[PathLike[typing.Any], str]`
             path = os.fspath(path)
 
         etrecord_zip = ZipFile(path, "w")
 
         try:
-            # Write the magic file identifier
-            etrecord_zip.writestr(ETRecordReservedFileNames.ETRECORD_IDENTIFIER, "")
-
-            # Save exported program if present
-            if self.exported_program is not None:
-                self._save_exported_program(
-                    etrecord_zip,
-                    ETRecordReservedFileNames.EXPORTED_PROGRAM,
-                    "",
-                    self.exported_program,
-                )
-
-            # Save edge dialect program if present
-            if self.edge_dialect_program is not None:
-                self._save_edge_dialect_program(etrecord_zip, self.edge_dialect_program)
-
-            # Save graph map if present
-            if self.graph_map is not None:
-                for module_name, export_module in self.graph_map.items():
-                    # Extract method name from module_name if it contains "/"
-                    if "/" in module_name:
-                        base_name, method_name = module_name.rsplit("/", 1)
-                        self._save_exported_program(
-                            etrecord_zip, base_name, method_name, export_module
-                        )
-                    else:
-                        self._save_exported_program(
-                            etrecord_zip, module_name, "forward", export_module
-                        )
-
-            # Save debug handle map
-            if self._debug_handle_map is not None:
-                etrecord_zip.writestr(
-                    ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME,
-                    json.dumps(self._debug_handle_map),
-                )
-
-            # Save delegate map
-            if self._delegate_map is not None:
-                etrecord_zip.writestr(
-                    ETRecordReservedFileNames.DELEGATE_MAP_NAME,
-                    json.dumps(self._delegate_map),
-                )
-
-            # Save reference outputs
-            if self._reference_outputs is not None:
-                etrecord_zip.writestr(
-                    ETRecordReservedFileNames.REFERENCE_OUTPUTS,
-                    pickle.dumps(self._reference_outputs),
-                )
-
-            # Save representative inputs
-            if self._representative_inputs is not None:
-                etrecord_zip.writestr(
-                    ETRecordReservedFileNames.REPRESENTATIVE_INPUTS,
-                    pickle.dumps(self._representative_inputs),
-                )
-
-            # Save export graph id
-            if self.export_graph_id is not None:
-                etrecord_zip.writestr(
-                    ETRecordReservedFileNames.EXPORT_GRAPH_ID,
-                    json.dumps(self.export_graph_id),
-                )
-
+            self._write_identifier(etrecord_zip)
+            self._save_programs(etrecord_zip)
+            self._save_graph_map(etrecord_zip)
+            self._save_metadata(etrecord_zip)
         finally:
             etrecord_zip.close()
 
+    def _write_identifier(self, etrecord_zip: ZipFile) -> None:
+        """Write the magic file identifier."""
+        etrecord_zip.writestr(ETRecordReservedFileNames.ETRECORD_IDENTIFIER, "")
+
+    def _save_programs(self, etrecord_zip: ZipFile) -> None:
+        """Save exported program and edge dialect program."""
+        if self.exported_program is not None:
+            self._save_exported_program(
+                etrecord_zip,
+                ETRecordReservedFileNames.EXPORTED_PROGRAM,
+                "",
+                self.exported_program,
+            )
+
+        if self.edge_dialect_program is not None:
+            self._save_edge_dialect_program(etrecord_zip, self.edge_dialect_program)
+
+    def _save_graph_map(self, etrecord_zip: ZipFile) -> None:
+        """Save graph map if present."""
+        if self.graph_map is not None:
+            # pyre-ignore[16]: Undefined attribute [16]: `Optional` has no attribute `items`.
+            for module_name, export_module in self.graph_map.items():
+                if "/" in module_name:
+                    base_name, method_name = module_name.rsplit("/", 1)
+                    self._save_exported_program(
+                        etrecord_zip, base_name, method_name, export_module
+                    )
+                else:
+                    self._save_exported_program(
+                        etrecord_zip, module_name, "forward", export_module
+                    )
+
+    def _save_metadata(self, etrecord_zip: ZipFile) -> None:
+        """Save debug maps, reference outputs, and other metadata."""
+        if self._debug_handle_map is not None:
+            etrecord_zip.writestr(
+                ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME,
+                json.dumps(self._debug_handle_map),
+            )
+
+        if self._delegate_map is not None:
+            etrecord_zip.writestr(
+                ETRecordReservedFileNames.DELEGATE_MAP_NAME,
+                json.dumps(self._delegate_map),
+            )
+
+        if self._reference_outputs is not None:
+            etrecord_zip.writestr(
+                ETRecordReservedFileNames.REFERENCE_OUTPUTS,
+                pickle.dumps(self._reference_outputs),
+            )
+
+        if self._representative_inputs is not None:
+            etrecord_zip.writestr(
+                ETRecordReservedFileNames.REPRESENTATIVE_INPUTS,
+                pickle.dumps(self._representative_inputs),
+            )
+
+        if self.export_graph_id is not None:
+            etrecord_zip.writestr(
+                ETRecordReservedFileNames.EXPORT_GRAPH_ID,
+                json.dumps(self.export_graph_id),
+            )
+
     def _save_exported_program(
-        self, etrecord_zip: ZipFile, module_name: str, method_name: str, ep: ExportedProgram
+        self,
+        etrecord_zip: ZipFile,
+        module_name: str,
+        method_name: str,
+        ep: ExportedProgram,
     ) -> None:
         """Save an exported program to the ETRecord zip file."""
         serialized_artifact = serialize(ep)
@@ -172,7 +181,9 @@ class ETRecord:
         etrecord_zip.writestr(base_name, serialized_artifact.exported_program)
         etrecord_zip.writestr(f"{base_name}_state_dict", serialized_artifact.state_dict)
         etrecord_zip.writestr(f"{base_name}_constants", serialized_artifact.constants)
-        etrecord_zip.writestr(f"{base_name}_example_inputs", serialized_artifact.example_inputs)
+        etrecord_zip.writestr(
+            f"{base_name}_example_inputs", serialized_artifact.example_inputs
+        )
 
     def _save_edge_dialect_program(
         self, etrecord_zip: ZipFile, edge_dialect_program: ExportedProgram
@@ -185,7 +196,9 @@ class ETRecord:
         etrecord_zip.writestr(base_name, serialized_artifact.exported_program)
         etrecord_zip.writestr(f"{base_name}_state_dict", serialized_artifact.state_dict)
         etrecord_zip.writestr(f"{base_name}_constants", serialized_artifact.constants)
-        etrecord_zip.writestr(f"{base_name}_example_inputs", serialized_artifact.example_inputs)
+        etrecord_zip.writestr(
+            f"{base_name}_example_inputs", serialized_artifact.example_inputs
+        )
 
 
 def _get_reference_outputs(
@@ -272,66 +285,15 @@ def generate_etrecord(
     Returns:
         None
     """
-    # Prepare data for ETRecord construction
-    processed_exported_program = None
-    export_graph_id = 0
-    processed_edge_dialect_program = None
-    graph_map = {}
-    debug_handle_map = None
-    delegate_map = None
-    reference_outputs = None
-    representative_inputs = None
-
-    # Process exported program
-    if exported_program is not None:
-        if isinstance(exported_program, dict) and "forward" in exported_program:
-            processed_exported_program = exported_program["forward"]
-        elif isinstance(exported_program, ExportedProgram):
-            processed_exported_program = exported_program
-
-        if processed_exported_program is not None:
-            export_graph_id = id(processed_exported_program.graph)
-
-    # Process extra recorded export modules
-    if extra_recorded_export_modules is not None:
-        for module_name, export_module in extra_recorded_export_modules.items():
-            contains_reserved_name = any(
-                reserved_name in module_name
-                for reserved_name in ETRecordReservedFileNames
-            )
-            if contains_reserved_name:
-                raise RuntimeError(
-                    f"The name {module_name} provided in the extra_recorded_export_modules dict is a reserved name in the ETRecord namespace."
-                )
-
-            # Process different types of export modules
-            if isinstance(export_module, ExirExportedProgram):
-                graph_map[f"{module_name}/forward"] = export_module.exported_program
-            elif isinstance(export_module, ExportedProgram):
-                graph_map[f"{module_name}/forward"] = export_module
-            elif isinstance(export_module, (EdgeProgramManager, exir.program._program.EdgeProgramManager)):
-                for method in export_module.methods:
-                    graph_map[f"{module_name}/{method}"] = export_module.exported_program(method)
-            else:
-                raise RuntimeError(f"Unsupported graph module type. {type(export_module)}")
-
-    # Process edge dialect program
-    if isinstance(edge_dialect_program, (EdgeProgramManager, exir.program._program.EdgeProgramManager)):
-        processed_edge_dialect_program = edge_dialect_program.exported_program()
-    elif isinstance(edge_dialect_program, ExirExportedProgram):
-        processed_edge_dialect_program = edge_dialect_program.exported_program
-    else:
-        raise RuntimeError(f"Unsupported type of edge_dialect_program passed in {type(edge_dialect_program)}.")
-
-    # Process executorch program
-    if isinstance(executorch_program, BundledProgram):
-        reference_outputs = _get_reference_outputs(executorch_program)
-        representative_inputs = _get_representative_inputs(executorch_program)
-        debug_handle_map = executorch_program.executorch_program.debug_handle_map
-        delegate_map = executorch_program.executorch_program.delegate_map
-    else:
-        debug_handle_map = executorch_program.debug_handle_map
-        delegate_map = executorch_program.delegate_map
+    # Process all inputs and prepare data for ETRecord construction
+    processed_exported_program, export_graph_id = _process_exported_program(
+        exported_program
+    )
+    graph_map = _process_extra_recorded_modules(extra_recorded_export_modules)
+    processed_edge_dialect_program = _process_edge_dialect_program(edge_dialect_program)
+    debug_handle_map, delegate_map, reference_outputs, representative_inputs = (
+        _process_executorch_program(executorch_program)
+    )
 
     # Create ETRecord instance and save
     etrecord = ETRecord(
@@ -346,6 +308,118 @@ def generate_etrecord(
     )
 
     etrecord.save(et_record)
+
+
+def _process_exported_program(
+    exported_program: Optional[Union[ExportedProgram, Dict[str, ExportedProgram]]]
+) -> tuple[Optional[ExportedProgram], int]:
+    """Process exported program and return the processed program and export graph id."""
+    processed_exported_program = None
+    export_graph_id = 0
+
+    if exported_program is not None:
+        if isinstance(exported_program, dict) and "forward" in exported_program:
+            processed_exported_program = exported_program["forward"]
+        elif isinstance(exported_program, ExportedProgram):
+            processed_exported_program = exported_program
+
+        if processed_exported_program is not None:
+            export_graph_id = id(processed_exported_program.graph)
+
+    return processed_exported_program, export_graph_id
+
+
+def _process_extra_recorded_modules(
+    extra_recorded_export_modules: Optional[
+        Dict[
+            str,
+            Union[
+                ExportedProgram,
+                ExirExportedProgram,
+                EdgeProgramManager,
+            ],
+        ]
+    ]
+) -> Dict[str, ExportedProgram]:
+    """Process extra recorded export modules and return graph map."""
+    graph_map = {}
+
+    if extra_recorded_export_modules is not None:
+        for module_name, export_module in extra_recorded_export_modules.items():
+            _validate_module_name(module_name)
+            _add_module_to_graph_map(graph_map, module_name, export_module)
+
+    return graph_map
+
+
+def _validate_module_name(module_name: str) -> None:
+    """Validate that module name is not a reserved name."""
+    contains_reserved_name = any(
+        reserved_name in module_name for reserved_name in ETRecordReservedFileNames
+    )
+    if contains_reserved_name:
+        raise RuntimeError(
+            f"The name {module_name} provided in the extra_recorded_export_modules dict is a reserved name in the ETRecord namespace."
+        )
+
+
+def _add_module_to_graph_map(
+    graph_map: Dict[str, ExportedProgram],
+    module_name: str,
+    export_module: Union[ExportedProgram, ExirExportedProgram, EdgeProgramManager],
+) -> None:
+    """Add export module to graph map based on its type."""
+    if isinstance(export_module, ExirExportedProgram):
+        graph_map[f"{module_name}/forward"] = export_module.exported_program
+    elif isinstance(export_module, ExportedProgram):
+        graph_map[f"{module_name}/forward"] = export_module
+    elif isinstance(
+        export_module,
+        (EdgeProgramManager, exir.program._program.EdgeProgramManager),
+    ):
+        for method in export_module.methods:
+            graph_map[f"{module_name}/{method}"] = export_module.exported_program(
+                method
+            )
+    else:
+        raise RuntimeError(f"Unsupported graph module type. {type(export_module)}")
+
+
+def _process_edge_dialect_program(
+    edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram]
+) -> ExportedProgram:
+    """Process edge dialect program and return the exported program."""
+    if isinstance(
+        edge_dialect_program,
+        (EdgeProgramManager, exir.program._program.EdgeProgramManager),
+    ):
+        return edge_dialect_program.exported_program()
+    elif isinstance(edge_dialect_program, ExirExportedProgram):
+        return edge_dialect_program.exported_program
+    else:
+        raise RuntimeError(
+            f"Unsupported type of edge_dialect_program passed in {type(edge_dialect_program)}."
+        )
+
+
+def _process_executorch_program(
+    executorch_program: Union[
+        ExecutorchProgram, ExecutorchProgramManager, BundledProgram
+    ]
+) -> tuple[Optional[Dict], Optional[Dict], Optional[Dict], Optional[List]]:
+    """Process executorch program and return debug maps and bundled program data."""
+    if isinstance(executorch_program, BundledProgram):
+        reference_outputs = _get_reference_outputs(executorch_program)
+        representative_inputs = _get_representative_inputs(executorch_program)
+        # pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `debug_handle_map`
+        debug_handle_map = executorch_program.executorch_program.debug_handle_map
+        # pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `debug_handle_map`
+        delegate_map = executorch_program.executorch_program.delegate_map
+        return debug_handle_map, delegate_map, reference_outputs, representative_inputs
+    else:
+        debug_handle_map = executorch_program.debug_handle_map
+        delegate_map = executorch_program.delegate_map
+        return debug_handle_map, delegate_map, None, None
 
 
 def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901

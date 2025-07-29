@@ -351,12 +351,14 @@ class TestETRecord(unittest.TestCase):
             expected_outputs = parsed_etrecord._reference_outputs
             self.assertTrue(
                 torch.equal(
-                    expected_outputs["forward"][0][0], reference_outputs["forward"][0][0]
+                    expected_outputs["forward"][0][0],
+                    reference_outputs["forward"][0][0],
                 )
             )
             self.assertTrue(
                 torch.equal(
-                    expected_outputs["forward"][1][0], reference_outputs["forward"][1][0]
+                    expected_outputs["forward"][1][0],
+                    reference_outputs["forward"][1][0],
                 )
             )
 
