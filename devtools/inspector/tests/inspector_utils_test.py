@@ -47,7 +47,7 @@ from executorch.devtools.inspector._inspector_utils import (
 )
 from executorch.devtools.inspector.numerical_comparator import L1Comparator
 from executorch.exir import to_edge
-from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY, UNSET_DEBUG_HANDLE
 from torch.export import export
 
 
@@ -278,6 +278,27 @@ class TestInspectorUtils(unittest.TestCase):
             actual_value = intermediate_outputs[key][1]
             self.assertTrue(torch.allclose(expected_value, actual_value))
 
+    def test_merge_overlapping_debug_handles_edge_cases(self):
+        intermediate_outputs = {
+            (9,): (1, "val1"),
+            (
+                9,
+                9,
+                9,
+            ): (2, "val2"),
+            (
+                9,
+                9,
+            ): (3, "val3"),
+        }
+        intermediate_outputs = merge_runtime_overlapping_debug_handles(
+            intermediate_outputs
+        )
+        expected_intermediate_outputs = {
+            (9,): (3, "val3"),
+        }
+        self.assertEqual(intermediate_outputs, expected_intermediate_outputs)
+
     def test_map_runtime_aot_intermediate_outputs_empty_inputs(self):
         # When the inputs are empty, the output should also be empty
         aot_intermediate_outputs = {}
@@ -302,23 +323,19 @@ class TestInspectorUtils(unittest.TestCase):
         }
         self.assertEqual(actual, expected)
 
-    def test_map_runtime_aot_intermediate_outputs_exact_match(self):
-        # Exact match between aot and runtime debug_handles
-        aot_intermediate_outputs = {(0, 1): 100, (2, 3): 200, (4, 5): 300}
-        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
+    def test_map_runtime_aot_intermediate_outputs_no_overlaps(self):
+        # No overlaps between aot and runtime debug_handles
+        aot_intermediate_outputs = {(0,): 100, (4,): 300}
+        runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
-        expected = {
-            ((0, 1), 100): ((0, 1), 150),
-            ((2, 3), 200): ((2, 3), 200),
-            ((4, 5), 300): ((4, 5), 300),
-        }
+        expected = {}
         self.assertEqual(actual, expected)
 
-    def test_map_runtime_aot_intermediate_outputs_no_overlaps(self):
-        # No overlaps between aot and runtime debug_handles
-        aot_intermediate_outputs = {(0, 1): 100, (4, 5): 300}
+    def test_map_runtime_aot_intermediate_outputs_partial_match(self):
+        # Partial match between aot and runtime debug_handles will return empty
+        aot_intermediate_outputs = {(2,): 100, (9,): 300}
         runtime_intermediate_outputs = {(2, 3): 200, (8, 9): 300}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
@@ -328,41 +345,24 @@ class TestInspectorUtils(unittest.TestCase):
 
     def test_map_runtime_aot_intermediate_outputs_multiple_aot_to_one_runtime(self):
         # Multiple aot debug_handles map to one runtime debug_handle
-        aot_intermediate_outputs = {(0, 1, 2): 100, (3, 4): 300}
-        runtime_intermediate_outputs = {(1, 2, 3): 250, (8, 9): 300}
+        aot_intermediate_outputs = {(0,): 100, (1,): 200, (2,): 300, (3,): 400}
+        runtime_intermediate_outputs = {(2, 3, 1): 250, (8, 9): 300}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
-        expected = {((0, 1, 2, 3, 4), 300): ((1, 2, 3), 250)}
-        self.assertEqual(actual, expected)
-
-    def test_map_runtime_aot_intermediate_outputs_one_aot_to_multiple_runtime(self):
-        # One aot debug_handle map to multiple runtime debug_handles
-        aot_intermediate_outputs = {(0, 1, 2, 3, 4): 100, (8, 9): 300}
-        runtime_intermediate_outputs = {(0, 1): 150, (2, 3): 200, (4, 5): 300}
-        actual = map_runtime_aot_intermediate_outputs(
-            aot_intermediate_outputs, runtime_intermediate_outputs
-        )
-        expected = {((0, 1, 2, 3, 4), 100): ((0, 1, 2, 3, 4, 5), 300)}
-        self.assertEqual(actual, expected)
-
-    def test_map_runtime_aot_intermediate_outputs_complex_chain(self):
-        # Complex chain (N-to-N mapping)
-        aot_intermediate_outputs = {(1, 2): 100, (3, 4): 200, (5, 6): 300}
-        runtime_intermediate_outputs = {(2, 3): 150, (4, 5): 250, (6, 7): 350}
-        actual = map_runtime_aot_intermediate_outputs(
-            aot_intermediate_outputs, runtime_intermediate_outputs
-        )
-        expected = {((1, 2, 3, 4, 5, 6), 300): ((2, 3, 4, 5, 6, 7), 350)}
+        expected = {((2, 3, 1), 200): ((2, 3, 1), 250)}
         self.assertEqual(actual, expected)
 
     def test_map_runtime_aot_intermediate_outputs_delegated(self):
         # Currently, runtime_intermediate_output logs all delegate call arguments
         # Test that the map function correctly extracted out the delegated outputs
         aot_intermediate_outputs = {
-            (1, 2): torch.tensor([4, 5]),
-            (3, 4): torch.tensor([10, 11, 12]),
-            (5, 6): torch.tensor([13, 14, 15, 16, 17]),
+            (1,): torch.tensor([4, 1]),
+            (2,): torch.tensor([4, 5]),
+            (3,): torch.tensor([10, 10, 13]),
+            (4,): torch.tensor([10, 11, 12]),
+            (5,): torch.tensor([13, 14, 15, 16, 21]),
+            (6,): torch.tensor([13, 14, 15, 16, 17]),
         }
         runtime_intermediate_outputs = {
             (1, 2): [torch.tensor([1, 2, 3]), torch.tensor([4, 5])],
@@ -610,9 +610,6 @@ class TestInspectorUtils(unittest.TestCase):
         with self.assertRaises(ValueError):
             compare_intermediate_outputs(a, b, L1Comparator())
 
-    @unittest.skip(
-        "TODO: enable the test after required feature has been built in pytorch core nightly version"
-    )
     def test_equip_debug_handle_to_export_program_success(self):
         """Test that propagate_back_debug_handle returns True and properly equips debug handles."""
         # Create a test model
@@ -621,6 +618,95 @@ class TestInspectorUtils(unittest.TestCase):
 
         # Export the model
         exported_program = export(model, inputs)
+        export_graph_id = id(exported_program.graph)
+
+        # Convert to edge dialect
+        edge_dialect_program = to_edge(exported_program).exported_program()
+
+        # Call propagate_back_debug_handle
+        result = propagate_back_debug_handle(
+            exported_program, export_graph_id, edge_dialect_program
+        )
+
+        self.assertTrue(result)
+
+        # Check that debug handles are properly equipped in the exported program
+        exported_program_debug_handles = []
+        for node in exported_program.graph.nodes:
+            if node.op not in ("placeholder", "output"):
+                self.assertIn(DEBUG_HANDLE_KEY, node.meta)
+                self.assertIsNotNone(node.meta[DEBUG_HANDLE_KEY])
+                exported_program_debug_handles.append(node.meta[DEBUG_HANDLE_KEY])
+
+        edge_dialect_program_debug_handles = []
+        for node in edge_dialect_program.graph.nodes:
+            if node.op not in ("placeholder", "output"):
+                self.assertIn(DEBUG_HANDLE_KEY, node.meta)
+                self.assertIsNotNone(node.meta[DEBUG_HANDLE_KEY])
+                edge_dialect_program_debug_handles.append(node.meta[DEBUG_HANDLE_KEY])
+
+        # The 0th operator in the exported program (layer_norm) has been decomposed into 0th and 1st ops in edge dialect graph (native_layer_norm and getitem)
+        # So they should have the same debug handle
+        self.assertEqual(
+            exported_program_debug_handles[0], edge_dialect_program_debug_handles[0]
+        )
+        self.assertEqual(
+            exported_program_debug_handles[0], edge_dialect_program_debug_handles[1]
+        )
+
+    def test_equip_debug_handle_to_strict_export_program_success(self):
+        """Test that propagate_back_debug_handle returns True and properly equips debug handles."""
+        # Create a test model
+        model = models.FeedForwardBlock(5, 10)
+        inputs = (torch.rand(5, 5),)
+
+        # Export the model
+        exported_program = export(model, inputs, strict=True)
+        export_graph_id = id(exported_program.graph)
+
+        # Convert to edge dialect
+        edge_dialect_program = to_edge(exported_program).exported_program()
+
+        # Call propagate_back_debug_handle
+        result = propagate_back_debug_handle(
+            exported_program, export_graph_id, edge_dialect_program
+        )
+
+        self.assertTrue(result)
+
+        # Check that debug handles are properly equipped in the exported program
+        exported_program_debug_handles = []
+        for node in exported_program.graph.nodes:
+            if node.op not in ("placeholder", "output"):
+                self.assertIn(DEBUG_HANDLE_KEY, node.meta)
+                self.assertIsNotNone(node.meta[DEBUG_HANDLE_KEY])
+                exported_program_debug_handles.append(node.meta[DEBUG_HANDLE_KEY])
+
+        edge_dialect_program_debug_handles = []
+        for node in edge_dialect_program.graph.nodes:
+            if node.op not in ("placeholder", "output"):
+                self.assertIn(DEBUG_HANDLE_KEY, node.meta)
+                self.assertIsNotNone(node.meta[DEBUG_HANDLE_KEY])
+                edge_dialect_program_debug_handles.append(node.meta[DEBUG_HANDLE_KEY])
+
+        # The 0th operator in the exported program (layer_norm) has been decomposed into 0th and 1st ops in edge dialect graph (native_layer_norm and getitem)
+        # So they should have the same debug handle
+        self.assertEqual(
+            exported_program_debug_handles[0], edge_dialect_program_debug_handles[0]
+        )
+        self.assertEqual(
+            exported_program_debug_handles[0], edge_dialect_program_debug_handles[1]
+        )
+
+    def test_equip_debug_handle_to_reexport_program_success(self):
+        """Test that propagate_back_debug_handle returns True and properly equips debug handles."""
+        # Create a test model
+        model = models.FeedForwardBlock(5, 10)
+        inputs = (torch.rand(5, 5),)
+
+        # Export the model
+        init_export_program = export(model, inputs)
+        exported_program = export(init_export_program.module(), inputs)
         export_graph_id = id(exported_program.graph)
 
         # Convert to edge dialect
@@ -679,9 +765,6 @@ class TestInspectorUtils(unittest.TestCase):
         # Check that it returns False due to mismatch
         self.assertFalse(result)
 
-    @unittest.skip(
-        "TODO: enable the test after required feature has been built in pytorch core nightly version"
-    )
     def test_equip_debug_handle_to_export_program_op_to_be_removed_in_to_edge(self):
         """Test that propagate_back_debug_handle returns True and properly equips debug handles when an op is removed in to_edge"""
 
@@ -710,8 +793,7 @@ class TestInspectorUtils(unittest.TestCase):
             )
         )
 
-        # only two add ops in the exported program will keep in edge dialect program, so the debug handles for removed op will be three
-        debug_handle_for_removed_node = 3
+        n_removed_nodes = 0
 
         for node in exported_program.graph.nodes:
             if node.name == "add":
@@ -719,9 +801,10 @@ class TestInspectorUtils(unittest.TestCase):
             elif node.name == "add_1":
                 self.assertEqual(node.meta[DEBUG_HANDLE_KEY], 2)
             elif node.op not in ("placeholder", "output"):
-                self.assertEqual(
-                    node.meta[DEBUG_HANDLE_KEY], debug_handle_for_removed_node
-                )
+                n_removed_nodes += 1
+                self.assertEqual(node.meta[DEBUG_HANDLE_KEY], UNSET_DEBUG_HANDLE)
+
+        self.assertEqual(n_removed_nodes, 2)
 
 
 def gen_mock_operator_graph_with_expected_map() -> (

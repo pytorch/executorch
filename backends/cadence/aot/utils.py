@@ -25,6 +25,10 @@ from torch.fx.operator_schemas import get_signature_for_torch_op
 from torch.utils._pytree import tree_flatten
 
 
+class MemoryPlanningAlgoFailure(Exception):
+    pass
+
+
 # Get the output size of a 1D convolution given the input size and parameters
 def get_conv1d_output_size(
     in_size: torch.Size,

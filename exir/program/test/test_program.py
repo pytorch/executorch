@@ -27,7 +27,6 @@ from executorch.exir.program._program import (
     ExecutorchProgramManager,
     to_edge,
     to_edge_transform_and_lower,
-    to_edge_with_preserved_ops,
 )
 from executorch.exir.tracer import _default_decomposition_table
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
@@ -784,7 +783,9 @@ class TestProgramManagers(unittest.TestCase):
     def _test_to_edge_with_preserved_ops(
         self, program, preserved_ops, expected_preserved_ops
     ):
-        edge = to_edge_with_preserved_ops(program, preserve_ops=preserved_ops)
+        edge = to_edge(
+            program, compile_config=EdgeCompileConfig(preserve_ops=preserved_ops)
+        )
 
         def count_nodes(graph_module, target):
             count = 0

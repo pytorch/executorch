@@ -1,11 +1,15 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "recipe",
     srcs = [
         "recipe.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "//caffe2:torch",
@@ -16,10 +20,14 @@ python_library(
     ]
 )
 
-python_library(
+runtime.python_library(
     name = "export",
     srcs = [
         "export.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         ":recipe",
@@ -28,10 +36,14 @@ python_library(
     ]
 )
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = [
         "__init__.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         ":export",
@@ -41,11 +53,14 @@ python_library(
     ],
 )
 
-
-python_library(
+runtime.python_library(
     name = "recipe_registry",
     srcs = [
         "recipe_registry.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         ":recipe",
@@ -54,7 +69,7 @@ python_library(
 )
 
 
-python_library(
+runtime.python_library(
     name = "recipe_provider",
     srcs = [
         "recipe_provider.py",

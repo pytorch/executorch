@@ -549,6 +549,15 @@ def corstone320_installed() -> bool:
     return True
 
 
+def model_converter_installed() -> bool:
+    cmd = ["model-converter", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except:
+        return False
+    return True
+
+
 def get_elf_path(target_board):
     elf_path = os.path.join(
         "arm_test",

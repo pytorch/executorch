@@ -29,7 +29,9 @@ from executorch.backends.arm._passes import (
     ConvertToClampPass,
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
+    DecomposeAddmmPass,
     DecomposeAsinPass,
+    DecomposeAtanhPass,
     DecomposeAtanPass,
     DecomposeAvgPool2d,
     DecomposeBatchNormNoStatsPass,
@@ -43,6 +45,7 @@ from executorch.backends.arm._passes import (
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeLinearVectorNormPass,
+    DecomposeMaskedFill,
     DecomposeMaxPool2DPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
@@ -65,8 +68,8 @@ from executorch.backends.arm._passes import (
     InsertCastForOpsWithInt64InputPass,
     InsertRescalePass,
     InsertTableOpsPass,
+    MatchArgDtypePass,
     MatchArgRanksPass,
-    MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
     ReplaceInfValues,
@@ -111,11 +114,12 @@ class ArmPassManager(PassManager):
         self.add_pass(
             DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
         )
+
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
-        self.add_pass(MatchWhereSelfDtypePass())
+        self.add_pass(MatchArgDtypePass())
         if self.tosa_spec.is_U55_subset:
             self.add_pass(CastToInt32Pass())
 
@@ -144,6 +148,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(SizeAdjustInputPass())
         self.add_pass(DecomposeSelectPass())
+
         self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(FuseViewCopyTransform())
@@ -158,11 +163,14 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeAcoshPass())
         self.add_pass(DecomposeAsinPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeAtanPass())
+        self.add_pass(DecomposeAtanhPass())
+        self.add_pass(DecomposeAddmmPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())
@@ -191,8 +199,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
-        self.add_pass(MatchWhereSelfDtypePass())
-
+        self.add_pass(MatchArgDtypePass())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
@@ -256,6 +263,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeRoundPass())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSignPass())
+        self.add_pass(DecomposeAddmmPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())
@@ -280,5 +288,9 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ReplaceInfValues())
         self.add_pass(DecomposeSumPass())
+
+        if not self.tosa_spec.is_U55_subset:
+            # Uses where which is not supported on Ethos-U55
+            self.add_pass(DecomposeMaskedFill())
 
         return self._transform(graph_module)

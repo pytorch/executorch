@@ -21,8 +21,7 @@ ExecuTorch provides support for:
 * **Strong Model Support** LLMs (Large Language Models),
   CV (Computer Vision), ASR (Automatic Speech Recognition), TTS (Text To Speech)
 * **All Major Platforms** Android, Mac, Linux, Windows
-* **Rich Acceleration Support** Apple, Arm, Cadence, MediaTek,
-  Qualcomm, Vulkan, XNNPACK
+* **Rich Acceleration Support** Apple, Arm, Cadence, MediaTek, NXP, OpenVino, Qualcomm, Vulkan, XNNPACK
 
 ### Documentation Navigation
 #### Introduction
@@ -55,6 +54,8 @@ ExecuTorch provides support for:
 - [Qualcomm](backends-qualcomm)
 - [MediaTek](backends-mediatek)
 - [Cadence](backends-cadence)
+- [OpenVINO](build-run-openvino)
+- [NXP](backend-nxp)
 #### Developer Tools
 - [Overview](devtools-overview)
 - [Bundled IO](bundled-io)
@@ -165,6 +166,8 @@ backends-arm-ethos-u
 backends-qualcomm
 backends-mediatek
 backends-cadence
+OpenVINO Backend <build-run-openvino>
+backends-nxp
 ```
 
 ```{toctree}

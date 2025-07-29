@@ -300,7 +300,7 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         run_on_tosa_ref_model: bool = True,
         tosa_version: str = "TOSA-0.80+BI",
         symmetric_io_quantization: bool = False,
-        per_channel_quantization: bool = False,
+        per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
         atol: float = 1e-03,
@@ -317,16 +317,14 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         compile_spec = common.get_tosa_compile_spec(
             tosa_profiles[tosa_version], custom_path=custom_path
         )
-        if symmetric_io_quantization or per_channel_quantization:
-            quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-            quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
-            )
-            if symmetric_io_quantization:
-                quantizer.set_io(quantization_config)
-            quant_stage = Quantize(quantizer, quantization_config)
-        else:
-            quant_stage = None
+
+        quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+        quantization_config = get_symmetric_quantization_config(
+            is_per_channel=per_channel_quantization
+        )
+        if symmetric_io_quantization:
+            quantizer.set_io(quantization_config)
+        quant_stage = Quantize(quantizer, quantization_config)
 
         super().__init__(
             module,
@@ -475,7 +473,7 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
         exir_ops: Optional[str | List[str]] = None,
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
-        per_channel_quantization: bool = False,
+        per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
         atol: float = 1e-03,
@@ -483,16 +481,13 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
         qtol: int = 1,
     ):
         compile_spec = common.get_u55_compile_spec(custom_path=custom_path)
-        if symmetric_io_quantization or per_channel_quantization:
-            quantizer = EthosUQuantizer(compile_spec)
-            quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
-            )
-            if symmetric_io_quantization:
-                quantizer.set_io(quantization_config)
-            quant_stage = Quantize(quantizer, quantization_config)
-        else:
-            quant_stage = None
+        quantizer = EthosUQuantizer(compile_spec)
+        quantization_config = get_symmetric_quantization_config(
+            is_per_channel=per_channel_quantization
+        )
+        if symmetric_io_quantization:
+            quantizer.set_io(quantization_config)
+        quant_stage = Quantize(quantizer, quantization_config)
 
         super().__init__(
             module,
@@ -565,7 +560,7 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
         exir_ops: str | List[str] = None,
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
-        per_channel_quantization: bool = False,
+        per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
         atol: float = 1e-03,
@@ -573,16 +568,13 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
         qtol: int = 1,
     ):
         compile_spec = common.get_u85_compile_spec(custom_path=custom_path)
-        if symmetric_io_quantization or per_channel_quantization:
-            quantizer = EthosUQuantizer(compile_spec)
-            quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
-            )
-            if symmetric_io_quantization:
-                quantizer.set_io(quantization_config)
-            quant_stage = Quantize(quantizer, quantization_config)
-        else:
-            quant_stage = None
+        quantizer = EthosUQuantizer(compile_spec)
+        quantization_config = get_symmetric_quantization_config(
+            is_per_channel=per_channel_quantization
+        )
+        if symmetric_io_quantization:
+            quantizer.set_io(quantization_config)
+        quant_stage = Quantize(quantizer, quantization_config)
 
         super().__init__(
             module,
@@ -862,25 +854,17 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         vgf_compiler_flags: Optional[str] = "",
         tosa_version: str = "TOSA-1.0+FP",
         symmetric_io_quantization: bool = False,
-        per_channel_quantization: bool = False,
+        per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
-
-        if (
-            symmetric_io_quantization or per_channel_quantization
-        ) and tosa_version == "TOSA-1.0+FP":
-            raise ValueError("Dont configure quantization with FP TOSA profile.")
-        if (
-            symmetric_io_quantization is False
-            and per_channel_quantization is False
-            and tosa_version == "TOSA-1.0+INT"
-        ):
-            raise ValueError("Missing quantization options for INT TOSA profile.")
 
         tosa_profile = TosaSpecification.create_from_string(tosa_version)
         compile_spec = common.get_vgf_compile_spec(
@@ -895,9 +879,10 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
             exir_op,
             use_to_edge_transform_and_lower,
             dynamic_shapes,
+            transform_passes=transform_passes,
         )
 
-        if symmetric_io_quantization or per_channel_quantization:
+        if "INT" in tosa_version:
             quantizer = VgfQuantizer(compile_spec)
             quantization_config = get_symmetric_quantization_config(
                 is_per_channel=per_channel_quantization
@@ -905,10 +890,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
             if symmetric_io_quantization:
                 quantizer.set_io(quantization_config)
             quant_stage = Quantize(quantizer, quantization_config)
-        else:
-            quant_stage = None
 
-        if quant_stage:
             self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
             self.add_stage_after(

@@ -457,7 +457,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         for node in original_nodes:
             if len(node.all_input_nodes) == 0:
                 # This node has no inputs so we don't need to change anything, but still need to tag input nodes
-                if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
+                if (
+                    "val" in node.meta
+                    and isinstance(node.meta["val"], torch.Tensor)
+                    and len(node.meta["val"].shape) == 4
+                ):
                     if node.meta["val"].is_contiguous():
                         self.mark_as_nchw_node(node)
                     else:

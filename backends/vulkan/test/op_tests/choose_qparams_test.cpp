@@ -456,7 +456,7 @@ void test_vulkan_choose_qparams_tensor_impl(
   ValueRef staging_zero_point = graph.set_output_tensor(r_zero_point);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 
@@ -676,7 +676,7 @@ void test_vulkan_choose_qparams_per_token_asymmetric_impl(
   ValueRef staging_zero_point = graph.set_output_tensor(r_zero_point);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
   graph.encode_execute();
 

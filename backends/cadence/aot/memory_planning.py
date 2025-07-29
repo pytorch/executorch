@@ -19,7 +19,10 @@ from executorch.backends.cadence.aot.memory_planning_algo import (
     MemoryPlanningAlgo,
     MemoryPlanningState,
 )
-from executorch.backends.cadence.aot.utils import MemoryConfig
+from executorch.backends.cadence.aot.utils import (
+    MemoryConfig,
+    MemoryPlanningAlgoFailure,
+)
 
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import collect_specs_from_nodes, Verifier
@@ -95,7 +98,9 @@ class PositionBasedGreedyWithHierarchy(MemoryPlanningAlgo):
         ):
             self.plan_spec(spec, state, placement_constraints)
             if not state.is_placed(spec):
-                raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
+                raise MemoryPlanningAlgoFailure(
+                    f"Cannot fit {spec} {spec.allocated_memory=} in any memory hierarchy for {self.memory_config}"
+                )
 
 
 class GreedyWithHeuristic(MemoryPlanningAlgo):
@@ -169,7 +174,9 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
         ):
             self.plan_spec(spec, state, placement_constraints)
             if not state.is_placed(spec):
-                raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
+                raise MemoryPlanningAlgoFailure(
+                    f"Cannot fit {spec} in any memory hierarchy for {self.memory_config}"
+                )
 
         logging.debug(
             f"greedy by size for offset calculation with hierarchy returns bufsizes: {state.bufsizes}"
