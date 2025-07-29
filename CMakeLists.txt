@@ -746,7 +746,7 @@ endif()
 if(EXECUTORCH_BUILD_WASM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm)
   if(EXECUTORCH_BUILD_WASM_DEMO)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/wasm/demo)
   endif()
 endif()
 
