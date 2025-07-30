@@ -81,7 +81,7 @@ function(vulkan_shader_lib library_name generated_spv_cpp)
   target_link_libraries(${library_name} vulkan_backend)
   target_compile_options(${library_name} PRIVATE ${VULKAN_CXX_FLAGS})
   # Link this library with --whole-archive due to dynamic shader registrations
-  target_link_options_shared_lib(${library_name})
+  executorch_target_link_options_shared_lib(${library_name})
 endfunction()
 
 # Convenience macro to generate a SPIR-V shader library target. Given the path
@@ -105,7 +105,7 @@ macro(vulkan_shader_library shaders_path library_name)
   target_link_libraries(${library_name} vulkan_backend)
   target_compile_options(${library_name} PRIVATE ${VULKAN_CXX_FLAGS})
   # Link this library with --whole-archive due to dynamic shader registrations
-  target_link_options_shared_lib(${library_name})
+  executorch_target_link_options_shared_lib(${library_name})
 
   unset(VULKAN_SHADERGEN_ENV)
   unset(VULKAN_SHADERGEN_OUT_PATH)

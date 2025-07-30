@@ -11,7 +11,7 @@ import copy
 import io
 import logging
 import os
-from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Type, Union
 
 import torch
 import torch._export
@@ -22,7 +22,6 @@ from executorch.exir._serialize._named_data_store import (
 )
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
-from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import (
     MethodProgramsPartitionerSpec,
     to_backend,
@@ -792,7 +791,6 @@ def edge_to_executorch_passes(
 
 
 def _generate_edge_program(
-    name: str,
     config: EdgeCompileConfig,
     program: ExportedProgram,
     core_aten_ops_exception_list: Optional[List[torch._ops.OpOverload]] = None,
@@ -800,7 +798,6 @@ def _generate_edge_program(
 ) -> ExportedProgram:
     """
     Args:
-        name: The name of the program.
         config: The configuration for the edge program.
         program: The exported program to be converted to an edge program.
         core_aten_ops_exception_list: A list of aten ops that are missing decompositions to core aten.
@@ -808,39 +805,24 @@ def _generate_edge_program(
     Returns:
         An ExportedProgram in edge dialect.
     """
-    # Remove invalid assert ops, such as _assert_tensor_metadata
-    gm = program.graph_module
-    gm_res = RemoveNonCoreAtenOpGraphAssertsPass()(gm)
-    assert gm_res is not None
-    gm = gm_res.graph_module
-
     # Remove unused parameters
     program = remove_unused_parameters_pass(program)
 
-    if config._check_ir_validity:
-        try:
-            EXIRATenDialectVerifier(
-                edge_compile_config=config,
-                class_only=False,
-                core_aten_ops_exception_list=core_aten_ops_exception_list,
-                preserve_ops=preserve_ops,
-            )(gm)
-        except ExportError as e:
-            logging.info(f"Input program {name} is not in ATen dialect.")
-            raise e
-
     pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
 
-    passes = []
-    passes.append(
-        ReplaceViewOpsWithViewCopyOpsPass()
-    )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
+    passes = [
+        # Remove invalid assert ops, such as _assert_tensor_metadata
+        RemoveNonCoreAtenOpGraphAssertsPass(),
+        # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
+        ReplaceViewOpsWithViewCopyOpsPass(),
+    ]
     passes.extend(pre_op_replace_passes)
     if config._use_edge_ops:
         passes.append(OpReplacePass())
         if not config._skip_dim_order:
             passes.append(MemoryFormatOpsPass())
 
+    gm = program.graph_module
     for p in passes:
         gm_res = p(gm)
         assert gm_res is not None
@@ -1107,9 +1089,10 @@ def _can_skip_using_EDGE_DO_NOT_DECOMP(
     for name, program in aten_programs.items():
         if partitioner is not None:
             for curr_partitioner in partitioner.get(name, []):
-                curr_ops_no_decomp, check_op_support = (
-                    curr_partitioner.ops_to_not_decompose(program)
-                )
+                (
+                    curr_ops_no_decomp,
+                    check_op_support,
+                ) = curr_partitioner.ops_to_not_decompose(program)
                 if check_op_support is not None:
                     can_skip_using_EDGE_DO_NOT_DECOMP = False
     return can_skip_using_EDGE_DO_NOT_DECOMP
@@ -1134,36 +1117,38 @@ def _gen_edge_manager_for_partitioners(
           on nodes with preserved aten targets. They are then replaces with transformed ops to
           keep them through the second pass of decompositions
     """
-
     can_skip_using_EDGE_DO_NOT_DECOMP = _can_skip_using_EDGE_DO_NOT_DECOMP(
         partitioner, aten_programs
     )
-
     ops_set_to_not_decompose_by_program = {}
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
+        # Functionalize program before asking partitioners to preserve ops
+        program = program.run_decompositions({})
+
         if partitioner is not None:
             # preserve all ops listed by all partitioners first
             all_ops_no_decomp = set()
-
-            # This holds the subset of all_ops_no_decomp that actually need preservation, i.e.,
-            # the ones where the decomposition table has an entry for the op
             all_ops_no_decomp_needing_preservation = []
             for curr_partitioner in partitioner.get(name, []):
                 curr_ops_no_decomp, _ = curr_partitioner.ops_to_not_decompose(program)
-                if not can_skip_using_EDGE_DO_NOT_DECOMP:
-                    curr_ops_no_decomp = _remove_invalid_ops_for_not_decompose(
-                        curr_ops_no_decomp
-                    )
                 all_ops_no_decomp |= set(curr_ops_no_decomp)
 
-            table = _default_decomposition_table()
+            # If not using the can_skip_using_EDGE_DO_NOT_DECOMP path, we need to remove invalid ops
+            # Otherwise there will be issues
+            if not can_skip_using_EDGE_DO_NOT_DECOMP:
+                all_ops_no_decomp = _remove_invalid_ops_for_not_decompose(
+                    list(all_ops_no_decomp)
+                )
+                all_ops_no_decomp = set(all_ops_no_decomp)
 
+            # Run default decompositions, except for those in all_ops_no_decomp
+            table = _default_decomposition_table()
             for op in all_ops_no_decomp:
                 if table.pop(op, None) is not None:
                     all_ops_no_decomp_needing_preservation.append(op)
-
             program = program.run_decompositions(table)
+
             # Among all the preserved aten ops, use the check_op_fn to do an additional
             # check on which ops need to be preserved and which ops need to be decomposed
             # Those which are truly preserved will be replaced with transformed ops
@@ -1183,7 +1168,6 @@ def _gen_edge_manager_for_partitioners(
 
         edge_programs[name] = program
         edge_programs[name] = _generate_edge_program(
-            name,
             config,
             program,
             preserve_ops=list(ops_set_to_not_decompose_by_program.get(name, [])),
@@ -1226,7 +1210,7 @@ def collect_named_data_store_from_exported_program(
 
 
 @et_logger("to_edge_transform_and_lower")
-def to_edge_transform_and_lower(
+def to_edge_transform_and_lower(  # noqa: C901
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
         Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
@@ -1291,6 +1275,9 @@ def to_edge_transform_and_lower(
     elif partitioner is None:
         partitioner = {name: [] for name in aten_programs.keys()}
 
+    can_skip_using_EDGE_DO_NOT_DECOMP = _can_skip_using_EDGE_DO_NOT_DECOMP(
+        partitioner, aten_programs
+    )
     edge_manager = _gen_edge_manager_for_partitioners(
         partitioner, aten_programs, config, constant_methods
     )
@@ -1316,7 +1303,8 @@ def to_edge_transform_and_lower(
             curr_op_set, check_op_support = curr_partitioner.ops_to_not_decompose(
                 program
             )
-            curr_op_set = _remove_invalid_ops_for_not_decompose(curr_op_set)
+            if not can_skip_using_EDGE_DO_NOT_DECOMP:
+                curr_op_set = _remove_invalid_ops_for_not_decompose(curr_op_set)
             ops_set_to_not_decompose = ops_set_to_not_decompose.union(curr_op_set)
             _sanity_check_graph_for_non_decomp_ops(
                 name,
@@ -1327,63 +1315,15 @@ def to_edge_transform_and_lower(
                 generate_error=True,
             )
 
+        preserve_ops = config.preserve_ops + list(ops_set_to_not_decompose)
         if config._check_ir_validity:
             EXIREdgeDialectVerifier(
                 edge_compile_config=config,
                 class_only=True,
-                preserve_ops=list(ops_set_to_not_decompose),
+                preserve_ops=preserve_ops,
             )()(program.graph_module)
 
     return edge_manager
-
-
-@experimental(
-    """
-    This is an experimental API which overloads to_edge by preserving specified ops to not be decomposed.
-    This function will be combined with to_edge in the future.
-    """
-)
-def to_edge_with_preserved_ops(
-    programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
-    constant_methods: Optional[Dict[str, Any]] = None,
-    compile_config: Optional[EdgeCompileConfig] = None,
-    preserve_ops: Tuple[torch._ops.OpOverload, ...] = (),
-) -> "EdgeProgramManager":
-    """
-    :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in
-    ATen dialect. Upon construction those programs are transformed into edge dialect.
-
-    Args:
-        programs: Can be a single ExportedProgram or a dictionary mapping function names to their corresponding ExportedPrograms. If only a single ExportedProgram is provided it will be assigned the name "forward".
-        constant_methods: An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.
-        compile_config: An optional argument used to provide greater control over the transformation to edge dialect process.
-        preserve_ops: An argument used to specify ops that should not be decomposed.
-
-    Returns:
-        EdgeProgramManager
-    """
-    assert not isinstance(constant_methods, EdgeCompileConfig)
-    config = compile_config or EdgeCompileConfig()
-    if not isinstance(programs, dict):
-        aten_programs = {"forward": programs}
-    else:
-        aten_programs = programs
-
-    edge_programs: Dict[str, ExportedProgram] = {}
-
-    for name, program in aten_programs.items():
-        # Decompose to Core ATen
-        table = _default_decomposition_table()
-        for op in preserve_ops:
-            table.pop(op, None)
-        program = program.run_decompositions(table)
-        edge_programs[name] = _generate_edge_program(
-            name, config, program, preserve_ops=list(preserve_ops)
-        )
-
-    return EdgeProgramManager(
-        edge_programs, constant_methods, config, list(preserve_ops)
-    )
 
 
 @et_logger("to_edge")
@@ -1420,13 +1360,41 @@ def to_edge(
         table = _default_decomposition_table()
         preserve_ops = []
         if compile_config:
-            preserve_ops = compile_config._preserve_ops
-            for op in compile_config._preserve_ops:
+            preserve_ops = compile_config.preserve_ops
+            for op in compile_config.preserve_ops:
                 table.pop(op, None)
         program = program.run_decompositions(table)
+
+        if config._check_ir_validity:
+            # Remove invalid assert ops, such as _assert_tensor_metadata.
+            # This pass is run in _generate_edge_program; it is required here to
+            # ensure the graph is in ATen dialect before verification.
+            gm = program.graph_module
+            gm_res = RemoveNonCoreAtenOpGraphAssertsPass()(gm)
+            assert gm_res is not None
+            gm = gm_res.graph_module
+            try:
+                EXIRATenDialectVerifier(
+                    edge_compile_config=config,
+                    class_only=False,
+                )(gm)
+            except ExportError as e:
+                logging.info(f"Input program {name} is not in ATen dialect.")
+                raise e
+
         edge_programs[name] = _generate_edge_program(
-            name, config, program, preserve_ops=preserve_ops
+            config, program, preserve_ops=preserve_ops
         )
+        if config._check_ir_validity:
+            try:
+                EXIREdgeDialectVerifier(
+                    edge_compile_config=config,
+                    class_only=True,
+                    preserve_ops=preserve_ops,
+                )()(edge_programs[name].graph_module)
+            except ExportError as e:
+                logging.info(f"Input program {name} is not in Edge dialect.")
+                raise e
 
     return EdgeProgramManager(edge_programs, constant_methods, config)
 

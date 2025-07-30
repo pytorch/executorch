@@ -15,9 +15,10 @@ from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 from typing import Any, Tuple
 
 from executorch.backends.cadence.aot.compiler import (
+    convert_pt2,
     export_to_executorch_gen_etrecord,
     fuse_pt2,
-    prepare_and_convert_pt2,
+    prepare_pt2,
     trace,
 )
 
@@ -52,8 +53,15 @@ def export_model(
     # Trace the model
     ep = trace(model, example_inputs)
 
+    # Prepare the model
+    prepared_gm = prepare_pt2(ep, quantizer)
+
+    # Calibrate the model
+    for samples in [example_inputs]:
+        prepared_gm(*samples)
+
     # Convert the model
-    converted_model = prepare_and_convert_pt2(ep, example_inputs, quantizer)
+    converted_model = convert_pt2(prepared_gm)
 
     # Get reference outputs from converted model
     ref_outputs = converted_model(*example_inputs)
