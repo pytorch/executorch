@@ -331,7 +331,7 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
     const auto& method_name = pair.first;
     auto& value = pair.second;
 
-    if (method_names.count(method_name)) {
+    if (method_names.contains(method_name)) {
       auto get_result = module->get(method_name);
       value = get_result.get().toScalar().to<decltype(metadata)::mapped_type>();
     } else {
@@ -361,7 +361,7 @@ std::unordered_set<uint64_t> get_eos_ids(
   }
   const auto method_names = method_names_result.get();
 
-  if (method_names.count(llm::kEosIds)) {
+  if (method_names.contains(llm::kEosIds)) {
     eos_ids.clear();
     auto execute_result = module->execute(llm::kEosIds);
     if (execute_result.error() != Error::Ok) {
