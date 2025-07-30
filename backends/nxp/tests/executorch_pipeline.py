@@ -12,11 +12,11 @@ from executorch import exir
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
-from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import (
-    RemoveIOQuantOpsPass,
-)
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
+)
+from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
+    RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
