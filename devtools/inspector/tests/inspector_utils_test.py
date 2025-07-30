@@ -654,6 +654,95 @@ class TestInspectorUtils(unittest.TestCase):
             exported_program_debug_handles[0], edge_dialect_program_debug_handles[1]
         )
 
+    def test_equip_debug_handle_to_strict_export_program_success(self):
+        """Test that propagate_back_debug_handle returns True and properly equips debug handles."""
+        # Create a test model
+        model = models.FeedForwardBlock(5, 10)
+        inputs = (torch.rand(5, 5),)
+
+        # Export the model
+        exported_program = export(model, inputs, strict=True)
+        export_graph_id = id(exported_program.graph)
+
+        # Convert to edge dialect
+        edge_dialect_program = to_edge(exported_program).exported_program()
+
+        # Call propagate_back_debug_handle
+        result = propagate_back_debug_handle(
+            exported_program, export_graph_id, edge_dialect_program
+        )
+
+        self.assertTrue(result)
+
+        # Check that debug handles are properly equipped in the exported program
+        exported_program_debug_handles = []
+        for node in exported_program.graph.nodes:
+            if node.op not in ("placeholder", "output"):
+                self.assertIn(DEBUG_HANDLE_KEY, node.meta)
+                self.assertIsNotNone(node.meta[DEBUG_HANDLE_KEY])
+                exported_program_debug_handles.append(node.meta[DEBUG_HANDLE_KEY])
+
+        edge_dialect_program_debug_handles = []
+        for node in edge_dialect_program.graph.nodes:
+            if node.op not in ("placeholder", "output"):
+                self.assertIn(DEBUG_HANDLE_KEY, node.meta)
+                self.assertIsNotNone(node.meta[DEBUG_HANDLE_KEY])
+                edge_dialect_program_debug_handles.append(node.meta[DEBUG_HANDLE_KEY])
+
+        # The 0th operator in the exported program (layer_norm) has been decomposed into 0th and 1st ops in edge dialect graph (native_layer_norm and getitem)
+        # So they should have the same debug handle
+        self.assertEqual(
+            exported_program_debug_handles[0], edge_dialect_program_debug_handles[0]
+        )
+        self.assertEqual(
+            exported_program_debug_handles[0], edge_dialect_program_debug_handles[1]
+        )
+
+    def test_equip_debug_handle_to_reexport_program_success(self):
+        """Test that propagate_back_debug_handle returns True and properly equips debug handles."""
+        # Create a test model
+        model = models.FeedForwardBlock(5, 10)
+        inputs = (torch.rand(5, 5),)
+
+        # Export the model
+        init_export_program = export(model, inputs)
+        exported_program = export(init_export_program.module(), inputs)
+        export_graph_id = id(exported_program.graph)
+
+        # Convert to edge dialect
+        edge_dialect_program = to_edge(exported_program).exported_program()
+
+        # Call propagate_back_debug_handle
+        result = propagate_back_debug_handle(
+            exported_program, export_graph_id, edge_dialect_program
+        )
+
+        self.assertTrue(result)
+
+        # Check that debug handles are properly equipped in the exported program
+        exported_program_debug_handles = []
+        for node in exported_program.graph.nodes:
+            if node.op not in ("placeholder", "output"):
+                self.assertIn(DEBUG_HANDLE_KEY, node.meta)
+                self.assertIsNotNone(node.meta[DEBUG_HANDLE_KEY])
+                exported_program_debug_handles.append(node.meta[DEBUG_HANDLE_KEY])
+
+        edge_dialect_program_debug_handles = []
+        for node in edge_dialect_program.graph.nodes:
+            if node.op not in ("placeholder", "output"):
+                self.assertIn(DEBUG_HANDLE_KEY, node.meta)
+                self.assertIsNotNone(node.meta[DEBUG_HANDLE_KEY])
+                edge_dialect_program_debug_handles.append(node.meta[DEBUG_HANDLE_KEY])
+
+        # The 0th operator in the exported program (layer_norm) has been decomposed into 0th and 1st ops in edge dialect graph (native_layer_norm and getitem)
+        # So they should have the same debug handle
+        self.assertEqual(
+            exported_program_debug_handles[0], edge_dialect_program_debug_handles[0]
+        )
+        self.assertEqual(
+            exported_program_debug_handles[0], edge_dialect_program_debug_handles[1]
+        )
+
     def test_equip_debug_handle_to_export_program_failure(self):
         """Test that propagate_back_debug_handle returns False when there's a mismatch."""
         # Create a test model
