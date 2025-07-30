@@ -42,6 +42,8 @@ sub2_test_data = {
         torch.randn(1, 4, 4, 1),
         torch.randn(1, 1, 4, 4),
     ),
+    "rand_3d_rand_Scalar": lambda: (torch.rand(1, 6, 2), torch.rand(1)),
+    "rand_3d_Scalar": lambda: (torch.rand(1, 6, 2), 1),
 }
 fvp_sub2_xfails = {"rand_4D_2x2x4x4": "MLETORCH-517 : Multiple batches not supported"}
 
@@ -93,7 +95,6 @@ def test_sub_tensor_tosa_BI(test_data):
         aten_op,
         exir_op,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
@@ -106,7 +107,6 @@ def test_sub_tensor_tosa_BI_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
         aten_op,
         exir_op,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
@@ -121,7 +121,6 @@ def test_sub_tensor_u55_BI(test_data):
         exir_op,
         run_on_fvp=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
@@ -136,7 +135,6 @@ def test_sub_tensor_u55_BI_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
         exir_op,
         run_on_fvp=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
@@ -151,7 +149,6 @@ def test_sub_tensor_u85_BI_2(test_data):
         exir_op,
         run_on_fvp=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
@@ -166,5 +163,4 @@ def test_sub_tensor_u85_BI(test_data: Tuple[torch.Tensor, torch.Tensor]):
         exir_op,
         run_on_fvp=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

@@ -61,11 +61,6 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
                 recipe_type, is_per_channel=True, is_dynamic=True
             )
 
-        elif recipe_type == XNNPackRecipeType.INT8_DYNAMIC_PER_TENSOR:
-            return self._build_quantized_recipe(
-                recipe_type, is_per_channel=False, is_dynamic=True
-            )
-
         elif recipe_type == XNNPackRecipeType.INT8_STATIC_PER_CHANNEL:
             return self._build_quantized_recipe(
                 recipe_type, is_per_channel=True, is_dynamic=False

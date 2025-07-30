@@ -193,12 +193,12 @@ GPU!
 
 ```shell
 # Build a model runner binary linked with the Vulkan delegate libs
-cmake --build cmake-android-out --target vulkan_executor_runner -j32
+cmake --build cmake-android-out --target executor_runner -j32
 
 # Push model to device
 adb push vk_add.pte /data/local/tmp/vk_add.pte
 # Push binary to device
-adb push cmake-android-out/backends/vulkan/vulkan_executor_runner /data/local/tmp/runner_bin
+adb push cmake-android-out/executor_runner /data/local/tmp/runner_bin
 
 # Run the model
 adb shell /data/local/tmp/runner_bin --model_path /data/local/tmp/vk_add.pte
