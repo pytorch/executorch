@@ -279,6 +279,134 @@ at::Tensor dequantize_affine_reference_impl(
       std::string("INT"));
 }
 
+std::tuple<at::Tensor, at::Tensor> choose_qparams_affine_reference_impl(
+    const at::Tensor& input_,
+    const std::string& mapping_type,
+    const std::vector<int64_t>& block_size,
+    int64_t quant_min,
+    int64_t quant_max,
+    double eps) {
+  const int64_t ndim = input_.dim();
+  _check_dims("input", block_size.size(), ndim);
+
+  VK_CHECK_COND(
+      input_.scalar_type() == at::kFloat || input_.scalar_type() == at::kHalf ||
+          input_.scalar_type() == at::kBFloat16,
+      "Unsupported input dtype: ",
+      input_.dtype());
+
+  at::Tensor input = input_.contiguous();
+
+  std::vector<int64_t> shape_for_reduction;
+  std::vector<int64_t> reduction_dims;
+  int64_t cur_dim = 0;
+
+  auto in_sizes = input.sizes();
+  for (int64_t i = 0; i < ndim; ++i) {
+    const int64_t blk = block_size[i];
+    const int64_t dim = in_sizes[i];
+
+    if (blk != dim && blk > 1) {
+      VK_CHECK_COND(
+          dim % blk == 0,
+          "Input size ",
+          dim,
+          " is not divisible by block_size ",
+          blk,
+          " at dimension ",
+          i);
+      shape_for_reduction.push_back(dim / blk);
+      shape_for_reduction.push_back(blk);
+      reduction_dims.push_back(cur_dim + 1);
+      cur_dim += 2;
+    } else {
+      shape_for_reduction.push_back(dim);
+      if (blk != 1) {
+        reduction_dims.push_back(cur_dim);
+      }
+      cur_dim += 1;
+    }
+  }
+
+  at::Tensor input_reshaped = input.view(shape_for_reduction);
+
+  std::vector<int64_t> shape_after_reduction = shape_for_reduction;
+  for (int64_t d : reduction_dims) {
+    shape_after_reduction[d] = 1;
+  }
+
+  at::Tensor min_val = input_reshaped.amin(reduction_dims, /*keepdim=*/true);
+  at::Tensor max_val = input_reshaped.amax(reduction_dims, /*keepdim=*/true);
+
+  at::Tensor scale, zero_point;
+
+  if (mapping_type == "ASYMMETRIC") {
+    // Include zero in the range
+    min_val = at::minimum(min_val, at::zeros_like(min_val));
+    max_val = at::maximum(max_val, at::zeros_like(max_val));
+
+    // Calculate scale
+    scale = (max_val - min_val) / (quant_max - quant_min);
+    scale = at::maximum(scale, at::full_like(scale, eps));
+
+    // Calculate zero_point
+    zero_point = at::round(quant_min - min_val / scale);
+    zero_point = at::clamp(zero_point, quant_min, quant_max);
+  } else if (mapping_type == "SYMMETRIC") {
+    // Include zero in the range
+    min_val = at::minimum(min_val, at::zeros_like(min_val));
+    max_val = at::maximum(max_val, at::zeros_like(max_val));
+
+    // Calculate max absolute value
+    at::Tensor abs_min = at::abs(min_val);
+    at::Tensor abs_max = at::abs(max_val);
+    at::Tensor M = at::maximum(abs_min, abs_max);
+
+    // Calculate scale
+    scale = M / ((quant_max - quant_min) * 0.5);
+    scale = at::maximum(scale, at::full_like(scale, eps));
+
+    // Calculate zero_point (mid-point)
+    zero_point =
+        at::full_like(scale, (quant_max + quant_min + 1) / 2, at::kInt);
+  } else if (mapping_type == "SYMMETRIC_NO_CLIPPING_ERR") {
+    // Include zero in the range
+    min_val = at::minimum(min_val, at::zeros_like(min_val));
+    max_val = at::maximum(max_val, at::zeros_like(max_val));
+
+    // Calculate scale based on min/max values
+    at::Tensor s_min = at::abs(min_val) / std::abs(quant_min);
+    at::Tensor s_max = max_val / quant_max;
+    scale = at::maximum(s_min, s_max);
+    scale = at::maximum(scale, at::full_like(scale, eps));
+
+    // Calculate zero_point (mid-point)
+    zero_point =
+        at::full_like(scale, (quant_max + quant_min + 1) / 2, at::kInt);
+  } else {
+    VK_CHECK_COND(
+        false,
+        "Unsupported mapping_type: ",
+        mapping_type,
+        ". Expected ASYMMETRIC, SYMMETRIC, or SYMMETRIC_NO_CLIPPING_ERR");
+  }
+
+  std::vector<int64_t> output_shape;
+  for (size_t i = 0; i < shape_after_reduction.size(); ++i) {
+    if (shape_after_reduction[i] != 1 ||
+        std::find(reduction_dims.begin(), reduction_dims.end(), i) ==
+            reduction_dims.end()) {
+      output_shape.push_back(shape_after_reduction[i]);
+    }
+  }
+
+  // Reshape scale and zero_point to final output shape
+  scale = scale.view(output_shape);
+  zero_point = zero_point.view(output_shape);
+
+  return std::make_tuple(scale, zero_point);
+}
+
 void test_vulkan_quantize_affine_impl(
     const std::vector<int>& input_sizes,
     const std::vector<int64_t>& block_size,
@@ -856,4 +984,396 @@ TEST(VulkanDequantizeAffineTest, test_4d_dequantization) {
       127, // quant_max (char max)
       at::kChar, // input dtype
       at::kFloat); // output dtype
+}
+
+void test_vulkan_choose_qparams_affine_impl(
+    const std::vector<int>& input_sizes,
+    const std::vector<int64_t>& block_size,
+    const std::string& mapping_type,
+    int64_t quant_min,
+    int64_t quant_max,
+    double eps,
+    at::ScalarType in_dtype = at::kFloat,
+    const vkcompute::utils::StorageType in_storage =
+        vkcompute::utils::kTexture3D,
+    const vkcompute::utils::StorageType out_storage =
+        vkcompute::utils::kBuffer) {
+  // Create input tensor with random values
+  std::vector<int64_t> input_sizes_int64(
+      input_sizes.begin(), input_sizes.end());
+  at::Tensor input =
+      at::rand(input_sizes_int64, at::device(at::kCPU).dtype(in_dtype));
+
+  // Get reference output
+  auto reference_out = choose_qparams_affine_reference_impl(
+      input, mapping_type, block_size, quant_min, quant_max, eps);
+
+  at::Tensor reference_scale = std::get<0>(reference_out);
+  at::Tensor reference_zero_point = std::get<1>(reference_out);
+
+  reference_zero_point = reference_zero_point.to(at::kInt);
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(in_storage);
+  ComputeGraph graph(config);
+
+  IOValueRef r_input = graph.add_input_tensor(
+      input.sizes().vec(), from_at_scalartype(input.scalar_type()), in_storage);
+
+  // Create mapping_type as string
+  std::string mapping_type_copy = mapping_type;
+  const ValueRef r_mapping_type =
+      graph.add_string(std::move(mapping_type_copy));
+
+  // Create block_size as IntList
+  std::vector<int64_t> block_size_copy(block_size);
+  const ValueRef r_block_size =
+      graph.add_scalar_list<int64_t>(std::move(block_size_copy));
+
+  // Create target_dtype, quant_min, quant_max, eps
+  const ValueRef r_target_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(at::kChar));
+  const ValueRef r_quant_min = graph.add_scalar<int64_t>(quant_min);
+  const ValueRef r_quant_max = graph.add_scalar<int64_t>(quant_max);
+  const ValueRef r_eps = graph.add_scalar<double>(eps);
+
+  // Create scale_dtype and zero_point_dtype
+  const ValueRef r_scale_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(at::kFloat));
+  const ValueRef r_zero_point_dtype =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(at::kInt));
+
+  // Create output tuple
+  std::vector<ValueRef> out_tuple;
+
+  // Create scale and zero_point output tensors
+  const ValueRef r_scale_out = graph.add_tensor(
+      reference_scale.sizes().vec(), vkapi::kFloat, out_storage);
+  const ValueRef r_zero_point_out = graph.add_tensor(
+      reference_zero_point.sizes().vec(), vkapi::kInt, out_storage);
+
+  out_tuple.push_back(r_scale_out);
+  out_tuple.push_back(r_zero_point_out);
+
+  const ValueRef r_out_tuple = graph.add_value_list(std::move(out_tuple));
+
+  VK_GET_OP_FN("torchao.choose_qparams_affine.default")
+  (graph,
+   {
+       r_input.value,
+       r_mapping_type,
+       r_block_size,
+       r_target_dtype,
+       r_quant_min,
+       r_quant_max,
+       r_eps,
+       r_scale_dtype,
+       r_zero_point_dtype,
+       r_out_tuple,
+   });
+
+  ValueRef staging_scale = graph.set_output_tensor(r_scale_out);
+  ValueRef staging_zero_point = graph.set_output_tensor(r_zero_point_out);
+
+  graph.prepare();
+  graph.prepack();
+  graph.encode_execute();
+
+  // Copy input data to GPU
+  graph.copy_into_staging(
+      r_input.staging, input.const_data_ptr(), input.numel());
+
+  // Execute the graph
+  graph.execute();
+
+  // Copy output data back to CPU
+  at::Tensor vk_scale = at::empty_like(reference_scale).contiguous();
+  at::Tensor vk_zero_point = at::empty_like(reference_zero_point).contiguous();
+
+  graph.copy_from_staging(
+      staging_scale, vk_scale.mutable_data_ptr(), vk_scale.numel());
+  graph.copy_from_staging(
+      staging_zero_point,
+      vk_zero_point.mutable_data_ptr(),
+      vk_zero_point.numel());
+
+  // Compare outputs
+  const bool scale_correct =
+      at::allclose(reference_scale, vk_scale, /*rtol=*/1e-3, /*atol=*/1e-3);
+
+  // For zero point, we need to compare as integers since zero point should be
+  // an integer First convert both tensors to int if they aren't already
+  at::Tensor ref_zp_int = reference_zero_point.to(at::kInt);
+  at::Tensor vk_zp_int = vk_zero_point.to(at::kInt);
+  const bool zero_point_correct = at::equal(ref_zp_int, vk_zp_int);
+
+  if (!scale_correct || !zero_point_correct) {
+    std::cout << "\nFailed with parameters:" << std::endl;
+    std::cout << "  input_sizes: [";
+    for (size_t i = 0; i < input_sizes.size(); i++) {
+      std::cout << input_sizes[i] << (i < input_sizes.size() - 1 ? ", " : "");
+    }
+    std::cout << "]" << std::endl;
+    std::cout << "  block_size: [";
+    for (size_t i = 0; i < block_size.size(); i++) {
+      std::cout << block_size[i] << (i < block_size.size() - 1 ? ", " : "");
+    }
+    std::cout << "]" << std::endl;
+    std::cout << "  mapping_type: " << mapping_type << std::endl;
+    std::cout << "  quant_min: " << quant_min << std::endl;
+    std::cout << "  quant_max: " << quant_max << std::endl;
+    std::cout << "  eps: " << eps << std::endl;
+    std::cout << "  storage type: "
+              << (in_storage == vkcompute::utils::kBuffer ? "buffer"
+                                                          : "texture")
+              << std::endl;
+
+    if (!scale_correct || !zero_point_correct) {
+      std::cout << "input:" << std::endl;
+      std::cout << input << std::endl;
+
+      std::cout << "reference_scale:" << std::endl
+                << reference_scale << std::endl;
+      std::cout << "vulkan_scale:" << std::endl << vk_scale << std::endl;
+
+      std::cout << "reference_zero_point:" << std::endl
+                << reference_zero_point << std::endl;
+      std::cout << "vulkan_zero_point:" << std::endl
+                << vk_zero_point << std::endl;
+    }
+  }
+
+  ASSERT_TRUE(scale_correct);
+  ASSERT_TRUE(zero_point_correct);
+}
+
+// Wrapper function to test both buffer and texture storage types
+void test_vulkan_choose_qparams_affine(
+    const std::vector<int>& input_sizes,
+    const std::vector<int64_t>& block_size,
+    const std::string& mapping_type,
+    int64_t quant_min,
+    int64_t quant_max,
+    double eps,
+    at::ScalarType in_dtype = at::kFloat) {
+  // Test with buffer storage for both input and output
+  test_vulkan_choose_qparams_affine_impl(
+      input_sizes,
+      block_size,
+      mapping_type,
+      quant_min,
+      quant_max,
+      eps,
+      in_dtype,
+      vkcompute::utils::kBuffer,
+      vkcompute::utils::kBuffer);
+
+  // Test with texture storage for input and buffer storage for output
+  // (shader always uses buffer storage for outputs)
+  test_vulkan_choose_qparams_affine_impl(
+      input_sizes,
+      block_size,
+      mapping_type,
+      quant_min,
+      quant_max,
+      eps,
+      in_dtype,
+      vkcompute::utils::kTexture3D,
+      vkcompute::utils::kBuffer);
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_1d_asymmetric) {
+  // 1D: 12 Tensor, block_size is 3
+  test_vulkan_choose_qparams_affine(
+      {12}, // input_sizes
+      {3}, // block_size
+      "ASYMMETRIC", // mapping_type
+      -128, // quant_min (char min)
+      127, // quant_max (char max)
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_2d_symmetric) {
+  // 2D: 8x6 Tensor, block_size is 2x3
+  test_vulkan_choose_qparams_affine(
+      {8, 6}, // input_sizes
+      {2, 3}, // block_size
+      "SYMMETRIC", // mapping_type
+      -128, // quant_min (char min)
+      127, // quant_max (char max)
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_3d_symmetric_no_clipping) {
+  // 3D: 6x4x6 Tensor, block_size is 3x2x2
+  test_vulkan_choose_qparams_affine(
+      {6, 4, 6}, // input_sizes
+      {3, 2, 2}, // block_size
+      "SYMMETRIC_NO_CLIPPING_ERR", // mapping_type
+      -128, // quant_min (char min)
+      127, // quant_max (char max)
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_4d_asymmetric) {
+  // 4D: 4x6x6x6 Tensor, block_size is 2x3x2x3
+  test_vulkan_choose_qparams_affine(
+      {4, 6, 6, 6}, // input_sizes (reduced from 8 to 4 to make test faster)
+      {2, 3, 2, 3}, // block_size
+      "ASYMMETRIC", // mapping_type
+      -128, // quant_min (char min)
+      127, // quant_max (char max)
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_per_tensor) {
+  // Per-tensor: block_size equals tensor size
+  test_vulkan_choose_qparams_affine(
+      {4, 6, 8}, // input_sizes
+      {4, 6, 8}, // block_size equals tensor size
+      "ASYMMETRIC", // mapping_type
+      -128, // quant_min (char min)
+      127, // quant_max (char max)
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_per_token) {
+  // Per-token: block_size is all 1s except last dimension
+  test_vulkan_choose_qparams_affine(
+      {4, 6, 8}, // input_sizes
+      {1, 1, 8}, // block_size is all 1s except last dimension
+      "ASYMMETRIC", // mapping_type
+      -128, // quant_min (char min)
+      127, // quant_max (char max)
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+// Additional tests for choose_qparams_affine
+
+TEST(VulkanChooseQParamsAffineTest, test_uint8_range) {
+  // Test with uint8 range (0-255)
+  test_vulkan_choose_qparams_affine(
+      {6, 8}, // input_sizes
+      {2, 4}, // block_size
+      "ASYMMETRIC", // mapping_type
+      0, // quant_min (uint8 min)
+      255, // quant_max (uint8 max)
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_int16_range) {
+  // Test with int16 range (-32768 to 32767)
+  test_vulkan_choose_qparams_affine(
+      {6, 8}, // input_sizes
+      {2, 4}, // block_size
+      "SYMMETRIC", // mapping_type
+      -32768, // quant_min (int16 min)
+      32767, // quant_max (int16 max)
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_larger_eps) {
+  // Test with larger epsilon value
+  test_vulkan_choose_qparams_affine(
+      {6, 8}, // input_sizes
+      {2, 4}, // block_size
+      "ASYMMETRIC", // mapping_type
+      -128, // quant_min
+      127, // quant_max
+      1e-2, // larger eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_per_channel_first_dim) {
+  // Per-channel quantization on first dimension
+  test_vulkan_choose_qparams_affine(
+      {8, 6, 4}, // input_sizes
+      {1, 6, 4}, // block_size (per-channel on dim 0)
+      "SYMMETRIC", // mapping_type
+      -128, // quant_min
+      127, // quant_max
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_per_channel_middle_dim) {
+  // Per-channel quantization on middle dimension
+  test_vulkan_choose_qparams_affine(
+      {4, 8, 6}, // input_sizes
+      {4, 1, 6}, // block_size (per-channel on dim 1)
+      "SYMMETRIC", // mapping_type
+      -128, // quant_min
+      127, // quant_max
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_mixed_block_sizes) {
+  // Mixed block sizes (some dimensions fully quantized, some partially)
+  test_vulkan_choose_qparams_affine(
+      {8, 6, 10}, // input_sizes
+      {4, 6, 2}, // block_size (mixed: partial, full, partial)
+      "ASYMMETRIC", // mapping_type
+      -128, // quant_min
+      127, // quant_max
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_small_tensor) {
+  // Test with a small tensor
+  test_vulkan_choose_qparams_affine(
+      {2, 3}, // small input_sizes
+      {2, 3}, // block_size (full tensor)
+      "ASYMMETRIC", // mapping_type
+      -128, // quant_min
+      127, // quant_max
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_asymmetric_narrow_range) {
+  // Test with a narrow quantization range
+  test_vulkan_choose_qparams_affine(
+      {6, 8}, // input_sizes
+      {2, 4}, // block_size
+      "ASYMMETRIC", // mapping_type
+      -10, // quant_min (narrow range)
+      10, // quant_max (narrow range)
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_symmetric_narrow_range) {
+  // Test with a narrow quantization range with symmetric mapping
+  test_vulkan_choose_qparams_affine(
+      {6, 8}, // input_sizes
+      {2, 4}, // block_size
+      "SYMMETRIC", // mapping_type
+      -10, // quant_min (narrow range)
+      10, // quant_max (narrow range)
+      1e-5, // eps
+      at::kFloat); // input dtype
+}
+
+TEST(VulkanChooseQParamsAffineTest, test_symmetric_no_clipping_narrow_range) {
+  // Test with a narrow quantization range with symmetric no clipping mapping
+  test_vulkan_choose_qparams_affine(
+      {6, 8}, // input_sizes
+      {2, 4}, // block_size
+      "SYMMETRIC_NO_CLIPPING_ERR", // mapping_type
+      -10, // quant_min (narrow range)
+      10, // quant_max (narrow range)
+      1e-5, // eps
+      at::kFloat); // input dtype
 }
