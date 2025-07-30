@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <numeric>
 #include <tuple>
 #include <unordered_map>
 #include <vector>
@@ -44,14 +45,17 @@ class StaticKVCache {
       size_t n_heads_per_cache = 1,
       StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK)
       : n_caches_(n_caches),
-        cache_len_(cache_len),
+        cache_len_(n_caches_, cache_len),
+        cache_pos_(n_caches_, 0),
         max_input_len_(max_input_len),
         n_heads_per_cache_(n_heads_per_cache),
         head_dim_(head_dim),
         style_(style),
         input_ptrs_(n_caches_),
         output_ptrs_(n_caches_) {
-    cache_data_size_ = n_caches_ * n_heads_per_cache_ * cache_len_ * head_dim_;
+    size_t total_cache_len =
+        std::accumulate(cache_len_.begin(), cache_len_.end(), 0);
+    cache_data_size_ = total_cache_len * n_heads_per_cache_ * head_dim_;
     update_data_size_ =
         n_caches_ * n_heads_per_cache_ * max_input_len_ * head_dim_;
 
@@ -122,7 +126,7 @@ class StaticKVCache {
       ET_CHECK_MSG(inSizes[ndim - 1] == head_dim_, "KV head dim mismatch.");
       ET_CHECK_MSG(outSizes[ndim - 1] == head_dim_, "KV head dim mismatch.");
       ET_CHECK_MSG(
-          inSizes[ndim - 2] == cache_len_, "Cache length dim mismatch.");
+          inSizes[ndim - 2] == cache_len_[i], "Cache length dim mismatch.");
 
       auto impl = ::executorch::runtime::etensor::TensorImpl(
           inMeta->scalar_type(),
@@ -150,55 +154,88 @@ class StaticKVCache {
   void update(
       torch::executor::Method& method,
       const std::vector<size_t>& output_indices,
-      size_t update_len,
+      size_t update_n,
       size_t update_pos = 0) {
-    if (valid_len_ + update_len > cache_len_) {
-      throw std::runtime_error("Cache capacity exceeded.");
-    }
-
     for (size_t i = 0; i < n_caches_; i++) {
       const auto& updateTensor =
           method.get_output(output_indices[i]).toTensor();
       ET_CHECK(output_ptrs_[i] == updateTensor.mutable_data_ptr<T>());
-      auto update_seq_len = updateTensor.size(updateTensor.dim() - 2);
-      for (size_t j = 0; j < n_heads_per_cache_; j++) {
-        auto* update_head = output_ptrs_[i] + update_seq_len * head_dim_ * j;
-        auto* cache_head = input_ptrs_[i] + cache_len_ * head_dim_ * j;
-        std::copy(
-            update_head + update_pos * head_dim_,
-            update_head + (update_pos + update_len) * head_dim_,
-            cache_head + valid_len_ * head_dim_);
-      }
+      size_t update_len = updateTensor.size(updateTensor.dim() - 2);
+      cache_pos_[i] = update_one_cache(
+          output_ptrs_[i],
+          update_len,
+          update_n,
+          update_pos,
+          input_ptrs_[i],
+          cache_len_[i],
+          cache_pos_[i]);
     }
-    valid_len_ += update_len;
   }
 
   /**
-   * Reset the cache. After this the cache contains no valid data and is ready
-   * for number of tokens up to the cache length.
+   * Reset the cache. After this the cache contains no valid data and the mask
+   * should be updated to reflect this.
    */
   void reset() {
-    valid_len_ = 0;
-  }
-
-  size_t size() {
-    return valid_len_;
+    std::fill(cache_pos_.begin(), cache_pos_.end(), 0);
   }
 
  private:
   void init_ptrs() {
     input_ptrs_.resize(n_caches_);
     output_ptrs_.resize(n_caches_);
+    size_t cache_data_offset = 0;
     for (size_t i = 0; i < n_caches_; i++) {
-      input_ptrs_[i] =
-          cache_data_ + i * n_heads_per_cache_ * cache_len_ * head_dim_;
+      input_ptrs_[i] = cache_data_ + cache_data_offset;
+      cache_data_offset += cache_len_[i] * n_heads_per_cache_ * head_dim_;
       output_ptrs_[i] =
           update_data_ + i * n_heads_per_cache_ * max_input_len_ * head_dim_;
     }
   }
 
+  size_t update_one_cache(
+      const T* update,
+      size_t update_len,
+      size_t update_n,
+      size_t update_pos,
+      T* cache,
+      size_t cache_len,
+      size_t cache_pos) {
+    size_t wrap_n = 0;
+    auto contiguous_n = cache_len - cache_pos;
+    if (update_n > contiguous_n) {
+      wrap_n = update_n - contiguous_n;
+      update_n = contiguous_n;
+    }
+
+    // Update & cache shape: (1, n_heads, seq_len, head_dim)
+    for (size_t head = 0; head < n_heads_per_cache_; head++) {
+      auto* update_head = update + update_len * head_dim_ * head;
+      auto* cache_head = cache + cache_len * head_dim_ * head;
+      std::copy(
+          update_head + update_pos * head_dim_,
+          update_head + (update_pos + update_n) * head_dim_,
+          cache_head + cache_pos * head_dim_);
+    }
+    cache_pos += update_n;
+
+    if (wrap_n > 0) {
+      return update_one_cache(
+          update,
+          update_len,
+          wrap_n,
+          update_pos + contiguous_n,
+          cache,
+          cache_len,
+          0);
+    }
+
+    return cache_pos;
+  }
+
   size_t n_caches_;
-  size_t cache_len_;
+  std::vector<size_t> cache_len_;
+  std::vector<size_t> cache_pos_;
   size_t max_input_len_;
   size_t n_heads_per_cache_;
   size_t head_dim_;
@@ -210,7 +247,6 @@ class StaticKVCache {
   T* update_data_;
   std::vector<T*> input_ptrs_;
   std::vector<T*> output_ptrs_;
-  size_t valid_len_ = 0;
 };
 
 template <typename T, typename AllocatorT = std::allocator<T>>
@@ -267,17 +303,20 @@ class StaticAttentionMask {
   }
 
   /**
-   * Update the mask to indicate update_len elements have been added to the
-   * cache. Note that update_len might be smaller than input_len_ when
-   * prefilling with padded inputs.
+   * Update the mask to indicate update_n elements have been added to the
+   * cache. Note that update_n might be smaller than input_len_ when prefilling
+   * with padded inputs.
    */
-  void unmask(size_t update_len) {
-    for (size_t i = 0; i < input_len_; i++) {
-      auto* p = data_ + (cache_len_ + input_len_) * i;
-      std::fill(
-          p + cache_valid_len_, p + cache_valid_len_ + update_len, zero_val_);
+  void unmask(size_t update_n) {
+    update_n = std::min(update_n, cache_len_ - cache_valid_len_);
+    if (update_n > 0) {
+      for (size_t i = 0; i < input_len_; i++) {
+        auto* p = data_ + (cache_len_ + input_len_) * i;
+        std::fill(
+            p + cache_valid_len_, p + cache_valid_len_ + update_n, zero_val_);
+      }
+      cache_valid_len_ += update_n;
     }
-    cache_valid_len_ += update_len;
   }
 
   void set_causal_mask() {
@@ -565,7 +604,7 @@ class StaticAttentionIOManager {
     set_input(method, config_.attn_mask_input_index, mask.get());
 
     std::vector<TokenT> generated_tokens;
-    while (kCaches_.size() + 1 <= config_.cache_len) {
+    while (true) {
       input_buffer[0] = prev_tok;
       prepare(method);
       ET_CHECK(method.execute() == executorch::runtime::Error::Ok);
@@ -629,7 +668,7 @@ class StaticAttentionIOManager {
         std::max(window_size * (ngram_size - 1), static_cast<size_t>(1));
     size_t n_inference = 0;
     std::fill(input_buffer.begin(), input_buffer.end(), prev_tok);
-    while (kCaches_.size() + 1 <= config_.cache_len) {
+    while (true) {
       input_buffer[0] = prev_tok;
       // Initialize verification branches.
       if (auto it = suffix_caches.find(prev_tok); it != suffix_caches.end()) {
@@ -697,9 +736,6 @@ class StaticAttentionIOManager {
              input_buffer[branch_offset + j] == match.back();
              j++) {
           match.emplace_back(output_toks[branch_offset + j]);
-          if (should_stop(match.back())) {
-            break;
-          }
         }
         if (match.size() > longest_match.size()) {
           longest_match = std::move(match);
@@ -724,8 +760,7 @@ class StaticAttentionIOManager {
             method,
             config_.k_cache_output_indices,
             config_.v_cache_output_indices,
-            std::min(
-                longest_match.size() - 1, config_.cache_len - kCaches_.size()),
+            longest_match.size() - 1,
             branch_offset);
       }
 
@@ -859,7 +894,7 @@ class StaticAttentionIOManager {
   }
 
   StaticAttentionIOConfig config_;
-  size_t input_pos_;
+  size_t input_pos_ = 0;
   StaticKVCache<CacheT, CacheAllocatorT> kCaches_;
   StaticKVCache<CacheT, CacheAllocatorT> vCaches_;
   std::unordered_map<size_t, StaticAttentionMask<MaskT, MaskAllocatorT>>

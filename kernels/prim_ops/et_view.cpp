@@ -66,7 +66,14 @@ bool get_view_target_size(
 } // namespace
 
 void et_view(KernelRuntimeContext& context, Span<EValue*> stack) {
-  (void)context;
+  ET_KERNEL_CHECK_MSG(
+      context,
+      stack.size() == 3,
+      InvalidProgram,
+      /* void */,
+      "Expected %zu args, got %zu",
+      (size_t)3,
+      stack.size());
 
   auto self = (*stack[0]).toTensor();
   auto size = (*stack[1]).toIntList();
