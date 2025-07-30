@@ -198,7 +198,7 @@ html_theme_options = {
         },
         {
             "name": "GitHub",
-            "url": "https://github.com/pytorch/<your-repo>",
+            "url": "https://github.com/pytorch/executorch",
             "icon": "fa-brands fa-github",
         },
         {
