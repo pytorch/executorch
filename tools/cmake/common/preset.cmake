@@ -30,6 +30,7 @@ endfunction()
 # Print the configured options.
 function(print_configured_options)
   get_property(_options GLOBAL PROPERTY _announce_configured_options)
+  list(SORT _options)
 
   set(_longest_name_length 0)
   foreach(_option IN LISTS _options)
