@@ -554,12 +554,7 @@ install(
   FILES_MATCHING
   PATTERN "*.h"
 )
-install(
-  TARGETS prim_ops_lib executorch_core
-  INCLUDES
-  DESTINATION ${_common_include_directories}
-)
-#prim_ops_lib install
+# ...existing code...
 install(
   TARGETS prim_ops_lib executorch_core
   INCLUDES

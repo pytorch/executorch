@@ -77,7 +77,6 @@ find_package(gflags REQUIRED)
 # find `executorch` libraries Same as for gflags
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
-# Note: target_link_options_shared_lib(prim_ops_lib) is now called automatically in executorch-config.cmake
 
 # llava_runner library
 add_subdirectory(runner)

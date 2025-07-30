@@ -30,7 +30,6 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 # find `executorch` libraries Same as for gflags
 find_package(executorch CONFIG REQUIRED PATHS ${EXECUTORCH_ROOT}/cmake-out)
-executorch_target_link_options_shared_lib(executorch)
 
 add_subdirectory(${EXECUTORCH_ROOT}/third-party/gflags gflags)
 set(link_libraries gflags)

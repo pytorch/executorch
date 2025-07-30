@@ -36,7 +36,7 @@ if(EXECUTORCH_CADENCE_CPU_RUNNER)
   # etdump, bundled_program.
   find_package(executorch CONFIG REQUIRED)
   # Note: target_link_options_shared_lib(prim_ops_lib) is now called automatically in executorch-config.cmake
-  target_link_options_shared_lib(portable_ops_lib)
+  
 
   target_include_directories(
     executorch INTERFACE ${_common_include_directories}
