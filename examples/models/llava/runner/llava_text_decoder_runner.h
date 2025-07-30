@@ -18,8 +18,10 @@ namespace example {
 class ET_EXPERIMENTAL LlavaTextDecoderRunner
     : public executorch::extension::llm::TextDecoderRunner {
  public:
-  explicit LlavaTextDecoderRunner(executorch::extension::Module* module)
-      : TextDecoderRunner(module) {}
+  explicit LlavaTextDecoderRunner(
+      executorch::extension::Module* module,
+      executorch::extension::llm::IOManager* io_manager)
+      : TextDecoderRunner(module, io_manager) {}
 
   inline executorch::runtime::Result<executorch::aten::Tensor> step(
       executorch::extension::TensorPtr& tokens,

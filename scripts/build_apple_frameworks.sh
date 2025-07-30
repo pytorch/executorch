@@ -34,6 +34,58 @@ libextension_module.a,\
 libextension_tensor.a,\
 :${FRAMEWORK_EXECUTORCH_HEADERS_DIR}:${FRAMEWORK_EXECUTORCH_MODULE_NAME}"
 
+FRAMEWORK_EXECUTORCH_LLM_NAME="executorch_llm"
+FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME="ExecuTorchLLM"
+FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR="${FRAMEWORK_EXECUTORCH_LLM_NAME}_include"
+FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH="${OUTPUT_DIR}/${FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR}"
+FRAMEWORK_EXECUTORCH_LLM="${FRAMEWORK_EXECUTORCH_LLM_NAME}:\
+libabsl_base.a,\
+libabsl_city.a,\
+libabsl_decode_rust_punycode.a,\
+libabsl_demangle_internal.a,\
+libabsl_demangle_rust.a,\
+libabsl_examine_stack.a,\
+libabsl_graphcycles_internal.a,\
+libabsl_hash.a,\
+libabsl_int128.a,\
+libabsl_kernel_timeout_internal.a,\
+libabsl_leak_check.a,\
+libabsl_log_globals.a,\
+libabsl_log_internal_check_op.a,\
+libabsl_log_internal_format.a,\
+libabsl_log_internal_globals.a,\
+libabsl_log_internal_log_sink_set.a,\
+libabsl_log_internal_message.a,\
+libabsl_log_internal_nullguard.a,\
+libabsl_log_internal_proto.a,\
+libabsl_log_severity.a,\
+libabsl_log_sink.a,\
+libabsl_low_level_hash.a,\
+libabsl_malloc_internal.a,\
+libabsl_raw_hash_set.a,\
+libabsl_raw_logging_internal.a,\
+libabsl_spinlock_wait.a,\
+libabsl_stacktrace.a,\
+libabsl_str_format_internal.a,\
+libabsl_strerror.a,\
+libabsl_strings.a,\
+libabsl_strings_internal.a,\
+libabsl_symbolize.a,\
+libabsl_synchronization.a,\
+libabsl_throw_delegate.a,\
+libabsl_time.a,\
+libabsl_time_zone.a,\
+libabsl_tracing_internal.a,\
+libabsl_utf8_for_code_point.a,\
+libextension_llm_apple.a,\
+libextension_llm_runner.a,\
+libpcre2-8.a,\
+libre2.a,\
+libregex_lookahead.a,\
+libsentencepiece.a,\
+libtokenizers.a,\
+:${FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR}"
+
 FRAMEWORK_THREADPOOL="threadpool:\
 libcpuinfo.a,\
 libextension_threadpool.a,\
@@ -171,6 +223,8 @@ done
 
 echo "Exporting headers"
 
+# FRAMEWORK_EXECUTORCH
+
 mkdir -p "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 
 "$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
@@ -195,9 +249,22 @@ cp -r $FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c
 
 cp "$SOURCE_ROOT_DIR/extension/apple/$FRAMEWORK_EXECUTORCH_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 
-cat > "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME/module.modulemap" << EOF
+cat > "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/module.modulemap" << EOF
 module ${FRAMEWORK_EXECUTORCH_MODULE_NAME} {
-  umbrella header "${FRAMEWORK_EXECUTORCH_MODULE_NAME}.h"
+  umbrella header "${FRAMEWORK_EXECUTORCH_MODULE_NAME}/${FRAMEWORK_EXECUTORCH_MODULE_NAME}.h"
+  export *
+}
+EOF
+
+# FRAMEWORK_EXECUTORCH_LLM
+
+mkdir -p "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME"
+
+cp "$SOURCE_ROOT_DIR/extension/llm/apple/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME"
+
+cat > "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME/module.modulemap" << EOF
+module ${FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME} {
+  umbrella header "${FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME}.h"
   export *
 }
 EOF
@@ -236,6 +303,7 @@ for mode in "${MODES[@]}"; do
   done
 
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH" "$mode"
+  append_framework_flag "" "$FRAMEWORK_EXECUTORCH_LLM" "$mode"
   append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_MPS" "$FRAMEWORK_BACKEND_MPS" "$mode"
@@ -255,6 +323,7 @@ for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
 done
 
 rm -rf "$FRAMEWORK_EXECUTORCH_HEADERS_PATH"
+rm -rf "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
 
 echo "Running tests"
 
