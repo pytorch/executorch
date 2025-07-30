@@ -61,7 +61,7 @@ DEFINE_string(
 
 DEFINE_int32(
     batch_size,
-    1,
+    4,
     "Batch size for training."); // Batch size for training (must match
                                  // export batch size)
 

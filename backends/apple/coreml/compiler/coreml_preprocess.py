@@ -28,6 +28,8 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
+from executorch.backends.apple.coreml.compiler.torch_ops import *  # noqa: F401, F403
+
 
 class COMPILE_SPEC_KEYS(Enum):
     COMPUTE_UNITS = "compute_units"

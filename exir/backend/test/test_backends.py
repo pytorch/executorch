@@ -1033,7 +1033,7 @@ class TestBackends(unittest.TestCase):
 
         def f(x, y):
             x = x + y
-            x = torch.ops.higher_order.cond(x[0][0] == 1, true_fn, false_fn, [x, y])
+            x = torch.cond(x[0][0] == 1, true_fn, false_fn, [x, y])
             x = x - y
             return x
 

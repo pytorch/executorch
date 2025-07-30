@@ -500,7 +500,6 @@ def get_quant_properties(  # noqa: C901
     elif node.target in [operator.getitem]:
         if not is_output_annotated(node.args[0]):  # type: ignore[attr-defined, arg-type]
             return None
-
         shared_qspec = SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
         quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
