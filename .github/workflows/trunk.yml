@@ -60,14 +60,14 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
-        model: [add]
+        model: [add, whisper_tiny]
       fail-fast: false
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 120
+      timeout: 180
       script: |
         MODEL_NAME=${{ matrix.model }}
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -82,6 +82,37 @@ jobs:
         download_arm_zephyr_sdk
         ./zephyr-sdk-0.16.0/setup.sh -c -t arm-zephyr-eabi
 
+        SIM_LIMIT=120
+        if [[ "${MODEL_NAME}" == "whisper_tiny" ]]; then
+            SIM_LIMIT=60000
+        fi
+
+        if [[ "${MODEL_NAME}" == "whisper_tiny" ]]; then
+          cd $ZEPHYR_PROJ_ROOT
+          # For whisper-tiny, we will use optimum to export the encoder and decoder ptes
+          git clone https://github.com/huggingface/optimum-executorch.git
+          cd optimum-executorch
+          pip_install --upgrade pip
+          pip_install '.[dev]'
+          python3 install_dev.py
+          pip_install torchao==0.11.0
+          pip_install transformers==4.52.4
+          pip_install torchcodec==0.4.0
+
+          optimum-cli export executorch \
+              --model "openai/whisper-tiny" \
+              --task "automatic-speech-recognition" \
+              --recipe "portable" \
+              --use_custom_sdpa \
+              --use_custom_kv_cache \
+              --qlinear \
+              --qembedding \
+              --output_dir="oa_whisper"
+          pwd
+          ls
+          ls oa_whisper/
+        fi
+
         cd $ZEPHYR_PROJ_ROOT
         setup_zephyr_et_module
 
@@ -91,12 +122,26 @@ jobs:
         source examples/arm/ethos-u-scratch/setup_path.sh
         source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
         cd $ZEPHYR_PROJ_ROOT/zephyr/samples/modules/executorch/arm/hello_world
-        west build -p always -b mps3/corstone300/fvp
-        FVP_Corstone_SSE-300_Ethos-U55 -a build/zephyr/zephyr.elf -C mps3_board.visualisation.disable-visualisation=1 -C mps3_board.telnetterminal0.start_telnet=0 -C mps3_board.uart0.out_file='sim.out'  -C cpu0.CFGITCMSZ=15 -C cpu0.CFGDTCMSZ=15 --simlimit 120
+        if [[ "${MODEL_NAME}" == "whisper_tiny" ]]; then
+            python3 build_model.py --pte-file $ZEPHYR_PROJ_ROOT/oa_whisper/encoder.pte
+        fi
 
-        grep -qF "Output[0][0]: (float) 2.000000" sim.out
-        exit_status=$? #store 0 if found (success), 1 if not (failure)
-        exit $exit_status
+        west build -p always -b mps3/corstone300/fvp
+
+        FVP_Corstone_SSE-300_Ethos-U55 -a build/zephyr/zephyr.elf -C mps3_board.visualisation.disable-visualisation=1 -C mps3_board.telnetterminal0.start_telnet=0 -C mps3_board.uart0.out_file='sim.out'  -C cpu0.CFGITCMSZ=15 -C cpu0.CFGDTCMSZ=15 --simlimit $SIM_LIMIT
+
+        if [[ "${MODEL_NAME}" == "add" ]]; then
+            grep -qF "Output[0][0]: (float) 2.000000" sim.out
+            exit_status=$? #store 0 if found (success), 1 if not (failure)
+            exit $exit_status
+        fi
+        if [[ "${MODEL_NAME}" == "whisper_tiny" ]]; then
+            python3 build_model.py --pte-file $ZEPHYR_PROJ_ROOT/oa_whisper/decoder.pte
+            west build -p always -b mps3/corstone300/fvp
+
+            FVP_Corstone_SSE-300_Ethos-U55 -a build/zephyr/zephyr.elf -C mps3_board.visualisation.disable-visualisation=1 -C mps3_board.telnetterminal0.start_telnet=0 -C mps3_board.uart0.out_file='sim.out'  -C cpu0.CFGITCMSZ=15 -C cpu0.CFGDTCMSZ=15 --simlimit $SIM_LIMIT
+        fi
+
 
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
