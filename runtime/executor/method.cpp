@@ -670,7 +670,7 @@ Error Method::resolve_operator(
     size_t kernel_index,
     InstructionArgs args,
     size_t n_args) {
-  // TODO(T153505381, T153506819) Investigate optimizing this function for both
+  // TODO(T153506819) Investigate optimizing this function for both
   // space and time.
 
   // resolve name
@@ -691,8 +691,8 @@ Error Method::resolve_operator(
   }
 
   // resolve tensor meta
-  auto method_allocator = memory_manager_->method_allocator();
-  TensorMeta* meta = method_allocator->allocateList<TensorMeta>(n_args);
+  auto temp_allocator = memory_manager_->temp_allocator();
+  TensorMeta* meta = temp_allocator->allocateList<TensorMeta>(n_args);
   if (meta == nullptr) {
     return Error::MemoryAllocationFailed;
   }
@@ -705,7 +705,7 @@ Error Method::resolve_operator(
       auto tensor = eval->toTensor();
       meta[count].dtype_ = tensor.scalar_type();
       executorch::aten::DimOrderType* dim_order_ptr =
-          method_allocator->allocateList<executorch::aten::DimOrderType>(
+          temp_allocator->allocateList<executorch::aten::DimOrderType>(
               tensor.dim());
       if (dim_order_ptr == nullptr) {
         return Error::MemoryAllocationFailed;
