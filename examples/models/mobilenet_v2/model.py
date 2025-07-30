@@ -15,8 +15,8 @@ from ..model_base import EagerModelBase
 
 
 class MV2Model(EagerModelBase):
-    def __init__(self, useRealInput=True):
-        self.useRealInput = useRealInput
+    def __init__(self, use_real_input=True):
+        self.use_real_input = use_real_input
         pass
 
     def get_eager_model(self) -> torch.nn.Module:
@@ -28,7 +28,7 @@ class MV2Model(EagerModelBase):
     def get_example_inputs(self):
         tensor_size = (1, 3, 224, 224)
         input_batch = (torch.randn(tensor_size),)
-        if self.useRealInput:
+        if self.use_real_input:
             logging.info("Loaded real input image dog.jpg")
             import urllib
             url, filename = ("https://github.com/pytorch/hub/raw/master/images/dog.jpg", "dog.jpg")
