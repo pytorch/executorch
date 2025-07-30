@@ -72,7 +72,7 @@ class MPSBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
     ET_UNUSED BackendExecutionContext& context,
     DelegateHandle* handle,
-    EValue** args) const override {
+    Span<EValue*> args) const override {
     auto executor = static_cast<mps::delegate::MPSExecutor*>(handle);
     std::vector<const Tensor*> input_pointers;
     std::vector<const Tensor*> output_pointers;

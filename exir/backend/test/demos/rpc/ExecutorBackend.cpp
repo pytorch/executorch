@@ -188,7 +188,7 @@ class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     Method* client_method = static_cast<Method*>(handle);
     auto num_inputs = client_method->inputs_size();
     Error status = Error::Ok;

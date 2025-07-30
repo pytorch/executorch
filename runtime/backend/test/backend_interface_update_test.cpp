@@ -50,7 +50,7 @@ class MockBackend : public BackendInterface {
   Error execute(
       __ET_UNUSED BackendExecutionContext& context,
       __ET_UNUSED DelegateHandle* handle,
-      __ET_UNUSED EValue** args) const override {
+      __ET_UNUSED Span<EValue*> args) const override {
     execute_count++;
     return Error::Ok;
   }
@@ -243,7 +243,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateAfterInitBeforeExecute) {
 
   // Now execute
   DelegateHandle* handle = handle_or_error.get();
-  EValue** args = nullptr; // Not used in mock
+  Span<EValue*> args = nullptr; // Not used in mock
   err = mock_backend->execute(execute_context, handle, args);
   EXPECT_EQ(err, Error::Ok);
 
@@ -269,7 +269,7 @@ TEST_F(BackendInterfaceUpdateTest, UpdateBetweenExecutes) {
   DelegateHandle* handle = handle_or_error.get();
 
   // First execute
-  EValue** args = nullptr;
+  Span<EValue*> args = nullptr;
   Error err = mock_backend->execute(execute_context, handle, args);
   EXPECT_EQ(err, Error::Ok);
 
@@ -308,7 +308,7 @@ class StubBackend : public BackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     return Error::Ok;
   }
 
