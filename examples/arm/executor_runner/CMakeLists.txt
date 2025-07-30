@@ -13,7 +13,7 @@ option(ET_ATOL "Set atol to use for BundleIO testing" OFF)
 option(ET_RTOL "Set rtol to use for BundleIO testing" OFF)
 option(ET_DUMP_INPUT "Dump input in log" OFF)
 option(ET_DUMP_OUTPUT "Dump output in log" ON)
-option(FETCH_ETHOS_U_CONTENT "Fetch ethos_u dependencies instead of relying on pre-downloads" ON)
+option(FETCH_ETHOS_U_CONTENT "Fetch ethos_u dependencies instead of relying on pre-downloads" OFF)
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
@@ -539,6 +539,26 @@ set_property(
   PROPERTY IMPORTED_LOCATION
            "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_kernels.a"
 )
+add_library(cortex_m_cmsis_nn_ops_lib STATIC IMPORTED)
+set_property(
+  TARGET cortex_m_cmsis_nn_ops_lib
+  PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/cortex_m/cmsis-nn/ops/libcortex_m_cmsis_nn_ops_lib.a"
+)
+add_library(cortex_m_cmsis_kernels STATIC IMPORTED)
+set_property(
+  TARGET cortex_m_cmsis_kernels
+   PROPERTY IMPORTED_LOCATION
+           "${ET_BUILD_DIR_PATH}/backends/cortex_m/cmsis-nn/ops/libcortex_m_cmsis_kernels.a"
+)
+
+add_library(cmsis_nn STATIC IMPORTED)
+set_property(
+  TARGET cmsis_nn
+   PROPERTY IMPORTED_LOCATION
+           "/home/sidart/working/CMSIS-NN/build/libcmsis-nn.a"
+)
+
 add_library(extension_runner_util STATIC IMPORTED)
 set_property(
   TARGET extension_runner_util
@@ -580,11 +600,14 @@ list(APPEND arm_executor_runner_link
   "-Wl,--whole-archive"
   executorch_delegate_ethos_u
   cortex_m_ops_lib
+  cortex_m_cmsis_nn_ops_lib
   quantized_ops_lib
   portable_ops_lib
   quantized_kernels
-  cortex_m_kernels
   portable_kernels
+  cortex_m_kernels
+  cortex_m_cmsis_kernels
+  cmsis_nn
   "-Wl,--no-whole-archive"
   -Xlinker -Map=arm_executor_runner.map
 )
@@ -673,6 +696,10 @@ endif()
 if(ET_DUMP_OUTPUT)
   target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_OUTPUT)
 endif()
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffunction-sections -fdata-sections -fno-exceptions -fno-unwind-tables")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffunction-sections -fdata-sections -fno-exceptions -fno-unwind-tables")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
 
 # Fixup compilation of retarget.c
 if(SEMIHOSTING)
