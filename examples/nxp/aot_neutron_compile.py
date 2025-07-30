@@ -18,22 +18,20 @@ import torch
 from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-from executorch.exir import (
-    EdgeCompileConfig,
-    ExecutorchBackendConfig,
-    to_edge_transform_and_lower,
-)
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.extension.export_util import save_pte_program
-from torch.export import export
+from executorch.extension.export_util.utils import export_to_edge
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
-
 from .models.mobilenet_v2 import MobilenetV2
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -228,7 +226,7 @@ if __name__ == "__main__":  # noqa C901
 
     module = exported_program.module()
 
-    # 4. Quantize if required
+    # 3. Quantize if required
     if args.quantize:
         if calibration_inputs is None:
             logging.warning(
@@ -254,10 +252,27 @@ if __name__ == "__main__":  # noqa C901
         quantized_str = "quantized " if args.quantize else ""
         print(f"\nAccuracy of the {quantized_str}`{args.model_name}`: {accuracy}\n")
 
-    # 5. Export to edge program
-    partitioner_list = []
-    if args.delegate is True:
-        partitioner_list = [
+    # 4. Export to edge program
+    edge_compile_config = EdgeCompileConfig()
+    edge_program_manager = export_to_edge(
+        module,
+        example_inputs,
+        edge_compile_config=edge_compile_config,
+    )
+
+    logging.debug(f"Exported graph:\n{edge_program_manager.exported_program().graph}")
+
+    edge_program_manager = NeutronEdgePassManager()(edge_program_manager)
+
+    if args.remove_quant_io_ops:
+        edge_program_manager = edge_program_manager.transform(
+            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
+        )
+
+    # 5. Delegate to Neutron
+    if args.delegate:
+        logging.info("Executing Neutron Partitioner and Delegate")
+        edge_program_manager = edge_program_manager.to_backend(
             NeutronPartitioner(
                 generate_neutron_compile_spec(
                     args.target,
@@ -265,28 +280,14 @@ if __name__ == "__main__":  # noqa C901
                     operators_not_to_delegate=args.operators_not_to_delegate,
                 )
             )
-        ]
-
-    edge_program = to_edge_transform_and_lower(
-        export(module, example_inputs, strict=True),
-        partitioner=partitioner_list,
-        compile_config=EdgeCompileConfig(
-            _check_ir_validity=False,
-        ),
-    )
-    logging.debug(f"Exported graph:\n{edge_program.exported_program().graph}")
-
-    if args.remove_quant_io_ops:
-        edge_program = edge_program.transform(
-            [RemoveIOQuantOpsPass(edge_program_manager=edge_program)]
         )
         logging.debug(
-            f"Exported graph (RemoveIOQuantOpsPass):\n{edge_program.exported_program().graph}"
+            f"Lowered graph:\n{edge_program_manager.exported_program().graph}"
         )
 
     # 6. Export to ExecuTorch program
     try:
-        exec_prog = edge_program.to_executorch(
+        exec_prog = edge_program_manager.to_executorch(
             config=ExecutorchBackendConfig(extract_delegate_segments=False)
         )
     except RuntimeError as e:
