@@ -21,7 +21,7 @@ setup_zephyr_et_module () {
 setup_optimum() {
     git clone https://github.com/huggingface/optimum-executorch.git
     cd optimum-executorch
-    ptyhon3 -m pip install --upgrade pip
+    python3 -m pip install --upgrade pip
     python3 -m pip install '.[dev]'
     python3 install_dev.py
     python3 -m pip install torchao==0.11.0
