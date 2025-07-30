@@ -67,7 +67,6 @@ extensions = [
     "sphinx_sitemap",
     "sphinxcontrib.mermaid",
     "pytorch_sphinx_theme2",
-    "sphinxext.opengraph",
 ]
 
 if not FBCODE:
@@ -208,7 +207,7 @@ html_theme_options = {
         },
         {
             "name": "PyPi",
-            "url": "https://pypi.org/project/<your-project>/",
+            "url": "https://pypi.org/project/executorch/",
             "icon": "fa-brands fa-python",
         },
     ],
@@ -235,10 +234,6 @@ html_context = {
     "community_links": theme_variables.get("community_links", []),
     "language_bindings_links": html_theme_options.get("language_bindings_links", []),
 }
-
-
-ogp_site_url = "http://pytorch.org/excutorch"
-ogp_image = "https://pytorch.org/assets/images/social-share.jpg"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
