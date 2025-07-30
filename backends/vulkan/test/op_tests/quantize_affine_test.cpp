@@ -346,6 +346,11 @@ void test_vulkan_quantize_affine(
 }
 
 TEST(VulkanQuantizeAffineTest, test_1d_quantization) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   // 1D: 1x1x1x12 Tensor, block_size is 3
   test_vulkan_quantize_affine(
       {12}, // input_sizes
@@ -359,6 +364,11 @@ TEST(VulkanQuantizeAffineTest, test_1d_quantization) {
 }
 
 TEST(VulkanQuantizeAffineTest, test_2d_quantization) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   // 2D: 1x1x8x6 Tensor, block_size is 1x1x2x3 (8/2=4, 6/3=2, so 4*2=8 blocks)
   test_vulkan_quantize_affine(
       {8, 6}, // input_sizes
@@ -372,6 +382,11 @@ TEST(VulkanQuantizeAffineTest, test_2d_quantization) {
 }
 
 TEST(VulkanQuantizeAffineTest, test_3d_quantization) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   // 3D: 1x6x4x6 Tensor, block_size is 3x2x2 (6/3=2, 4/2=2, 6/2=3, so 2*2*3=12
   // blocks)
   test_vulkan_quantize_affine(
@@ -400,6 +415,11 @@ TEST(VulkanQuantizeAffineTest, test_3d_quantization) {
 }
 
 TEST(VulkanQuantizeAffineTest, test_4d_quantization) {
+  if (!vkcompute::api::context()
+           ->adapter_ptr()
+           ->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
   // 4D: 8x6x6x6 Tensor, block_size is 2x3x2x3 (8/2=4, 6/3=2, 6/2=3, 6/3=2, so
   // 4*2*3*2=48 blocks)
   test_vulkan_quantize_affine(

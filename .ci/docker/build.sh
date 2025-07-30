@@ -7,8 +7,10 @@
 
 set -exu
 
-IMAGE_NAME="$1"
+FULL_IMAGE_NAME="$1"
 shift
+
+IMAGE_NAME=$(echo "${FULL_IMAGE_NAME}" | sed 's/ci-image://')
 
 echo "Building ${IMAGE_NAME} Docker image"
 
@@ -40,6 +42,10 @@ case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-arm-sdk)
     ARM_SDK=yes
     CLANG_VERSION=12
+    ;;
+  executorch-ubuntu-22.04-zephyr-sdk)
+    ZEPHYR_SDK=yes
+    GCC_VERSION=11
     ;;
   executorch-ubuntu-22.04-qnn-sdk)
     QNN_SDK=yes
@@ -85,6 +91,7 @@ docker build \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
   --build-arg "ARM_SDK=${ARM_SDK:-}" \
+  --build-arg "ZEPHYR_SDK=${ZEPHYR_SDK:-}" \
   --build-arg "QNN_SDK=${QNN_SDK:-}" \
   --build-arg "MEDIATEK_SDK=${MEDIATEK_SDK:-}" \
   --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \
