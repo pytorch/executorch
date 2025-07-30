@@ -8,15 +8,12 @@
 
 #pragma once
 
+#include "executorch/runtime/core/exec_aten/exec_aten.h"
+#include "executorch/runtime/kernel/kernel_runtime_context.h"
+
 #define ET_FORALL_CADENCE_QUANTIZED_TYPES(_) \
   _(uint8_t, Byte)                           \
   _(int8_t, Char)
-
-using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::optional;
-using ::executorch::aten::ScalarType;
-using ::executorch::aten::Tensor;
-using ::executorch::runtime::KernelRuntimeContext;
 
 namespace cadence {
 namespace impl {
@@ -62,68 +59,68 @@ void quantized_relu_out(
     ::executorch::aten::Tensor& output);
 
 void quantized_linear_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& in,
-    const Tensor& weight,
-    const Tensor& bias,
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    const ::executorch::aten::Tensor& weight,
+    const ::executorch::aten::Tensor& bias,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
-    const Tensor& out_multiplier,
-    const Tensor& out_shift,
+    const ::executorch::aten::Tensor& weight_zero_point,
+    const ::executorch::aten::Tensor& out_multiplier,
+    const ::executorch::aten::Tensor& out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
-    Tensor& out);
+    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
+    ::executorch::aten::Tensor& out);
 
 void quantized_linear_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& in,
-    const Tensor& weight,
-    const Tensor& bias,
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& in,
+    const ::executorch::aten::Tensor& weight,
+    const ::executorch::aten::Tensor& bias,
     int64_t in_zero_point,
     int64_t weight_zero_point,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
-    Tensor& out);
+    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
+    ::executorch::aten::Tensor& out);
 
 void quantized_conv_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    const ::executorch::aten::Tensor& weight,
+    const ::executorch::aten::Tensor& bias,
+    ::executorch::aten::IntArrayRef stride,
+    ::executorch::aten::IntArrayRef padding,
+    ::executorch::aten::IntArrayRef dilation,
     int64_t groups,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
-    const Tensor& bias_scale,
+    const ::executorch::aten::Tensor& weight_zero_point,
+    const ::executorch::aten::Tensor& bias_scale,
     double output_scale,
     int64_t output_zero_point,
-    __ET_UNUSED const Tensor& out_multiplier,
-    __ET_UNUSED const Tensor& out_shift,
+    const ::executorch::aten::Tensor& out_multiplier,
+    const ::executorch::aten::Tensor& out_shift,
     bool channel_last,
-    Tensor& out);
+    ::executorch::aten::Tensor& out);
 
 void quantized_conv_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    const ::executorch::aten::Tensor& weight,
+    const ::executorch::aten::Tensor& bias,
+    ::executorch::aten::IntArrayRef stride,
+    ::executorch::aten::IntArrayRef padding,
+    ::executorch::aten::IntArrayRef dilation,
     int64_t groups,
     int64_t in_zero_point,
     int64_t weight_zero_point,
     double bias_scale,
     double output_scale,
     int64_t output_zero_point,
-    __ET_UNUSED int64_t out_multiplier,
-    __ET_UNUSED int64_t out_shift,
+    int64_t out_multiplier,
+    int64_t out_shift,
     bool channel_last,
-    Tensor& out);
+    ::executorch::aten::Tensor& out);
 
 } // namespace native
 } // namespace HiFi

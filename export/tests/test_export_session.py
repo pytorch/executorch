@@ -39,6 +39,32 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         mock_artifact.context = {}
         mock_stage.get_artifacts.return_value = mock_artifact
         mock_stage.stage_type = stage_type
+
+        # Add the new properties required by the Stage interface
+        if stage_type == StageType.SOURCE_TRANSFORM:
+            mock_stage.valid_predecessor_stages = []
+            mock_stage.can_start_pipeline = True
+        elif stage_type == StageType.QUANTIZE:
+            mock_stage.valid_predecessor_stages = [StageType.SOURCE_TRANSFORM]
+            mock_stage.can_start_pipeline = True
+        elif stage_type == StageType.TORCH_EXPORT:
+            mock_stage.valid_predecessor_stages = [
+                StageType.SOURCE_TRANSFORM,
+                StageType.QUANTIZE,
+            ]
+            mock_stage.can_start_pipeline = True
+        elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
+            mock_stage.valid_predecessor_stages = [StageType.TORCH_EXPORT]
+            mock_stage.can_start_pipeline = False
+        elif stage_type == StageType.TO_EXECUTORCH:
+            mock_stage.valid_predecessor_stages = [
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER
+            ]
+            mock_stage.can_start_pipeline = True
+        else:
+            mock_stage.valid_predecessor_stages = []
+            mock_stage.can_start_pipeline = True
+
         return mock_stage
 
     def test_default_pipeline_execution_order(self) -> None:
@@ -60,8 +86,9 @@ class TestExportSessionCoreFlow(unittest.TestCase):
             export_recipe=self.recipe,
         )
 
-        # Replace the pipeline with our mocked stages
-        session._pipeline = mock_stages
+        # Replace the stages in the registry with our mocked stages
+        for stage_type, mock_stage in zip(stage_types, mock_stages):
+            session.register_stage(stage_type, mock_stage)
 
         session.export()
 
@@ -92,7 +119,9 @@ class TestExportSessionCoreFlow(unittest.TestCase):
             pipeline_stages=stage_types,
         )
 
-        session._pipeline = mock_stages
+        # Replace the stages in the registry with our mocked stages
+        for stage_type, mock_stage in zip(stage_types, mock_stages):
+            session.register_stage(stage_type, mock_stage)
         session.export()
 
         # Verify all stages were called
@@ -115,7 +144,7 @@ class TestExportSessionCoreFlow(unittest.TestCase):
                 pipeline_stages=invalid_stages,
             )._run_pipeline()
 
-        self.assertIn("Invalid pipeline sequence", str(cm.exception))
+        self.assertIn("cannot start a pipeline", str(cm.exception))
 
     def test_pipeline_validation_enforces_valid_transitions(self) -> None:
         # Test invalid transition: TORCH_EXPORT -> TO_EXECUTORCH (skipping edge stage)
@@ -186,20 +215,18 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         self.assertEqual(session._run_context["session_name"], "test_session")
         self.assertIsNotNone(session._run_context["constant_methods"])
 
-    def test_pipeline_building_unknown_stage_type(self) -> None:
-        # Test error handling for unknown stage types
-        session = ExportSession(
-            model=self.model,
-            example_inputs=self.example_inputs,
-            export_recipe=ExportRecipe(name="test"),
-        )
-
-        # Mock an unknown stage type
-        unknown_stage = "UNKNOWN_STAGE"
+    def test_stage_registry_unknown_stage_type(self) -> None:
+        # Test error handling for unknown stage types in pipeline
+        unknown_stage_type = "UNKNOWN_STAGE"
 
         with self.assertRaises(ValueError) as cm:
-            session._build_pipeline_from_stages([unknown_stage])  # pyre-ignore
-        self.assertIn("Unknown stage type", str(cm.exception))
+            ExportSession(
+                model=self.model,
+                example_inputs=self.example_inputs,
+                export_recipe=ExportRecipe(name="test"),
+                pipeline_stages=[unknown_stage_type],  # pyre-ignore
+            )._run_pipeline()
+        self.assertIn("not found in registry", str(cm.exception))
 
     def test_multi_method_model_export(self) -> None:
         # Test export with multi-method models
@@ -338,8 +365,9 @@ class TestExportSessionPipelineBuilding(unittest.TestCase):
             export_recipe=recipe,
         )
 
-        self.assertEqual(len(session._pipeline), 5)
-        stage_types = [stage.stage_type for stage in session._pipeline]
+        registered_stages = session.get_all_registered_stages()
+
+        self.assertEqual(len(registered_stages), 5)
         expected_types = [
             StageType.SOURCE_TRANSFORM,
             StageType.QUANTIZE,
@@ -347,4 +375,4 @@ class TestExportSessionPipelineBuilding(unittest.TestCase):
             StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             StageType.TO_EXECUTORCH,
         ]
-        self.assertEqual(stage_types, expected_types)
+        self.assertListEqual(list(registered_stages.keys()), expected_types)
