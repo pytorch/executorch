@@ -10,3 +10,5 @@ choose_qparams_texture:
       MODE: per_tensor
     - NAME: choose_qparams_per_token_asymmetric_texture3d
       MODE: per_token
+    - NAME: choose_qparams_block_wise_texture3d
+      MODE: block_wise
