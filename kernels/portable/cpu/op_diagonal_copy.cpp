@@ -98,9 +98,11 @@ Tensor& diagonal_copy_out(
       InvalidArgument,
       out);
 
-  constexpr auto name = "diagonal_copy.out";
 
-  ET_SWITCH_ALL_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "diagonal_copy.out";
+
+  ET_SWITCH_ALL_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
     diagonal_copy_impl<CTYPE>(in, offset, dim1, dim2, out);
   });
 
