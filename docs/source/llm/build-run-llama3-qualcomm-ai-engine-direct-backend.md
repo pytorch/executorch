@@ -13,12 +13,12 @@ This tutorial demonstrates how to export Llama 3 8B Instruct for Qualcomm AI Eng
 
 ## Instructions
 
-### Step1: Prepare the checkpoint of the model and optimized matrix from [Spin Quant](https://github.com/facebookresearch/SpinQuant)
+### Step 1: Prepare the checkpoint of the model and optimized matrix from [Spin Quant](https://github.com/facebookresearch/SpinQuant)
 
 1. For Llama 3 tokenizer and checkpoint, please refer to https://github.com/meta-llama/llama-models/blob/main/README.md for further instructions on how to download `tokenizer.model`, `consolidated.00.pth` and `params.json`.
 2. To get the optimized matrix, please refer to [SpinQuant on GitHub](https://github.com/facebookresearch/SpinQuant). You can download the optimized rotation matrices in the Quantized Models section. Please choose **LLaMA-3-8B/8B_W4A16KV16_lr_1.5_seed_0**.
 
-### Step2: Export to ExecuTorch with Qualcomm AI Engine Direct Backend
+### Step 2: Export to ExecuTorch with Qualcomm AI Engine Direct Backend
 Deploying large language models like Llama 3 on-device presents the following challenges:
 
 1. The model size is too large to fit in device memory for inference.
@@ -26,24 +26,44 @@ Deploying large language models like Llama 3 on-device presents the following ch
 3. Difficulty in quantization.
 
 To address these challenges, we have implemented the following solutions:
-1. Using `--pt2e_quantize qnn_16a4w` to quantize activations and weights, thereby reducing the on-disk model size and alleviating memory pressure during inference.
-2. Using `--num_sharding 8` to shard the model into sub-parts.
+1. Using `quantization.pt2e_quantize = "qnn_16a4w'` to quantize activations and weights, thereby reducing the on-disk model size and alleviating memory pressure during inference.
+2. Using `backed.qnn.num_sharding = 8` to shard the model into sub-parts.
 3. Performing graph transformations to convert or decompose operations into more accelerator-friendly operations.
-4. Using `--optimized_rotation_path <path_to_optimized_matrix>` to apply R1 and R2 of [Spin Quant](https://github.com/facebookresearch/SpinQuant) to improve accuracy.
-5. Using `--calibration_data "<|start_header_id|>system<|end_header_id|..."` to ensure that during the quantization of Llama 3 8B instruct, the calibration includes special tokens in the prompt template. For more details on the prompt template, refer to [the model card of meta llama3 instruct](https://llama.meta.com/docs/model-cards-and-prompt-formats/meta-llama-3/).
+4. Using `backend.qnn.optimized_rotation_path = "<path_to_optimized_matrix>"` to apply R1 and R2 of [Spin Quant](https://github.com/facebookresearch/SpinQuant) to improve accuracy.
+5. Using `quantization.calibration_data = "<|start_header_id|>system<|end_header_id|..."` to ensure that during quantization, the calibration includes special tokens in the prompt template. For more details on the prompt template, refer to [the model card](https://llama.meta.com/docs/model-cards-and-prompt-formats/meta-llama-3/).
 
-To export Llama 3 8B instruct with the Qualcomm AI Engine Direct Backend, ensure the following:
+To export with the Qualcomm AI Engine Direct Backend, ensure the following:
 
 1. The host machine has more than 100GB of memory (RAM + swap space).
 2. The entire process takes a few hours.
 
 ```bash
-# Please note that calibration_data must include the prompt template for special tokens.
-python -m examples.models.llama.export_llama -t <path_to_tokenizer.model>
-llama3/Meta-Llama-3-8B-Instruct/tokenizer.model -p <path_to_params.json> -c <path_to_checkpoint_for_Meta-Llama-3-8B-Instruct>  --use_kv_cache  --qnn --pt2e_quantize qnn_16a4w --disable_dynamic_shape --num_sharding 8 --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --optimized_rotation_path <path_to_optimized_matrix> --calibration_data "<|start_header_id|>system<|end_header_id|>\n\nYou are a funny chatbot.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nCould you tell me about Facebook?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+# path/to/config.yaml
+base:
+  model_class: llama3
+  checkpoint: path/to/consolidated.00.pth
+  params: path/to/params.json
+  tokenizer_path: path/to/tokenizer.model
+  metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+model:
+  use_kv_cache: True
+  enable_dynamic_shape: False
+quantization:
+  pt2e_quantize: qnn_16a4w
+  # Please note that calibration_data must include the prompt template for special tokens.
+  calibration_data: "<|start_header_id|>system<|end_header_id|>\n\nYou are a funny chatbot.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nCould you tell me about Facebook?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+backend:
+  qnn:
+    enabled: True
+    num_sharding: 8
+    
+
+# export_llm
+python -m extension.llm.export.export_llm \
+  --config path/to/config.yaml
 ```
 
-### Step3: Invoke the Runtime on an Android smartphone with Qualcomm SoCs
+### Step 3: Invoke the Runtime on an Android smartphone with Qualcomm SoCs
 1. Build executorch with Qualcomm AI Engine Direct Backend for android
     ```bash
     cmake \
@@ -116,9 +136,9 @@ You should see the message:
 ```
 
 ## What is coming?
-- Improve the performance for Llama 3 Instruct
+- Performance improvements
 - Reduce the memory pressure during inference to support 12GB Qualcomm devices
-- Support more LLMs
+- Support more LLMs (Qwen, Phi-4-mini, etc.)
 
 ## FAQ
 

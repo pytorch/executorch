@@ -10,6 +10,8 @@ import coremltools as ct
 import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
+from executorch.backends.apple.coreml.logging import get_coreml_log_level
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.backend.partitioner import (
@@ -23,7 +25,15 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
+
+
+def _is_view_op(op: torch._ops.OpOverload) -> bool:
+    schema = op._schema
+    if len(schema.arguments) == 0:
+        return False
+    alias_info = schema.arguments[0].alias_info
+    return (alias_info is not None) and (not alias_info.is_write)
 
 
 class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
@@ -119,6 +129,7 @@ class CoreMLPartitioner(Partitioner):
 
     def __init__(
         self,
+        *,
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         compile_specs: Optional[List[CompileSpec]] = None,
         take_over_mutable_buffer: Optional[bool] = True,
@@ -209,6 +220,9 @@ class CoreMLPartitioner(Partitioner):
             torch.ops.aten.triu.default,
             # https://github.com/apple/coremltools/blob/release/8.3/coremltools/converters/mil/frontend/torch/ops.py#L6997-L6998
             torch.ops.aten.tril.default,
+            # CoreML's translation of repeat_interleave has poor perf
+            torch.ops.aten.repeat_interleave.self_int,
+            torch.ops.aten.repeat_interleave.self_Tensor,
         ]
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
@@ -218,6 +232,7 @@ class CoreMLPartitioner(Partitioner):
                     if (
                         op_support.is_node_supported(None, node)
                         and node.target not in do_not_decompose_blocklist
+                        and not _is_view_op(node.target)
                     ):
                         do_not_decompose.append(node.target)
                 except Exception as e:
