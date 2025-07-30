@@ -71,7 +71,7 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250714"
+NIGHTLY_VERSION = "dev20250725"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -118,7 +118,14 @@ def install_requirements(use_pytorch_nightly):
     # Install packages directly from local copy instead of pypi.
     # This is usually not recommended.
     new_env = os.environ.copy()
-    new_env["USE_CPP"] = "1"  # install torchao kernels
+    if ("EXECUTORCH_BUILD_TORCHAO" not in new_env) or (
+        new_env["EXECUTORCH_BUILD_TORCHAO"] == "0"
+    ):
+        new_env["USE_CPP"] = "0"
+    else:
+        assert new_env["EXECUTORCH_BUILD_TORCHAO"] == "1"
+        new_env["USE_CPP"] = "1"
+        new_env["CMAKE_POLICY_VERSION_MINIMUM"] = "3.5"
     subprocess.run(
         [
             sys.executable,

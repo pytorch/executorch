@@ -49,19 +49,9 @@ void calc_scale_zp(
       }
     }
 
-    // zero point calculation with error-based selection (from legacy function)
-    float zero_point_from_min = float(qmin) - minv / scale;
-    float zero_point_from_max = float(qmax) - maxv / scale;
-    float zero_point_from_min_error = abs(float(qmin)) - abs(minv / scale);
-    float zero_point_from_max_error = abs(float(qmax)) - abs(maxv / scale);
-
-    // Choose zero point based on which gives smaller error
-    float initial_zero_point = zero_point_from_min_error < zero_point_from_max_error
-        ? zero_point_from_min
-        : zero_point_from_max;
-
-    // Clamp and round to valid integer range
-    zp = int(clamp(round(initial_zero_point), float(qmin), float(qmax)));
+    // Calculate zero_point (matching reference implementation)
+    float initial_zero_point = float(qmin) - round(minv / scale);
+    zp = int(clamp(initial_zero_point, float(qmin), float(qmax)));
   } else { // symmetric -- centred
     float scale_sym;
     if (mapping_type == 1) { // SYM

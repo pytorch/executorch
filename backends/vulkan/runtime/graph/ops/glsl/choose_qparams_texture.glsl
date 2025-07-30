@@ -22,8 +22,13 @@ ${define_required_extensions(IN_DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_scale", "float", "texture3d")}
-${layout_declare_tensor(B, "w", "t_zero_point", "int", "texture3d")}
+$if MODE != "block_wise":
+  ${layout_declare_tensor(B, "w", "t_scale", "float", "texture3d")}
+  ${layout_declare_tensor(B, "w", "t_zero_point", "int", "texture3d")}
+$else:
+  ${layout_declare_tensor(B, "w", "t_scale", "float", "buffer")}
+  ${layout_declare_tensor(B, "w", "t_zero_point", "int", "buffer")}
+
 ${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "texture3d")}
 
 $if MODE == "per_tensor":
@@ -38,10 +43,27 @@ $if MODE == "per_token":
     int quant_min;
     int quant_max;
   };
+$if MODE == "block_wise":
+  layout(push_constant) uniform BlockPC {
+    ivec4 blockSize; // WHCN (>=1)
+    ivec4 numBlocks; // #blocks along W,H,C,N
+    ivec4 blockStride; // {1, #W, #W * #H, #W * #H * #C}
+    int mapping_type; // 0=ASYM, 1=SYM, 2=SYM_NO_CLIP
+    int quant_min;
+    int quant_max;
+    float eps;
+  };
 
 ${layout_declare_ubo(B, "ivec3", "t_in_limits")}
-${layout_declare_ubo(B, "ivec3", "t_scale_limits")}
-${layout_declare_ubo(B, "ivec3", "t_zero_point_limits")}
+$if MODE != "block_wise":
+  ${layout_declare_ubo(B, "ivec3", "t_scale_limits")}
+  ${layout_declare_ubo(B, "ivec3", "t_zero_point_limits")}
+$else:
+  ${layout_declare_ubo(B, "ivec4", "t_scale_sizes")}
+  ${layout_declare_ubo(B, "ivec4", "t_scale_strides")}
+  ${layout_declare_ubo(B, "ivec4", "t_zero_point_sizes")}
+  ${layout_declare_ubo(B, "ivec4", "t_zero_point_strides")}
+
 
 #include "indexing_utils.h"
 #include "choose_qparams.glslh"
@@ -80,7 +102,15 @@ shared float shared_max[NWORKERS];
     (*) local_wg_size: {1, 1, 1}
 
   - choose_qparams_block_wise
-    (*) THIS MODE IS NOT SUPPORTED FOR TEXTURE3D STORAGE YET
+      This mode computes quantization parameters for each block of elements, allowing
+      fine-grained control over quantization granularity within the tensor. Each block
+      is processed independently to find its own min/max values and compute corresponding
+      scale and zero_point parameters.
+
+      NOTE: This mode currently only supports buffer storage for the output.
+
+    (*) global_wg_size: {nBlocks, 1u, 1u} (one workgroup per block)
+    (*) local_wg_size: {1, 1, 1} (single thread per block)
 
   Tree Reduction Algorithm for Min/Max Finding:
     The shader uses a parallel tree reduction algorithm to efficiently find minimum and
@@ -127,7 +157,6 @@ shared float shared_max[NWORKERS];
   - Per-Tensor: Single workgroup with strided access across entire tensor
   - Per-Token: Multiple workgroups, each processing one token independently
 */
-
 
 #ifdef per_tensor
 
@@ -249,7 +278,7 @@ void choose_qparams_per_tensor() {
   }
 }
 
-#else
+#elif defined(per_token)
 
 void choose_qparams_per_token() {
   // Each token is processed by multiple workgroups for parallel reduction
@@ -396,6 +425,100 @@ void choose_qparams_per_token() {
 
     // Synchronize before processing next token
     barrier();
+  }
+}
+
+#elif defined(block_wise)
+
+ivec4 block_id_to_coord(uint bid) {
+  ivec4 bc;
+  bc.w = int(bid) / blockStride.w;
+
+  int r = int(bid) - bc.w * blockStride.w;
+  bc.z = r / blockStride.z;
+
+  r -= bc.z * blockStride.z;
+  bc.y = r / blockStride.y;
+
+  r -= bc.y * blockStride.y;
+  bc.x = r;
+  return bc;
+}
+
+void choose_qparams_block_wise() {
+  const uint T = uint(numBlocks.x * numBlocks.y * numBlocks.z * numBlocks.w);
+  const uint STRIDE = gl_WorkGroupSize.x * gl_NumWorkGroups.x;
+
+  // tensor full size in WHCN order
+  const ivec4 tensorSz = blockSize * numBlocks;
+
+  // Process blocks with stride for better parallelization
+  for (uint blkIdx = gl_GlobalInvocationID.x; blkIdx < T; blkIdx += STRIDE) {
+    // block index in WHCN
+    const ivec4 b4d = block_id_to_coord(blkIdx);
+    const ivec4 blockStart = b4d * blockSize;
+    const ivec4 blockEnd = blockStart + blockSize;
+
+    // scan all elements inside the block
+    float vmin = 3.402823e38;  // +FLT_MAX
+    float vmax = -3.402823e38; // -FLT_MAX
+    bool found_valid = false;
+
+    // Calculate total elements in block for linear iteration
+    const int blockElements = blockSize.x * blockSize.y * blockSize.z * blockSize.w;
+
+    // Linear iteration over block elements (more cache-friendly)
+    for (int elemIdx = 0; elemIdx < blockElements; ++elemIdx) {
+      // Convert linear index to 4D coordinates within block
+      int remaining = elemIdx;
+      int dn = remaining / (blockSize.x * blockSize.y * blockSize.z);
+      remaining -= dn * (blockSize.x * blockSize.y * blockSize.z);
+      int dc = remaining / (blockSize.x * blockSize.y);
+      remaining -= dc * (blockSize.x * blockSize.y);
+      int dh = remaining / blockSize.x;
+      int dw = remaining - dh * blockSize.x;
+
+      ivec4 tidx = blockStart + ivec4(dw, dh, dc, dn);
+
+      // skip padding when tensor size is not an exact multiple of block
+      if (any(greaterThanEqual(tidx, tensorSz))) { continue; }
+
+      // tensor index -> (x,y,z,component) inside input texture
+      ivec4 posi = to_texture_elem_pos(tidx, tensorSz, 0); // 0 = W_DIM (width packed)
+
+      // fetch texel and pick the element inside it
+      FVEC4_T texl = load_texel(t_in, posi.xyz);
+      float v;
+      if (posi.w == 0) v = texl.x;
+      else if (posi.w == 1) v = texl.y;
+      else if (posi.w == 2) v = texl.z;
+      else v = texl.w;
+
+      if (!isnan(v) && !isinf(v)) {
+        if (!found_valid) {
+          vmin = vmax = v;
+          found_valid = true;
+        } else {
+          vmin = min(vmin, v);
+          vmax = max(vmax, v);
+        }
+      }
+    }
+
+    // Handle case where no valid values were found
+    if (!found_valid) {
+      vmin = 0.0;
+      vmax = 0.0;
+    }
+
+    // compute scale / zero‑point (same maths as buffer kernel)
+    float scale;
+    int zp;
+    calc_scale_zp(vmin, vmax, quant_min, quant_max, mapping_type, eps, scale, zp);
+
+    // Write the scalar values directly to buffer using linear index
+    t_scale[blkIdx] = scale;
+    t_zero_point[blkIdx] = zp;
   }
 }
 

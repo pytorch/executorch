@@ -62,6 +62,7 @@ from executorch.devtools.inspector._inspector_utils import (
     map_runtime_aot_intermediate_outputs,
     merge_runtime_overlapping_debug_handles,
     ProgramOutput,
+    propagate_back_debug_handle,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TimeScale,
     verify_debug_data_equivalence,
@@ -1166,7 +1167,18 @@ class Inspector:
         """
         if self._etrecord._representative_inputs is None:
             return {}, {}
-        export_program = self._etrecord.edge_dialect_program
+
+        export_program = None
+
+        # Will use the exported program to extract intermediate output if and only if exported_program has been provided, and it is the greatest ancestor of the edge_dialect_program
+        if self._etrecord.exported_program and propagate_back_debug_handle(
+            self._etrecord.exported_program,
+            self._etrecord.export_graph_id,
+            self._etrecord.edge_dialect_program,
+        ):
+            export_program = self._etrecord.exported_program
+        else:
+            export_program = self._etrecord.edge_dialect_program
         graph_module = export_program.module()
         aot_debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(
             graph_module
@@ -1376,17 +1388,19 @@ class Inspector:
             else self._etrecord.graph_map.get(graph)
         )
 
-    def calculate_numeric_gap(self, distance: str = "MSE") -> pd.DataFrame:
+    def calculate_numeric_gap(self, distance: str = "MSE"):
         """
         Compares logged intermediate outputs from the exported graph (in ETRecord)
         with runtime outputs (in ETDump) using a user-specific numerical comparator.
+        To use this function, you must first generate the ETRecord using the `bundle_program`,
+        and then create the Inspector instance with the ETRecord and ETDump. The Inspector can then
+        compare the intermediate outputs from the AOT and the runtime.
 
         Args:
             distance: the metrics the inspector will use for gap calculation. Should be one of "MSE", "L1" and "SNR".
 
         Returns:
-            pd.DataFrame: A DataFrame listing corresponding operator outputs from
-                          both stages and their computed numerical gaps.
+            pd.DataFrame: A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.
         """
         aot_intermediate_outputs, aot_debug_handle_to_op_names = (
             self._get_aot_intermediate_outputs_and_op_names()

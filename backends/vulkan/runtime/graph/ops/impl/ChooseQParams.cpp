@@ -14,38 +14,6 @@
 
 namespace vkcompute {
 
-void resize_choose_qparams_block_wise_output(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
-  const ValueRef scale_out = args.at(0).refs.at(0);
-  const ValueRef zero_point_out = args.at(0).refs.at(1);
-  const ValueRef input = args.at(1).refs.at(0);
-  const ValueRef block_size = extra_args.at(0);
-
-  // Calculate output sizes based on the number of blocks
-  const auto input_sizes = graph->sizes_of(input);
-  const auto block_size_list = graph->get_int_list(block_size);
-
-  // Convert dimensions to WHCN order for shader
-  utils::ivec4 blk = utils::make_whcn_ivec4(*block_size_list);
-  utils::ivec4 tensor_size_whcn = utils::make_whcn_ivec4(input_sizes);
-
-  // Calculate numBlocks: ceil(tensorSize / blockSize) (both in WHCN order)
-  utils::ivec4 nBlk = {
-      (tensor_size_whcn[0] + blk[0] - 1) / blk[0],
-      (tensor_size_whcn[1] + blk[1] - 1) / blk[1],
-      (tensor_size_whcn[2] + blk[2] - 1) / blk[2],
-      (tensor_size_whcn[3] + blk[3] - 1) / blk[3]};
-
-  // Total number of blocks
-  int64_t num_blocks = nBlk[0] * nBlk[1] * nBlk[2] * nBlk[3];
-
-  // Output is a 1D tensor with size = number of blocks
-  graph->virtual_resize(scale_out, {num_blocks});
-  graph->virtual_resize(zero_point_out, {num_blocks});
-}
-
 utils::uvec3 choose_qparams_pick_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -140,28 +108,54 @@ utils::uvec3 choose_qparams_block_wise_pick_global_wg_size(
     const vkapi::ShaderInfo&,
     const std::vector<ArgGroup>& a,
     const std::vector<ValueRef>& r) {
-  const auto input = a.at(1).refs.at(0);
+  const ValueRef input = a.at(2).refs.at(0);
   const auto blkRef = r.at(0);
   const auto inSz = g->sizes_of(input);
   const auto blkList = g->get_int_list(blkRef);
 
-  utils::ivec4 blk = utils::make_whcn_ivec4(*blkList);
-  utils::ivec4 ts = utils::make_whcn_ivec4(inSz);
+  // Use same code as in add_choose_qparams_block_wise_node
+  utils::ivec4 block_size_vec = utils::make_whcn_ivec4(*blkList);
+  utils::ivec4 tensor_size_whcn = utils::make_whcn_ivec4(inSz);
 
-  uint32_t nBlocks = ((ts[0] + blk[0] - 1) / blk[0]) *
-      ((ts[1] + blk[1] - 1) / blk[1]) * ((ts[2] + blk[2] - 1) / blk[2]) *
-      ((ts[3] + blk[3] - 1) / blk[3]);
+  // Calculate numBlocks: ceil(tensorSize / blockSize) (both in WHCN order)
+  utils::ivec4 nBlk = {
+      (tensor_size_whcn[0] + block_size_vec[0] - 1) / block_size_vec[0],
+      (tensor_size_whcn[1] + block_size_vec[1] - 1) / block_size_vec[1],
+      (tensor_size_whcn[2] + block_size_vec[2] - 1) / block_size_vec[2],
+      (tensor_size_whcn[3] + block_size_vec[3] - 1) / block_size_vec[3]};
 
-  return {nBlocks, 1u, 1u};
+  uint32_t nBlocks = nBlk[0] * nBlk[1] * nBlk[2] * nBlk[3];
+
+  // For texture storage, use more threads to better utilize GPU parallelism
+  // Each thread can process multiple blocks with stride
+  if (g->is_buffer_storage(input)) {
+    return {nBlocks, 1u, 1u};
+  } else {
+    // For texture storage, use more workgroups to better utilize GPU
+    // Aim for ~64-256 threads per workgroup for good occupancy
+    uint32_t preferred_threads_per_wg = 64;
+    uint32_t num_workgroups =
+        (nBlocks + preferred_threads_per_wg - 1) / preferred_threads_per_wg;
+    num_workgroups = std::max(1u, std::min(num_workgroups, nBlocks));
+    return {num_workgroups * preferred_threads_per_wg, 1u, 1u};
+  }
 }
 
 utils::uvec3 choose_qparams_block_wise_pick_local_wg_size(
     ComputeGraph* g,
     const vkapi::ShaderInfo&,
-    const utils::uvec3&,
-    const std::vector<ArgGroup>&,
+    const utils::uvec3& global_wg_size,
+    const std::vector<ArgGroup>& a,
     const std::vector<ValueRef>&) {
-  return {1u, 1u, 1u};
+  const ValueRef input = a.at(2).refs.at(0);
+
+  if (g->is_buffer_storage(input)) {
+    return {1u, 1u, 1u};
+  } else {
+    // For texture storage, use 64 threads per workgroup for better occupancy
+    uint32_t local_size = std::min(64u, global_wg_size[0]);
+    return {local_size, 1u, 1u};
+  }
 }
 
 void add_choose_qparams_tensor_node(
@@ -303,7 +297,9 @@ void add_choose_qparams_block_wise_node(
   const auto input_sizes = graph.sizes_of(input);
   const auto block_size_list = graph.get_int_list(block_size);
 
-  // Convert dimensions to WHCN order for shader
+  // For shader compatibility, we still need to convert to WHCN order
+  // but the output shape calculation is now handled correctly in resize
+  // function
   utils::ivec4 block_size_vec = utils::make_whcn_ivec4(*block_size_list);
   utils::ivec4 tensor_size_whcn = utils::make_whcn_ivec4(input_sizes);
 
@@ -350,10 +346,14 @@ void add_choose_qparams_block_wise_node(
         graph.sizes_ubo(zp_out),
         graph.strides_ubo(zp_out)};
   } else {
+    // For texture input, the shader uses buffer storage for outputs
+    // so we need buffer UBOs for the output tensors
     param_ubos = {
         graph.logical_limits_ubo(input),
-        graph.logical_limits_ubo(scale_out),
-        graph.logical_limits_ubo(zp_out)};
+        graph.sizes_ubo(scale_out),
+        graph.strides_ubo(scale_out),
+        graph.sizes_ubo(zp_out),
+        graph.strides_ubo(zp_out)};
   }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -374,7 +374,7 @@ void add_choose_qparams_block_wise_node(
       // Resize Args
       {block_size},
       // Resizing Logic
-      resize_choose_qparams_block_wise_output));
+      nullptr));
 }
 
 void choose_qparams_tensor_impl(

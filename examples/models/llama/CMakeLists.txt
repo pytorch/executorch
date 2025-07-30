@@ -77,10 +77,12 @@ find_package(gflags REQUIRED)
 # llama_main: test binary to run llama, with tokenizer and sampler integrated
 #
 
-# find `executorch` libraries Same as for gflags
-set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
-find_package(executorch CONFIG REQUIRED)
-target_link_options_shared_lib(executorch)
+# find `executorch` libraries. CMAKE_PREFIX_PATH would work for host
+# compilation, but CMAKE_FIND_ROOT_PATH appears to be necessary for
+# cross-compiling (e.g., to Android) to work as well.
+list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
+find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
+executorch_target_link_options_shared_lib(executorch)
 
 # llama_runner library
 add_subdirectory(runner)
@@ -98,18 +100,18 @@ if(TARGET optimized_native_cpu_ops_lib)
     cpublas
     eigen_blas
   )
-  target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
-  target_link_options_shared_lib(portable_ops_lib)
+  executorch_target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 # quantized_ops_lib: Register quantized op kernels into the runtime
-target_link_options_shared_lib(quantized_ops_lib)
+executorch_target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(TARGET custom_ops)
-  target_link_options_shared_lib(custom_ops)
+  executorch_target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()
 
@@ -124,13 +126,13 @@ if(EXECUTORCH_BUILD_TORCHAO)
       ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental
       ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental
     )
-    target_link_options_shared_lib(torchao_ops_executorch)
+    executorch_target_link_options_shared_lib(torchao_ops_executorch)
     list(APPEND link_libraries torchao_ops_executorch)
     if(EXECUTORCH_BUILD_MPS)
       add_subdirectory(
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
         ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental/ops/mps)
-      target_link_options_shared_lib(torchao_ops_mps_executorch)
+      executorch_target_link_options_shared_lib(torchao_ops_mps_executorch)
       list(APPEND link_libraries torchao_ops_mps_executorch)
     endif()
   endif()
@@ -160,19 +162,19 @@ if(TARGET xnnpack_backend)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
   list(APPEND link_libraries ${xnnpack_backend_libs})
-  target_link_options_shared_lib(xnnpack_backend)
+  executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
 
 # Vulkan backend
 if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
-  target_link_options_shared_lib(vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
 endif()
 
 # Qnn backend
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
-  target_link_options_shared_lib(qnn_executorch_backend)
+  executorch_target_link_options_shared_lib(qnn_executorch_backend)
 endif()
 
 # MPS backend
@@ -186,7 +188,7 @@ if(TARGET mpsdelegate)
     "-weak_framework MetalPerformanceShadersGraph"
     "-weak_framework Metal"
   )
-  target_link_options_shared_lib(mpsdelegate)
+  executorch_target_link_options_shared_lib(mpsdelegate)
 endif()
 
 if(TARGET coremldelegate)
@@ -200,7 +202,7 @@ if(TARGET coremldelegate)
     "-framework CoreML"
     "-framework Accelerate"
   )
-  target_link_options_shared_lib(coremldelegate)
+  executorch_target_link_options_shared_lib(coremldelegate)
 endif()
 
 # This one is needed for cpuinfo where it uses android specific log lib

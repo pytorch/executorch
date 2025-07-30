@@ -1,10 +1,11 @@
 # Summary
 
 ## Overview
-This file provides you the instructions to run LLAMA model with different parameters via Qualcomm HTP backend. We currently support the following models:
+This file provides you the instructions to run LLM Decoder model with different parameters via Qualcomm HTP backend. We currently support the following models:
  1. LLAMA2 Stories 110M
  2. LLAMA3.2 1B
  3. LLAMA3.2 3B
+ 4. QWEN2.5 0.5B
 
 We offer the following modes to execute the model:
 
@@ -123,11 +124,15 @@ On the other hand, if you already have a pre-compiled .pte model, you can perfor
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --ptq 16a4w --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --llama_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
 ```
 
+#### KV Cache Updater
+
 You can select the KV Cache update mechanism at runtime by setting the `KV_UPDATER` variable to either "shift_pointer" or "smart_mask". By default, it is set to "smart_mask".
 `KV_UPDATER` = "shift_pointer"
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --ptq 16a4w --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --llama_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1" --kv_updator ${KV_UPDATER}
 ```
+
+#### Lookahead Decoding Mode
 
 You can choose the lookahead mode to enhance decoding speed. To use this mode, you need to specify the following parameters:
 - `--ngram` (N-gram size): Represents the size of the n-grams used in the lookahead process.
@@ -139,3 +144,8 @@ For more details, please refer to the paper ["Break the Sequential Dependency of
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --ptq 16a4w --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --llama_model llama3_2 --model_mode lookahead --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1" --ngram 3 --window 2 --gcap 2
 ```
+
+#### Masked Softmax
+
+You can enable MaskedSoftmax feature by providing the flag `--enable_masked_softmax`. It is designed to optimize the LLMs accuracy and performance executed on HTP backend. MaskedSoftmax is used to replace the Softmax(Add(In, Mask)) structure in attention block in LLMs during backend optimization. For more details, please refer to QNN documents.
+Note that it is only supported starting from QNN 2.35.

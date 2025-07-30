@@ -1170,19 +1170,18 @@ void test_vulkan_choose_qparams_affine(
       vkcompute::utils::kBuffer,
       vkcompute::utils::kBuffer);
 
-  // TEXTURE STORAGE NOT IMPLEMENTED YET
-
-  // // Test with texture storage for both input and output
-  // test_vulkan_choose_qparams_affine_impl(
-  //     input_sizes,
-  //     block_size,
-  //     mapping_type,
-  //     quant_min,
-  //     quant_max,
-  //     eps,
-  //     in_dtype,
-  //     vkcompute::utils::kTexture3D,
-  //     vkcompute::utils::kTexture3D);
+  // Test with texture storage for input and buffer storage for output
+  // (shader always uses buffer storage for outputs)
+  test_vulkan_choose_qparams_affine_impl(
+      input_sizes,
+      block_size,
+      mapping_type,
+      quant_min,
+      quant_max,
+      eps,
+      in_dtype,
+      vkcompute::utils::kTexture3D,
+      vkcompute::utils::kBuffer);
 }
 
 TEST(VulkanChooseQParamsAffineTest, test_1d_asymmetric) {

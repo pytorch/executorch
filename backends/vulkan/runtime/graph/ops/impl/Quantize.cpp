@@ -17,6 +17,18 @@
 
 namespace vkcompute {
 
+void resize_quantize_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  (void)extra_args;
+
+  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
+  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+
+  out->virtual_resize(in->sizes());
+}
+
 utils::uvec3 quantize_per_channel_local_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -142,7 +154,7 @@ void add_quantize_per_tensor_node(
       // Resize Args
       {},
       // Resizing Logic
-      nullptr));
+      resize_quantize_node));
 }
 
 void add_quantize_per_token_node(
@@ -214,7 +226,7 @@ void add_quantize_per_token_node(
       // Resize Args
       {},
       // Resizing Logic
-      nullptr));
+      resize_quantize_node));
 }
 
 void add_quantize_per_channel_node(
@@ -307,7 +319,7 @@ void add_quantize_per_channel_node(
       // Resize Args
       {},
       // Resizing Logic
-      nullptr));
+      resize_quantize_node));
 }
 
 void add_quantize_block_wise_node(
@@ -394,7 +406,7 @@ void add_quantize_block_wise_node(
       // Resize Args
       {},
       // Resizing Logic
-      nullptr));
+      resize_quantize_node));
 }
 
 void quantize_per_tensor_impl(

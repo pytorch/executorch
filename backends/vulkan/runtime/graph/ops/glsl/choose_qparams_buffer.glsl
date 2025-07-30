@@ -331,32 +331,51 @@ ivec4 block_id_to_coord(uint bid) {
 void choose_qparams_block_wise() {
   const uint TOTAL_BLOCKS = uint(numBlocks.x * numBlocks.y * numBlocks.z * numBlocks.w);
 
-  /* each invocation handles block-ids: id, id+STRIDE, id+2·STRIDE … */
+  // each invocation handles block-ids: id, id+STRIDE, id+2·STRIDE
   const uint STRIDE = gl_WorkGroupSize.x * gl_NumWorkGroups.x;
   for (uint block_id = gl_GlobalInvocationID.x; block_id < TOTAL_BLOCKS; block_id += STRIDE) {
     // block -> WHCN coordinate
     ivec4 bc = block_id_to_coord(block_id);
-    ivec4 t0 = bc * blockSize; // first element (inclusive)
-    ivec4 tEnd = t0 + blockSize; // last element (exclusive)
+    ivec4 blockStart = bc * blockSize; // first element (inclusive)
+    ivec4 blockEnd = blockStart + blockSize; // last element (exclusive)
 
     // min / max scan over the block
     float lo =  1.0/0.0; // +INF
     float hi = -1.0/0.0; // -INF
+    bool found_valid = false;
 
-    for (int n = t0.w; n < tEnd.w; ++n)
-    for (int c = t0.z; c < tEnd.z; ++c)
-    for (int h = t0.y; h < tEnd.y; ++h)
-    for (int w = t0.x; w < tEnd.x; ++w) {
-      uint idx = tidx_to_bufi(ivec4(w,h,c,n), t_in_strides);
+    // Calculate actual block dimensions
+    ivec4 actualBlockSize = blockEnd - blockStart;
+    int blockElements = actualBlockSize.x * actualBlockSize.y * actualBlockSize.z * actualBlockSize.w;
+
+    // Linear iteration over block elements
+    for (int elemIdx = 0; elemIdx < blockElements; ++elemIdx) {
+      // Convert linear index to 4D coordinates within block
+      int remaining = elemIdx;
+      int dn = remaining / (actualBlockSize.x * actualBlockSize.y * actualBlockSize.z);
+      remaining -= dn * (actualBlockSize.x * actualBlockSize.y * actualBlockSize.z);
+      int dc = remaining / (actualBlockSize.x * actualBlockSize.y);
+      remaining -= dc * (actualBlockSize.x * actualBlockSize.y);
+      int dh = remaining / actualBlockSize.x;
+      int dw = remaining - dh * actualBlockSize.x;
+
+      ivec4 tidx = blockStart + ivec4(dw, dh, dc, dn);
+      uint idx = tidx_to_bufi(tidx, t_in_strides);
       float v = t_in[idx];
+
       if (!isnan(v) && !isinf(v)) {
-        lo = min(lo, v);
-        hi = max(hi, v);
+        if (!found_valid) {
+          lo = hi = v;
+          found_valid = true;
+        } else {
+          lo = min(lo, v);
+          hi = max(hi, v);
+        }
       }
     }
-    // Check for invalid min/max values
-    if (isinf(lo) || isinf(hi)) {
-      // Handle the case where no valid values were found in the block
+
+    // Handle the case where no valid values were found in the block
+    if (!found_valid) {
       lo = 0.0;
       hi = 0.0;
     }
