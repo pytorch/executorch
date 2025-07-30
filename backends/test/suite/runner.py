@@ -1,11 +1,15 @@
 import argparse
+import importlib
+import re
 import unittest
 
-from typing import Callable
+from typing import Any
 
 import torch
 
-from executorch.backends.test.harness import Tester
+from executorch.backends.test.harness.stages import StageType
+from executorch.backends.test.suite.discovery import discover_tests, TestFilter
+from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
@@ -15,13 +19,21 @@ from executorch.backends.test.suite.reporting import (
 )
 
 
+# A list of all runnable test suites and the corresponding python package.
+NAMED_SUITES = {
+    "models": "executorch.backends.test.suite.models",
+    "operators": "executorch.backends.test.suite.operators",
+}
+
+
 def run_test(  # noqa: C901
     model: torch.nn.Module,
-    inputs: any,
-    tester_factory: Callable[[], Tester],
+    inputs: Any,
+    flow: TestFlow,
     test_name: str,
-    flow_name: str,
     params: dict | None,
+    dynamic_shapes: Any | None = None,
+    generate_random_test_inputs: bool = True,
 ) -> TestCaseSummary:
     """
     Top-level test run function for a model, input set, and tester. Handles test execution
@@ -34,7 +46,7 @@ def run_test(  # noqa: C901
     ) -> TestCaseSummary:
         return TestCaseSummary(
             name=test_name,
-            flow=flow_name,
+            flow=flow.name,
             params=params,
             result=result,
             error=error,
@@ -47,12 +59,23 @@ def run_test(  # noqa: C901
         return build_result(TestResult.EAGER_FAIL, e)
 
     try:
-        tester = tester_factory(model, inputs)
+        tester = flow.tester_factory(model, inputs)
     except Exception as e:
         return build_result(TestResult.UNKNOWN_FAIL, e)
 
+    if flow.quantize:
+        try:
+            tester.quantize(
+                flow.quantize_stage_factory() if flow.quantize_stage_factory else None
+            )
+        except Exception as e:
+            return build_result(TestResult.QUANTIZE_FAIL, e)
+
     try:
-        tester.export()
+        # TODO Use Tester dynamic_shapes parameter once input generation can properly handle derived dims.
+        tester.export(
+            tester._get_default_stage(StageType.EXPORT, dynamic_shapes=dynamic_shapes),
+        )
     except Exception as e:
         return build_result(TestResult.EXPORT_FAIL, e)
 
@@ -80,7 +103,9 @@ def run_test(  # noqa: C901
         # the cause of a failure in run_method_and_compare_outputs. We can look for
         # AssertionErrors to catch output mismatches, but this might catch more than that.
         try:
-            tester.run_method_and_compare_outputs()
+            tester.run_method_and_compare_outputs(
+                inputs=None if generate_random_test_inputs else inputs
+            )
         except AssertionError as e:
             return build_result(TestResult.OUTPUT_MISMATCH_FAIL, e)
         except Exception as e:
@@ -110,6 +135,9 @@ def print_summary(summary: RunSummary):
     print()
     print("[Failure]")
     print(
+        f"{summary.aggregated_results.get(TestResult.QUANTIZE_FAIL, 0):>5} Quantization Fail"
+    )
+    print(
         f"{summary.aggregated_results.get(TestResult.LOWER_FAIL, 0):>5} Lowering Fail"
     )
     print(
@@ -130,8 +158,27 @@ def parse_args():
         prog="ExecuTorch Backend Test Suite",
         description="Run ExecuTorch backend tests.",
     )
-    parser.add_argument("test_path", nargs="?", help="Prefix filter for tests to run.")
+    parser.add_argument(
+        "suite",
+        nargs="*",
+        help="The test suite to run.",
+        choices=NAMED_SUITES.keys(),
+        default=["operators"],
+    )
+    parser.add_argument(
+        "-b", "--backend", nargs="*", help="The backend or backends to test."
+    )
+    parser.add_argument(
+        "-f", "--filter", nargs="?", help="A regular expression filter for test names."
+    )
     return parser.parse_args()
+
+
+def build_test_filter(args: argparse.Namespace) -> TestFilter:
+    return TestFilter(
+        backends=set(args.backend) if args.backend is not None else None,
+        name_regex=re.compile(args.filter) if args.filter is not None else None,
+    )
 
 
 def runner_main():
@@ -139,11 +186,15 @@ def runner_main():
 
     begin_test_session()
 
-    test_path = args.test_path or "executorch.backends.test.suite.operators"
+    if len(args.suite) > 1:
+        raise NotImplementedError("TODO Support multiple suites.")
 
-    loader = unittest.TestLoader()
-    suite = loader.loadTestsFromName(test_path)
-    unittest.TextTestRunner().run(suite)
+    test_path = NAMED_SUITES[args.suite[0]]
+    test_root = importlib.import_module(test_path)
+    test_filter = build_test_filter(args)
+
+    suite = discover_tests(test_root, test_filter)
+    unittest.TextTestRunner(verbosity=2).run(suite)
 
     summary = complete_test_session()
     print_summary(summary)

@@ -8,110 +8,19 @@
 
 import argparse
 
-import torch
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
-from executorch.extension.pybindings.portable_lib import ExecuTorchModule
-from executorch.extension.training.examples.CIFAR.model import (
-    CIFAR10Model,
-    ModelWithLoss,
+from executorch.extension.training.examples.CIFAR.data_utils import get_data_loaders
+from executorch.extension.training.examples.CIFAR.export import (
+    get_pte_only,
+    get_pte_with_ptd,
+    save_model,
+    update_tensor_data_and_save,
 )
-from executorch.extension.training.examples.CIFAR.utils import (
-    fine_tune_executorch_model,
-    get_data_loaders,
+from executorch.extension.training.examples.CIFAR.model import CIFAR10Model
+from executorch.extension.training.examples.CIFAR.train_utils import (
     save_json,
+    train_both_models,
     train_model,
 )
-from torch.export import export
-from torch.export.experimental import _export_forward_backward
-
-
-def export_model(
-    net: torch.nn.Module, input_tensor: torch.Tensor, label_tensor: torch.Tensor
-) -> ExecuTorchModule:
-    """
-    Export a PyTorch model to an ExecutorTorch module format.
-
-    This function takes a PyTorch model and sample input/label
-    tensors, wraps the model with a loss function, exports it
-    using torch.export, applies forward-backward pass
-    optimization, converts it to edge format, and finally to
-    ExecutorTorch format.
-
-    Args:
-        net (torch.nn.Module): The PyTorch model to be exported
-        input_tensor (torch.Tensor): A sample input tensor with
-        the correct shape
-        label_tensor (torch.Tensor): A sample label tensor with
-        the correct shape
-
-    Returns:
-        ExecuTorchModule: The exported model in ExecutorTorch
-        format ready for deployment
-    """
-    criterion = torch.nn.CrossEntropyLoss()
-    model_with_loss = ModelWithLoss(net, criterion)
-    ep = export(model_with_loss, (input_tensor, label_tensor), strict=True)
-    ep = _export_forward_backward(ep)
-    ep = to_edge(ep, compile_config=EdgeCompileConfig(_check_ir_validity=False))
-    ep = ep.to_executorch()
-    return ep
-
-
-def export_model_with_ptd(
-    net: torch.nn.Module, input_tensor: torch.Tensor, label_tensor: torch.Tensor
-) -> ExecuTorchModule:
-    """
-    Export a PyTorch model to an ExecutorTorch module format with external
-    tensor data.
-
-    This function takes a PyTorch model and sample input/label tensors,
-    wraps the model with a loss function, exports it using torch.export,
-    applies forward-backward pass optimization, converts it to edge format,
-    and finally to ExecutorTorch format with external constants and mutable
-    weights.
-
-    Args:
-        net (torch.nn.Module): The PyTorch model to be exported
-        input_tensor (torch.Tensor): A sample input tensor with the correct
-        shape
-        label_tensor (torch.Tensor): A sample label tensor with the correct
-        shape
-
-    Returns:
-        ExecuTorchModule: The exported model in ExecutorTorch format ready for
-        deployment
-    """
-    criterion = torch.nn.CrossEntropyLoss()
-    model_with_loss = ModelWithLoss(net, criterion)
-    ep = export(model_with_loss, (input_tensor, label_tensor), strict=True)
-    ep = _export_forward_backward(ep)
-    ep = to_edge(ep, compile_config=EdgeCompileConfig(_check_ir_validity=False))
-    ep = ep.to_executorch(
-        config=ExecutorchBackendConfig(
-            external_constants=True,  # This is the flag that
-            # enables the external constants to be stored in a
-            # separate file external to the PTE file.
-            external_mutable_weights=True,  # This is the flag
-            # that enables all trainable weights will be stored
-            # in a separate file external to the PTE file.
-        )
-    )
-    return ep
-
-
-def save_model(ep: ExecuTorchModule, model_path: str) -> None:
-    """
-    Save an ExecutorTorch model to a specified file path.
-
-    This function writes the buffer of an ExecutorTorchModule to a
-    file in binary format.
-
-    Args:
-        ep (ExecuTorchModule): The ExecutorTorch module to be saved.
-        model_path (str): The file path where the model will be saved.
-    """
-    with open(model_path, "wb") as file:
-        file.write(ep.buffer)
 
 
 def parse_args() -> argparse.Namespace:
@@ -212,6 +121,13 @@ def parse_args() -> argparse.Namespace:
         help="Learning rate for fine-tuning (default: 0.001)",
     )
 
+    parser.add_argument(
+        "--momentum",
+        type=float,
+        default=0.9,
+        help="Momentum for fine-tuning (default: 0.9)",
+    )
+
     return parser.parse_args()
 
 
@@ -241,48 +157,31 @@ def main() -> None:
 
     save_json(train_hist, args.save_pt_json)
 
-    # Export the model for et runtime
-    validation_sample_data = next(iter(test_loader))
-    img, lbl = validation_sample_data
-    sample_input = img[0:1, :]
-    sample_label = lbl[0:1]
-
-    ep = export_model(model, sample_input, sample_label)
+    ep = get_pte_only(model)
 
     save_model(ep, args.pte_model_path)
 
-    et_model, et_hist = fine_tune_executorch_model(
-        args.pte_model_path,
-        args.pte_model_path,
-        train_loader,
-        test_loader,
-        epochs=args.fine_tune_epochs,
-        learning_rate=args.learning_rate,
-    )
-
-    save_json(et_hist, args.save_et_json)
-
-    # Split the model into the pte and ptd files
-    exported_program = export_model_with_ptd(model, sample_input, sample_label)
-
-    exported_program._tensor_data["generic_cifar"] = exported_program._tensor_data.pop(
-        "_default_external_constant"
-    )
-    exported_program.write_tensor_data_to_file(args.ptd_model_dir)
-    save_model(exported_program, args.split_pte_model_path)
-
-    # Finetune the PyTorch model
-    model, train_hist = train_model(
-        model,
-        train_loader,
-        test_loader,
+    pytorch_model, et_mod, pytorch_history, et_history = train_both_models(
+        pytorch_model=model,
+        et_model_path=args.pte_model_path,
+        train_loader=train_loader,
+        test_loader=test_loader,
         epochs=args.fine_tune_epochs,
         lr=args.learning_rate,
-        momentum=0.9,
-        save_path=args.model_path,
+        momentum=args.momentum,
+        pytorch_save_path=args.model_path,
     )
 
-    save_json(train_hist, args.save_pt_json)
+    save_json(et_history, args.save_et_json)
+    save_json(pytorch_history, args.save_pt_json)
+
+    # Split the model into the pte and ptd files
+    exported_program = get_pte_with_ptd(model)
+
+    update_tensor_data_and_save(
+        exported_program, args.ptd_model_dir, args.split_pte_model_path
+    )
+    print("\n\nProcess complete!!!\n\n")
 
 
 if __name__ == "__main__":

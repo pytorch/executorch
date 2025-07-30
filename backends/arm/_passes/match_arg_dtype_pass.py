@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.arm_pass_utils import create_node, get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -26,7 +26,7 @@ def get_largest_dtype(dtype_1, dtype_2):
     return dtype_1 if DTYPE_RANK[dtype_1] > DTYPE_RANK[dtype_2] else dtype_2
 
 
-class MatchWhereSelfDtypePass(ExportPass):
+class MatchArgDtypePass(ExportPass):
     """Pass to match data types of non-condition input tensors.
 
     Edge dialect allows different data types for non-condition tensors, while TOSA
@@ -38,14 +38,18 @@ class MatchWhereSelfDtypePass(ExportPass):
 
     """
 
+    targeted_ops = {exir_ops.edge.aten.sub.Tensor, exir_ops.edge.aten.where.self}
+
     def call(self, graph_module: torch.fx.GraphModule):
         modified_graph = False
         graph = graph_module.graph
-        node_list = graph.find_nodes(
-            op="call_function", target=exir_ops.edge.aten.where.self
-        )
-        for node in node_list:
-            cond, input_, other_ = node.args
+
+        for node in list(graph.nodes):
+            if node.op != "call_function" or node.target not in self.targeted_ops:
+                continue
+
+            input_ = get_node_arg(node.args, 0)
+            other_ = get_node_arg(node.args, 1)
 
             input_dtype = input_.meta["val"].dtype
             other_dtype = other_.meta["val"].dtype

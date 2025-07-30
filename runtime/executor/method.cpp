@@ -1319,7 +1319,7 @@ Error Method::execute_instruction() {
       // TODO(T147221312): Also expose tensor resizer via the context.
       KernelRuntimeContext context(event_tracer_, temp_allocator_);
       auto args = chain.argument_lists_[step_state_.instr_idx];
-      chain.kernels_[step_state_.instr_idx](context, args.data());
+      chain.kernels_[step_state_.instr_idx](context, args);
       // We reset the temp_allocator after the switch statement
       err = context.failure_state();
       if (err != Error::Ok) {
