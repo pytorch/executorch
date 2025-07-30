@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import torch
 from torch.fx import Node
@@ -27,7 +27,24 @@ __all__ = [
     "OP_TO_ANNOTATOR",
     "propagate_annotation",
     "_convert_scalars_to_attrs",
+    "bits_to_range",
 ]
+
+
+def bits_to_range(bits: int) -> Tuple[int, int]:
+    """
+    Calculate quantization range for given number of bits.
+
+    Args:
+        bits: Number of quantization bits
+
+    Returns:
+        Tuple of (qmin, qmax) for the given bit width
+    """
+    return (
+        -(2 ** (bits - 1)),
+        (2 ** (bits - 1) - 1),
+    )
 
 
 AnnotatorType = Callable[
