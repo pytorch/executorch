@@ -135,11 +135,11 @@ else()
 endif()
 
 # By default, use 2MB of temporary scratch buffer
-# For Dedicated_Sram, use 128MB for the temporary scratch buffer and
+# For Dedicated_Sram, use 64MB for the temporary scratch buffer and
 # 384KB for the fast scratch buffer(the cache, applicable only for Ethos-U65 and Ethos-U85)
 set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x200000)
 if(MEMORY_MODE MATCHES "Dedicated_Sram")
-  set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x8000000)
+  set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x4000000)
   set(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
 endif()
 message(STATUS "ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE = ${ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE}")

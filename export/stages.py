@@ -72,6 +72,22 @@ class Stage(ABC):
         """
         pass
 
+    @property
+    @abstractmethod
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        """
+        Returns the list of stage types that can come before this stage.
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def can_start_pipeline(self) -> bool:
+        """
+        Returns whether this stage can be the first stage in a pipeline.
+        """
+        pass
+
     @abstractmethod
     def run(self, artifact: PipelineArtifact) -> None:
         """
@@ -102,6 +118,14 @@ class TorchExportStage(Stage):
     @property
     def stage_type(self) -> str:
         return StageType.TORCH_EXPORT
+
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return [StageType.SOURCE_TRANSFORM, StageType.QUANTIZE]
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return True
 
     def run(self, artifact: PipelineArtifact) -> None:
         models = artifact.data
@@ -155,6 +179,14 @@ class EdgeTransformAndLowerStage(Stage):
     def stage_type(self) -> str:
         return StageType.TO_EDGE_TRANSFORM_AND_LOWER
 
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return [StageType.TORCH_EXPORT]
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return False
+
     def run(self, artifact: PipelineArtifact) -> None:
         """
         Transform and lower to EdgeProgramManager.
@@ -197,6 +229,14 @@ class ExecutorchStage(Stage):
     def stage_type(self) -> str:
         return StageType.TO_EXECUTORCH
 
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return [StageType.TO_EDGE_TRANSFORM_AND_LOWER]
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return False
+
     def run(self, artifact: PipelineArtifact) -> None:
         """
         Convert to ExecutorchProgramManager.
@@ -226,6 +266,14 @@ class SourceTransformStage(Stage):
     @property
     def stage_type(self) -> str:
         return StageType.SOURCE_TRANSFORM
+
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return []
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return True
 
     def run(self, artifact: PipelineArtifact) -> None:
         """
@@ -268,6 +316,14 @@ class QuantizeStage(Stage):
     @property
     def stage_type(self) -> str:
         return StageType.QUANTIZE
+
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return [StageType.SOURCE_TRANSFORM]
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return True
 
     def run(self, artifact: PipelineArtifact) -> None:
         if not self._quantization_recipe or not self._quantization_recipe.quantizers:
