@@ -255,7 +255,10 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
     layers = torch.nn.ModuleList()
     cls = ATTENTION_REGISTRY[model_args.attention_type]
     for layer_id in range(model_args.n_layers):
-        attention = cls(model_args, layer_id, rope)
+        if model_args.no_rope_layer_interval and (layer_id + 1) % model_args.no_rope_layer_interval == 0:
+            attention = cls(model_args, layer_id, None)
+        else:
+            attention = cls(model_args, layer_id, rope)
         transformer_block = TransformerBlock(model_args, attention)
         layers.append(transformer_block)
 

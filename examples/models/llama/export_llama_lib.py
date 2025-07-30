@@ -109,6 +109,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "qwen3_4b",
     "phi_4_mini",
     "smollm2",
+    "smollm3",
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
@@ -118,6 +119,7 @@ HUGGING_FACE_REPO_IDS = {
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
+    "smollm3": "HuggingFaceTB/SmolLM3-3B",
 }
 
 
@@ -605,7 +607,7 @@ def export_llama(
             from executorch.examples.models.phi_4_mini import (  # pyre-ignore[21]
                 convert_weights,
             )
-        elif model_name == "smollm2":
+        elif model_name == "smollm2" or model_name == "smollm3":
             from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
                 convert_weights,
             )

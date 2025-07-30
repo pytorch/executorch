@@ -325,7 +325,7 @@ class RingKVCache(KVCache):
 
 @register_attention("mha")
 class AttentionMHA(Attention):
-    def __init__(self, args: ModelArgs, layer_id: int, rope: Rope):
+    def __init__(self, args: ModelArgs, layer_id: int, rope: Optional[Rope]):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
@@ -412,7 +412,8 @@ class AttentionMHA(Attention):
             k = self.k_norm_fn(k)
 
         # RoPE relative positional embeddings
-        q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
+        if self.rope:
+            q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)

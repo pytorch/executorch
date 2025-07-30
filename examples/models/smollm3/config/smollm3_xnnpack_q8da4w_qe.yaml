@@ -1,0 +1,21 @@
+base:
+  model_class: smollm3
+  metadata: '{"get_eos_ids":[128012]}'
+
+export:
+  output_name: smollm3_xnnpack_q8da4w_64_qe8_0_norope.pte
+  
+model:
+  use_kv_cache: True
+  use_sdpa_with_kv_cache: True
+  dtype_override: fp32
+
+quantization:
+  qmode: 8da4w
+  group_size: 64
+  embedding_quantize: 8,0
+
+backend:
+  xnnpack:
+    enabled: True
+    extended_ops: True
