@@ -33,13 +33,27 @@ def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
 
 def to_quantized_edge_program(
     model: torch.nn.Module,
-    input_shape: tuple,
+    input_shapes: tuple[int] | list[tuple[int]],
     operators_not_to_delegate: list[str] = None,
     target="imxrt700",
     neutron_converter_flavor="SDK_25_03",
 ) -> EdgeProgramManager:
-    calibration_inputs = [(torch.randn(input_shape),), (torch.randn(input_shape),)]
-    example_input = (torch.ones(*input_shape),)
+    if isinstance(input_shapes, list):
+        assert all(isinstance(input_shape, tuple) for input_shape in input_shapes), (
+            "For multiple inputs, provide" " list[tuple[int]]."
+        )
+
+    random_tensors = (
+        (torch.randn(input_shapes),)
+        if type(input_shapes) is tuple
+        else tuple(torch.randn(input_shape) for input_shape in input_shapes)
+    )
+    calibration_inputs = [random_tensors, random_tensors]
+    example_input = (
+        (torch.ones(input_shapes),)
+        if type(input_shapes) is tuple
+        else tuple(torch.ones(input_shape) for input_shape in input_shapes)
+    )
 
     exir_program_aten = torch.export.export_for_training(
         model, example_input, strict=True
@@ -67,16 +81,27 @@ def to_quantized_edge_program(
 
 
 def to_quantized_executorch_program(
-    model: torch.nn.Module, input_shape: tuple
+    model: torch.nn.Module, input_shapes: tuple[int] | list[tuple[int]]
 ) -> ExecutorchProgramManager:
-    edge_program_manager = to_quantized_edge_program(model, input_shape)
+    edge_program_manager = to_quantized_edge_program(model, input_shapes)
 
     return edge_program_manager.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
 
-def to_edge_program(model: nn.Module, input_shape) -> EdgeProgramManager:
-    example_input = (torch.ones(input_shape),)
+def to_edge_program(
+    model: nn.Module, input_shapes: tuple[int] | list[tuple[int]]
+) -> EdgeProgramManager:
+    if isinstance(input_shapes, list):
+        assert all(isinstance(input_shape, tuple) for input_shape in input_shapes), (
+            "For multiple inputs, provide" " list[tuple[int]]."
+        )
+
+    example_input = (
+        (torch.ones(input_shapes),)
+        if type(input_shapes) is tuple
+        else tuple(torch.ones(input_shape) for input_shape in input_shapes)
+    )
     exir_program = torch.export.export(model, example_input)
     return exir.to_edge(exir_program)

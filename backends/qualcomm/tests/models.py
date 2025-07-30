@@ -102,6 +102,16 @@ class AMax(torch.nn.Module):
         return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
 
 
+class AMin(torch.nn.Module):
+    def __init__(self, dim=None, keepdim=False):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.amin(x, dim=self.dim, keepdim=self.keepdim)
+
+
 class Arange(torch.nn.Module):
     def __init__(self, start, end, step, dtype):
         super().__init__()
@@ -117,6 +127,15 @@ class Arange(torch.nn.Module):
             )
             + y
         )
+
+
+class Argmax(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = torch.argmax(x, dim=0, keepdim=True)
+        return x
 
 
 class Argmin(torch.nn.Module):
@@ -1146,12 +1165,41 @@ class MaskedFill(torch.nn.Module):
         )
 
 
+class MaskedSoftmax(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, attention_mask, input):
+        attn_weights = torch.where(
+            attention_mask == 0, input, torch.amin(input, dim=3, keepdim=True) + (-20)
+        )
+        return torch.nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
+
+
+class MaxDim(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logits):
+        max_logits, max_indices = torch.max(logits, dim=1)
+        return max_logits, max_indices
+
+
 class Maximum(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x, y):
         return torch.maximum(x, y)
+
+
+class MinDim(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logits):
+        min_logits, min_indices = torch.min(logits, dim=1)
+        return min_logits, min_indices
 
 
 class Minimum(torch.nn.Module):

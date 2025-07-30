@@ -105,18 +105,24 @@ endif()
 
 add_library(coreml_util ${UTIL_SOURCES})
 target_include_directories(
-  coreml_util PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
+  coreml_util
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/util>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreml/runtime/util>
 )
 if(APPLE)
   target_link_libraries(coreml_util PRIVATE ${FOUNDATION_FRAMEWORK})
 endif()
 target_compile_options(coreml_util PUBLIC -fPIC)
 
+install(TARGETS coreml_util DESTINATION lib)
+
 install(
-  TARGETS coreml_util
-  DESTINATION lib
-  INCLUDES
-  DESTINATION ${_common_include_directories}
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
+  DESTINATION
+    ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreml/runtime/util
+  FILES_MATCHING
+  PATTERN "*.h"
 )
 
 # CoreML inmemoryfs
@@ -134,7 +140,10 @@ endif()
 
 add_library(coreml_inmemoryfs ${INMEMORYFS_SOURCES})
 target_include_directories(
-  coreml_inmemoryfs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
+  coreml_inmemoryfs
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreml/runtime/inmemoryfs>
 )
 if(APPLE)
   target_link_libraries(
@@ -148,6 +157,14 @@ install(
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
+)
+
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/runtime/inmemoryfs
+  DESTINATION
+    ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreml/runtime/inmemoryfs
+  FILES_MATCHING
+  PATTERN "*.h"
 )
 
 # executorchcoreml
@@ -199,7 +216,7 @@ if(APPLE)
       ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
     )
 
-    target_link_options_shared_lib(libprotobuf-lite)
+    executorch_target_link_options_shared_lib(libprotobuf-lite)
     target_link_libraries(coremldelegate PRIVATE libprotobuf-lite)
   endif()
 
@@ -210,7 +227,7 @@ if(APPLE)
             ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
   )
 
-  target_link_options_shared_lib(coremldelegate)
+  executorch_target_link_options_shared_lib(coremldelegate)
 
   if(EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER)
     target_link_libraries(
@@ -232,9 +249,10 @@ if(APPLE)
   endif()
 
   install(
-    TARGETS coremldelegate
+    TARGETS coremldelegate coreml_util coreml_inmemoryfs
+    EXPORT ExecuTorchTargets
     DESTINATION lib
     INCLUDES
-    DESTINATION ${_common_include_directories}
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
 endif()
