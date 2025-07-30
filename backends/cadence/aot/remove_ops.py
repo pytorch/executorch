@@ -19,7 +19,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import cast, List, Optional, Sequence, Set
+from typing import cast, List, Optional, Sequence, Set, Type
 
 import torch
 import torch.fx
@@ -940,8 +940,8 @@ class RemoveCatFromSliceCopyPass(ExportPass):
 # in Jarvis. Currently, each function in this class iterates over each node of
 # the graph module once. In future, we could consolidate them into a monolithic
 # function.
-class CadenceRemoveNops:
-    passes = [
+class GenericRemoveNops:
+    passes: List[Type[ExportPass]] = [
         SimplifySliceOpPass,
         RemoveCloneOpsTransformImported,
         RemoveToOpsPass,
@@ -949,7 +949,6 @@ class CadenceRemoveNops:
         RemoveZeroSizedCatArgsPass,
         RemoveNopSliceOrViewOpPass,
         RemoveNopExpandOpPass,
-        RemoveZeroSizedConstantPadNd,
         RemoveCloneOpPass,
         RemoveContiguousOpPass,
         RemoveAliasCopyOpPass,
@@ -957,4 +956,12 @@ class CadenceRemoveNops:
         RemoveNopAddOpPass,
         RemoveNopLinalgVectorNormOpPass,
         RemoveBranchedQuantDequant,
+        RemoveNopSelectOpPass,
+        RemovePermutesAroundElementwiseOps,
+        RemoveSqueezeViewBeforeElementwiseOps,
+        RemoveCatFromSliceCopyPass,
     ]
+
+class CadenceRemoveNops:
+    passes: List[Type[ExportPass]] = GenericRemoveNops.passes
+    passes += [RemoveZeroSizedConstantPadNd]
