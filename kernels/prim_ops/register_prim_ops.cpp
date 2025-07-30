@@ -36,7 +36,6 @@ namespace {
   }
 
 #define __NUMBER_ET_PRIM_OP_IMPL(operator, stack, context) \
-  (void)context;                                           \
   EValue& a = *stack[0];                                   \
   EValue& b = *stack[1];                                   \
   EValue& out = *stack[2];                                 \
@@ -50,11 +49,23 @@ namespace {
     out = EValue(a.toDouble() operator b.toInt());         \
   }
 
+#define __ET_PRIM_OP_NUM_ARGS_CHECK_IMPL(stack, context) \
+  ET_KERNEL_CHECK_MSG(                                   \
+      context,                                           \
+      stack.size() == 3,                                 \
+      InvalidProgram,                                    \
+      /* void */,                                        \
+      "Expected %zu args, got %zu",                      \
+      (size_t)3,                                         \
+      stack.size());
+
 #define ALGEBRA_ET_PRIM_OP(operator, stack, context) \
+  __ET_PRIM_OP_NUM_ARGS_CHECK_IMPL(stack, context)   \
   __NUMBER_ET_PRIM_OP_IMPL(operator, stack, context) \
   __ET_PRIM_OP_ERROR_IMPL(a, b, context)
 
 #define BOOLEAN_ET_PRIM_OP(operator, stack, context) \
+  __ET_PRIM_OP_NUM_ARGS_CHECK_IMPL(stack, context)   \
   __NUMBER_ET_PRIM_OP_IMPL(operator, stack, context) \
   else if (a.isBool() && b.isBool()) {               \
     out = EValue(a.toBool() operator b.toBool());    \
@@ -80,7 +91,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "aten::sym_size.int",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& self = *stack[0];
           EValue& dim = *stack[1];
           EValue& out = *stack[2];
@@ -94,7 +112,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "aten::_local_scalar_dense",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& self = *stack[0];
           EValue& out = *stack[1];
           executorch::aten::Tensor self_tensor =
@@ -113,7 +138,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "aten::sym_numel",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& self = *stack[0];
           EValue& out = *stack[1];
           executorch::aten::Tensor self_tensor =
@@ -125,7 +157,15 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::sym_max.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
+
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -146,7 +186,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::sym_min.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -167,7 +214,6 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::add.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
           ALGEBRA_ET_PRIM_OP(+, stack, context);
         }),
 
@@ -197,7 +243,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::floordiv.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -233,7 +286,14 @@ static Kernel prim_ops[] = {
         "executorch_prim::truediv.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
           // can't use macro because of custom casting behavior
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -266,7 +326,14 @@ static Kernel prim_ops[] = {
           // can't use macro because of custom casting behavior
           // TODO: Now that we are reliably generating conversion operators,
           // we can remove the mixed type handling for other operators
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& a = *stack[0];
           EValue& out = *stack[1];
           if (a.isInt()) {
@@ -318,7 +385,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::neg.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& a = *stack[0];
           EValue& out = *stack[1];
           if (a.isInt()) {
@@ -335,7 +409,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::floordiv.int",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -346,7 +427,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::mod.int",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -357,7 +445,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::mod.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -379,7 +474,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::ceil.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& a = *stack[0];
           EValue& out = *stack[1];
           if (a.isDouble()) {
@@ -399,7 +501,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::round.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& a = *stack[0];
           EValue& out = *stack[1];
           if (a.isDouble()) {
@@ -436,7 +545,14 @@ static Kernel prim_ops[] = {
     Kernel(
         "executorch_prim::trunc.Scalar",
         [](KernelRuntimeContext& context, Span<EValue*> stack) {
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& a = *stack[0];
           EValue& out = *stack[1];
           if (a.isDouble()) {
