@@ -16,6 +16,8 @@ from typing import Any, Dict, final, List, Optional, Tuple
 
 import coremltools as ct
 import coremltools.optimize as cto
+import torch
+from coremltools.proto import FeatureTypes_pb2
 
 from executorch.backends.apple.coreml import executorchcoreml
 from executorch.exir.backend.backend_details import (
@@ -29,6 +31,74 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 from executorch.backends.apple.coreml.compiler.torch_ops import *  # noqa: F401, F403
+
+
+def _ct_dtype_to_torch_dtype(ct_data_type: int) -> torch.dtype:
+    mapping = {
+        FeatureTypes_pb2.ArrayFeatureType.INT32: torch.int32,
+        FeatureTypes_pb2.ArrayFeatureType.FLOAT16: torch.float16,
+        FeatureTypes_pb2.ArrayFeatureType.FLOAT32: torch.float32,
+        FeatureTypes_pb2.ArrayFeatureType.DOUBLE: torch.float64,
+    }
+    return mapping[ct_data_type]
+
+
+def _validate_io(ep_io, ct_io, io_kind):
+    assert len(ep_io) == len(
+        ct_io
+    ), f"The ExportedProgram and the CoreML program have different {io_kind}.  This is not expected.  Please file an issue on ExecuTorch."
+
+    for i, (ep_io_val, ct_io_val) in enumerate(zip(ep_io, ct_io)):
+        ct_name = ct_io_val.name
+        ep_name = ep_io_val[0]
+        assert (
+            ct_name == ep_name
+        ), f"Mismatched {io_kind} at pos {i}: ExportedProgram {io_kind} is {ep_name}, but CoreML input is {ct_name}"
+        assert (
+            ct_io_val.type.WhichOneof("Type") == "multiArrayType"
+        ), f"Expected multiArrayType for {ct_name}"
+
+        ct_dtype = _ct_dtype_to_torch_dtype(ct_io_val.type.multiArrayType.dataType)
+        ep_dtype = ep_io_val[1].dtype
+        assert ct_dtype == ep_dtype, (
+            f"Mismatched dtype for {io_kind} {ep_name} (pos {i}):\n"
+            f"  ExportedProgram has dtype {ep_dtype}, but CoreML has dtype {ct_dtype}.\n"
+            f"  Sometimes CoreML autocasts inputs/outputs (e.g., int64 → int32).\n"
+            f"  In some cases, this can be fixed by changing the input type on the ExportedProgram before lowering."
+        )
+
+
+def _validate_inputs(ep, mlmodel):
+    user_input_to_val = {}
+    for node in ep.graph.nodes:
+        if node.op == "placeholder":
+            assert node.name in ep.graph_signature.user_inputs
+            user_input_to_val[node.name] = node.meta["val"]
+
+    ep_user_inputs = []
+    for uin in ep.graph_signature.user_inputs:
+        ep_user_inputs.append((uin, user_input_to_val[uin]))
+
+    ct_inputs = mlmodel.get_spec().description.input
+    _validate_io(ep_user_inputs, ct_inputs, "user_input")
+
+
+def _validate_outputs(ep, mlmodel):
+    for output_node in ep.graph.nodes:
+        if output_node.op == "output":
+            break
+
+    user_output_to_val = {}
+    for node in output_node.args[0]:
+        assert node.name in ep.graph_signature.user_outputs
+        user_output_to_val[node.name] = node.meta["val"]
+
+    ep_user_outputs = []
+    for uout in ep.graph_signature.user_outputs:
+        ep_user_outputs.append((uout, user_output_to_val[uout]))
+
+    ct_outputs = mlmodel.get_spec().description.output
+    _validate_io(ep_user_outputs, ct_outputs, "user_output")
 
 
 class COMPILE_SPEC_KEYS(Enum):
@@ -440,6 +510,8 @@ class CoreMLBackend(BackendDetails):
             minimum_deployment_target=minimum_deployment_target,
             compute_units=compute_units,
         )
+        _validate_inputs(edge_program, mlmodel)
+        _validate_outputs(edge_program, mlmodel)
 
         if op_linear_quantizer_config is not None:
             logger.warning(
