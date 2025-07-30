@@ -98,8 +98,6 @@ jobs:
               --recipe "portable" \
               --use_custom_sdpa \
               --use_custom_kv_cache \
-              --qlinear \
-              --qembedding \
               --output_dir="oa_whisper"
           pwd
           ls
