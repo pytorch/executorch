@@ -21,10 +21,10 @@ setup_zephyr_et_module () {
 setup_optimum() {
     git clone https://github.com/huggingface/optimum-executorch.git
     cd optimum-executorch
-    python3 -m pip install --upgrade pip
-    python3 -m pip install '.[dev]'
-    python3 install_dev.py
-    python3 -m pip install torchao==0.11.0
-    python3 -m pip install transformers==4.52.4
-    python3 -m pip install torchcodec==0.4.0
+    python -m pip install --upgrade pip
+    python -m pip install '.[dev]'
+    python install_dev.py --skip_override_torch
+    python -m pip install torchao==0.11.0
+    python -m pip install transformers==4.52.4
+    python -m pip install torchcodec==0.4.0
 }
