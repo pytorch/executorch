@@ -216,7 +216,7 @@ def fuse_into_linear_qcnw_node(
 
 
 def _is_dequantize_affine_node(node: torch.fx.Node) -> bool:
-    """Check if a node is a dequantize_affine function call."""
+    """Check if a node is a dequantize_affine operation."""
     return (
         node.op == "call_function"
         and node.target is not None
@@ -225,10 +225,52 @@ def _is_dequantize_affine_node(node: torch.fx.Node) -> bool:
     )
 
 
+def _is_view_copy_node(node: torch.fx.Node) -> bool:
+    """Check if a node is a view_copy operation."""
+    return (
+        node.op == "call_function"
+        and node.target is not None
+        and hasattr(node.target, "__name__")
+        and "view_copy" in getattr(node.target, "__name__", "")
+    )
+
+
 def _validate_qta8a_qga4w_nodes(
+    input_node: torch.fx.node.Argument, weight_node: torch.fx.node.Argument
+) -> Optional[torch.fx.Node]:
+    """
+    Validate input and weight nodes for QTA8A_QGA4W pattern.
+    Returns the actual input node (after handling view operations) or None if invalid.
+    """
+    # Type checking - ensure we have torch.fx.Node objects
+    if not isinstance(weight_node, torch.fx.Node) or not isinstance(
+        input_node, torch.fx.Node
+    ):
+        return None
+
+    # Input may be preprocessed with a view node
+    actual_input_node = input_node
+    if _is_view_copy_node(input_node):
+        actual_input_node = input_node.args[0]
+        if not isinstance(actual_input_node, torch.fx.Node):
+            return None
+
+    # Check if input is dequantized with dequantize_affine (from dynamic quantization)
+    if not _is_dequantize_affine_node(actual_input_node):
+        return None
+
+    # Check if weight is dequantized with dequantize_affine
+    if not _is_dequantize_affine_node(weight_node):
+        return None
+
+    return actual_input_node
+
+
+def _extract_weight_params(
     program: ExportedProgram, weight_node: torch.fx.Node
 ) -> Optional[Tuple[torch.fx.Node, torch.fx.Node, torch.fx.Node]]:
-    """Validate and extract weight quantization nodes for QTA8A_QGA4W pattern."""
+    """Extract and validate weight parameters from dequantize_affine node."""
+    # Get the original quantized weight and quantization parameters
     if len(weight_node.args) < 4:
         return None
 
@@ -237,58 +279,38 @@ def _validate_qta8a_qga4w_nodes(
     weight_zeros = weight_node.args[3]
 
     # Type checking
-    if not isinstance(orig_weight, torch.fx.Node):
+    if not isinstance(orig_weight, torch.fx.Node) or not is_param_node(
+        program, orig_weight
+    ):
         return None
-    if not is_param_node(program, orig_weight):
+    if not isinstance(weight_scales, torch.fx.Node) or not is_param_node(
+        program, weight_scales
+    ):
         return None
-    if not isinstance(weight_scales, torch.fx.Node):
-        return None
-    if not is_param_node(program, weight_scales):
-        return None
-    if not isinstance(weight_zeros, torch.fx.Node):
-        return None
-    if not is_param_node(program, weight_zeros):
+    if not isinstance(weight_zeros, torch.fx.Node) or not is_param_node(
+        program, weight_zeros
+    ):
         return None
 
     return orig_weight, weight_scales, weight_zeros
 
 
-def _validate_qta8a_qga4w_tensors(
-    program: ExportedProgram,
-    orig_weight: torch.fx.Node,
-    weight_scales: torch.fx.Node,
-    weight_zeros: torch.fx.Node,
-) -> Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
-    """Validate and extract weight tensors for QTA8A_QGA4W pattern."""
-    orig_weight_tensor = get_param_tensor(program, orig_weight)
-    weight_scales_tensor = get_param_tensor(program, weight_scales)
-    weight_zeros_tensor = get_param_tensor(program, weight_zeros)
-
-    if not isinstance(orig_weight_tensor, torch.Tensor):
-        return None
-    if not isinstance(weight_scales_tensor, torch.Tensor):
-        return None
-    if not isinstance(weight_zeros_tensor, torch.Tensor):
-        return None
-
-    return orig_weight_tensor, weight_scales_tensor, weight_zeros_tensor
-
-
-def _validate_4bit_quantization(orig_weight_tensor: torch.Tensor) -> bool:
-    """Check if weight tensor is quantized to 4 bits."""
-    quant_min = orig_weight_tensor.min().item()
-    quant_max = orig_weight_tensor.max().item()
+def _validate_4bit_quantization(weight_tensor: torch.Tensor) -> bool:
+    """Check if weight tensor is quantized to 4 bits (values in [-8, 7] range)."""
+    quant_min = weight_tensor.min().item()
+    quant_max = weight_tensor.max().item()
     return quant_min >= -8 and quant_max <= 7
 
 
 def _calculate_group_size(
     orig_weight_tensor: torch.Tensor, weight_scales_tensor: torch.Tensor
 ) -> Optional[int]:
-    """Calculate and validate group size from tensor shapes."""
+    """Calculate and validate group size from weight and scales tensors."""
+    out_features, in_features = orig_weight_tensor.shape
+
     if len(weight_scales_tensor.shape) != 2:
         return None
 
-    out_features, in_features = orig_weight_tensor.shape
     scales_out_features, num_groups = weight_scales_tensor.shape
 
     if scales_out_features != out_features:
@@ -327,37 +349,37 @@ def matches_linear_qta8a_qga4w_pattern(
     input_node = node.args[0]
     weight_node = node.args[1]
 
-    # Type checking - ensure we have torch.fx.Node objects
+    # Validate nodes and get actual input node
+    actual_input_node = _validate_qta8a_qga4w_nodes(input_node, weight_node)
+    if actual_input_node is None:
+        return None
+
+    # Extract weight parameters
     if not isinstance(weight_node, torch.fx.Node):
         return None
-    if not isinstance(input_node, torch.fx.Node):
+    weight_params = _extract_weight_params(program, weight_node)
+    if weight_params is None:
         return None
 
-    # Check if input and weight are dequantized with dequantize_affine
-    if not _is_dequantize_affine_node(input_node):
-        return None
-    if not _is_dequantize_affine_node(weight_node):
-        return None
+    orig_weight, weight_scales, weight_zeros = weight_params
 
-    # Validate and extract weight quantization nodes
-    weight_nodes = _validate_qta8a_qga4w_nodes(program, weight_node)
-    if weight_nodes is None:
-        return None
-    orig_weight, weight_scales, weight_zeros = weight_nodes
+    # Get tensors to analyze the quantization scheme
+    orig_weight_tensor = get_param_tensor(program, orig_weight)
+    weight_scales_tensor = get_param_tensor(program, weight_scales)
+    weight_zeros_tensor = get_param_tensor(program, weight_zeros)
 
-    # Validate and extract weight tensors
-    weight_tensors = _validate_qta8a_qga4w_tensors(
-        program, orig_weight, weight_scales, weight_zeros
-    )
-    if weight_tensors is None:
+    if not isinstance(orig_weight_tensor, torch.Tensor):
         return None
-    orig_weight_tensor, weight_scales_tensor, weight_zeros_tensor = weight_tensors
+    if not isinstance(weight_scales_tensor, torch.Tensor):
+        return None
+    if not isinstance(weight_zeros_tensor, torch.Tensor):
+        return None
 
     # Check if weight is quantized to 4 bits
     if not _validate_4bit_quantization(orig_weight_tensor):
         return None
 
-    # Calculate and validate group size
+    # Calculate group size
     group_size = _calculate_group_size(orig_weight_tensor, weight_scales_tensor)
     if group_size is None:
         return None
@@ -390,6 +412,20 @@ def fuse_into_linear_qta8a_qga4w_node(
     """
     dq_input_node = linear_node.args[0]
     dq_weight_node = linear_node.args[1]
+
+    assert isinstance(dq_input_node, torch.fx.Node)
+
+    input_view_node = None
+    # Input may be preprocessed with a view node
+    if (
+        dq_input_node.op == "call_function"
+        and dq_input_node.target is not None
+        and hasattr(dq_input_node.target, "__name__")
+        and "view_copy" in getattr(dq_input_node.target, "__name__", "")
+    ):
+        input_view_node = dq_input_node
+        dq_input_node = dq_input_node.args[0]
+        assert isinstance(dq_input_node, torch.fx.Node)
 
     assert isinstance(dq_input_node, torch.fx.Node)
     assert isinstance(dq_weight_node, torch.fx.Node)
@@ -440,6 +476,8 @@ def fuse_into_linear_qta8a_qga4w_node(
 
         # Erase nodes in the correct order (users first, then dependencies)
         graph_module.graph.erase_node(linear_node)
+        if input_view_node is not None:
+            graph_module.graph.erase_node(input_view_node)
         graph_module.graph.erase_node(dq_weight_node)
         graph_module.graph.erase_node(dq_input_node)
 
