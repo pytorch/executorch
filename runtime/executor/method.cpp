@@ -496,8 +496,12 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
               j);
           evalp_list[j] = &values_[static_cast<size_t>(value_index)];
         }
-        new (&values_[i]) EValue(
-            BoxedEvalueList<int64_t>(evalp_list, int_list, items->size()));
+        auto* boxed_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<BoxedEvalueList<int64_t>>();
+        auto boxed_list = new (boxed_list_mem)
+            BoxedEvalueList<int64_t>(evalp_list, int_list, items->size());
+        new (&values_[i]) EValue(boxed_list);
       } break;
       case executorch_flatbuffer::KernelTypes::BoolList: {
         const auto items =
@@ -514,8 +518,12 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
         // portable here we need to allocate a new array of bool and copy cast
         // the flatbuffer data into it, but because of how exceptionally rare
         // this case is its low prio TODO: jakeszwe
-        new (&values_[i]) EValue(executorch::aten::ArrayRef<bool>(
-            (const bool*)items->data(), items->size()));
+        auto* bool_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<executorch::aten::ArrayRef<bool>>();
+        auto bool_list = new (bool_list_mem) executorch::aten::ArrayRef<bool>(
+            (const bool*)items->data(), items->size());
+        new (&values_[i]) EValue(bool_list);
       } break;
       case executorch_flatbuffer::KernelTypes::DoubleList: {
         const auto items =
@@ -525,8 +533,12 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
             InvalidProgram,
             "Missing list at index %" ET_PRIsize_t,
             i);
-        new (&values_[i]) EValue(
-            executorch::aten::ArrayRef<double>(items->data(), items->size()));
+        auto* double_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<executorch::aten::ArrayRef<double>>();
+        auto double_list = new (double_list_mem)
+            executorch::aten::ArrayRef<double>(items->data(), items->size());
+        new (&values_[i]) EValue(double_list);
       } break;
       case executorch_flatbuffer::KernelTypes::String: {
         const auto fb_str =
@@ -537,7 +549,12 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
             InvalidProgram,
             "Missing string at index %" ET_PRIsize_t,
             i);
-        new (&values_[i]) EValue(fb_str->c_str(), fb_str->size());
+        auto* char_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<executorch::aten::ArrayRef<char>>();
+        auto char_list = new (char_list_mem)
+            executorch::aten::ArrayRef<char>(fb_str->c_str(), fb_str->size());
+        new (&values_[i]) EValue(char_list);
       } break;
       case executorch_flatbuffer::KernelTypes::Tensor: {
         auto t = deserialization::parseTensor(
@@ -577,7 +594,12 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
               static_cast<uint32_t>(tensors.error()));
           return tensors.error();
         }
-        new (&values_[i]) EValue(tensors.get());
+        auto* boxed_tensor_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<BoxedEvalueList<executorch::aten::Tensor>>();
+        auto boxed_tensor_list = new (boxed_tensor_list_mem)
+            BoxedEvalueList<executorch::aten::Tensor>(std::move(tensors.get()));
+        new (&values_[i]) EValue(boxed_tensor_list);
       } break;
       case executorch_flatbuffer::KernelTypes::OptionalTensorList: {
         const auto items =
@@ -601,7 +623,14 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
               static_cast<uint32_t>(tensors.error()));
           return tensors.error();
         }
-        new (&values_[i]) EValue(tensors.get());
+        auto* boxed_optional_tensor_list_mem =
+            memory_manager_->method_allocator()
+                ->allocateInstance<
+                    BoxedEvalueList<std::optional<executorch::aten::Tensor>>>();
+        auto boxed_optional_tensor_list = new (boxed_optional_tensor_list_mem)
+            BoxedEvalueList<std::optional<executorch::aten::Tensor>>(
+                std::move(tensors.get()));
+        new (&values_[i]) EValue(boxed_optional_tensor_list);
       } break;
       default:
         // flatbuffer enums start at 0, but they generate a hidden NONE enum
