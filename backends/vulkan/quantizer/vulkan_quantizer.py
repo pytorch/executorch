@@ -12,7 +12,7 @@ import functools
 from typing import Callable, Optional
 
 import torch
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+from executorch.backends.vulkan.quantizer.vulkan_quantizer_utils import (
     _convert_scalars_to_attrs,
     OP_TO_ANNOTATOR,
     propagate_annotation,
