@@ -58,7 +58,7 @@ int tid_to_smi(const ivec2 tid) {
 // with the accumulator.
 #define POSTPROCESS(accum) ${POSTPROCESS}
 
-void reduce_2d(const ivec2 tid, ivec3 scan_pos) {
+void reduce_2d_non_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   // shared memory index of this thread
   const int smi = tid_to_smi(tid);
 
@@ -124,5 +124,5 @@ void main() {
     return;
   }
 
-  reduce_2d(tid, scan_pos);
+  reduce_2d_non_packed_dim(tid, scan_pos);
 }

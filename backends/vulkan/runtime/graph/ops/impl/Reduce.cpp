@@ -179,6 +179,12 @@ void add_reduce2d_node(
   reduce_dim1 = nchw_dim_to_whcn_dim(reduce_dim1, ndim);
   reduce_dim2 = nchw_dim_to_whcn_dim(reduce_dim2, ndim);
   
+  // Check that none of the reduction dims are packed
+  VK_CHECK_COND(graph.packed_dim_of(in) != reduce_dim1);
+  VK_CHECK_COND(graph.packed_dim_of(in) != reduce_dim2);
+  VK_CHECK_COND(graph.packed_dim_of(out) != reduce_dim1);
+  VK_CHECK_COND(graph.packed_dim_of(out) != reduce_dim2);
+
   // Check that the concat dim is not one of the reduction dims
   if (graph.dim_of(in) == 4 && graph.size_at<int>(0, in) > 1) {
     VK_CHECK_COND(graph.concat_dim_of(in) != reduce_dim1);
@@ -232,13 +238,12 @@ void add_reduce2d_node(
       const ValueRef dim_ref = graph.get_or_add_value_for_int(dim_val);  \
       return add_reduce_node(                                            \
           graph, args[0], dim_ref, args[out_arg_idx], #op_name);         \
-    }
-    if (dims_list.size() == 2) {                                  \
+    }                                                                    \
+    if (dims_list.size() == 2) {                                         \
       return add_reduce2d_node(                                          \
           graph, args[0], args[1], args[out_arg_idx], #op_name);         \
-    }
-    VK_CHECK_COND(false, "Only 1 or 2 dimensions supported");          \
     }                                                                    \
+    VK_CHECK_COND(false, "Only 1 or 2 dimensions supported");            \
   }
 
 DEFINE_REDUCE_FN(sum, 4)

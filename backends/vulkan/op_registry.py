@@ -23,6 +23,7 @@ from executorch.backends.vulkan.utils import (
     all_memory_layouts,
     all_packed_dims,
     PackedDim,
+    get_node_memory_layout,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -534,6 +535,27 @@ def register_reduce_op(features: OpFeatures):
         dim_list = node.args[1]
         if isinstance(dim_list, list) and len(dim_list) > 2:
             return False
+
+        if isinstance(dim_list, list) and len(dim_list) == 2:
+            # Try to get the memory layout for this node
+            try:
+                memory_layout = get_node_memory_layout(node)
+
+                # If we have memory layout information, check if any dimension in dim_list corresponds to a packed dimension
+                if memory_layout is not None:
+                    for dim in dim_list:
+                        # For WIDTH_PACKED layout, dimension 3 (W) is packed
+                        if memory_layout == VkMemoryLayout.TENSOR_WIDTH_PACKED and dim == 3:
+                            return False
+                        # For HEIGHT_PACKED layout, dimension 2 (H) is packed
+                        elif memory_layout == VkMemoryLayout.TENSOR_HEIGHT_PACKED and dim == 2:
+                            return False
+                        # For CHANNELS_PACKED layout, dimension 1 (C) is packed
+                        elif memory_layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED and dim == 1:
+                            return False
+            except (AssertionError, KeyError, AttributeError):
+                # If we can't get memory layout information, we'll assume the dims aren't packed
+                pass
 
         keepdim = node.args[2]
         if isinstance(keepdim, bool) and not keepdim:
