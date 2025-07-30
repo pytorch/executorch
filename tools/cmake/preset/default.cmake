@@ -146,6 +146,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_VGF "Build the Arm VGF backend" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." BOOL
   OFF
 )
@@ -211,6 +214,30 @@ define_overridable_option(
   EXECUTORCH_USE_CPP_CODE_COVERAGE "Build with code coverage enabled" BOOL OFF
 )
 
+# Selective build options. These affect the executorch_kernels target.
+define_overridable_option(
+  EXECUTORCH_SELECT_OPS_YAML
+  "Build the executorch_kernels target with YAML selective build config."
+  STRING ""
+)
+define_overridable_option(
+  EXECUTORCH_SELECT_OPS_LIST
+  "Build the executorch_kernels target with a list of selected operators."
+  STRING ""
+)
+define_overridable_option(
+  EXECUTORCH_SELECT_OPS_MODEL
+  "Build the executorch_kernels target with only operators from the given model .pte file."
+  STRING
+  ""
+)
+define_overridable_option(
+  EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD
+  "Build the executorch_kernels target with only operator implementations for selected data types."
+  BOOL
+  FALSE
+)
+
 # ------------------------------------------------------------------------------
 # Validations
 #
@@ -223,8 +250,7 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXECUTOR_RUNNER REQUIRES
-  EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL
-  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
+  EXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
 )
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR REQUIRES
@@ -271,14 +297,28 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD REQUIRES
+  EXECUTORCH_SELECT_OPS_MODEL
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_BUILD_XNNPACK REQUIRES EXECUTORCH_BUILD_CPUINFO
   EXECUTORCH_BUILD_PTHREADPOOL
 )
 
 check_conflicting_options_on(
   IF_ON EXECUTORCH_BUILD_ARM_BAREMETAL CONFLICTS_WITH
-  EXECUTORCH_BUILD_PTHREADPOOL
-  EXECUTORCH_BUILD_CPUINFO
+  EXECUTORCH_BUILD_PTHREADPOOL EXECUTORCH_BUILD_CPUINFO
+)
+
+# Selective build specifiers are mutually exclusive.
+check_conflicting_options_on(
+  IF_ON EXECUTORCH_SELECT_OPS_YAML CONFLICTS_WITH EXECUTORCH_SELECT_OPS_LIST
+  EXECUTORCH_SELECT_OPS_MODEL
+)
+
+check_conflicting_options_on(
+  IF_ON EXECUTORCH_SELECT_OPS_LIST CONFLICTS_WITH EXECUTORCH_SELECT_OPS_MODEL
 )
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})

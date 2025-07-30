@@ -45,6 +45,7 @@ class LlamaAttention(nn.Module):
         self.num_key_value_groups = config.n_heads // self.n_kv_heads
         self.max_seq_len = config.max_seq_len
         self.output_new_cache_only = output_new_cache_only
+        self.enable_masked_softmax = getattr(config, "enable_masked_softmax", False)
 
         self.wq = nn.Linear(
             self.dim,
@@ -189,7 +190,13 @@ class LlamaAttention(nn.Module):
         for i, _ in enumerate(q):
             cache_idx = i // self.num_key_value_groups
             attn = q[i] @ kh[cache_idx]
-            attn = attn / self.scale + atten_mask
+            attn = attn / self.scale
+            if self.enable_masked_softmax:
+                attn_min = torch.amin(attn, dim=-1, keepdim=True)
+                minus_value = -20
+                attn = torch.where(atten_mask == 0, attn, attn_min + minus_value)
+            else:
+                attn = attn + atten_mask
             attn = self.attn_softmax(attn)
             y = attn @ vh[cache_idx]
 
