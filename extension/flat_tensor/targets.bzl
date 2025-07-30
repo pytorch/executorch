@@ -21,6 +21,6 @@ def define_common_targets():
                 "//executorch/extension/flat_tensor/serialize:generated_headers",
             ],
             visibility = [
-                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
             ],
         )

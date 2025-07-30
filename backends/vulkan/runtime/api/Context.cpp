@@ -217,7 +217,7 @@ void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
 }
 
 void Context::flush() {
-  VK_CHECK(vkQueueWaitIdle(queue()));
+  VK_CHECK(vkQueueWaitIdle(queue().handle));
 
   command_pool_.flush();
   descriptor_pool_.flush();
