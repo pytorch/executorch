@@ -90,14 +90,7 @@ jobs:
         if [[ "${MODEL_NAME}" == "whisper_tiny" ]]; then
           cd $ZEPHYR_PROJ_ROOT
           # For whisper-tiny, we will use optimum to export the encoder and decoder ptes
-          git clone https://github.com/huggingface/optimum-executorch.git
-          cd optimum-executorch
-          pip_install --upgrade pip
-          pip_install '.[dev]'
-          python3 install_dev.py
-          pip_install torchao==0.11.0
-          pip_install transformers==4.52.4
-          pip_install torchcodec==0.4.0
+          setup_optimum
 
           optimum-cli export executorch \
               --model "openai/whisper-tiny" \
