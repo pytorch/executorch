@@ -409,7 +409,6 @@
 <li class="toctree-l2"><a class="reference internal" href="#backend-delegation">Backend delegation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#quantization">Quantization</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#profiling-and-debugging">Profiling and Debugging</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#performance-debugging-and-profiling">Performance debugging and profiling</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="run-with-c-plus-plus.html">Running with C++</a></li>
@@ -847,13 +846,9 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 </pre></div>
 </div>
 </div>
-<div class="section" id="performance-analysis">
-<h3>Performance Analysis<a class="headerlink" href="#performance-analysis" title="Permalink to this heading">¶</a></h3>
-<p>Through the ExecuTorch Developer Tools, users are able to profile model execution, giving timing information for each operator in the model.</p>
-<div class="section" id="prerequisites">
-<h4>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h4>
-<div class="section" id="etrecord-generation-optional">
-<h5>ETRecord generation (Optional)<a class="headerlink" href="#etrecord-generation-optional" title="Permalink to this heading">¶</a></h5>
+<div class="section" id="further-model-analysis-and-debugging">
+<h3>Further Model Analysis and Debugging<a class="headerlink" href="#further-model-analysis-and-debugging" title="Permalink to this heading">¶</a></h3>
+<p>Through the <span class="xref myst">ExecuTorch’s Developer Tools</span>, users are able to profile model execution, giving timing information for each operator in the model, doing model numeric debugging, etc.</p>
 <p>An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see <a class="reference internal" href="../etrecord.html"><span class="doc std std-doc">the ETRecord docs</span></a>.</p>
 <p>In your export script, after calling <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, call <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> with the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and the <code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>. Make sure to copy the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>, as the call to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code> mutates the graph in-place.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
@@ -871,79 +866,8 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 </pre></div>
 </div>
 <p>Run the export script and the ETRecord will be generated as <code class="docutils literal notranslate"><span class="pre">etrecord.bin</span></code>.</p>
+<p>To learn more about ExecuTorch’s Developer Tools, see the <a class="reference internal" href="../devtools-overview.html"><span class="doc std std-doc">Introduction to the ExecuTorch Developer Tools</span></a>.</p>
 </div>
-<div class="section" id="etdump-generation">
-<h5>ETDump generation<a class="headerlink" href="#etdump-generation" title="Permalink to this heading">¶</a></h5>
-<p>An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see <a class="reference internal" href="../etdump.html"><span class="doc std std-doc">the ETDump docs</span></a>.</p>
-<p>Include the ETDump header and namespace in your code.</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
-
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/devtools/etdump/etdump_flatcc.h&gt;</span>
-
-<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">etdump</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="p">;</span>
-<span class="k">using</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">etdump_result</span><span class="p">;</span>
-</pre></div>
-</div>
-<p>Create an Instance of the ETDumpGen class and pass it to the Module constructor.</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">unique_ptr</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="w"> </span><span class="n">etdump_gen_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">Module</span><span class="w"> </span><span class="n">model</span><span class="p">(</span><span class="s">&quot;nanogpt.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Module</span><span class="o">::</span><span class="n">LoadMode</span><span class="o">::</span><span class="n">MmapUseMlockIgnoreErrors</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">etdump_gen_</span><span class="p">));</span>
-</pre></div>
-</div>
-<p>After calling <code class="docutils literal notranslate"><span class="pre">generate()</span></code>, save the ETDump to a file. You can capture multiple
-model runs in a single trace, if desired.</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">ETDumpGen</span><span class="o">*</span><span class="w"> </span><span class="n">etdump_gen</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">*&gt;</span><span class="p">(</span><span class="n">model</span><span class="p">.</span><span class="n">event_tracer</span><span class="p">());</span>
-
-<span class="n">ET_LOG</span><span class="p">(</span><span class="n">Info</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ETDump size: %zu blocks&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">etdump_gen</span><span class="o">-&gt;</span><span class="n">get_num_blocks</span><span class="p">());</span>
-<span class="n">etdump_result</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump_gen</span><span class="o">-&gt;</span><span class="n">get_etdump_data</span><span class="p">();</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="k">nullptr</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="c1">// On a device with a file system, users can just write it to a file.</span>
-<span class="w">    </span><span class="kt">FILE</span><span class="o">*</span><span class="w"> </span><span class="n">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">fopen</span><span class="p">(</span><span class="s">&quot;etdump.etdp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;w+&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="n">fwrite</span><span class="p">((</span><span class="kt">uint8_t</span><span class="o">*</span><span class="p">)</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">f</span><span class="p">);</span>
-<span class="w">    </span><span class="n">fclose</span><span class="p">(</span><span class="n">f</span><span class="p">);</span>
-<span class="w">    </span><span class="n">free</span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="p">);</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-<p>Additionally, update CMakeLists.txt to build with Developer Tools and enable events to be traced and logged into ETDump:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">option</span><span class="p">(</span><span class="n">EXECUTORCH_ENABLE_EVENT_TRACER</span> <span class="s2">&quot;&quot;</span> <span class="n">ON</span><span class="p">)</span>
-<span class="n">option</span><span class="p">(</span><span class="n">EXECUTORCH_BUILD_DEVTOOLS</span> <span class="s2">&quot;&quot;</span> <span class="n">ON</span><span class="p">)</span>
-
-<span class="c1"># ...</span>
-
-<span class="n">target_link_libraries</span><span class="p">(</span>
-    <span class="c1"># ... omit existing ones</span>
-    <span class="n">etdump</span><span class="p">)</span> <span class="c1"># Provides event tracing and logging</span>
-
-<span class="n">target_compile_options</span><span class="p">(</span><span class="n">executorch</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
-<span class="n">target_compile_options</span><span class="p">(</span><span class="n">portable_ops_lib</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>Build and run the runner, you will see a file named “etdump.etdp” is generated. (Note that this time we build in release mode to get around a flatccrt build limitation.)</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span>..<span class="o">)</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j10
-./cmake-out/nanogpt_runner
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="section" id="performance-debugging-and-profiling">
-<h2>Performance debugging and profiling<a class="headerlink" href="#performance-debugging-and-profiling" title="Permalink to this heading">¶</a></h2>
-<p>Once you’ve collected debug artifacts ETDump (and optionally an ETRecord), you can use the Inspector API to view performance information.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
-
-<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;etdump.etdp&quot;</span><span class="p">)</span>
-<span class="c1"># If you also generated an ETRecord, then pass that in as well: `inspector = Inspector(etdump_path=&quot;etdump.etdp&quot;, etrecord=&quot;etrecord.bin&quot;)`</span>
-
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;inspector_out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-    <span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event. Top rows look like this:
-<img alt="" src="../_images/llm_manual_print_data_tabular.png" />
-<a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a></p>
-<p>To learn more about the Inspector and the rich functionality it provides, see the <a class="reference internal" href="../model-inspector.html"><span class="doc std std-doc">Inspector API Reference</span></a>.</p>
 </div>
 </div>
 
@@ -998,17 +922,9 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class
 <li><a class="reference internal" href="#quantization">Quantization</a></li>
 <li><a class="reference internal" href="#profiling-and-debugging">Profiling and Debugging</a><ul>
 <li><a class="reference internal" href="#visualizing-the-delegation">Visualizing the Delegation</a></li>
-<li><a class="reference internal" href="#performance-analysis">Performance Analysis</a><ul>
-<li><a class="reference internal" href="#prerequisites">Prerequisites</a><ul>
-<li><a class="reference internal" href="#etrecord-generation-optional">ETRecord generation (Optional)</a></li>
-<li><a class="reference internal" href="#etdump-generation">ETDump generation</a></li>
+<li><a class="reference internal" href="#further-model-analysis-and-debugging">Further Model Analysis and Debugging</a></li>
 </ul>
 </li>
-</ul>
-</li>
-</ul>
-</li>
-<li><a class="reference internal" href="#performance-debugging-and-profiling">Performance debugging and profiling</a></li>
 </ul>
 </li>
 </ul>

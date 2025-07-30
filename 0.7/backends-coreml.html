@@ -537,7 +537,7 @@
 <h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Permalink to this heading">¶</a></h2>
 <p>To develop you need:</p>
 <ul class="simple">
-<li><p><a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0.</p></li>
+<li><p><a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0</p></li>
 <li><p><a class="reference external" href="https://developer.apple.com/documentation/xcode">Xcode</a> &gt;= 14.1</p></li>
 </ul>
 <p>Before starting, make sure you install the Xcode Command Line Tools:</p>
@@ -569,45 +569,45 @@
 </div>
 <div class="section" id="partitioner-api">
 <h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Permalink to this heading">¶</a></h3>
-<p>The CoreML partitioner API allows for configuration of the model delegation to CoreML. Passing an <code class="docutils literal notranslate"><span class="pre">CoreMLPartitioner</span></code> instance with no additional parameters will run as much of the model as possible on the CoreML backend with default settings. This is the most common use-case. For advanced use cases, the partitioner exposes the following options via the <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/partition/coreml_partitioner.py#L60">constructor</a>:</p>
+<p>The CoreML partitioner API allows for configuration of the model delegation to CoreML. Passing a <code class="docutils literal notranslate"><span class="pre">CoreMLPartitioner</span></code> instance with no additional parameters will run as much of the model as possible on the CoreML backend with default settings. This is the most common use case. For advanced use cases, the partitioner exposes the following options via the <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/partition/coreml_partitioner.py#L60">constructor</a>:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">skip_ops_for_coreml_delegation</span></code>: Allows you to skip ops for delegation by CoreML.  By default, all ops that CoreML supports will be delegated.  See <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/test/test_coreml_partitioner.py#L42">here</a> for an example of skipping an op for delegation.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">compile_specs</span></code>: A list of CompileSpec for the CoreML backend.  These control low-level details of CoreML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32).  These are discussed more below.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">take_over_mutable_buffer</span></code>: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to <a class="reference external" href="https://developer.apple.com/documentation/coreml/mlstate">CoreML MLState</a>.  If set to false, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the CoreML lowered module under the hood.  Generally setting take_over_mutable_buffer to true will result in better performance, but using MLState requires iOS &gt;= 18.0, macOS &gt;= 15.0, and XCode &gt;= 16.0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compile_specs</span></code>: A list of <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code>s for the CoreML backend.  These control low-level details of CoreML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32).  These are discussed more below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">take_over_mutable_buffer</span></code>: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to <a class="reference external" href="https://developer.apple.com/documentation/coreml/mlstate">CoreML <code class="docutils literal notranslate"><span class="pre">MLState</span></code></a>.  If set to <code class="docutils literal notranslate"><span class="pre">False</span></code>, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the CoreML lowered module under the hood.  Generally, setting <code class="docutils literal notranslate"><span class="pre">take_over_mutable_buffer</span></code> to true will result in better performance, but using <code class="docutils literal notranslate"><span class="pre">MLState</span></code> requires iOS &gt;= 18.0, macOS &gt;= 15.0, and Xcode &gt;= 16.0.</p></li>
 </ul>
 <div class="section" id="coreml-compilespec">
 <h4>CoreML CompileSpec<a class="headerlink" href="#coreml-compilespec" title="Permalink to this heading">¶</a></h4>
-<p>A list of CompileSpec is constructed with <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L210">CoreMLBackend.generate_compile_specs</a>.  Below are the available options:</p>
+<p>A list of <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code>s is constructed with <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L210"><code class="docutils literal notranslate"><span class="pre">CoreMLBackend.generate_compile_specs</span></code></a>.  Below are the available options:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">compute_unit</span></code>: this controls the compute units (CPU, GPU, ANE) that are used by CoreML.  The default value is coremltools.ComputeUnit.ALL.  The available options from coremltools are:</p>
+<li><p><code class="docutils literal notranslate"><span class="pre">compute_unit</span></code>: this controls the compute units (CPU, GPU, ANE) that are used by CoreML.  The default value is <code class="docutils literal notranslate"><span class="pre">coremltools.ComputeUnit.ALL</span></code>.  The available options from coremltools are:</p>
 <ul>
-<li><p>coremltools.ComputeUnit.ALL (uses the CPU, GPU, and ANE)</p></li>
-<li><p>coremltools.ComputeUnit.CPU_ONLY (uses the CPU only)</p></li>
-<li><p>coremltools.ComputeUnit.CPU_AND_GPU (uses both the CPU and GPU, but not the ANE)</p></li>
-<li><p>coremltools.ComputeUnit.CPU_AND_NE (uses both the CPU and ANE, but not the GPU)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">coremltools.ComputeUnit.ALL</span></code> (uses the CPU, GPU, and ANE)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">coremltools.ComputeUnit.CPU_ONLY</span></code> (uses the CPU only)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">coremltools.ComputeUnit.CPU_AND_GPU</span></code> (uses both the CPU and GPU, but not the ANE)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">coremltools.ComputeUnit.CPU_AND_NE</span></code> (uses both the CPU and ANE, but not the GPU)</p></li>
 </ul>
 </li>
-<li><p><code class="docutils literal notranslate"><span class="pre">minimum_deployment_target</span></code>: The minimum iOS deployment target (e.g., coremltools.target.iOS18).  The default value is coremltools.target.iOS15.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">compute_precision</span></code>: The compute precision used by CoreML (coremltools.precision.FLOAT16, coremltools.precision.FLOAT32).  The default value is coremltools.precision.FLOAT16.  Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model.  For example, an FP32 PyTorch model will be converted to FP16 when delegating to the CoreML backend by default.  Also note that the ANE only supports FP16 precision.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">model_type</span></code>: Whether the model should be compiled to the CoreML <a class="reference external" href="https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device">mlmodelc format</a> during .pte creation (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L71">CoreMLBackend.MODEL_TYPE.COMPILED_MODEL</a>), or whether it should be compiled to mlmodelc on device (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L70">CoreMLBackend.MODEL_TYPE.MODEL</a>).  Using CoreMLBackend.MODEL_TYPE.COMPILED_MODEL and doing compilation ahead of time should improve the first time on-device model load time.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">minimum_deployment_target</span></code>: The minimum iOS deployment target (e.g., <code class="docutils literal notranslate"><span class="pre">coremltools.target.iOS18</span></code>).  The default value is <code class="docutils literal notranslate"><span class="pre">coremltools.target.iOS15</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compute_precision</span></code>: The compute precision used by CoreML (<code class="docutils literal notranslate"><span class="pre">coremltools.precision.FLOAT16</span></code> or <code class="docutils literal notranslate"><span class="pre">coremltools.precision.FLOAT32</span></code>).  The default value is <code class="docutils literal notranslate"><span class="pre">coremltools.precision.FLOAT16</span></code>.  Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model.  For example, an FP32 PyTorch model will be converted to FP16 when delegating to the CoreML backend by default.  Also note that the ANE only supports FP16 precision.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">model_type</span></code>: Whether the model should be compiled to the CoreML <a class="reference external" href="https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device">mlmodelc format</a> during .pte creation (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L71"><code class="docutils literal notranslate"><span class="pre">CoreMLBackend.MODEL_TYPE.COMPILED_MODEL</span></code></a>), or whether it should be compiled to mlmodelc on device (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L70"><code class="docutils literal notranslate"><span class="pre">CoreMLBackend.MODEL_TYPE.MODEL</span></code></a>).  Using <code class="docutils literal notranslate"><span class="pre">CoreMLBackend.MODEL_TYPE.COMPILED_MODEL</span></code> and doing compilation ahead of time should improve the first time on-device model load time.</p></li>
 </ul>
 </div>
 </div>
 <div class="section" id="testing-the-model">
 <h3>Testing the Model<a class="headerlink" href="#testing-the-model" title="Permalink to this heading">¶</a></h3>
-<p>After generating the CoreML-delegated .pte, the model can be tested from Python using the ExecuTorch runtime python bindings. This can be used to sanity check the model and evaluate numerical accuracy. See <a class="reference internal" href="using-executorch-export.html#testing-the-model"><span class="std std-doc">Testing the Model</span></a> for more information.</p>
+<p>After generating the CoreML-delegated .pte, the model can be tested from Python using the ExecuTorch runtime Python bindings. This can be used to quickly check the model and evaluate numerical accuracy. See <a class="reference internal" href="using-executorch-export.html#testing-the-model"><span class="std std-doc">Testing the Model</span></a> for more information.</p>
 </div>
 <hr class="docutils" />
 <div class="section" id="quantization">
 <h3>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h3>
-<p>To quantize a PyTorch model for the CoreML backend, use the <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>. <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, and the <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code> is configured to quantize models to leverage the available quantization for the CoreML backend.</p>
+<p>To quantize a PyTorch model for the CoreML backend, use the <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p>
 </div>
 <div class="section" id="bit-quantization-using-the-pt2e-flow">
 <h3>8-bit Quantization using the PT2E Flow<a class="headerlink" href="#bit-quantization-using-the-pt2e-flow" title="Permalink to this heading">¶</a></h3>
-<p>Quantization with the CoreML backend requires exporting the model for iOS17 or later.
-To perform 8-bit quantization with the PT2E flow, perform the following steps:</p>
+<p>Quantization with the CoreML backend requires exporting the model for iOS 17 or later.
+To perform 8-bit quantization with the PT2E flow, follow these steps:</p>
 <ol class="arabic simple">
-<li><p>Define <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig">coremltools.optimize.torch.quantization.LinearQuantizerConfig</a> and use to to create an instance of a <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p></li>
+<li><p>Create a <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig"><code class="docutils literal notranslate"><span class="pre">coremltools.optimize.torch.quantization.LinearQuantizerConfig</span></code></a> and use to to create an instance of a <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p></li>
 <li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export_for_training</span></code> to export a graph module that will be prepared for quantization.</p></li>
 <li><p>Call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> to prepare the model for quantization.</p></li>
 <li><p>Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
@@ -629,7 +629,7 @@ To perform 8-bit quantization with the PT2E flow, perform the following steps:</
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
 <span class="c1"># Step 1: Define a LinearQuantizerConfig and create an instance of a CoreMLQuantizer</span>
-<span class="c1"># Note that linear here does not mean only linear layers are quantized, but that linear (aka affine) quantization</span>
+<span class="c1"># Note that &quot;linear&quot; here does not mean only linear layers are quantized, but that linear (aka affine) quantization</span>
 <span class="c1"># is being performed</span>
 <span class="n">static_8bit_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="p">(</span>
     <span class="n">global_config</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">ModuleLinearQuantizerConfig</span><span class="p">(</span>
@@ -682,26 +682,26 @@ To perform 8-bit quantization with the PT2E flow, perform the following steps:</
 <span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">weight_only_8bit_config</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling convert_pt2e, even for data-free weight-only quantization.</p>
+<p>Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code>, even for data-free weight-only quantization.</p>
 <p>See <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
 </div>
 </div>
 <hr class="docutils" />
 <div class="section" id="runtime-integration">
 <h2>Runtime integration<a class="headerlink" href="#runtime-integration" title="Permalink to this heading">¶</a></h2>
-<p>To run the model on-device, use the standard ExecuTorch runtime APIs. See <a class="reference internal" href="getting-started.html#running-on-device"><span class="std std-doc">Running on Device</span></a> for more information, including building the iOS frameworks.</p>
+<p>To run the model on device, use the standard ExecuTorch runtime APIs. See <a class="reference internal" href="getting-started.html#running-on-device"><span class="std std-doc">Running on Device</span></a> for more information, including building the iOS frameworks.</p>
 <p>When building from source, pass <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_COREML=ON</span></code> when configuring the CMake build to compile the CoreML backend.</p>
-<p>To link against the <code class="docutils literal notranslate"><span class="pre">coremldelegate</span></code> target. Due to the use of static registration, it may be necessary to link with whole-archive. This can typically be done by passing <code class="docutils literal notranslate"><span class="pre">&quot;$&lt;LINK_LIBRARY:WHOLE_ARCHIVE,coremldelegate&gt;&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code>.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
-<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
-<span class="o">...</span>
-<span class="n">target_link_libraries</span><span class="p">(</span>
-    <span class="n">my_target</span>
-    <span class="n">PRIVATE</span> <span class="n">executorch</span>
-    <span class="n">extension_module_static</span>
-    <span class="n">extension_tensor</span>
-    <span class="n">optimized_native_cpu_ops_lib</span>
-    <span class="n">coremldelegate</span><span class="p">)</span>
+<p>Due to the use of static initializers for registration, it may be necessary to use whole-archive to link against the <code class="docutils literal notranslate"><span class="pre">coremldelegate</span></code> target. This can typically be done by passing <code class="docutils literal notranslate"><span class="pre">&quot;$&lt;LINK_LIBRARY:WHOLE_ARCHIVE,coremldelegate&gt;&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code>.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span># CMakeLists.txt
+add_subdirectory(&quot;executorch&quot;)
+...
+target_link_libraries(
+    my_target
+    PRIVATE executorch
+    extension_module_static
+    extension_tensor
+    optimized_native_cpu_ops_lib
+    $&lt;LINK_LIBRARY:WHOLE_ARHIVE,coremldelegate&gt;)
 </pre></div>
 </div>
 <p>No additional steps are necessary to use the backend beyond linking the target. A CoreML-delegated .pte file will automatically run on the registered backend.</p>
@@ -725,19 +725,19 @@ To perform 8-bit quantization with the PT2E flow, perform the following steps:</
 <ol class="arabic simple">
 <li><p>“ValueError: In op, of type [X], named [Y], the named input [Z] must have the same data type as the named input x. However, [Z] has dtype fp32 whereas x has dtype fp16.”</p></li>
 </ol>
-<p>This happens because the model is in FP16, but CoreML interprets some of the arguments as FP32, which leads to a type mismatch.  The solution is to keep the PyTorch model in FP32.  Note that the model will be still be converted to FP16 during lowering to CoreML unless specified otherwise in the compute_precision <a class="reference internal" href="#coreml-compilespec"><span class="std std-doc">CoreML CompileSpec</span></a>.  Also see the <a class="reference external" href="https://github.com/apple/coremltools/issues/2480">related issue in coremltools</a>.</p>
+<p>This happens because the model is in FP16, but CoreML interprets some of the arguments as FP32, which leads to a type mismatch.  The solution is to keep the PyTorch model in FP32.  Note that the model will be still be converted to FP16 during lowering to CoreML unless specified otherwise in the compute_precision <a class="reference internal" href="#coreml-compilespec"><span class="std std-doc">CoreML <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code></span></a>.  Also see the <a class="reference external" href="https://github.com/apple/coremltools/issues/2480">related issue in coremltools</a>.</p>
 <ol class="arabic simple" start="2">
 <li><p>coremltools/converters/mil/backend/mil/load.py”, line 499, in export
 raise RuntimeError(“BlobWriter not loaded”)</p></li>
 </ol>
-<p>If you’re using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13, see this <a class="reference external" href="https://github.com/apple/coremltools/issues/2487">issue</a>.</p>
+<p>If you’re using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13 per <a class="reference external" href="https://github.com/apple/coremltools/issues/2487">coremltools issue #2487</a>.</p>
 </div>
 <div class="section" id="at-runtime">
 <h3>At runtime<a class="headerlink" href="#at-runtime" title="Permalink to this heading">¶</a></h3>
 <ol class="arabic simple">
 <li><p>[ETCoreMLModelCompiler.mm:55] [Core ML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 “Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset ‘CoreML7’.” UserInfo={NSLocalizedDescription=Failed to par$</p></li>
 </ol>
-<p>This means the model requires the the CoreML opset ‘CoreML7’, which requires running the model on iOS17/macOS14 or later.</p>
+<p>This means the model requires the the CoreML opset ‘CoreML7’, which requires running the model on iOS &gt;= 17 or macOS &gt;= 14.</p>
 </div>
 </div>
 </div>
