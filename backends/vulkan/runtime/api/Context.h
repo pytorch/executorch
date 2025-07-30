@@ -90,8 +90,8 @@ class Context final {
     return device_;
   }
 
-  inline VkQueue queue() {
-    return queue_.handle;
+  inline vkapi::Adapter::Queue& queue() {
+    return queue_;
   }
 
   // Device Caches
@@ -229,6 +229,10 @@ class Context final {
   void submit_cmd_to_gpu(
       VkFence fence_handle = VK_NULL_HANDLE,
       const bool final_use = false);
+
+  vkapi::CommandBuffer& extract_cmd() {
+    return cmd_;
+  }
 
   void flush();
 
