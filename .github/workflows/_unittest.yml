@@ -30,9 +30,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    secrets: inherit
     with:
-      secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.2xlarge
       docker-image: ${{ inputs.docker-image }}
       submodules: 'recursive'
@@ -40,15 +38,11 @@ jobs:
       timeout: 90
       script: |
         set -eux
-        pip install -U "huggingface_hub[cli]"
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         .ci/scripts/unittest-linux.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
 
   macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    secrets: inherit
     with:
-      secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -57,6 +51,4 @@ jobs:
         set -eux
         # This is needed to get the prebuilt PyTorch wheel from S3
         ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
-        ${CONDA_RUN} pip install -U "huggingface_hub[cli]"
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         .ci/scripts/unittest-macos.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
