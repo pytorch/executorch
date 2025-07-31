@@ -27,7 +27,7 @@ class Sigmoid(torch.nn.Module):
 
 
 @common.parametrize("test_data", Sigmoid.test_data)
-def test_insert_table_tosa_BI(test_data: input_t):
+def test_insert_table_tosa_INT(test_data: input_t):
     module = Sigmoid()
     pipeline = PassPipeline[input_t](
         module,
