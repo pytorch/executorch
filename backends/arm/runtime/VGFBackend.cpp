@@ -152,7 +152,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
 
     // Copy all inputs from EValue to VkDeviceMemory

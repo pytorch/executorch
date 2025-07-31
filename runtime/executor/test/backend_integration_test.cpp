@@ -57,7 +57,7 @@ class StubBackend final : public BackendInterface {
       ArrayRef<CompileSpec>,
       BackendInitContext&)>;
   using ExecuteFn =
-      std::function<Error(BackendExecutionContext&, DelegateHandle*, EValue**)>;
+      std::function<Error(BackendExecutionContext&, DelegateHandle*, Span<EValue*>)>;
   using DestroyFn = std::function<void(DelegateHandle*)>;
 
   // Default name that this backend is registered as.
@@ -97,7 +97,7 @@ class StubBackend final : public BackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     if (execute_fn_) {
       return execute_fn_.value()(context, handle, args);
     }
@@ -442,7 +442,7 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   StubBackend::singleton().install_execute(
       [&](ET_UNUSED BackendExecutionContext& backend_execution_context,
           DelegateHandle* handle,
-          ET_UNUSED EValue** args) -> Error {
+          ET_UNUSED Span<EValue*> args) -> Error {
         execute_handle = handle;
         auto* processed = reinterpret_cast<FreeableBuffer*>(handle);
 
@@ -593,7 +593,7 @@ TEST_P(BackendIntegrationTest, GetMethodNameDuringExecuteSuccess) {
   StubBackend::singleton().install_execute(
       [&](BackendExecutionContext& backend_execution_context,
           ET_UNUSED DelegateHandle* handle,
-          ET_UNUSED EValue** args) -> Error {
+          ET_UNUSED Span<EValue*> args) -> Error {
         // Ensure that we can get the method name during execution via context
         auto method_name = backend_execution_context.get_method_name();
         EXPECT_STREQ(method_name, "forward");

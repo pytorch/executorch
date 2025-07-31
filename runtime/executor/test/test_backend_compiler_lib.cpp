@@ -171,7 +171,7 @@ class BackendWithCompiler final : public BackendInterface {
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     EXECUTORCH_SCOPE_PROF("BackendWithCompiler::execute");
 
     // example: [('prim::Constant#1', 14), ('aten::add', 15)]

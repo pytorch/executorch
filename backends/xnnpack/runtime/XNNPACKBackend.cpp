@@ -126,7 +126,7 @@ class XnnpackBackend final
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE

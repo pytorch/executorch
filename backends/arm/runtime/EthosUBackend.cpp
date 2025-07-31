@@ -140,7 +140,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
 #if defined(ET_EVENT_TRACER_ENABLED)
     EventTracer* event_tracer = context.event_tracer();
     EventTracerEntry event_tracer_local_scope;

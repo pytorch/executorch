@@ -32,7 +32,7 @@ class QnnExecuTorchBackend final
   executorch::runtime::Error execute(
       ET_UNUSED executorch::runtime::BackendExecutionContext& context,
       executorch::runtime::DelegateHandle* handle,
-      executorch::runtime::EValue** args) const override;
+      executorch::runtime::Span<EValue*> args) const override;
 
   void destroy(executorch::runtime::DelegateHandle* handle) const override;
 

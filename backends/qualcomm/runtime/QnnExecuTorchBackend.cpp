@@ -114,7 +114,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 Error QnnExecuTorchBackend::execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
-    EValue** args) const {
+    Span<EValue*> args) const {
   ET_CHECK_OR_RETURN_ERROR(
       delegate_map_rev_.count(handle) != 0,
       Internal,
