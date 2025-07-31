@@ -227,7 +227,7 @@ public class LlmModule {
   public int generateFromPos(
       String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo) {
     long[] nativeResult = generateFromPosNative(prompt, seqLen, startPos, callback, echo);
-    return nativeResult[0];
+    return (int) nativeResult[0];
   }
 
   /**
