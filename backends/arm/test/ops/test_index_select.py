@@ -10,8 +10,8 @@ import pytest
 
 import torch
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -78,19 +78,19 @@ test_data = {
 
 
 @pytest.mark.parametrize("test_data", list(test_data.values()))
-def test_index_select_tosa_MI(test_data: input_params):
+def test_index_select_tosa_FP(test_data: input_params):
     op, test_input = test_data
-    pipeline = TosaPipelineMI[input_params](
+    pipeline = TosaPipelineFP[input_params](
         op, test_input, op.aten_op, op.exir_op, use_to_edge_transform_and_lower=True
     )
     pipeline.run()
 
 
 @pytest.mark.parametrize("test_data", list(test_data.values())[:-1])
-def test_index_select_tosa_BI(test_data: input_params):
+def test_index_select_tosa_INT(test_data: input_params):
     op, test_input = test_data
 
-    pipeline = TosaPipelineBI[input_params](
+    pipeline = TosaPipelineINT[input_params](
         op,
         test_input,
         op.aten_op,
@@ -101,10 +101,10 @@ def test_index_select_tosa_BI(test_data: input_params):
 
 
 @pytest.mark.parametrize("test_data", list(test_data.values())[-1:])
-def test_index_select_tosa_BI_rand(test_data: input_params):
+def test_index_select_tosa_INT_rand(test_data: input_params):
     op, test_input = test_data
 
-    pipeline = TosaPipelineBI[input_params](
+    pipeline = TosaPipelineINT[input_params](
         op,
         test_input,
         op.aten_op,
