@@ -30,7 +30,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import MemoryPlanningPass
 
-from executorch.extension.llm.optimum.integrations import (
+from optimum.exporters.executorch.integrations import (
     ImageTextToTextExportableModule,
 )
 

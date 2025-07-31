@@ -1,69 +1,95 @@
 # ExecuTorch Optimum Module
 
-This module provides integration utilities for exporting and optimizing transformer models for ExecuTorch runtime. It contains specialized wrapper classes and utilities to make pre-trained models from Hugging Face Transformers compatible with `torch.export` and ExecuTorch execution. A lot of code is forked from `optimum-executorch` and adopted from `transformers`. We put it in ExecuTorch so that we can fast iterate on the stack. Eventually we want to upstream changes to `transformers` and `optimum-executorch`.
+This module provides ExecuTorch-specific optimizations and integrations for transformer models. It focuses on runtime-specific features that are not available in the upstream transformers or optimum-executorch libraries.
 
 ## Overview
 
-The optimum module bridges the gap between Hugging Face Transformers models and ExecuTorch by providing:
+This streamlined module contains only ExecuTorch-specific components:
 
-- Exportable wrapper modules for different model types
-- Custom cache implementations for efficient inference
-- Utilities for model configuration and optimization
-- Integration with ExecuTorch's custom operators
+- Custom cache implementations optimized for ExecuTorch runtime
+- Custom SDPA implementations for ExecuTorch operators
+- XNNPACK backend integration and optimization passes
+- ExecuTorch-specific utilities
+
+For general model export functionality, use `optimum-executorch` which provides a comprehensive recipe system and CLI interface.
 
 ## Key Components
 
-### Exportable Modules
+### Custom Cache Implementations
 
-#### `TorchExportableModuleWithHybridCache`
-A wrapper module that makes decoder-only language models exportable with `torch.export` using `HybridCache`. This is a forked version of [`TorchExportableModuleForDecoderOnlyLM`](https://github.com/huggingface/transformers/blob/main/src/transformers/integrations/executorch.py#L391) with some modifications to support `inputs_embeds`.
+#### `ETCustomStaticCache` and `ETCustomHybridCache`
+Custom KV cache implementations that inherit from Hugging Face's caches but use ExecuTorch's `CustomKVCache` and `CustomRingKVCache` for optimal runtime performance.
 
-**Note**: This class should be upstreamed to transformers. We keep it here so that we can iterate quickly.
+### Custom SDPA
 
-#### `TorchExportableModuleForImageTextLM`
-A wrapper for text decoder model in a vision-language model. It is very similar to [`TorchExportableModuleForDecoderOnlyLM`](https://github.com/huggingface/transformers/blob/main/src/transformers/integrations/executorch.py#L30) but instead of taking `input_ids` this module takes `inputs_embeds`. This is because we want to be able to take both token embeddings and image embeddings as inputs.
+#### `get_custom_sdpa_for_ring_kv_cache`
+Custom Scaled Dot-Product Attention implementation optimized for ExecuTorch's ring buffer caches and sliding window attention.
 
-**Note**: This class should be upstreamed to transformers. We keep it here so that we can iterate quickly.
+### XNNPACK Integration
 
-#### `ImageEncoderExportableModule`
-A wrapper for vision encoder models that projects vision features to language model space. Commonly implemented as `get_image_features()` in HuggingFace transformers. For example: [`Gemma3Model.get_image_features()`](https://github.com/huggingface/transformers/blob/main/src/transformers/models/gemma3/modeling_gemma3.py#L794).
-
-#### `ImageTextToTextExportableModule`
-A wrapper of `torch.nn.Module` for `image-text-to-text` task. Provides `export()` API that generates an `ExportedProgram`. It will be consumed by `xnnpack.py` recipe to generate ExecuTorch program.
-
-### Custom Implementations
-These are mostly copied from `optimum-executorch`. We put them here so that they can be reused by `integrations.py` and `xnnpack.py` recipe.
-
-- **Custom KV Cache**: Optimized key-value cache implementations for ExecuTorch
-- **Custom SDPA**: Scaled Dot-Product Attention optimizations
-- **XNNPACK Integration**: Lower to XNNPACK backend for optimized inference on CPU
+#### `export_to_executorch_with_xnnpack`
+ExecuTorch-specific XNNPACK backend integration with custom optimization passes:
+- `RemovePaddingIdxEmbeddingPass`: Removes padding_idx from embedding operations
+- Memory planning and quantization optimizations
+- Backend delegation analysis and debugging
 
 ### Utilities
 
-- Configuration saving and constant method generation
-- Model metadata extraction
-- Export helper functions
+- `save_config_to_constant_methods`: ExecuTorch-specific configuration utilities
+- Model metadata extraction for runtime optimization
 
 ## Usage
 
-```python
-from transformers import PretrainedConfig
-from executorch.extension.llm.optimum.image_text_to_text import load_image_text_to_text_model
-from executorch.extension.llm.optimum.xnnpack import export_to_executorch_with_xnnpack
-from executorch.extension.llm.optimum.modeling import ExecuTorchModelForImageTextToTextCausalLM
+For multimodal model export, use optimum-executorch:
 
-model_id = "google/gemma-3-4b-it"
-
-module = load_image_text_to_text_model(
-    model_id,
-    use_custom_sdpa=True,
-    use_custom_kv_cache=True,
-    qlinear=True,
-    qembedding=True,
-)
-model = export_to_executorch_with_xnnpack(module)
-et_model = ExecuTorchModelForImageTextToTextCausalLM(model, PretrainedConfig.from_pretrained(model_id))
+```bash
+# Export with optimum-executorch CLI
+optimum-cli export executorch \
+    --model google/gemma-3-4b-it \
+    --task image-text-to-text \
+    --recipe xnnpack \
+    --use_custom_sdpa \
+    --use_custom_kv_cache
 ```
+
+```python
+# Or via Python API
+from optimum.executorch import ExecuTorchModelForCausalLM
+
+model = ExecuTorchModelForCausalLM.from_pretrained(
+    "google/gemma-3-4b-it",
+    task="image-text-to-text", 
+    recipe="xnnpack",
+    use_custom_sdpa=True,
+    use_custom_kv_cache=True
+)
+```
+
+For ExecuTorch-specific XNNPACK optimizations:
+
+```python
+from optimum.exporters.executorch.integrations import ImageTextToTextExportableModule
+from executorch.extension.llm.optimum.xnnpack import export_to_executorch_with_xnnpack
+
+# Load model using optimum-executorch
+module = ImageTextToTextExportableModule(model, use_custom_kv_cache=True, use_custom_sdpa=True)
+
+# Apply ExecuTorch-specific XNNPACK optimizations
+executorch_program = export_to_executorch_with_xnnpack(module)
+```
+
+## Architecture
+
+This module follows the recommended approach:
+1. **General export functionality**: Use `optimum-executorch` 
+2. **Multimodal support**: Enhanced `transformers.integrations.executorch`
+3. **ExecuTorch-specific optimizations**: This module
+
+This separation ensures:
+- No code duplication between repositories
+- Leverages mature optimum-executorch infrastructure  
+- Focuses ExecuTorch module on runtime-specific optimizations
+- Maintains unified user experience through optimum-executorch CLI/API
 
 ## Testing
 
