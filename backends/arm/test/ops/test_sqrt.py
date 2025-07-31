@@ -9,20 +9,20 @@ from typing import Dict, Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
 class Sqrt(torch.nn.Module):
     input_t = Tuple[torch.Tensor]
-    aten_op_MI = "torch.ops.aten.sqrt.default"
-    exir_op_MI = "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Tensor"
+    aten_op_FP = "torch.ops.aten.sqrt.default"
+    exir_op_FP = "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Tensor"
 
-    aten_op_BI = "torch.ops.aten.pow.Tensor_Scalar"
-    exir_op_BI = "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"
+    aten_op_INT = "torch.ops.aten.pow.Tensor_Scalar"
+    exir_op_INT = "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"
 
     def __init__(self):
         super().__init__()
@@ -45,35 +45,35 @@ fvp_xfails = {
 
 
 @common.parametrize("test_data", Sqrt.test_data)
-def test_sqrt_tosa_MI(test_data: Sqrt.input_t):
-    pipeline = TosaPipelineMI[Sqrt.input_t](
+def test_sqrt_tosa_FP(test_data: Sqrt.input_t):
+    pipeline = TosaPipelineFP[Sqrt.input_t](
         Sqrt(),
         test_data(),
-        Sqrt.aten_op_MI,
-        Sqrt.exir_op_MI,
+        Sqrt.aten_op_FP,
+        Sqrt.exir_op_FP,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Sqrt.test_data)
-def test_sqrt_tosa_BI(test_data: Sqrt.input_t):
-    pipeline = TosaPipelineBI[Sqrt.input_t](
+def test_sqrt_tosa_INT(test_data: Sqrt.input_t):
+    pipeline = TosaPipelineINT[Sqrt.input_t](
         Sqrt(),
         test_data(),
-        Sqrt.aten_op_BI,
-        Sqrt.exir_op_BI,
+        Sqrt.aten_op_INT,
+        Sqrt.exir_op_INT,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Sqrt.test_data, fvp_xfails)
 @common.XfailIfNoCorstone300
-def test_sqrt_u55_BI(test_data: Sqrt.input_t):
-    pipeline = EthosU55PipelineBI[Sqrt.input_t](
+def test_sqrt_u55_INT(test_data: Sqrt.input_t):
+    pipeline = EthosU55PipelineINT[Sqrt.input_t](
         Sqrt(),
         test_data(),
-        Sqrt.aten_op_BI,
-        Sqrt.exir_op_BI,
+        Sqrt.aten_op_INT,
+        Sqrt.exir_op_INT,
         run_on_fvp=True,
     )
     pipeline.run()
@@ -81,12 +81,12 @@ def test_sqrt_u55_BI(test_data: Sqrt.input_t):
 
 @common.parametrize("test_data", Sqrt.test_data, fvp_xfails)
 @common.XfailIfNoCorstone320
-def test_sqrt_u85_BI(test_data: Sqrt.input_t):
-    pipeline = EthosU85PipelineBI[Sqrt.input_t](
+def test_sqrt_u85_INT(test_data: Sqrt.input_t):
+    pipeline = EthosU85PipelineINT[Sqrt.input_t](
         Sqrt(),
         test_data(),
-        Sqrt.aten_op_BI,
-        Sqrt.exir_op_BI,
+        Sqrt.aten_op_INT,
+        Sqrt.exir_op_INT,
         run_on_fvp=True,
     )
     pipeline.run()

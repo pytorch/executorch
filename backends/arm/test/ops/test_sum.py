@@ -9,10 +9,10 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 aten_op = "torch.ops.aten.sum.dim_IntList"
@@ -41,8 +41,8 @@ class Sum(torch.nn.Module):
 
 
 @common.parametrize("test_data", Sum.test_parameters)
-def test_sum_dim_intlist_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](
+def test_sum_dim_intlist_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
         Sum(),
         test_data(),
         aten_op,
@@ -52,8 +52,8 @@ def test_sum_dim_intlist_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", Sum.test_parameters)
-def test_sum_dim_intlist_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_sum_dim_intlist_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         Sum(),
         test_data(),
         aten_op,
@@ -64,8 +64,8 @@ def test_sum_dim_intlist_tosa_BI(test_data: input_t1):
 
 @common.parametrize("test_data", Sum.test_parameters)
 @common.XfailIfNoCorstone300
-def test_view_u55_BI_1_0(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_view_u55_INT_1_0(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         Sum(),
         test_data(),
         aten_op,
@@ -77,8 +77,8 @@ def test_view_u55_BI_1_0(test_data: Tuple):
 
 @common.parametrize("test_data", Sum.test_parameters)
 @common.XfailIfNoCorstone320
-def test_view_u85_BI_1_0(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_view_u85_INT_1_0(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         Sum(),
         test_data(),
         aten_op,
@@ -96,8 +96,8 @@ reject_inputs = {
 
 
 @common.parametrize("test_data", reject_inputs)
-def test_view_u55_BI_not_delegated(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_view_u55_INT_not_delegated(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         Sum(),
         test_data(),
         aten_op,
