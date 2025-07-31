@@ -20,6 +20,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -56,6 +57,57 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             logger.info(msg)
             self._logged_msgs.add(msg)
 
+    def should_skip_op_for_delegation(self, node_target_name: str) -> bool:
+        skipped_ops = self.skip_ops_for_coreml_delegation or []
+
+        if node_target_name in skipped_ops:
+            return True
+
+        # For backwards compatibility
+        split_name = node_target_name.split("::")
+        if len(split_name) == 2:
+            namespace, name_without_namespace = split_name
+            if namespace == "aten" and name_without_namespace in skipped_ops:
+                return True
+
+        return False
+
+    def should_override_support(self, node) -> bool:
+        # https://github.com/apple/coremltools/issues/2573
+        if (
+            node.target
+            in [
+                torch.ops.aten.sub.Tensor,
+                exir_ops.edge.aten.sub.Tensor,
+                torch.ops.aten.add.Tensor,
+                exir_ops.edge.aten.add.Tensor,
+            ]
+            and "alpha" in node.kwargs
+        ):
+            self.log_once(
+                "torch.ops.aten.{sub, add}.Tensor with alpha is not supported by CoreML.  Overriding support."
+            )
+            return True
+
+        # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
+        # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
+        # # in the placeholders due to partitioning, which CoreML does not support
+        # if not self.lower_full_graph and any(
+        #     isinstance(arg, torch.fx.Node)
+        #     and isinstance(
+        #         arg.meta.get("val", None),
+        #         (torch.SymInt, torch.SymBool, torch.SymFloat),
+        #     )
+        #     for arg in node.args
+        # ):
+        #     self.log_once(
+        #         "Skipping op for CoreML delegation because it contains symbolic args: "
+        #         + node_target_name
+        #     )
+        #     return True
+
+        return False
+
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         # get_attr node can always be supported on any backend
         if node.op == "get_attr":
@@ -63,8 +115,9 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         # check if the PyTorch op get called is supported in Core ML
         elif node.op == "call_function":
             # skip ops if specified by user
-            node_target_name = getattr(node.target, "__name__", "").lower()
-            if node_target_name in (self.skip_ops_for_coreml_delegation or []):
+            node_target_name = node.target.name().lower()
+
+            if self.should_skip_op_for_delegation(node_target_name):
                 self.log_once(
                     "Skipping op for CoreML delegation because it is in skip_ops_for_coreml_delegation: "
                     + node_target_name
@@ -74,28 +127,13 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
                 ), "Cannot have skip_ops_for_coreml_delegation when lower_full_graph is True"
                 return False
 
-            # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
-            # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
-            # # in the placeholders due to partitioning, which CoreML does not support
-            # if not self.lower_full_graph and any(
-            #     isinstance(arg, torch.fx.Node)
-            #     and isinstance(
-            #         arg.meta.get("val", None),
-            #         (torch.SymInt, torch.SymBool, torch.SymFloat),
-            #     )
-            #     for arg in node.args
-            # ):
-            #     self.log_once(
-            #         "Skipping op for CoreML delegation because it contains symbolic args: "
-            #         + node_target_name
-            #     )
-            #     assert not self.lower_full_graph
-            #     return False
-
             # query coremltools to see if node is supported
             is_supported = ct.converters.mil.frontend.torch.is_torch_fx_node_supported(
                 node
             )
+            if self.should_override_support(node):
+                is_supported = False
+
             if not is_supported:
                 if self.lower_full_graph:
                     raise NotImplementedError(
@@ -126,7 +164,6 @@ Do not file an issue with ExecuTorch for op support.
 
 
 class CoreMLPartitioner(Partitioner):
-
     def __init__(
         self,
         *,
