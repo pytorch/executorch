@@ -67,8 +67,9 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
 cmake_install_executorch_libraries
 cmake_build_llama_runner
 
+PROMPT="What happens if you eat watermelon seeds?"
 # Run llama runner
-RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=${DOWNLOADED_PATH}/tokenizer.model --prompt='What happens if you eat watermelon seeds?' --temperature=0 --seq_len=10 --warmup=1"
+RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=${DOWNLOADED_PATH}/tokenizer.model --prompt=${PROMPT} --temperature=0 --seq_len=10 --warmup=1"
 
 NOW=$(date +"%H:%M:%S")
 echo "Starting to run llama runner at ${NOW}"
