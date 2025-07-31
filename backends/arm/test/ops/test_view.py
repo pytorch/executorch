@@ -13,11 +13,11 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 aten_op = "torch.ops.aten.view.default"
@@ -58,9 +58,9 @@ class View(torch.nn.Module):
 
 
 @common.parametrize("test_data", View.needs_transpose_tests)
-def test_view_tosa_MI(test_data: Tuple):
+def test_view_tosa_FP(test_data: Tuple):
     test_tensor, new_shape = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         View(new_shape),
         (test_tensor,),
         aten_op,
@@ -70,9 +70,9 @@ def test_view_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", View.needs_transpose_tests)
-def test_view_tosa_BI(test_data: Tuple):
+def test_view_tosa_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         View(new_shape),
         (test_tensor,),
         aten_op,
@@ -98,9 +98,9 @@ xfails = {
 
 @common.parametrize("test_data", View.needs_transpose_tests, xfails=xfails)
 @common.XfailIfNoCorstone300
-def test_view_u55_BI(test_data: Tuple):
+def test_view_u55_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         View(new_shape),
         (test_tensor,),
         aten_op,
@@ -111,7 +111,7 @@ def test_view_u55_BI(test_data: Tuple):
 
 @common.parametrize("test_data", View.rank_product_too_large, xfails=xfails)
 @common.XfailIfNoCorstone300
-def test_view_u55_BI_not_delegated(test_data: Tuple):
+def test_view_u55_INT_not_delegated(test_data: Tuple):
     test_tensor, new_shape = test_data()
     pipeline = OpNotSupportedPipeline[input_t1](
         View(new_shape),
@@ -126,9 +126,9 @@ def test_view_u55_BI_not_delegated(test_data: Tuple):
 
 @common.parametrize("test_data", View.needs_transpose_tests, xfails=xfails)
 @common.XfailIfNoCorstone320
-def test_view_u85_BI(test_data: Tuple):
+def test_view_u85_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         View(new_shape),
         (test_tensor,),
         aten_op,
