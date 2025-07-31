@@ -343,6 +343,7 @@ targets = [
     "vgf",
     "TOSA-0.80+BI",
     "TOSA-1.0+INT",
+    "TOSA-1.0+FP",
 ]
 
 
@@ -580,6 +581,13 @@ def get_args():
         default="Arm/vela.ini",
         help="Specify custom vela configuration file (vela.ini)",
     )
+    parser.add_argument(
+        "--non_strict_export",
+        dest="strict_export",
+        required=False,
+        action="store_false",
+        help="Disable strict checking while exporting models.",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -696,7 +704,7 @@ def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
     )
     # Wrap quantized model back into an exported_program
     exported_program = torch.export.export_for_training(
-        model_int8, example_inputs, strict=True
+        model_int8, example_inputs, strict=args.strict_export
     )
 
     return model_int8, exported_program
@@ -791,7 +799,7 @@ if __name__ == "__main__":  # noqa: C901
     # export_for_training under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
     exported_program = torch.export.export_for_training(
-        model, example_inputs, strict=True
+        model, example_inputs, strict=args.strict_export
     )
     model = exported_program.module()
     model_fp32 = model

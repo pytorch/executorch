@@ -30,6 +30,7 @@ from executorch.backends.arm._passes import (
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
     DecomposeAddmmPass,
+    DecomposeAsinhPass,
     DecomposeAsinPass,
     DecomposeAtanhPass,
     DecomposeAtanPass,
@@ -45,6 +46,7 @@ from executorch.backends.arm._passes import (
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeLinearVectorNormPass,
+    DecomposeMaskedFill,
     DecomposeMaxPool2DPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
@@ -160,9 +162,11 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeAcoshPass())
         self.add_pass(DecomposeAsinPass())
+        self.add_pass(DecomposeAsinhPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeAtanPass())
         self.add_pass(DecomposeAtanhPass())
@@ -284,5 +288,9 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ReplaceInfValues())
         self.add_pass(DecomposeSumPass())
+
+        if not self.tosa_spec.is_U55_subset:
+            # Uses where which is not supported on Ethos-U55
+            self.add_pass(DecomposeMaskedFill())
 
         return self._transform(graph_module)

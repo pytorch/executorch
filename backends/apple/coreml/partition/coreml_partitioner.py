@@ -10,6 +10,8 @@ import coremltools as ct
 import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
+from executorch.backends.apple.coreml.logging import get_coreml_log_level
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.backend.partitioner import (
@@ -23,14 +25,23 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
 
 
-class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
+def _is_view_op(op: torch._ops.OpOverload) -> bool:
+    schema = op._schema
+    if len(schema.arguments) == 0:
+        return False
+    alias_info = schema.arguments[0].alias_info
+    return (alias_info is not None) and (not alias_info.is_write)
+
+
+class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
     def __init__(
         self,
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         lower_full_graph: bool = False,
+        log: bool = False,
     ) -> None:
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
@@ -38,10 +49,11 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
         self.lower_full_graph = lower_full_graph
         self._logged_msgs = set()
+        self._log = log
 
     def log_once(self, msg: str) -> None:
-        if msg not in self._logged_msgs:
-            logging.info(msg)
+        if self._log and msg not in self._logged_msgs:
+            logger.info(msg)
             self._logged_msgs.add(msg)
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
@@ -117,6 +129,7 @@ class CoreMLPartitioner(Partitioner):
 
     def __init__(
         self,
+        *,
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         compile_specs: Optional[List[CompileSpec]] = None,
         take_over_mutable_buffer: Optional[bool] = True,
@@ -154,8 +167,10 @@ class CoreMLPartitioner(Partitioner):
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            OperatorsSupportedForCoreMLBackend(
-                self.skip_ops_for_coreml_delegation, self.lower_full_graph
+            _OperatorsSupportedForCoreMLBackend(
+                self.skip_ops_for_coreml_delegation,
+                self.lower_full_graph,
+                log=True,
             ),
             allows_single_node_partition=True,
         )
@@ -191,8 +206,10 @@ class CoreMLPartitioner(Partitioner):
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         do_not_decompose = []
-        op_support = OperatorsSupportedForCoreMLBackend(
-            self.skip_ops_for_coreml_delegation, self.lower_full_graph
+        op_support = _OperatorsSupportedForCoreMLBackend(
+            self.skip_ops_for_coreml_delegation,
+            self.lower_full_graph,
+            log=False,
         )
 
         # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace
@@ -203,6 +220,9 @@ class CoreMLPartitioner(Partitioner):
             torch.ops.aten.triu.default,
             # https://github.com/apple/coremltools/blob/release/8.3/coremltools/converters/mil/frontend/torch/ops.py#L6997-L6998
             torch.ops.aten.tril.default,
+            # CoreML's translation of repeat_interleave has poor perf
+            torch.ops.aten.repeat_interleave.self_int,
+            torch.ops.aten.repeat_interleave.self_Tensor,
         ]
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
@@ -212,6 +232,7 @@ class CoreMLPartitioner(Partitioner):
                     if (
                         op_support.is_node_supported(None, node)
                         and node.target not in do_not_decompose_blocklist
+                        and not _is_view_op(node.target)
                     ):
                         do_not_decompose.append(node.target)
                 except Exception as e:

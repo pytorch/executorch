@@ -105,7 +105,7 @@ class DecomposeMeanDimPass(ArmPass):
 
         # Reshape back to 5D if necessary
         if len(input_shape) > 4:
-            original_dims = input_shape[0:-4]
+            original_dims = input_shape[0:-3]
             temp_shape = list(x.data.shape)[1:]
             temp_shape = original_dims + temp_shape
             dims_to_reduce = [dim + len(original_dims) - 1 for dim in dims_to_reduce]

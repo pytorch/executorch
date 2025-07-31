@@ -25,8 +25,8 @@ def apply_rotary_emb_single(
     x_r, x_i = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
     # broadcast for batch_prefill mode input x
     if x.dim() == 4:
-        freqs_cos = freqs_cos[None, None, :, :]
-        freqs_sin = freqs_sin[None, None, :, :]
+        freqs_cos = freqs_cos[None, :, None, :]
+        freqs_sin = freqs_sin[None, :, None, :]
     x_out_r = x_r * freqs_cos - x_i * freqs_sin
     x_out_i = x_r * freqs_sin + x_i * freqs_cos
 
@@ -37,6 +37,7 @@ def apply_rotary_emb_single(
 class LlamaAttention(nn.Module):
     def __init__(self, config: ModelArgs, output_new_cache_only=False):
         super().__init__()
+        self.config = config
         self.dim = config.dim
         self.n_heads = config.n_heads
         self.head_dim = config.head_dim
@@ -44,10 +45,23 @@ class LlamaAttention(nn.Module):
         self.num_key_value_groups = config.n_heads // self.n_kv_heads
         self.max_seq_len = config.max_seq_len
         self.output_new_cache_only = output_new_cache_only
+        self.enable_masked_softmax = getattr(config, "enable_masked_softmax", False)
 
-        self.wq = nn.Linear(self.dim, self.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
+        self.wq = nn.Linear(
+            self.dim,
+            self.n_heads * self.head_dim,
+            bias=getattr(config, "attention_qkv_bias", False),
+        )
+        self.wk = nn.Linear(
+            self.dim,
+            self.n_kv_heads * self.head_dim,
+            bias=getattr(config, "attention_qkv_bias", False),
+        )
+        self.wv = nn.Linear(
+            self.dim,
+            self.n_kv_heads * self.head_dim,
+            bias=getattr(config, "attention_qkv_bias", False),
+        )
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
 
         self.attn_softmax = torch.nn.Softmax(dim=-1)
@@ -57,19 +71,34 @@ class LlamaAttention(nn.Module):
     def prepare_sha(self):
         self.wq_sha = nn.ModuleList(
             [
-                nn.Conv2d(self.dim, self.head_dim, 1, bias=False)
+                nn.Conv2d(
+                    self.dim,
+                    self.head_dim,
+                    1,
+                    bias=getattr(self.config, "attention_qkv_bias", False),
+                )
                 for _ in range(self.n_heads)
             ]
         )
         self.wk_sha = nn.ModuleList(
             [
-                nn.Conv2d(self.dim, self.head_dim, 1, bias=False)
+                nn.Conv2d(
+                    self.dim,
+                    self.head_dim,
+                    1,
+                    bias=getattr(self.config, "attention_qkv_bias", False),
+                )
                 for _ in range(self.n_kv_heads)
             ]
         )
         self.wv_sha = nn.ModuleList(
             [
-                nn.Conv2d(self.dim, self.head_dim, 1, bias=False)
+                nn.Conv2d(
+                    self.dim,
+                    self.head_dim,
+                    1,
+                    bias=getattr(self.config, "attention_qkv_bias", False),
+                )
                 for _ in range(self.n_kv_heads)
             ]
         )
@@ -83,17 +112,29 @@ class LlamaAttention(nn.Module):
                     i * self.head_dim : (i + 1) * self.head_dim, :, None, None
                 ]
             )
+            if self.wq_sha[i].bias is not None:
+                self.wq_sha[i].bias.data.copy_(
+                    self.wq.bias[i * self.head_dim : (i + 1) * self.head_dim]
+                )
         for i in range(self.n_kv_heads):
             self.wk_sha[i].weight.data.copy_(
                 self.wk.weight[
                     i * self.head_dim : (i + 1) * self.head_dim, :, None, None
                 ]
             )
+            if self.wk_sha[i].bias is not None:
+                self.wk_sha[i].bias.data.copy_(
+                    self.wk.bias[i * self.head_dim : (i + 1) * self.head_dim]
+                )
             self.wv_sha[i].weight.data.copy_(
                 self.wv.weight[
                     i * self.head_dim : (i + 1) * self.head_dim, :, None, None
                 ]
             )
+            if self.wv_sha[i].bias is not None:
+                self.wv_sha[i].bias.data.copy_(
+                    self.wv.bias[i * self.head_dim : (i + 1) * self.head_dim]
+                )
         self.wo_sha.weight.data.copy_(self.wo.weight[:, :, None, None])
 
     def forward_sha(
@@ -149,7 +190,13 @@ class LlamaAttention(nn.Module):
         for i, _ in enumerate(q):
             cache_idx = i // self.num_key_value_groups
             attn = q[i] @ kh[cache_idx]
-            attn = attn / self.scale + atten_mask
+            attn = attn / self.scale
+            if self.enable_masked_softmax:
+                attn_min = torch.amin(attn, dim=-1, keepdim=True)
+                minus_value = -20
+                attn = torch.where(atten_mask == 0, attn, attn_min + minus_value)
+            else:
+                attn = attn + atten_mask
             attn = self.attn_softmax(attn)
             y = attn @ vh[cache_idx]
 

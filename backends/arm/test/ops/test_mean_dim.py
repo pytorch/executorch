@@ -210,6 +210,11 @@ class MeanDim(torch.nn.Module):
             (1, 2),
             False,
         ),
+        "rank5_2": lambda: (
+            torch.rand(1, 4, 7, 3, 2),
+            (2),
+            False,
+        ),
         "u55_avg_pool_not_supported": lambda: (
             torch.rand(1, 1, 1, 257),
             (0, 1, 2, 3),
@@ -255,6 +260,7 @@ xfails = {
     "rank5_01234": "Rank 5 graph input currently not supported in EthosUBackend (passes since CHW are all averaged over so data order does not matter in this case)",
     "rank5_234": "Rank 5 graph input currently not supported in EthosUBackend (passes since CHW are all averaged over so data order does not matter in this case)",
     "rank5_12": "Rank 5 graph input currently not supported in EthosUBackend",
+    "rank5_2": "Rank 5 graph input currently not supported in EthosUBackend",
 }
 
 

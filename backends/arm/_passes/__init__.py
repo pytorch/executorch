@@ -26,6 +26,7 @@ from .decompose_acosh_pass import DecomposeAcoshPass  # noqa
 from .decompose_adaptive_avg_pool2d_pass import DecomposeAdaptiveAvgPool2dPass  # noqa
 from .decompose_addmm_pass import DecomposeAddmmPass  # noqa
 from .decompose_asin_pass import DecomposeAsinPass  # noqa
+from .decompose_asinh_pass import DecomposeAsinhPass  # noqa
 from .decompose_atan_pass import DecomposeAtanPass  # noqa
 from .decompose_atanh_pass import DecomposeAtanhPass  # noqa
 from .decompose_avg_pool2d import DecomposeAvgPool2d  # noqa
@@ -40,6 +41,7 @@ from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linalg_vector_norm_pass import DecomposeLinearVectorNormPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
+from .decompose_masked_fill import DecomposeMaskedFill  # noqa
 from .decompose_maxpool2d_with_dilation import DecomposeMaxPool2DPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
