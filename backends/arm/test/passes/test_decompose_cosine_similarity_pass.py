@@ -28,7 +28,7 @@ modules = {"cosine_basic": CosineSimilarityModel()}
 
 
 @common.parametrize("module", modules)
-def test_decompose_cosine_similarity_tosa_BI(module):
+def test_decompose_cosine_similarity_tosa_INT(module):
 
     ops_after_pass = {
         "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 5,

@@ -14,11 +14,7 @@
 from typing import Any, Optional, Sequence
 
 import torch
-from executorch.backends.arm.tosa_specification import (
-    Tosa_0_80,
-    Tosa_1_00,
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa_specification import Tosa_1_00, TosaSpecification
 
 UNSUPPORTED_DTYPES = (
     torch.float64,
@@ -36,9 +32,7 @@ UNSUPPORTED_DTYPES = (
 def map_dtype(data_type: torch.dtype, tosa_spec: TosaSpecification) -> Any:
     if data_type in UNSUPPORTED_DTYPES:
         raise ValueError(f"Unsupported type: {data_type}")
-    if isinstance(tosa_spec, Tosa_0_80):
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-    elif isinstance(tosa_spec, Tosa_1_00):
+    if isinstance(tosa_spec, Tosa_1_00):
         import serializer.tosa_serializer as ts  # type: ignore
     else:
         raise RuntimeError(f"Unsupported tosa_spec: {tosa_spec}")
@@ -140,9 +134,7 @@ class TosaArg:
             if self.name is not None:
                 attrs.append(f"name={self.name!r}")
             if self.dtype is not None:
-                if isinstance(self.tosa_spec, Tosa_0_80):
-                    import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-                elif isinstance(self.tosa_spec, Tosa_1_00):
+                if isinstance(self.tosa_spec, Tosa_1_00):
                     import serializer.tosa_serializer as ts  # type: ignore
                 else:
                     raise RuntimeError(f"Unsupported tosa_spec: {self.tosa_spec}")

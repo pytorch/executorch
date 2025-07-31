@@ -9,8 +9,8 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t = tuple[torch.Tensor]
@@ -35,9 +35,9 @@ class Unflatten(torch.nn.Module):
 
 
 @common.parametrize("test_data", Unflatten.test_data)
-def test_unflatten_int_tosa_MI(test_data: test_data_t):
+def test_unflatten_int_tosa_FP(test_data: test_data_t):
     module, inputs = test_data()
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         module,
         inputs,
         Unflatten.aten_op,
@@ -46,9 +46,9 @@ def test_unflatten_int_tosa_MI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", Unflatten.test_data)
-def test_unflatten_int_tosa_BI(test_data: test_data_t):
+def test_unflatten_int_tosa_INT(test_data: test_data_t):
     module, inputs = test_data()
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         module,
         inputs,
         Unflatten.aten_op,
