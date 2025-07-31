@@ -352,7 +352,6 @@ void test_vulkan_sdpa(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   //
   // Run model
