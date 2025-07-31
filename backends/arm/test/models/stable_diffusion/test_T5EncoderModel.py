@@ -86,7 +86,7 @@ class TestT5EncoderModel(unittest.TestCase):
                 )
             )
 
-    def test_T5EncoderModel_tosa_BI(self):
+    def test_T5EncoderModel_tosa_INT(self):
         t5_encoder_model, t5_encoder_model_inputs = self.prepare_model_and_inputs()
         with torch.no_grad():
             (

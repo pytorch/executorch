@@ -25,10 +25,11 @@ from typing import (
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
+import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
+
 import torch.fx
 import torch.utils._pytree as pytree
 
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore[import-untyped]
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.arm_backend import (
