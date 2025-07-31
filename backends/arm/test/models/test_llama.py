@@ -19,8 +19,8 @@ from executorch.backends.arm._passes import InsertCastForOpsWithInt64InputPass
 
 from executorch.backends.arm.test import conftest
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 from executorch.examples.models.llama.export_llama_lib import (
     build_args_parser,
@@ -98,14 +98,14 @@ class TestLlama:
         return llama_model, llama_inputs, llama_meta
 
 
-def test_llama_tosa_MI():
+def test_llama_tosa_FP():
     llama_model, llama_inputs, llama_meta = TestLlama().prepare_model()
 
     if llama_model is None or llama_inputs is None:
         pytest.skip("Missing model and/or input files")
 
     with torch.no_grad():
-        pipeline = TosaPipelineMI[input_t](
+        pipeline = TosaPipelineFP[input_t](
             llama_model,
             llama_inputs,
             aten_op=[],
@@ -116,14 +116,14 @@ def test_llama_tosa_MI():
         pipeline.run()
 
 
-def test_llama_tosa_BI():
+def test_llama_tosa_INT():
     llama_model, llama_inputs, llama_meta = TestLlama().prepare_model()
 
     if llama_model is None or llama_inputs is None:
         pytest.skip("Missing model and/or input files")
 
     with torch.no_grad():
-        pipeline = TosaPipelineBI[input_t](
+        pipeline = TosaPipelineINT[input_t](
             llama_model,
             llama_inputs,
             aten_op=[],
