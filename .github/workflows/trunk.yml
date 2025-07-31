@@ -88,6 +88,15 @@ jobs:
             SIM_LIMIT=60000
         fi
 
+        cd $ZEPHYR_PROJ_ROOT
+        setup_zephyr_et_module
+
+        cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
+        install_executorch "--use-pt-pinned-commit"
+        .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
+        source examples/arm/ethos-u-scratch/setup_path.sh
+        source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
+
         if [[ "${MODEL_NAME}" == "whisper_tiny" ]]; then
           cd $ZEPHYR_PROJ_ROOT
           # For whisper-tiny, we will use optimum to export the encoder and decoder ptes
@@ -111,14 +120,6 @@ jobs:
           ls oa_whisper/
         fi
 
-        cd $ZEPHYR_PROJ_ROOT
-        setup_zephyr_et_module
-
-        cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
-        install_executorch "--use-pt-pinned-commit"
-        .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
-        source examples/arm/ethos-u-scratch/setup_path.sh
-        source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
         cd $ZEPHYR_PROJ_ROOT/zephyr/samples/modules/executorch/arm/hello_world
         if [[ "${MODEL_NAME}" == "whisper_tiny" ]]; then
             python3 build_model.py --pte-file $ZEPHYR_PROJ_ROOT/oa_whisper/encoder.pte
