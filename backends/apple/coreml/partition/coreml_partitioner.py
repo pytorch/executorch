@@ -89,6 +89,30 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             )
             return True
 
+        # https://github.com/apple/coremltools/issues/2565
+        if node.target in [
+            torch.ops.aten.diagonal.default,
+            torch.ops.aten.diagonal_copy.default,
+            exir_ops.edge.aten.diagonal.default,
+            exir_ops.edge.aten.diagonal_copy.default,
+        ]:
+            self.log_once(
+                "torch.ops.aten.diagonal.default has a bug in CoreML.  Overriding op support."
+            )
+            return True
+
+        # https://github.com/apple/coremltools/issues/2569
+        if node.target in [
+            torch.ops.aten.acosh.default,
+            exir_ops.edge.aten.acosh.default,
+            torch.ops.aten.asinh.default,
+            exir_ops.edge.aten.asinh.default,
+        ]:
+            self.log_once(
+                "torch.ops.aten.{acosh, asinh}.default is not supported by CoreML.  Overriding op support."
+            )
+            return True
+
         # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
         # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
         # # in the placeholders due to partitioning, which CoreML does not support
