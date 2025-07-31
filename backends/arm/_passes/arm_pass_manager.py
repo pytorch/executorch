@@ -108,7 +108,7 @@ class ArmPassManager(PassManager):
         with TosaLoweringContext(self.tosa_spec):
             return self(graph_module).graph_module
 
-    def _tosa_080_BI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+    def _tosa_INT_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
@@ -164,7 +164,7 @@ class ArmPassManager(PassManager):
 
         return self._transform(exported_program.graph_module)
 
-    def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+    def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
         self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeAcoshPass())
@@ -239,22 +239,12 @@ class ArmPassManager(PassManager):
 
         return self._transform(exported_program.graph_module)
 
-    def _tosa_1_0_int_quantized_pipeline(self, exported_program: ExportedProgram):
-        return self._tosa_080_BI_pipeline(exported_program)
-
-    def _tosa_1_0_fp_pipeline(self, exported_program: ExportedProgram):
-        return self._tosa_080_MI_pipeline(exported_program)
-
     def transform_to_backend_pipeline(self, exported_program: ExportedProgram):
         """Apply passes before transforming program to backend"""
-        if self.tosa_spec == TosaSpecification.create_from_string("TOSA-0.80.0+BI"):
-            return self._tosa_080_BI_pipeline(exported_program)
-        elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-0.80.0+MI"):
-            return self._tosa_080_MI_pipeline(exported_program)
-        elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+FP"):
-            return self._tosa_1_0_fp_pipeline(exported_program)
+        if self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+FP"):
+            return self._tosa_FP_pipeline(exported_program)
         elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+INT"):
-            return self._tosa_1_0_int_quantized_pipeline(exported_program)
+            return self._tosa_INT_pipeline(exported_program)
         else:
             raise NotImplementedError(
                 f"No pass pipeline implemented for {self.tosa_spec=}"
