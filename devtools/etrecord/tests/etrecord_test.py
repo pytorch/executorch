@@ -52,52 +52,6 @@ class TestETRecord(unittest.TestCase):
         self.assert_etrecord_has_no_executorch_program(etrecord)
         self.assertIsNone(etrecord.graph_map)
 
-    def assert_etrecord_has_exported_program(
-        self, etrecord: ETRecord, expected_exported_program
-    ) -> None:
-        """Assert that ETRecord has exported program data matching expected."""
-        self.assertIsNotNone(etrecord.exported_program)
-        self.assertIsNotNone(etrecord.export_graph_id)
-        self.check_graph_closeness(
-            etrecord.exported_program,
-            expected_exported_program.graph_module,
-        )
-        self.assertEqual(
-            etrecord.export_graph_id,
-            id(expected_exported_program.graph),
-        )
-
-    def assert_etrecord_has_edge_dialect_program(
-        self, etrecord: ETRecord, expected_edge_program
-    ) -> None:
-        """Assert that ETRecord has edge dialect program data matching expected."""
-        self.assertIsNotNone(etrecord.edge_dialect_program)
-        if hasattr(expected_edge_program, "exported_program"):
-            # EdgeProgramManager case
-            expected_graph_module = expected_edge_program.exported_program.graph_module
-        else:
-            # ExirExportedProgram case
-            expected_graph_module = expected_edge_program.exported_program.graph_module
-        self.check_graph_closeness(
-            etrecord.edge_dialect_program,
-            expected_graph_module,
-        )
-
-    def assert_etrecord_has_executorch_program(
-        self, etrecord: ETRecord, expected_et_output
-    ) -> None:
-        """Assert that ETRecord has executorch program data matching expected."""
-        self.assertIsNotNone(etrecord._debug_handle_map)
-        self.assertIsNotNone(etrecord._delegate_map)
-        self.assertEqual(
-            etrecord._debug_handle_map,
-            json.loads(json.dumps(expected_et_output.debug_handle_map)),
-        )
-        self.assertEqual(
-            etrecord._delegate_map,
-            json.loads(json.dumps(expected_et_output.delegate_map)),
-        )
-
     def get_test_model(self):
         f = models.BasicSinMax()
         captured_output = exir.capture(f, f.get_random_inputs(), exir.CaptureConfig())
