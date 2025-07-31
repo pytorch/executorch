@@ -91,7 +91,8 @@ Error TextLLMRunner::generate_from_pos(
     int64_t start_pos,
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
+    std::function<void(const Stats&)> stats_callback,
+    std::function<void(int)> updated_start_pos) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
@@ -230,6 +231,9 @@ Error TextLLMRunner::generate_from_pos(
   if (stats_callback) {
     stats_callback(*stats_);
   }
+  if (updated_start_pos) {
+    updated_start_pos(pos);
+  }
 
   return Error::Ok;
 }
@@ -238,7 +242,8 @@ Error TextLLMRunner::generate(
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
-  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
+  return generate_from_pos(
+      prompt, 0, config, token_callback, stats_callback, {});
 }
 
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {

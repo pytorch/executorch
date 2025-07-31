@@ -119,7 +119,8 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       int64_t start_pos,
       const GenerationConfig& config,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {}) override;
+      std::function<void(const Stats&)> stats_callback = {},
+      std::function<void(int)> updated_start_pos = {}) override;
 
   /**
    * @brief Warms up the model with a sample prompt

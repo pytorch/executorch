@@ -291,32 +291,46 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return tuple_result;
   }
 
-  jint generate_from_pos(
+  facebook::jni::local_ref<jlongArray> generate_from_pos(
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       jlong start_pos,
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
+    facebook::jni::local_ref<jlongArray> tuple_result =
+        facebook::jni::make_long_array(2);
+
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(multi_modal_runner_->generate_from_pos(
-          prompt->toStdString(),
-          seq_len,
-          start_pos,
-          [callback](const std::string& result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); },
-          echo));
+      tuple_result->pin()[0] =
+          static_cast<jlong>(multi_modal_runner_->generate_from_pos(
+              prompt->toStdString(),
+              seq_len,
+              start_pos,
+              [callback](const std::string& result) {
+                callback->onResult(result);
+              },
+              [callback](const llm::Stats& stats) { callback->onStats(stats); },
+              echo));
+      tuple_result->pin()[1] = static_cast<jlong>(start_pos);
+      return tuple_result;
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       executorch::extension::llm::GenerationConfig config{
           .echo = static_cast<bool>(echo),
           .seq_len = seq_len,
           .temperature = temperature_,
       };
-      return static_cast<jint>(runner_->generate_from_pos(
+      int start_pos_after_generate = start_pos;
+      tuple_result->pin()[0] = static_cast<jlong>(runner_->generate_from_pos(
           prompt->toStdString(),
           start_pos,
           config,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
+          [callback](const llm::Stats& stats) { callback->onStats(stats); },
+          [callback, &start_pos_after_generate](int updated_start_pos) {
+            start_pos_after_generate = updated_start_pos;
+          }));
+      tuple_result->pin()[1] = static_cast<jlong>(start_pos_after_generate);
+      return tuple_result;
     }
   }
 

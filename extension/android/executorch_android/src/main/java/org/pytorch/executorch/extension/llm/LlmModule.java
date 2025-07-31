@@ -213,6 +213,9 @@ public class LlmModule {
   /**
    * Generate tokens from the given prompt, starting from the given position.
    *
+   * <p>This function is deprecated. Please use #generateFromPosWithPosUpdate( String prompt, int
+   * seqLen, long startPos, LlmCallback callback, boolean echo) instead.
+   *
    * @param prompt The text prompt to LLaVA.
    * @param seqLen The total sequence length, including the prompt tokens and new tokens.
    * @param startPos The starting position in KV cache of the input in the LLM.
@@ -220,7 +223,45 @@ public class LlmModule {
    * @param echo indicate whether to echo the input prompt or not.
    * @return The error code.
    */
-  public native int generateFromPos(
+  @Deprecated
+  public int generateFromPos(
+      String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo) {
+    long[] nativeResult = generateFromPosNative(prompt, seqLen, startPos, callback, echo);
+    return nativeResult[0];
+  }
+
+  /**
+   * Generate tokens from the given prompt, starting from the given position.
+   *
+   * <p>This will return the updated startPos.
+   *
+   * @param prompt The text prompt to LLaVA.
+   * @param seqLen The total sequence length, including the prompt tokens and new tokens.
+   * @param startPos The starting position in KV cache of the input in the LLM.
+   * @param callback callback object to receive results.
+   * @param echo indicate whether to echo the input prompt or not.
+   * @return updated startPos
+   */
+  public long generateFromPosWithPosUpdate(
+      String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo) {
+    long[] nativeResult = generateFromPosNative(prompt, seqLen, startPos, callback, echo);
+    if (nativeResult[0] != 0) {
+      throw new RuntimeException("Generate failed with error code: " + nativeResult[0]);
+    }
+    return nativeResult[1];
+  }
+
+  /**
+   * Generate tokens from the given prompt, starting from the given position.
+   *
+   * @param prompt The text prompt to LLaVA.
+   * @param seqLen The total sequence length, including the prompt tokens and new tokens.
+   * @param startPos The starting position in KV cache of the input in the LLM.
+   * @param callback callback object to receive results.
+   * @param echo indicate whether to echo the input prompt or not.
+   * @return a tuple of (status, updated startPos)
+   */
+  private native long[] generateFromPosNative(
       String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo);
 
   /** Stop current generate() before it finishes. */
