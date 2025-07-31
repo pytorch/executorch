@@ -115,7 +115,7 @@ cat_module = {
 
 
 @common.parametrize("module", modules)
-def test_fuse_const_ops_tosa_MI(module: torch.nn.Module):
+def test_fuse_const_ops_tosa_FP(module: torch.nn.Module):
     pipeline = PassPipeline[input_t](
         module=module,
         test_data=(torch.rand(1),),
@@ -129,7 +129,7 @@ def test_fuse_const_ops_tosa_MI(module: torch.nn.Module):
 
 
 @common.parametrize("module", modules)
-def test_fuse_const_ops_tosa_BI(module: torch.nn.Module):
+def test_fuse_const_ops_tosa_INT(module: torch.nn.Module):
     pipeline = PassPipeline[input_t](
         module,
         (torch.rand(10, 10),),

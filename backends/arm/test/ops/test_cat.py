@@ -12,10 +12,10 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -70,8 +70,8 @@ class Cat(torch.nn.Module):
 
 
 @common.parametrize("test_data", Cat.test_parameters)
-def test_cat_tosa_MI(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
+def test_cat_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
         Cat(),
         test_data(),
         aten_op,
@@ -80,11 +80,11 @@ def test_cat_tosa_MI(test_data: Tuple):
     pipeline.run()
 
 
-def test_cat_tosa_MI_4d():
+def test_cat_tosa_FP_4d():
     square = torch.ones((2, 2, 2, 2))
     for dim in range(-3, 3):
         test_data = ((square, square.clone()), dim)
-        pipeline = TosaPipelineMI[input_t1](
+        pipeline = TosaPipelineFP[input_t1](
             Cat(),
             test_data,
             aten_op,
@@ -94,8 +94,8 @@ def test_cat_tosa_MI_4d():
 
 
 @common.parametrize("test_data", Cat.test_parameters)
-def test_cat_tosa_BI(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
+def test_cat_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
         Cat(),
         test_data(),
         aten_op,
@@ -114,8 +114,8 @@ x_fails = {
 
 @common.parametrize("test_data", Cat.test_parameters, x_fails)
 @common.XfailIfNoCorstone300
-def test_cat_u55_BI(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_cat_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         Cat(),
         test_data(),
         aten_op,
@@ -127,8 +127,8 @@ def test_cat_u55_BI(test_data: Tuple):
 
 @common.parametrize("test_data", Cat.test_parameters, x_fails)
 @common.XfailIfNoCorstone320
-def test_cat_u85_BI(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_cat_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         Cat(),
         test_data(),
         aten_op,

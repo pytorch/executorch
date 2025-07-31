@@ -11,8 +11,8 @@ from executorch.backends.arm._passes import InsertCastForOpsWithInt64InputPass
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -57,9 +57,9 @@ test_input: dict[input_params] = {
 
 
 @common.parametrize("test_input", test_input)
-def test_embedding_tosa_MI(test_input: input_params):
+def test_embedding_tosa_FP(test_input: input_params):
     op = Embedding()
-    pipeline = TosaPipelineMI[input_params](
+    pipeline = TosaPipelineFP[input_params](
         op,
         test_input,
         op.aten_op,
@@ -71,9 +71,9 @@ def test_embedding_tosa_MI(test_input: input_params):
 
 
 @common.parametrize("test_input", test_input)
-def test_embedding_tosa_BI(test_input: input_params):
+def test_embedding_tosa_INT(test_input: input_params):
     op = Embedding()
-    pipeline = TosaPipelineBI[input_params](
+    pipeline = TosaPipelineINT[input_params](
         op,
         test_input,
         op.aten_op,
