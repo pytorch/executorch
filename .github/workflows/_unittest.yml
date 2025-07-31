@@ -30,6 +30,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    secrets: inherit
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.2xlarge
@@ -45,6 +46,7 @@ jobs:
 
   macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-m1-stable
