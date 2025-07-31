@@ -63,6 +63,7 @@ jobs:
         model: [add, whisper_tiny]
       fail-fast: false
     with:
+      secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
       submodules: 'recursive'
