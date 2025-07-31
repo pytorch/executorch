@@ -196,44 +196,11 @@ class ExportSession:
                     )
                 stage = TorchExportStage(pre_edge_passes)
             elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
-                stage = EdgeTransformAndLowerStage(
-                    partitioners=(
-                        self._lowering_recipe.partitioners
-                        if self._lowering_recipe
-                        else None
-                    ),
-                    transform_passes=(
-                        self._lowering_recipe.edge_transform_passes
-                        if self._lowering_recipe
-                        else None
-                    ),
-                    compile_config=(
-                        self._lowering_recipe.edge_compile_config
-                        if self._lowering_recipe
-                        else None
-                    ),
-                )
+                stage = EdgeTransformAndLowerStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EDGE:
-                stage = ToEdgeStage(
-                    edge_compile_config=(
-                        self._lowering_recipe.edge_compile_config
-                        if self._lowering_recipe
-                        else None
-                    ),
-                )
+                stage = ToEdgeStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_BACKEND:
-                stage = ToBackendStage(
-                    partitioners=(
-                        self._lowering_recipe.partitioners
-                        if self._lowering_recipe
-                        else None
-                    ),
-                    transform_passes=(
-                        self._lowering_recipe.edge_transform_passes
-                        if self._lowering_recipe
-                        else None
-                    ),
-                )
+                stage = ToBackendStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EXECUTORCH:
                 stage = ExecutorchStage(self._export_recipe.executorch_backend_config)
             else:
