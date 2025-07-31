@@ -9,10 +9,10 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -92,8 +92,8 @@ x_fail = {
 
 
 @common.parametrize("test_data", Pow_TensorTensor.test_data, x_fail, strict=False)
-def test_pow_tensor_tensor_tosa_MI(test_data: Pow_TensorTensor.input_t):
-    pipeline = TosaPipelineMI[Pow_TensorTensor.input_t](
+def test_pow_tensor_tensor_tosa_FP(test_data: Pow_TensorTensor.input_t):
+    pipeline = TosaPipelineFP[Pow_TensorTensor.input_t](
         Pow_TensorTensor(),
         test_data(),
         Pow_TensorTensor.aten_op,
@@ -113,9 +113,9 @@ x_fail = {
 
 
 @common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
-def test_pow_tensor_scalar_tosa_MI(test_data: Pow_TensorScalar.input_t):
+def test_pow_tensor_scalar_tosa_FP(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
-    pipeline = TosaPipelineMI[Pow_TensorScalar.input_t](
+    pipeline = TosaPipelineFP[Pow_TensorScalar.input_t](
         Pow_TensorScalar(exp),
         (base,),
         Pow_TensorScalar.aten_op,
@@ -125,9 +125,9 @@ def test_pow_tensor_scalar_tosa_MI(test_data: Pow_TensorScalar.input_t):
 
 
 @common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
-def test_pow_tensor_scalar_tosa_BI(test_data: Pow_TensorScalar.input_t):
+def test_pow_tensor_scalar_tosa_INT(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
-    pipeline = TosaPipelineBI[Pow_TensorScalar.input_t](
+    pipeline = TosaPipelineINT[Pow_TensorScalar.input_t](
         Pow_TensorScalar(exp),
         (base,),
         Pow_TensorScalar.aten_op,
@@ -138,9 +138,9 @@ def test_pow_tensor_scalar_tosa_BI(test_data: Pow_TensorScalar.input_t):
 
 @common.parametrize("test_data", Pow_TensorScalar.test_data)
 @common.XfailIfNoCorstone300
-def test_pow_tensor_scalar_u55_BI(test_data: Pow_TensorScalar.input_t):
+def test_pow_tensor_scalar_u55_INT(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
-    pipeline = EthosU55PipelineBI[Pow_TensorScalar.input_t](
+    pipeline = EthosU55PipelineINT[Pow_TensorScalar.input_t](
         Pow_TensorScalar(exp),
         (base,),
         Pow_TensorScalar.aten_op,
@@ -152,9 +152,9 @@ def test_pow_tensor_scalar_u55_BI(test_data: Pow_TensorScalar.input_t):
 
 @common.parametrize("test_data", Pow_TensorScalar.test_data)
 @common.XfailIfNoCorstone320
-def test_pow_tensor_scalar_u85_BI(test_data: Pow_TensorScalar.input_t):
+def test_pow_tensor_scalar_u85_INT(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
-    pipeline = EthosU85PipelineBI[Pow_TensorScalar.input_t](
+    pipeline = EthosU85PipelineINT[Pow_TensorScalar.input_t](
         Pow_TensorScalar(exp),
         (base,),
         Pow_TensorScalar.aten_op,
