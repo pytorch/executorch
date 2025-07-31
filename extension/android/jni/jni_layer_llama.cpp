@@ -362,7 +362,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod(
             "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
         makeNativeMethod(
-            "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
+            "generateFromPosNative", ExecuTorchLlmJni::generate_from_pos),
     });
   }
 };
