@@ -53,6 +53,17 @@ $if MODE == "per_channel":
     int quant_min;
     int quant_max;
   };
+$if MODE == "block_wise":
+  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+
+  layout(push_constant) uniform restrict Block {
+    ivec4 blockSize;     // bW, bH, bC, bN
+    ivec4 numBlocks;     // tW/bW, tH/bH, tC/bC, tN/bN
+    ivec4 blockStride;   // pre-computed linear strides for the block grid
+    int quant_min;
+    int quant_max;
+  };
 
 ${layout_declare_ubo(B, "int", "out_numel")}
 ${layout_declare_ubo(B, "ivec4", "t_in_sizes")}
@@ -71,64 +82,54 @@ const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
 const lowp ivec4 in_dim_order = unhash_dim_order(in_layout);
 
 /*
- * QUANTIZATION SHADER (BUFFER STORAGE)
- *
- * This shader converts floating-point tensor values to n-bit integer representations
- * using pre-computed quantization parameters (scale and zero_point). The quantization
- * maps floating-point values to a discrete integer range while preserving the
- * original data distribution as much as possible.
- *
- * ALGORITHM:
- * 1. Load floating-point input value from buffer
- * 2. Apply quantization formula: qvalue = round(value / scale) + zero_point
- * 3. Clamp result to [quant_min, quant_max] range
- * 4. Store quantized integer value to output buffer
- *
- * WORKGROUP CONFIGURATION:
- * - Per-Tensor Mode:
- *   - Global WG Size: {num_elements, 1, 1} (one thread per tensor element)
- *   - Local WG Size: Default (typically {64, 1, 1} or based on global WG size)
- * - Per-Token Mode:
- *   - Global WG Size: {num_elements, 1, 1} (one thread per tensor element)
- *   - Local WG Size: Default (typically {64, 1, 1} or based on global WG size)
- *
- * SUPPORTED CONFIGURATIONS:
- * - Per-Tensor Config: Uses linear buffer indexing with stride-based tensor access
- * - and supports any tensor layout through stride calculations and dimension ordering
- * - Per-Token Config: Assumes width-packed layout (packed_dim = 0)
- * - since that is how token index is calculated
- *
- * QUANTIZATION FORMULA VISUALIZATION:
- * For input range [min_val, max_val] mapped to integer range [quant_min, quant_max]:
- *
- * Floating Point Domain:    Integer Domain:
- * min_val ────────────────► quant_min
- *    │                         │
- *    │    scale = (max_val - min_val) / (quant_max - quant_min)
- *    │    zero_point = quant_min - round(min_val / scale)
- *    │                         │
- * max_val ────────────────► quant_max
- *
- * Quantization Process:
- * Input: 2.5 (float)
- * Step 1: value / scale = 2.5 / 0.1 = 25.0
- * Step 2: round(25.0) + zero_point = 25 + (-128) = -103
- * Step 3: clamp(-103, -128, 127) = -103
- * Output: -103 (int8)
- *
- * PER-TENSOR QUANTIZATION:
- * - Single scale and zero_point values for entire tensor
- * - All elements use same quantization parameters
- * - Parameters passed as push constants for efficiency
- * - Formula: qvalue = clamp(round(value / scale) + zero_point, quant_min, quant_max)
- *
- * PER-TOKEN QUANTIZATION:
- * - Separate scale and zero_point for each token
- * - Token = all elements except last dimension (e.g., for [B,S,H]: B*S tokens of H elements)
- * - Parameters stored in buffer arrays indexed by token_id
- * - Each thread calculates its token_id from tensor coordinates
- * - Formula: qvalue = clamp(round(value / scale[token_id]) + zero_point[token_id], quant_min, quant_max)
- */
+  Quantization Shader (Buffer Storage)
+    This shader converts floating-point tensor values to n-bit integer representations
+    using pre-computed quantization parameters (scale and zero_point). The quantization
+    maps floating-point values to a discrete integer range while preserving the original
+    data distribution as much as possible.
+
+  Important Considerations:
+    (+) All input tensors are assumed to be WIDTH_PACKED (i.e., contiguous in the last dimension)
+    (+) The axis map layout is assumed to be a standard layout for scales and zero_points
+    (++) The scale and zero_point tensors must be implemented as buffers
+
+  Workgroup Configuration:
+  - quantize_per_tensor
+      This mode applies uniform quantization across the entire tensor using a single scale
+      and zero_point value.
+
+    (*) global_wg_size: default
+    (*) local_wg_size: default
+
+  - quantize_per_token
+      This mode applies quantization individually to each token (or element) in the input,
+      using separate scale and zero_point values for each token. For instance if we have
+      a tensor of shape [B, S, H] then we have B*S tokens (and s+zp pairs) of H elements each.
+
+    (*) global_wg_size: default
+    (*) local_wg_size: default
+
+  - quantize_per_channel
+      This mode applies quantization separately to each channel of the input tensor, using
+      distinct scale and zero_point values for each channel. For example, if the tensor shape
+      is [B, C, H, W] and axis = 1, quantization parameters are computed per channel C, allowing
+      each channel to be quantized independently.
+
+    (*) global_wg_size: default
+    (*) local_wg_size: default
+
+  - quantize_block_wise
+      This mode applies quantization in blocks or groups of elements, allowing different scale
+      and zero_point values for each block. It is equivalent to quantize_affine, where quantization
+      parameters are affine transformations applied per block. For example, if the tensor shape
+      is [6, 9, 4] and blockSize = [3, 3, 2], then we have 12 blocks each with 18 elements.
+
+    (*) global_wg_size: default
+    (*) local_wg_size: default
+
+  Quantization Formula:
+    qvalue = clamp(round(value / scale) + zero_point, quant_min, quant_max).
+*/
 
 #ifdef per_tensor
 
@@ -183,7 +184,7 @@ void quantize_per_token() {
   t_out[out_bufi] = qvalue;
 }
 
-#else // per_channel
+#elif defined(per_channel)
 
 void quantize_per_channel() {
   const int out_bufi = int(gl_GlobalInvocationID.x);
@@ -218,6 +219,29 @@ void quantize_per_channel() {
   channel_idx = min(channel_idx, num_channels - 1);
 
   OUT_T qvalue = quantize_val(value, t_scale[channel_idx], t_zero_point[channel_idx]);
+
+  t_out[out_bufi] = qvalue;
+}
+
+#else // block_wise
+
+void quantize_block_wise() {
+  const int out_bufi = int(gl_GlobalInvocationID.x);
+
+  if (out_bufi >= out_numel) {
+    return;
+  }
+
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, t_out_strides, out_dim_order);
+  const int in_bufi = tidx_to_bufi(out_tidx, t_in_strides);
+
+  IN_T value = t_in[in_bufi];
+
+  const ivec4 bcoord = out_tidx / blockSize;
+
+  const int block_id = bcoord.x * blockStride.x + bcoord.y * blockStride.y + bcoord.z * blockStride.z + bcoord.w * blockStride.w;
+
+  const OUT_T qvalue = quantize_val(value, t_scale[block_id], t_zero_point[block_id]);
 
   t_out[out_bufi] = qvalue;
 }
