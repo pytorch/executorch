@@ -91,11 +91,11 @@ jobs:
         if [[ "${MODEL_NAME}" == "whisper_tiny" ]]; then
           cd $ZEPHYR_PROJ_ROOT
           # For whisper-tiny, we will use optimum to export the encoder and decoder ptes
-          OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+          #OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
           git clone https://github.com/huggingface/optimum-executorch
           pushd optimum-executorch
           # There is no release yet, for CI stability, always test from the same commit on main
-          git checkout $OPTIMUM_ET_COMMIT
+          git checkout eea657ddbdeb1118943a92fb73c289985c3ee1ba
           python install_dev.py --skip_override_torch
           popd
 
