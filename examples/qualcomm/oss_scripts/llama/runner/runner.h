@@ -33,9 +33,17 @@ enum DecoderModelVersion {
   kQwen2_5,
   kPhi4,
 };
+
+enum KvBitWidth {
+  kWidth8 = 8,
+  kWidth16 = 16,
+};
+
+template <typename T>
 class Runner {
  public:
   explicit Runner(
+      std::unique_ptr<executorch::extension::Module> module,
       const std::string& decoder_model,
       const std::string& model_path,
       const std::string& tokenizer_path,
@@ -87,11 +95,11 @@ class Runner {
   DecoderModelVersion decoder_model_version_;
   KVManagerMode kv_updater_;
   std::unique_ptr<IMemAlloc> buffer_manager_;
-  std::unique_ptr<KVManager> kv_manager_;
+  std::unique_ptr<KVManager<T>> kv_manager_;
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<DecoderRunner> decoder_runner_;
-  std::unique_ptr<PromptProcessor> prompt_processor_;
-  std::unique_ptr<TokenGenerator> token_generator_;
+  std::unique_ptr<PromptProcessor<T>> prompt_processor_;
+  std::unique_ptr<TokenGenerator<T>> token_generator_;
 
   // stats
   executorch::llm::Stats stats_;
