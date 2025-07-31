@@ -47,7 +47,7 @@ class SoftmaxLog(torch.nn.Module):
         return (torch.rand(2, 3),)
 
 
-def test_softmax_basic_tosa_MI():
+def test_softmax_basic_tosa_FP():
     module = Softmax()
     pipeline = PassPipeline[input_t](
         module,
@@ -74,7 +74,7 @@ def test_softmax_basic_tosa_MI():
     pipeline.run()
 
 
-def test_softmax_log_tosa_MI():
+def test_softmax_log_tosa_FP():
     module = SoftmaxLog()
     pipeline = PassPipeline[input_t](
         module,

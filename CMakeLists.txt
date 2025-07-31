@@ -278,6 +278,30 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   )
 endif()
 
+if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
+  set(TORCHAO_BUILD_ATEN_OPS OFF)
+  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
+  set(TORCHAO_BUILD_CPU_AARCH64 ON)
+  set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
+
+  list(APPEND TORCHAO_INCLUDE_DIRS
+    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
+    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
+    ${EXECUTORCH_ROOT}/third-party/ao
+  )
+
+  set(EXECUTORCH_INCLUDE_DIRS ${TORCHAO_INCLUDE_DIRS})
+
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental)
+  executorch_target_link_options_shared_lib(torchao_ops_executorch)
+  list(APPEND _executorch_kernels torchao_ops_executorch)
+endif()
+
+if(EXECUTORCH_BUILD_TESTS)
+  set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
+  include(CTest)
+endif()
+
 # TODO(dbort): Fix these warnings and remove this flag.
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
