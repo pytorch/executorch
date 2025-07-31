@@ -14,10 +14,10 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -57,8 +57,8 @@ class Squeeze(torch.nn.Module):
 
 
 @common.parametrize("test_data", Squeeze.test_parameters)
-def test_squeeze_dim_tosa_MI(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
+def test_squeeze_dim_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
         Squeeze(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.default",
@@ -68,8 +68,8 @@ def test_squeeze_dim_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", Squeeze.test_parameters)
-def test_squeeze_dim_tosa_BI(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
+def test_squeeze_dim_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
         Squeeze(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.default",
@@ -80,8 +80,8 @@ def test_squeeze_dim_tosa_BI(test_data: Tuple):
 
 @common.parametrize("test_data", Squeeze.test_parameters)
 @common.XfailIfNoCorstone300
-def test_squeeze_dim_u55_BI(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_squeeze_dim_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         Squeeze(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.default",
@@ -93,8 +93,8 @@ def test_squeeze_dim_u55_BI(test_data: Tuple):
 
 @common.parametrize("test_data", Squeeze.test_parameters)
 @common.XfailIfNoCorstone320
-def test_squeeze_dim_u85_BI(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_squeeze_dim_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         Squeeze(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.default",
@@ -105,8 +105,8 @@ def test_squeeze_dim_u85_BI(test_data: Tuple):
 
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
-def test_squeeze_dim_tosa_MI_2(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
+def test_squeeze_dim_tosa_FP_2(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
         SqueezeDim(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.dim",
@@ -116,8 +116,8 @@ def test_squeeze_dim_tosa_MI_2(test_data: Tuple):
 
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
-def test_squeeze_dim_tosa_BI_2(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
+def test_squeeze_dim_tosa_INT_2(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
         SqueezeDim(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.dim",
@@ -128,8 +128,8 @@ def test_squeeze_dim_tosa_BI_2(test_data: Tuple):
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
 @common.XfailIfNoCorstone300
-def test_squeeze_dim_u55_BI_2(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_squeeze_dim_u55_INT_2(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         SqueezeDim(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dim",
@@ -141,8 +141,8 @@ def test_squeeze_dim_u55_BI_2(test_data: Tuple):
 
 @common.parametrize("test_data", SqueezeDim.test_parameters)
 @common.XfailIfNoCorstone320
-def test_squeeze_dim_u85_BI_2(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_squeeze_dim_u85_INT_2(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         SqueezeDim(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dim",
@@ -153,8 +153,8 @@ def test_squeeze_dim_u85_BI_2(test_data: Tuple):
 
 
 @common.parametrize("test_data", SqueezeDims.test_parameters)
-def test_squeeze_dims_tosa_MI(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
+def test_squeeze_dims_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
         SqueezeDims(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.dims",
@@ -164,8 +164,8 @@ def test_squeeze_dims_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", SqueezeDims.test_parameters)
-def test_squeeze_dims_tosa_BI(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
+def test_squeeze_dims_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
         SqueezeDims(),
         test_data(),
         aten_op="torch.ops.aten.squeeze.dims",
@@ -176,8 +176,8 @@ def test_squeeze_dims_tosa_BI(test_data: Tuple):
 
 @common.parametrize("test_data", SqueezeDims.test_parameters)
 @common.XfailIfNoCorstone300
-def test_squeeze_dims_u55_BI(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_squeeze_dims_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         SqueezeDims(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dims",
@@ -189,8 +189,8 @@ def test_squeeze_dims_u55_BI(test_data: Tuple):
 
 @common.parametrize("test_data", SqueezeDims.test_parameters)
 @common.XfailIfNoCorstone320
-def test_squeeze_dims_u85_BI(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_squeeze_dims_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         SqueezeDims(),
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dims",

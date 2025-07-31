@@ -83,7 +83,7 @@ class TestCLIPTextModelWithProjection(unittest.TestCase):
     # MLETORCH-867, MLETORCH-1059
     # Failures: "Fatal Python error: Aborted, Dependency cycles, KeyError in CastInt64BuffersToInt32Pass")
     @unittest.expectedFailure
-    def test_CLIPTextModelWithProjection_tosa_BI(self):
+    def test_CLIPTextModelWithProjection_tosa_INT(self):
         text_encoder_model, text_encoder_model_inputs = self.prepare_model_and_inputs()
         with torch.no_grad():
             (
