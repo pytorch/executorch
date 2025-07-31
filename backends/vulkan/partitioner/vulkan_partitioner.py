@@ -83,61 +83,18 @@ class VulkanSupportedOperators(OperatorSupportBase):
                 return False, "no operator implementation"
             features = get_op_features(target)
 
-        # Check for high dimensional tensors
-        if utils.is_tensor_node(node) and utils.tensor_node_is_high_dim(node):
-            return False, "contains high dim tensor"
-
-        valid_texture_layouts = utils.possible_node_memory_layouts(
+        # Get the possible tensor representations for each tensor participating in the
+        # this operator. Then check that all tensors are representable as either a
+        # buffer or texture.
+        op_repsets: utils.OpRepSets = features.make_op_repsets(
             node, self.texture_limits
         )
 
-        can_use_buffers = utils.within_buffer_limit(node, self.buffer_limit)
-        for i, arg in enumerate(node.args):
-            if (
-                isinstance(arg, torch.fx.Node)
-                and utils.is_tensor_node(arg)
-                and i not in features.skip_limits_check
-            ):
-                # Check for bool inputs
-                if utils.tensor_node_is_bool(arg):
-                    return False, "contains bool tensor"
-
-                # Check for high dimensional tensors
-                if utils.tensor_node_is_high_dim(arg):
-                    return False, "contains high dim tensor"
-
-                arg_texture_layouts = utils.possible_node_memory_layouts(
-                    arg, self.texture_limits
-                )
-                valid_texture_layouts = valid_texture_layouts.intersection(
-                    arg_texture_layouts
-                )
-                can_use_buffers = can_use_buffers and utils.within_buffer_limit(
-                    arg, self.buffer_limit
-                )
-
-        op_available_layouts = features.supported_memory_layouts(
-            VkStorageType.TEXTURE_3D
-        )
-
-        can_use_texture = any(
-            layout in op_available_layouts for layout in valid_texture_layouts
-        )
-
-        # If there are no valid texture memory layouts, then buffer storage must be
-        # supported by the operator implementation.
-        if not can_use_texture:
-            if not can_use_buffers:
-                return (
-                    False,
-                    f"op requires buffers that exceed the buffer limit ({self.buffer_limit})",
-                )
-
-            compatible = VkStorageType.BUFFER in features.supported_storage_types()
-            reason = "op is compatible"
-            if not compatible:
-                reason = "op requires buffers which is not supported by op impl"
-            return compatible, reason
+        if op_repsets.any_is_empty():
+            return (
+                False,
+                "No valid representations for a tensor in the operation",
+            )
 
         return True, "Op is compatible"
 
@@ -266,11 +223,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         assert features is not None
 
-        if not features.check_node_fn(node):
+        if not features.are_node_inputs_supported_fn(node):
             self.log_skip(node, "op args not supported")
             return False
 
-        if self.require_dynamic_shapes and not features.resize_fn:
+        if self.require_dynamic_shapes and not features.supports_resize:
             self.log_skip(node, "no dynamic shape support")
             return False
 
@@ -331,7 +288,10 @@ class VulkanPartitioner(Partitioner):
     def ops_to_not_decompose(
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
-        return (ops_not_to_decompose, None)
+        def filter_fn(node: torch.fx.Node) -> bool:
+            return True
+
+        return (ops_not_to_decompose, filter_fn)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
