@@ -64,6 +64,7 @@ class TableOps:
     special_table_ops: Set[EdgeOpOverload] = {
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
+        exir_ops.edge.aten.elu.default,
     }
 
     def __init__(self, exported_program: ExportedProgram):
@@ -96,6 +97,11 @@ class TableOps:
                     )
                     return lambda x: torch.nn.functional.gelu(
                         x, approximate=approximate
+                    ).flatten()
+                case exir_ops.edge.aten.elu.default:
+                    input_alpha = cast(int, node.args[1]) if len(node.args) > 1 else 1
+                    return lambda x: torch.nn.functional.elu(
+                        x, alpha=input_alpha
                     ).flatten()
                 case _:
                     # Op must be handled if it's inside self.special_ops
