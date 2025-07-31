@@ -15,9 +15,67 @@ import serializer.tosa_serializer as ts  # type: ignore
 import torch.fx
 import torch.fx.node
 
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+    get_output_qparams,
+)
+
 from executorch.backends.arm.tosa_mapping import TosaArg
 from torch.fx import Node
 from tosa.RoundingMode import RoundingMode  # type: ignore
+
+
+def insert_rescale_ops_to_int32_maxscale(
+    tosa_graph: Any, inputs: list[TosaArg], node: Node, tosa_spec=None
+) -> tuple[list[Any], float]:
+    """For ADD and SUB, we rescale to int32 using a different common scale(2*max(left scale,right scale))
+    compared to all the other cases. We also multply the left and right scales by 1<<20 giving us extra precision
+    for the computation without overflowing.
+
+    Returns a list of the rescaled nodes and the scale factor used,
+    needed by rescale_node_back_to_int8.
+    """
+
+    if len(inputs) > 2:
+        raise ValueError("More than two inputs not supported")
+
+    tensors = inputs.copy()
+    # Reshape tensor according to TOSA dim order
+    for tensor in tensors:
+        dim_order = tensor.dim_order
+        tensor.shape = [tensor.shape[i] for i in dim_order]
+
+    input_qparams = get_input_qparams(node)
+    lhs_qparams, rhs_qparams = input_qparams.values()
+    lhs_scale = lhs_qparams.get_scale_per_tensor()
+    rhs_scale = rhs_qparams.get_scale_per_tensor()
+    # Common scale for the two numbers
+    max_scale_2x = 2 * max(lhs_scale, rhs_scale)
+    SHIFT_INT8 = 20
+    # We are adding two int8 numbers. If the zero point is non-null, the result will be in the range [-255;255], therefore we need 9 bits for the result.
+    # We have a 32-bit accumulator, so we can shift to the left by 20 bits and not overflow. In reality, because we divide by the 2*max(lhs_scale,rhs_scale)
+    # we are shifting to the left by 19.
+    lhs_factor = (1 << SHIFT_INT8) * lhs_scale / max_scale_2x
+    rhs_factor = (1 << SHIFT_INT8) * rhs_scale / max_scale_2x
+    rescaled_lhs = build_rescale_to_int32(
+        tosa_graph,
+        tensors[0],
+        lhs_qparams.get_zp_per_tensor(),
+        lhs_factor,
+        tosa_spec=tosa_spec,
+    )
+    rescaled_rhs = build_rescale_to_int32(
+        tosa_graph,
+        tensors[1],
+        rhs_qparams.get_zp_per_tensor(),
+        rhs_factor,
+        tosa_spec=tosa_spec,
+    )
+    out_qparam = get_output_qparams(node)[0]
+    out_scale = out_qparam.get_scale_per_tensor()
+    back_scale = max_scale_2x / (out_scale * (1 << SHIFT_INT8))
+
+    return [rescaled_lhs, rescaled_rhs], back_scale
 
 
 def insert_rescale_ops_to_int32(
@@ -71,6 +129,7 @@ def insert_rescale_op_to_int8(
     last_tensor: TosaArg,
     scale: float,
     node: Node,
+    compute_rescale=True,
     tosa_spec=None,
 ) -> None:
     """Rescales the node back to int8, adding a suitable RESCALE op to 'tosa_graph'.
@@ -78,6 +137,7 @@ def insert_rescale_op_to_int8(
         node: The original node that is being handled by the rescales.
         last_tensor:the tosa tensor to rescale back.
         scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_op_to_int32'
+        compute_rescale: boolean indicating whether we need to divide the output scale by the original scale.
         tosa_graph: the tosa_graph to manipulate.
 
     This functions is used in serialization to TOSA for target ops that are
@@ -89,10 +149,14 @@ def insert_rescale_op_to_int8(
     )
 
     output_qparams = get_output_qparams(node)
-    assert len(output_qparams) == 1, "More than one output not supported"
+    if len(output_qparams) != 1:
+        raise ValueError("More than one output not supported")
 
     qargs_out = output_qparams[0]
-    output_rescale_scale = scale / qargs_out.get_scale_per_tensor()
+    if compute_rescale:
+        output_rescale_scale = scale / qargs_out.get_scale_per_tensor()
+    else:
+        output_rescale_scale = scale
 
     # Rescale Back to INT8
     build_rescale_from_int32(

@@ -472,6 +472,10 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
+        torch.ops.aten.add.Tensor,
+        torch.ops.aten.add_.Tensor,
+        torch.ops.aten.sub.Tensor,
+        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.matmul.default,
         torch.ops.aten.mm.default,
         torch.ops.aten.bmm.default,
@@ -484,10 +488,6 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
-        torch.ops.aten.add.Tensor,
-        torch.ops.aten.add_.Tensor,
-        torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
     ):
