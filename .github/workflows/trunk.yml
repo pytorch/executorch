@@ -799,10 +799,10 @@ jobs:
 
         echo "::endgroup::"
 
-  test-huggingface-transformers-coreml:
+  test-huggingface-optimum-text-generation-coreml:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    name: test-huggingface-transformers-coreml
+    name: test-huggingface-optimum-text-generation-coreml
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
       id-token: write
@@ -842,7 +842,8 @@ jobs:
         git clone https://github.com/huggingface/optimum-executorch
         pushd optimum-executorch
         # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout $OPTIMUM_ET_COMMIT
+        # git checkout $OPTIMUM_ET_COMMIT
+        gh pr checkout 114
         ${CONDA_RUN} python install_dev.py --skip_override_torch
 
         # When using transformers 4.53 onward, optimum-et uses dynamic shapes for LLMs
@@ -865,6 +866,7 @@ jobs:
           "--recipe" "coreml_fp32_gpu"
           "--qlinear" "4w"
           "--qembedding" "8w"
+          "--disable_dynamic_shapes"
           "--output_dir" "${OUTPUT_DIR}"
         )
 
