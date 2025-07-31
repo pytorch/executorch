@@ -48,7 +48,7 @@ DOWNLOADED_PATH=$(
     --model_id "${HF_MODEL_REPO}" \
     --files "adapter_config.json" "adapter_model.pt" "consolidated.00.pth" "params.json" "tokenizer.model"
 )
-
+EXPORTED_MODEL_NAME="llama_3_2_1B_lora.pte"
 # Export model.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
@@ -61,7 +61,7 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     model.dtype_override="fp32" \
     backend.xnnpack.enabled=true \
     backend.xnnpack.extended_ops=true \
-    export.output_name="llama3_2_1B_lora.pte"
+    export.output_name="${EXPORTED_MODEL_NAME}"
 
 # Build llama runner.
 cmake_install_executorch_libraries
