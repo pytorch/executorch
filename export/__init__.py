@@ -18,7 +18,7 @@ from .export import export, ExportSession
 from .recipe import ExportRecipe, LoweringRecipe, QuantizationRecipe, RecipeType
 from .recipe_provider import BackendRecipeProvider
 from .recipe_registry import recipe_registry
-from .stages import StageType
+from .types import StageType
 
 __all__ = [
     "StageType",

@@ -6,7 +6,6 @@
 
 import logging
 from abc import ABC, abstractmethod
-from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import torch
@@ -16,22 +15,13 @@ from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.program import to_edge, to_edge_transform_and_lower
 from executorch.exir.program._program import _transform
 from executorch.export.recipe import QuantizationRecipe
+from executorch.export.types import StageType
 from torch import nn
 from torch._export.pass_base import PassType
 from torchao.quantization import quantize_
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer
 from torchao.utils import unwrap_tensor_subclass
-
-
-class StageType(str, Enum):
-    SOURCE_TRANSFORM = "source_transform"
-    QUANTIZE = "quantize"
-    TORCH_EXPORT = "torch_export"
-    TO_EDGE_TRANSFORM_AND_LOWER = "to_edge_transform_and_lower"
-    TO_EXECUTORCH = "to_executorch"
-    TO_EDGE = "to_edge"
-    TO_BACKEND = "to_backend"
 
 
 class PipelineArtifact:
@@ -234,7 +224,7 @@ class ExecutorchStage(Stage):
 
     @property
     def valid_predecessor_stages(self) -> List["StageType"]:
-        return [StageType.TO_EDGE_TRANSFORM_AND_LOWER]
+        return [StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_BACKEND]
 
     @property
     def can_start_pipeline(self) -> bool:
@@ -382,7 +372,7 @@ class ToEdgeStage(Stage):
     @property
     def stage_type(self) -> str:
         return StageType.TO_EDGE
-    
+
     @property
     def valid_predecessor_stages(self) -> List["StageType"]:
         return [StageType.TORCH_EXPORT]
@@ -428,7 +418,7 @@ class ToBackendStage(Stage):
     @property
     def stage_type(self) -> str:
         return StageType.TO_BACKEND
-    
+
     @property
     def valid_predecessor_stages(self) -> List["StageType"]:
         return [StageType.TO_EDGE]

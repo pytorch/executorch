@@ -16,6 +16,8 @@ from executorch.exir.pass_manager import PassType
 from torchao.core.config import AOBaseConfig
 from torchao.quantization.pt2e.quantizer import Quantizer
 
+from .types import StageType
+
 
 """
 Export recipe definitions for ExecuTorch.
@@ -121,19 +123,21 @@ class ExportRecipe:
     Attributes:
         name: Optional name for the recipe
         quantization_recipe: Optional quantization recipe for model quantization
-        lowering_recipe: Optional lowering recipe for model lowering and partitioning
-        executorch_backend_config: Optional backend configuration for ExecuTorch
         pre_edge_transform_passes: Optional function to apply transformation passes
                                   before edge lowering
+        lowering_recipe: Optional lowering recipe for model lowering and partitioning
+        executorch_backend_config: Optional backend configuration for ExecuTorch
+        pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
         mode: Export mode (debug or release)
     """
 
     name: Optional[str] = None
     quantization_recipe: Optional[QuantizationRecipe] = None
+    pre_edge_transform_passes: Optional[Sequence[PassType]] = None
     lowering_recipe: Optional[LoweringRecipe] = None
     # pyre-ignore[11]: Type not defined
     executorch_backend_config: Optional[ExecutorchBackendConfig] = None
-    pre_edge_transform_passes: Optional[Sequence[PassType]] = None
+    pipeline_stages: Optional[List[StageType]] = None
     mode: Mode = Mode.RELEASE
 
     @classmethod

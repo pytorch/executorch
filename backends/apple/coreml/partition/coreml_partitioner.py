@@ -10,6 +10,8 @@ import coremltools as ct
 import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
+from executorch.backends.apple.coreml.logging import get_coreml_log_level
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.backend.partitioner import (
@@ -23,7 +25,7 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
 
 
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
