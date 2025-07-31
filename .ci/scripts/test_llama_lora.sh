@@ -67,9 +67,9 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
 cmake_install_executorch_libraries
 cmake_build_llama_runner
 
-PROMPT="What happens if you eat watermelon seeds?"
+PROMPT="\"What happens if you eat watermelon seeds?\""
 # Run llama runner
-RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=${DOWNLOADED_PATH}/tokenizer.model --prompt=${PROMPT} --temperature=0 --seq_len=10 --warmup=1"
+RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=${DOWNLOADED_PATH}/tokenizer.model --prompt=${PROMPT} --temperature=0 --seq_len=20 --warmup=1"
 
 NOW=$(date +"%H:%M:%S")
 echo "Starting to run llama runner at ${NOW}"
@@ -79,7 +79,7 @@ NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
 RESULT=$(cat result.txt)
-EXPECTED_PREFIX="What happens if you eat watermelon seeds? Eating watermelon seeds can be a bit tricky,"
+EXPECTED_PREFIX="What happens if you eat watermelon seeds? Watermelon seeds are a good source of vitamin C,"
 
 if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
