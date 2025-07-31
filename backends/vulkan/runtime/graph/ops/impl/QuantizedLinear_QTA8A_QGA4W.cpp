@@ -68,11 +68,10 @@ void check_linear_qta8a_qga4w_args(
   const auto mat1_scale_sizes = graph.sizes_of(mat1_scale);
   const auto mat1_zero_point_sizes = graph.sizes_of(mat1_zero_point);
 
-  VK_CHECK_COND(mat1_scale_sizes.size() == 1);
-  VK_CHECK_COND(mat1_zero_point_sizes.size() == 1);
-
-  VK_CHECK_COND(mat1_scale_sizes[0] == input_num_tokens);
-  VK_CHECK_COND(mat1_zero_point_sizes[0] == input_num_tokens);
+  VK_CHECK_COND(
+      utils::val_at<int64_t>(-1, mat1_scale_sizes) == input_num_tokens);
+  VK_CHECK_COND(
+      utils::val_at<int64_t>(-1, mat1_zero_point_sizes) == input_num_tokens);
 
   // Verify weight scales and zeros have the same shape
   const auto weight_scales_sizes = graph.sizes_of(weight_scales);

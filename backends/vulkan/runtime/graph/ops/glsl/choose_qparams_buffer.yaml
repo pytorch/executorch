@@ -10,3 +10,5 @@ choose_qparams_buffer:
       MODE: per_tensor
     - NAME: choose_qparams_per_token_asymmetric_buffer
       MODE: per_token
+    - NAME: choose_qparams_block_wise_buffer
+      MODE: block_wise

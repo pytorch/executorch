@@ -7,11 +7,13 @@
 # pyre-strict
 
 import unittest
+from typing import List
 from unittest.mock import Mock
 
 import torch
 from executorch.export import ExportRecipe, ExportSession
-from executorch.export.stages import PipelineArtifact, StageType
+from executorch.export.stages import PipelineArtifact
+from executorch.export.types import StageType
 
 
 class SimpleTestModel(torch.nn.Module):
@@ -100,7 +102,7 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         self.assertEqual(set(session._stage_to_artifacts.keys()), set(stage_types))
 
     def test_overriden_pipeline_execution_order(self) -> None:
-        # Test when pipeline stages that are passed to export function
+        # Test when pipeline stages that are passed through recipe
         stage_types = [
             StageType.SOURCE_TRANSFORM,
             StageType.TORCH_EXPORT,
@@ -111,11 +113,11 @@ class TestExportSessionCoreFlow(unittest.TestCase):
             self._create_mock_stage(stage_type) for stage_type in stage_types
         ]
 
+        self.recipe.pipeline_stages = stage_types
         session = ExportSession(
             model=self.model,
             example_inputs=self.example_inputs,
             export_recipe=self.recipe,
-            pipeline_stages=stage_types,
         )
 
         # Replace the stages in the registry with our mocked stages
@@ -130,34 +132,6 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         # Verify artifacts were stored for each stage
         self.assertEqual(len(session._stage_to_artifacts), 4)
         self.assertEqual(set(session._stage_to_artifacts.keys()), set(stage_types))
-
-    def test_pipeline_validation_enforces_mandatory_stages(self) -> None:
-        # Test missing mandatory TORCH_EXPORT stage
-        invalid_stages = [StageType.TO_EXECUTORCH]
-
-        with self.assertRaises(ValueError) as cm:
-            ExportSession(
-                model=self.model,
-                example_inputs=self.example_inputs,
-                export_recipe=self.recipe,
-                pipeline_stages=invalid_stages,
-            )._run_pipeline()
-
-        self.assertIn("cannot start a pipeline", str(cm.exception))
-
-    def test_pipeline_validation_enforces_valid_transitions(self) -> None:
-        # Test invalid transition: TORCH_EXPORT -> TO_EXECUTORCH (skipping edge stage)
-        invalid_stages = [StageType.TORCH_EXPORT, StageType.TO_EXECUTORCH]
-
-        with self.assertRaises(ValueError) as cm:
-            ExportSession(
-                model=self.model,
-                example_inputs=self.example_inputs,
-                export_recipe=self.recipe,
-                pipeline_stages=invalid_stages,
-            )._run_pipeline()
-
-        self.assertIn("Invalid pipeline sequence", str(cm.exception))
 
     def test_model_standardization_single_to_dict(self) -> None:
         session = ExportSession(
@@ -216,14 +190,15 @@ class TestExportSessionCoreFlow(unittest.TestCase):
 
     def test_stage_registry_unknown_stage_type(self) -> None:
         # Test error handling for unknown stage types in pipeline
-        unknown_stage_type = "UNKNOWN_STAGE"
+        unknown_stage_type = Mock()
+        unknown_stage_type.name = "UNKNOWN_STAGE"
+        recipe = ExportRecipe(name="test", pipeline_stages=[unknown_stage_type])
 
         with self.assertRaises(ValueError) as cm:
             ExportSession(
                 model=self.model,
                 example_inputs=self.example_inputs,
-                export_recipe=ExportRecipe(name="test"),
-                pipeline_stages=[unknown_stage_type],  # pyre-ignore
+                export_recipe=recipe,
             )._run_pipeline()
         self.assertIn("not found in registry", str(cm.exception))
 
@@ -254,6 +229,127 @@ class TestExportSessionCoreFlow(unittest.TestCase):
 
         self.assertEqual(forward_input, self.example_inputs[0])
         self.assertEqual(inference_input, inputs_dict["inference"][0])
+
+
+class TestPipelineValidation(unittest.TestCase):
+    def setUp(self) -> None:
+        self.model = SimpleTestModel()
+        self.example_inputs = [(torch.randn(2, 10),)]
+        self.recipe = ExportRecipe(name="test")
+
+    # pyre-ignore
+    def _get_export_session(self, stages: List[StageType]):
+        self.recipe.pipeline_stages = stages
+        return ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=self.recipe,
+        )
+
+    def test_valid_pipeline_sequences(self) -> None:
+        """Test various valid pipeline sequences."""
+        valid_sequences = [
+            # Full pipeline
+            [
+                StageType.SOURCE_TRANSFORM,
+                StageType.QUANTIZE,
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ],
+            # Skip quantize
+            [
+                StageType.SOURCE_TRANSFORM,
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ],
+            # Skip source transform and tart with quantize
+            [
+                StageType.QUANTIZE,
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ],
+            # Start with torch export
+            [
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ],
+        ]
+
+        for i, stages in enumerate(valid_sequences):
+            with self.subTest(sequence=i, stages=[s.name for s in stages]):
+                session = self._get_export_session(stages)
+                # Should not raise any exception
+                try:
+                    session._validate_pipeline_sequence(stages)
+                except Exception as e:
+                    self.fail(f"Valid sequence {[s.name for s in stages]} raised {e}")
+
+    def test_invalid_pipeline_start_stages(self) -> None:
+        """Test stages that cannot start a pipeline."""
+        invalid_stage_sequence = [
+            # Edge stage cannot start pipeline
+            [StageType.TO_EDGE_TRANSFORM_AND_LOWER],
+            [StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_EXECUTORCH],
+        ]
+
+        for i, stages in enumerate(invalid_stage_sequence):
+            with self.subTest(sequence=i, stages=[s.name for s in stages]):
+                session = self._get_export_session(stages)
+                with self.assertRaises(ValueError) as cm:
+                    session._validate_pipeline_sequence(stages)
+                self.assertIn("cannot start a pipeline", str(cm.exception))
+
+    def test_pipeline_transitions(self) -> None:
+        """Test both valid and invalid pipeline transitions"""
+        test_cases = [
+            # Valid cases
+            ([StageType.SOURCE_TRANSFORM, StageType.QUANTIZE], True),
+            ([StageType.QUANTIZE, StageType.TORCH_EXPORT], True),
+            ([StageType.SOURCE_TRANSFORM, StageType.TORCH_EXPORT], True),
+            ([StageType.TORCH_EXPORT, StageType.TO_EDGE_TRANSFORM_AND_LOWER], True),
+            # Invalid cases - transitions
+            ([StageType.QUANTIZE, StageType.TO_EDGE_TRANSFORM_AND_LOWER], False),
+            (
+                [StageType.SOURCE_TRANSFORM, StageType.TO_EDGE_TRANSFORM_AND_LOWER],
+                False,
+            ),
+            (
+                [
+                    StageType.TORCH_EXPORT,
+                    StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                    StageType.QUANTIZE,
+                ],
+                False,
+            ),
+            ([StageType.TO_EXECUTORCH, StageType.TORCH_EXPORT], False),
+        ]
+
+        for i, (stages, should_pass) in enumerate(test_cases):
+            with self.subTest(
+                sequence=i, stages=[s.name for s in stages], should_pass=should_pass
+            ):
+                session = self._get_export_session(stages)
+                if should_pass:
+                    try:
+                        session._validate_pipeline_sequence(stages)
+                    except Exception as e:
+                        self.fail(
+                            f"Expected valid sequence {[s.name for s in stages]} but got {e}"
+                        )
+                else:
+                    with self.assertRaises(ValueError):
+                        session._validate_pipeline_sequence(stages)
+
+    def test_empty_pipeline_sequence(self) -> None:
+        """Test empty pipeline sequence."""
+        session = self._get_export_session([])
+        with self.assertRaises(ValueError) as cm:
+            session._validate_pipeline_sequence([])
+        self.assertIn("Pipeline stages cannot be empty", str(cm.exception))
 
 
 class TestExportSessionErrorHandling(unittest.TestCase):
