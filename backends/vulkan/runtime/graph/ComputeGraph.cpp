@@ -867,14 +867,29 @@ void ComputeGraph::execute() {
 
     context_->cmd_reset_querypool();
 
+    uint32_t encoded_node_count = 0;
+
     for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
       node->encode(this);
+      encoded_node_count++;
+      // Create a new command buffer every 64 nodes to allow concurrent CPU and
+      // GPU execution.
+      if ((encoded_node_count % 64) == 0) {
+        context_->submit_cmd_to_gpu(VK_NULL_HANDLE, false);
+        deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
+        context_->set_cmd(true);
+      }
     }
 
+    vkapi::VulkanFence fence = context_->fences().get_fence();
+    context_->submit_cmd_to_gpu(fence.get_submit_handle(), false);
+    fence.wait();
+    context_->fences().return_fence(fence);
     deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
+  } else {
+    submit_deferred_cmds_and_wait();
   }
 
-  submit_deferred_cmds_and_wait();
   execute_count_++;
 }
 
