@@ -34,6 +34,16 @@ python_library(
     ],
 )
 
+python_library(
+    name = "range_setting_pt2e",
+    srcs = [
+        "range_setting_pt2e.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
 python_binary(
     name = "llama",
     main_function = "executorch.examples.qualcomm.oss_scripts.llama.llama.main",
@@ -42,6 +52,7 @@ python_binary(
     ],
     deps = [
         ":llama_lib",
+        "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
     ],
 )
 
@@ -55,6 +66,7 @@ python_binary(
     deps = [
         ":llama_lib",
         "//executorch/examples/models/llama:eval_library",
+        "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
         "fbsource//third-party/pypi/lm-eval:lm-eval",
     ],
 )

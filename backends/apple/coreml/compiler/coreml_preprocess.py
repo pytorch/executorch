@@ -16,8 +16,8 @@ from typing import Any, Dict, final, List, Optional, Tuple
 
 import coremltools as ct
 import coremltools.optimize as cto
-
 from executorch.backends.apple.coreml import executorchcoreml
+from executorch.backends.apple.coreml.logging import get_coreml_log_level
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     ExportedProgram,
@@ -25,8 +25,10 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
+from executorch.backends.apple.coreml.compiler.torch_ops import *  # noqa: F401, F403
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(get_coreml_log_level(default_level=logging.WARNING))
 
 
 class COMPILE_SPEC_KEYS(Enum):
@@ -407,6 +409,7 @@ class CoreMLBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
+        logger.info(f"Edge program: {edge_program}")
         model_type: CoreMLBackend.MODEL_TYPE = (
             CoreMLBackend.model_type_from_compile_specs(
                 compile_specs,

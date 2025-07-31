@@ -39,12 +39,17 @@ class EdgeCompileConfig:
     _check_ir_validity: bool = True
     # TODO(larryliu): remove this
     _use_edge_ops: bool = True
+    # TODO(gasoonjia): remove this
+    _skip_dim_order: bool = False
     # Allow core ATen ops check to be skipped for certain ops, but continue with the rest of the checks.
+    # Note: only use this for core ATen ops that are missing decompositions. This is temporary,
+    # enabling verification on the rest of the program until decomposition coverage is improved.
     _core_aten_ops_exception_list: List[torch._ops.OpOverload] = field(
         default_factory=list
     )
-    # TODO(gasoonjia): remove this
-    _skip_dim_order: bool = False
+    # Allow ops to be preserved in the graph, i.e., prevent them from being decomposed.
+    # These may be core or non-core ATen ops; custom ops should not be here.
+    preserve_ops: List[torch.torch._ops.OpOverload] = field(default_factory=list)
 
 
 @compatibility(is_backward_compatible=False)

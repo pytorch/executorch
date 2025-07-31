@@ -23,6 +23,7 @@ from executorch.backends.vulkan.utils import (
     is_mutable_buffer_node,
     is_param_node,
     is_symint_node,
+    TensorRepr,
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
@@ -135,7 +136,7 @@ class VkGraphBuilder:
 
     def create_node_value(self, node: Node) -> int:
         # If the node has been marked as a scalar tensor, create a SymInt instead of a tensor
-        if is_symint_node(node) or node.meta.get("vkdg_is_scalar_tensor", False):
+        if is_symint_node(node) or node.meta.get("etvk_is_scalar_tensor", False):
             new_id = self.create_symint_value()
             self.node_to_value_ids[node] = new_id
             return new_id
@@ -197,12 +198,11 @@ class VkGraphBuilder:
 
         storage_type = VkStorageType.DEFAULT_STORAGE
         memory_layout = VkMemoryLayout.DEFAULT_LAYOUT
-        if hasattr(spec, "vk_storage_type"):
+        if hasattr(spec, "etvk_node_repr"):
             # pyre-ignore[16]
-            storage_type = spec.vk_storage_type
-        if hasattr(spec, "vk_memory_layout"):
-            # pyre-ignore[16]
-            memory_layout = spec.vk_memory_layout
+            assert isinstance(spec.etvk_node_repr, TensorRepr)
+            storage_type = spec.etvk_node_repr.storage_type
+            memory_layout = spec.etvk_node_repr.memory_layout
 
         # Apply downcast logic before getting VK datatype
         effective_dtype = spec.dtype
