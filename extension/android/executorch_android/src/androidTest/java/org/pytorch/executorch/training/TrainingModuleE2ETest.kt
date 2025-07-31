@@ -5,23 +5,24 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-package org.pytorch.executorch
+
+package org.pytorch.executorch.training
 
 import android.Manifest
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
-import java.io.File
-import java.io.IOException
-import java.net.URISyntaxException
 import org.apache.commons.io.FileUtils
 import org.junit.Assert
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.pytorch.executorch.TestFileUtils.getTestFilePath
-import org.pytorch.executorch.training.SGD
-import org.pytorch.executorch.training.TrainingModule
+import org.pytorch.executorch.EValue
+import org.pytorch.executorch.Tensor
+import org.pytorch.executorch.TestFileUtils
+import java.io.File
+import java.io.IOException
+import java.net.URISyntaxException
 import kotlin.random.Random
 import kotlin.test.assertContains
 
@@ -38,17 +39,20 @@ class TrainingModuleE2ETest {
         val pteFilePath = "/xor.pte"
         val ptdFilePath = "/xor.ptd"
 
-        val pteFile = File(getTestFilePath(pteFilePath))
+        val pteFile = File(TestFileUtils.getTestFilePath(pteFilePath))
         val pteInputStream = javaClass.getResourceAsStream(pteFilePath)
         FileUtils.copyInputStreamToFile(pteInputStream, pteFile)
         pteInputStream.close()
 
-        val ptdFile = File(getTestFilePath(ptdFilePath))
+        val ptdFile = File(TestFileUtils.getTestFilePath(ptdFilePath))
         val ptdInputStream = javaClass.getResourceAsStream(ptdFilePath)
         FileUtils.copyInputStreamToFile(ptdInputStream, ptdFile)
         ptdInputStream.close()
 
-        val module = TrainingModule.load(getTestFilePath(pteFilePath), getTestFilePath(ptdFilePath))
+        val module = TrainingModule.load(
+            TestFileUtils.getTestFilePath(pteFilePath),
+            TestFileUtils.getTestFilePath(ptdFilePath)
+        )
         val params = module.namedParameters("forward")
 
         Assert.assertEquals(4, params.size)
@@ -77,7 +81,10 @@ class TrainingModuleE2ETest {
             val targetDex = inputDex + 1
             val input = dataset.get(inputDex)
             val target = dataset.get(targetDex)
-            val out = module.executeForwardBackward("forward", EValue.from(input), EValue.from(target))
+            val out = module.executeForwardBackward("forward",
+                EValue.from(input),
+                EValue.from(target)
+            )
             val gradients = module.namedGradients("forward")
 
             if (i == 0) {
@@ -98,7 +105,9 @@ class TrainingModuleE2ETest {
                         input.getDataAsFloatArray()[0],
                         input.getDataAsFloatArray()[1],
                         out[1].toTensor().getDataAsLongArray()[0],
-                        target.getDataAsLongArray()[0]));
+                        target.getDataAsLongArray()[0]
+                    )
+                );
             }
 
             sgd.step(gradients)
@@ -115,12 +124,12 @@ class TrainingModuleE2ETest {
     fun testTrainXOR_PTEOnly() {
         val pteFilePath = "/xor_full.pte"
 
-        val pteFile = File(getTestFilePath(pteFilePath))
+        val pteFile = File(TestFileUtils.getTestFilePath(pteFilePath))
         val pteInputStream = javaClass.getResourceAsStream(pteFilePath)
         FileUtils.copyInputStreamToFile(pteInputStream, pteFile)
         pteInputStream.close()
 
-        val module = TrainingModule.load(getTestFilePath(pteFilePath));
+        val module = TrainingModule.load(TestFileUtils.getTestFilePath(pteFilePath));
         val params = module.namedParameters("forward")
 
         Assert.assertEquals(4, params.size)
@@ -149,7 +158,10 @@ class TrainingModuleE2ETest {
             val targetDex = inputDex + 1
             val input = dataset.get(inputDex)
             val target = dataset.get(targetDex)
-            val out = module.executeForwardBackward("forward", EValue.from(input), EValue.from(target))
+            val out = module.executeForwardBackward("forward",
+                EValue.from(input),
+                EValue.from(target)
+            )
             val gradients = module.namedGradients("forward")
 
             if (i == 0) {
@@ -170,7 +182,9 @@ class TrainingModuleE2ETest {
                         input.getDataAsFloatArray()[0],
                         input.getDataAsFloatArray()[1],
                         out[1].toTensor().getDataAsLongArray()[0],
-                        target.getDataAsLongArray()[0]));
+                        target.getDataAsLongArray()[0]
+                    )
+                );
             }
 
             sgd.step(gradients)
@@ -186,9 +200,12 @@ class TrainingModuleE2ETest {
     @Throws(IOException::class)
     fun testMissingPteFile() {
         val exception = Assert.assertThrows(RuntimeException::class.java) {
-            TrainingModule.load(getTestFilePath(MISSING_PTE_NAME))
+            TrainingModule.load(TestFileUtils.getTestFilePath(MISSING_PTE_NAME))
         }
-        Assert.assertEquals(exception.message, "Cannot load model path!! " + getTestFilePath(MISSING_PTE_NAME))
+        Assert.assertEquals(
+            exception.message,
+            "Cannot load model path!! " + TestFileUtils.getTestFilePath(MISSING_PTE_NAME)
+        )
     }
 
     @Test
@@ -196,14 +213,20 @@ class TrainingModuleE2ETest {
     fun testMissingPtdFile() {
         val exception = Assert.assertThrows(RuntimeException::class.java) {
             val pteFilePath = "/xor.pte"
-            val pteFile = File(getTestFilePath(pteFilePath))
+            val pteFile = File(TestFileUtils.getTestFilePath(pteFilePath))
             val pteInputStream = javaClass.getResourceAsStream(pteFilePath)
             FileUtils.copyInputStreamToFile(pteInputStream, pteFile)
             pteInputStream.close()
 
-            TrainingModule.load(getTestFilePath(pteFilePath), getTestFilePath(MISSING_PTD_NAME))
+            TrainingModule.load(
+                TestFileUtils.getTestFilePath(pteFilePath),
+                TestFileUtils.getTestFilePath(MISSING_PTD_NAME)
+            )
         }
-        Assert.assertEquals(exception.message, "Cannot load data path!! " + getTestFilePath(MISSING_PTD_NAME))
+        Assert.assertEquals(
+            exception.message,
+            "Cannot load data path!! " + TestFileUtils.getTestFilePath(MISSING_PTD_NAME)
+        )
     }
 
     companion object {
