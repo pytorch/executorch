@@ -16,6 +16,8 @@ from executorch.exir.pass_manager import PassType
 from torchao.core.config import AOBaseConfig
 from torchao.quantization.pt2e.quantizer import Quantizer
 
+from .types import StageType
+
 
 """
 Export recipe definitions for ExecuTorch.
@@ -109,6 +111,7 @@ class ExportRecipe:
         transform_check_ir_validity: Whether to check IR validity during transformation
         partitioners: Optional list of partitioners for model partitioning
         executorch_backend_config: Optional backend configuration for ExecuTorch
+        pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
         mode: Export mode (debug or release)
     """
 
@@ -122,6 +125,7 @@ class ExportRecipe:
     partitioners: Optional[List[Partitioner]] = None
     # pyre-ignore[11]: Type not defined
     executorch_backend_config: Optional[ExecutorchBackendConfig] = None
+    pipeline_stages: Optional[List[StageType]] = None
     mode: Mode = Mode.RELEASE
 
     @classmethod

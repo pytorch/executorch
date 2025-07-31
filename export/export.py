@@ -24,11 +24,11 @@ from .stages import (
     QuantizeStage,
     SourceTransformStage,
     Stage,
-    StageType,
     ToBackendStage,
     ToEdgeStage,
     TorchExportStage,
 )
+from .types import StageType
 
 
 @experimental(
@@ -104,7 +104,6 @@ class ExportSession:
         dynamic_shapes: Optional[Union[Any, Dict[str, Any]]] = None,
         constant_methods: Optional[Union[Dict[str, Callable]]] = None,
         artifact_dir: Optional[str] = None,
-        pipeline_stages: Optional[List[StageType]] = None,
     ) -> None:
         """
         Initialize the ExportSession with model, inputs, and recipe.
@@ -119,7 +118,6 @@ class ExportSession:
             dynamic_shapes: Optional dynamic shape specifications
             constant_methods: Optional dictionary of constant methods
             artifact_dir: Optional directory to store artifacts
-            pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
         """
         # Standardize model to dictionary format
         self._model = model if isinstance(model, dict) else {"forward": model}
@@ -146,10 +144,14 @@ class ExportSession:
         )
 
         # Stages to run
-        self._pipeline_stages = pipeline_stages or self._get_default_pipeline()
+        self._pipeline_stages = (
+            self._export_recipe.pipeline_stages or self._get_default_pipeline()
+        )
 
         # Stage registry: map of StageType to Stage instances
-        self._stage_registry: Dict[StageType, Stage] = self._build_default_stages()
+        self._stage_registry: Dict[StageType, Stage] = self._build_stages(
+            self._pipeline_stages
+        )
 
         # Intialize run context
         self._run_context: Dict[str, Any] = {
@@ -172,10 +174,12 @@ class ExportSession:
             StageType.TO_EXECUTORCH,
         ]
 
-    def _build_default_stages(self) -> Dict[StageType, Stage]:
+    def _build_stages(self, stages: List[StageType]) -> Dict[StageType, Stage]:
+        """Build the stage registry from the given stages."""
         stage_registry: Dict[StageType, Stage] = {}
 
-        for stage_type in self._get_default_pipeline():
+        stage = None
+        for stage_type in stages or self._get_default_pipeline():
             if stage_type == StageType.SOURCE_TRANSFORM:
                 stage = SourceTransformStage(self._quant_recipe)
             elif stage_type == StageType.QUANTIZE:
@@ -205,9 +209,12 @@ class ExportSession:
             elif stage_type == StageType.TO_EXECUTORCH:
                 stage = ExecutorchStage(self._export_recipe.executorch_backend_config)
             else:
-                raise ValueError(f"Unknown stage type: {stage_type}")
+                logging.info(
+                    f"{stage_type} is unknown, you have to register it before executing export()"
+                )
 
-            stage_registry[stage_type] = stage
+            if stage:
+                stage_registry[stage_type] = stage
         return stage_registry
 
     def register_stage(self, stage_type: StageType, stage: Stage) -> None:
@@ -244,7 +251,7 @@ class ExportSession:
     def _validate_pipeline_sequence(
         self,
         stages: List[StageType],
-    ) -> bool:
+    ) -> None:
         if not stages:
             raise ValueError("Pipeline stages cannot be empty")
 
@@ -252,7 +259,9 @@ class ExportSession:
         first_stage = stages[0]
         first_stage_instance = self._stage_registry.get(first_stage)
         if first_stage_instance is None:
-            raise ValueError(f"Stage {first_stage} not found in registry")
+            raise ValueError(
+                f"Stage {first_stage} not found in registry, register it using session.register_stage()"
+            )
 
         if not first_stage_instance.can_start_pipeline:
             raise ValueError(f"Stage {first_stage} cannot start a pipeline. ")
@@ -265,25 +274,24 @@ class ExportSession:
             # Get the stage instance to check its valid predecessors
             stage_instance = self._stage_registry.get(current_stage)
             if stage_instance is None:
-                raise ValueError(f"Stage {current_stage} not found in registry")
+                raise ValueError(
+                    f"Stage {current_stage} not found in registry, , register it using session.register_stage()"
+                )
 
             valid_predecessors = stage_instance.valid_predecessor_stages
 
             # Check if the previous stage is valid for the current stage
             if valid_predecessors and previous_stage not in valid_predecessors:
-                logging.error(
+                raise ValueError(
                     f"Invalid transition from {previous_stage} to {current_stage}. "
                     f"Valid predecessors for {current_stage}: {valid_predecessors}"
                 )
-                return False
-        return True
 
     def _run_pipeline(self) -> None:
         # Validate if given stage sequence is valid
-        if not self._validate_pipeline_sequence(
+        self._validate_pipeline_sequence(
             stages=self._pipeline_stages,
-        ):
-            raise ValueError("Invalid pipeline sequence")
+        )
 
         current_artifact = PipelineArtifact(data=self._model, context=self._run_context)
 

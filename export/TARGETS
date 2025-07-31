@@ -31,6 +31,7 @@ runtime.python_library(
     deps = [
         ":recipe",
         ":stages",
+        ":types",
         "//executorch/runtime:runtime",
         ":recipe_registry"
     ]
@@ -48,6 +49,7 @@ runtime.python_library(
     ],
     deps = [
         ":recipe",
+        ":types",
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir:pass_manager",
@@ -71,7 +73,8 @@ runtime.python_library(
         ":recipe",
         ":stages",
         ":recipe_registry",
-        ":recipe_provider"
+        ":recipe_provider",
+        ":types",
     ],
 )
 
@@ -99,4 +102,11 @@ runtime.python_library(
     deps = [
         ":recipe",
     ]
+)
+
+runtime.python_library(
+    name = "types",
+    srcs = [
+        "types.py",
+    ],
 )

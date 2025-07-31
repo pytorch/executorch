@@ -101,6 +101,26 @@
         }
     },
     {
+        "name": "profiling",
+        "displayName": "Build ExecuTorch with Profiling Enabled",
+        "inherits": [
+            "common"
+        ],
+        "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/profiling.cmake",
+            "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        },
+        "condition": {
+            "type": "inList",
+            "string": "${hostSystemName}",
+            "list": [
+                "Darwin",
+                "Linux",
+                "Windows"
+            ]
+        }
+    },
+    {
         "name": "zephyr",
         "displayName": "Build ExecuTorch for Zephyr RTOS",
         "inherits": ["common"],
