@@ -59,17 +59,15 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
 
     def should_skip_op_for_delegation(self, node_target_name: str) -> bool:
         skipped_ops = self.skip_ops_for_coreml_delegation or []
-
         if node_target_name in skipped_ops:
+            assert (
+                not self.lower_full_graph
+            ), f"Cannot skip {node_target_name} because lower_full_graph is True.  Please set skip_ops_for_coreml_delegation=None or lower_full_graph=False in the CoreMLPartitioner"
+            self.log_once(
+                "Skipping op for CoreML delegation because it is in skip_ops_for_coreml_delegation: "
+                + node_target_name
+            )
             return True
-
-        # For backwards compatibility
-        split_name = node_target_name.split("::")
-        if len(split_name) == 2:
-            namespace, name_without_namespace = split_name
-            if namespace == "aten" and name_without_namespace in skipped_ops:
-                return True
-
         return False
 
     def should_override_support(self, node) -> bool:
@@ -83,9 +81,10 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
                 exir_ops.edge.aten.add.Tensor,
             ]
             and "alpha" in node.kwargs
+            and node.kwargs["alpha"] != 1
         ):
             self.log_once(
-                "torch.ops.aten.{sub, add}.Tensor with alpha is not supported by CoreML.  Overriding support."
+                "torch.ops.aten.{sub, add}.Tensor with alpha != 1 is not supported by CoreML.  Overriding support."
             )
             return True
 
@@ -139,16 +138,9 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         # check if the PyTorch op get called is supported in Core ML
         elif node.op == "call_function":
             # skip ops if specified by user
-            node_target_name = node.target.name().lower()
+            node_target_name = getattr(node.target, "__name__", "").lower()
 
             if self.should_skip_op_for_delegation(node_target_name):
-                self.log_once(
-                    "Skipping op for CoreML delegation because it is in skip_ops_for_coreml_delegation: "
-                    + node_target_name
-                )
-                assert (
-                    not self.lower_full_graph
-                ), "Cannot have skip_ops_for_coreml_delegation when lower_full_graph is True"
                 return False
 
             # query coremltools to see if node is supported
