@@ -19,7 +19,6 @@ from executorch.backends.cadence.aot.compiler import (
     export_to_executorch_gen_etrecord,
     fuse_pt2,
     prepare_pt2,
-    trace,
 )
 
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
@@ -50,11 +49,8 @@ def export_model(
     # Instantiate the quantizer
     quantizer = CadenceDefaultQuantizer()
 
-    # Trace the model
-    ep = trace(model, example_inputs)
-
     # Prepare the model
-    prepared_gm = prepare_pt2(ep, quantizer)
+    prepared_gm = prepare_pt2(model, example_inputs, quantizer)
 
     # Calibrate the model
     for samples in [example_inputs]:
