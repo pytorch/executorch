@@ -1,12 +1,15 @@
 /*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
  *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
+ *  * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *  * All rights reserved.
+ *  *
+ *  * This source code is licensed under the BSD-style license found in the
+ *  * LICENSE file in the root directory of this source tree.
+ *
+ *
  */
 
-package org.pytorch.executorch;
+package org.pytorch.executorch.training;
 
 import android.util.Log;
 import com.facebook.jni.HybridData;
@@ -16,6 +19,8 @@ import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
+import org.pytorch.executorch.EValue;
+import org.pytorch.executorch.Tensor;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -48,7 +53,7 @@ public class TrainingModule {
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module.
    * @param dataPath path to file that contains the ExecuTorch module external weights.
-   * @return new {@link org.pytorch.executorch.TrainingModule} object which owns the model module.
+   * @return new {@link TrainingModule} object which owns the model module.
    */
   public static TrainingModule load(final String modelPath, final String dataPath) {
     File modelFile = new File(modelPath);
@@ -67,7 +72,7 @@ public class TrainingModule {
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module. This PTE does not
    *     rely on external weights.
-   * @return new {@link org.pytorch.executorch.TrainingModule} object which owns the model module.
+   * @return new {@link TrainingModule} object which owns the model module.
    */
   public static TrainingModule load(final String modelPath) {
     File modelFile = new File(modelPath);

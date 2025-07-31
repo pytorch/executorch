@@ -20,6 +20,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
+import org.pytorch.executorch.training.SGD
+import org.pytorch.executorch.training.TrainingModule
 import kotlin.random.Random
 import kotlin.test.assertContains
 
