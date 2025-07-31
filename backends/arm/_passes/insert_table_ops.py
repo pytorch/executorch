@@ -58,6 +58,7 @@ class TableOps:
         exir_ops.edge.aten.sinh.default: torch.sinh,
         exir_ops.edge.aten.acosh.default: torch.acosh,
         exir_ops.edge.aten.asin.default: torch.asin,
+        exir_ops.edge.aten.asinh.default: torch.asinh,
     }
 
     # Targets that must be treated explicitly

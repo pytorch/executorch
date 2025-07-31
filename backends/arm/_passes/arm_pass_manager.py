@@ -31,6 +31,7 @@ from executorch.backends.arm._passes import (
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
     DecomposeAddmmPass,
+    DecomposeAsinhPass,
     DecomposeAsinPass,
     DecomposeAtanhPass,
     DecomposeAtanPass,
@@ -116,7 +117,6 @@ class ArmPassManager(PassManager):
         self.add_pass(
             DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
         )
-
         self.add_pass(ConvertFullLikeToFullPass())
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
@@ -151,7 +151,6 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(SizeAdjustInputPass())
         self.add_pass(DecomposeSelectPass())
-
         self.add_pass(ConvertSqueezesToViewPass())
 
         self.add_pass(FuseViewCopyTransform())
@@ -170,6 +169,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeAcoshPass())
         self.add_pass(DecomposeAsinPass())
+        self.add_pass(DecomposeAsinhPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeAtanPass())
         self.add_pass(DecomposeAtanhPass())
