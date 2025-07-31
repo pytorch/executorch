@@ -8,10 +8,10 @@
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t = tuple[torch.Tensor]
@@ -37,8 +37,8 @@ class AdaptiveAveragePool2d(torch.nn.Module):
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
-def test_adaptive_avg_pool2d_tosa_MI(test_data):
-    TosaPipelineMI[input_t](
+def test_adaptive_avg_pool2d_tosa_FP(test_data):
+    TosaPipelineFP[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
@@ -47,8 +47,8 @@ def test_adaptive_avg_pool2d_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
-def test_adaptive_avg_pool2d_tosa_BI(test_data):
-    TosaPipelineBI[input_t](
+def test_adaptive_avg_pool2d_tosa_INT(test_data):
+    TosaPipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
@@ -59,8 +59,8 @@ def test_adaptive_avg_pool2d_tosa_BI(test_data):
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.XfailIfNoCorstone300
-def test_adaptive_avg_pool2d_u55_BI(test_data):
-    EthosU55PipelineBI[input_t](
+def test_adaptive_avg_pool2d_u55_INT(test_data):
+    EthosU55PipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
@@ -72,8 +72,8 @@ def test_adaptive_avg_pool2d_u55_BI(test_data):
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.XfailIfNoCorstone320
-def test_adaptive_avg_pool2d_u85_BI(test_data):
-    EthosU85PipelineBI[input_t](
+def test_adaptive_avg_pool2d_u85_INT(test_data):
+    EthosU85PipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
@@ -195,6 +195,26 @@ class MeanDim(torch.nn.Module):
             (-4, -3, -2, -1),
             False,
         ),
+        "rank5_01234": lambda: (
+            torch.rand(1, 1, 7, 3, 2),
+            (-5, -4, -3, -2, -1),
+            False,
+        ),
+        "rank5_234": lambda: (
+            torch.rand(1, 1, 7, 3, 2),
+            (-3, -2, -1),
+            False,
+        ),
+        "rank5_12": lambda: (
+            torch.rand(1, 1, 7, 3, 2),
+            (1, 2),
+            False,
+        ),
+        "rank5_2": lambda: (
+            torch.rand(1, 4, 7, 3, 2),
+            (2),
+            False,
+        ),
         "u55_avg_pool_not_supported": lambda: (
             torch.rand(1, 1, 1, 257),
             (0, 1, 2, 3),
@@ -214,9 +234,9 @@ class MeanDim(torch.nn.Module):
 
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
-def test_mean_dim_tosa_MI(test_data):
+def test_mean_dim_tosa_FP(test_data):
     test_data, dim, keep_dim = test_data()
-    TosaPipelineMI[input_t](
+    TosaPipelineFP[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         MeanDim.torch_op,
@@ -225,9 +245,9 @@ def test_mean_dim_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
-def test_mean_dim_tosa_BI(test_data):
+def test_mean_dim_tosa_INT(test_data):
     test_data, dim, keep_dim = test_data()
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
@@ -236,11 +256,19 @@ def test_mean_dim_tosa_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", MeanDim.test_data_suite)
+xfails = {
+    "rank5_01234": "Rank 5 graph input currently not supported in EthosUBackend (passes since CHW are all averaged over so data order does not matter in this case)",
+    "rank5_234": "Rank 5 graph input currently not supported in EthosUBackend (passes since CHW are all averaged over so data order does not matter in this case)",
+    "rank5_12": "Rank 5 graph input currently not supported in EthosUBackend",
+    "rank5_2": "Rank 5 graph input currently not supported in EthosUBackend",
+}
+
+
+@common.parametrize("test_data", MeanDim.test_data_suite, xfails=xfails, strict=False)
 @common.XfailIfNoCorstone300
-def test_mean_dim_u55_BI(test_data):
+def test_mean_dim_u55_INT(test_data):
     test_data, dim, keep_dim = test_data()
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
@@ -256,11 +284,11 @@ def test_mean_dim_u55_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", MeanDim.test_data_suite)
+@common.parametrize("test_data", MeanDim.test_data_suite, xfails=xfails, strict=False)
 @common.XfailIfNoCorstone320
-def test_mean_dim_u85_BI(test_data):
+def test_mean_dim_u85_INT(test_data):
     test_data, dim, keep_dim = test_data()
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both

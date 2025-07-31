@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [macos, ios, ios-simulator, pybind, llm]
+        preset: [macos, ios, ios-simulator, pybind, profiling, llm]
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -44,7 +44,7 @@ jobs:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-arm-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
       submodules: recursive
       timeout: 90
       script: |
@@ -63,7 +63,7 @@ jobs:
         # Verify download
         echo "93128be0235cf5cf5f1ee561aa6eac5f  ${toolchain_dir}.tar.xz" > arm-zephyr-eabi.md5
         md5sum -c --strict arm-zephyr-eabi.md5
-        
+
         # Extract and install to PATH
         tar xf "${toolchain_dir}.tar.xz"
         rm -f "${toolchain_dir}.tar.xz"
@@ -93,7 +93,7 @@ jobs:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: ${{ matrix.runner }}
-      docker-image: ${{ matrix.docker-image }}
+      docker-image: ci-image:${{ matrix.docker-image }}
       submodules: recursive
       timeout: 90
       script: |

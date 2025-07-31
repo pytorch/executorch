@@ -158,6 +158,7 @@ ComputeGraph::~ComputeGraph() {
 
   prepack_nodes_.clear();
   execute_nodes_.clear();
+  clear_deferred_cmds();
 
   context_->flush();
 }
@@ -273,6 +274,14 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
     return val.toConstTensor().dtype();
   } else if (val.isTensorRef()) {
     return val.toConstTensorRef().dtype;
+  } else if (val.isBool()) {
+    return vkapi::ScalarType::Bool;
+  } else if (val.isDouble()) {
+    // We downcast anyway in the shader and we want to avoid having to
+    // write special cases there.
+    return vkapi::ScalarType::Float;
+  } else if (val.isInt()) {
+    return vkapi::ScalarType::Int;
   }
   VK_THROW("Could not get dtype of value with type ", val.type());
 }
@@ -756,16 +765,62 @@ void ComputeGraph::prepare_pipelines() {
       vkapi::ComputePipelineCache::Hasher>();
 }
 
-void ComputeGraph::submit_current_cmd(const bool final_use, bool wait) {
-  if (wait) {
-    // Submit and wait for command buffer
-    vkapi::VulkanFence fence = context_->fences().get_fence();
-    context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
-    fence.wait();
-    context_->fences().return_fence(fence);
-  } else {
-    context_->submit_cmd_to_gpu(VK_NULL_HANDLE, final_use);
+void ComputeGraph::submit_current_cmd(const bool final_use) {
+  context_->submit_cmd_to_gpu(VK_NULL_HANDLE, final_use);
+}
+
+void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
+  vkapi::VulkanFence fence = context_->fences().get_fence();
+  context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
+  fence.wait();
+  context_->fences().return_fence(fence);
+}
+
+void ComputeGraph::submit_cmd(
+    vkapi::CommandBuffer& cmd_buf,
+    VkSemaphore wait_semaphore,
+    VkSemaphore signal_semaphore,
+    VkFence fence) {
+  if (cmd_buf) {
+    cmd_buf.end();
+    context_->adapter_ptr()->submit_cmd(
+        context_->queue(),
+        cmd_buf.get_submit_handle(false),
+        fence,
+        wait_semaphore,
+        signal_semaphore);
   }
+}
+
+void ComputeGraph::submit_deferred_cmds_and_wait() {
+  VkSemaphore prev_semaphore = VK_NULL_HANDLE;
+  vkapi::VulkanFence fence = context_->fences().get_fence();
+
+  for (uint32_t i = 0; i < deferred_cmd_list_.size(); i++) {
+    auto& cmd = deferred_cmd_list_[i];
+    VkSemaphore wait_semaphore = prev_semaphore;
+    VkSemaphore signal_semaphore = cmd.get_signal_semaphore();
+    prev_semaphore = signal_semaphore;
+
+    submit_cmd(
+        cmd,
+        wait_semaphore,
+        signal_semaphore,
+        i == (deferred_cmd_list_.size() - 1) ? fence.get_submit_handle()
+                                             : VK_NULL_HANDLE);
+  }
+  fence.wait();
+  context_->fences().return_fence(fence);
+}
+
+void ComputeGraph::clear_deferred_cmds() {
+  for (auto& cmd : deferred_cmd_list_) {
+    if (cmd) {
+      cmd.end();
+      cmd.invalidate();
+    }
+  }
+  deferred_cmd_list_.clear();
 }
 
 void ComputeGraph::prepack() {
@@ -787,10 +842,10 @@ void ComputeGraph::prepack() {
       // proceed. This results in lower load latency at the cost of higher peak
       // memory usage.
       if (reduce_peak_memory) {
-        submit_current_cmd(/*final_use=*/true, /*wait=*/true);
+        submit_current_cmd_and_wait();
         context_->flush();
       } else {
-        submit_current_cmd(/*final_use=*/true, /*wait=*/false);
+        submit_current_cmd();
       }
       staging_nbytes_in_cmd_ = 0;
       context_->set_cmd();
@@ -800,36 +855,26 @@ void ComputeGraph::prepack() {
     node->encode(this);
     i++;
   }
-  submit_current_cmd(/*final_use=*/true, /*wait=*/true);
+  submit_current_cmd_and_wait(/*final_use=*/true);
   context_->flush();
   staging_nbytes_in_cmd_ = 0;
 }
 
-void ComputeGraph::encode_execute() {
-  context_->flush();
-  context_->set_cmd(/*reusable = */ true);
-
-  context_->cmd_reset_querypool();
-
-  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
-    node->encode(this);
-  }
-
-  // Indicate execute nodes have been freshly encoded and needs to be submitted
-  // first
-  execute_pending_first_submission = true;
-}
-
 void ComputeGraph::execute() {
-  if (execute_pending_first_submission) {
-    submit_current_cmd(/*final_use=*/false, /*wait=*/true);
-    execute_pending_first_submission = false;
-  } else {
-    vkapi::VulkanFence fence = context_->fences().get_fence();
-    context_->submit_all_non_final_cmds(fence.get_submit_handle());
-    fence.wait();
-    context_->fences().return_fence(fence);
+  if (deferred_cmd_list_.empty()) {
+    context_->flush();
+    context_->set_cmd(/*reusable = */ true);
+
+    context_->cmd_reset_querypool();
+
+    for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+      node->encode(this);
+    }
+
+    deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
   }
+
+  submit_deferred_cmds_and_wait();
   execute_count_++;
 }
 
@@ -852,7 +897,7 @@ void ComputeGraph::propagate_resize() {
   }
   // Only re-encode on resize if dynamic shapes are expected
   if (config_.expect_dynamic_shapes) {
-    encode_execute();
+    clear_deferred_cmds();
   }
 }
 

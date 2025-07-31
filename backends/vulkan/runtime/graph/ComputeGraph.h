@@ -193,6 +193,9 @@ class ComputeGraph final {
   // Utility constexpr to express byte quantities
   constexpr static size_t MB = 1024 * 1024;
 
+  // List of command buffers deferred for submission
+  std::vector<vkapi::CommandBuffer> deferred_cmd_list_;
+
  protected:
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
@@ -203,10 +206,6 @@ class ComputeGraph final {
   // Represents the amount of staging buffer data that will be copied if the
   // current Context's command buffer is submitted now.
   size_t staging_nbytes_in_cmd_ = 0;
-
-  // Flag to indicate if execute nodes have been freshly encoded and have not
-  // been submitted yet.
-  bool execute_pending_first_submission = false;
 
  public:
   //
@@ -845,10 +844,34 @@ class ComputeGraph final {
   // Command Buffer Management
 
   /*
-   * Submits the current command buffer in the Context to the GPU for execution,
-   * and wait for it to complete before returning, if wait is True.
+   * Submits the current command buffer in the Context to the GPU for execution.
    */
-  void submit_current_cmd(const bool final_use = false, bool wait = true);
+  void submit_current_cmd(const bool final_use = false);
+
+  /*
+   * Submits the current command buffer in the Context to the GPU for execution,
+   * and wait for it to complete before returning.
+   */
+  void submit_current_cmd_and_wait(const bool final_use = false);
+
+  /*
+   * Submit one command buffer to the GPU.
+   */
+  void submit_cmd(
+      vkapi::CommandBuffer& cmd_buf,
+      VkSemaphore wait_semaphore,
+      VkSemaphore signal_semaphore,
+      VkFence fence);
+
+  /*
+   * Submits all the commands gathered in deferred_cmd_bufs_ to the GPU.
+   */
+  void submit_deferred_cmds_and_wait();
+
+  /*
+   * Ends and invalidates all deferred commands.
+   */
+  void clear_deferred_cmds();
 
  public:
   //
@@ -869,7 +892,6 @@ class ComputeGraph final {
   // Graph Execution
   //
 
-  void encode_execute();
   void execute();
 
   //

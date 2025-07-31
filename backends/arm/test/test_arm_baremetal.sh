@@ -97,6 +97,9 @@ test_pytest_models() { # Test ops and other things
     # Prepare for pytest
     backends/arm/scripts/build_executorch.sh
 
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
     # Run arm baremetal pytest tests without FVP
     pytest  --verbose --color=yes --durations=0 backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
@@ -135,6 +138,9 @@ test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify
     # arm_test/arm_semihosting_executor_runner_corstone-300
     # arm_test/arm_semihosting_executor_runner_corstone-320
     backends/arm/test/setup_testing.sh
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests with FVP
     pytest  --verbose --color=yes --durations=0 backends/arm/test/models
@@ -228,7 +234,7 @@ test_models_ethos-u85() { # End to End model tests using model_test.py
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=mv2 --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-512 --model=mv3 --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=lstm --extra_flags="-DET_ATOL=0.03 -DET_RTOL=0.03"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"
+    #python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"  # Takes long time to run
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=ic4 --extra_flags="-DET_ATOL=0.8 -DET_RTOL=0.8" --timeout=2400
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=resnet18 --extra_flags="-DET_ATOL=0.2 -DET_RTOL=0.2"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=resnet50 --extra_flags="-DET_ATOL=0.2 -DET_RTOL=0.2"

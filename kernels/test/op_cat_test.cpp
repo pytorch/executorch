@@ -73,6 +73,58 @@ class OpCatOutTest : public OperatorTest {
         tf.make({2, 4}, {1.5, -2.0, 3.25, 10.0, 4.0, -5.5, 6.5, 20.0});
     EXPECT_TENSOR_EQ(out, expected);
   }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_complex_dtype() {
+    TensorFactory<DTYPE> tf;
+    Tensor x = tf.make(
+        {2, 2},
+        {CTYPE(0.01, 2.03),
+         CTYPE(4.05, 6.07),
+         CTYPE(0.11, 2.13),
+         CTYPE(4.15, 6.17)});
+    Tensor y = tf.make(
+        {2, 2},
+        {CTYPE(0.21, 2.23),
+         CTYPE(4.25, 6.27),
+         CTYPE(0.31, 2.33),
+         CTYPE(4.35, 6.37)});
+
+    std::vector<Tensor> inputs = {x, y};
+
+    // Concatenate along dim[0].
+    Tensor out_0 = tf.full({4, 2}, CTYPE{0, 0});
+    Tensor ret_0 = op_cat_out(
+        ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out_0);
+    Tensor expected_0 = tf.make(
+        {4, 2},
+        {CTYPE(0.01, 2.03),
+         CTYPE(4.05, 6.07),
+         CTYPE(0.11, 2.13),
+         CTYPE(4.15, 6.17),
+         CTYPE(0.21, 2.23),
+         CTYPE(4.25, 6.27),
+         CTYPE(0.31, 2.33),
+         CTYPE(4.35, 6.37)});
+
+    EXPECT_TENSOR_EQ(out_0, expected_0);
+
+    // Concatenate along dim[1].
+    Tensor out_1 = tf.full({2, 4}, CTYPE{0, 0});
+    Tensor ret_1 = op_cat_out(
+        ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out_1);
+    Tensor expected_1 = tf.make(
+        {2, 4},
+        {CTYPE(0.01, 2.03),
+         CTYPE(4.05, 6.07),
+         CTYPE(0.21, 2.23),
+         CTYPE(4.25, 6.27),
+         CTYPE(0.11, 2.13),
+         CTYPE(4.15, 6.17),
+         CTYPE(0.31, 2.33),
+         CTYPE(4.35, 6.37)});
+    EXPECT_TENSOR_EQ(out_1, expected_1);
+  }
 };
 
 TEST_F(OpCatOutTest, SmokeDim1) {
@@ -131,6 +183,13 @@ TEST_F(OpCatOutTest, SixteenBitFloatSupport) {
   }
   test_16bit_dtype<ScalarType::Half>();
   test_16bit_dtype<ScalarType::BFloat16>();
+}
+
+TEST_F(OpCatOutTest, ComplexSupport) {
+#define RUN_COMPLEX_TEST(ctype, dtype) \
+  test_complex_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_COMPLEXH_TYPES(RUN_COMPLEX_TEST);
+#undef RUN_COMPLEX_TEST
 }
 
 TEST_F(OpCatOutTest, NegativeDims) {

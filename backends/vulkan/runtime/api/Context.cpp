@@ -214,43 +214,13 @@ void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
 
     submit_count_ = 0u;
   }
-
-  if (!final_use) {
-    non_final_cmds_.emplace_back(std::move(cmd_));
-  }
-}
-
-void Context::submit_all_non_final_cmds(VkFence fence_handle) {
-  VkSemaphore local_prev_semaphore = VK_NULL_HANDLE;
-
-  for (uint32_t i = 0; i < non_final_cmds_.size(); i++) {
-    auto& cmd = non_final_cmds_[i];
-    VkSemaphore wait_semaphore = local_prev_semaphore;
-    VkSemaphore signal_semaphore = cmd.get_signal_semaphore();
-    local_prev_semaphore = signal_semaphore;
-
-    if (cmd) {
-      cmd.end();
-      adapter_p_->submit_cmd(
-          queue_,
-          cmd.get_submit_handle(false),
-          i == (non_final_cmds_.size() - 1) ? fence_handle : VK_NULL_HANDLE,
-          wait_semaphore,
-          signal_semaphore);
-    }
-  }
 }
 
 void Context::flush() {
-  VK_CHECK(vkQueueWaitIdle(queue()));
+  VK_CHECK(vkQueueWaitIdle(queue().handle));
 
   command_pool_.flush();
   descriptor_pool_.flush();
-
-  for (auto& cmd : non_final_cmds_) {
-    cmd.invalidate();
-  }
-  non_final_cmds_.clear();
 
   // If there is an existing command buffer, invalidate it
   if (cmd_) {

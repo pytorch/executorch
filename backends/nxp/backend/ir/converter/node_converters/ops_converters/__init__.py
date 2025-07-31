@@ -1,8 +1,20 @@
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.abs_converter import (
+    AbsConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.adaptive_avg_pool_2d_converter import (
+    AdaptiveAvgPool2dConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.add_tensor_converter import (
+    AddTensorConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.addmm_converter import (
     AddMMConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.avg_pool_2d_converter import (
     AvgPool2dConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clone_converter import (
+    CloneConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.constant_pad_nd_converter import (
     ConstantPadNDConverter,
@@ -10,8 +22,14 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.convolution_converter import (
     ConvolutionConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import (
+    HardTanhConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool_2d_converter import (
     MaxPool2dConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mean_dim_converter import (
+    MeanDimConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mm_converter import (
     MMConverter,
@@ -46,6 +64,12 @@ __all__ = [
     "QDQQuantizeConverter",
     "ConstantPadNDConverter",
     "ReLUConverter",
+    "MeanDimConverter",
     "MaxPool2dConverter",
     "AvgPool2dConverter",
+    "AddTensorConverter",
+    "CloneConverter",
+    "AbsConverter",
+    "AdaptiveAvgPool2dConverter",
+    "HardTanhConverter",
 ]
