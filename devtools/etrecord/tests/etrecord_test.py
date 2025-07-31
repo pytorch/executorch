@@ -61,7 +61,7 @@ class TestETRecord(unittest.TestCase):
         self.assert_etrecord_has_no_executorch_program(etrecord)
 
     def assert_etrecord_saveable(self, etrecord: ETRecord) -> None:
-        """Assert ETRecord contains all essential information for saving """
+        """Assert ETRecord contains all essential information for saving"""
         self.assertIsNotNone(etrecord.exported_program)
         self.assertIsNotNone(etrecord.export_graph_id)
         self.assertIsNotNone(etrecord.edge_dialect_program)
