@@ -808,6 +808,8 @@ jobs:
       id-token: write
       contents: read
     secrets: inherit
+    env:
+      GH_TOKEN: ${{ github.token }}
     strategy:
       matrix:
         hf_model_id: [
