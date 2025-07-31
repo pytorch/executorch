@@ -115,7 +115,7 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
 
       # pip wheels will need to be able to find the dependent libraries. On
       # Linux, the .so has non-absolute dependencies on libs like
-      # "_portable_lib.so" without paths; as long as we `import torch` first,
+      # "_portable_lib.so" and "libextension_module.so" without paths; as long as we `import torch` first,
       # those dependencies will work. But Apple dylibs do not support
       # non-absolute dependencies, so we need to tell the loader where to look
       # for its libraries. The LC_LOAD_DYLIB entries for the portable_lib
@@ -124,9 +124,9 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       # installed location of our _portable_lib.so file. To see these LC_*
       # values, run `otool -l libquantized_ops_lib.dylib`.
       if(APPLE)
-        set(RPATH "@loader_path/../../extensions/pybindings")
+        set(RPATH "@loader_path/../../extension/pybindings")
       else()
-        set(RPATH "$ORIGIN/../../extensions/pybindings")
+        set(RPATH "$ORIGIN/../../extension/pybindings")
       endif()
       set_target_properties(
         quantized_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH

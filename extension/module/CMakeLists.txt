@@ -17,6 +17,16 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 list(TRANSFORM _extension_module__srcs PREPEND "${EXECUTORCH_ROOT}/")
+
+# Always add bundled_module.cpp to ensure it's included
+list(APPEND _extension_module__srcs "${EXECUTORCH_ROOT}/extension/module/bundled_module.cpp")
+
+# Also add bundled_module sources if they exist (in case there are additional files)
+if(DEFINED _extension_bundled_module__srcs)
+  list(TRANSFORM _extension_bundled_module__srcs PREPEND "${EXECUTORCH_ROOT}/")
+  list(APPEND _extension_module__srcs ${_extension_bundled_module__srcs})
+endif()
+
 if(CMAKE_TOOLCHAIN_IOS
    OR CMAKE_TOOLCHAIN_ANDROID
    OR APPLE
@@ -29,7 +39,7 @@ else()
 endif()
 target_link_libraries(
   extension_module PRIVATE executorch_core extension_data_loader
-                           extension_flat_tensor
+                           extension_flat_tensor bundled_program
 )
 target_include_directories(
   extension_module PUBLIC ${_common_include_directories}
@@ -38,12 +48,17 @@ target_compile_options(
   extension_module PUBLIC -Wno-deprecated-declarations -fPIC
 )
 
+# Ensure consistent USE_ATEN_LIB definition with pybindings
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  target_compile_definitions(extension_module PRIVATE USE_ATEN_LIB)
+endif()
+
 # Module extension built as a static library. TODO(gjcomer) Remove this target
 # after cleaning up CMake targets.
 add_library(extension_module_static STATIC ${_extension_module__srcs})
 target_link_libraries(
   extension_module_static PRIVATE executorch_core extension_data_loader
-                                  extension_flat_tensor
+                                  extension_flat_tensor bundled_program
 )
 target_include_directories(
   extension_module_static PUBLIC ${_common_include_directories}
@@ -51,6 +66,11 @@ target_include_directories(
 target_compile_options(
   extension_module_static PUBLIC -Wno-deprecated-declarations -fPIC
 )
+
+# Ensure consistent USE_ATEN_LIB definition with pybindings
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+  target_compile_definitions(extension_module_static PRIVATE USE_ATEN_LIB)
+endif()
 
 # Install libraries
 install(
