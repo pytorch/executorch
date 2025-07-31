@@ -85,9 +85,7 @@ class TOSABackend(BackendDetails):
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
-        if isinstance(tosa_spec, tosa_specification.Tosa_0_80):
-            import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-        elif isinstance(tosa_spec, tosa_specification.Tosa_1_00):
+        if isinstance(tosa_spec, tosa_specification.Tosa_1_00):
             import serializer.tosa_serializer as ts  # type: ignore
         else:
             raise RuntimeError(

@@ -53,6 +53,21 @@ class TestETRecord(unittest.TestCase):
         self.assert_etrecord_has_no_executorch_program(etrecord)
         self.assertIsNone(etrecord.graph_map)
 
+    def assert_legal_etrecord_in_edge_program(self, etrecord: ETRecord) -> None:
+        """Assert that ETRecord has all expected data after to_edge_transform_and_lower() or to_edge() stage"""
+        self.assertIsNotNone(etrecord.exported_program)
+        self.assertIsNotNone(etrecord.export_graph_id)
+        self.assertIsNotNone(etrecord.edge_dialect_program)
+        self.assert_etrecord_has_no_executorch_program(etrecord)
+
+    def assert_etrecord_saveable(self, etrecord: ETRecord) -> None:
+        """Assert ETRecord contains all essential information for saving """
+        self.assertIsNotNone(etrecord.exported_program)
+        self.assertIsNotNone(etrecord.export_graph_id)
+        self.assertIsNotNone(etrecord.edge_dialect_program)
+        self.assertIsNotNone(etrecord._debug_handle_map)
+        self.assertIsNotNone(etrecord._delegate_map)
+
     def get_test_model(self):
         f = models.BasicSinMax()
         captured_output = exir.capture(f, f.get_random_inputs(), exir.CaptureConfig())
@@ -290,11 +305,7 @@ class TestETRecord(unittest.TestCase):
         # Verify that ETRecord was generated and attached
         self.assertIsNotNone(edge_manager._etrecord)
         etrecord = edge_manager._etrecord
-
-        # Verify that ETRecord has the expected data
-        self.assertIsNotNone(etrecord.exported_program)
-        self.assertIsNotNone(etrecord.export_graph_id)
-        self.assertIsNotNone(etrecord.edge_dialect_program)
+        self.assert_legal_etrecord_in_edge_program(etrecord)
 
         # Verify the exported program matches the input
         self.check_graph_closeness(
@@ -343,13 +354,7 @@ class TestETRecord(unittest.TestCase):
         # Test get_etrecord method
         etrecord = et_manager.get_etrecord()
         self.assertIsNotNone(etrecord)
-
-        # Verify that the returned ETRecord has all expected data
-        self.assertIsNotNone(etrecord.exported_program)
-        self.assertIsNotNone(etrecord.export_graph_id)
-        self.assertIsNotNone(etrecord.edge_dialect_program)
-        self.assertIsNotNone(etrecord._debug_handle_map)
-        self.assertIsNotNone(etrecord._delegate_map)
+        self.assert_etrecord_saveable(etrecord)
 
         # Verify the data matches the original input
         self.check_graph_closeness(
