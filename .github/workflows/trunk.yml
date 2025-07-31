@@ -91,8 +91,6 @@ jobs:
         if [[ "${MODEL_NAME}" == "whisper_tiny" ]]; then
           cd $ZEPHYR_PROJ_ROOT
           # For whisper-tiny, we will use optimum to export the encoder and decoder ptes
-          pip install -U "huggingface_hub[cli]"
-          huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
           OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
           git clone https://github.com/huggingface/optimum-executorch
           pushd optimum-executorch
