@@ -584,11 +584,11 @@ do {
   // Execute a potentially different method by name.
   let outputs3 = try module.execute("another_method", inputs: [Value(inputTensor1)])
 
-  // Process outputs (assuming first output is a tensor).
-  if let resultTensor = outputs1.first?.tensor {
-    resultTensor.bytes { ptr, count, dtype in
-      // Access result data.
-    }
+  // Process outputs by converting the first output Value to a typed Tensor<Float>.
+  if let outputTensor: Tensor<Float> = outputs1.first?.tensor() {
+    // Now you have a type-safe tensor and can access its data easily.
+    let logits = try outputTensor.scalars()
+    print("First 5 logits: \(logits.prefix(5))")
   }
 } catch {
   print("Execution failed: \(error)")
