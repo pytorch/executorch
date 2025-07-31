@@ -808,8 +808,6 @@ jobs:
       id-token: write
       contents: read
     secrets: inherit
-    env:
-      GH_TOKEN: ${{ github.token }}
     strategy:
       matrix:
         hf_model_id: [
@@ -821,6 +819,8 @@ jobs:
       fail-fast: false
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
+      env:
+        GH_TOKEN: ${{ github.token }}
       runner: macos-15-xlarge
       python-version: '3.11'
       submodules: 'recursive'
