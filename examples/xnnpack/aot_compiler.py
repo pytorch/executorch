@@ -9,12 +9,10 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
-import copy
 import logging
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.devtools import generate_etrecord
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -103,18 +101,16 @@ if __name__ == "__main__":
             _check_ir_validity=False if args.quantize else True,
             _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
         ),
+        generate_etrecord=args.etrecord is not None,
     )
     logging.info(f"Exported and lowered graph:\n{edge.exported_program().graph}")
-
-    # this is needed for the ETRecord as lowering modifies the graph in-place
-    edge_copy = copy.deepcopy(edge)
 
     exec_prog = edge.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
     if args.etrecord is not None:
-        generate_etrecord(args.etrecord, edge_copy, exec_prog)
+        edge.get_etrecord().save(args.etrecord)
         logging.info(f"Saved ETRecord to {args.etrecord}")
 
     quant_tag = "q8" if args.quantize else "fp32"
