@@ -84,7 +84,6 @@ class ToTosaMemoryFormatPass(ExportPass):
         return False
 
     @staticmethod
-    @staticmethod
     def memory_format_differs(shape):
         """Returns true if the shape will have a different memory layout in (N)NCHW and (N)NHWC format"""
         if len(shape) >= 5:
