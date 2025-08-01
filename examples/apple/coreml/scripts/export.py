@@ -223,7 +223,6 @@ def main():
     pte_base_name = get_pte_base_name(args)
     if args.use_partitioner:
         model = model.eval()
-        assert not args.generate_etrecord, "ETRecord is not supported with partitioner"
         ep = torch.export.export(
             model,
             args=example_args,
@@ -234,9 +233,12 @@ def main():
         delegated_program = exir.to_edge_transform_and_lower(
             ep,
             partitioner=[CoreMLPartitioner(compile_specs=compile_specs)],
+            generate_etrecord=args.generate_etrecord,
         )
         exec_program = delegated_program.to_executorch()
         save_pte_program(exec_program, pte_base_name)
+        if args.generate_etrecord:
+            exec_program.get_etrecord().save(f"{pte_base_name}_coreml_etrecord.bin")
         if args.run_with_pybindings:
             run_with_pybindings(
                 executorch_program=exec_program,
