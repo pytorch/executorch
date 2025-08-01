@@ -25,57 +25,6 @@ from torch.fx import Node
 
 
 @register_node_visitor
-class LessEqualVisitor_0_80(NodeVisitor):
-    target = "aten.le.Tensor"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+BI"),
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
-    ]
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, inputs, ts)
-        validate_valid_dtype(
-            self.target,
-            inputs,
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
-            output.tosa_spec,
-        )
-        validate_valid_dtype(self.target, output, ts.DType.BOOL, output.tosa_spec)
-
-        input_nodes = inputs
-        # Handle quantization
-        if inputs[0].dtype == ts.DType.INT8:
-            # Rescale inputs to 32 bit
-            rescaled_inputs, _ = tqutils.insert_rescale_ops_to_int32(
-                tosa_graph, inputs, node
-            )
-
-            # Update IO
-            input_nodes = rescaled_inputs
-
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().GREATER_EQUAL,
-            [input_nodes[1].name, input_nodes[0].name],
-            [output.name],
-            None,
-        )
-
-
-@register_node_visitor
 class LessEqualVisitor(NodeVisitor):
     target = "aten.le.Tensor"
 

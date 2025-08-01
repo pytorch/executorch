@@ -12,9 +12,9 @@ from executorch.backends.arm.quantizer import (
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
+    TosaPipelineINT,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester import Quantize
@@ -40,9 +40,6 @@ def _get_16_bit_quant_config():
 def get_16bit_sigmoid_quantizer(u55_config=False):
     tosa_version = conftest.get_option("tosa_version")
     tosa_profiles = {
-        "0.80": TosaSpecification.create_from_string(
-            "TOSA-0.80+BI" + ("+u55" if u55_config else "")
-        ),
         "1.0": TosaSpecification.create_from_string(
             "TOSA-1.0+INT" + ("+u55" if u55_config else "")
         ),
@@ -90,8 +87,8 @@ class SigmoidAddSigmoid(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_sigmoid_tosa_BI(test_data):
-    pipeline = TosaPipelineBI(
+def test_sigmoid_tosa_INT(test_data):
+    pipeline = TosaPipelineINT(
         Sigmoid(),
         (test_data(),),
         Sigmoid.aten_op,
@@ -107,8 +104,8 @@ def test_sigmoid_tosa_BI(test_data):
     test_data_suite,
     strict=False,
 )
-def test_sigmoid_tosa_BI_add_sigmoid(test_data):
-    pipeline = TosaPipelineBI(
+def test_sigmoid_tosa_INT_add_sigmoid(test_data):
+    pipeline = TosaPipelineINT(
         SigmoidAddSigmoid(),
         (test_data(),),
         Sigmoid.aten_op,
@@ -122,7 +119,7 @@ def test_sigmoid_tosa_BI_add_sigmoid(test_data):
     "test_data",
     test_data_suite,
 )
-def test_sigmoid_u55_BI(test_data):
+def test_sigmoid_u55_INT(test_data):
     pipeline = OpNotSupportedPipeline(
         Sigmoid(),
         (test_data(),),
@@ -138,7 +135,7 @@ def test_sigmoid_u55_BI(test_data):
     "test_data",
     test_data_suite,
 )
-def test_sigmoid_u55_BI_add_sigmoid(test_data):
+def test_sigmoid_u55_INT_add_sigmoid(test_data):
     pipeline = OpNotSupportedPipeline(
         SigmoidAddSigmoid(),
         (test_data(),),
@@ -153,8 +150,8 @@ def test_sigmoid_u55_BI_add_sigmoid(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_sigmoid_u85_BI(test_data):
-    pipeline = EthosU85PipelineBI(
+def test_sigmoid_u85_INT(test_data):
+    pipeline = EthosU85PipelineINT(
         Sigmoid(),
         (test_data(),),
         Sigmoid.aten_op,
@@ -174,8 +171,8 @@ def test_sigmoid_u85_BI(test_data):
 )
 @pytest.mark.flaky(reruns=5)  # MLETORCH-787: Investigate int16-int8 rescaling precision
 @common.XfailIfNoCorstone320
-def test_sigmoid_u85_BI_add_sigmoid(test_data):
-    pipeline = EthosU85PipelineBI(
+def test_sigmoid_u85_INT_add_sigmoid(test_data):
+    pipeline = EthosU85PipelineINT(
         SigmoidAddSigmoid(),
         (test_data(),),
         Sigmoid.aten_op,

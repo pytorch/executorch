@@ -14,10 +14,10 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, Input y
@@ -63,9 +63,9 @@ test_data_suite = {
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_repeat_tosa_MI(test_data: Tuple):
+def test_repeat_tosa_FP(test_data: Tuple):
     module, test_data = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         module,
         test_data,
         module.aten_op,
@@ -75,9 +75,9 @@ def test_repeat_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_repeat_tosa_BI(test_data: Tuple):
+def test_repeat_tosa_INT(test_data: Tuple):
     module, test_data = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         module,
         test_data,
         module.aten_op,
@@ -87,9 +87,9 @@ def test_repeat_tosa_BI(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_repeat_u55_BI(test_data: Tuple):
+def test_repeat_u55_INT(test_data: Tuple):
     module, test_data = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         module,
         test_data,
         module.aten_op,
@@ -100,9 +100,9 @@ def test_repeat_u55_BI(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_repeat_u85_BI(test_data: Tuple):
+def test_repeat_u85_INT(test_data: Tuple):
     module, test_data = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         module,
         test_data,
         module.aten_op,

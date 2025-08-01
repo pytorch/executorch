@@ -69,8 +69,6 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
 
 # container for all SupportedTosaOperatorCheck classes
 _tosa_spec_support: dict[TosaSpecification, list[Type[SupportedTOSAOperatorCheck]]] = {
-    TosaSpecification.create_from_string("TOSA-0.80+BI"): [],
-    TosaSpecification.create_from_string("TOSA-0.80+MI"): [],
     TosaSpecification.create_from_string("TOSA-1.0+INT"): [],
     TosaSpecification.create_from_string("TOSA-1.0+FP"): [],
 }
@@ -258,6 +256,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.atanh.default,
             exir_ops.edge.aten.addmm.default,
             exir_ops.edge.aten.masked_fill.Scalar,
+            exir_ops.edge.aten.asinh.default,
         ]
 
         return supported

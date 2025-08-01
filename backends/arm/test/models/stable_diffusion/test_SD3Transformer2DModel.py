@@ -89,7 +89,7 @@ class TestSD3Transformer2DModel(unittest.TestCase):
 
         return sd35_transformer2D_model, sd35_transformer2D_model_inputs
 
-    def test_SD3Transformer2DModel_tosa_MI(self):
+    def test_SD3Transformer2DModel_tosa_FP(self):
         sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
             self.prepare_model_and_inputs()
         )
@@ -106,12 +106,12 @@ class TestSD3Transformer2DModel(unittest.TestCase):
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=sd35_transformer2D_model_inputs,
-                    rtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with MI and BI
+                    rtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
                     atol=4.0,
                 )
             )
 
-    def test_SD3Transformer2DModel_tosa_BI(self):
+    def test_SD3Transformer2DModel_tosa_INT(self):
         sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
             self.prepare_model_and_inputs()
         )
@@ -129,7 +129,7 @@ class TestSD3Transformer2DModel(unittest.TestCase):
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=sd35_transformer2D_model_inputs,
-                    qtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with MI and BI
+                    qtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
                     rtol=1.0,
                     atol=4.0,
                 )

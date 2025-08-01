@@ -91,6 +91,25 @@ TEST_F(ModuleTest, TestLoadMethod) {
   EXPECT_TRUE(module.is_loaded());
 }
 
+TEST_F(ModuleTest, TestUnloadMethod) {
+  Module module(model_path_);
+
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  const auto errorLoad = module.load_method("forward");
+  EXPECT_EQ(errorLoad, Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+  // Unload method
+  EXPECT_TRUE(module.unload_method("forward"));
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  // Try unload method again
+  EXPECT_FALSE(module.unload_method("forward"));
+  // Load method again
+  const auto errorReload = module.load_method("forward");
+  EXPECT_EQ(errorReload, Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+  EXPECT_TRUE(module.is_loaded());
+}
+
 TEST_F(ModuleTest, TestLoadNonExistentMethod) {
   Module module(model_path_);
 

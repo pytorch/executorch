@@ -10,7 +10,7 @@ from executorch.backends.arm.test import common, conftest
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
-    TosaPipelineMI,
+    TosaPipelineFP,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -46,11 +46,11 @@ test_data_fp32_input = {
 
 
 @common.parametrize("test_data", test_data_fp32_input)
-def test_decorate_fp32_to_int32_casting_tosa_MI(test_data: Tuple):
+def test_decorate_fp32_to_int32_casting_tosa_FP(test_data: Tuple):
     test_tensor, target_dtype = test_data()
     module = FP32ToINT32Casting(target_dtype)
 
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         module,
         (test_tensor,),
         aten_op=[],
@@ -61,11 +61,11 @@ def test_decorate_fp32_to_int32_casting_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_fp32_input)
-def test_decorate_fp32_to_int32_casting_tosa_BI(test_data: Tuple):
+def test_decorate_fp32_to_int32_casting_tosa_INT(test_data: Tuple):
     """
-    Casting operation involving floating-point dtypes will be rejected in BI/INT profile.
+    Casting operation involving floating-point dtypes will be rejected in INT/INT profile.
     Therefore, the DecorateFp32toInt32CastingPass is not required in this profile.
-    Add a BI test to ensure that such casting is rejected as expected.
+    Add a INT test to ensure that such casting is rejected as expected.
     """
     test_tensor, target_dtype = test_data()
     module = FP32ToINT32Casting(target_dtype)

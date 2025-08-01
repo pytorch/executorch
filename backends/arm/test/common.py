@@ -33,7 +33,7 @@ def get_time_formatted_path(path: str, log_prefix: str) -> str:
         log_prefix: The name of the test.
 
     Example output:
-        './my_log_folder/test_BI_artifact_28-Nov-14:14:38.log'
+        './my_log_folder/test_INT_artifact_28-Nov-14:14:38.log'
     """
     return str(
         Path(path) / f"{log_prefix}_{datetime.now().strftime('%d-%b-%H:%M:%S')}.log"
@@ -48,12 +48,12 @@ def maybe_get_tosa_collate_path() -> str | None:
     tosa_test_base = os.environ.get("TOSA_TESTCASES_BASE_PATH")
     if tosa_test_base:
         current_test = os.environ.get("PYTEST_CURRENT_TEST")
-        # '::test_collate_tosa_BI_tests[randn] (call)'
+        # '::test_collate_tosa_INT_tests[randn] (call)'
         test_name = current_test.split("::")[1].split(" ")[0]  # type: ignore[union-attr]
-        if "BI" in test_name:
-            tosa_test_base = os.path.join(tosa_test_base, "tosa-bi")
-        elif "MI" in test_name:
-            tosa_test_base = os.path.join(tosa_test_base, "tosa-mi")
+        if "INT" in test_name:
+            tosa_test_base = os.path.join(tosa_test_base, "tosa-int")
+        elif "FP" in test_name:
+            tosa_test_base = os.path.join(tosa_test_base, "tosa-fp")
         else:
             tosa_test_base = os.path.join(tosa_test_base, "other")
         return os.path.join(tosa_test_base, test_name)

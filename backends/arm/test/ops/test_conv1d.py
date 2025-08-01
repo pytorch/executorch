@@ -9,10 +9,10 @@ from typing import List, Tuple, Union
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 aten_op = "torch.ops.aten.conv1d.default"
@@ -249,7 +249,7 @@ two_conv1d = Conv1d(
     batches=1,
 )
 
-test_data_MI = {
+test_data_FP = {
     "2_3x2x40_nobias": lambda: conv1d_2_3x2x40_nobias,
     "3_1x3x256_st1": lambda: conv1d_3_1x3x256_st1,
     "3_1x3x12_st2_pd1": lambda: conv1d_3_1x3x12_st2_pd1,
@@ -265,16 +265,16 @@ test_data_MI = {
     "two_conv1d": lambda: two_conv1d,
 }
 
-test_data_BI = {
+test_data_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
-    for (k, v) in test_data_MI.items()
+    for (k, v) in test_data_FP.items()
     for q in [True, False]
 }
 
 
-@common.parametrize("test_data", test_data_MI)
-def test_convolution_1d_tosa_MI(test_data):
-    pipeline = TosaPipelineMI[input_t](
+@common.parametrize("test_data", test_data_FP)
+def test_convolution_1d_tosa_FP(test_data):
+    pipeline = TosaPipelineFP[input_t](
         test_data(),
         test_data().get_inputs(),
         aten_op,
@@ -283,10 +283,10 @@ def test_convolution_1d_tosa_MI(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_BI)
-def test_convolution_1d_tosa_BI(test_data):
+@common.parametrize("test_data", test_data_INT)
+def test_convolution_1d_tosa_INT(test_data):
     model, per_channel_quantization = test_data()
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         model,
         model.get_inputs(),
         aten_op,
@@ -297,11 +297,11 @@ def test_convolution_1d_tosa_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_BI)
+@common.parametrize("test_data", test_data_INT)
 @common.XfailIfNoCorstone300
-def test_convolution_1d_u55_BI(test_data):
+def test_convolution_1d_u55_INT(test_data):
     model, per_channel_quantization = test_data()
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         model,
         model.get_inputs(),
         aten_op,
@@ -313,11 +313,11 @@ def test_convolution_1d_u55_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_BI)
+@common.parametrize("test_data", test_data_INT)
 @common.XfailIfNoCorstone320
-def test_convolution_1d_u85_BI(test_data):
+def test_convolution_1d_u85_INT(test_data):
     model, per_channel_quantization = test_data()
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         model,
         model.get_inputs(),
         aten_op,

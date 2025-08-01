@@ -12,11 +12,11 @@ from typing import Tuple
 import pytest
 
 import torch
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -45,18 +45,18 @@ class Linear(torch.nn.Module):
 """Tests dumping the partition artifact in ArmTester. Both to file and to stdout."""
 
 
-def _tosa_MI_pipeline(module: torch.nn.Module, test_data: input_t1, dump_file=None):
+def _tosa_FP_pipeline(module: torch.nn.Module, test_data: input_t1, dump_file=None):
 
-    pipeline = TosaPipelineMI[input_t1](module, test_data, [], [])
+    pipeline = TosaPipelineFP[input_t1](module, test_data, [], [])
     pipeline.dump_artifact("to_edge_transform_and_lower")
     pipeline.dump_artifact("to_edge_transform_and_lower", suffix=dump_file)
     pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
 
-def _tosa_BI_pipeline(module: torch.nn.Module, test_data: input_t1, dump_file=None):
+def _tosa_INT_pipeline(module: torch.nn.Module, test_data: input_t1, dump_file=None):
 
-    pipeline = TosaPipelineBI[input_t1](module, test_data, [], [])
+    pipeline = TosaPipelineINT[input_t1](module, test_data, [], [])
     pipeline.dump_artifact("to_edge_transform_and_lower")
     pipeline.dump_artifact("to_edge_transform_and_lower", suffix=dump_file)
     pipeline.pop_stage("run_method_and_compare_outputs")
@@ -71,12 +71,12 @@ def _is_tosa_marker_in_file(tmp_file):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_MI_artifact(test_data: input_t1):
+def test_FP_artifact(test_data: input_t1):
     model = Linear()
     tmp_file = common.get_time_formatted_path(
-        tempfile.mkdtemp(), test_MI_artifact.__name__
+        tempfile.mkdtemp(), test_FP_artifact.__name__
     )
-    _tosa_MI_pipeline(model, test_data, dump_file=tmp_file)
+    _tosa_FP_pipeline(model, test_data, dump_file=tmp_file)
     assert os.path.exists(tmp_file), f"File {tmp_file} was not created"
     if _is_tosa_marker_in_file(tmp_file):
         return  # Implicit pass test
@@ -84,12 +84,12 @@ def test_MI_artifact(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_BI_artifact(test_data: input_t1):
+def test_INT_artifact(test_data: input_t1):
     model = Linear()
     tmp_file = common.get_time_formatted_path(
-        tempfile.mkdtemp(), test_BI_artifact.__name__
+        tempfile.mkdtemp(), test_INT_artifact.__name__
     )
-    _tosa_BI_pipeline(model, test_data, dump_file=tmp_file)
+    _tosa_INT_pipeline(model, test_data, dump_file=tmp_file)
     assert os.path.exists(tmp_file), f"File {tmp_file} was not created"
     if _is_tosa_marker_in_file(tmp_file):
         return  # Implicit pass test
@@ -101,7 +101,7 @@ def test_BI_artifact(test_data: input_t1):
 
 @common.parametrize("test_data", Linear.inputs)
 def test_numerical_diff_print(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         Linear(),
         test_data,
         [],
@@ -125,7 +125,7 @@ def test_numerical_diff_print(test_data: input_t1):
 
 @common.parametrize("test_data", Linear.inputs)
 def test_dump_ops_and_dtypes(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](Linear(), test_data, [], [])
+    pipeline = TosaPipelineINT[input_t1](Linear(), test_data, [], [])
     pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.add_stage_after("quantize", pipeline.tester.dump_dtype_distribution)
     pipeline.add_stage_after("quantize", pipeline.tester.dump_operator_distribution)
@@ -143,7 +143,7 @@ def test_dump_ops_and_dtypes(test_data: input_t1):
 
 @common.parametrize("test_data", Linear.inputs)
 def test_dump_ops_and_dtypes_parseable(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](Linear(), test_data, [], [])
+    pipeline = TosaPipelineINT[input_t1](Linear(), test_data, [], [])
     pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.add_stage_after("quantize", pipeline.tester.dump_dtype_distribution, False)
     pipeline.add_stage_after(
@@ -167,24 +167,21 @@ def test_dump_ops_and_dtypes_parseable(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
-def test_collate_tosa_BI_tests(test_data: input_t1):
+def test_collate_tosa_INT_tests(test_data: input_t1):
     # Set the environment variable to trigger the collation of TOSA tests
     os.environ["TOSA_TESTCASES_BASE_PATH"] = "test_collate_tosa_tests"
     # Clear out the directory
-    pipeline = TosaPipelineBI[input_t1](Linear(), test_data, [], [])
+    pipeline = TosaPipelineINT[input_t1](Linear(), test_data, [], [])
     pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
     test_collate_dir = (
-        "test_collate_tosa_tests/tosa-bi/test_collate_tosa_BI_tests[randn]"
+        "test_collate_tosa_tests/tosa-int/test_collate_tosa_INT_tests[randn]"
     )
     # test that the output directory is created and contains the expected files
     assert os.path.exists(test_collate_dir)
-    tosa_version = conftest.get_option("tosa_version")
     for file in os.listdir(test_collate_dir):
-        file_name_prefix = f"TOSA-{tosa_version}+" + (
-            "INT" if tosa_version == "1.0" else "BI"
-        )
+        file_name_prefix = "TOSA-1.0+INT"
         assert file.endswith((f"{file_name_prefix}.json", f"{file_name_prefix}.tosa"))
 
     os.environ.pop("TOSA_TESTCASES_BASE_PATH")
@@ -193,7 +190,7 @@ def test_collate_tosa_BI_tests(test_data: input_t1):
 
 @common.parametrize("test_data", Linear.inputs)
 def test_dump_tosa_ops(caplog, test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](Linear(), test_data, [], [])
+    pipeline = TosaPipelineINT[input_t1](Linear(), test_data, [], [])
     pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.dump_operator_distribution("to_edge_transform_and_lower")
     pipeline.run()
@@ -211,7 +208,7 @@ class Add(torch.nn.Module):
 
 @common.parametrize("test_data", Add.inputs)
 def test_fail_dump_tosa_ops(caplog, test_data: input_t1):
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         Add(), test_data, [], [], use_to_edge_transform_and_lower=True, run_on_fvp=False
     )
     pipeline.dump_operator_distribution("to_edge_transform_and_lower")

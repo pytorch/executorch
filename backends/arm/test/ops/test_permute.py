@@ -13,10 +13,10 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 from torchvision.ops import Permute
 
@@ -48,9 +48,9 @@ class SimplePermute(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_permute_tosa_MI(test_data: torch.Tensor):
+def test_permute_tosa_FP(test_data: torch.Tensor):
     test_data, dims = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         SimplePermute(dims=dims),
         (test_data,),
         aten_op,
@@ -60,9 +60,9 @@ def test_permute_tosa_MI(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_permute_tosa_BI(test_data: torch.Tensor):
+def test_permute_tosa_INT(test_data: torch.Tensor):
     test_data, dims = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         SimplePermute(dims=dims),
         (test_data,),
         aten_op,
@@ -77,9 +77,9 @@ def test_permute_tosa_BI(test_data: torch.Tensor):
     xfails={"rank_4_3": "MLETORCH-955 : Permutation numerical diff for u55"},
 )
 @common.XfailIfNoCorstone300
-def test_permute_u55_BI(test_data):
+def test_permute_u55_INT(test_data):
     test_data, dims = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         SimplePermute(dims=dims),
         (test_data,),
         aten_op,
@@ -91,9 +91,9 @@ def test_permute_u55_BI(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_permute_u85_BI(test_data: torch.Tensor):
+def test_permute_u85_INT(test_data: torch.Tensor):
     test_data, dims = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         SimplePermute(dims=dims),
         (test_data,),
         aten_op,

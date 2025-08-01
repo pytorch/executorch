@@ -15,10 +15,10 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 aten_op = "torch.ops.aten.clone.default"
@@ -46,9 +46,9 @@ test_data_suite = {
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_clone_tosa_MI(test_data: Tuple[torch.Tensor]):
+def test_clone_tosa_FP(test_data: Tuple[torch.Tensor]):
 
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         Clone(),
         test_data(),
         aten_op,
@@ -59,8 +59,8 @@ def test_clone_tosa_MI(test_data: Tuple[torch.Tensor]):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_clone_tosa_BI(test_data):
-    pipeline = TosaPipelineBI[input_t](
+def test_clone_tosa_INT(test_data):
+    pipeline = TosaPipelineINT[input_t](
         Clone(),
         test_data(),
         aten_op,
@@ -74,8 +74,8 @@ def test_clone_tosa_BI(test_data):
 @pytest.mark.xfail(
     reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
 )
-def test_clone_u55_BI(test_data):
-    pipeline = EthosU55PipelineBI[input_t](
+def test_clone_u55_INT(test_data):
+    pipeline = EthosU55PipelineINT[input_t](
         Clone(),
         test_data(),
         aten_op,
@@ -91,8 +91,8 @@ def test_clone_u55_BI(test_data):
 @pytest.mark.xfail(
     reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
 )
-def test_clone_u85_BI(test_data):
-    pipeline = EthosU85PipelineBI[input_t](
+def test_clone_u85_INT(test_data):
+    pipeline = EthosU85PipelineINT[input_t](
         Clone(),
         test_data(),
         aten_op,

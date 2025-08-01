@@ -21,34 +21,6 @@ from torch.fx import Node
 
 
 @register_node_visitor
-class LogVisitor_0_80_MI(NodeVisitor):
-    target = "aten.log.default"
-
-    # BI case should be handled by op_table
-    tosa_specs = [TosaSpecification.create_from_string("TOSA-0.80+MI")]
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output], ts)
-        validate_valid_dtype(
-            self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
-        )
-
-        tosa_graph.addOperator(ts.TosaOp.Op().LOG, [inputs[0].name], [output.name])
-
-
-@register_node_visitor
 class LogVisitor(NodeVisitor):
     target = "aten.log.default"
 
