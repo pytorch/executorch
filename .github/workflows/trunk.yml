@@ -799,10 +799,10 @@ jobs:
 
         echo "::endgroup::"
 
-  test-huggingface-optimum-text-generation-coreml:
+  test-huggingface-optimum-coreml:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    name: test-huggingface-optimum-text-generation-coreml
+    name: test-huggingface-optimum-coreml
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
       id-token: write
@@ -810,11 +810,15 @@ jobs:
     secrets: inherit
     strategy:
       matrix:
-        hf_model_id: [
-          Qwen/Qwen3-0.6B,
-          HuggingFaceTB/SmolLM2-135M,
-          meta-llama/Llama-3.2-1B,
-          allenai/OLMo-1B-hf,
+        config: [
+          qwen3|coreml_fp32_gpu|--quantize,
+          smollm|coreml_fp32_gpu|--quantize,
+          llama3|coreml_fp32_gpu|--quantize,
+          olmo|coreml_fp32_gpu|--quantize,
+          bert|coreml_fp32_gpu|--quantize,
+          roberta|coreml_fp32_gpu|--quantize,
+          distilbert|coreml_fp32_gpu|--quantize,
+          vit|coreml_fp16_ne
         ]
       fail-fast: false
     with:
@@ -826,6 +830,11 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"
+        echo "Model: $MODEL"
+        echo "Recipe: $RECIPE"
+        echo "Quantize: $QUANTIZE"
+
         echo "::group::Set up ExecuTorch"
         bash .ci/scripts/setup-conda.sh
         eval "$(conda shell.bash hook)"
@@ -852,48 +861,8 @@ jobs:
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 
-        echo "::group::Export to ExecuTorch"
-        # Pass matrix variable as environment variable
-        export MODEL_ID="${{ matrix.hf_model_id }}"
-        export OUTPUT_DIR="$(pwd)/${MODEL_ID}_coreml"
-        pushd optimum-executorch
-
-        ARGS=(
-          "--model" "${MODEL_ID}"
-          "--task" "text-generation"
-          "--recipe" "coreml_fp32_gpu"
-          "--qlinear" "4w"
-          "--qembedding" "8w"
-          "--disable_dynamic_shapes"
-          "--output_dir" "${OUTPUT_DIR}"
-        )
-
-        ${CONDA_RUN} optimum-cli export executorch "${ARGS[@]}"
-
-        ls -FlAGhp ${OUTPUT_DIR}
-        popd
-        echo "::endgroup::"
-
-        echo "::group::Inference using python API"
-        pushd optimum-executorch
-        ${CONDA_RUN} python -c "
-        import os
-        from optimum.executorch import ExecuTorchModelForCausalLM
-        from transformers import AutoTokenizer
-
-        model_id = os.getenv('MODEL_ID')
-        pte_dir = os.getenv('OUTPUT_DIR')
-        print(f'Loading model {model_id} from {pte_dir}.')
-        model = ExecuTorchModelForCausalLM.from_pretrained(pte_dir)
-        generated_text = model.text_generation(
-          tokenizer=AutoTokenizer.from_pretrained(model_id),
-          prompt='Simply put, the theory of relativity states that',
-          max_seq_len=64
-        )
-        print(generated_text)
-        "
-        popd
-        echo "::endgroup::"
+        # Run test
+        ${CONDA_RUN} python .ci/scripts/test_huggingface_optimum_coreml.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE}
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
