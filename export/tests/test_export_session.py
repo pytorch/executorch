@@ -249,12 +249,21 @@ class TestPipelineValidation(unittest.TestCase):
     def test_valid_pipeline_sequences(self) -> None:
         """Test various valid pipeline sequences."""
         valid_sequences = [
-            # Full pipeline
+            # Full pipeline with to_edge_transform_lower
             [
                 StageType.SOURCE_TRANSFORM,
                 StageType.QUANTIZE,
                 StageType.TORCH_EXPORT,
                 StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                StageType.TO_EXECUTORCH,
+            ],
+            # Full pipeline with to_edge, to_backend
+            [
+                StageType.SOURCE_TRANSFORM,
+                StageType.QUANTIZE,
+                StageType.TORCH_EXPORT,
+                StageType.TO_EDGE,
+                StageType.TO_BACKEND,
                 StageType.TO_EXECUTORCH,
             ],
             # Skip quantize
