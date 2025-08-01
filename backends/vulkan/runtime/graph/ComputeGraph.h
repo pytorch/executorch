@@ -857,11 +857,7 @@ class ComputeGraph final {
   /*
    * Submit one command buffer to the GPU.
    */
-  void submit_cmd(
-      vkapi::CommandBuffer& cmd_buf,
-      VkSemaphore wait_semaphore,
-      VkSemaphore signal_semaphore,
-      VkFence fence);
+  void submit_cmd(vkapi::CommandBuffer& cmd_buf, VkFence fence);
 
   /*
    * Submits all the commands gathered in deferred_cmd_bufs_ to the GPU.
