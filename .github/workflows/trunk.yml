@@ -848,11 +848,6 @@ jobs:
         # There is no release yet, for CI stability, always test from the same commit on main
         git checkout $OPTIMUM_ET_COMMIT
         ${CONDA_RUN} python install_dev.py --skip_override_torch
-
-        # When using transformers 4.53 onward, optimum-et uses dynamic shapes for LLMs
-        # and this doesn't export on CoreML.  Until we add the ability to disable dynamic shapes
-        # in "optimum-cli export executorch", we need to pin transformers to 4.52.4
-        ${CONDA_RUN} pip install transformers==4.52.4 --force-reinstall
         popd
         ${CONDA_RUN} pip list
         echo "::endgroup::"
