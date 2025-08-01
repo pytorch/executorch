@@ -817,8 +817,6 @@ jobs:
           allenai/OLMo-1B-hf,
         ]
       fail-fast: false
-    env:
-        GH_TOKEN: ${{ github.token }}
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
@@ -838,13 +836,14 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Set up Hugging Face"
-        pip install -U "huggingface_hub[cli]"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]"
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         git clone https://github.com/huggingface/optimum-executorch
         pushd optimum-executorch
         # There is no release yet, for CI stability, always test from the same commit on main
         # git checkout $OPTIMUM_ET_COMMIT
+        ${CONDA_RUN} conda install -c conda-forge gh
         gh pr checkout 114
         ${CONDA_RUN} python install_dev.py --skip_override_torch
 
