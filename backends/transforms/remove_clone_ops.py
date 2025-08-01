@@ -6,26 +6,45 @@
 
 # pyre-strict
 
+from typing import Set
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-
-
-def remove_clone_ops(graph: torch.fx.Graph) -> torch.fx.Graph:
-    """
-    Remove clone op nodes and replace uses with parent node.
-    """
-    clone_op = exir_ops.edge.aten.clone.default
-    for node in graph.nodes:
-        if node.op == "call_function" and node.target == clone_op:
-            with graph.inserting_after(node):
-                node.replace_all_uses_with(node.args[0])
-
-    graph.eliminate_dead_code()
-    return graph
+from executorch.exir.passes import dead_code_elimination_pass
+from executorch.exir.passes.remove_noop_pass import _DEQUANT_OPS, eliminate_dq_q
 
 
 class RemoveCloneOpsTransform(ExportPass):
+    """
+    Trim the 'identity' operators to reduce the unnecessary copy overhead.
+    """
+
+    clone_ops: Set[torch._ops.OpOverload] = {
+        exir_ops.edge.aten.clone.default,
+    }
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def _remove(self, graph_module: torch.fx.GraphModule) -> None:
+        dequant_nodes = []
+
+        for n in graph_module.graph.nodes:
+            if n.target not in self.clone_ops:
+                continue
+
+            to_be_remove = n
+            for user_n in list(n.users.keys()):
+                user_n.replace_input_with(n, n.args[0])
+            if n.args[0].target in _DEQUANT_OPS:
+                dequant_nodes += [n.args[0]]
+            graph_module.graph.erase_node(to_be_remove)
+
+        eliminate_dq_q(graph_module, dequant_nodes)
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        graph_module.graph = remove_clone_ops(graph_module.graph)
+        self._remove(graph_module)
+        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
