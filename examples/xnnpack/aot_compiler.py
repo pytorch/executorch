@@ -101,7 +101,7 @@ if __name__ == "__main__":
             _check_ir_validity=False if args.quantize else True,
             _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
         ),
-        generate_etrecord=args.etrecord is not None,
+        generate_etrecord=args.etrecord is not False,
     )
     logging.info(f"Exported and lowered graph:\n{edge.exported_program().graph}")
 
@@ -109,7 +109,7 @@ if __name__ == "__main__":
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
-    if args.etrecord is not None:
+    if args.etrecord is not False:
         edge.get_etrecord().save(args.etrecord)
         logging.info(f"Saved ETRecord to {args.etrecord}")
 
