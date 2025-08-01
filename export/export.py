@@ -16,7 +16,7 @@ from executorch.runtime import Runtime, Verification
 from tabulate import tabulate
 from torch import nn
 
-from .recipe import ExportRecipe, QuantizationRecipe
+from .recipe import ExportRecipe, LoweringRecipe, QuantizationRecipe
 from .stages import (
     EdgeTransformAndLowerStage,
     ExecutorchStage,
@@ -143,6 +143,10 @@ class ExportSession:
             self._export_recipe.quantization_recipe
         )
 
+        self._lowering_recipe: Optional[LoweringRecipe] = (
+            self._export_recipe.lowering_recipe
+        )
+
         # Stages to run
         self._pipeline_stages = (
             self._export_recipe.pipeline_stages or self._get_default_pipeline()
@@ -192,20 +196,11 @@ class ExportSession:
                     )
                 stage = TorchExportStage(pre_edge_passes)
             elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
-                stage = EdgeTransformAndLowerStage(
-                    partitioners=self._export_recipe.partitioners,
-                    transform_passes=self._export_recipe.edge_transform_passes,
-                    compile_config=self._export_recipe.edge_compile_config,
-                )
+                stage = EdgeTransformAndLowerStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EDGE:
-                stage = ToEdgeStage(
-                    edge_compile_config=self._export_recipe.edge_compile_config
-                )
+                stage = ToEdgeStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_BACKEND:
-                stage = ToBackendStage(
-                    partitioners=self._export_recipe.partitioners,
-                    transform_passes=self._export_recipe.edge_transform_passes,
-                )
+                stage = ToBackendStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EXECUTORCH:
                 stage = ExecutorchStage(self._export_recipe.executorch_backend_config)
             else:

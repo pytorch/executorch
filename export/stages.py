@@ -14,7 +14,7 @@ from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.program import to_edge, to_edge_transform_and_lower
 from executorch.exir.program._program import _transform
-from executorch.export.recipe import QuantizationRecipe
+from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.types import StageType
 from torch import nn
 from torch._export.pass_base import PassType
@@ -167,6 +167,19 @@ class EdgeTransformAndLowerStage(Stage):
         self._partitioners = partitioners
         self._transform_passes = transform_passes
         self._compile_config = compile_config
+
+    @classmethod
+    def from_recipe(
+        cls, lowering_recipe: Optional["LoweringRecipe"]
+    ) -> "EdgeTransformAndLowerStage":
+        if lowering_recipe is None:
+            return cls()
+
+        return cls(
+            partitioners=lowering_recipe.partitioners,
+            transform_passes=lowering_recipe.edge_transform_passes,
+            compile_config=lowering_recipe.edge_compile_config,
+        )
 
     @property
     def stage_type(self) -> str:
@@ -369,6 +382,15 @@ class ToEdgeStage(Stage):
         super().__init__()
         self._edge_compile_config = edge_compile_config
 
+    @classmethod
+    def from_recipe(cls, lowering_recipe: Optional["LoweringRecipe"]) -> "ToEdgeStage":
+        if lowering_recipe is None:
+            return cls()
+
+        return cls(
+            edge_compile_config=lowering_recipe.edge_compile_config,
+        )
+
     @property
     def stage_type(self) -> str:
         return StageType.TO_EDGE
@@ -414,6 +436,18 @@ class ToBackendStage(Stage):
         super().__init__()
         self._partitioners = partitioners
         self._transform_passes = transform_passes
+
+    @classmethod
+    def from_recipe(
+        cls, lowering_recipe: Optional["LoweringRecipe"]
+    ) -> "ToBackendStage":
+        if lowering_recipe is None:
+            return cls()
+
+        return cls(
+            partitioners=lowering_recipe.partitioners,
+            transform_passes=lowering_recipe.edge_transform_passes,
+        )
 
     @property
     def stage_type(self) -> str:
