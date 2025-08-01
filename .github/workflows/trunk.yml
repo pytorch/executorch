@@ -836,7 +836,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Set up Hugging Face"
-        ${CONDA_RUN} pip install -U "huggingface_hub[cli]"
+        pip install -U "huggingface_hub[cli]"
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         git clone https://github.com/huggingface/optimum-executorch
