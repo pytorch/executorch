@@ -9,10 +9,10 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -132,8 +132,8 @@ class OrScalar(BitwiseBinaryScalar):
 
 
 @common.parametrize("test_data", And().test_data)
-def test_bitwise_and_tensor_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](
+def test_bitwise_and_tensor_tosa_FP(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](
         And(),
         test_data(),
         And().aten_op,
@@ -146,8 +146,8 @@ def test_bitwise_and_tensor_tosa_MI(test_data: input_t2):
 
 
 @common.parametrize("test_data", AndScalar.test_data)
-def test_bitwise_and_scalar_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](
+def test_bitwise_and_scalar_tosa_FP(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](
         AndScalar(),
         test_data(),
         AndScalar.aten_op,
@@ -160,8 +160,8 @@ def test_bitwise_and_scalar_tosa_MI(test_data: input_t2):
 
 
 @common.parametrize("test_data", And().test_data)
-def test_bitwise_and_tensor_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](
+def test_bitwise_and_tensor_tosa_INT(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](
         And(),
         test_data(),
         And().aten_op,
@@ -176,8 +176,8 @@ def test_bitwise_and_tensor_tosa_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", AndScalar.test_data)
-def test_bitwise_and_scalar_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](
+def test_bitwise_and_scalar_tosa_INT(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](
         AndScalar(),
         test_data(),
         AndScalar.aten_op,
@@ -192,7 +192,7 @@ def test_bitwise_and_scalar_tosa_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", And().test_data)
-def test_bitwise_and_tensor_u55_BI(test_data: input_t2):
+def test_bitwise_and_tensor_u55_INT(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         And(),
@@ -205,7 +205,7 @@ def test_bitwise_and_tensor_u55_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", AndScalar.test_data)
-def test_bitwise_and_scalar_u55_BI(test_data: input_t2):
+def test_bitwise_and_scalar_u55_INT(test_data: input_t2):
     # There will be one full op which will be delegated.
     num_delegates = 1
     num_exir = 0
@@ -225,8 +225,8 @@ def test_bitwise_and_scalar_u55_BI(test_data: input_t2):
 
 @common.parametrize("test_data", AndScalar.test_data)
 @common.XfailIfNoCorstone320
-def test_bitwise_and_scalar_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_bitwise_and_scalar_u85_INT(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         AndScalar(),
         test_data(),
         AndScalar.aten_op,
@@ -243,8 +243,8 @@ def test_bitwise_and_scalar_u85_BI(test_data: input_t2):
 
 @common.parametrize("test_data", And().test_data)
 @common.XfailIfNoCorstone320
-def test_bitwise_and_tensor_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_bitwise_and_tensor_u85_INT(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         And(),
         test_data(),
         And().aten_op,
@@ -260,8 +260,8 @@ def test_bitwise_and_tensor_u85_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Xor().test_data)
-def test_bitwise_xor_tensor_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](
+def test_bitwise_xor_tensor_tosa_FP(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](
         Xor(),
         test_data(),
         Xor().aten_op,
@@ -274,8 +274,8 @@ def test_bitwise_xor_tensor_tosa_MI(test_data: input_t2):
 
 
 @common.parametrize("test_data", XorScalar.test_data)
-def test_bitwise_xor_scalar_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](
+def test_bitwise_xor_scalar_tosa_FP(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](
         XorScalar(),
         test_data(),
         XorScalar.aten_op,
@@ -288,8 +288,8 @@ def test_bitwise_xor_scalar_tosa_MI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Xor().test_data)
-def test_bitwise_xor_tensor_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](
+def test_bitwise_xor_tensor_tosa_INT(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](
         Xor(),
         test_data(),
         Xor().aten_op,
@@ -304,8 +304,8 @@ def test_bitwise_xor_tensor_tosa_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", XorScalar.test_data)
-def test_bitwise_xor_scalar_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](
+def test_bitwise_xor_scalar_tosa_INT(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](
         XorScalar(),
         test_data(),
         XorScalar.aten_op,
@@ -320,7 +320,7 @@ def test_bitwise_xor_scalar_tosa_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Xor().test_data)
-def test_bitwise_xor_tensor_u55_BI(test_data: input_t2):
+def test_bitwise_xor_tensor_u55_INT(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         Xor(),
@@ -333,7 +333,7 @@ def test_bitwise_xor_tensor_u55_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", XorScalar.test_data)
-def test_bitwise_xor_scalar_u55_BI(test_data: input_t2):
+def test_bitwise_xor_scalar_u55_INT(test_data: input_t2):
     # There will be one full op which will be delegated.
     num_delegates = 1
     num_exir = 0
@@ -353,8 +353,8 @@ def test_bitwise_xor_scalar_u55_BI(test_data: input_t2):
 
 @common.parametrize("test_data", Xor().test_data)
 @common.XfailIfNoCorstone320
-def test_bitwise_xor_tensor_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_bitwise_xor_tensor_u85_INT(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         Xor(),
         test_data(),
         Xor().aten_op,
@@ -371,8 +371,8 @@ def test_bitwise_xor_tensor_u85_BI(test_data: input_t2):
 
 @common.parametrize("test_data", XorScalar.test_data)
 @common.XfailIfNoCorstone320
-def test_bitwise_xor_scalar_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_bitwise_xor_scalar_u85_INT(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         XorScalar(),
         test_data(),
         XorScalar.aten_op,
@@ -388,8 +388,8 @@ def test_bitwise_xor_scalar_u85_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Or().test_data)
-def test_bitwise_or_tensor_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](
+def test_bitwise_or_tensor_tosa_FP(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](
         Or(),
         test_data(),
         Or().aten_op,
@@ -402,8 +402,8 @@ def test_bitwise_or_tensor_tosa_MI(test_data: input_t2):
 
 
 @common.parametrize("test_data", OrScalar.test_data)
-def test_bitwise_or_scalar_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](
+def test_bitwise_or_scalar_tosa_FP(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](
         OrScalar(),
         test_data(),
         OrScalar.aten_op,
@@ -416,8 +416,8 @@ def test_bitwise_or_scalar_tosa_MI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Or().test_data)
-def test_bitwise_or_tensor_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](
+def test_bitwise_or_tensor_tosa_INT(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](
         Or(),
         test_data(),
         Or().aten_op,
@@ -432,8 +432,8 @@ def test_bitwise_or_tensor_tosa_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", OrScalar.test_data)
-def test_bitwise_or_scalar_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](
+def test_bitwise_or_scalar_tosa_INT(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](
         OrScalar(),
         test_data(),
         OrScalar.aten_op,
@@ -448,7 +448,7 @@ def test_bitwise_or_scalar_tosa_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Or().test_data)
-def test_bitwise_or_tensor_u55_BI(test_data: input_t2):
+def test_bitwise_or_tensor_u55_INT(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         Or(),
@@ -461,7 +461,7 @@ def test_bitwise_or_tensor_u55_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", OrScalar.test_data)
-def test_bitwise_or_scalar_u55_BI(test_data: input_t2):
+def test_bitwise_or_scalar_u55_INT(test_data: input_t2):
     # There will be one full op which will be delegated.
     num_delegates = 1
     num_exir = 0
@@ -481,8 +481,8 @@ def test_bitwise_or_scalar_u55_BI(test_data: input_t2):
 
 @common.parametrize("test_data", Or().test_data)
 @common.XfailIfNoCorstone320
-def test_bitwise_or_tensor_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_bitwise_or_tensor_u85_INT(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         Or(),
         test_data(),
         Or().aten_op,
@@ -499,8 +499,8 @@ def test_bitwise_or_tensor_u85_BI(test_data: input_t2):
 
 @common.parametrize("test_data", OrScalar.test_data)
 @common.XfailIfNoCorstone320
-def test_bitwise_or_scalar_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_bitwise_or_scalar_u85_INT(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         OrScalar(),
         test_data(),
         OrScalar.aten_op,

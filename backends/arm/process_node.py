@@ -12,11 +12,7 @@ import torch
 import torch.fx
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import (
-    Tosa_0_80,
-    Tosa_1_00,
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa_specification import Tosa_1_00, TosaSpecification
 from executorch.backends.arm.tosa_utils import getNodeArgs, tosa_shape
 from torch._export.utils import (
     get_buffer,
@@ -85,9 +81,7 @@ def process_inputs(
             "Is the original torch function supported?"
         ) from e
 
-    if isinstance(tosa_spec, Tosa_0_80):
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-    elif isinstance(tosa_spec, Tosa_1_00):
+    if isinstance(tosa_spec, Tosa_1_00):
         import serializer.tosa_serializer as ts
     else:
         raise ValueError(f"Unsupported TOSA spec: {tosa_spec}")

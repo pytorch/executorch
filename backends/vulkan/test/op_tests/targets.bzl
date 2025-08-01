@@ -216,3 +216,9 @@ def define_common_targets(is_fbcode = False):
             ":test_utils",
         ]
     )
+    define_test_targets(
+        "quantize_affine_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )

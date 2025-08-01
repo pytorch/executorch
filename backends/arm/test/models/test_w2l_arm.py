@@ -13,10 +13,10 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 from torchaudio import models
@@ -46,8 +46,8 @@ class TestW2L(unittest.TestCase):
 
 
 @pytest.mark.slow  # about 3min on std laptop
-def test_w2l_tosa_MI():
-    pipeline = TosaPipelineMI[input_t](
+def test_w2l_tosa_FP():
+    pipeline = TosaPipelineFP[input_t](
         TestW2L.w2l,
         TestW2L.model_example_inputs,
         aten_op=[],
@@ -59,8 +59,8 @@ def test_w2l_tosa_MI():
 
 @pytest.mark.slow  # about 1min on std laptop
 @pytest.mark.flaky
-def test_w2l_tosa_BI():
-    pipeline = TosaPipelineBI[input_t](
+def test_w2l_tosa_INT():
+    pipeline = TosaPipelineINT[input_t](
         TestW2L.w2l,
         TestW2L.model_example_inputs,
         aten_op=[],
@@ -76,8 +76,8 @@ def test_w2l_tosa_BI():
     reason="MLETORCH-1009: Wav2Letter fails on U55 due to unsupported conditions",
     strict=False,
 )
-def test_w2l_u55_BI():
-    pipeline = EthosU55PipelineBI[input_t](
+def test_w2l_u55_INT():
+    pipeline = EthosU55PipelineINT[input_t](
         TestW2L.w2l,
         TestW2L.model_example_inputs,
         aten_ops=[],
@@ -91,8 +91,8 @@ def test_w2l_u55_BI():
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
 @pytest.mark.skip(reason="Intermittent timeout issue: MLETORCH-856")
-def test_w2l_u85_BI():
-    pipeline = EthosU85PipelineBI[input_t](
+def test_w2l_u85_INT():
+    pipeline = EthosU85PipelineINT[input_t](
         TestW2L.w2l,
         TestW2L.model_example_inputs,
         aten_ops=[],

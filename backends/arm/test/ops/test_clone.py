@@ -11,11 +11,11 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    OpNotSupportedPipeline
 )
 
 aten_op = "torch.ops.aten.clone.default"
@@ -95,9 +95,9 @@ non_delegated_networks = {
 
 
 @common.parametrize("input_data", delegated_clones)
-def test_clone_tosa_MI(input_data):
+def test_clone_tosa_FP(input_data):
     module, input_tensor = input_data()
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         module(),
         input_tensor,
         [],
@@ -106,10 +106,10 @@ def test_clone_tosa_MI(input_data):
 
 
 @common.parametrize("input_data", delegated_clones)
-def test_clone_tosa_BI(input_data):
+def test_clone_tosa_INT(input_data):
     module, input_tensor = input_data()
 
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         module(),
         input_tensor,
         aten_op,
@@ -120,10 +120,10 @@ def test_clone_tosa_BI(input_data):
 
 @common.parametrize("input_data", delegated_clones)
 @common.XfailIfNoCorstone300
-def test_clone_u55_BI(input_data):
+def test_clone_u55_INT(input_data):
     module, input_tensor = input_data()
 
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         module(),
         input_tensor,
         aten_op,
@@ -136,10 +136,10 @@ def test_clone_u55_BI(input_data):
 
 @common.parametrize("input_data", delegated_clones)
 @common.XfailIfNoCorstone320
-def test_clone_u85_BI(input_data):
+def test_clone_u85_INT(input_data):
     module, input_tensor = input_data()
 
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         module(),
         input_tensor,
         aten_op,
@@ -151,7 +151,7 @@ def test_clone_u85_BI(input_data):
 
 
 @common.parametrize("input_data", non_delegated_networks)
-def test_clone_tosa_MI_not_delegated(input_data):
+def test_clone_tosa_FP_not_delegated(input_data):
     module, input_tensor = input_data()
     pipeline = OpNotSupportedPipeline[input_t](
         module(),

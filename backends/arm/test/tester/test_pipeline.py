@@ -271,9 +271,9 @@ class BasePipelineMaker(Generic[T]):
                 raise e
 
 
-class TosaPipelineBI(BasePipelineMaker, Generic[T]):
+class TosaPipelineINT(BasePipelineMaker, Generic[T]):
     """
-    Lowers a graph to BI TOSA spec (with quantization) and tests it with the TOSA reference model.
+    Lowers a graph to INT TOSA spec (with quantization) and tests it with the TOSA reference model.
 
     Attributes:
        module: The module which the pipeline is applied to.
@@ -298,7 +298,6 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         aten_op: str | List[str],
         exir_op: Optional[str | List[str]] = None,
         run_on_tosa_ref_model: bool = True,
-        tosa_version: str = "TOSA-0.80+BI",
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
@@ -309,7 +308,6 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         tosa_profiles = {
-            "0.80": TosaSpecification.create_from_string("TOSA-0.80+BI"),
             "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT"),
         }
         tosa_version = conftest.get_option("tosa_version")
@@ -372,9 +370,9 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
             )
 
 
-class TosaPipelineMI(BasePipelineMaker, Generic[T]):
+class TosaPipelineFP(BasePipelineMaker, Generic[T]):
     """
-    Lowers a graph to MI TOSA spec and tests it with the TOSA reference model.
+    Lowers a graph to FP TOSA spec and tests it with the TOSA reference model.
 
     Attributes:
        module: The module which the pipeline is applied to.
@@ -399,7 +397,6 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
         aten_op: str | List[str],
         exir_op: Optional[str | List[str]] = None,
         run_on_tosa_ref_model: bool = True,
-        tosa_version: str = "TOSA-0.80+MI",
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
         atol: float = 1e-03,
@@ -411,7 +408,6 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
         ] = None,
     ):
         tosa_profiles = {
-            "0.80": TosaSpecification.create_from_string("TOSA-0.80+MI"),
             "1.0": TosaSpecification.create_from_string("TOSA-1.0+FP"),
         }
         tosa_version = conftest.get_option("tosa_version")
@@ -449,9 +445,9 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
             )
 
 
-class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
+class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
     """
-    Lowers a graph to u55 BI TOSA spec and tests it on the Corstone300 FVP, if run_on_fvp is true.
+    Lowers a graph to u55 INT TOSA spec and tests it on the Corstone300 FVP, if run_on_fvp is true.
 
     Attributes:
        module: The module which the pipeline is applied to.
@@ -536,9 +532,9 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
             )
 
 
-class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
+class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
     """
-    Lowers a graph to u85 BI TOSA spec and tests it on the Corstone320 FVP, if run_on_fvp is true.
+    Lowers a graph to u85 INT TOSA spec and tests it on the Corstone320 FVP, if run_on_fvp is true.
 
     Attributes:
        module: The module which the pipeline is applied to.
@@ -661,9 +657,6 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
         custom_path: str = None,
     ):
         tosa_profiles = {
-            "0.80": TosaSpecification.create_from_string(
-                "TOSA-0.80+" + ("BI" if quantize else "MI")
-            ),
             "1.0": TosaSpecification.create_from_string(
                 "TOSA-1.0+" + ("INT" if quantize else "FP")
             ),
@@ -730,7 +723,6 @@ class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
         custom_path: str = None,
     ):
         tosa_profiles = {
-            "0.80": TosaSpecification.create_from_string("TOSA-0.80+BI"),
             "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT"),
         }
         tosa_version = conftest.get_option("tosa_version")
@@ -789,7 +781,6 @@ class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
         u55_subset: Optional[bool] = False,
     ):
         tosa_profiles = {
-            "0.80": "TOSA-0.80+" + ("BI" if quantize else "MI"),
             "1.0": "TOSA-1.0+" + ("INT" if quantize else "FP"),
         }
         tosa_version = tosa_profiles[conftest.get_option("tosa_version")]
@@ -808,7 +799,7 @@ class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
             [],
         )
 
-        if "INT" in tosa_version or "BI" in tosa_version:
+        if "INT" in tosa_version:
             self.add_stage(self.tester.quantize, pos=0)
 
         self.change_args("check_not.exir", [])

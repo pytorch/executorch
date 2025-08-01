@@ -12,8 +12,8 @@ import timm
 import torch
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
@@ -34,8 +34,8 @@ model_inputs = (normalize(torch.rand((1, 3, 224, 224))),)
 input_t = Tuple[torch.Tensor]
 
 
-def test_deit_tiny_tosa_MI():
-    pipeline = TosaPipelineMI[input_t](
+def test_deit_tiny_tosa_FP():
+    pipeline = TosaPipelineFP[input_t](
         deit_tiny,
         model_inputs,
         aten_op=[],
@@ -45,8 +45,8 @@ def test_deit_tiny_tosa_MI():
     pipeline.run()
 
 
-def test_deit_tiny_tosa_BI():
-    pipeline = TosaPipelineBI[input_t](
+def test_deit_tiny_tosa_INT():
+    pipeline = TosaPipelineINT[input_t](
         deit_tiny,
         model_inputs,
         aten_op=[],

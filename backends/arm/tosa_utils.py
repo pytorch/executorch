@@ -10,19 +10,15 @@ import os
 from typing import Any, Optional
 
 import numpy as np
+import serializer.tosa_serializer as ts  # type: ignore
 
 import sympy  # type: ignore
 
 import torch
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta, TosaArg
 
-from executorch.backends.arm.tosa_specification import (
-    Tosa_0_80,
-    Tosa_1_00,
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa_specification import Tosa_1_00, TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.print_program import inspect_node
 
@@ -187,11 +183,8 @@ def broadcast_tensors(
         for broadcast. However this function also performs the broadcast and
         does not have a limit on only two input tensors.
     """
-    if isinstance(tosa_spec, Tosa_0_80):
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        reshape_helper = build_reshape
-    elif isinstance(tosa_spec, Tosa_1_00):
+    if isinstance(tosa_spec, Tosa_1_00):
         import serializer.tosa_serializer as ts
 
         reshape_helper = build_reshape_tosa_1_0
@@ -225,16 +218,7 @@ def broadcast_tensors(
         multipliers = [
             comm if curr == 1 else 1 for comm, curr in zip(common_shape, new_shape)
         ]
-        if isinstance(tosa_spec, Tosa_0_80):
-            attr = ts.TosaSerializerAttribute()
-            attr.TileAttribute(multipliers)
-            tosa_fb.addOperator(
-                ts.TosaOp.Op().TILE,
-                [reshaped.name],
-                [tiled.name],
-                attr,
-            )
-        elif isinstance(tosa_spec, Tosa_1_00):
+        if isinstance(tosa_spec, Tosa_1_00):
             multiple_shapes = tosa_fb.addConst(
                 (len(multipliers),),
                 ts.DType.SHAPE,

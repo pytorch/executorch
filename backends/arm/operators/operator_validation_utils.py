@@ -6,7 +6,7 @@
 from math import ceil, floor
 from typing import Any, List, Optional
 
-from executorch.backends.arm.operators.node_visitor import NodeVisitor
+import serializer.tosa_serializer as ts
 
 
 def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[int]):
@@ -158,10 +158,6 @@ def validate_valid_dtype(
     )
 
     """
-    if tosa_spec in NodeVisitor.tosa_specs_0_80:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts
-    else:
-        import serializer.tosa_serializer as ts
 
     if not tensors:
         raise ValueError(

@@ -7,11 +7,11 @@
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t = tuple[torch.Tensor]
@@ -50,9 +50,9 @@ class ZerosAdd(torch.nn.Module):
 
 
 @common.parametrize("test_data", ZerosAdd.test_data | ZerosAdd.test_data_mixed_dtypes)
-def test_zeros_tosa_MI(test_data: test_data_t):
+def test_zeros_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         ZerosAdd(*init_data),
         input_data(),
         ZerosAdd.aten_op,
@@ -61,9 +61,9 @@ def test_zeros_tosa_MI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", ZerosAdd.test_data | ZerosAdd.test_data_mixed_dtypes)
-def test_zeros_tosa_BI(test_data: test_data_t):
+def test_zeros_tosa_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         ZerosAdd(*init_data),
         input_data(),
         ZerosAdd.aten_op,
@@ -74,9 +74,9 @@ def test_zeros_tosa_BI(test_data: test_data_t):
 
 @common.parametrize("test_data", ZerosAdd.test_data)
 @common.XfailIfNoCorstone300
-def test_zeros_u55_BI(test_data: test_data_t):
+def test_zeros_u55_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         ZerosAdd(*init_data),
         input_data(),
         ZerosAdd.aten_op,
@@ -88,9 +88,9 @@ def test_zeros_u55_BI(test_data: test_data_t):
 
 @common.parametrize("test_data", ZerosAdd.test_data)
 @common.XfailIfNoCorstone320
-def test_zeros_u85_BI(test_data: test_data_t):
+def test_zeros_u85_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         ZerosAdd(*init_data),
         input_data(),
         ZerosAdd.aten_op,
@@ -104,7 +104,7 @@ def test_zeros_u85_BI(test_data: test_data_t):
     "test_data",
     ZerosAdd.test_data_mixed_dtypes,
 )
-def test_zeros_tosa_BI_not_delegated(test_data: test_data_t):
+def test_zeros_tosa_INT_not_delegated(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = OpNotSupportedPipeline[input_t](
         ZerosAdd(*init_data),

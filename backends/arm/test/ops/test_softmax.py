@@ -10,10 +10,10 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 aten_op = "torch.ops.aten.softmax.default"  # Used for checking that we do not have softmax in the graph after decompose
@@ -42,9 +42,9 @@ class Softmax(torch.nn.Module):
 
 
 @common.parametrize("test_data", Softmax.test_data)
-def test_softmax_tosa_MI(test_data):
+def test_softmax_tosa_FP(test_data):
     data, dim = test_data()
-    pipeline = TosaPipelineMI[input_t1](Softmax(dim), data, [])
+    pipeline = TosaPipelineFP[input_t1](Softmax(dim), data, [])
     pipeline.add_stage_after(
         "to_edge_transform_and_lower", pipeline.tester.check_not, [exir_op]
     )
@@ -52,9 +52,9 @@ def test_softmax_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", Softmax.test_data)
-def test_softmax_tosa_BI(test_data):
+def test_softmax_tosa_INT(test_data):
     data, dim = test_data()
-    pipeline = TosaPipelineBI[input_t1](Softmax(dim), data, [])
+    pipeline = TosaPipelineINT[input_t1](Softmax(dim), data, [])
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
@@ -68,9 +68,9 @@ def test_softmax_tosa_BI(test_data):
     },
 )
 @common.XfailIfNoCorstone300
-def test_softmax_u55_BI(test_data):
+def test_softmax_u55_INT(test_data):
     data, dim = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](Softmax(dim), data, [], run_on_fvp=True)
+    pipeline = EthosU55PipelineINT[input_t1](Softmax(dim), data, [], run_on_fvp=True)
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
@@ -84,9 +84,9 @@ def test_softmax_u55_BI(test_data):
     },
 )
 @common.XfailIfNoCorstone320
-def test_softmax_u85_BI(test_data):
+def test_softmax_u85_INT(test_data):
     data, dim = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](Softmax(dim), data, [], run_on_fvp=True)
+    pipeline = EthosU85PipelineINT[input_t1](Softmax(dim), data, [], run_on_fvp=True)
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

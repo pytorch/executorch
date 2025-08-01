@@ -6,10 +6,10 @@
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -61,10 +61,10 @@ test_data_suite = {
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_native_group_norm_tosa_MI(test_data):
+def test_native_group_norm_tosa_FP(test_data):
     aten_op = "torch.ops.aten.group_norm.default"
     exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         test_data[1],
         test_data[0],
         aten_op=aten_op,
@@ -84,10 +84,10 @@ def test_native_group_norm_tosa_MI(test_data):
     },
     strict=False,
 )
-def test_native_group_norm_tosa_BI(test_data):
+def test_native_group_norm_tosa_INT(test_data):
     aten_op = "torch.ops.aten.sub.Tensor"  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
     exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         test_data[1],
         test_data[0],
         aten_op=aten_op,
@@ -109,8 +109,8 @@ def test_native_group_norm_tosa_BI(test_data):
     strict=False,
 )
 @common.XfailIfNoCorstone300
-def test_native_group_norm_u55_BI(test_data):
-    pipeline = EthosU55PipelineBI[input_t](
+def test_native_group_norm_u55_INT(test_data):
+    pipeline = EthosU55PipelineINT[input_t](
         test_data[1],
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
@@ -133,8 +133,8 @@ def test_native_group_norm_u55_BI(test_data):
     strict=False,
 )
 @common.XfailIfNoCorstone320
-def test_native_group_norm_u85_BI(test_data):
-    pipeline = EthosU85PipelineBI[input_t](
+def test_native_group_norm_u85_INT(test_data):
+    pipeline = EthosU85PipelineINT[input_t](
         test_data[1],
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed

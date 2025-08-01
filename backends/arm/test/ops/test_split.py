@@ -10,10 +10,10 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 exir_op = "executorch_exir_dialects_edge__ops_aten_split_with_sizes_copy_default"
@@ -63,9 +63,9 @@ class SplitTwoOut(torch.nn.Module):
     "test_data",
     (Split.test_data | Split.test_data_list),
 )
-def test_split_with_sizes_tosa_MI(test_data: input_t1):
+def test_split_with_sizes_tosa_FP(test_data: input_t1):
 
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         Split(),
         test_data(),
         aten_op=[],
@@ -75,9 +75,9 @@ def test_split_with_sizes_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", Split.test_data_list)
-def test_split_with_sizes_tosa_MI_2(test_data: input_t1):
+def test_split_with_sizes_tosa_FP_2(test_data: input_t1):
 
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         SplitWithSizes(),
         test_data(),
         aten_op=[],
@@ -90,9 +90,9 @@ def test_split_with_sizes_tosa_MI_2(test_data: input_t1):
     "test_data",
     (Split.test_data | Split.test_data_list),
 )
-def test_split_with_sizes_tosa_MI_one_out(test_data: input_t1):
+def test_split_with_sizes_tosa_FP_one_out(test_data: input_t1):
 
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         SplitSingleOut(),
         test_data(),
         aten_op=[],
@@ -105,9 +105,9 @@ def test_split_with_sizes_tosa_MI_one_out(test_data: input_t1):
     "test_data",
     (Split.test_data | Split.test_data_list),
 )
-def test_split_with_sizes_tosa_BI(test_data: input_t1):
+def test_split_with_sizes_tosa_INT(test_data: input_t1):
 
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         Split(),
         test_data(),
         aten_op=[],
@@ -120,8 +120,8 @@ def test_split_with_sizes_tosa_BI(test_data: input_t1):
     "test_data",
     (Split.test_data | Split.test_data_list),
 )
-def test_split_with_sizes_u55_BI(test_data: input_t1):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_split_with_sizes_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
         Split(),
         test_data(),
         aten_ops=[],
@@ -135,9 +135,9 @@ def test_split_with_sizes_u55_BI(test_data: input_t1):
     "test_data",
     (Split.test_data | Split.test_data_list),
 )
-def test_split_with_sizes_u85_BI(test_data: input_t1):
+def test_split_with_sizes_u85_INT(test_data: input_t1):
 
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         Split(),
         test_data(),
         aten_ops=[],

@@ -13,10 +13,10 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 test_data_suite = {
@@ -114,18 +114,18 @@ class MaxPool2d(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_max_pool2d_tosa_MI(test_data: torch.Tensor):
+def test_max_pool2d_tosa_FP(test_data: torch.Tensor):
     test_data, model_params = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         MaxPool2d(*model_params), (test_data,), aten_op, exir_op
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_max_pool2d_tosa_BI(test_data: torch.Tensor):
+def test_max_pool2d_tosa_INT(test_data: torch.Tensor):
     test_data, model_params = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
@@ -136,9 +136,9 @@ def test_max_pool2d_tosa_BI(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-def test_max_pool2d_u55_BI(test_data: torch.Tensor):
+def test_max_pool2d_u55_INT(test_data: torch.Tensor):
     test_data, model_params = test_data()
-    EthosU55PipelineBI[input_t1](
+    EthosU55PipelineINT[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
@@ -149,9 +149,9 @@ def test_max_pool2d_u55_BI(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_max_pool2d_u85_BI(test_data: torch.Tensor):
+def test_max_pool2d_u85_INT(test_data: torch.Tensor):
     test_data, model_params = test_data()
-    EthosU85PipelineBI[input_t1](
+    EthosU85PipelineINT[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
@@ -161,9 +161,9 @@ def test_max_pool2d_u85_BI(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite_mult_batches)
-def test_max_pool2d_tosa_MI_mult_batches(test_data: torch.Tensor):
+def test_max_pool2d_tosa_FP_mult_batches(test_data: torch.Tensor):
     test_data, model_params = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
@@ -173,9 +173,9 @@ def test_max_pool2d_tosa_MI_mult_batches(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite_mult_batches)
-def test_max_pool2d_tosa_BI_mult_batches(test_data: torch.Tensor):
+def test_max_pool2d_tosa_INT_mult_batches(test_data: torch.Tensor):
     test_data, model_params = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
@@ -189,9 +189,9 @@ x_fail = {"randn": "MLETORCH-986: Numerical issues with mutli batches."}
 
 @common.parametrize("test_data", test_data_suite_mult_batches, x_fail)
 @common.XfailIfNoCorstone300
-def test_max_pool2d_u55_BI_mult_batches(test_data: torch.Tensor):
+def test_max_pool2d_u55_INT_mult_batches(test_data: torch.Tensor):
     test_data, model_params = test_data()
-    EthosU55PipelineBI[input_t1](
+    EthosU55PipelineINT[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
@@ -203,9 +203,9 @@ def test_max_pool2d_u55_BI_mult_batches(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite_mult_batches, x_fail)
 @common.XfailIfNoCorstone320
-def test_max_pool2d_u85_BI_mult_batches(test_data: torch.Tensor):
+def test_max_pool2d_u85_INT_mult_batches(test_data: torch.Tensor):
     test_data, model_params = test_data()
-    EthosU85PipelineBI[input_t1](
+    EthosU85PipelineINT[input_t1](
         MaxPool2d(*model_params),
         (test_data,),
         aten_op,
@@ -224,9 +224,9 @@ reject_data_suite = {
 
 @common.parametrize("test_data", reject_data_suite)
 @common.XfailIfNoCorstone300
-def test_max_pool2d_u55_BI_failure_set(test_data: Tuple):
+def test_max_pool2d_u55_INT_failure_set(test_data: Tuple):
     module, test_data = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         module,
         (test_data,),
         aten_op,
@@ -246,12 +246,12 @@ dilation_test_data = {
 
 
 @common.parametrize("test_data", dilation_test_data)
-def test_max_pool2d_tosa_MI_dilation(test_data):
+def test_max_pool2d_tosa_FP_dilation(test_data):
     """
-    TOSA MI pipeline with dilation > 1 (and dilation=1 sanity cases).
+    TOSA FP pipeline with dilation > 1 (and dilation=1 sanity cases).
     """
     data, model_params = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         MaxPool2d(*model_params),
         (data,),
         aten_op,
@@ -261,12 +261,12 @@ def test_max_pool2d_tosa_MI_dilation(test_data):
 
 
 @common.parametrize("test_data", dilation_test_data)
-def test_max_pool2d_tosa_BI_dilation(test_data):
+def test_max_pool2d_tosa_INT_dilation(test_data):
     """
-    TOSA BI pipeline with dilation > 1 (and dilation=1 sanity cases).
+    TOSA INT pipeline with dilation > 1 (and dilation=1 sanity cases).
     """
     data, model_params = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         MaxPool2d(*model_params),
         (data,),
         aten_op,

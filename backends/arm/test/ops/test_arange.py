@@ -10,10 +10,10 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t = tuple[torch.Tensor]
@@ -53,9 +53,9 @@ class ArangeAdd(torch.nn.Module):
 
 
 @common.parametrize("test_data", ArangeAdd.test_data)
-def test_arange_start_step_tosa_MI(test_data: test_data_t):
+def test_arange_start_step_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         ArangeAdd(*init_data),
         input_data(),
         ArangeAdd.aten_op,
@@ -65,9 +65,9 @@ def test_arange_start_step_tosa_MI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", ArangeAdd.test_data_dtypes)
-def test_arange_start_step_tosa_MI_dtypes(test_data: test_data_t):
+def test_arange_start_step_tosa_FP_dtypes(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         ArangeAdd(*init_data),
         input_data(),
         ArangeAdd.aten_op,
@@ -77,9 +77,9 @@ def test_arange_start_step_tosa_MI_dtypes(test_data: test_data_t):
 
 
 @common.parametrize("test_data", ArangeAdd.test_data)
-def test_arange_start_step_tosa_BI(test_data: test_data_t):
+def test_arange_start_step_tosa_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         ArangeAdd(*init_data),
         input_data(),
         ArangeAdd.aten_op,
@@ -91,9 +91,9 @@ def test_arange_start_step_tosa_BI(test_data: test_data_t):
 
 @common.parametrize("test_data", ArangeAdd.test_data)
 @common.XfailIfNoCorstone300
-def test_arange_start_step_u55_BI(test_data: test_data_t):
+def test_arange_start_step_u55_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         ArangeAdd(*init_data),
         input_data(),
         ArangeAdd.aten_op,
@@ -104,9 +104,9 @@ def test_arange_start_step_u55_BI(test_data: test_data_t):
 
 @common.parametrize("test_data", ArangeAdd.test_data)
 @common.XfailIfNoCorstone320
-def test_arange_start_step_u85_BI(test_data: test_data_t):
+def test_arange_start_step_u85_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         ArangeAdd(*init_data),
         input_data(),
         ArangeAdd.aten_op,
@@ -134,9 +134,9 @@ class LinspaceAdd(torch.nn.Module):
 
 
 @common.parametrize("test_data", LinspaceAdd.test_data)
-def test_linspace_tosa_MI(test_data):
+def test_linspace_tosa_FP(test_data):
     input_data, init_data = test_data
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         LinspaceAdd(*init_data),
         input_data(),
         LinspaceAdd.aten_op,
@@ -146,9 +146,9 @@ def test_linspace_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", LinspaceAdd.test_data)
-def test_linspace_tosa_BI(test_data: test_data_t):
+def test_linspace_tosa_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         LinspaceAdd(*init_data),
         input_data(),
         LinspaceAdd.aten_op,
@@ -162,20 +162,20 @@ skip_str = "aten.arange.default is decomposed to aten.arange.start_step, so it w
 
 
 @pytest.mark.skip(reason=skip_str)
-def test_arange_tosa_MI():
+def test_arange_tosa_FP():
     pass
 
 
 @pytest.mark.skip(reason=skip_str)
-def test_arange_tosa_BI():
+def test_arange_tosa_INT():
     pass
 
 
 @pytest.mark.skip(reason=skip_str)
-def test_arange_u55_BI():
+def test_arange_u55_INT():
     pass
 
 
 @pytest.mark.skip(reason=skip_str)
-def test_arange_u85_BI():
+def test_arange_u85_INT():
     pass

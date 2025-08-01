@@ -10,7 +10,7 @@ import torch
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
-    TosaPipelineMI,
+    TosaPipelineINT,
 )
 
 
@@ -86,7 +86,7 @@ class ChannelsLastInsidePartition(torch.nn.Module):
 
 
 def test_dim_order_ok():
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         ChannelsLastInsidePartition(), ChannelsLastInsidePartition.inputs, []
     )
     pipeline.run()

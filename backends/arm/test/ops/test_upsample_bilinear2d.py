@@ -9,10 +9,10 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 aten_op = "torch.ops.aten.upsample_bilinear2d.vec"
@@ -110,12 +110,12 @@ class Interpolate(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite_tosa)
-def test_upsample_bilinear2d_vec_tosa_MI_UpsamplingBilinear2d(
+def test_upsample_bilinear2d_vec_tosa_FP_UpsamplingBilinear2d(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data
 
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         UpsamplingBilinear2d(size, scale_factor),
         (test_data,),
         aten_op,
@@ -127,12 +127,12 @@ def test_upsample_bilinear2d_vec_tosa_MI_UpsamplingBilinear2d(
 
 
 @common.parametrize("test_data", test_data_suite_tosa)
-def test_upsample_bilinear2d_vec_tosa_MI_Upsample(
+def test_upsample_bilinear2d_vec_tosa_FP_Upsample(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data
 
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         Upsample(size, scale_factor),
         (test_data,),
         aten_op,
@@ -145,12 +145,12 @@ def test_upsample_bilinear2d_vec_tosa_MI_Upsample(
 
 
 @common.parametrize("test_data", test_data_suite_tosa)
-def test_upsample_bilinear2d_vec_tosa_MI_Interpolate(
+def test_upsample_bilinear2d_vec_tosa_FP_Interpolate(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data
 
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         Interpolate(size, scale_factor),
         (test_data,),
         aten_op,
@@ -162,12 +162,12 @@ def test_upsample_bilinear2d_vec_tosa_MI_Interpolate(
 
 
 @common.parametrize("test_data", test_data_suite_tosa)
-def test_upsample_bilinear2d_vec_tosa_BI_intropolate(
+def test_upsample_bilinear2d_vec_tosa_INT_intropolate(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data
 
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         UpsamplingBilinear2d(size, scale_factor),
         (test_data,),
         aten_op,
@@ -179,12 +179,12 @@ def test_upsample_bilinear2d_vec_tosa_BI_intropolate(
 
 
 @common.parametrize("test_data", test_data_suite_tosa)
-def test_upsample_bilinear2d_vec_tosa_BI_Upsample(
+def test_upsample_bilinear2d_vec_tosa_INT_Upsample(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data
 
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         Upsample(size, scale_factor),
         (test_data,),
         aten_op,
@@ -197,7 +197,7 @@ def test_upsample_bilinear2d_vec_tosa_BI_Upsample(
 
 @common.parametrize("test_data", test_data_u55)
 @common.XfailIfNoCorstone300
-def test_upsample_bilinear2d_vec_U55_BI_Upsample_not_delegated(
+def test_upsample_bilinear2d_vec_U55_INT_Upsample_not_delegated(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data
@@ -215,7 +215,7 @@ def test_upsample_bilinear2d_vec_U55_BI_Upsample_not_delegated(
 
 @common.parametrize("test_data", test_data_u55)
 @common.XfailIfNoCorstone300
-def test_upsample_bilinear2d_vec_U55_BI_Interpolate_not_delegated(
+def test_upsample_bilinear2d_vec_U55_INT_Interpolate_not_delegated(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data
@@ -233,7 +233,7 @@ def test_upsample_bilinear2d_vec_U55_BI_Interpolate_not_delegated(
 
 @common.parametrize("test_data", test_data_u55)
 @common.XfailIfNoCorstone300
-def test_upsample_bilinear2d_vec_U55_BI_UpsamplingBilinear2d_not_delegated(
+def test_upsample_bilinear2d_vec_U55_INT_UpsamplingBilinear2d_not_delegated(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data
@@ -251,10 +251,10 @@ def test_upsample_bilinear2d_vec_U55_BI_UpsamplingBilinear2d_not_delegated(
 
 @common.parametrize("test_data", test_data_suite_Uxx)
 @common.XfailIfNoCorstone320
-def test_upsample_bilinear2d_vec_U85_BI_Upsample(test_data: input_t1):
+def test_upsample_bilinear2d_vec_U85_INT_Upsample(test_data: input_t1):
     test_data, size, scale_factor, compare_outputs = test_data
 
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         Upsample(size, scale_factor),
         (test_data,),
         aten_op,
@@ -269,12 +269,12 @@ def test_upsample_bilinear2d_vec_U85_BI_Upsample(test_data: input_t1):
 
 @common.parametrize("test_data", test_data_suite_Uxx)
 @common.XfailIfNoCorstone320
-def test_upsample_bilinear2d_vec_U85_BI_Interpolate(
+def test_upsample_bilinear2d_vec_U85_INT_Interpolate(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data
 
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         Interpolate(size, scale_factor),
         (test_data,),
         aten_op,
@@ -289,12 +289,12 @@ def test_upsample_bilinear2d_vec_U85_BI_Interpolate(
 
 @common.parametrize("test_data", test_data_suite_Uxx)
 @common.XfailIfNoCorstone320
-def test_upsample_bilinear2d_vec_U85_BI_UpsamplingBilinear2d(
+def test_upsample_bilinear2d_vec_U85_INT_UpsamplingBilinear2d(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data
 
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         UpsamplingBilinear2d(size, scale_factor),
         (test_data,),
         aten_op,

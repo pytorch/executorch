@@ -38,7 +38,7 @@ class Repeat(torch.nn.Module):
 
 
 @common.parametrize("test_data", Repeat.test_data)
-def test_unsqueeze_before_repeat_tosa_MI(test_data: input_t):
+def test_unsqueeze_before_repeat_tosa_FP(test_data: input_t):
     """
     When rank(input) != number of repeated dimensions (=4 in Repeat module),
     insert view.

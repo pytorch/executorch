@@ -11,10 +11,10 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 from torchaudio.models import Conformer
@@ -49,8 +49,8 @@ class TestConformer:
     conformer = conformer.eval()
 
 
-def test_conformer_tosa_MI():
-    pipeline = TosaPipelineMI[input_t](
+def test_conformer_tosa_FP():
+    pipeline = TosaPipelineFP[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
         aten_op=TestConformer.aten_ops,
@@ -60,8 +60,8 @@ def test_conformer_tosa_MI():
     pipeline.run()
 
 
-def test_conformer_tosa_BI():
-    pipeline = TosaPipelineBI[input_t](
+def test_conformer_tosa_INT():
+    pipeline = TosaPipelineINT[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
         aten_op=TestConformer.aten_ops,
@@ -84,8 +84,8 @@ def test_conformer_tosa_BI():
 @pytest.mark.xfail(
     reason="TODO(MLETORCH-635): Expected failure under FVP option, but test passed."
 )
-def test_conformer_u55_BI():
-    pipeline = EthosU55PipelineBI[input_t](
+def test_conformer_u55_INT():
+    pipeline = EthosU55PipelineINT[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
         aten_ops=TestConformer.aten_ops,
@@ -106,8 +106,8 @@ def test_conformer_u55_BI():
 
 @common.XfailIfNoCorstone320
 @pytest.mark.xfail(reason="All IO needs to have the same data type (MLETORCH-635)")
-def test_conformer_u85_BI():
-    pipeline = EthosU85PipelineBI[input_t](
+def test_conformer_u85_INT():
+    pipeline = EthosU85PipelineINT[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
         aten_ops=TestConformer.aten_ops,

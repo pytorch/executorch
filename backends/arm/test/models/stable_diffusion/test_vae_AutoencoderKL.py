@@ -59,7 +59,7 @@ class TestAutoencoderKL(unittest.TestCase):
                 )
             )
 
-    def test_AutoencoderKL_tosa_BI(self):
+    def test_AutoencoderKL_tosa_INT(self):
         auto_encoder_model, auto_encoder_model_inputs = self.prepare_model_and_inputs()
         with torch.no_grad():
             (
@@ -75,6 +75,6 @@ class TestAutoencoderKL(unittest.TestCase):
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=auto_encoder_model_inputs,
-                    atol=1.0,  # TODO: MLETORCH-990 Reduce tolerance of vae(AutoencoderKL) with BI
+                    atol=1.0,  # TODO: MLETORCH-990 Reduce tolerance of vae(AutoencoderKL) with INT
                 )
             )
