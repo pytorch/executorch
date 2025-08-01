@@ -12,7 +12,7 @@
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 function(gen_selected_ops)
-  set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS OPS_FROM_MODEL DTYPE_SELECTIVE_BUILD)
+	set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS OPS_FROM_MODEL OPS_FROM_DICT DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "" "" "${arg_names}" ${ARGN})
 
   message(STATUS "Generating selected operator lib:")
@@ -21,15 +21,16 @@ function(gen_selected_ops)
   message(STATUS "  ROOT_OPS: ${GEN_ROOT_OPS}")
   message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
   message(STATUS "  OPS_FROM_MODEL: ${GEN_OPS_FROM_MODEL}")
+  message(STATUS "  OPS_FROM_DICT: ${GEN_OPS_FROM_DICT}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
 
-  if(GEN_DTYPE_SELECTIVE_BUILD)
-    if(NOT GEN_OPS_FROM_MODEL)
-      message(FATAL_ERROR "  DTYPE_SELECTIVE_BUILD is only support with model API, please pass in a model")
-    endif()
-  endif()
+  #if(GEN_DTYPE_SELECTIVE_BUILD)
+  #  if(NOT GEN_OPS_FROM_MODEL)
+  #    message(FATAL_ERROR "  DTYPE_SELECTIVE_BUILD is only support with model API, please pass in a model")
+  #  endif()
+  #endif()
 
   set(_oplist_yaml
     ${_out_dir}/selected_operators.yaml
@@ -53,6 +54,9 @@ function(gen_selected_ops)
   endif()
   if(GEN_INCLUDE_ALL_OPS)
     list(APPEND _gen_oplist_command --include_all_operators)
+  endif()
+  if(GEN_OPS_FROM_DICT)
+    list(APPEND _gen_oplist_command --ops_dict="${GEN_OPS_FROM_DICT}")
   endif()
   if(GEN_OPS_FROM_MODEL)
     list(APPEND _gen_oplist_command --model_file_path="${GEN_OPS_FROM_MODEL}")
