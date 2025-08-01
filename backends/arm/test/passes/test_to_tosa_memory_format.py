@@ -11,7 +11,7 @@ from executorch.backends.arm._passes import ToTosaMemoryFormatPass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     PassPipeline,
-    TosaPipelineMI,
+    TosaPipelineFP,
 )
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 
@@ -167,7 +167,7 @@ modules = {
 
 
 @common.parametrize("module", modules)
-def test_to_tosa_memory_format_tosa_MI(module):
+def test_to_tosa_memory_format_tosa_FP(module):
     # We cannot check op counts after a specific pass with the full pipeline
     pipeline = PassPipeline[input_t](
         module,
@@ -181,7 +181,7 @@ def test_to_tosa_memory_format_tosa_MI(module):
 
 
 @common.parametrize("module", modules)
-def test_to_tosa_memory_format_tosa_MI_functional(module):
+def test_to_tosa_memory_format_tosa_FP_functional(module):
     # Also run the actual pass pipeline to ensure functional correctness.
-    pipeline = TosaPipelineMI[input_t](module, module.get_inputs(), [])
+    pipeline = TosaPipelineFP[input_t](module, module.get_inputs(), [])
     pipeline.run()
