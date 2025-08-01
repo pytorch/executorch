@@ -817,10 +817,10 @@ jobs:
           allenai/OLMo-1B-hf,
         ]
       fail-fast: false
+    env:
+        GH_TOKEN: ${{ github.token }}
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
-      env:
-        GH_TOKEN: ${{ github.token }}
       runner: macos-15-xlarge
       python-version: '3.11'
       submodules: 'recursive'
