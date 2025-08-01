@@ -892,7 +892,6 @@ class ComputeGraph final {
   // Graph Execution
   //
 
-  void encode_execute();
   void execute();
 
   //
