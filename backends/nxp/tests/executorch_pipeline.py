@@ -6,6 +6,9 @@
 import torch
 
 from executorch import exir
+from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import (
+    RemoveIOQuantOpsPass,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -37,6 +40,7 @@ def to_quantized_edge_program(
     operators_not_to_delegate: list[str] = None,
     target="imxrt700",
     neutron_converter_flavor="SDK_25_03",
+    remove_quant_io_ops=False,
 ) -> EdgeProgramManager:
     if isinstance(input_shapes, list):
         assert all(isinstance(input_shape, tuple) for input_shape in input_shapes), (
@@ -76,6 +80,11 @@ def to_quantized_edge_program(
         partitioner=[partitioner],
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
+
+    if remove_quant_io_ops:
+        edge_program_manager = edge_program_manager.transform(
+            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
+        )
 
     return edge_program_manager
 
