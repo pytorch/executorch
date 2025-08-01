@@ -142,19 +142,6 @@ def install_requirements(use_pytorch_nightly):
 
 
 def install_optional_example_requirements(use_pytorch_nightly):
-    print("Installing packages in requirements-examples.txt")
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "-r",
-            "requirements-examples.txt",
-        ],
-        check=True,
-    )
-
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
         (
@@ -177,6 +164,43 @@ def install_optional_example_requirements(use_pytorch_nightly):
         ],
         check=True,
     )
+
+
+    print("Installing packages in requirements-examples.txt")
+    try:
+        import torch
+        import torchvision
+        import torchaudio
+        torch_version = torch.__version__
+        torchvision_version = torchvision.__version__
+        torchaudio_version = torchaudio.__version__
+    except ImportError as e:
+        print(f"Error: Required package not installed: {e}")
+        sys.exit(1)
+
+    with open("constraints.txt", "w") as f:
+        f.write(f"torch=={torch_version}\n")
+        f.write(f"torchvision=={torchvision_version}\n")
+        f.write(f"torchaudio=={torchaudio_version}\n")
+
+    # Packages in requirements-example (e.g., timm) may require torch, torchvision et
+    # pip searches PyPI and finds torch stable release and thinks this is "newer" than your dev version
+    # Uninstalls torch nightly and installs a stable release version, which is older.
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "requirements-examples.txt",
+            "-c",
+            "constraints.txt",
+        ],
+        check=True,
+    )
+
+    os.remove("constraints.txt")
 
 
 # Prebuilt binaries for Intel-based macOS are no longer available on PyPI; users must compile from source.

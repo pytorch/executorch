@@ -65,6 +65,8 @@ def clean():
             print("ccache not found, skipping ccache cleanup.")
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("ccache not found, skipping ccache cleanup.")
+    
+    shutil.rmtree("constraints.txt", ignore_errors=True)
 
     print("Done cleaning build artifacts.")
 
