@@ -12,6 +12,7 @@ from unittest.mock import Mock
 
 import torch
 from executorch.export import ExportRecipe, ExportSession
+from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.stages import PipelineArtifact
 from executorch.export.types import StageType
 
@@ -434,3 +435,48 @@ class TestExportSessionErrorHandling(unittest.TestCase):
 
         with self.assertRaises(AssertionError):
             session.save_to_pte(None)  # pyre-ignore
+
+
+class TestExportSessionPipelineBuilding(unittest.TestCase):
+    """Test pipeline building and stage configuration."""
+
+    def setUp(self) -> None:
+        self.model = SimpleTestModel()
+        self.example_inputs = [(torch.randn(2, 10),)]
+
+    def test_pipeline_building_with_all_recipes(self) -> None:
+        """Test pipeline building with quantization and lowering recipes."""
+        # Create comprehensive recipes
+        quant_recipe = QuantizationRecipe(
+            ao_base_config=[Mock()],
+            quantizers=[Mock()],
+        )
+        lowering_recipe = LoweringRecipe(
+            partitioners=[Mock()],
+            edge_transform_passes=[Mock()],
+            edge_compile_config=Mock(),
+        )
+        recipe = ExportRecipe(
+            name="comprehensive_test",
+            quantization_recipe=quant_recipe,
+            lowering_recipe=lowering_recipe,
+            executorch_backend_config=Mock(),
+        )
+
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+
+        registered_stages = session.get_all_registered_stages()
+
+        self.assertEqual(len(registered_stages), 5)
+        expected_types = [
+            StageType.SOURCE_TRANSFORM,
+            StageType.QUANTIZE,
+            StageType.TORCH_EXPORT,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.TO_EXECUTORCH,
+        ]
+        self.assertListEqual(list(registered_stages.keys()), expected_types)
