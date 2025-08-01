@@ -89,6 +89,26 @@ class QuantizationRecipe:
         return self.quantizers
 
 
+@dataclass
+class LoweringRecipe:
+    """
+    Configuration recipe for lowering and partitioning.
+
+    This class holds the configuration parameters for lowering a model
+    to backend-specific representations.
+
+    Attributes:
+        partitioners: Optional list of partitioners for model partitioning
+        edge_transform_passes: Optional sequence of transformation passes to apply
+        edge_compile_config: Optional edge compilation configuration
+    """
+
+    partitioners: Optional[List[Partitioner]] = None
+    edge_transform_passes: Optional[Sequence[PassType]] = None
+    # pyre-ignore[11]: Type not defined
+    edge_compile_config: Optional[EdgeCompileConfig] = None
+
+
 @experimental(
     "This API and all of its related functionality such as ExportSession and ExportRecipe are experimental."
 )
@@ -103,13 +123,9 @@ class ExportRecipe:
     Attributes:
         name: Optional name for the recipe
         quantization_recipe: Optional quantization recipe for model quantization
-        edge_compile_config: Optional edge compilation configuration
         pre_edge_transform_passes: Optional function to apply transformation passes
                                   before edge lowering
-        edge_transform_passes: Optional sequence of transformation passes to apply
-                              during edge lowering
-        transform_check_ir_validity: Whether to check IR validity during transformation
-        partitioners: Optional list of partitioners for model partitioning
+        lowering_recipe: Optional lowering recipe for model lowering and partitioning
         executorch_backend_config: Optional backend configuration for ExecuTorch
         pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
         mode: Export mode (debug or release)
@@ -117,12 +133,8 @@ class ExportRecipe:
 
     name: Optional[str] = None
     quantization_recipe: Optional[QuantizationRecipe] = None
-    # pyre-ignore[11]: Type not defined
-    edge_compile_config: Optional[EdgeCompileConfig] = None
     pre_edge_transform_passes: Optional[Sequence[PassType]] = None
-    edge_transform_passes: Optional[Sequence[PassType]] = None
-    transform_check_ir_validity: bool = True
-    partitioners: Optional[List[Partitioner]] = None
+    lowering_recipe: Optional[LoweringRecipe] = None
     # pyre-ignore[11]: Type not defined
     executorch_backend_config: Optional[ExecutorchBackendConfig] = None
     pipeline_stages: Optional[List[StageType]] = None
