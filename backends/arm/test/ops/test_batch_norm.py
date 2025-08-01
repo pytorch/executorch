@@ -13,11 +13,11 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -76,9 +76,9 @@ class BatchNorm2d(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_native_batch_norm_legit_no_training_tosa_MI(test_data: Tuple):
+def test_native_batch_norm_legit_no_training_tosa_FP(test_data: Tuple):
     test_data, model_params = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         BatchNorm2d(*model_params),
         (test_data,),
         aten_op=BatchNorm2d.aten_op,
@@ -87,7 +87,7 @@ def test_native_batch_norm_legit_no_training_tosa_MI(test_data: Tuple):
 
 
 # TODO(MLETORCH-100: Quantized stand-alone batch norms)
-def test_native_batch_norm_legit_no_training_tosa_BI_not_delegated():
+def test_native_batch_norm_legit_no_training_tosa_INT_not_delegated():
     test_data, model_params = test_data_suite["rand_1_3_254_254"]()
     OpNotSupportedPipeline[input_t1](
         BatchNorm2d(*model_params),
@@ -100,7 +100,7 @@ def test_native_batch_norm_legit_no_training_tosa_BI_not_delegated():
 
 
 # TODO(MLETORCH-100: Quantized stand-alone batch norms)
-def test_native_batch_norm_legit_no_training_u55_BI_not_delegated():
+def test_native_batch_norm_legit_no_training_u55_INT_not_delegated():
     test_data, model_params = test_data_suite["rand_1_3_254_254"]()
     OpNotSupportedPipeline[input_t1](
         BatchNorm2d(*model_params),
@@ -114,7 +114,7 @@ def test_native_batch_norm_legit_no_training_u55_BI_not_delegated():
 
 
 # TODO(MLETORCH-100: Quantized stand-alone batch norms)
-def test_native_batch_norm_legit_no_training_u85_BI_not_delegated():
+def test_native_batch_norm_legit_no_training_u85_INT_not_delegated():
     test_data, model_params = test_data_suite["rand_1_3_254_254"]()
     OpNotSupportedPipeline[input_t1](
         BatchNorm2d(*model_params),
@@ -169,9 +169,9 @@ class BatchNorm2dConv(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_native_batch_norm_legit_no_training_tosa_MI_conv(test_data: Tuple):
+def test_native_batch_norm_legit_no_training_tosa_FP_conv(test_data: Tuple):
     test_data, model_params = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         BatchNorm2dConv(*model_params),
         (test_data,),
         aten_op=BatchNorm2dConv.aten_ops,
@@ -180,9 +180,9 @@ def test_native_batch_norm_legit_no_training_tosa_MI_conv(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_native_batch_norm_legit_no_training_tosa_BI_conv(test_data: Tuple):
+def test_native_batch_norm_legit_no_training_tosa_INT_conv(test_data: Tuple):
     test_data, model_params = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         BatchNorm2dConv(*model_params),
         (test_data,),
         aten_op=BatchNorm2dConv.aten_ops[0],  # Bn is removed before check
@@ -193,9 +193,9 @@ def test_native_batch_norm_legit_no_training_tosa_BI_conv(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-def test_native_batch_norm_legit_no_training_u55_BI_conv(test_data: Tuple):
+def test_native_batch_norm_legit_no_training_u55_INT_conv(test_data: Tuple):
     test_data, model_params = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         BatchNorm2dConv(*model_params),
         (test_data,),
         aten_ops=BatchNorm2dConv.aten_ops[0],  # Bn is removed before check
@@ -207,9 +207,9 @@ def test_native_batch_norm_legit_no_training_u55_BI_conv(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_native_batch_norm_legit_no_training_u85_BI_conv(test_data: Tuple):
+def test_native_batch_norm_legit_no_training_u85_INT_conv(test_data: Tuple):
     test_data, model_params = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         BatchNorm2dConv(*model_params),
         (test_data,),
         aten_ops=BatchNorm2dConv.aten_ops[0],  # Bn is removed before check
@@ -253,9 +253,9 @@ class BatchNorm2dNoStats(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_native_batch_norm_legit_no_stats_tosa_MI(test_data: Tuple):
+def test_native_batch_norm_legit_no_stats_tosa_FP(test_data: Tuple):
     test_data, model_params = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         BatchNorm2dNoStats(*model_params),
         (test_data,),
         aten_op=BatchNorm2dNoStats.aten_ops,
@@ -266,9 +266,9 @@ def test_native_batch_norm_legit_no_stats_tosa_MI(test_data: Tuple):
 @pytest.mark.skip(
     reason="MLETORCH-999: Add support for _native_batch_norm_legit.no_stats."
 )
-def test_native_batch_norm_legit_no_stats_tosa_BI(test_data: Tuple):
+def test_native_batch_norm_legit_no_stats_tosa_INT(test_data: Tuple):
     test_data, model_params = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         BatchNorm2dNoStats(*model_params),
         (test_data,),
         aten_op=BatchNorm2dNoStats.aten_ops,
@@ -282,9 +282,9 @@ def test_native_batch_norm_legit_no_stats_tosa_BI(test_data: Tuple):
 )
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-def test_native_batch_norm_legit_no_stats_u55_BI(test_data: Tuple):
+def test_native_batch_norm_legit_no_stats_u55_INT(test_data: Tuple):
     test_data, model_params = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         BatchNorm2dNoStats(*model_params),
         (test_data,),
         aten_op=BatchNorm2dNoStats.aten_ops,
@@ -299,9 +299,9 @@ def test_native_batch_norm_legit_no_stats_u55_BI(test_data: Tuple):
 )
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_native_batch_norm_legit_no_stats_u85_BI(test_data: Tuple):
+def test_native_batch_norm_legit_no_stats_u85_INT(test_data: Tuple):
     test_data, model_params = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         BatchNorm2dNoStats(*model_params),
         (test_data,),
         aten_op=BatchNorm2dNoStats.aten_ops,
