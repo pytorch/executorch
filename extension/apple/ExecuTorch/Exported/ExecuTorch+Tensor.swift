@@ -582,7 +582,7 @@ public extension AnyTensor {
 /// This class encapsulates a type-erasing `AnyTensor` instance and provides a variety of
 /// initializers and utility methods to work with tensor data.
 @available(*, deprecated, message: "This API is experimental.")
-public class Tensor<T: Scalar>: Equatable {
+public final class Tensor<T: Scalar>: Equatable {
   /// The data type of the tensor's elements.
   public var dataType: DataType { anyTensor.dataType }
 

@@ -11,6 +11,7 @@ class StageType(str, Enum):
     """
     Enum representing the different stages in the ExecuTorch export pipeline.
     """
+
     SOURCE_TRANSFORM = "source_transform"
     QUANTIZE = "quantize"
     TORCH_EXPORT = "torch_export"
