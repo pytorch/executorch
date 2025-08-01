@@ -340,9 +340,9 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 
 ## Running with low-bit kernels
 
-We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac, and install executorch from source with the environment variable EXECUTORCH_BUILD_TORCHAO=1 defined:
+We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac, and install executorch from source with the environment variable EXECUTORCH_BUILD_KERNELS_TORCHAO=1 defined:
 ```
-EXECUTORCH_BUILD_TORCHAO=1 python install_executorch.py
+EXECUTORCH_BUILD_KERNELS_TORCHAO=1 python install_executorch.py
 ```
 
 Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
@@ -384,6 +384,7 @@ The first step is to install ExecuTorch (the same as step 3.1 above):
 
 ```
 cmake -DPYTHON_EXECUTABLE=python \
+cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DCMAKE_BUILD_TYPE=Release \
@@ -394,6 +395,9 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+	  -DEXECUTORCH_BUILD_KERNELS_TORCHAO=ON \
+	  -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
+	  -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out .
 cmake --build cmake-out -j16 --target install --config Release
@@ -404,11 +408,6 @@ Next install the llama runner with torchao kernels enabled (similar to step 3.2 
 ```
 cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=OFF \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_TORCHAO=ON \
     -Bcmake-out/examples/models/llama \
     examples/models/llama
 cmake --build cmake-out/examples/models/llama -j16 --config Release

@@ -37,7 +37,7 @@ cmake_dependent_option(
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
 
-option(EXECUTORCH_BUILD_TORCHAO "Build the torchao kernels" OFF)
+option(EXECUTORCH_BUILD_KERNELS_TORCHAO_MPS "Build the torchao MPS kernels" OFF)
 
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
@@ -115,21 +115,15 @@ if(TARGET custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()
 
-if(EXECUTORCH_BUILD_TORCHAO)
+if (TARGET torchao_ops_executorch)
+  executorch_target_link_options_shared_lib(torchao_ops_executorch)
+  list(APPEND link_libraries torchao_ops_executorch)
+endif()
+
+
+if(EXECUTORCH_BUILD_KERNELS_TORCHAO_MPS)
   # Currently only enable this on Arm-based Macs
-  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL
-                                             "arm64"
-  )
-    set(TORCHAO_BUILD_ATEN_OPS OFF)
-    set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-    set(TORCHAO_BUILD_CPU_AARCH64 ON)
-    set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
-    add_subdirectory(
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental
-      ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/ao/torchao/experimental
-    )
-    executorch_target_link_options_shared_lib(torchao_ops_executorch)
-    list(APPEND link_libraries torchao_ops_executorch)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
     if(EXECUTORCH_BUILD_MPS)
       add_subdirectory(
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
