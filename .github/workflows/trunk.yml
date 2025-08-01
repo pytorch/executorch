@@ -842,9 +842,7 @@ jobs:
         git clone https://github.com/huggingface/optimum-executorch
         pushd optimum-executorch
         # There is no release yet, for CI stability, always test from the same commit on main
-        # git checkout $OPTIMUM_ET_COMMIT
-        ${CONDA_RUN} conda install -c conda-forge gh
-        gh pr checkout 114
+        git checkout $OPTIMUM_ET_COMMIT
         ${CONDA_RUN} python install_dev.py --skip_override_torch
 
         # When using transformers 4.53 onward, optimum-et uses dynamic shapes for LLMs
