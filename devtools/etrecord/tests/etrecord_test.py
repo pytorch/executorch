@@ -24,6 +24,7 @@ from executorch.devtools.etrecord._etrecord import (
     ETRecordReservedFileNames,
 )
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from executorch.exir.program._program import to_edge_transform_and_lower
 from torch.export import export
 
 
@@ -51,6 +52,21 @@ class TestETRecord(unittest.TestCase):
         self.assert_etrecord_has_no_edge_dialect_program(etrecord)
         self.assert_etrecord_has_no_executorch_program(etrecord)
         self.assertIsNone(etrecord.graph_map)
+
+    def assert_legal_etrecord_in_edge_program(self, etrecord: ETRecord) -> None:
+        """Assert that ETRecord has all expected data after to_edge_transform_and_lower() or to_edge() stage"""
+        self.assertIsNotNone(etrecord.exported_program)
+        self.assertIsNotNone(etrecord.export_graph_id)
+        self.assertIsNotNone(etrecord.edge_dialect_program)
+        self.assert_etrecord_has_no_executorch_program(etrecord)
+
+    def assert_etrecord_saveable(self, etrecord: ETRecord) -> None:
+        """Assert ETRecord contains all essential information for saving"""
+        self.assertIsNotNone(etrecord.exported_program)
+        self.assertIsNotNone(etrecord.export_graph_id)
+        self.assertIsNotNone(etrecord.edge_dialect_program)
+        self.assertIsNotNone(etrecord._debug_handle_map)
+        self.assertIsNotNone(etrecord._delegate_map)
 
     def get_test_model(self):
         f = models.BasicSinMax()
@@ -274,6 +290,157 @@ class TestETRecord(unittest.TestCase):
 
             # Validate that export_graph_id matches the expected value
             self.assertEqual(etrecord.export_graph_id, expected_graph_id)
+
+    def test_to_edge_transform_and_lower_with_etrecord_generation(self):
+        """Test that to_edge_transform_and_lower generates ETRecord correctly."""
+        f = models.BasicSinMax()
+        aten_program = export(f, f.get_random_inputs(), strict=True)
+
+        # Test with generate_etrecord=True
+        edge_manager = to_edge_transform_and_lower(
+            aten_program,
+            generate_etrecord=True,
+        )
+
+        # Verify that ETRecord was generated and attached
+        self.assertIsNotNone(edge_manager._etrecord)
+        etrecord = edge_manager._etrecord
+        self.assert_legal_etrecord_in_edge_program(etrecord)
+
+        # Verify the exported program matches the input
+        self.check_graph_closeness(
+            etrecord.exported_program,
+            aten_program.graph_module,
+        )
+        self.assertEqual(
+            etrecord.export_graph_id,
+            id(aten_program.graph),
+        )
+
+        # Verify the edge dialect program matches the edge manager
+        self.check_graph_closeness(
+            etrecord.edge_dialect_program,
+            edge_manager.exported_program().graph_module,
+        )
+
+    def test_to_edge_transform_and_lower_without_etrecord_generation(self):
+        """Test that to_edge_transform_and_lower works correctly without ETRecord generation."""
+        f = models.BasicSinMax()
+        aten_program = export(f, f.get_random_inputs(), strict=True)
+
+        # Test with generate_etrecord=False (default)
+        edge_manager = to_edge_transform_and_lower(aten_program)
+
+        # Verify that no ETRecord was generated
+        self.assertIsNone(edge_manager._etrecord)
+
+        # Verify that the edge manager still works correctly
+        self.assertIsNotNone(edge_manager.exported_program())
+
+    def test_get_etrecord_from_executorch_program_manager(self):
+        """Test getting ETRecord from ExecutorchProgramManager using get_etrecord() method."""
+        f = models.BasicSinMax()
+        aten_program = export(f, f.get_random_inputs(), strict=True)
+
+        # Generate edge manager with ETRecord
+        edge_manager = to_edge_transform_and_lower(
+            aten_program,
+            generate_etrecord=True,
+        )
+
+        # Convert to executorch
+        et_manager = edge_manager.to_executorch()
+
+        # Test get_etrecord method
+        etrecord = et_manager.get_etrecord()
+        self.assertIsNotNone(etrecord)
+        self.assert_etrecord_saveable(etrecord)
+
+        # Verify the data matches the original input
+        self.check_graph_closeness(
+            etrecord.exported_program,
+            aten_program.graph_module,
+        )
+        self.assertEqual(
+            etrecord.export_graph_id,
+            id(aten_program.graph),
+        )
+
+        # Verify the executorch program data matches
+        # ETRecord stores data directly (not JSON serialized), so compare with original data
+        self.assertEqual(etrecord._debug_handle_map, et_manager.debug_handle_map)
+        self.assertEqual(etrecord._delegate_map, et_manager.delegate_map)
+
+    def test_get_etrecord_from_executorch_program_manager_without_generation(self):
+        """Test getting ETRecord from ExecutorchProgramManager when ETRecord was not generated."""
+        f = models.BasicSinMax()
+        aten_program = export(f, f.get_random_inputs(), strict=True)
+
+        # Generate edge manager without ETRecord
+        edge_manager = to_edge_transform_and_lower(aten_program)
+
+        # Verify no ETRecord on edge manager
+        self.assertIsNone(edge_manager._etrecord)
+
+        # Convert to executorch
+        et_manager = edge_manager.to_executorch()
+
+        # Verify no ETRecord on executorch manager
+        self.assertIsNone(et_manager._etrecord)
+
+        # Test get_etrecord method should raise RuntimeError
+        with self.assertRaises(RuntimeError) as context:
+            et_manager.get_etrecord()
+
+        self.assertIn("ETRecord was not generated", str(context.exception))
+
+    def test_to_edge_transform_and_lower_etrecord_save_and_parse(self):
+        """Test that ETRecord generated by to_edge_transform_and_lower can be saved and parsed."""
+        f = models.BasicSinMax()
+        aten_program = export(f, f.get_random_inputs(), strict=True)
+
+        # Generate edge manager with ETRecord
+        edge_manager = to_edge_transform_and_lower(
+            aten_program,
+            generate_etrecord=True,
+        )
+
+        # Convert to executorch to get complete ETRecord
+        et_manager = edge_manager.to_executorch()
+        etrecord = et_manager.get_etrecord()
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            etrecord_path = tmpdirname + "/etrecord_flow2.bin"
+
+            etrecord.save(etrecord_path)
+
+            # Parse ETRecord back and verify
+            parsed_etrecord = parse_etrecord(etrecord_path)
+
+            # Validate that all components are preserved
+            # Note: Skip graph structure comparison due to transformation differences
+            self.check_graph_closeness(
+                etrecord.exported_program, parsed_etrecord.exported_program
+            )
+            self.check_graph_closeness(
+                etrecord.edge_dialect_program, parsed_etrecord.edge_dialect_program
+            )
+
+            # Validate executorch program data
+            self.assertEqual(
+                parsed_etrecord._debug_handle_map,
+                json.loads(json.dumps(et_manager.debug_handle_map)),
+            )
+            self.assertEqual(
+                parsed_etrecord._delegate_map,
+                json.loads(json.dumps(et_manager.delegate_map)),
+            )
+
+            # Validate export graph id
+            self.assertEqual(
+                parsed_etrecord.export_graph_id,
+                id(aten_program.graph),
+            )
 
     def test_add_extra_export_modules(self):
         """Test add_extra_export_modules when ETRecord already has a graph_map."""
