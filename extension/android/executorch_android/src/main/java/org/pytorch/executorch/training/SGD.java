@@ -6,13 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package org.pytorch.executorch;
+package org.pytorch.executorch.training;
 
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.util.Map;
+import org.pytorch.executorch.Tensor;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -62,7 +63,7 @@ public class SGD {
    * @param dampening The dampening value
    * @param weightDecay The weight decay value
    * @param nesterov Whether to use Nesterov momentum
-   * @return new {@link org.pytorch.executorch.SGD} object
+   * @return new {@link SGD} object
    */
   public static SGD create(
       Map<String, Tensor> namedParameters,
@@ -79,7 +80,7 @@ public class SGD {
    *
    * @param namedParameters Map of parameter names to tensors to be optimized
    * @param learningRate The learning rate for the optimizer
-   * @return new {@link org.pytorch.executorch.SGD} object
+   * @return new {@link SGD} object
    */
   public static SGD create(Map<String, Tensor> namedParameters, double learningRate) {
     return create(namedParameters, learningRate, 0.0, 0.0, 0.0, false);
