@@ -10,8 +10,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import torch
 from executorch.devtools.backend_debug import get_delegation_info
+from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_api import validation_disabled
-from executorch.exir.program import to_edge_transform_and_lower
+from executorch.exir.program import to_edge, to_edge_transform_and_lower
 from executorch.exir.program._program import _transform
 from executorch.export.recipe import QuantizationRecipe
 from executorch.export.types import StageType
@@ -223,7 +224,7 @@ class ExecutorchStage(Stage):
 
     @property
     def valid_predecessor_stages(self) -> List["StageType"]:
-        return [StageType.TO_EDGE_TRANSFORM_AND_LOWER]
+        return [StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_BACKEND]
 
     @property
     def can_start_pipeline(self) -> bool:
@@ -354,3 +355,114 @@ class QuantizeStage(Stage):
             quantized_models[method_name] = quantized_model
 
         self._artifact = artifact.copy_with_new_data(quantized_models)
+
+
+class ToEdgeStage(Stage):
+    """
+    Stage: Convert ExportedProgram to EdgeProgramManager.
+    """
+
+    def __init__(
+        self,
+        edge_compile_config: Optional[EdgeCompileConfig] = None,  # pyre-ignore
+    ) -> None:
+        super().__init__()
+        self._edge_compile_config = edge_compile_config
+
+    @property
+    def stage_type(self) -> str:
+        return StageType.TO_EDGE
+
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return [StageType.TORCH_EXPORT]
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return False
+
+    def run(self, artifact: PipelineArtifact) -> None:
+        """
+        Convert ExportedProgram to EdgeProgramManager.
+
+        Args:
+            artifact: Contains exported programs and context
+        """
+        exported_programs = artifact.data
+        constant_methods = artifact.get_context("constant_methods")
+
+        # Convert to edge program manager
+        edge_program_manager = to_edge(
+            exported_programs,
+            constant_methods=constant_methods,
+            compile_config=self._edge_compile_config,
+        )
+
+        self._artifact = artifact.copy_with_new_data(edge_program_manager)
+
+
+class ToBackendStage(Stage):
+    """
+    Stage: Apply transformations and partitioning to EdgeProgramManager.
+    """
+
+    def __init__(
+        self,
+        partitioners: Optional[List[Any]] = None,
+        transform_passes: Optional[Sequence[Callable[[Any], Optional[Any]]]] = None,
+    ) -> None:
+        super().__init__()
+        self._partitioners = partitioners
+        self._transform_passes = transform_passes
+
+    @property
+    def stage_type(self) -> str:
+        return StageType.TO_BACKEND
+
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return [StageType.TO_EDGE]
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return False
+
+    def run(self, artifact: PipelineArtifact) -> None:
+        """
+        Apply transformations and partitioning to EdgeProgramManager.
+
+        Args:
+            artifact: Contains edge program manager and context
+        """
+        edge_program_manager = artifact.data
+
+        if edge_program_manager is None:
+            raise RuntimeError("Edge program manager is not set.")
+
+        # Apply transform passes if available
+        if self._transform_passes:
+            edge_program_manager = edge_program_manager.transform(
+                self._transform_passes
+            )
+
+        # Apply partitioners if available
+        if self._partitioners is not None and len(self._partitioners) > 0:
+            with validation_disabled():
+                # pyre-ignore
+                for partitioner in self._partitioners:
+                    edge_program_manager = edge_program_manager.to_backend(partitioner)
+
+        # Get delegation info
+        delegation_info = get_delegation_info(
+            edge_program_manager.exported_program().graph_module
+        )
+
+        self._artifact = artifact.copy_with_new_data(edge_program_manager)
+        self._artifact.add_context("delegation_info", delegation_info)
+
+    @property
+    def delegation_info(self) -> Any:
+        """
+        Returns the delegation info.
+        """
+        return self._artifact.get_context("delegation_info")

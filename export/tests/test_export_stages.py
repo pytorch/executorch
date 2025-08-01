@@ -19,6 +19,8 @@ from executorch.export.stages import (
     QuantizeStage,
     SourceTransformStage,
     StageType,
+    ToBackendStage,
+    ToEdgeStage,
     TorchExportStage,
 )
 from torch.export import ExportedProgram
@@ -282,3 +284,105 @@ class TestQuantizeStage(unittest.TestCase):
         self.assertIn(
             "Example inputs for method forward not found or empty", str(cm.exception)
         )
+
+
+class TestToEdgeStage(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mock_exported_program = Mock(spec=ExportedProgram)
+        self.exported_programs = {"forward": self.mock_exported_program}
+        self.context = {"constant_methods": None}
+
+    @patch("executorch.export.stages.to_edge")
+    def test_run_success(self, mock_to_edge: Mock) -> None:
+        mock_edge_manager = Mock(spec=EdgeProgramManager)
+        mock_to_edge.return_value = mock_edge_manager
+        mock_config = Mock()
+
+        stage = ToEdgeStage(edge_compile_config=mock_config)
+        artifact = PipelineArtifact(data=self.exported_programs, context=self.context)
+        stage.run(artifact)
+
+        # Verify to_edge was called with correct parameters
+        mock_to_edge.assert_called_once_with(
+            self.exported_programs,
+            constant_methods=None,
+            compile_config=mock_config,
+        )
+
+        # Verify artifacts are set correctly
+        result_artifact = stage.get_artifacts()
+        self.assertEqual(result_artifact.data, mock_edge_manager)
+
+
+class TestToBackendStage(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mock_edge_manager = Mock(spec=EdgeProgramManager)
+        self.context = {}
+
+    @patch("executorch.export.stages.get_delegation_info")
+    def test_run_success_no_transforms_or_partitioners(
+        self, mock_get_delegation_info: Mock
+    ) -> None:
+        # Test successful execution without transforms or partitioners
+        mock_delegation_info = {"delegation": "info"}
+        mock_get_delegation_info.return_value = mock_delegation_info
+        mock_exported_program = Mock()
+        mock_graph_module = Mock()
+        mock_exported_program.graph_module = mock_graph_module
+        self.mock_edge_manager.exported_program.return_value = mock_exported_program
+
+        stage = ToBackendStage()
+        artifact = PipelineArtifact(data=self.mock_edge_manager, context=self.context)
+        stage.run(artifact)
+
+        # Verify get_delegation_info was called
+        mock_get_delegation_info.assert_called_once_with(mock_graph_module)
+
+        # Verify artifacts are set correctly
+        result_artifact = stage.get_artifacts()
+        self.assertEqual(result_artifact.data, self.mock_edge_manager)
+        self.assertEqual(
+            result_artifact.get_context("delegation_info"), mock_delegation_info
+        )
+
+    @patch("executorch.export.stages.get_delegation_info")
+    def test_run_with_partitioners_and_passes(
+        self, mock_get_delegation_info: Mock
+    ) -> None:
+        mock_delegation_info = {"delegation": "info"}
+        mock_get_delegation_info.return_value = mock_delegation_info
+        mock_exported_program = Mock()
+        mock_graph_module = Mock()
+        mock_exported_program.graph_module = mock_graph_module
+
+        mock_edge_program_manager = Mock(spec=EdgeProgramManager)
+        mock_edge_program_manager.transform.return_value = mock_edge_program_manager
+        mock_edge_program_manager.to_backend.return_value = mock_edge_program_manager
+
+        mock_partitioner = Mock()
+        mock_transform_passes = [Mock(), Mock()]
+        stage = ToBackendStage(
+            partitioners=[mock_partitioner], transform_passes=mock_transform_passes
+        )
+        artifact = PipelineArtifact(
+            data=mock_edge_program_manager, context=self.context
+        )
+        stage.run(artifact)
+
+        # Verify transform and to_backend called correctly
+        mock_edge_program_manager.transform.assert_called_once_with(
+            mock_transform_passes
+        )
+        mock_edge_program_manager.to_backend.assert_called_once_with(mock_partitioner)
+
+        # Verify artifacts contain the backend manager
+        result_artifact = stage.get_artifacts()
+        self.assertEqual(result_artifact.data, mock_edge_program_manager)
+
+    def test_run_edge_manager_none(self) -> None:
+        stage = ToBackendStage()
+        artifact = PipelineArtifact(data=None, context=self.context)
+
+        with self.assertRaises(RuntimeError) as cm:
+            stage.run(artifact)
+        self.assertIn("Edge program manager is not set", str(cm.exception))
