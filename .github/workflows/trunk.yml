@@ -862,7 +862,7 @@ jobs:
         echo "::endgroup::"
 
         # Run test
-        ${CONDA_RUN} python .ci/scripts/test_huggingface_optimum_coreml.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE}
+        ${CONDA_RUN} python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE}
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
