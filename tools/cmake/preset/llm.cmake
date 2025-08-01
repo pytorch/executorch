@@ -7,6 +7,8 @@
 # keep sorted
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM ON)
@@ -17,6 +19,9 @@ set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_MPS ON)
+  if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set_overridable_option(EXECUTORCH_BUILD_TORCHAO ON)
+  endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # Linux-specific code here
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL "WIN32")

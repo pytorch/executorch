@@ -10,6 +10,8 @@ import coremltools as ct
 import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
+from executorch.backends.apple.coreml.logging import get_coreml_log_level
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.backend.partitioner import (
@@ -18,19 +20,29 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
 
 
-class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
+def _is_view_op(op: torch._ops.OpOverload) -> bool:
+    schema = op._schema
+    if len(schema.arguments) == 0:
+        return False
+    alias_info = schema.arguments[0].alias_info
+    return (alias_info is not None) and (not alias_info.is_write)
+
+
+class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
     def __init__(
         self,
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         lower_full_graph: bool = False,
+        log: bool = False,
     ) -> None:
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
@@ -38,11 +50,86 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
         self.lower_full_graph = lower_full_graph
         self._logged_msgs = set()
+        self._log = log
 
     def log_once(self, msg: str) -> None:
-        if msg not in self._logged_msgs:
-            logging.info(msg)
+        if self._log and msg not in self._logged_msgs:
+            logger.info(msg)
             self._logged_msgs.add(msg)
+
+    def should_skip_op_for_delegation(self, node_target_name: str) -> bool:
+        skipped_ops = self.skip_ops_for_coreml_delegation or []
+        if node_target_name in skipped_ops:
+            assert (
+                not self.lower_full_graph
+            ), f"Cannot skip {node_target_name} because lower_full_graph is True.  Please set skip_ops_for_coreml_delegation=None or lower_full_graph=False in the CoreMLPartitioner"
+            self.log_once(
+                "Skipping op for CoreML delegation because it is in skip_ops_for_coreml_delegation: "
+                + node_target_name
+            )
+            return True
+        return False
+
+    def should_override_support(self, node) -> bool:
+        # https://github.com/apple/coremltools/issues/2573
+        if (
+            node.target
+            in [
+                torch.ops.aten.sub.Tensor,
+                exir_ops.edge.aten.sub.Tensor,
+                torch.ops.aten.add.Tensor,
+                exir_ops.edge.aten.add.Tensor,
+            ]
+            and "alpha" in node.kwargs
+            and node.kwargs["alpha"] != 1
+        ):
+            self.log_once(
+                "torch.ops.aten.{sub, add}.Tensor with alpha != 1 is not supported by CoreML.  Overriding support."
+            )
+            return True
+
+        # https://github.com/apple/coremltools/issues/2565
+        if node.target in [
+            torch.ops.aten.diagonal.default,
+            torch.ops.aten.diagonal_copy.default,
+            exir_ops.edge.aten.diagonal.default,
+            exir_ops.edge.aten.diagonal_copy.default,
+        ]:
+            self.log_once(
+                "torch.ops.aten.diagonal.default has a bug in CoreML.  Overriding op support."
+            )
+            return True
+
+        # https://github.com/apple/coremltools/issues/2569
+        if node.target in [
+            torch.ops.aten.acosh.default,
+            exir_ops.edge.aten.acosh.default,
+            torch.ops.aten.asinh.default,
+            exir_ops.edge.aten.asinh.default,
+        ]:
+            self.log_once(
+                "torch.ops.aten.{acosh, asinh}.default is not supported by CoreML.  Overriding op support."
+            )
+            return True
+
+        # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
+        # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
+        # # in the placeholders due to partitioning, which CoreML does not support
+        # if not self.lower_full_graph and any(
+        #     isinstance(arg, torch.fx.Node)
+        #     and isinstance(
+        #         arg.meta.get("val", None),
+        #         (torch.SymInt, torch.SymBool, torch.SymFloat),
+        #     )
+        #     for arg in node.args
+        # ):
+        #     self.log_once(
+        #         "Skipping op for CoreML delegation because it contains symbolic args: "
+        #         + node_target_name
+        #     )
+        #     return True
+
+        return False
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         # get_attr node can always be supported on any backend
@@ -52,38 +139,17 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
         elif node.op == "call_function":
             # skip ops if specified by user
             node_target_name = getattr(node.target, "__name__", "").lower()
-            if node_target_name in (self.skip_ops_for_coreml_delegation or []):
-                self.log_once(
-                    "Skipping op for CoreML delegation because it is in skip_ops_for_coreml_delegation: "
-                    + node_target_name
-                )
-                assert (
-                    not self.lower_full_graph
-                ), "Cannot have skip_ops_for_coreml_delegation when lower_full_graph is True"
-                return False
 
-            # TODO: enable this after bugs in ExecuTorch's partitioner are fixed
-            # # If lower_full_graph=False, do not partition nodes with symbolic args because it can result in symbolic args
-            # # in the placeholders due to partitioning, which CoreML does not support
-            # if not self.lower_full_graph and any(
-            #     isinstance(arg, torch.fx.Node)
-            #     and isinstance(
-            #         arg.meta.get("val", None),
-            #         (torch.SymInt, torch.SymBool, torch.SymFloat),
-            #     )
-            #     for arg in node.args
-            # ):
-            #     self.log_once(
-            #         "Skipping op for CoreML delegation because it contains symbolic args: "
-            #         + node_target_name
-            #     )
-            #     assert not self.lower_full_graph
-            #     return False
+            if self.should_skip_op_for_delegation(node_target_name):
+                return False
 
             # query coremltools to see if node is supported
             is_supported = ct.converters.mil.frontend.torch.is_torch_fx_node_supported(
                 node
             )
+            if self.should_override_support(node):
+                is_supported = False
+
             if not is_supported:
                 if self.lower_full_graph:
                     raise NotImplementedError(
@@ -114,9 +180,9 @@ Do not file an issue with ExecuTorch for op support.
 
 
 class CoreMLPartitioner(Partitioner):
-
     def __init__(
         self,
+        *,
         skip_ops_for_coreml_delegation: Optional[List[str]] = None,
         compile_specs: Optional[List[CompileSpec]] = None,
         take_over_mutable_buffer: Optional[bool] = True,
@@ -154,8 +220,10 @@ class CoreMLPartitioner(Partitioner):
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            OperatorsSupportedForCoreMLBackend(
-                self.skip_ops_for_coreml_delegation, self.lower_full_graph
+            _OperatorsSupportedForCoreMLBackend(
+                self.skip_ops_for_coreml_delegation,
+                self.lower_full_graph,
+                log=True,
             ),
             allows_single_node_partition=True,
         )
@@ -191,8 +259,10 @@ class CoreMLPartitioner(Partitioner):
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         do_not_decompose = []
-        op_support = OperatorsSupportedForCoreMLBackend(
-            self.skip_ops_for_coreml_delegation, self.lower_full_graph
+        op_support = _OperatorsSupportedForCoreMLBackend(
+            self.skip_ops_for_coreml_delegation,
+            self.lower_full_graph,
+            log=False,
         )
 
         # CoreML prevents certain ops (like triu) from lowering to CoreML when put in the ExecuTorch op namespace
@@ -203,6 +273,9 @@ class CoreMLPartitioner(Partitioner):
             torch.ops.aten.triu.default,
             # https://github.com/apple/coremltools/blob/release/8.3/coremltools/converters/mil/frontend/torch/ops.py#L6997-L6998
             torch.ops.aten.tril.default,
+            # CoreML's translation of repeat_interleave has poor perf
+            torch.ops.aten.repeat_interleave.self_int,
+            torch.ops.aten.repeat_interleave.self_Tensor,
         ]
         for node in ep.graph.nodes:
             if node.op == "call_function" and isinstance(
@@ -212,6 +285,7 @@ class CoreMLPartitioner(Partitioner):
                     if (
                         op_support.is_node_supported(None, node)
                         and node.target not in do_not_decompose_blocklist
+                        and not _is_view_op(node.target)
                     ):
                         do_not_decompose.append(node.target)
                 except Exception as e:

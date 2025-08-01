@@ -55,6 +55,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::unique_ptr<::executorch::extension::Module> module,
       std::unique_ptr<TextDecoderRunner> text_decoder_runner,
       std::unique_ptr<TextPrefiller> text_prefiller,
+      std::unique_ptr<IOManager> io_manager,
       std::unique_ptr<TextTokenGenerator> text_token_generator,
       std::unique_ptr<Stats> stats,
       float temperature = -1.0f);
@@ -155,6 +156,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
                             // sure it outlives text_prefiller_ &
                             // text_token_generator_.
   std::unique_ptr<TextPrefiller> text_prefiller_;
+  std::unique_ptr<IOManager> io_manager_;
   std::unique_ptr<TextTokenGenerator> text_token_generator_;
 
   // Stats

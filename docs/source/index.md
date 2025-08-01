@@ -21,8 +21,7 @@ ExecuTorch provides support for:
 * **Strong Model Support** LLMs (Large Language Models),
   CV (Computer Vision), ASR (Automatic Speech Recognition), TTS (Text To Speech)
 * **All Major Platforms** Android, Mac, Linux, Windows
-* **Rich Acceleration Support** Apple, Arm, Cadence, MediaTek,
-  Qualcomm, Vulkan, XNNPACK
+* **Rich Acceleration Support** Apple, Arm, Cadence, MediaTek, NXP, OpenVino, Qualcomm, Vulkan, XNNPACK
 
 ### Documentation Navigation
 #### Introduction
@@ -55,6 +54,8 @@ ExecuTorch provides support for:
 - [Qualcomm](backends-qualcomm)
 - [MediaTek](backends-mediatek)
 - [Cadence](backends-cadence)
+- [OpenVINO](build-run-openvino)
+- [NXP](backend-nxp)
 #### Developer Tools
 - [Overview](devtools-overview)
 - [Bundled IO](bundled-io)
@@ -87,11 +88,13 @@ ExecuTorch provides support for:
 - [Custom ATen Kernel](kernel-library-custom-aten-kernel)
 - [Selective Build](kernel-library-selective-build)
 #### Working with LLMs
-- [Llama](llm/llama.md)
-- [Llama on Android](llm/llama-demo-android.md)
-- [Llama on iOS](llm/llama-demo-ios.md)
-- [Llama on Android via Qualcomm backend](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
-- [Intro to LLMs in Executorch](llm/getting-started.md)
+- [Getting Started](llm/getting-started.md)
+- [Exporting LLMs](llm/export-llm.md)
+- [Exporting custom LLMs](llm/export-custom-llm.md)
+- [Running with C++](llm/run-with-c-plus-plus.md)
+- [Running on Android (XNNPack)](llm/llama-demo-android.md)
+- [Running on Android (QNN)](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
+- [Running on iOS](llm/run-on-ios.md)
 #### Backend Development
 - [Delegates Integration](backend-delegates-integration)
 - [XNNPACK Reference](backend-delegates-xnnpack-reference)
@@ -163,6 +166,8 @@ backends-arm-ethos-u
 backends-qualcomm
 backends-mediatek
 backends-cadence
+OpenVINO Backend <build-run-openvino>
+backends-nxp
 ```
 
 ```{toctree}
@@ -239,11 +244,13 @@ kernel-library-selective-build
 :caption: Working with LLMs
 :hidden:
 
-Llama <llm/llama>
-Llama on Android <llm/llama-demo-android>
-Llama on iOS <llm/llama-demo-ios>
-Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
-Intro to LLMs in Executorch <llm/getting-started>
+Getting Started <llm/getting-started>
+Exporting LLMs with export_llm <llm/export-llm>
+Exporting custom LLMs <llm/export-custom-llm>
+Running with C++ <llm/run-with-c-plus-plus>
+Running on Android <XNNPack> <llm/llama-demo-android>
+Running on Android <QNN> <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
+Running on iOS <llm/run-on-ios>
 ```
 
 ```{toctree}

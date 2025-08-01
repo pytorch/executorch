@@ -16,13 +16,18 @@ runtime.python_test(
 )
 
 runtime.python_test(
-    name = "test_export_recipe",
+    name = "test_executorch_export",
     srcs = [
         "test_recipe_provider.py",
         "test_recipe_registry.py",
         "test_export_recipe.py",
+        "test_export_session.py",
+        "test_export_stages.py",
     ],
     deps = [
         "//executorch/export:lib",
+        "//executorch/exir:lib",
+        "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/runtime:runtime",
     ]
 )

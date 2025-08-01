@@ -29,6 +29,8 @@ from executorch.backends.arm._passes import (
     ConvertToClampPass,
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
+    DecomposeAddmmPass,
+    DecomposeAsinhPass,
     DecomposeAsinPass,
     DecomposeAtanhPass,
     DecomposeAtanPass,
@@ -44,6 +46,7 @@ from executorch.backends.arm._passes import (
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeLinearVectorNormPass,
+    DecomposeMaskedFill,
     DecomposeMaxPool2DPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
@@ -66,8 +69,8 @@ from executorch.backends.arm._passes import (
     InsertCastForOpsWithInt64InputPass,
     InsertRescalePass,
     InsertTableOpsPass,
+    MatchArgDtypePass,
     MatchArgRanksPass,
-    MatchWhereSelfDtypePass,
     QuantizeOperatorArguments,
     RemoveClonePass,
     ReplaceInfValues,
@@ -103,7 +106,7 @@ class ArmPassManager(PassManager):
         with TosaLoweringContext(self.tosa_spec):
             return self(graph_module).graph_module
 
-    def _tosa_080_BI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+    def _tosa_INT_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
@@ -116,7 +119,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
-        self.add_pass(MatchWhereSelfDtypePass())
+        self.add_pass(MatchArgDtypePass())
         if self.tosa_spec.is_U55_subset:
             self.add_pass(CastToInt32Pass())
 
@@ -158,13 +161,16 @@ class ArmPassManager(PassManager):
 
         return self._transform(exported_program.graph_module)
 
-    def _tosa_080_MI_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+    def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeAcoshPass())
         self.add_pass(DecomposeAsinPass())
+        self.add_pass(DecomposeAsinhPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeAtanPass())
         self.add_pass(DecomposeAtanhPass())
+        self.add_pass(DecomposeAddmmPass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())
@@ -193,8 +199,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertToClampPass())
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ConvertAnyDefaultDimDimsPass())
-        self.add_pass(MatchWhereSelfDtypePass())
-
+        self.add_pass(MatchArgDtypePass())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
@@ -230,22 +235,12 @@ class ArmPassManager(PassManager):
 
         return self._transform(exported_program.graph_module)
 
-    def _tosa_1_0_int_quantized_pipeline(self, exported_program: ExportedProgram):
-        return self._tosa_080_BI_pipeline(exported_program)
-
-    def _tosa_1_0_fp_pipeline(self, exported_program: ExportedProgram):
-        return self._tosa_080_MI_pipeline(exported_program)
-
     def transform_to_backend_pipeline(self, exported_program: ExportedProgram):
         """Apply passes before transforming program to backend"""
-        if self.tosa_spec == TosaSpecification.create_from_string("TOSA-0.80.0+BI"):
-            return self._tosa_080_BI_pipeline(exported_program)
-        elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-0.80.0+MI"):
-            return self._tosa_080_MI_pipeline(exported_program)
-        elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+FP"):
-            return self._tosa_1_0_fp_pipeline(exported_program)
+        if self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+FP"):
+            return self._tosa_FP_pipeline(exported_program)
         elif self.tosa_spec == TosaSpecification.create_from_string("TOSA-1.0+INT"):
-            return self._tosa_1_0_int_quantized_pipeline(exported_program)
+            return self._tosa_INT_pipeline(exported_program)
         else:
             raise NotImplementedError(
                 f"No pass pipeline implemented for {self.tosa_spec=}"
@@ -258,6 +253,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeRoundPass())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSignPass())
+        self.add_pass(DecomposeAddmmPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())
@@ -282,5 +278,9 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ReplaceInfValues())
         self.add_pass(DecomposeSumPass())
+
+        if not self.tosa_spec.is_U55_subset:
+            # Uses where which is not supported on Ethos-U55
+            self.add_pass(DecomposeMaskedFill())
 
         return self._transform(graph_module)

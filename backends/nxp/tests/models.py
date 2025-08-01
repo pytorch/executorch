@@ -209,6 +209,41 @@ class AvgPool2dConvModule(torch.nn.Module):
         return self.avg_pool(x)
 
 
+class AdaptiveAvgPool2dModule(torch.nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d(output_size=output_size)
+
+    def forward(self, x):
+        return self.adaptive_avg_pool(x)
+
+
+class AdaptiveAvgPool2dConvModule(torch.nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+
+        self.conv = Conv2dModule(padding=1)
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d(output_size=output_size)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.adaptive_avg_pool(x)
+
+
+class AdaptiveAvgPool2dConvMeanDimModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = Conv2dModule()
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d(output_size=(1, 1))
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.adaptive_avg_pool(x)
+        return x
+
+
 class ReLUModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -252,3 +287,55 @@ class Conv2dReLUMaxPoolModule(torch.nn.Module):
         x = self.conv(x)
         x = self.relu(x)
         return self.pool(x)
+
+
+class AddTensorModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return x + y
+
+
+class AddTensorConvModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = Conv2dModule(padding=1, stride=1)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x + x
+
+
+class AddTensorOneInputModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x):
+        return x + x
+
+
+class MeanDimLinearModule(torch.nn.Module):
+    def __init__(self, dim, keepdim):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+        self.linear = torch.nn.Linear(32, 16)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return torch.mean(x, dim=self.dim, keepdim=self.keepdim)
+
+
+class MeanDimConvModule(torch.nn.Module):
+    def __init__(self, dim, keepdim):
+        super().__init__()
+        self.conv = Conv2dModule(stride=1, padding=1)
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.mean(x, dim=self.dim, keepdim=self.keepdim)
