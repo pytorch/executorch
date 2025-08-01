@@ -860,21 +860,20 @@ void ComputeGraph::prepack() {
   staging_nbytes_in_cmd_ = 0;
 }
 
-void ComputeGraph::encode_execute() {
-  clear_deferred_cmds();
-  context_->flush();
-  context_->set_cmd(/*reusable = */ true);
+void ComputeGraph::execute() {
+  if (deferred_cmd_list_.empty()) {
+    context_->flush();
+    context_->set_cmd(/*reusable = */ true);
 
-  context_->cmd_reset_querypool();
+    context_->cmd_reset_querypool();
 
-  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
-    node->encode(this);
+    for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+      node->encode(this);
+    }
+
+    deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
   }
 
-  deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
-}
-
-void ComputeGraph::execute() {
   submit_deferred_cmds_and_wait();
   execute_count_++;
 }
@@ -898,7 +897,7 @@ void ComputeGraph::propagate_resize() {
   }
   // Only re-encode on resize if dynamic shapes are expected
   if (config_.expect_dynamic_shapes) {
-    encode_execute();
+    clear_deferred_cmds();
   }
 }
 
