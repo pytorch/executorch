@@ -163,7 +163,7 @@ test_cmake_select_ops_in_yaml() {
 
 test_cmake_select_ops_in_dict() {
     echo "Exporting MobilenetV2"
-    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="add"
+    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv2"
 
     local example_dir=examples/selective_build
     local build_dir=cmake-out/${example_dir}
@@ -184,12 +184,12 @@ test_cmake_select_ops_in_dict() {
     echo 'Running selective build test'
     ${build_dir}/selective_build_test --model_path="./mv2.pte"
 
-    echo "Removing mv2.pte"
-    rm "./mv2.pte"
+    #echo "Removing mv2.pte"
+    #rm "./mv2.pte"
 }
 
 test_cmake_select_ops_in_model() {
-    local model_name="mv3"
+    local model_name="mv2"
     local model_export_name="${model_name}.pte"
     echo "Exporting ${model_name}"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="${model_name}"
@@ -210,7 +210,7 @@ test_cmake_select_ops_in_model() {
 
     strip ${build_dir}/selective_build_test
     echo $(stat --format=%s ${build_dir}/selective_build_test)
-    rm "./${model_export_name}"
+    #rm "./${model_export_name}"
 }
 
 if [[ -z $BUCK ]];
@@ -234,8 +234,8 @@ then
     #test_cmake_select_all_ops
     #test_cmake_select_ops_in_list
     #test_cmake_select_ops_in_yaml
-    test_cmake_select_ops_in_model
-    #test_cmake_select_ops_in_dict
+    test_cmake_select_ops_in_dict
+    #test_cmake_select_ops_in_model
 elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops
