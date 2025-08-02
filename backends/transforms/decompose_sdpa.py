@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+import math
+
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._decomp import get_decompositions
@@ -30,6 +32,7 @@ class DecomposeScaledDotProductAttention(ExportPass):
         for node in graph.nodes:
             if node.target == torch.ops.aten.scaled_dot_product_attention.default:
                 input_tensors = (arg.meta["val"] for arg in node.args)
+                scale = node.kwargs.get("scale", None)
 
                 # refer to pytorch/test/test_decomp.py
                 decomposed_module = make_fx(
@@ -80,6 +83,16 @@ class DecomposeScaledDotProductAttention(ExportPass):
                                     ],
                                 )
                             continue
+
+                        if scale is not None and decomposed_node.target in [
+                            torch.ops.aten.mul.Scalar
+                        ]:
+                            new_args = list(decomposed_node.args)
+                            # Based on the implementation of _scaled_dot_product_attention_math,
+                            # the scale is applied to q and k before matmul.
+                            # refer to pytorch/aten/src/ATen/native/transformers/attention.cpp#L873
+                            new_args[1] = math.sqrt(scale)
+                            decomposed_node.args = tuple(new_args)
 
                         subgraph_node = graph.node_copy(
                             decomposed_node,
