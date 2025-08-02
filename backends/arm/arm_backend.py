@@ -57,7 +57,7 @@ class ArmCompileSpecBuilder:
                 f"Invalid TOSA version: {tosa_version}"
             )
 
-        if not ("FP" or "INT" in tosa_profiles):
+        if "FP" not in tosa_profiles and "INT" not in tosa_profiles:
             raise ValueError(
                 "Arm backend only supports converter-backend for FP or INT. "
                 f"Invalid TOSA profile: {tosa_profiles}"
