@@ -12,6 +12,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]
@@ -92,5 +93,35 @@ def test_floor_u85_INT(test_data: input_t1):
         module.aten_op,
         module.exir_op,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data)
+@common.SkipIfNoModelConverter
+def test_floor_vgf_FP(test_data: input_t1):
+    module, data = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        (data,),
+        module.aten_op,
+        module.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data)
+@common.SkipIfNoModelConverter
+def test_floor_vgf_INT(test_data: input_t1):
+    module, data = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        (data,),
+        module.aten_op,
+        module.exir_op,
+        atol=0.06,
+        rtol=0.01,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
