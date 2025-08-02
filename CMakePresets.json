@@ -128,6 +128,15 @@
             "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/zephyr.cmake",
             "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake"
         }
+    },
+    {
+        "name": "arm-baremetal",
+        "displayName": "Build ExecuTorch for Arm baremetal",
+        "inherits": ["common"],
+        "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/arm_baremetal.cmake",
+            "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
+          }
     }
   ]
 }
