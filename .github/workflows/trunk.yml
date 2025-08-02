@@ -797,6 +797,8 @@ jobs:
           --etdump_path ${OUTPUT_DIR}/etdump.etdp \
           --tsv_path ${TSV_PATH}
 
+        echo "::group::Run Multimodal Tests"
+        python3 -m unittest extension/llm/optimum/test/test_modeling_gemma3.py
         echo "::endgroup::"
 
 
