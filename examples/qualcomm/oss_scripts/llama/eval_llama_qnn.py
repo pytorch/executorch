@@ -38,7 +38,7 @@ from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
 
-from executorch.examples.qualcomm.oss_scripts.llama.llama import calibrate
+from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import calibrate
 
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,

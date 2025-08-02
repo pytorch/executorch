@@ -7,8 +7,10 @@
 # TODO: reenable pyre after fixing the issues
 # pyre-ignore-all-errors
 
+import math
 from typing import List, Optional, Tuple
 
+import scipy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -67,6 +69,18 @@ class LlamaAttention(nn.Module):
         self.attn_softmax = torch.nn.Softmax(dim=-1)
 
         self.scale = float(self.head_dim) ** 0.5
+
+        if config.enable_r3:
+            self.register_buffer(
+                "r3_weight",
+                torch.tensor(
+                    scipy.linalg.hadamard(self.head_dim, dtype=float)
+                    / math.sqrt(self.head_dim),
+                    dtype=torch.float32,
+                    device="cpu",
+                ),
+                persistent=False,
+            )
 
     def prepare_sha(self):
         self.wq_sha = nn.ModuleList(
@@ -172,8 +186,13 @@ class LlamaAttention(nn.Module):
         ]
         for i in range(len(q)):
             q[i] = apply_rotary_emb_single(q[i], freqs_cos, freqs_sin)
+            if self.config.enable_r3:
+                q[i] = torch.matmul(q[i], self.r3_weight.T)
         for i in range(len(k)):
-            k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin).transpose(1, 2)
+            k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin)
+            if self.config.enable_r3:
+                k[i] = torch.matmul(k[i], self.r3_weight.T)
+            k[i] = k[i].transpose(1, 2)
 
         output_y = []
         kh, vh = [], []
