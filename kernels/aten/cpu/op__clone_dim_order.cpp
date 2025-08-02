@@ -15,9 +15,6 @@ namespace executor {
 namespace native {
 
 using Tensor = executorch::aten::Tensor;
-using SizesArrayRef = executorch::aten::ArrayRef<executorch::aten::SizesType>;
-using DimOrderArrayRef =
-    executorch::aten::ArrayRef<executorch::aten::DimOrderType>;
 using MemoryFormat = executorch::aten::MemoryFormat;
 
 template <typename T>
@@ -26,15 +23,19 @@ using OptionalArrayRef = executorch::aten::OptionalArrayRef<T>;
 template <typename T>
 using Optional = std::optional<T>;
 
-// _to_dim_order_copy.out(Tensor self, *, bool non_blocking=False, int[]?
-// dim_order=None, Tensor(a!) out) -> Tensor(a!)
-Tensor& _to_dim_order_copy_out(
+/**
+ * _clone_dim_order.out(Tensor self, *, bool non_blocking=False, int[]?
+ * dim_order=None, Tensor(a!) out) -> Tensor(a!)
+ *
+ * Clones with explicit dim_order, using the corresponding memory format.
+ */
+Tensor& _clone_dim_order_out(
     KernelRuntimeContext& ctx,
     const Tensor& self,
     bool non_blocking,
     OptionalArrayRef<int64_t> dim_order,
     Tensor& out) {
-  // TODO(T181345875): enable sanity check in aten mode
+  // Ensure output has the same layout as input or matches dim_order.
   ET_KERNEL_CHECK(
       ctx,
       check__to_dim_order_copy_args(self, non_blocking, dim_order, out),
@@ -42,18 +43,18 @@ Tensor& _to_dim_order_copy_out(
       out);
 
   Optional<MemoryFormat> memory_format = get_memory_format(dim_order);
-  at::_to_copy_outf(self, non_blocking, memory_format, out);
+  at::clone_outf(self, memory_format, out);
 
   return out;
 }
 
-Tensor& _to_dim_order_copy_out(
+Tensor& _clone_dim_order_out(
     const Tensor& self,
     bool non_blocking,
     OptionalArrayRef<int64_t> dim_order,
     Tensor& out) {
   KernelRuntimeContext ctx{};
-  return _to_dim_order_copy_out(ctx, self, non_blocking, dim_order, out);
+  return _clone_dim_order_out(ctx, self, non_blocking, dim_order, out);
 }
 
 } // namespace native

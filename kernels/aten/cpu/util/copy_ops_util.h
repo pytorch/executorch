@@ -13,6 +13,9 @@
 namespace torch {
 namespace executor {
 
+std::optional<MemoryFormat> get_memory_format(
+    executorch::aten::OptionalArrayRef<int64_t> dim_order);
+
 bool check__to_dim_order_copy_args(
     const Tensor& input,
     bool non_blocking,
