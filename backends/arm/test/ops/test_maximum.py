@@ -15,6 +15,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 test_t = tuple[torch.Tensor, torch.Tensor]
@@ -73,3 +74,27 @@ def test_maximum_u85_INT(test_data: Tuple):
         aten_op,
         run_on_fvp=True,
     ).run()
+
+
+@common.parametrize("test_data", Maximum.test_parameters)
+@common.SkipIfNoModelConverter
+def test_maximum_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[test_t](
+        Maximum(),
+        test_data(),
+        aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Maximum.test_parameters)
+@common.SkipIfNoModelConverter
+def test_maximum_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[test_t](
+        Maximum(),
+        test_data(),
+        aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

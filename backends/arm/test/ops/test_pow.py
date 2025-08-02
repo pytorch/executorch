@@ -13,6 +13,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -102,6 +103,19 @@ def test_pow_tensor_tensor_tosa_FP(test_data: Pow_TensorTensor.input_t):
     pipeline.run()
 
 
+@common.parametrize("test_data", Pow_TensorTensor.test_data, x_fail, strict=False)
+@common.SkipIfNoModelConverter
+def test_pow_tensor_tensor_vgf_FP(test_data: Pow_TensorTensor.input_t):
+    pipeline = VgfPipeline[Pow_TensorTensor.input_t](
+        Pow_TensorTensor(),
+        test_data(),
+        Pow_TensorTensor.aten_op,
+        Pow_TensorTensor.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
 x_fail = {
     "exp_minus_three": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
     "exp_minus_one": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
@@ -160,5 +174,33 @@ def test_pow_tensor_scalar_u85_INT(test_data: Pow_TensorScalar.input_t):
         Pow_TensorScalar.aten_op,
         Pow_TensorScalar.exir_op,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+@common.SkipIfNoModelConverter
+def test_pow_tensor_scalar_vgf_FP(test_data: Pow_TensorScalar.input_t):
+    base, exp = test_data()
+    pipeline = VgfPipeline[Pow_TensorScalar.input_t](
+        Pow_TensorScalar(exp),
+        (base,),
+        Pow_TensorScalar.aten_op,
+        Pow_TensorScalar.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+@common.SkipIfNoModelConverter
+def test_pow_tensor_scalar_vgf_INT(test_data: Pow_TensorScalar.input_t):
+    base, exp = test_data()
+    pipeline = VgfPipeline[Pow_TensorScalar.input_t](
+        Pow_TensorScalar(exp),
+        (base,),
+        Pow_TensorScalar.aten_op,
+        Pow_TensorScalar.exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

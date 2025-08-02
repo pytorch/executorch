@@ -13,6 +13,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = Tuple[torch.Tensor]
@@ -124,4 +125,38 @@ def test_vector_norm_u85_INT_fvp(test_module):
         symmetric_io_quantization=True,
     )
     pipeline.pop_stage("check_not.exir")
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_vector_norm_vgf_FP(test_module):
+    model, input_tensor = test_module
+    # FP VGF
+    aten_op = "torch.ops.aten.linalg_vector_norm.default"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_linalg_vector_norm_default"
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_vector_norm_vgf_INT(test_module):
+    model, input_tensor = test_module
+    # Should not found this op
+    exir_op = "executorch_exir_dialects_edge__ops_aten_linalg_vector_norm_default"
+
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        aten_op_q_decomposed_q,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.run()
