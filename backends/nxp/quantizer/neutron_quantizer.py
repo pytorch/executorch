@@ -32,6 +32,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     ReluPattern,
     ReshapePattern,
     SharedSpecPattern,
+    SigmoidPattern,
     SoftMaxPattern,
     ViewPattern,
 )
@@ -217,6 +218,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(ReluPattern(), static_qconfig),
                 NeutronAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(ReshapePattern(), static_qconfig),
+                NeutronAtenQuantizer(SigmoidPattern(), static_qconfig),
                 NeutronAtenQuantizer(SoftMaxPattern(), static_qconfig),
                 NeutronAtenQuantizer(ViewPattern(), static_qconfig),
             ]

@@ -1,4 +1,4 @@
-# Copyright (c) 2024 NXP
+# Copyright 2025 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -15,8 +15,15 @@ from torch.fx import Node
 from torch.nn import Parameter
 
 
-class ReLUConverter(NodeConverter):
-    supported_targets = [Target.RT700]
+class SigmoidConverter(NodeConverter):
+    @staticmethod
+    def _is_supported_on_target(target: Target) -> bool:
+        match target:
+            case Target.RT700:
+                return True
+
+            case _:
+                return False
 
     @staticmethod
     def _is_supported_in_IR(
@@ -28,6 +35,8 @@ class ReLUConverter(NodeConverter):
         self.assert_convertible(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)
-        t_op.opcode_index = self.builder.op_code_index_for_op_type(BuiltinOperator.RELU)
+        t_op.opcode_index = self.builder.op_code_index_for_op_type(
+            BuiltinOperator.LOGISTIC
+        )
 
         self.builder.append_operators([t_op])
