@@ -200,6 +200,38 @@ class ETRecord:
             f"{base_name}_example_inputs", serialized_artifact.example_inputs
         )
 
+    def add_extra_export_modules(
+        self,
+        extra_recorded_export_modules: Dict[
+            str,
+            Union[
+                ExportedProgram,
+                ExirExportedProgram,
+                EdgeProgramManager,
+            ],
+        ],
+    ) -> None:
+        """
+        Add extra export modules to the ETRecord after it has been created.
+
+        This method allows users to add more export modules they want to record
+        to an existing ETRecord instance. The modules will be added to the graph_map
+        and will be included when the ETRecord is saved.
+
+        Args:
+            extra_recorded_export_modules: A dictionary of graph modules with the key being
+                the user provided name and the value being the corresponding exported module.
+                The exported graph modules can be either the output of `torch.export()` or `exir.to_edge()`.
+        """
+        if self.graph_map is None:
+            self.graph_map = {}
+
+        # Now self.graph_map is guaranteed to be non-None
+        graph_map = self.graph_map
+        for module_name, export_module in extra_recorded_export_modules.items():
+            _validate_module_name(module_name)
+            _add_module_to_graph_map(graph_map, module_name, export_module)
+
 
 def _get_reference_outputs(
     bundled_program: BundledProgram,
