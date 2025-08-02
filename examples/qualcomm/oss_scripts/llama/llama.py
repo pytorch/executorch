@@ -595,7 +595,7 @@ def compile(args, pte_filename, tokenizer):
                 annotate_conv=args.ptq != "16a8w",
             ),
         )
-        if args.decoder_model == {"stories110m", "stories260k"}:
+        if args.decoder_model in {"stories110m", "stories260k"}:
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
