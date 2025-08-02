@@ -7,7 +7,10 @@
 # pyre-unsafe
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
+    get_first_fake_tensor,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -34,8 +37,9 @@ class DecomposeSelectPass(ExportPass):
 
             input_node, dim, index = node.args
 
-            rank = len(input_node.meta["val"].size())
-            shape = input_node.meta["val"].shape
+            input_tensor = get_first_fake_tensor(input_node)
+            rank = len(input_tensor.size())
+            shape = input_tensor.shape
             dim = dim % rank if dim < 0 else dim
             index = index % shape[dim] if index < 0 else index
 
@@ -44,7 +48,7 @@ class DecomposeSelectPass(ExportPass):
                     graph_module.graph, slice_op, (input_node, dim, index, index + 1)
                 )
                 squeeze_node = create_node(
-                    graph_module.graph, squeeze_op, (slice_node, [dim])
+                    graph_module.graph, squeeze_op, (slice_node, [dim]), from_node=node
                 )
 
             node.replace_all_uses_with(squeeze_node)

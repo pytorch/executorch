@@ -222,18 +222,8 @@ def test_depthwise_convolution_2d_tosa_INT(test_data):
     pipeline.run()
 
 
-x_fails = {
-    f"{k},per_channel_quant={q}": reason
-    for k, reason in {
-        "3x3_2x8x198x198_gp8_st3": "MLETORCH-517: Operators fail with batches > 1",
-        "two_dw_conv2d": "MLETORCH-517: Operators fail with batches > 1",
-    }.items()
-    for q in [True, False]
-}
-
-
 @common.XfailIfNoCorstone300  # TODO: MLETORCH-516
-@common.parametrize("test_data", test_data_conv2d_INT, x_fails)
+@common.parametrize("test_data", test_data_conv2d_INT)
 def test_depthwise_convolution_2d_u55_INT(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineINT[input_t](
@@ -263,7 +253,7 @@ def test_depthwise_convolution_1d_u55_INT(test_data):
 
 
 @common.XfailIfNoCorstone320  # TODO: MLETORCH-516
-@common.parametrize("test_data", test_data_conv2d_INT, x_fails)
+@common.parametrize("test_data", test_data_conv2d_INT)
 def test_depthwise_convolution_2d_u85_INT(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineINT[input_t](
@@ -278,7 +268,7 @@ def test_depthwise_convolution_2d_u85_INT(test_data):
 
 
 @common.XfailIfNoCorstone320  # TODO: MLETORCH-516
-@common.parametrize("test_data", test_data_conv1d_INT, x_fails)
+@common.parametrize("test_data", test_data_conv1d_INT)
 def test_depthwise_convolution_1d_u85_INT(test_data):
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineINT[input_t](
