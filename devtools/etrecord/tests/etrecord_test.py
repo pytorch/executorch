@@ -252,6 +252,73 @@ class TestETRecord(unittest.TestCase):
             # Validate that export_graph_id matches the expected value
             self.assertEqual(etrecord.export_graph_id, expected_graph_id)
 
+    def test_add_extra_export_modules(self):
+        """Test add_extra_export_modules when ETRecord already has a graph_map."""
+        captured_output, edge_output, et_output = self.get_test_model()
+
+        # Create an ETRecord instance with existing graph_map
+        initial_graph_map = {
+            "existing_module/forward": captured_output.exported_program
+        }
+        etrecord = ETRecord(
+            exported_program=captured_output.exported_program,
+            export_graph_id=id(captured_output.exported_program.graph),
+            edge_dialect_program=edge_output.exported_program,
+            graph_map=initial_graph_map,
+            _debug_handle_map=et_output.debug_handle_map,
+            _delegate_map=et_output.delegate_map,
+        )
+
+        # Verify initial state
+        self.assertIsNotNone(etrecord.graph_map)
+        self.assertIn("existing_module/forward", etrecord.graph_map)
+
+        # Create additional module to add
+        f2 = models.BasicSinMax()
+        captured_output2 = exir.capture(
+            f2, f2.get_random_inputs(), exir.CaptureConfig()
+        )
+
+        extra_modules = {
+            "new_module": captured_output2.exported_program,
+        }
+
+        # Add extra export modules
+        etrecord.add_extra_export_modules(extra_modules)
+
+        # Verify both existing and new modules are present
+        self.assertIn("existing_module/forward", etrecord.graph_map)
+        self.assertIn("new_module/forward", etrecord.graph_map)
+
+        # Verify the modules are correctly stored
+        self.check_graph_closeness(
+            etrecord.graph_map["existing_module/forward"],
+            captured_output.exported_program.graph_module,
+        )
+        self.check_graph_closeness(
+            etrecord.graph_map["new_module/forward"],
+            captured_output2.exported_program.graph_module,
+        )
+
+    def test_add_extra_export_modules_reserved_name_validation(self):
+        """Test that add_extra_export_modules validates reserved names."""
+        captured_output, edge_output, et_output = self.get_test_model()
+
+        etrecord = ETRecord(
+            exported_program=captured_output.exported_program,
+            export_graph_id=id(captured_output.exported_program.graph),
+            edge_dialect_program=edge_output.exported_program,
+            _debug_handle_map=et_output.debug_handle_map,
+            _delegate_map=et_output.delegate_map,
+        )
+
+        # Test that reserved names are rejected
+        for reserved_name in ETRecordReservedFileNames:
+            with self.assertRaises(RuntimeError):
+                etrecord.add_extra_export_modules(
+                    {reserved_name: captured_output.exported_program}
+                )
+
     def test_etrecord_class_constructor_and_save(self):
         """Test that ETRecord class constructor and save method work correctly."""
         captured_output, edge_output, et_output = self.get_test_model()
