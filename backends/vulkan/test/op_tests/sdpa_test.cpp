@@ -585,7 +585,6 @@ void test_vulkan_flash_attention(
   graph.prepare();
   graph.encode_prepack();
   graph.prepack();
-  graph.encode_execute();
 
   // Copy inputs and run
   graph.copy_into_staging(r_q.staging, q.const_data_ptr(), q.numel());
@@ -844,7 +843,6 @@ void test_reference_flash_attention(
   graph.prepare();
   graph.encode_prepack();
   graph.prepack();
-  graph.encode_execute();
 
   graph.copy_into_staging(r_q.staging, q.const_data_ptr(), q.numel());
   graph.copy_into_staging(r_k.staging, k.const_data_ptr(), k.numel());

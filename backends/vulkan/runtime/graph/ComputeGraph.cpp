@@ -151,6 +151,10 @@ ComputeGraph::ComputeGraph(GraphConfig config)
     config_.prepack_threshold_nbytes = 10 * MB;
     config_.prepack_initial_threshold_nbytes = 10 * MB;
   }
+  if (config_.execute_threshold_node_count == 0) {
+    config_.execute_threshold_node_count = 128;
+    config_.prepack_initial_threshold_nbytes = 64;
+  }
 }
 
 ComputeGraph::~ComputeGraph() {
@@ -776,36 +780,22 @@ void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
   context_->fences().return_fence(fence);
 }
 
-void ComputeGraph::submit_cmd(
-    vkapi::CommandBuffer& cmd_buf,
-    VkSemaphore wait_semaphore,
-    VkSemaphore signal_semaphore,
-    VkFence fence) {
+void ComputeGraph::submit_cmd(vkapi::CommandBuffer& cmd_buf, VkFence fence) {
   if (cmd_buf) {
     cmd_buf.end();
     context_->adapter_ptr()->submit_cmd(
-        context_->queue(),
-        cmd_buf.get_submit_handle(false),
-        fence,
-        wait_semaphore,
-        signal_semaphore);
+        context_->queue(), cmd_buf.get_submit_handle(false), fence);
   }
 }
 
 void ComputeGraph::submit_deferred_cmds_and_wait() {
-  VkSemaphore prev_semaphore = VK_NULL_HANDLE;
   vkapi::VulkanFence fence = context_->fences().get_fence();
 
   for (uint32_t i = 0; i < deferred_cmd_list_.size(); i++) {
     auto& cmd = deferred_cmd_list_[i];
-    VkSemaphore wait_semaphore = prev_semaphore;
-    VkSemaphore signal_semaphore = cmd.get_signal_semaphore();
-    prev_semaphore = signal_semaphore;
 
     submit_cmd(
         cmd,
-        wait_semaphore,
-        signal_semaphore,
         i == (deferred_cmd_list_.size() - 1) ? fence.get_submit_handle()
                                              : VK_NULL_HANDLE);
   }
@@ -866,15 +856,22 @@ void ComputeGraph::execute() {
     context_->set_cmd(/*reusable = */ true);
 
     context_->cmd_reset_querypool();
-
     uint32_t encoded_node_count = 0;
 
     for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
       node->encode(this);
       encoded_node_count++;
-      // Create a new command buffer every 64 nodes to allow concurrent CPU and
-      // GPU execution.
-      if ((encoded_node_count % 64) == 0) {
+
+      // Threshold is reached when the node count reached
+      // execute_initial_threshold_node_count or if its a multiple of
+      // execute_threshold_node_count.
+      const bool reached_threshold =
+          (encoded_node_count - config_.execute_initial_threshold_node_count) %
+              config_.execute_threshold_node_count ==
+          0;
+
+      // Create a new command buffer when threashold is reached
+      if (reached_threshold) {
         context_->submit_cmd_to_gpu(VK_NULL_HANDLE, false);
         deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
         context_->set_cmd(true);
