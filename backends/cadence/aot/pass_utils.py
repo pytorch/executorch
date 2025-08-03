@@ -13,7 +13,7 @@ import torch
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
-from executorch.exir.pass_base import PassBase
+from executorch.exir.pass_base import PassBase, PassResult
 
 from torch._ops import OpOverloadPacket
 
@@ -224,3 +224,8 @@ def set_arg(
         node.update_arg(idx, value)
     else:
         node.update_kwarg(kwarg_name, value)
+
+
+def none_throws(x: Optional[PassResult]) -> PassResult:
+    assert x is not None
+    return x
