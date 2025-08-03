@@ -59,7 +59,7 @@ class Partitioner(ABC):
     def __init__(
         self,
         spec: Mapping[Union[str, int, float, bool], object] = MappingProxyType({}),
-    ):
+    ) -> None:
         self._spec = spec
 
     def __call__(self, exported_program: ExportedProgram) -> PartitionResult:
@@ -69,7 +69,7 @@ class Partitioner(ABC):
     def spec(self) -> Mapping[Union[str, int, float, bool], object]:
         return self._spec
 
-    @enforcedmethod
+    @enforcedmethod  # type: ignore[misc]
     @abstractmethod
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         """
