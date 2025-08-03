@@ -27,8 +27,10 @@ from executorch.exir.tests.test_memory_format_ops_pass_utils import (
     AmbiguousDimOrderError,
     MemoryFormatOpsPassTestUtils,
     MemoryFormatTestSet,
+    PropagateToCloneChannelsLastModule,
     PropagateToCopyChannalsLastModule,
     SimpleCloneChannelsLastModule,
+    SimpleCloneContiguousModule,
     SimpleEmptyChannelLastModule,
     SimpleEmptyContiguoustModule,
     SimpleToCopyChannelsLastModule,
@@ -92,6 +94,36 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ),
         )
 
+    def test_op_clone_replacement_contiguous(self) -> None:
+        model = SimpleCloneContiguousModule()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                op=torch.ops.aten.clone.default,
+                sample_input=(
+                    torch.randn((3, 4, 5, 6)).to(memory_format=torch.channels_last),
+                ),
+                target_memory_format=torch.contiguous_format,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+        )
+
+    def test_op_clone_replacement_channels_last(self) -> None:
+        model = SimpleCloneChannelsLastModule()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                op=torch.ops.aten.clone.default,
+                sample_input=(
+                    torch.randn((3, 4, 5, 6)).to(memory_format=torch.contiguous_format),
+                ),
+                target_memory_format=torch.channels_last,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+        )
+
     def test_op_dim_order_update(self) -> None:
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
@@ -129,6 +161,25 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             check_unambiguous_dim_order=True,
         )
 
+    def test_op_clone_dim_order_propagation(self) -> None:
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=PropagateToCloneChannelsLastModule().eval(),
+                op=torch.ops.aten.clone.default,
+                sample_input=(
+                    torch.rand_like(
+                        torch.zeros([2, 2, 2, 2]),
+                        dtype=torch.float32,
+                        memory_format=torch.contiguous_format,
+                    ),
+                ),
+                target_memory_format=torch.channels_last,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+            check_unambiguous_dim_order=True,
+        )
+
     def test_op_dim_order_propagation_ambiguous(self) -> None:
         try:
             MemoryFormatOpsPassTestUtils.memory_format_test_runner(
@@ -153,6 +204,29 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             AssertionError("Should have raised AmbiguousDimOrderError")
         except AmbiguousDimOrderError:
             pass  # Expected error
+
+    def test_op_clone_dim_order_graph_replacement(self):
+        model = SimpleCloneChannelsLastModule()
+        x = torch.randn(3, 4, 5, 6).to(memory_format=torch.contiguous_format)
+        _clone_dim_order_op_str = (
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
+        )
+
+        exported = export(model.eval(), (x,), strict=True)
+        epm = to_edge(exported, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+
+        # Verify one _clone_dim_order op exists and aten.clone.default nodes have been removed.
+        (
+            FileCheck()
+            .check_not(
+                "aten.clone.default"
+            )  # Check before first _clone_dim_order_op_str match.
+            .check_count(_clone_dim_order_op_str, 1, exactly=True)
+            .check_not(
+                "aten.clone.default"
+            )  # Check after _clone_dim_order_op_str match.
+            .run(epm.exported_program().graph_module.code)
+        )
 
     # Only test dim order replacement result in lean mode test.
     # This test is irrelevant with operator mode.
@@ -389,18 +463,4 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                 atol=1e-3,
                 rtol=1e-3,
             ),
-        )
-
-    def test_op_clone_dim_order_registration(self):
-        model = SimpleCloneChannelsLastModule()
-        x = torch.randn(3, 4, 5, 6).to(memory_format=torch.contiguous_format)
-        clone_dim_order_op_str = (
-            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
-        )
-
-        exported = export(model.eval(), (x,), strict=True)
-        epm = to_edge(exported, compile_config=EdgeCompileConfig(_skip_dim_order=False))
-
-        FileCheck().check_count(clone_dim_order_op_str, 1, exactly=True).run(
-            epm.exported_program().graph_module.code
         )

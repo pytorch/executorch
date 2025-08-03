@@ -122,6 +122,16 @@ class PropagateToCopyChannalsLastModule(torch.nn.Module):
         return t1 * t2
 
 
+class PropagateToCloneChannelsLastModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        t1 = x.clone(memory_format=torch.channels_last)
+        t2 = t1 + t1
+        return t1 * t2
+
+
 class AmbiguousDimOrderError(RuntimeError):
     pass
 
