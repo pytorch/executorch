@@ -66,6 +66,11 @@ option(EXECUTORCH_SELECT_ALL_OPS
        "Whether to register all ops defined in portable kernel library." OFF
 )
 
+# Option to enable parsing ops and dtypes from json formatted dictionary
+option(EXECUTORCH_SELECT_OPS_FROM_DICT
+       "Enable op selection from json formattting string during build." OFF
+)
+
 # Option to enable parsing ops and dtypes directly from model pte file
 option(EXECUTORCH_SELECT_OPS_FROM_MODEL
        "Enable op selection from pte during build." OFF
@@ -121,6 +126,8 @@ gen_selected_ops(
   "${EXECUTORCH_SELECT_OPS_LIST}"
   INCLUDE_ALL_OPS
   "${EXECUTORCH_SELECT_ALL_OPS}"
+  OPS_FROM_DICT
+  "${EXECUTORCH_SELECT_OPS_FROM_DICT}"
   OPS_FROM_MODEL
   "${EXECUTORCH_SELECT_OPS_FROM_MODEL}"
   DTYPE_SELECTIVE_BUILD
