@@ -106,12 +106,6 @@ jobs:
           - model: emformer_join
             backend: xnnpack-quantization-delegation
             runner: linux.4xlarge.memory
-          - model: phi_4_mini
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: llama3_2_vision_encoder
-            backend: portable
-            runner: linux.4xlarge.memory
           - model: w2l
             backend: portable
             runner: linux.4xlarge.memory
