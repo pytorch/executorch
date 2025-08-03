@@ -15,28 +15,6 @@ namespace torch {
 namespace executor {
 
 using Tensor = executorch::aten::Tensor;
-using MemoryFormat = executorch::aten::MemoryFormat;
-
-/**
- * Determines the memory format (Contiguous or ChannelsLast) corresponding to
- * the dim_order. Provides support for bridging torch.memory_format with
- * ExecuTorch's dim_order.
- */
-std::optional<MemoryFormat> get_memory_format(
-    executorch::aten::OptionalArrayRef<int64_t> dim_order) {
-  if (!dim_order.has_value()) {
-    return executorch::aten::nullopt;
-  }
-  if (is_contiguous_dim_order(
-          dim_order.value().data(), dim_order.value().size())) {
-    return MemoryFormat::Contiguous;
-  } else if (is_channels_last_dim_order(
-                 dim_order.value().data(), dim_order.value().size())) {
-    return MemoryFormat::ChannelsLast;
-  } else {
-    ET_ASSERT_UNREACHABLE();
-  }
-}
 
 bool check__to_dim_order_copy_args(
     const Tensor& input,
