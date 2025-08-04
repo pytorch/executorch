@@ -204,6 +204,9 @@ test_model_with_qnn() {
     EXTRA_FLAGS="--dataset imagenet-mini/val"
   elif [[ "${MODEL_NAME}" == "cvt" ]]; then
     EXPORT_SCRIPT=cvt
+  elif [[ "${MODEL_NAME}" == "dino_v2" ]]; then
+    EXPORT_SCRIPT=dino_v2
+    EXTRA_FLAGS="--dataset imagenet-mini/val"
   elif [[ "${MODEL_NAME}" == "distilbert" ]]; then
     EXPORT_SCRIPT=distilbert
   elif [[ "${MODEL_NAME}" == "dit" ]]; then
@@ -241,7 +244,7 @@ test_model_with_qnn() {
     "cvt"|"dit"|"focalnet"|"mobilevit_v2"|"pvt"|"swin")
         SCRIPT_FOLDER=oss_scripts
         ;;
-    "albert"|"bert"|"conv_former"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")
+    "albert"|"bert"|"conv_former"|"dino_v2"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")
         pip install evaluate
         SCRIPT_FOLDER=oss_scripts
         # 16bit models will encounter op validation fail on some operations,
