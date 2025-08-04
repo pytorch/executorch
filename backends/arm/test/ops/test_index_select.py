@@ -9,9 +9,12 @@ from typing import Tuple
 import pytest
 
 import torch
+
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -114,4 +117,50 @@ def test_index_select_tosa_INT_rand(test_data: input_params):
     pipeline.change_args(
         "run_method_and_compare_outputs", inputs=test_input, atol=0.9, rtol=0.2, qtol=1
     )
+    pipeline.run()
+
+
+@pytest.mark.parametrize("test_data", list(test_data.values()))
+@common.SkipIfNoModelConverter
+def test_index_select_vgf_FP(test_data: input_params):
+    op, inp = test_data
+    pipeline = VgfPipeline[input_params](
+        op,
+        inp,
+        op.aten_op,
+        op.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@pytest.mark.parametrize("test_data", list(test_data.values())[:-1])
+@common.SkipIfNoModelConverter
+def test_index_select_vgf_INT(test_data: input_params):
+    op, inp = test_data
+    pipeline = VgfPipeline[input_params](
+        op,
+        inp,
+        op.aten_op,
+        op.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@pytest.mark.parametrize("test_data", list(test_data.values())[-1:])
+@common.SkipIfNoModelConverter
+def test_index_select_vgf_INT_rand(test_data: input_params):
+    op, inp = test_data
+    pipeline = VgfPipeline[input_params](
+        op,
+        inp,
+        op.aten_op,
+        op.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
+    # pipeline.change_args(
+    #     "run_method_and_compare_outputs", inputs=test_input, atol=0.9, rtol=0.2, qtol=1
+    # )
     pipeline.run()
