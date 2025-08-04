@@ -27,7 +27,7 @@
                                                  eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable __unused)eventLogger
                                                        error:(NSError * __autoreleasing *)error {
     if (self.ignoreOutputBackings) {
-        if (@available(macOS 11.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
+        if (@available(iOS 16.0, tvOS 16.0, watchOS 9.0, *)) {
             predictionOptions.outputBackings = @{};
         }
     }

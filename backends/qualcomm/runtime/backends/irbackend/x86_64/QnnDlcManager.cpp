@@ -18,9 +18,6 @@ QnnDlcManager::QnnDlcManager(
     : qnn_loaded_backend_(""),
       qnn_context_blob_(qnn_context_blob),
       options_(options) {
-  QNN_EXECUTORCH_LOG_INFO(
-      "QnnDlcManager Get Qnn Context blob bytes %u", qnn_context_blob_.nbytes);
-
   if (options_ == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Fail to create QnnDlcManager, options is nullptr");
@@ -41,8 +38,7 @@ Error QnnDlcManager::Create() {
       std::make_unique<QnnDevice>(qnn_loaded_backend_, logger_.get());
 
   backend_params_ptr_->qnn_backend_cache_ptr_ =
-      std::make_unique<QnnBackendCache>(
-          qnn_context_blob_, options_->graph_name()->str());
+      std::make_unique<QnnBackendCache>(qnn_context_blob_);
 
   backend_params_ptr_->qnn_context_ptr_ = std::make_unique<IrContext>(
       qnn_loaded_backend_,
@@ -64,12 +60,18 @@ Error QnnDlcManager::Create() {
 Error QnnDlcManager::Configure() {
   ET_CHECK_OR_RETURN_ERROR(
       backend_params_ptr_ != nullptr, Internal, "Failed to load Qnn backend.");
+  std::vector<std::string> graph_names;
+  for (auto name : *options_->graph_name()) {
+    graph_names.emplace_back(name->str());
+  }
   ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_backend_cache_ptr_->Configure() == Error::Ok,
+      backend_params_ptr_->qnn_backend_cache_ptr_->Configure(graph_names) ==
+          Error::Ok,
       Internal,
       "Fail to configure Qnn backend cache");
   ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
+      backend_params_ptr_->qnn_backend_ptr_->Configure(
+          options_->op_package_options()) == Error::Ok,
       Internal,
       "Fail to configure Qnn backend");
   ET_CHECK_OR_RETURN_ERROR(

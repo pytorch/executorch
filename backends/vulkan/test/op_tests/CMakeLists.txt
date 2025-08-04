@@ -29,8 +29,8 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 endif()
 
-# Include this file to access target_link_options_shared_lib This is required to
-# provide access to target_link_options_shared_lib which allows libraries to be
+# Include this file to access executorch_target_link_options_shared_lib This is required to
+# provide access to executorch_target_link_options_shared_lib which allows libraries to be
 # linked with the --whole-archive flag. This is required for libraries that
 # perform dynamic registration via static initialization.
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
@@ -44,10 +44,6 @@ endif()
 find_library(LIB_TORCH torch HINTS ${TORCH_INSTALL_PREFIX}/lib)
 find_library(LIB_TORCH_CPU torch_cpu HINTS ${TORCH_INSTALL_PREFIX}/lib)
 find_library(LIB_C10 c10 HINTS ${TORCH_INSTALL_PREFIX}/lib)
-
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
 
 # Third party include paths
 
@@ -70,7 +66,7 @@ set(COMMON_INCLUDES
     ${TORCH_BASE_PATH}/include/torch/csrc/api/include
 )
 
-target_link_options_shared_lib(vulkan_backend)
+executorch_target_link_options_shared_lib(vulkan_backend)
 
 function(vulkan_op_test test_name test_src)
   set(extra_deps ${ARGN})

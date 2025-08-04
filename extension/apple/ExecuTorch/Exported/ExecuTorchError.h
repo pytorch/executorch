@@ -19,30 +19,34 @@ FOUNDATION_EXPORT NSErrorDomain const ExecuTorchErrorDomain NS_SWIFT_NAME(ErrorD
  */
 typedef NS_ERROR_ENUM(ExecuTorchErrorDomain, ExecuTorchErrorCode) {
   // System errors.
-  ExecuTorchErrorCodeOk                             = 0,
-  ExecuTorchErrorCodeInternal                       = 1,
-  ExecuTorchErrorCodeInvalidState                   = 2,
-  ExecuTorchErrorCodeEndOfMethod                    = 3,
+  ExecuTorchErrorCodeOk                              = 0,
+  ExecuTorchErrorCodeInternal                        = 1,
+  ExecuTorchErrorCodeInvalidState                    = 2,
+  ExecuTorchErrorCodeEndOfMethod                     = 3,
 
   // Logical errors.
-  ExecuTorchErrorCodeNotSupported                   = 16,
-  ExecuTorchErrorCodeNotImplemented                 = 17,
-  ExecuTorchErrorCodeInvalidArgument                = 18,
-  ExecuTorchErrorCodeInvalidType                    = 19,
-  ExecuTorchErrorCodeOperatorMissing                = 20,
+  ExecuTorchErrorCodeNotSupported                    = 16,
+  ExecuTorchErrorCodeNotImplemented                  = 17,
+  ExecuTorchErrorCodeInvalidArgument                 = 18,
+  ExecuTorchErrorCodeInvalidType                     = 19,
+  ExecuTorchErrorCodeOperatorMissing                 = 20,
+
+  // Registration errors.
+  ExecuTorchErrorCodeRegistrationExceedingMaxKernels = 21,
+  ExecuTorchErrorCodeRegistrationAlreadyRegistered   = 22,
 
   // Resource errors.
-  ExecuTorchErrorCodeNotFound                       = 32,
-  ExecuTorchErrorCodeMemoryAllocationFailed         = 33,
-  ExecuTorchErrorCodeAccessFailed                   = 34,
-  ExecuTorchErrorCodeInvalidProgram                 = 35,
-  ExecuTorchErrorCodeInvalidExternalData            = 36,
-  ExecuTorchErrorCodeOutOfResources                 = 37,
+  ExecuTorchErrorCodeNotFound                        = 32,
+  ExecuTorchErrorCodeMemoryAllocationFailed          = 33,
+  ExecuTorchErrorCodeAccessFailed                    = 34,
+  ExecuTorchErrorCodeInvalidProgram                  = 35,
+  ExecuTorchErrorCodeInvalidExternalData             = 36,
+  ExecuTorchErrorCodeOutOfResources                  = 37,
 
   // Delegate errors.
-  ExecuTorchErrorCodeDelegateInvalidCompatibility   = 48,
-  ExecuTorchErrorCodeDelegateMemoryAllocationFailed = 49,
-  ExecuTorchErrorCodeDelegateInvalidHandle          = 50,
+  ExecuTorchErrorCodeDelegateInvalidCompatibility    = 48,
+  ExecuTorchErrorCodeDelegateMemoryAllocationFailed  = 49,
+  ExecuTorchErrorCodeDelegateInvalidHandle           = 50,
 } NS_SWIFT_NAME(ErrorCode);
 
 /**
@@ -62,7 +66,23 @@ NSString *ExecuTorchErrorDescription(ExecuTorchErrorCode code)
  * @param code The ExecuTorchErrorCode to wrap.
  * @return An NSError with ExecuTorchErrorDomain, the specified code, and a localized description.
  */
-FOUNDATION_EXPORT NSError *ExecuTorchErrorWithCode(ExecuTorchErrorCode code)
+FOUNDATION_EXPORT
+NS_RETURNS_RETAINED
+__attribute__((deprecated("This API is experimental.")))
+NSError *ExecuTorchErrorWithCode(ExecuTorchErrorCode code)
     NS_SWIFT_NAME(Error(code:));
+
+/**
+ * Create an NSError in the ExecuTorch domain for the given code.
+ *
+ * @param code The ExecuTorchErrorCode to wrap.
+ * @param description Additional error description.
+ * @return An NSError with ExecuTorchErrorDomain, the specified code, and a localized description.
+ */
+ FOUNDATION_EXPORT
+ NS_RETURNS_RETAINED
+ __attribute__((deprecated("This API is experimental.")))
+ NSError *ExecuTorchErrorWithCodeAndDescription(ExecuTorchErrorCode code, NSString * __nullable description)
+     NS_SWIFT_NAME(Error(code:description:));
 
 NS_ASSUME_NONNULL_END

@@ -61,11 +61,15 @@ class ExecuteNode {
 
   virtual ~ExecuteNode() = default;
 
+  virtual void prepare_pipelines(ComputeGraph* graph) {
+    (void)graph;
+  }
+
   virtual void encode(ComputeGraph* graph) {
     (void)graph;
   }
 
-  inline void trigger_resize(ComputeGraph* graph) {
+  virtual inline void trigger_resize(ComputeGraph* graph) {
     if (resize_fn_ != nullptr) {
       resize_fn_(graph, args_, resize_args_);
     }

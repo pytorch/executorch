@@ -62,9 +62,17 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   TensorRefPtr tref = graph->get_tref(tref_);
   size_t numel = utils::multiply_integers(tref->sizes);
   api::StagingBuffer staging(graph->context(), tref->dtype, numel);
+  graph->update_staging_nbytes_in_cmd(staging.buffer().mem_size_as_size_t());
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
   staging.copy_from(tref->data, nbytes);
   return staging;
+}
+
+void PrepackNode::prepare_pipelines(ComputeGraph* graph) {
+  graph->register_pipeline_to_create(
+      shader_, local_workgroup_size_, spec_vars_, push_constants_);
+  graph->register_pipeline_to_create(
+      noop_shader_, utils::WorkgroupSize(1, 1, 1), {}, {});
 }
 
 void PrepackNode::encode(ComputeGraph* graph) {

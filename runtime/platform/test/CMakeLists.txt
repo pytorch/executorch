@@ -19,6 +19,10 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 et_cxx_test(platform_test SOURCES executor_pal_test.cpp)
 
+et_cxx_test(platform_runtime_override_test SOURCES executor_pal_runtime_override_test.cpp stub_platform.cpp)
+
+et_cxx_test(platform_static_runtime_override_test SOURCES executor_pal_static_runtime_override_test.cpp)
+
 # TODO: Re-enable this test on OSS
 # et_cxx_test(platform_death_test SOURCES executor_pal_death_test.cpp)
 

@@ -32,7 +32,7 @@ et_cxx_test(
   XNNPACK
   pthreadpool
   cpuinfo
-  microkernels-prod
+  xnnpack-microkernels-prod
 )
 target_include_directories(
   backends_xnnpack_test

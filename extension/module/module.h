@@ -16,6 +16,12 @@
 
 #include <executorch/runtime/executor/program.h>
 
+#ifdef USE_ATEN_LIB
+#define ET_MODULE_NAMESPACE module::aten
+#else // !USE_ATEN_LIB
+#define ET_MODULE_NAMESPACE module
+#endif // USE_ATEN_LIB
+
 namespace executorch {
 namespace extension {
 
@@ -24,6 +30,9 @@ using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::NamedDataMap;
 using ET_RUNTIME_NAMESPACE::Program;
 
+class ExecuTorchJni;
+
+namespace ET_MODULE_NAMESPACE {
 /**
  * A facade class for loading programs and executing methods within them.
  */
@@ -186,6 +195,29 @@ class Module {
   }
 
   /**
+   * Unload a specific method from the program.
+   *
+   * @param[in] method_name The name of the method to unload.
+   *
+   * @returns True if the method is unloaded, false if no-op.
+   */
+  inline bool unload_method(const std::string& method_name) {
+    return methods_.erase(method_name);
+  }
+
+  /**
+   * Get a method by it's name. Not recommended to use this method directly as
+   * an end user. It's exposed to allow for composability of module in apis that
+   * operate on method.
+   *
+   * @param[in] method_name The name of the method to get.
+   *
+   * @returns A Result object containing either a pointer to the requested
+   *          method or an error to indicate failure.
+   */
+  ET_NODISCARD runtime::Result<Method*> method(const std::string& method_name);
+
+  /**
    * Load the 'forward' method from the program and set up memory management if
    * needed. The loaded method is cached to reuse the next time it's executed.
    *
@@ -208,6 +240,15 @@ class Module {
   }
 
   /**
+   * Unload the 'forward' method from the program.
+   *
+   * @returns True if the 'forward' method is unloaded, false if no-op.
+   */
+  inline bool unload_forward() {
+    return unload_method("forward");
+  }
+
+  /**
    * Checks if a specific method is loaded.
    *
    * @param[in] method_name The name of the method to check.
@@ -221,7 +262,7 @@ class Module {
 
   /**
    * Get a method metadata struct by method name.
-   * Loads the program and method if needed.
+   * Loads the program if needed.
    *
    * @param[in] method_name The name of the method to get the metadata for.
    *
@@ -469,6 +510,11 @@ class Module {
     return event_tracer_.get();
   }
 
+  ET_NODISCARD
+  runtime::Span<uint8_t> debug_buffer() {
+    return runtime::Span<uint8_t>(debug_buffer_.data(), debug_buffer_.size());
+  }
+
  private:
   struct MethodHolder {
     std::vector<std::vector<uint8_t>> planned_buffers;
@@ -489,13 +535,15 @@ class Module {
   std::unique_ptr<runtime::EventTracer> event_tracer_;
   std::unique_ptr<runtime::DataLoader> data_map_loader_;
   std::unique_ptr<NamedDataMap> data_map_;
+  std::vector<uint8_t> debug_buffer_;
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;
 
-  friend class ExecuTorchJni;
+  friend class executorch::extension::ExecuTorchJni;
 };
 
+} // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch
 
@@ -503,6 +551,13 @@ namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::extension::Module;
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 } // namespace executor
 } // namespace torch
+
+namespace executorch {
+namespace extension {
+// backward compatible namespace alias
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
+} // namespace extension
+} // namespace executorch

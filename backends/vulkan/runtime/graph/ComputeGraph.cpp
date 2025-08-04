@@ -122,7 +122,8 @@ ComputeGraph::ComputeGraph(GraphConfig config)
       prepack_descriptor_counts_{},
       execute_descriptor_counts_{},
       context_{new api::Context(
-          vkapi::runtime()->default_adapter_i(),
+          config.external_adapter ? config.external_adapter
+                                  : vkapi::runtime()->get_adapter_p(),
           config_.context_config)},
       shared_objects_{},
       values_{},
@@ -144,7 +145,12 @@ ComputeGraph::ComputeGraph(GraphConfig config)
   execute_descriptor_counts_.descriptor_combined_sampler_count = 0;
   execute_descriptor_counts_.descriptor_storage_image_count = 0;
 
-  context_->set_cmd(/*reusable = */ true);
+  // If certain graph config variables are not specified, then set them
+  // automatically.
+  if (config_.prepack_threshold_nbytes == 0) {
+    config_.prepack_threshold_nbytes = 10 * MB;
+    config_.prepack_initial_threshold_nbytes = 10 * MB;
+  }
 }
 
 ComputeGraph::~ComputeGraph() {
@@ -152,8 +158,41 @@ ComputeGraph::~ComputeGraph() {
 
   prepack_nodes_.clear();
   execute_nodes_.clear();
+  clear_deferred_cmds();
 
   context_->flush();
+}
+
+std::vector<int64_t> ComputeGraph::extract_int_or_symint_list(
+    const ValueRef idx) {
+  const Value& val = values_.at(idx);
+  std::vector<int64_t> result;
+
+  if (val.isIntList()) {
+    // If it's an IntList, return a copy of the list
+    return val.toConstIntList();
+  } else if (val.isValueList()) {
+    // If it's a ValueList, extract each element as an Int or SymInt
+    const std::vector<ValueRef>& value_list = val.toConstValueList();
+    result.reserve(value_list.size());
+
+    for (const ValueRef& ref : value_list) {
+      const Value& element = values_.at(ref);
+      if (element.isInt()) {
+        result.push_back(element.toInt());
+      } else if (element.isSymInt()) {
+        result.push_back(read_symint(ref));
+      } else {
+        VK_THROW(
+            "ValueList element is neither Int nor SymInt, but has type ",
+            element.type());
+      }
+    }
+    return result;
+  }
+
+  VK_THROW(
+      "Cannot extract int or symint list from Value with type ", val.type());
 }
 
 utils::StorageType ComputeGraph::suggested_storage_type() {
@@ -235,8 +274,48 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
     return val.toConstTensor().dtype();
   } else if (val.isTensorRef()) {
     return val.toConstTensorRef().dtype;
+  } else if (val.isBool()) {
+    return vkapi::ScalarType::Bool;
+  } else if (val.isDouble()) {
+    // We downcast anyway in the shader and we want to avoid having to
+    // write special cases there.
+    return vkapi::ScalarType::Float;
+  } else if (val.isInt()) {
+    return vkapi::ScalarType::Int;
   }
   VK_THROW("Could not get dtype of value with type ", val.type());
+}
+
+bool ComputeGraph::is_contiguous_buffer_tensor(const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (!is_buffer_storage(idx)) {
+    return false;
+  }
+  return is_contiguous(idx);
+}
+
+bool ComputeGraph::is_standard_channels_packed_texture_tensor(
+    const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return false;
+  }
+  return has_standard_axis_map(idx) && packed_dim_of(idx) == 2;
+}
+
+bool ComputeGraph::is_standard_width_packed_texture_tensor(
+    const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return false;
+  }
+  return has_standard_axis_map(idx) && packed_dim_of(idx) == 0;
 }
 
 ValueRef ComputeGraph::add_tensor(
@@ -346,27 +425,16 @@ ValueRef ComputeGraph::add_tensor_view(const ValueRef vref) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
   values_.emplace_back(api::vTensor(*t));
-  for (SharedObject& sobj : shared_objects_) {
-    if (sobj.has_user(vref)) {
-      sobj.add_user(this, idx);
-    }
-  }
   return idx;
 }
 
 ValueRef ComputeGraph::add_tensor_view(
     const ValueRef vref,
     const std::vector<int64_t>& sizes,
-    const std::vector<int64_t>& strides,
-    const size_t offset_numel) {
+    const std::vector<int64_t>& strides) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
-  values_.emplace_back(api::vTensor(*t, sizes, strides, offset_numel));
-  for (SharedObject& sobj : shared_objects_) {
-    if (sobj.has_user(vref)) {
-      sobj.add_user(this, idx);
-    }
-  }
+  values_.emplace_back(api::vTensor(*t, sizes, strides));
   return idx;
 }
 
@@ -377,6 +445,7 @@ ValueRef ComputeGraph::add_tensorref(
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
   values_.emplace_back(TensorRef(sizes, dtype, data));
+  total_constant_nbytes_ += values_.back().toConstTensorRef().nbytes();
   return idx;
 }
 
@@ -415,6 +484,15 @@ ValueRef ComputeGraph::add_symint(const int32_t val) {
   check_no_active_value_ptrs();
   values_.emplace_back(SymInt(context(), val));
   return idx;
+}
+
+ValueRef ComputeGraph::get_or_add_value_for_int(const int64_t val) {
+  for (int i = 0; i < values_.size(); ++i) {
+    if (values_.at(i).isInt() && values_.at(i).toInt() == val) {
+      return i;
+    }
+  }
+  return add_scalar(val);
 }
 
 ValueRef ComputeGraph::set_input_tensor(
@@ -456,16 +534,34 @@ ValueRef ComputeGraph::set_output_tensor(
   return idx;
 }
 
+ValueRef ComputeGraph::set_output_value(const ValueRef idx) {
+  if (values_.at(idx).isTensor()) {
+    return set_output_tensor(idx);
+  }
+  outputs_.push_back({idx, kDummyValueRef});
+  return idx;
+}
+
 vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
     const ValueRef idx) {
   if (values_.at(idx).isInt()) {
     const int32_t val = extract_scalar<int32_t>(idx);
-    create_params_buffer(val);
+    return create_params_buffer(val);
   } else if (values_.at(idx).isSymInt()) {
     SymIntPtr symint = get_symint(idx);
     return vkapi::BufferBindInfo(symint->gpu_buffer.buffer());
   }
   VK_THROW("Cannot create a int param buffer for the given value");
+}
+
+vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
+    const ValueRef idx,
+    const int32_t default_val) {
+  if (values_.at(idx).isNone()) {
+    return create_params_buffer(default_val);
+  } else {
+    return get_or_create_int_param_buffer(idx);
+  }
 }
 
 void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
@@ -508,6 +604,42 @@ void ComputeGraph::update_descriptor_counts(
         VK_THROW("Unsupported descriptor type!");
     }
   }
+}
+
+void ComputeGraph::register_pipeline_to_create(
+    const vkapi::ShaderInfo& shader_info,
+    const utils::WorkgroupSize& local_workgroup_size,
+    const vkapi::SpecVarList& spec_vars,
+    const std::vector<PushConstantDataInfo>& push_constants) {
+  VkDescriptorSetLayout shader_layout =
+      context()->shader_layout_cache().retrieve(shader_info.kernel_layout);
+
+  uint32_t pc_offset = 0;
+  std::array<uint8_t, kMaxPushConstantSize> pc_data;
+  for (const auto& pc : push_constants) {
+    pc_offset += pc.write(pc_data.data(), pc_offset, kMaxPushConstantSize);
+  }
+
+  vkapi::SpecVarList spec_constants = {
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
+
+  spec_constants.append(spec_vars);
+
+  const vkapi::ComputePipelineCache::Key desc = {
+      context()->pipeline_layout_cache().retrieve(shader_layout, pc_offset),
+      context()->shader_cache().retrieve(shader_info),
+      spec_constants};
+
+  if (context_->pipeline_cache().contains(desc)) {
+    return;
+  }
+  auto it = pipeline_descriptors_.find(desc);
+  if (it != pipeline_descriptors_.cend()) {
+    return;
+  }
+  pipeline_descriptors_.insert(desc);
 }
 
 utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
@@ -612,45 +744,124 @@ void ComputeGraph::prepare() {
   if (config_.enable_querypool) {
     context_->initialize_querypool();
   }
-}
-
-void ComputeGraph::encode_prepack() {
-  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
-    node->encode(this);
-  }
-}
-
-void ComputeGraph::prepack() const {
-  // Submit and execute the command buffer
-  vkapi::VulkanFence fence = context_->fences().get_fence();
-  context_->submit_cmd_to_gpu(fence.get_submit_handle(), /*final_use = */ true);
-  fence.wait();
-  context_->fences().return_fence(fence);
-
-  context_->flush();
-}
-
-void ComputeGraph::encode_execute() {
-  context_->flush();
-  context_->set_cmd(/*reusable = */ true);
-
-  context_->cmd_reset_querypool();
 
   for (SharedObject& shared_object : shared_objects_) {
     shared_object.allocate(this);
     shared_object.bind_users(this);
   }
+}
 
+void ComputeGraph::prepare_pipelines() {
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    node->prepare_pipelines(this);
+  }
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
-    node->encode(this);
+    node->prepare_pipelines(this);
+  }
+  context_->pipeline_cache().create_pipelines(pipeline_descriptors_);
+
+  pipeline_descriptors_ = std::unordered_set<
+      vkapi::ComputePipelineCache::Key,
+      vkapi::ComputePipelineCache::Hasher>();
+}
+
+void ComputeGraph::submit_current_cmd(const bool final_use) {
+  context_->submit_cmd_to_gpu(VK_NULL_HANDLE, final_use);
+}
+
+void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
+  vkapi::VulkanFence fence = context_->fences().get_fence();
+  context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
+  fence.wait();
+  context_->fences().return_fence(fence);
+}
+
+void ComputeGraph::submit_cmd(vkapi::CommandBuffer& cmd_buf, VkFence fence) {
+  if (cmd_buf) {
+    cmd_buf.end();
+    context_->adapter_ptr()->submit_cmd(
+        context_->queue(), cmd_buf.get_submit_handle(false), fence);
   }
 }
 
-void ComputeGraph::execute() const {
+void ComputeGraph::submit_deferred_cmds_and_wait() {
   vkapi::VulkanFence fence = context_->fences().get_fence();
-  context_->submit_cmd_to_gpu(fence.get_submit_handle());
+
+  for (uint32_t i = 0; i < deferred_cmd_list_.size(); i++) {
+    auto& cmd = deferred_cmd_list_[i];
+
+    submit_cmd(
+        cmd,
+        i == (deferred_cmd_list_.size() - 1) ? fence.get_submit_handle()
+                                             : VK_NULL_HANDLE);
+  }
   fence.wait();
   context_->fences().return_fence(fence);
+}
+
+void ComputeGraph::clear_deferred_cmds() {
+  for (auto& cmd : deferred_cmd_list_) {
+    if (cmd) {
+      cmd.end();
+      cmd.invalidate();
+    }
+  }
+  deferred_cmd_list_.clear();
+}
+
+void ComputeGraph::prepack() {
+  int i = 0;
+  bool submitted = false;
+  const bool reduce_peak_memory = total_constant_nbytes_ > 500 * MB;
+  // int count = 0;
+  context_->set_cmd();
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    // Do not trigger on the first or last prepack node.
+    const bool not_terminal = i != 0 && i != (prepack_nodes_.size() - 1);
+    size_t threshold = submitted ? config_.prepack_threshold_nbytes
+                                 : config_.prepack_initial_threshold_nbytes;
+    if (not_terminal && staging_nbytes_in_cmd_ > threshold) {
+      // If reducing peak memory usage, wait for the current command buffer to
+      // finish executing and flush to recycle the staging memory. This will
+      // reduce peak memory usage, but will slightly increase load latency.
+      // Otherwise, just submit the current command buffer for execution and
+      // proceed. This results in lower load latency at the cost of higher peak
+      // memory usage.
+      if (reduce_peak_memory) {
+        submit_current_cmd_and_wait();
+        context_->flush();
+      } else {
+        submit_current_cmd();
+      }
+      staging_nbytes_in_cmd_ = 0;
+      context_->set_cmd();
+      submitted = true;
+    }
+
+    node->encode(this);
+    i++;
+  }
+  submit_current_cmd_and_wait(/*final_use=*/true);
+  context_->flush();
+  staging_nbytes_in_cmd_ = 0;
+}
+
+void ComputeGraph::execute() {
+  if (deferred_cmd_list_.empty()) {
+    context_->flush();
+    context_->set_cmd(/*reusable = */ true);
+
+    context_->cmd_reset_querypool();
+
+    for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+      node->encode(this);
+    }
+
+    deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
+  }
+
+  submit_deferred_cmds_and_wait();
+  execute_count_++;
 }
 
 void ComputeGraph::resize_input(
@@ -660,9 +871,19 @@ void ComputeGraph::resize_input(
   get_tensor(io_val.value)->virtual_resize(new_sizes);
 }
 
+void ComputeGraph::virtual_resize(
+    const ValueRef idx,
+    const std::vector<int64_t>& new_sizes) {
+  get_tensor(idx)->virtual_resize(new_sizes);
+}
+
 void ComputeGraph::propagate_resize() {
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->trigger_resize(this);
+  }
+  // Only re-encode on resize if dynamic shapes are expected
+  if (config_.expect_dynamic_shapes) {
+    clear_deferred_cmds();
   }
 }
 

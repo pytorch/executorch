@@ -43,6 +43,10 @@ void check_linear_qcsnw_args(
     VK_CHECK_COND(
         utils::val_at(-1, scales_sizes) == utils::val_at(-2, qmat2_sizes));
   }
+
+  if (graph.is_buffer_storage(out)) {
+    VK_CHECK_COND(graph.is_contiguous(out));
+  }
 }
 
 void resize_linear_qcsnw_node(

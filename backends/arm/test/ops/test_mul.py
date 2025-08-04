@@ -12,10 +12,10 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x
@@ -51,6 +51,10 @@ test_data_suite = {
         200 * torch.randn(1, 10, 25, 20),
         torch.rand(1, 10, 25, 1),
     ),
+    "op_mul_rank4_randn_mutltiple_broadcasts": lambda: (
+        torch.randn(1, 4, 4, 1),
+        torch.randn(1, 1, 4, 4),
+    ),
 }
 
 
@@ -75,6 +79,23 @@ test_data_suite_2 = {
 }
 
 
+test_data_suite_int32 = {
+    # (test_name, input, other,) See torch.mul() for info
+    "op_mul_rank4_randn_int32": lambda: (
+        torch.randint(0, 10, (1, 10, 25, 20), dtype=torch.int32),
+        torch.randint(0, 10, (1, 10, 25, 20), dtype=torch.int32),
+    ),
+    "op_mul_rank4_randn_mutltiple_broadcasts_int32": lambda: (
+        torch.randint(0, 10, (1, 4, 4, 1), dtype=torch.int32),
+        torch.randint(0, 10, (1, 1, 4, 4), dtype=torch.int32),
+    ),
+    "op_mul_rank4_randn_broadcast_int32": lambda: (
+        torch.randint(0, 10, (1, 10, 25, 20), dtype=torch.int32),
+        torch.randint(0, 10, (1, 25, 20), dtype=torch.int32),
+    ),
+}
+
+
 class Mul(torch.nn.Module):
 
     def forward(
@@ -86,8 +107,8 @@ class Mul(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_mul_tensor_tosa_MI(test_data: torch.Tensor):
-    pipeline = TosaPipelineMI[input_t1](
+def test_mul_tensor_tosa_FP(test_data: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t1](
         Mul(),
         test_data(),
         aten_op,
@@ -97,8 +118,19 @@ def test_mul_tensor_tosa_MI(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite_2)
-def test_mul_tensor_tosa_MI_diff_input_ranks(test_data: torch.Tensor):
-    pipeline = TosaPipelineMI[input_t1](
+def test_mul_tensor_tosa_FP_diff_input_ranks(test_data: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t1](
+        Mul(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_int32)
+def test_mul_tensor_tosa_FP_int32(test_data: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t1](
         Mul(),
         test_data(),
         aten_op,
@@ -108,8 +140,8 @@ def test_mul_tensor_tosa_MI_diff_input_ranks(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite_2)
-def test_mul_tensor_tosa_BI_diff_input_ranks(test_data: torch.Tensor):
-    pipeline = TosaPipelineBI[input_t1](
+def test_mul_tensor_tosa_INT_diff_input_ranks(test_data: torch.Tensor):
+    pipeline = TosaPipelineINT[input_t1](
         Mul(),
         test_data(),
         aten_op,
@@ -119,20 +151,32 @@ def test_mul_tensor_tosa_BI_diff_input_ranks(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_mul_tensor_tosa_BI(test_data: torch.Tensor):
-    pipeline = TosaPipelineBI[input_t1](
+def test_mul_tensor_tosa_INT(test_data: torch.Tensor):
+    pipeline = TosaPipelineINT[input_t1](
         Mul(),
         test_data(),
         aten_op,
         exir_op=[],
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_int32)
+def test_mul_tensor_tosa_INT_int32(test_data: torch.Tensor):
+    pipeline = TosaPipelineINT[input_t1](
+        Mul(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-def test_mul_tensor_u55_BI(test_data: torch.Tensor):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_mul_tensor_u55_INT(test_data: torch.Tensor):
+    pipeline = EthosU55PipelineINT[input_t1](
         Mul(),
         test_data(),
         aten_op,
@@ -144,12 +188,56 @@ def test_mul_tensor_u55_BI(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_mul_tensor_u85_BI(test_data: torch.Tensor):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_mul_tensor_u85_INT(test_data: torch.Tensor):
+    pipeline = EthosU85PipelineINT[input_t1](
         Mul(),
         test_data(),
         aten_op,
         exir_ops=[],
         run_on_fvp=True,
     )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_data_suite_int32,
+    xfails={
+        # TODO: MLETORCH-1132 Investigate why tests with inputs that require broadcasting fail on u55/u85
+        "op_mul_rank4_randn_mutltiple_broadcasts_int32": "RuntimeError: mean(): could not infer output dtype. Input dtype must be either a floating point or complex dtype. Got: Int",
+        "op_mul_rank4_randn_broadcast_int32": "RuntimeError: mean(): could not infer output dtype. Input dtype must be either a floating point or complex dtype. Got: Int",
+    },
+)
+@common.XfailIfNoCorstone300
+def test_mul_tensor_u55_INT_int32(test_data: torch.Tensor):
+    pipeline = EthosU55PipelineINT[input_t1](
+        Mul(),
+        test_data(),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_data_suite_int32,
+    xfails={
+        # TODO: MLETORCH-1132 Investigate why tests with inputs that require broadcasting fail on u55/u85
+        "op_mul_rank4_randn_mutltiple_broadcasts_int32": "RuntimeError: mean(): could not infer output dtype. Input dtype must be either a floating point or complex dtype. Got: Int",
+        "op_mul_rank4_randn_broadcast_int32": "RuntimeError: mean(): could not infer output dtype. Input dtype must be either a floating point or complex dtype. Got: Int",
+    },
+)
+@common.XfailIfNoCorstone320
+def test_mul_tensor_u85_INT_int32(test_data: torch.Tensor):
+    pipeline = EthosU85PipelineINT[input_t1](
+        Mul(),
+        test_data(),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

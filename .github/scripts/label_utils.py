@@ -22,9 +22,7 @@ BOT_AUTHORS = ["github-actions", "pytorchmergebot", "pytorch-bot"]
 
 LABEL_ERR_MSG_TITLE = "This PR needs a `release notes:` label"
 LABEL_ERR_MSG = f"""# {LABEL_ERR_MSG_TITLE}
-If your change should be included in the release notes (i.e. would users of this library care about this change?), please use a label starting with `release notes:`.
-
-If not, please add the `release notes: none` label.
+If your change should be included in the release notes (i.e. would users of this library care about this change?), please use a label starting with `release notes:`. This helps us keep track and include your important work in the next release notes.
 
 To add a label, you can comment to pytorchbot, for example
 `@pytorchbot label "release notes: none"`
@@ -51,7 +49,6 @@ def get_last_page_num_from_header(header: Any) -> int:
     # rel="next", <https://api.github.com/repositories/65600975/labels?per_page=100&page=3>; rel="last"
     link_info = header["link"]
     # Docs does not specify that it should be present for projects with just few labels
-    # And https://github.com/malfet/deleteme/actions/runs/7334565243/job/19971396887 it's not the case
     if link_info is None:
         return 1
     prefix = "&page="

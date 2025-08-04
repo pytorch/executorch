@@ -22,13 +22,17 @@ bool is_bitw8(vkapi::ScalarType dtype) {
 
 vkapi::ShaderInfo get_nchw_to_tensor_shader(
     const api::vTensor& v_dst,
-    const bool int8_buffer_enabled) {
+    bool int8_buffer_enabled,
+    bool push_constant_variant) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
   if (is_bitw8(v_dst.dtype()) && v_dst.storage_type() != utils::kBuffer &&
       !int8_buffer_enabled) {
     kernel_name = "nchw_to_bitw8_image_nobitw8buffer";
+    if (!push_constant_variant) {
+      kernel_name += "_no_pc";
+    }
     add_storage_type_suffix(kernel_name, v_dst);
     add_dtype_suffix(kernel_name, v_dst);
     return VK_KERNEL_FROM_STR(kernel_name);
@@ -36,11 +40,17 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
 
   if (v_dst.storage_type() == utils::kBuffer) {
     kernel_name = "nchw_to_buffer";
+    if (!push_constant_variant) {
+      kernel_name += "_no_pc";
+    }
     add_dtype_suffix(kernel_name, v_dst);
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
   kernel_name = "nchw_to_image";
+  if (!push_constant_variant) {
+    kernel_name += "_no_pc";
+  }
   add_storage_type_suffix(kernel_name, v_dst);
   add_dtype_suffix(kernel_name, v_dst);
 
@@ -49,13 +59,17 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
 
 vkapi::ShaderInfo get_tensor_to_nchw_shader(
     const api::vTensor& v_src,
-    bool int8_buffer_enabled) {
+    bool int8_buffer_enabled,
+    bool push_constant_variant) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
   if (is_bitw8(v_src.dtype()) && v_src.storage_type() != utils::kBuffer &&
       !int8_buffer_enabled) {
     kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
+    if (!push_constant_variant) {
+      kernel_name += "_no_pc";
+    }
     add_storage_type_suffix(kernel_name, v_src);
     add_dtype_suffix(kernel_name, v_src);
     return VK_KERNEL_FROM_STR(kernel_name);
@@ -63,11 +77,17 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
 
   if (v_src.storage_type() == utils::kBuffer) {
     kernel_name = "buffer_to_nchw";
+    if (!push_constant_variant) {
+      kernel_name += "_no_pc";
+    }
     add_dtype_suffix(kernel_name, v_src);
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
   kernel_name = "image_to_nchw";
+  if (!push_constant_variant) {
+    kernel_name += "_no_pc";
+  }
   add_storage_type_suffix(kernel_name, v_src);
   add_dtype_suffix(kernel_name, v_src);
 

@@ -30,6 +30,7 @@ endfunction()
 # Print the configured options.
 function(print_configured_options)
   get_property(_options GLOBAL PROPERTY _announce_configured_options)
+  list(SORT _options)
 
   set(_longest_name_length 0)
   foreach(_option IN LISTS _options)
@@ -39,7 +40,7 @@ function(print_configured_options)
     endif()
   endforeach()
 
-  message(STATUS "--- Configurated Options ---\n")
+  message(STATUS "--- Configured Options ---\n")
   foreach(_option IN LISTS _options)
     string(LENGTH "${_option}" _option_length)
     math(EXPR num_spaces "${_longest_name_length} - ${_option_length}")
@@ -48,9 +49,13 @@ function(print_configured_options)
       set(padding "${padding} ")
       math(EXPR num_spaces "${num_spaces} - 1")
     endwhile()
-    message(STATUS "${_option}${padding} : ${${_option}}")
+    if(DEFINED ${_option})
+      message(STATUS "${_option}${padding} : ${${_option}}")
+    else()
+      message(STATUS "${_option}${padding} x (unset)")
+    endif()
   endforeach()
-  message(STATUS "---------------------------")
+  message(STATUS "--------------------------")
 endfunction()
 
 
@@ -72,7 +77,7 @@ macro(define_overridable_option NAME DESCRIPTION VALUE_TYPE DEFAULT_VALUE)
     message(FATAL_ERROR "Invalid option (${NAME}) value type '${VALUE_TYPE}', must be either STRING or BOOL")
   endif()
 
-  if(DEFINED ${NAME})
+  if(DEFINED ${NAME} AND NOT DEFINED CACHE{${NAME}})
     set(${NAME} ${${NAME}} CACHE ${VALUE_TYPE} ${DESCRIPTION} FORCE)
   else()
     set(${NAME} ${DEFAULT_VALUE} CACHE ${VALUE_TYPE} ${DESCRIPTION})
@@ -85,11 +90,9 @@ endmacro()
 # Set an overridable option.
 macro(set_overridable_option NAME VALUE)
   # If the user has explitily set the option, do not override it.
-  if(DEFINED ${NAME})
-    return()
+  if(NOT DEFINED ${NAME})
+    set(${NAME} ${VALUE} CACHE STRING "")
   endif()
-
-  set(${NAME} ${VALUE} CACHE STRING "")
 endmacro()
 
 # Detemine the build preset and load it.
@@ -102,3 +105,43 @@ macro(load_build_preset)
   # For now, just continue if the preset file is not set. In the future, we will
   # try to determine a preset file.
 endmacro()
+
+
+# Check if the required options are set.
+function(check_required_options_on)
+  cmake_parse_arguments(
+    ARG
+    ""
+    "IF_ON"
+    "REQUIRES"
+    ${ARGN}
+  )
+
+  if(${${ARG_IF_ON}})
+    foreach(required ${ARG_REQUIRES})
+      if(NOT ${${required}})
+        message(FATAL_ERROR "Use of '${ARG_IF_ON}' requires '${required}'")
+      endif()
+    endforeach()
+  endif()
+endfunction()
+
+
+# Check if flags conflict with each other.
+function(check_conflicting_options_on)
+  cmake_parse_arguments(
+    ARG
+    ""
+    "IF_ON"
+    "CONFLICTS_WITH"
+    ${ARGN}
+  )
+
+  if(${${ARG_IF_ON}})
+    foreach(conflict ${ARG_CONFLICTS_WITH})
+      if(${${conflict}})
+        message(FATAL_ERROR "Both '${ARG_IF_ON}' and '${conflict}' can't be ON")
+      endif()
+    endforeach()
+  endif()
+endfunction()

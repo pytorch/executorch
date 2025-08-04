@@ -1,6 +1,6 @@
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
-    "ANDROID",
+    "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
@@ -88,6 +88,7 @@ def define_common_targets():
         exported_headers = glob([
             "*.h",
         ]),
+        platforms = (CXX),
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",

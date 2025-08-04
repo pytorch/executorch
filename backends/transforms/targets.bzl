@@ -118,6 +118,19 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "remove_getitem_op",
+        srcs = ["remove_getitem_op.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "mean_to_sum_div",
         srcs = ["mean_to_sum_div.py"],
         visibility = [

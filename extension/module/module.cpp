@@ -36,6 +36,7 @@
 
 namespace executorch {
 namespace extension {
+namespace ET_MODULE_NAMESPACE {
 
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::Program;
@@ -227,10 +228,16 @@ runtime::Error Module::load_method(
   return runtime::Error::Ok;
 }
 
-runtime::Result<MethodMeta> Module::method_meta(
+ET_NODISCARD runtime::Result<Method*> Module::method(
     const std::string& method_name) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
-  return methods_.at(method_name).method->method_meta();
+  return methods_[method_name].method.get();
+}
+
+runtime::Result<MethodMeta> Module::method_meta(
+    const std::string& method_name) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  return program_->method_meta(method_name.c_str());
 }
 
 runtime::Result<std::vector<runtime::EValue>> Module::execute(
@@ -240,6 +247,12 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
   auto& method = methods_.at(method_name).method;
   auto& inputs = methods_.at(method_name).inputs;
 
+  ET_CHECK_OR_RETURN_ERROR(
+      input_values.size() <= inputs.size(),
+      InvalidArgument,
+      "input size: %zu does not match method input size: %zu",
+      input_values.size(),
+      inputs.size());
   for (size_t i = 0; i < input_values.size(); ++i) {
     if (!input_values[i].isNone()) {
       inputs[i] = input_values[i];
@@ -302,5 +315,6 @@ runtime::Error Module::set_output(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
+} // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch

@@ -1,94 +1,79 @@
 # MediaTek Backend
 
-MediaTek backend empowers ExecuTorch to speed up PyTorch models on edge devices that equips with MediaTek Neuron Processing Unit (NPU). This document offers a step-by-step guide to set up the build environment for the MediaTek ExecuTorch libraries.
+The MediaTek backend enables acceleration of PyTorch models on edge devices with MediaTek Neuron Processing Units (NPUs). This backend provides tools for exporting, building, and deploying models to leverage MediaTek hardware.
 
-::::{grid} 2
-:::{grid-item-card}  What you will learn in this tutorial:
-:class-card: card-prerequisites
-* How to export and lower a PyTorch model ahead of time with ExecuTorch for MediaTek devices.
-* How to build MediaTek backend and examples.
-* How to deploy the exported models on device with ExecuTorch runtime.
-:::
-:::{grid-item-card}  Tutorials we recommend you complete before this:
-:class-card: card-prerequisites
-* [Introduction to ExecuTorch](intro-how-it-works.md)
-* [Getting Started](getting-started.md)
-* [Building ExecuTorch with CMake](using-executorch-building-from-source.md)
-:::
-::::
+## Features
 
+- Acceleration of PyTorch models on MediaTek NPUs
+- Tools for model export and lowering
+- Example scripts for model deployment and execution
 
-## Prerequisites (Hardware and Software)
+## Target Requirements
 
-### Host OS
+- **Hardware:** MediaTek Dimensity 9300 (D9300), Dimensity 9400 (D9400)
+- **Host OS:** Linux
+- **SDK:** [NeuroPilot Express SDK](https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress)
+
+## Development Requirements
+
 - Linux operating system
+- Python dependencies:
+  ```bash
+  pip3 install -r requirements.txt
+  ```
+- NeuroPilot SDK Python wheels (download from [NeuroPilot Express SDK](https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress)):
+  ```bash
+  pip3 install mtk_neuron-8.2.19-py3-none-linux_x86_64.whl
+  pip3 install mtk_converter-8.13.0+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+  ```
 
-### Supported Chips:
-- MediaTek Dimensity 9300 (D9300)
+## Using the MediaTek Backend
 
-### Software:
+### Exporting and Lowering a Model
 
-- [NeuroPilot Express SDK](https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress) is a lightweight SDK for deploying AI applications on MediaTek SOC devices.
-
-## Setting up your developer environment
-
-Follow the steps below to setup your build environment:
-
-1. **Setup ExecuTorch Environment**: Refer to the [Getting Started](getting-started.md) guide for detailed instructions on setting up the ExecuTorch environment.
-
-2. **Setup MediaTek Backend Environment**
-- Install the dependent libs. Ensure that you are inside `backends/mediatek/` directory
-   ```bash
-   pip3 install -r requirements.txt
-   ```
-- Install the two .whl downloaded from NeuroPilot Portal
-   ```bash
-   pip3 install mtk_neuron-8.2.13-py3-none-linux_x86_64.whl
-   pip3 install mtk_converter-8.9.1+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-   ```
-- Set evironment variables for building backend
-   ```bash
-   export NEURON_BUFFER_ALLOCATOR_LIB=<path_to_buffer_allocator.so>
-   ```
-
-## Build
-
-### Ahead of time:
-
-**Exporting a PyTorch Model for MediaTek Backend**:
-1. Lower and export the `.pte` file for on-device execution. The export script samples are povided under `example/mediatek/`. For example, the following commnad exports the `.pte` using the scripts provided.
+To export and lower a model for the MediaTek backend, use the provided shell script:
 ```bash
 cd executorch
-
 ./examples/mediatek/shell_scripts/export_oss.sh mobilenetv3
 ```
+The exported `.pte` file is saved in a directory named after the model.
 
-2. Find the `.pte` files under the directory named as same as the model.
+### Partitioner API
 
-### Runtime:
+A list of CompileSpec is suppported by MediaTek backend:
+- `platform-config`: Specifies the targeted MediaTek platform name to compile for.
 
-**Build MediaTek Backend for ExecuTorch Runtime**
-1. Navigate to `backends/mediatek/scripts/` directory.
+## Runtime Integration
 
-2. **Build MediaTek Backend**: Once the prerequisites are in place, run the `mtk_build.sh` script to start the build process:
-   ```bash
-   ./mtk_build.sh
-   ```
+This section presents an example of exporting and deploying a model. Please refer to `executorch/examples/mediatek/` for export and execution examples of various of models.
 
-3. MediaTek backend will be built under `cmake-android-out/backends/` as `libneuron_backend.so`.
+### Building Example Runners
 
-**Build a runner to execute the model on the device**:
-1. Build the runners and the backend by exedcuting the script:
+Build example runners:
 ```bash
 ./mtk_build_examples.sh
 ```
+Runners are located in `cmake-android-out/examples/mediatek/`.
 
-2. The runners will be built under `cmake-android-out/examples/`
+### Deploying to Device
 
-## Deploying and running on a device
-
-1. **Push MediaTek universal SDK and MediaTek backend to the device**: push `libneuronusdk_adapter.mtk.so` and `libneuron_backend.so` to the phone and export it to the `$LD_LIBRARY_PATH` environment variable before executing ExecuTorch with MediaTek backend.
-
+1. Push `libneuron_backend.so`, `libneuronusdk_adapter.mtk.so` and `libneuron_buffer_allocator.so` to the device.
+2. Set the library path before running ExecuTorch:
    ```bash
-   export LD_LIBRARY_PATH=<path_to_usdk>:<path_to_neuron_backend>:$LD_LIBRARY_PATH
+   export LD_LIBRARY_PATH=<path_to_neuron_backend>:<path_to_usdk>:<path_to_buffer_allocator>:$LD_LIBRARY_PATH
    ```
+
+### Building the Backend from Source
+1. Copy `NeuronAdapter.h` to `backends/mediatek/runtime/include/api/`
+
+2. Set NDK Path: Ensure that the `$ANDROID_NDK` environment variable is set to the path where the NDK is located.
+   ```bash
+   export ANDROID_NDK=<path_to_android_ndk>
+   ```
+
+3. Build the backend library `libneuron_backend.so`:
+    ```bash
+    cd backends/mediatek/scripts/
+    ./mtk_build.sh
+    ```
+The output is `libneuron_backend.so` in `cmake-android-out/backends/mediatek/`.

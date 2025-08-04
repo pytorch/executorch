@@ -61,7 +61,8 @@ class TestRingKVCache(unittest.TestCase):
 
         # Check that cache_positions was updated correctly
         expected_positions = torch.tensor(
-            [0, 1, 2, -1, -1, -1, -1, -1], dtype=torch.long
+            [0, 1, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+            dtype=torch.long,
         )
         self.assertTrue(
             torch.all(
@@ -81,8 +82,8 @@ class TestRingKVCache(unittest.TestCase):
         )
 
         # Create input tensors for first update
-        input_pos = torch.tensor([6], dtype=torch.long)
-        seq_len = 4  # This will wrap around from position 6 to positions 6, 7, 0, 1
+        input_pos = torch.tensor([14], dtype=torch.long)
+        seq_len = 4  # This will wrap around from position 14 to positions 14, 15, 0, 1
         k_val = (
             torch.ones(
                 (self.max_batch_size, self.n_heads, seq_len, self.head_dim),
@@ -102,8 +103,8 @@ class TestRingKVCache(unittest.TestCase):
         k_out, v_out = cache.update(input_pos, k_val, v_val)
 
         # Check that the cache was updated correctly with wrapping
-        # Positions 6, 7 should be updated
-        for i in range(6, 8):
+        # Positions 14, 15 should be updated
+        for i in range(14, 16):
             self.assertTrue(torch.all(k_out[:, :, i] == 3.0))
             self.assertTrue(torch.all(v_out[:, :, i] == 4.0))
 
@@ -113,17 +114,19 @@ class TestRingKVCache(unittest.TestCase):
             self.assertTrue(torch.all(v_out[:, :, i] == 4.0))
 
         # The rest should still be zeros
-        for i in range(2, 6):
+        for i in range(2, 14):
             self.assertTrue(torch.all(k_out[:, :, i] == 0.0))
             self.assertTrue(torch.all(v_out[:, :, i] == 0.0))
 
         # Check that cache_positions was updated correctly
-        # Note that positions 2, 3, 4, 5 are 0 instead of -1 because in actual ring
+        # Note that positions 2-13 are 0 instead of -1 because in actual ring
         # updates those positions would have been updated.
-        # But CachePositionsManager thinks they are updated because start_pos > (2, 3, 4, 5)
+        # But CachePositionsManager thinks they are updated because start_pos > (2-13)
         # As a result it does not fill them with -1 and instead uses original values
         # which is 0, the value cache_position buffer is initialized with.
-        expected_positions = torch.tensor([8, 9, 0, 0, 0, 0, 6, 7], dtype=torch.long)
+        expected_positions = torch.tensor(
+            [16, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 15], dtype=torch.long
+        )
         self.assertTrue(
             torch.all(
                 cache.cache_positions_manager.cache_positions == expected_positions
@@ -198,7 +201,10 @@ class TestRingKVCache(unittest.TestCase):
             self.assertTrue(torch.all(v_out2[:, :, i] == 0.0))
 
         # Check that cache_positions was updated correctly
-        expected_positions = torch.tensor([0, 1, 2, 3, 4, -1, -1, -1], dtype=torch.long)
+        expected_positions = torch.tensor(
+            [0, 1, 2, 3, 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+            dtype=torch.long,
+        )
         self.assertTrue(
             torch.all(
                 cache.cache_positions_manager.cache_positions == expected_positions
@@ -206,7 +212,7 @@ class TestRingKVCache(unittest.TestCase):
         )
 
         # Third update with wrapping
-        input_pos3 = torch.tensor([6], dtype=torch.long)
+        input_pos3 = torch.tensor([14], dtype=torch.long)
         seq_len3 = 4
         k_val3 = (
             torch.ones(
@@ -236,17 +242,21 @@ class TestRingKVCache(unittest.TestCase):
             self.assertTrue(torch.all(k_out3[:, :, i] == 7.0))
             self.assertTrue(torch.all(v_out3[:, :, i] == 8.0))
 
-        # Position 5 should still be zero
-        self.assertTrue(torch.all(k_out3[:, :, 5] == 0.0))
-        self.assertTrue(torch.all(v_out3[:, :, 5] == 0.0))
+        # Positions 5-13 should still be zero
+        for i in range(5, 14):
+            self.assertTrue(torch.all(k_out3[:, :, i] == 0.0))
+            self.assertTrue(torch.all(v_out3[:, :, i] == 0.0))
 
-        # Positions 6, 7 should have values from the third update
-        for i in range(6, 8):
+        # Positions 14, 15 should have values from the third update
+        for i in range(14, 16):
             self.assertTrue(torch.all(k_out3[:, :, i] == 9.0))
             self.assertTrue(torch.all(v_out3[:, :, i] == 10.0))
 
         # Check that cache_positions was updated correctly
-        expected_positions = torch.tensor([8, 9, 2, 3, 4, -1, 6, 7], dtype=torch.long)
+        expected_positions = torch.tensor(
+            [16, 17, 2, 3, 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, 14, 15],
+            dtype=torch.long,
+        )
         self.assertTrue(
             torch.all(
                 cache.cache_positions_manager.cache_positions == expected_positions
@@ -296,7 +306,8 @@ class TestRingKVCache(unittest.TestCase):
 
         # Check that cache_positions was updated correctly
         expected_positions = torch.tensor(
-            [0, -1, -1, -1, -1, -1, -1, -1], dtype=torch.long
+            [0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+            dtype=torch.long,
         )
         self.assertTrue(
             torch.all(
@@ -316,8 +327,10 @@ class TestRingKVCache(unittest.TestCase):
         )
 
         # Create input tensors
-        input_pos = torch.tensor([5], dtype=torch.long)
-        seq_len = 5  # This will wrap around from position 5 to positions 5, 6, 7, 0, 1
+        input_pos = torch.tensor([13], dtype=torch.long)
+        seq_len = (
+            5  # This will wrap around from position 13 to positions 13, 14, 15, 0, 1
+        )
         k_val = (
             torch.ones(
                 (self.max_batch_size, self.n_heads, seq_len, self.head_dim),
@@ -336,8 +349,8 @@ class TestRingKVCache(unittest.TestCase):
         # Update the cache
         k_out, v_out = cache.update(input_pos, k_val, v_val)
 
-        # Check that positions 5, 6, 7 were updated
-        for i in range(5, 8):
+        # Check that positions 13, 14, 15 were updated
+        for i in range(13, 16):
             self.assertTrue(torch.all(k_out[:, :, i] == 13.0))
             self.assertTrue(torch.all(v_out[:, :, i] == 14.0))
 
@@ -346,18 +359,20 @@ class TestRingKVCache(unittest.TestCase):
             self.assertTrue(torch.all(k_out[:, :, i] == 13.0))
             self.assertTrue(torch.all(v_out[:, :, i] == 14.0))
 
-        # Check that positions 2, 3, 4 are still zeros
-        for i in range(2, 5):
+        # Check that positions 2-12 are still zeros
+        for i in range(2, 13):
             self.assertTrue(torch.all(k_out[:, :, i] == 0.0))
             self.assertTrue(torch.all(v_out[:, :, i] == 0.0))
 
         # Check that cache_positions was updated correctly
-        # Note that positions 2, 3, 4 are 0 instead of -1 because in actual ring
+        # Note that positions 2-12 are 0 instead of -1 because in actual ring
         # updates those positions would have been updated.
-        # But CachePositionsManager thinks they are updated because start_pos > (2, 3, 4)
+        # But CachePositionsManager thinks they are updated because start_pos > (2-12)
         # As a result it does not fill them with -1 and instead uses original values
         # which is 0, the value cache_position buffer is initialized with.
-        expected_positions = torch.tensor([8, 9, 0, 0, 0, 5, 6, 7], dtype=torch.long)
+        expected_positions = torch.tensor(
+            [16, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 14, 15], dtype=torch.long
+        )
         self.assertTrue(
             torch.all(
                 cache.cache_positions_manager.cache_positions == expected_positions
@@ -375,7 +390,7 @@ class TestRingKVCache(unittest.TestCase):
             self.dtype,
         )
 
-        # First update at position 10 (will be mapped to position 2 in the ring buffer)
+        # First update at position 10 (will be mapped to position 10 in the ring buffer)
         input_pos = torch.tensor([10], dtype=torch.long)
         seq_len = 4
         k_val = torch.ones(
@@ -392,14 +407,14 @@ class TestRingKVCache(unittest.TestCase):
 
         # Check that cache_positions correctly tracks the original indices
         # For input_pos=10 and seq_len=4, the original indices should be 10, 11, 12, 13
-        # These map to positions 2, 3, 4, 5 in the ring buffer (since max_context_length=8)
-        # Note that positions 0, 1, 6 and 7 are 0 instead of -1 because in actual ring
+        # These map to positions 10, 11, 12, 13 in the ring buffer (since max_context_length=8 but buffer size is 16)
+        # Note that positions 0-9 are 0 because in actual ring
         # updates those positions would have been updated for start_pos = 0.
-        # So CachePositionsManager thinks they are updated because start_pos > (0, 1, 6, 7)
+        # So CachePositionsManager thinks they are updated because start_pos > (0-9)
         # As a result it does not fill them with -1 and instead uses original values
         # which is 0, the value cache_position buffer is initialized with.
         expected_positions = torch.tensor(
-            [0, 0, 10, 11, 12, 13, 0, 0], dtype=torch.long
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 11, 12, 13, -1, -1], dtype=torch.long
         )
         self.assertTrue(
             torch.all(
@@ -407,7 +422,7 @@ class TestRingKVCache(unittest.TestCase):
             )
         )
 
-        # Second update at position 14 (will be mapped to position 6 in the ring buffer)
+        # Second update at position 14 (will be mapped to position 14 in the ring buffer)
         input_pos = torch.tensor([14], dtype=torch.long)
         seq_len = 3
         k_val = torch.ones(
@@ -424,9 +439,9 @@ class TestRingKVCache(unittest.TestCase):
 
         # Check that cache_positions correctly tracks the original indices
         # For input_pos=14 and seq_len=3, the original indices should be 14, 15, 16
-        # These map to positions 6, 7, 0 in the ring buffer
+        # These map to positions 14, 15, 0 in the ring buffer
         expected_positions = torch.tensor(
-            [16, 0, 10, 11, 12, 13, 14, 15], dtype=torch.long
+            [16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 11, 12, 13, 14, 15], dtype=torch.long
         )
         self.assertTrue(
             torch.all(

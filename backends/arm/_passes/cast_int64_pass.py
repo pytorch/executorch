@@ -35,6 +35,8 @@ class CastInt64BuffersToInt32Pass(ExportPass):
 
     def _to_int32(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
+            if len(node.users) == 0:
+                continue
             fake_tensor = node.meta["val"]
             if not isinstance(fake_tensor, torch._subclasses.fake_tensor.FakeTensor):
                 continue
@@ -45,7 +47,7 @@ class CastInt64BuffersToInt32Pass(ExportPass):
                 buffer_name = self.exported_program.graph_signature.inputs_to_buffers[
                     node.name
                 ]
-                buffer = self.exported_program.state_dict[node.name]
+                buffer = self.exported_program.state_dict[buffer_name]
                 self._assert_within_int32(buffer, node)
                 logger.warning(
                     f"Casting buffer {node.name} from torch.int64 to torch.int32"

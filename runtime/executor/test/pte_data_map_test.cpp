@@ -125,8 +125,8 @@ TEST_F(PteDataMapTest, UnimplementedMethods) {
       data_map_loader_.get(), 0, program_->named_data(), program_->segments());
   ;
 
-  // Check get_metadata is not implemented.
-  auto result = data_map->get_metadata("sample_key");
+  // Check get_tensor_layout is not implemented.
+  auto result = data_map->get_tensor_layout("sample_key");
   EXPECT_EQ(result.error(), Error::NotImplemented);
 
   // Check load_data_into is not implemented.

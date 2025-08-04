@@ -11,6 +11,8 @@ from executorch.backends.arm._passes import CastInt64BuffersToInt32Pass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
+from executorch.backends.test.harness.stages import StageType
+
 input_t = Tuple[torch.Tensor]  # Input x
 
 
@@ -40,6 +42,8 @@ def test_int64_model(test_data: input_t):
     )
     pipeline.run()
 
-    exported_program = pipeline.tester.get_artifact("RunPasses").exported_program()
+    exported_program = pipeline.tester.get_artifact(
+        StageType.RUN_PASSES
+    ).exported_program()
     for state in exported_program.state_dict:
         assert exported_program.state_dict[state].dtype == torch.int32

@@ -10,10 +10,10 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 aten_op = "torch.ops.aten.sub.Tensor"
@@ -38,6 +38,12 @@ sub2_test_data = {
     "rand_3D_4x4x4": lambda: (torch.rand(4, 2, 2), torch.rand(4, 2, 2)),
     "rand_4D_2x2x4x4": lambda: (torch.rand(2, 2, 4, 4), torch.rand(2, 2, 4, 4)),
     "zeros": lambda: (torch.rand(4, 4), torch.zeros(4, 4)),
+    "randn_4D_mutltiple_broadcasts": lambda: (
+        torch.randn(1, 4, 4, 1),
+        torch.randn(1, 1, 4, 4),
+    ),
+    "rand_3d_rand_Scalar": lambda: (torch.rand(1, 6, 2), torch.rand(1)),
+    "rand_3d_Scalar": lambda: (torch.rand(1, 6, 2), 1),
 }
 fvp_sub2_xfails = {"rand_4D_2x2x4x4": "MLETORCH-517 : Multiple batches not supported"}
 
@@ -57,9 +63,9 @@ input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
 @common.parametrize("test_data", sub_test_data)
-def test_sub_tensor_tosa_MI(test_data):
-    """Test Subtraction (TOSA MI)"""
-    pipeline = TosaPipelineMI[input_t1](
+def test_sub_tensor_tosa_FP(test_data):
+    """Test Subtraction (TOSA FP)"""
+    pipeline = TosaPipelineFP[input_t1](
         Sub(),
         test_data(),
         aten_op,
@@ -69,9 +75,9 @@ def test_sub_tensor_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", sub2_test_data)
-def test_sub_tensor_tosa_MI_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
-    """Test Two-Operand Subtraction (TOSA MI)"""
-    pipeline = TosaPipelineMI[input_t2](
+def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction (TOSA FP)"""
+    pipeline = TosaPipelineFP[input_t2](
         Sub2(),
         test_data(),
         aten_op,
@@ -81,86 +87,80 @@ def test_sub_tensor_tosa_MI_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
 
 
 @common.parametrize("test_data", sub_test_data)
-def test_sub_tensor_tosa_BI(test_data):
-    """Test Subtraction (TOSA BI)"""
-    pipeline = TosaPipelineBI[input_t1](
+def test_sub_tensor_tosa_INT(test_data):
+    """Test Subtraction (TOSA INT)"""
+    pipeline = TosaPipelineINT[input_t1](
         Sub(),
         test_data(),
         aten_op,
         exir_op,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
 @common.parametrize("test_data", sub2_test_data)
-def test_sub_tensor_tosa_BI_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
-    """Test Two-Operand Subtraction (TOSA BI)"""
-    pipeline = TosaPipelineBI[input_t2](
+def test_sub_tensor_tosa_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction (TOSA INT)"""
+    pipeline = TosaPipelineINT[input_t2](
         Sub2(),
         test_data(),
         aten_op,
         exir_op,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
 @common.parametrize("test_data", sub_test_data, fvp_sub_xfails)
 @common.XfailIfNoCorstone300
-def test_sub_tensor_u55_BI(test_data):
+def test_sub_tensor_u55_INT(test_data):
     """Test Subtraction on Ethos-U55 (FVP Mode)"""
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         Sub(),
         test_data(),
         aten_op,
         exir_op,
         run_on_fvp=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
 @common.parametrize("test_data", sub2_test_data, fvp_sub2_xfails)
 @common.XfailIfNoCorstone300
-def test_sub_tensor_u55_BI_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
+def test_sub_tensor_u55_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction on Ethos-U55 (FVP Mode)"""
-    pipeline = EthosU55PipelineBI[input_t2](
+    pipeline = EthosU55PipelineINT[input_t2](
         Sub2(),
         test_data(),
         aten_op,
         exir_op,
         run_on_fvp=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
 @common.parametrize("test_data", sub_test_data, fvp_sub_xfails)
 @common.XfailIfNoCorstone320
-def test_sub_tensor_u85_BI_2(test_data):
+def test_sub_tensor_u85_INT_2(test_data):
     """Test Subtraction on Ethos-U85 (FVP Mode)"""
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         Sub(),
         test_data(),
         aten_op,
         exir_op,
         run_on_fvp=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
 @common.parametrize("test_data", sub2_test_data, fvp_sub2_xfails)
 @common.XfailIfNoCorstone320
-def test_sub_tensor_u85_BI(test_data: Tuple[torch.Tensor, torch.Tensor]):
+def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction on Ethos-U85 (FVP Mode)"""
-    pipeline = EthosU85PipelineBI[input_t2](
+    pipeline = EthosU85PipelineINT[input_t2](
         Sub2(),
         test_data(),
         aten_op,
         exir_op,
         run_on_fvp=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

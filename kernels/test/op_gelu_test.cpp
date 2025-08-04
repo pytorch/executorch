@@ -17,15 +17,15 @@
 
 using namespace ::testing;
 using executorch::aten::ScalarType;
-using executorch::aten::string_view;
 using executorch::aten::Tensor;
+using std::string_view;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
 class OpGeluTest : public OperatorTest {
  protected:
   Tensor&
-  op_gelu_out(const Tensor& self, string_view approximate, Tensor& out) {
+  op_gelu_out(const Tensor& self, std::string_view approximate, Tensor& out) {
     return torch::executor::aten::gelu_outf(context_, self, approximate, out);
   }
 

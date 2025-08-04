@@ -79,17 +79,16 @@ TEST_F(FlatTensorSerializeTest, ValidFlatTensorSerialized) {
 
   EXPECT_EQ(
       *(uint64_t*)(header_buffer + 16),
-      232); // Flatbuffer size. This is fragile, and depends on the schema,
+      280); // Flatbuffer size. This is fragile, and depends on the schema,
             // the builder, and the padding needed.
 
   // Segment offset, depends on the padded header and flatbuffer sizes.
-  const uint64_t segment_offset = 48 + 232 + 8; // 8 is padding.
+  const uint64_t segment_offset = 48 + 280 + 8; // 8 is padding.
   EXPECT_EQ(*(uint64_t*)(header_buffer + 24), segment_offset);
 
-  EXPECT_EQ(
-      *(uint64_t*)(header_buffer + 32),
-      20); // Segment total size, 8 bytes of data (2 floats), 24 bytes of
-           // padding.
+  // Segment total size, 8 bytes of data (2 floats), 24 bytes of padding.
+  const uint64_t segment_size = 32;
+  EXPECT_EQ(*(uint64_t*)(header_buffer + 32), segment_size);
 
   // Check Flatbuffer
   auto flat_tensor = ::flat_tensor_flatbuffer::GetFlatTensor(byte_buffer);
@@ -97,30 +96,38 @@ TEST_F(FlatTensorSerializeTest, ValidFlatTensorSerialized) {
   EXPECT_EQ(
       flat_tensor->version(),
       executorch::extension::flat_tensor::kSchemaVersion);
-  EXPECT_EQ(flat_tensor->tensor_alignment(), 16);
-  EXPECT_EQ(flat_tensor->tensors()->size(), 2);
-  EXPECT_EQ(flat_tensor->segments()->size(), 1);
+  EXPECT_EQ(flat_tensor->named_data()->size(), 2);
+  EXPECT_EQ(flat_tensor->segments()->size(), 2);
 
-  auto tensor0 = flat_tensor->tensors()->Get(0);
-  EXPECT_EQ(strcmp(tensor0->fully_qualified_name()->c_str(), "linear.bias"), 0);
-  EXPECT_EQ(tensor0->scalar_type(), executorch_flatbuffer::ScalarType::FLOAT);
-  EXPECT_EQ(tensor0->sizes()->size(), 1);
-  EXPECT_EQ(tensor0->segment_index(), 0);
-  EXPECT_EQ(tensor0->offset(), 0);
-
-  auto tensor1 = flat_tensor->tensors()->Get(1);
+  auto tensor0 = flat_tensor->named_data()->Get(0);
+  EXPECT_EQ(strcmp(tensor0->key()->c_str(), "linear.bias"), 0);
   EXPECT_EQ(
-      strcmp(tensor1->fully_qualified_name()->c_str(), "linear.weight"), 0);
-  EXPECT_EQ(tensor1->scalar_type(), executorch_flatbuffer::ScalarType::FLOAT);
-  EXPECT_EQ(tensor1->sizes()->size(), 1);
-  EXPECT_EQ(tensor1->segment_index(), 0);
-  EXPECT_EQ(tensor1->offset(), 16);
+      tensor0->tensor_layout()->scalar_type(),
+      executorch_flatbuffer::ScalarType::FLOAT);
+  EXPECT_EQ(tensor0->tensor_layout()->sizes()->size(), 1);
+  EXPECT_EQ(tensor0->tensor_layout()->sizes()->Get(0), 1);
+  EXPECT_EQ(tensor0->tensor_layout()->dim_order()->size(), 1);
+  EXPECT_EQ(tensor0->tensor_layout()->dim_order()->Get(0), 0);
+
+  auto tensor1 = flat_tensor->named_data()->Get(1);
+  EXPECT_EQ(strcmp(tensor1->key()->c_str(), "linear.weight"), 0);
+  EXPECT_EQ(
+      tensor1->tensor_layout()->scalar_type(),
+      executorch_flatbuffer::ScalarType::FLOAT);
+  EXPECT_EQ(tensor1->tensor_layout()->sizes()->size(), 1);
+  EXPECT_EQ(tensor1->tensor_layout()->sizes()->Get(0), 1);
+  EXPECT_EQ(tensor1->tensor_layout()->dim_order()->size(), 1);
+  EXPECT_EQ(tensor1->tensor_layout()->dim_order()->Get(0), 0);
 
   // Test Segments
-  auto segment = flat_tensor->segments()->Get(0);
+  auto segment0 = flat_tensor->segments()->Get(0);
+  EXPECT_EQ(segment0->offset(), 0);
+  EXPECT_EQ(segment0->size(), 4);
 
-  EXPECT_EQ(segment->offset(), 0);
-  EXPECT_EQ(segment->size(), 20);
+  auto segment1 = flat_tensor->segments()->Get(1);
+  EXPECT_EQ(segment1->offset(), kTensorAlignment);
+  EXPECT_EQ(segment1->size(), 4);
+
   uint8_t* data = (uint8_t*)(byte_buffer + segment_offset);
   EXPECT_EQ(*(float*)(data + 0), linear_bias);
   EXPECT_EQ(*(float*)(data + 16), linear_weight);

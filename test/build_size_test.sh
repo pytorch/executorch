@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Build size_test and show the size of it
-set -e
+set -ex
 
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../.ci/scripts/utils.sh"
@@ -28,6 +28,7 @@ cmake_install_executorch_lib() {
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
+          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
           -DEXECUTORCH_OPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           ${EXTRA_BUILD_ARGS} \
@@ -46,9 +47,11 @@ test_cmake_size_test() {
 
     echo 'ExecuTorch with no ops binary size, unstripped:'
     ls -al cmake-out/test/size_test
+    size cmake-out/test/size_test
 
     echo 'ExecuTorch with portable ops binary size, unstripped:'
     ls -al cmake-out/test/size_test_all_ops
+    size cmake-out/test/size_test_all_ops
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]]; then

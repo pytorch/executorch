@@ -14,17 +14,14 @@ namespace executor {
 namespace native {
 namespace {
 
-double reciprocal(double x) {
+template <typename T>
+T reciprocal(T x) {
   return 1.0 / x;
 }
 
 } // namespace
 
-Tensor&
-reciprocal_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realhbbf16_to_floathbf16(
-      reciprocal, ctx, in, out);
-}
+DEFINE_UNARY_UFUNC_REALHBBF16_TO_FLOATHBF16(reciprocal_out, reciprocal)
 
 } // namespace native
 } // namespace executor

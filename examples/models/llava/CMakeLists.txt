@@ -76,9 +76,9 @@ find_package(gflags REQUIRED)
 #
 
 # find `executorch` libraries Same as for gflags
-set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
-find_package(executorch CONFIG REQUIRED)
-target_link_options_shared_lib(executorch)
+list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
+find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
+executorch_target_link_options_shared_lib(executorch)
 
 # llava_runner library
 add_subdirectory(runner)
@@ -97,17 +97,17 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     cpublas
     eigen_blas
   )
-  target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
-  target_link_options_shared_lib(portable_ops_lib)
+  executorch_target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 # quantized_ops_lib: Register quantized op kernels into the runtime
-target_link_options_shared_lib(quantized_ops_lib)
+executorch_target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_LLM)
   list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
@@ -130,24 +130,24 @@ endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
+  set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   if(TARGET kleidiai)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
   list(APPEND link_libraries ${xnnpack_backend_libs})
-  target_link_options_shared_lib(xnnpack_backend)
+  executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
 
 # Vulkan backend
 if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
-  target_link_options_shared_lib(vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
 endif()
 
 # Qnn backend
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
-  target_link_options_shared_lib(qnn_executorch_backend)
+  executorch_target_link_options_shared_lib(qnn_executorch_backend)
 endif()
 
 # MPS backend
@@ -161,7 +161,7 @@ if(TARGET mpsdelegate)
     "-weak_framework MetalPerformanceShadersGraph"
     "-weak_framework Metal"
   )
-  target_link_options_shared_lib(mpsdelegate)
+  executorch_target_link_options_shared_lib(mpsdelegate)
 endif()
 
 if(TARGET coremldelegate)
@@ -175,7 +175,7 @@ if(TARGET coremldelegate)
     "-framework CoreML"
     "-framework Accelerate"
   )
-  target_link_options_shared_lib(coremldelegate)
+  executorch_target_link_options_shared_lib(coremldelegate)
 endif()
 
 # This one is needed for cpuinfo where it uses android specific log lib
@@ -197,17 +197,13 @@ list(APPEND _common_include_directories ${stb_SOURCE_DIR}
 )
 
 add_executable(llava_main ${_srcs})
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  if(APPLE)
-    target_link_options(llava_main PRIVATE "LINKER:-dead_strip,-s")
-  else()
-    target_link_options(llava_main PRIVATE "LINKER:--gc-sections,-s")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(llava_main)
+  if(NOT APPLE)
+    target_link_options(llava_main PRIVATE "LINKER:-s")
   endif()
 endif()
 
 target_include_directories(llava_main PUBLIC ${_common_include_directories})
 target_link_libraries(llava_main PUBLIC llava_runner ${link_libraries})
 target_compile_options(llava_main PUBLIC ${_common_compile_options})
-
-# Print all summary
-executorch_print_configuration_summary()

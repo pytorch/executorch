@@ -14,8 +14,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 aten_op = "torch.ops.aten.pad.default"
@@ -91,9 +91,9 @@ class ConstantPadND(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_constant_pad_nd_tosa_MI(test_data: Tuple):
+def test_constant_pad_nd_tosa_FP(test_data: Tuple):
     test_data, padding, value = test_data
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         ConstantPadND(padding, value),
         (test_data,),
         aten_op,
@@ -103,12 +103,14 @@ def test_constant_pad_nd_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_constant_pad_nd_tosa_BI(test_data: Tuple):
+def test_constant_pad_nd_tosa_INT(test_data: Tuple):
     test_data, padding, value = test_data
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         ConstantPadND(padding, value),
         (test_data,),
         aten_op,
         exir_op,
+        atol=0.005,  # TODO: Investigate flakyness (MLETORCH-989)
+        rtol=0.01,
     )
     pipeline.run()

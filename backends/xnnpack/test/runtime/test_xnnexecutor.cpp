@@ -56,7 +56,7 @@ TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
           dims.size(),
           dims.data(),
           nullptr,
-          /*external_id=*/0,
+          /*external_id=*/1,
           /*flags=*/XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
           &output_id));
   ASSERT_NE(output_id, XNN_INVALID_VALUE_ID);

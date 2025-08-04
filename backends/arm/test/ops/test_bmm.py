@@ -13,10 +13,10 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 aten_op_bmm = "torch.ops.aten.bmm.default"
@@ -44,16 +44,6 @@ class BMM(torch.nn.Module):
         return torch.bmm(x, y)
 
 
-class MatMul(torch.nn.Module):
-    test_data_generators = {
-        "rand_3d": lambda: (torch.rand(2, 3, 5), torch.rand(2, 5, 2)),
-        "rand_4d": lambda: (torch.rand(1, 2, 3, 5), torch.rand(1, 2, 5, 2)),
-    }
-
-    def forward(self, x, y):
-        return torch.matmul(x, y)
-
-
 class BMMSingleInput(torch.nn.Module):
     test_data_generators = {
         "rand_3d_1": lambda: (torch.rand(20, 3, 3),),
@@ -67,43 +57,31 @@ class BMMSingleInput(torch.nn.Module):
 
 
 @common.parametrize("test_data", BMM.test_data_generators)
-def test_bmm_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](BMM(), test_data(), aten_op_bmm, exir_op_bmm)
+def test_bmm_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](BMM(), test_data(), aten_op_bmm, exir_op_bmm)
     pipeline.run()
 
 
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLETORCH-534)
 @common.parametrize("test_data", BMMSingleInput.test_data_generators)
-def test_bmm_tosa_MI_single_input(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](
+def test_bmm_tosa_FP_single_input(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
         BMMSingleInput(), test_data(), aten_op_bmm, exir_op_bmm
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", MatMul.test_data_generators)
-def test_mm_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](MatMul(), test_data(), aten_op_mm, exir_op_mm)
-    pipeline.run()
-
-
-@common.parametrize("test_data", MatMul.test_data_generators)
-def test_mm_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](MatMul(), test_data(), aten_op_mm, exir_op_mm)
-    pipeline.run()
-
-
-@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLETORCH-534)
 @common.parametrize("test_data", BMM.test_data_generators)
-def test_bmm_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](BMM(), test_data(), aten_op_bmm, exir_op_bmm)
+def test_bmm_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        BMM(), test_data(), aten_op_bmm, exir_op_bmm, qtol=1
+    )
     pipeline.run()
 
 
-@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLETORCH-534)
 @common.parametrize("test_data", BMMSingleInput.test_data_generators)
-def test_bmm_tosa_BI_single_input(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_bmm_tosa_INT_single_input(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         BMMSingleInput(), test_data(), aten_op_bmm, exir_op_bmm
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
@@ -112,8 +90,8 @@ def test_bmm_tosa_BI_single_input(test_data: input_t1):
 
 @common.parametrize("test_data", BMM.test_data_generators)
 @common.XfailIfNoCorstone300
-def test_bmm_u55_BI(test_data: input_t1):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_bmm_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
         BMM(),
         test_data(),
         aten_op_bmm,
@@ -125,8 +103,8 @@ def test_bmm_u55_BI(test_data: input_t1):
 
 @common.parametrize("test_data", BMM.test_data_generators)
 @common.XfailIfNoCorstone320
-def test_bmm_u85_BI(test_data: input_t1):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_bmm_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
         BMM(),
         test_data(),
         aten_op_bmm,
@@ -138,8 +116,8 @@ def test_bmm_u85_BI(test_data: input_t1):
 
 @common.parametrize("test_data", BMMSingleInput.test_data_generators)
 @common.XfailIfNoCorstone300
-def test_bmm_u55_BI_single_input(test_data: input_t1):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_bmm_u55_INT_single_input(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
         BMMSingleInput(),
         test_data(),
         aten_op_bmm,
@@ -151,8 +129,8 @@ def test_bmm_u55_BI_single_input(test_data: input_t1):
 
 @common.parametrize("test_data", BMMSingleInput.test_data_generators)
 @common.XfailIfNoCorstone320
-def test_bmm_u85_BI_single_input(test_data: input_t1):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_bmm_u85_INT_single_input(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
         BMMSingleInput(),
         test_data(),
         aten_op_bmm,

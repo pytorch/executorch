@@ -99,6 +99,22 @@ public class PromptFormat {
     }
   }
 
+  public static String replaceSpecialToken(ModelType modelType, String token) {
+    switch (modelType) {
+      case QWEN_3:
+        switch (token) {
+          case "<|im_end|>":
+            return "";
+          case "<think>":
+            return "Thinking...\n";
+          case "</think>":
+            return "\nDone thinking";
+        }
+      default:
+        return token;
+    }
+  }
+
   public static String getLlavaPresetPrompt() {
     return "A chat between a curious human and an artificial intelligence assistant. The assistant"
         + " gives helpful, detailed, and polite answers to the human's questions. USER: ";

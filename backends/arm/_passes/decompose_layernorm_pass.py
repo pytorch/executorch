@@ -1,5 +1,4 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -47,11 +46,12 @@ class DecomposeLayerNormPass(ArmPass):
     Decompose layernorm(x, normalized_shape, weights, bias, eps) to a sequence of:
     mean        = op_mean(x, dims)           # E[x]
     var         = op_var(x, dims)            # Var[x]
-    denominator = op_sub(x, mean)            # (x - E[x])
+    numerator   = op_sub(x, mean)            # (x - E[x])
     add         = op_add(var, eps)           # Var[x] + eps
     rsqrt       = op_rsqrt(add)              # 1 / sqrt(Var[x] + eps)
-    mul         = op_mul(denominator, rsqrt) # ((x - E[x]) / sqrt(Var[x] + eps)) * weigths
-    bias        = op_add(mul, bias)          # ((x - E[x]) / sqrt(Var[x] + eps)) * weigths + bias
+    mul         = op_mul(numerator, rsqrt)   # ((x - E[x]) / sqrt(Var[x] + eps))
+    weigths     = op_mul(mul, weigths)       # ((x - E[x]) / sqrt(Var[x] + eps)) * weigths
+    bias        = op_add(weigths, bias)      # ((x - E[x]) / sqrt(Var[x] + eps)) * weigths + bias
 
     Source: https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
     """

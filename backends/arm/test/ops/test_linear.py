@@ -14,18 +14,18 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 aten_op = "torch.ops.aten.linear.default"
 
 input_t1 = Tuple[torch.Tensor]
 
-test_data_suite_rank1 = {
-    # (test_name, test_data, out_features, has_bias)
+test_data_rank1_FP = {
+    # test_name: (test_data, out_features, has_bias)
     "model_linear_rank1_zeros": lambda: (
         torch.zeros(10),
         15,
@@ -58,8 +58,8 @@ test_data_suite_rank1 = {
     ),
 }
 
-test_data_suite_rank4 = {
-    # (test_name, test_data, out_features, has_bias)
+test_data_rank4_FP = {
+    # test_name: (test_data, out_features, has_bias)
     "model_linear_rank4_zeros": lambda: (
         torch.zeros(5, 10, 25, 20),
         30,
@@ -92,6 +92,20 @@ test_data_suite_rank4 = {
     ),
 }
 
+# Generate a new test set paired with per_channel_quant=True/False.
+test_data_rank1_INT = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
+    for (k, v) in test_data_rank1_FP.items()
+    for q in [True, False]
+}
+
+# Generate a new test set paired with per_channel_quant=True/False.
+test_data_rank4_INT = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
+    for (k, v) in test_data_rank4_FP.items()
+    for q in [True, False]
+}
+
 
 class Linear(torch.nn.Module):
     def __init__(
@@ -111,11 +125,11 @@ class Linear(torch.nn.Module):
         return self.fc(x)
 
 
-@common.parametrize("test_data", test_data_suite_rank1 | test_data_suite_rank4)
-def test_linear_tosa_MI(test_data: torch.Tensor):
+@common.parametrize("test_data", test_data_rank1_FP | test_data_rank4_FP)
+def test_linear_tosa_FP(test_data: torch.Tensor):
     test_data, out_features, has_bias = test_data()
     in_features = test_data.shape[-1]
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         Linear(
             in_features=in_features,
             out_features=out_features,
@@ -129,11 +143,11 @@ def test_linear_tosa_MI(test_data: torch.Tensor):
 
 
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness.
-@common.parametrize("test_data", test_data_suite_rank1 | test_data_suite_rank4)
-def test_linear_tosa_BI(test_data: torch.Tensor):
-    test_data, out_features, has_bias = test_data()
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+def test_linear_tosa_INT(test_data: torch.Tensor):
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         Linear(
             in_features=in_features,
             out_features=out_features,
@@ -142,17 +156,18 @@ def test_linear_tosa_BI(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_op=[],
+        per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_rank1)
+@common.parametrize("test_data", test_data_rank1_INT)
 @common.XfailIfNoCorstone300
-def test_linear_u55_BI(test_data: torch.Tensor):
-    test_data, out_features, has_bias = test_data()
+def test_linear_u55_INT(test_data: torch.Tensor):
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
-    EthosU55PipelineBI[input_t1](
+    EthosU55PipelineINT[input_t1](
         Linear(
             in_features=in_features,
             out_features=out_features,
@@ -162,30 +177,35 @@ def test_linear_u55_BI(test_data: torch.Tensor):
         aten_op,
         exir_ops=[],
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     ).run()
 
 
 x_fail = {
-    "model_linear_rank4_zeros": "AssertionError: Output 0 does not match reference output.",
-    "model_linear_rank4_ones": "AssertionError: Output 0 does not match reference output.",
-    "model_linear_rank4_negative_ones": "AssertionError: Output 0 does not match reference output.",
-    "model_linear_rank4_rand": "AssertionError: Output 0 does not match reference output.",
-    "model_linear_rank4_negative_large_rand": "AssertionError: Output 0 does not match reference output.",
-    "model_linear_rank4_large_randn": "AssertionError: Output 0 does not match reference output.",
+    f"{k},per_channel_quant={q}": reason
+    for k, reason in {
+        "model_linear_rank4_zeros": "AssertionError: Output 0 does not match reference output.",
+        "model_linear_rank4_ones": "AssertionError: Output 0 does not match reference output.",
+        "model_linear_rank4_negative_ones": "AssertionError: Output 0 does not match reference output.",
+        "model_linear_rank4_rand": "AssertionError: Output 0 does not match reference output.",
+        "model_linear_rank4_negative_large_rand": "AssertionError: Output 0 does not match reference output.",
+        "model_linear_rank4_large_randn": "AssertionError: Output 0 does not match reference output.",
+    }.items()
+    for q in [True, False]
 }
 
 
 @common.parametrize(
     "test_data",
-    test_data_suite_rank1 | test_data_suite_rank4,
+    test_data_rank1_INT | test_data_rank4_INT,
     x_fail,
 )
 @common.XfailIfNoCorstone320
-def test_linear_u85_BI(test_data: torch.Tensor):
-    test_data, out_features, has_bias = test_data()
+def test_linear_u85_INT(test_data: torch.Tensor):
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
-    EthosU85PipelineBI[input_t1](
+    EthosU85PipelineINT[input_t1](
         Linear(
             in_features=in_features,
             out_features=out_features,
@@ -195,5 +215,6 @@ def test_linear_u85_BI(test_data: torch.Tensor):
         aten_op,
         exir_ops=[],
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     ).run()

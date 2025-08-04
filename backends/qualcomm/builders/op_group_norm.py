@@ -12,7 +12,8 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpGroupNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 from .utils import get_parameter
 
@@ -29,7 +30,7 @@ class GroupNormVisitor(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -39,7 +40,7 @@ class GroupNormVisitor(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        weight_node = node.args[1]
+        weight_node = self.get_node(node.args[1])
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
@@ -49,7 +50,7 @@ class GroupNormVisitor(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        bias_node = node.args[2]
+        bias_node = self.get_node(node.args[2])
         bias_tensor = get_parameter(bias_node, self.edge_program)
         bias_tensor_wrapper = self.define_tensor(
             bias_node,

@@ -10,7 +10,7 @@ import torch
 
 from executorch.backends.arm.test import common
 
-from executorch.backends.arm.test.tester.test_pipeline import EthosU55PipelineBI
+from executorch.backends.arm.test.tester.test_pipeline import EthosU55PipelineINT
 from executorch.exir.passes.quantize_io_pass import QuantizeInputs, QuantizeOutputs
 
 
@@ -27,17 +27,18 @@ class SimpleModel(torch.nn.Module):
 
 
 @common.parametrize("test_data", SimpleModel.test_data)
-def test_ioquantisation_pass_u55_BI(test_data: input_t):
+def test_ioquantisation_pass_u55_INT(test_data: input_t):
     """
     Test the executorch/exir/passes/quanize_io_pass pass works(meaning we don't get Q/DQ nodes) on a simple model
     """
     model = SimpleModel()
-    pipeline = EthosU55PipelineBI(
+    pipeline = EthosU55PipelineINT(
         model,
         test_data,
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=False,
+        run_on_fvp=False,
     )
     pipeline.pop_stage(-1)
     pipeline.run()

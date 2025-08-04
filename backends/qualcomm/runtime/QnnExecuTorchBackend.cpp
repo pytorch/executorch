@@ -129,33 +129,37 @@ Error QnnExecuTorchBackend::execute(
   std::vector<Qnn_Tensor_t> input_tensor_structs;
   std::vector<Qnn_Tensor_t> output_tensor_structs;
 
+  int args_index = 0;
   input_tensor_structs.reserve(input_tensors.size());
-  for (int i = 0; i < input_tensors.size(); ++i) {
-    if (qnn_manager->RegisterMem(
-            args[i]->toTensor().mutable_data_ptr(), input_tensors[i]) !=
-        Error::Ok) {
-      // update data ptr only should be fine
-      input_tensors[i]->FillDataBuffer(
-          args[i]->toTensor().const_data_ptr(), false /* copy_data */);
+  for (const auto& input_tensor : input_tensors) {
+    if (input_tensor->GetName().find("mutbuf_") == std::string::npos) {
+      if (qnn_manager->RegisterMem(
+              args[args_index]->toTensor().mutable_data_ptr(), input_tensor) !=
+          Error::Ok) {
+        // update data ptr only should be fine
+        input_tensor->FillDataBuffer(
+            args[args_index]->toTensor().const_data_ptr(),
+            false /* copy_data */);
+        // use the real input shape instead of nominal one to make sure
+        // dynamic shape is functional
+        auto dims = args[args_index]->toTensor().sizes();
+        input_tensor->SetDims(dims.data(), dims.size());
+      }
+      args_index++;
     }
-    // use the real input shape instead of nominal one to make sure
-    // dynamic shape is functional
-    auto dims = args[i]->toTensor().sizes();
-    input_tensors[i]->SetDims(dims.data(), dims.size());
-    input_tensor_structs.emplace_back(input_tensors[i]->CloneTensorStruct());
+    input_tensor_structs.emplace_back(input_tensor->CloneTensorStruct());
   }
 
-  int output_index = input_tensors.size();
   for (const auto& output_tensor : output_tensors) {
     // pos=0 limits the search to the prefix
-    if (output_tensor->GetName().rfind("output_", 0) == 0) {
-      void* mutable_data_ptr =
-          args[output_index]->toTensor().mutable_data_ptr();
+    if (output_tensor->GetName().rfind("output_", 0) == 0 &&
+        output_tensor->GetName().find("mutbuf_") == std::string::npos) {
+      void* mutable_data_ptr = args[args_index]->toTensor().mutable_data_ptr();
       if (qnn_manager->RegisterMem(mutable_data_ptr, output_tensor) !=
           Error::Ok) {
         output_tensor->FillDataBuffer(mutable_data_ptr, false /* copy_data */);
       }
-      output_index++;
+      args_index++;
     }
     output_tensor_structs.push_back(output_tensor->CloneTensorStruct());
   }

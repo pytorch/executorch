@@ -8,10 +8,10 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t1 = Tuple[torch.Tensor]
@@ -44,8 +44,8 @@ class AliasCopy(torch.nn.Module):
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
-def test_alias_tosa_MI(test_data: input_t1):
-    TosaPipelineMI[input_t1](
+def test_alias_tosa_FP(test_data: input_t1):
+    TosaPipelineFP[input_t1](
         AliasCopy(),
         test_data(),
         AliasCopy.aten_op,
@@ -54,8 +54,8 @@ def test_alias_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
-def test_alias_tosa_BI(test_data: input_t1):
-    TosaPipelineBI[input_t1](
+def test_alias_tosa_INT(test_data: input_t1):
+    TosaPipelineINT[input_t1](
         AliasCopy(),
         test_data(),
         AliasCopy.aten_op,
@@ -64,8 +64,9 @@ def test_alias_tosa_BI(test_data: input_t1):
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
-def test_alias_u55_BI(test_data: input_t1):
-    EthosU55PipelineBI[input_t1](
+@common.XfailIfNoCorstone300
+def test_alias_u55_INT(test_data: input_t1):
+    EthosU55PipelineINT[input_t1](
         AliasCopy(),
         test_data(),
         AliasCopy.aten_op,
@@ -74,8 +75,9 @@ def test_alias_u55_BI(test_data: input_t1):
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
-def test_alias_u85_BI(test_data: input_t1):
-    EthosU85PipelineBI[input_t1](
+@common.XfailIfNoCorstone320
+def test_alias_u85_INT(test_data: input_t1):
+    EthosU85PipelineINT[input_t1](
         AliasCopy(),
         test_data(),
         AliasCopy.aten_op,

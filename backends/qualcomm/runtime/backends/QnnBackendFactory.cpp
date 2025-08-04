@@ -25,13 +25,12 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
   switch (options->backend_options()->backend_type()) {
     case QnnExecuTorchBackendType::kHtpBackend: {
       auto htp_options = options->backend_options()->htp_options();
+      const std::string skel_library_dir =
+          htp_options->skel_library_dir()->str();
+      if (!skel_library_dir.empty()) {
+        setenv("ADSP_LIBRARY_PATH", skel_library_dir.c_str(), /*overwrite=*/1);
+      }
       if (options->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
-        const std::string skel_library_dir =
-            htp_options->skel_library_dir()->str();
-        if (!skel_library_dir.empty()) {
-          setenv(
-              "ADSP_LIBRARY_PATH", skel_library_dir.c_str(), /*overwrite=*/1);
-        }
         QNN_EXECUTORCH_LOG_INFO(
             "skel_library_dir: %s", skel_library_dir.c_str());
         QNN_EXECUTORCH_LOG_INFO(
@@ -62,8 +61,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           implementation, logger, options->soc_info(), htp_options);
 
       backend_params->qnn_backend_cache_ptr_ =
-          std::make_unique<HtpBackendCache>(
-              qnn_context_blob, options->graph_name()->str());
+          std::make_unique<HtpBackendCache>(qnn_context_blob);
 
       backend_params->qnn_context_ptr_ = std::make_unique<HtpContext>(
           implementation,
@@ -81,7 +79,9 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           options->soc_info(),
           htp_options);
       backend_params->qnn_mem_manager_ptr_ = std::make_unique<QnnMemManager>(
-          implementation, backend_params->qnn_context_ptr_.get());
+          implementation,
+          backend_params->qnn_context_ptr_.get(),
+          options->log_level());
       backend_params->backend_init_state_ = BackendInitializeState::INITIALIZED;
     } break;
     case QnnExecuTorchBackendType::kGpuBackend:

@@ -9,7 +9,3 @@
 # any variables so that subprocesses will see them.
 
 source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
-
-# When building for macOS, link additional backends into the pybindings runtime.
-CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_COREML=ON"
-CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_MPS=ON"

@@ -60,10 +60,6 @@ say "Installing CoreML Backend Requirements"
 
 ./backends/apple/coreml/scripts/install_requirements.sh
 
-say "Installing MPS Backend Requirements"
-
-./backends/apple/mps/install_requirements.sh
-
 say "Exporting Models"
 
 python3 -m examples.portable.scripts.export --model_name="$MODEL_NAME"
