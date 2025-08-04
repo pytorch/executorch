@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 scalar_input_t = tuple[torch.Tensor, int]
@@ -67,8 +68,13 @@ class LshiftTensor(torch.nn.Module):
         return x.bitwise_left_shift(shift)
 
 
+##################
+## LshiftScalar ##
+##################
+
+
 @common.parametrize("test_data", LshiftScalar.test_data)
-def test_lshift_scalar_tosa_FP_scalar(test_data):
+def test_bitwise_left_shift_scalar_tosa_FP_scalar(test_data):
     TosaPipelineFP[scalar_input_t](
         LshiftScalar(),
         test_data,
@@ -117,8 +123,40 @@ def test_bitwise_left_shift_tensor_u85_INT_scalar(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", LshiftScalar.test_data)
+@common.SkipIfNoModelConverter
+def test_bitwise_left_shift_scalar_vgf_FP_scalar(test_data: scalar_input_t):
+    pipeline = VgfPipeline[scalar_input_t](
+        LshiftScalar(),
+        test_data,
+        LshiftScalar.torch_op_FP,
+        LshiftScalar.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", LshiftScalar.test_data)
+@common.SkipIfNoModelConverter
+def test_bitwise_left_shift_tensor_vgf_INT_scalar(test_data: scalar_input_t):
+    pipeline = VgfPipeline[scalar_input_t](
+        LshiftScalar(),
+        test_data,
+        LshiftScalar.torch_op_INT,
+        LshiftScalar.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+##################
+## LshiftTensor ##
+##################
+
+
 @common.parametrize("test_data", LshiftTensor.test_data)
-def test_lshift_scalar_tosa_FP(test_data):
+def test_bitwise_left_shift_tensor_tosa_FP(test_data):
     TosaPipelineFP[scalar_input_t](
         LshiftTensor(),
         test_data,
@@ -162,6 +200,33 @@ def test_bitwise_left_shift_tensor_u85_INT(test_data):
         LshiftTensor.torch_op,
         LshiftTensor.exir_op,
         run_on_fvp=True,
+    )
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize("test_data", LshiftTensor.test_data)
+@common.SkipIfNoModelConverter
+def test_bitwise_left_shift_tensor_vgf_FP(test_data: tensor_input_t):
+    pipeline = VgfPipeline[tensor_input_t](
+        LshiftTensor(),
+        test_data,
+        LshiftTensor.torch_op,
+        LshiftTensor.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", LshiftTensor.test_data)
+@common.SkipIfNoModelConverter
+def test_bitwise_left_shift_tensor_vgf_INT(test_data: tensor_input_t):
+    pipeline = VgfPipeline[tensor_input_t](
+        LshiftTensor(),
+        test_data,
+        LshiftTensor.torch_op,
+        LshiftTensor.exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
