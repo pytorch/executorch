@@ -17,6 +17,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 from torchvision.ops import Permute
 
@@ -102,5 +103,33 @@ def test_permute_u85_INT(test_data: torch.Tensor):
         aten_op,
         exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_permute_vgf_FP(test_data):
+    test_data, dims = test_data()
+    pipeline = VgfPipeline[input_t1](
+        SimplePermute(dims=dims),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_permute_vgf_INT(test_data):
+    test_data, dims = test_data()
+    pipeline = VgfPipeline[input_t1](
+        SimplePermute(dims=dims),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
