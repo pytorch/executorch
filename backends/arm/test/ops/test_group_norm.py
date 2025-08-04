@@ -10,6 +10,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -142,4 +143,57 @@ def test_native_group_norm_u85_INT(test_data):
         atol=0.1,  # TODO: "MLETORCH-925: Fix numerical issue for aten.native_group_norm"
     )
     pipeline.change_args("run_method_and_compare_outputs", atol=1, qtol=1)
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    xfails={
+        "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_8": "MLETORCH-925: Fix numerical issue",
+    },
+    strict=False,
+)
+@common.SkipIfNoModelConverter
+def test_native_group_norm_vgf_FP(test_data):
+    aten_op = "torch.ops.aten.group_norm.default"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
+    model, inp = test_data
+    pipeline = VgfPipeline[input_t](
+        inp,
+        model,
+        aten_op=aten_op,
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    xfails={
+        "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_8": "MLETORCH-925: Fix numerical issue",
+    },
+    strict=False,
+)
+@common.SkipIfNoModelConverter
+def test_native_group_norm_vgf_INT(test_data):
+    aten_op = "torch.ops.aten.sub.Tensor"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
+    model, inp = test_data
+    pipeline = VgfPipeline[input_t](
+        inp,
+        model,
+        aten_op=aten_op,
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+INT",
+        atol=0.1,  # TODO: "MLETORCH-925: Fix numerical issue for aten.native_group_norm"
+    )
     pipeline.run()
