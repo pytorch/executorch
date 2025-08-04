@@ -815,6 +815,9 @@ jobs:
           smollm|coreml_fp32_gpu|--quantize,
           llama3|coreml_fp32_gpu|--quantize,
           olmo|coreml_fp32_gpu|--quantize,
+          roberta|coreml_fp32_gpu|--quantize,
+          bert|coreml_fp32_gpu|--quantize,
+          distilbert|coreml_fp32_gpu|--quantize,
         ]
       fail-fast: false
     with:
