@@ -1,19 +1,24 @@
-import subprocess
 import argparse
+import subprocess
+import tempfile
 from pathlib import Path
 
 import torch
 from datasets import load_dataset
-from transformers import AutoProcessor, AutoTokenizer, AutoModelForImageClassification, AutoConfig
 
 from optimum.executorch import (
     ExecuTorchModelForCausalLM,
+    ExecuTorchModelForImageClassification,
     ExecuTorchModelForMaskedLM,
     ExecuTorchModelForSeq2SeqLM,
     ExecuTorchModelForSpeechSeq2Seq,
-    ExecuTorchModelForImageClassification,
 )
-import tempfile
+from transformers import (
+    AutoConfig,
+    AutoModelForImageClassification,
+    AutoProcessor,
+    AutoTokenizer,
+)
 
 
 def cli_export(command, model_dir):
@@ -22,7 +27,9 @@ def cli_export(command, model_dir):
         if not p.is_dir():
             raise Exception(f"Path {model_dir} already exists and is not a directory.")
         if any(p.iterdir()):
-            raise Exception(f"Existing directory {model_dir} is non-empty. Please remove it first.")
+            raise Exception(
+                f"Existing directory {model_dir} is non-empty. Please remove it first."
+            )
     try:
         subprocess.run(command, check=True)
         print("Export completed successfully.")
@@ -50,8 +57,10 @@ def test_text_generation(model_id, model_dir, recipe, *, quantize=True, run_only
         ]
         if quantize:
             command += [
-                "--qlinear", "4w",
-                "--qembedding", "8w",
+                "--qlinear",
+                "4w",
+                "--qembedding",
+                "8w",
             ]
     else:
         assert not quantize, "Quantization is not supported for non-CoreML recipes yet"
@@ -86,8 +95,10 @@ def test_fill_mask(model_id, model_dir, recipe, *, quantize=True, run_only=False
     ]
     if "coreml" in recipe and quantize:
         command += [
-            "--qlinear", "4w",
-            "--qembedding", "8w",
+            "--qlinear",
+            "4w",
+            "--qembedding",
+            "8w",
         ]
     else:
         assert not quantize, "Quantization is not supported for non-CoreML recipes yet"
@@ -192,7 +203,9 @@ def test_whisper(model_id, model_dir, recipe, *, quantize=False, run_only=False)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = ExecuTorchModelForSpeechSeq2Seq.from_pretrained(model_dir)
     processor = AutoProcessor.from_pretrained(model_id)
-    dataset = load_dataset("distil-whisper/librispeech_long", "clean", split="validation")
+    dataset = load_dataset(
+        "distil-whisper/librispeech_long", "clean", split="validation"
+    )
     sample = dataset[0]["audio"]
 
     input_features = processor(
@@ -209,6 +222,7 @@ def test_whisper(model_id, model_dir, recipe, *, quantize=False, run_only=False)
     expected_text = " Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel. Nor is Mr. Quilter's manner less interesting than his matter. He tells us that at this festive season of the year, with Christmas and roast beef looming before us, similarly drawn from eating and its results occur most readily to the mind. He has grave doubts whether Sir Frederick Latins work is really Greek after all, and can discover that."
     print(f"Generated transcription: {generated_transcription}")
     print(f"Expected transcription: {expected_text}")
+
 
 def test_vit(model_id, model_dir, recipe, *, quantize=False, run_only=False):
     assert not quantize, "Quantization is not supported for ViT models yet."
@@ -229,7 +243,7 @@ def test_vit(model_id, model_dir, recipe, *, quantize=False, run_only=False):
     ]
     if not run_only:
         cli_export(command, model_dir)
-    
+
     config = AutoConfig.from_pretrained(model_id)
     batch_size = 1
     num_channels = config.num_channels
@@ -239,12 +253,16 @@ def test_vit(model_id, model_dir, recipe, *, quantize=False, run_only=False):
 
     # Test fetching and lowering the model to ExecuTorch
     et_model = ExecuTorchModelForImageClassification.from_pretrained(model_id=model_dir)
-    eager_model = AutoModelForImageClassification.from_pretrained(model_id).eval().to("cpu")
+    eager_model = (
+        AutoModelForImageClassification.from_pretrained(model_id).eval().to("cpu")
+    )
     with torch.no_grad():
         eager_output = eager_model(pixel_values)
         et_output = et_model.forward(pixel_values)
-    
-    assert torch.allclose(eager_output.logits, et_output, atol=1e-02, rtol=1e-02), "CoreML output does not match eager"
+
+    assert torch.allclose(
+        eager_output.logits, et_output, atol=1e-02, rtol=1e-02
+    ), "CoreML output does not match eager"
 
 
 if __name__ == "__main__":
@@ -255,22 +273,32 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     model_to_model_id_and_test_function = {
-        "smollm": ("HuggingFaceTB/SmolLM2-135M", test_text_generation), # works
-        "qwen3": ("Qwen/Qwen3-0.6B", test_text_generation), # works
-        "olmo": ("allenai/OLMo-1B-hf", test_text_generation), # works
-        "gemma3": ("unsloth/gemma-3-1b-it", test_text_generation), # does not export
-        "phi4": ("microsoft/Phi-4-mini-instruct", test_text_generation), # fails to lower
-        "llama3": ("NousResearch/Llama-3.2-1B", test_text_generation), # works
-        "bert": ("google-bert/bert-base-uncased", test_fill_mask), # works
-        "roberta": ("FacebookAI/xlmcl-roberta-base", test_fill_mask), # works
-        "distilbert": ("distilbert/distilbert-base-uncased", test_fill_mask), # works
-        "whisper": ("openai/whisper-tiny", test_whisper), # works
-        "t5": ("google-t5/t5-small", test_t5), # CoreML runime failure
-        "vit": ("google/vit-base-patch16-224", test_vit), # works
+        "smollm": ("HuggingFaceTB/SmolLM2-135M", test_text_generation),  # works
+        "qwen3": ("Qwen/Qwen3-0.6B", test_text_generation),  # works
+        "olmo": ("allenai/OLMo-1B-hf", test_text_generation),  # works
+        "gemma3": ("unsloth/gemma-3-1b-it", test_text_generation),  # does not export
+        "phi4": (
+            "microsoft/Phi-4-mini-instruct",
+            test_text_generation,
+        ),  # fails to lower
+        "llama3": ("NousResearch/Llama-3.2-1B", test_text_generation),  # works
+        "bert": ("google-bert/bert-base-uncased", test_fill_mask),  # works
+        "roberta": ("FacebookAI/xlmcl-roberta-base", test_fill_mask),  # works
+        "distilbert": ("distilbert/distilbert-base-uncased", test_fill_mask),  # works
+        "whisper": ("openai/whisper-tiny", test_whisper),  # works
+        "t5": ("google-t5/t5-small", test_t5),  # CoreML runime failure
+        "vit": ("google/vit-base-patch16-224", test_vit),  # works
     }
     if args.model not in model_to_model_id_and_test_function:
-        raise ValueError(f"Unknown model name: {args.model}. Available models: {model_to_model_id_and_test_function.keys()}")
-    
+        raise ValueError(
+            f"Unknown model name: {args.model}. Available models: {model_to_model_id_and_test_function.keys()}"
+        )
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         model_id, test_fn = model_to_model_id_and_test_function[args.model]
-        test_fn(model_id=model_id, model_dir=tmp_dir, recipe=args.recipe, quantize=args.quantize)
+        test_fn(
+            model_id=model_id,
+            model_dir=tmp_dir,
+            recipe=args.recipe,
+            quantize=args.quantize,
+        )
