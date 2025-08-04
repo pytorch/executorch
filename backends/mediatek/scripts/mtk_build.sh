@@ -4,7 +4,8 @@
 set -e
 
 # Define the directory where CMakeLists.txt is located
-SOURCE_DIR=$(realpath "$(dirname "$0")/../../..")
+EXECUTORCH_ROOT=$(realpath "$(dirname "$0")/../../..")
+echo EXECUTORCH_ROOT=${EXECUTORCH_ROOT}
 
 # Check if the ANDROID_NDK environment variable is set
 if [ -z "$ANDROID_NDK" ]; then
@@ -12,10 +13,11 @@ if [ -z "$ANDROID_NDK" ]; then
     exit 1
 fi
 
-# Create and enter the build directory
+# Enter the build directory
+cd "$EXECUTORCH_ROOT"
+
 # Set build directory
 build_dir="cmake-android-out"
-cd "$SOURCE_DIR"
 rm -rf "${build_dir}"
 
 # Configure the project with CMake
