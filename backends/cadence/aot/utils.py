@@ -45,6 +45,10 @@ class NumericalMismatchExpectedError(Exception):
         super().__init__()
 
 
+class ISSRuntimeFailure(Exception):
+    pass
+
+
 # Get the output size of a 1D convolution given the input size and parameters
 def get_conv1d_output_size(
     in_size: torch.Size,
