@@ -36,8 +36,8 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
     if (!push_constant_variant) {
       kernel_name += "_no_pc";
     }
-    add_storage_type_suffix(kernel_name, v_dst);
-    add_dtype_suffix(kernel_name, v_dst);
+    add_storage_type_suffix(kernel_name, v_dst.storage_type());
+    add_dtype_suffix(kernel_name, v_dst.dtype());
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
@@ -46,7 +46,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
     if (!push_constant_variant) {
       kernel_name += "_no_pc";
     }
-    add_dtype_suffix(kernel_name, v_dst);
+    add_dtype_suffix(kernel_name, v_dst.dtype());
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
@@ -54,8 +54,8 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
   if (!push_constant_variant) {
     kernel_name += "_no_pc";
   }
-  add_storage_type_suffix(kernel_name, v_dst);
-  add_dtype_suffix(kernel_name, v_dst);
+  add_storage_type_suffix(kernel_name, v_dst.storage_type());
+  add_dtype_suffix(kernel_name, v_dst.dtype());
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
@@ -73,8 +73,8 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
     if (!push_constant_variant) {
       kernel_name += "_no_pc";
     }
-    add_storage_type_suffix(kernel_name, v_src);
-    add_dtype_suffix(kernel_name, v_src);
+    add_storage_type_suffix(kernel_name, v_src.storage_type());
+    add_dtype_suffix(kernel_name, v_src.dtype());
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
@@ -83,7 +83,7 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
     if (!push_constant_variant) {
       kernel_name += "_no_pc";
     }
-    add_dtype_suffix(kernel_name, v_src);
+    add_dtype_suffix(kernel_name, v_src.dtype());
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
@@ -91,8 +91,8 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
   if (!push_constant_variant) {
     kernel_name += "_no_pc";
   }
-  add_storage_type_suffix(kernel_name, v_src);
-  add_dtype_suffix(kernel_name, v_src);
+  add_storage_type_suffix(kernel_name, v_src.storage_type());
+  add_dtype_suffix(kernel_name, v_src.dtype());
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
@@ -200,8 +200,8 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
   utils::uvec3 global_wg_size = {buffer_len, 1, 1};
 
   std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer_no_pc";
-  add_storage_type_suffix(kernel_name, v_src);
-  add_dtype_suffix(kernel_name, v_src);
+  add_storage_type_suffix(kernel_name, v_src.storage_type());
+  add_dtype_suffix(kernel_name, v_src.dtype());
 
   context->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel_name),
@@ -224,7 +224,7 @@ void record_binary_op(
     api::vTensor& v_in2,
     api::vTensor& v_dst) {
   std::string kernel_name = "binary_" + op_name + "_nobroadcast__test";
-  add_dtype_suffix(kernel_name, v_dst);
+  add_dtype_suffix(kernel_name, v_dst.dtype());
 
   vkapi::PipelineBarrier pipeline_barrier{};
   vkapi::SpecVarList specialization_constants = {};
@@ -315,7 +315,7 @@ void record_scalar_add_buffer(
   vkapi::PipelineBarrier pipeline_barrier{};
   vkapi::SpecVarList specialization_constants = {SV(offset)};
   std::string kernel = "scalar_add_buffer";
-  add_dtype_suffix(kernel, v_ten);
+  add_dtype_suffix(kernel, v_ten.dtype());
   api::context()->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel),
       pipeline_barrier,

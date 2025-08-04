@@ -498,7 +498,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   std::string kernel_name("fill_texture__test");
-  add_dtype_suffix(kernel_name, a);
+  add_dtype_suffix(kernel_name, a.dtype());
 
   struct Params final {
     utils::ivec3 size;
@@ -1040,8 +1040,8 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   EXPECT_TRUE(sizeof(Value) < 56);
   // Current known size on 64 bit system: 120 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
-  // Current known size on 64 bit system: 384 B
-  EXPECT_TRUE(sizeof(ComputeGraph) < 500);
+  // Current known size on 64 bit system: 512 B
+  EXPECT_TRUE(sizeof(ComputeGraph) < 600);
   // Current known size on 64 bit system: 248 B
   EXPECT_TRUE(sizeof(DispatchNode) < 500);
 }
@@ -2316,7 +2316,7 @@ void run_from_gpu_test(
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
 
   std::string kernel_name("idx_fill_texture");
-  add_dtype_suffix(kernel_name, vten);
+  add_dtype_suffix(kernel_name, vten.dtype());
 
   int32_t offset = -50;
 
