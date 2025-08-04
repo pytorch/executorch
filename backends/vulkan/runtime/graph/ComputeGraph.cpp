@@ -700,6 +700,38 @@ utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
   return create_local_wg_size(create_global_wg_size(idx));
 }
 
+void ComputeGraph::bind_tensor_to_descriptor_set(
+    const ValueRef ref,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::MemoryAccessFlags access_type,
+    vkapi::DescriptorSet& descriptor_set,
+    const uint32_t idx) {
+  vTensorPtr tensor = get_tensor(ref);
+  if (tensor->buffer()) {
+    vkapi::VulkanBuffer& buffer = tensor->buffer(
+        pipeline_barrier, vkapi::PipelineStage::COMPUTE, access_type);
+    descriptor_set.bind(idx, buffer);
+  } else {
+    vkapi::VulkanImage& image = tensor->image(
+        pipeline_barrier, vkapi::PipelineStage::COMPUTE, access_type);
+    descriptor_set.bind(idx, image);
+  }
+}
+
+void ComputeGraph::bind_value_to_descriptor_set(
+    const ValueRef ref,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::MemoryAccessFlags access_type,
+    vkapi::DescriptorSet& descriptor_set,
+    const uint32_t idx) {
+  if (val_is_tensor(ref)) {
+    bind_tensor_to_descriptor_set(
+        ref, pipeline_barrier, access_type, descriptor_set, idx);
+  } else if (val_is_staging(ref)) {
+    descriptor_set.bind(idx, get_staging(ref)->buffer());
+  }
+}
+
 void ComputeGraph::copy_into_staging(
     const ValueRef idx,
     const void* data,
@@ -862,6 +894,17 @@ void ComputeGraph::execute() {
 
   submit_deferred_cmds_and_wait();
   execute_count_++;
+}
+
+void ComputeGraph::virtual_clone(const ValueRef dst, const ValueRef src) {
+  get_tensor(dst)->virtual_clone(*get_tensor(src));
+}
+
+void ComputeGraph::virtual_transpose(
+    const ValueRef tensor,
+    const int64_t dim0,
+    const int64_t dim1) {
+  get_tensor(tensor)->virtual_transpose(dim0, dim1);
 }
 
 void ComputeGraph::resize_input(

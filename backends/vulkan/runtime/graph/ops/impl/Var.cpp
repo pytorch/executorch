@@ -19,16 +19,17 @@ void resize_var_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
 
-  int dim = extra_args[0];
+  const int dim = extra_args.at(0);
 
-  std::vector<int64_t> new_sizes = in->sizes();
+  std::vector<int64_t> new_sizes = graph->sizes_of(in);
   if (!new_sizes.empty()) {
     new_sizes.at(normalize(dim, new_sizes.size())) = 1;
   }
-  out->virtual_resize(new_sizes);
+
+  graph->virtual_resize(out, new_sizes);
 }
 
 void add_var_buffer_node(

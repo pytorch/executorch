@@ -16,13 +16,6 @@ namespace vkcompute {
 // For objects in the graph
 //
 
-void bind_tensor_to_descriptor_set(
-    api::vTensor& tensor,
-    vkapi::PipelineBarrier& pipeline_barrier,
-    const vkapi::MemoryAccessFlags accessType,
-    vkapi::DescriptorSet& descriptor_set,
-    const uint32_t idx);
-
 uint32_t bind_values_to_descriptor_set(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,

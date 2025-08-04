@@ -27,7 +27,7 @@ void add_staging_to_tensor_node(
   VK_CHECK_COND(graph.val_is_staging(in_staging));
 
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
-      *graph.get_tensor(out_tensor), graph.int8_buffers_enabled());
+      graph, out_tensor, graph.int8_buffers_enabled());
 
   std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(out_tensor)) {
@@ -73,7 +73,7 @@ vkapi::ShaderInfo get_tensor_to_staging_shader(
   (void)resize_args;
   const ValueRef in_tensor = args.at(1).refs.at(0);
   return get_tensor_to_nchw_shader(
-      *graph->get_tensor(in_tensor), graph->int8_buffers_enabled());
+      *graph, in_tensor, graph->int8_buffers_enabled());
 }
 
 utils::uvec3 tensor_to_staging_global_wg_size(
@@ -110,8 +110,8 @@ void add_tensor_to_staging_node(
     const ValueRef out_staging) {
   VK_CHECK_COND(graph.val_is_staging(out_staging));
 
-  vkapi::ShaderInfo shader = get_tensor_to_nchw_shader(
-      *graph.get_tensor(in_tensor), graph.int8_buffers_enabled());
+  vkapi::ShaderInfo shader =
+      get_tensor_to_nchw_shader(graph, in_tensor, graph.int8_buffers_enabled());
 
   std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(in_tensor)) {
@@ -151,8 +151,8 @@ void add_prepack_standard_node(
     const ValueRef tensor_data,
     const ValueRef tensor,
     const bool transpose_hw = false) {
-  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
-      *graph.get_tensor(tensor), graph.int8_buffers_enabled());
+  vkapi::ShaderInfo shader =
+      get_nchw_to_tensor_shader(graph, tensor, graph.int8_buffers_enabled());
 
   std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(tensor)) {

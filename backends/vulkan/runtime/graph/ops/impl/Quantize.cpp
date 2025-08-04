@@ -23,10 +23,11 @@ void resize_quantize_node(
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
 
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
 
-  out->virtual_resize(in->sizes());
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+  graph->virtual_resize(out, in_sizes);
 }
 
 utils::uvec3 quantize_per_channel_local_wg_size(
