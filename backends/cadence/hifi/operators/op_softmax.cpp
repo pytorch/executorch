@@ -70,81 +70,86 @@ Tensor& _softmax_out(
     optimized = false;
 
   if (optimized) {
-    int* p_inp = (int*)in.const_data_ptr<float>();
-    int* out_data = (int*)out.mutable_data_ptr<float>();
+    if (dim == in.dim() - 1) {
+      const float* p_inp = in.const_data_ptr<float>();
+      float* out_data = out.mutable_data_ptr<float>();
 
-    int num_inp_dims = in.dim();
-    int num_out_dims = num_inp_dims;
+      WORD32 ret_val = xa_nn_vec_softmax_f32_f32(out_data, p_inp, size);
+      ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
+    } else {
+      int* p_inp = (int*)in.const_data_ptr<float>();
+      int* out_data = (int*)out.mutable_data_ptr<float>();
+      int num_inp_dims = in.dim();
+      int num_out_dims = num_inp_dims;
 
-    int p_inp_shape[kNnlibMaxDim];
-    int p_out_shape[kNnlibMaxDim];
-    int p_permute_vec[kNnlibMaxDim];
+      int p_inp_shape[kNnlibMaxDim];
+      int p_out_shape[kNnlibMaxDim];
+      int p_permute_vec[kNnlibMaxDim];
 
-    for (int i = 0; i < num_inp_dims; i++)
-      p_inp_shape[i] = in.size(i);
+      for (int i = 0; i < num_inp_dims; i++)
+        p_inp_shape[i] = in.size(i);
 
-    for (int i = 0; i < num_inp_dims; i++) {
-      if (i == d)
-        p_permute_vec[i] = num_inp_dims - 1;
-      else if (i == (num_inp_dims - 1))
-        p_permute_vec[num_inp_dims - 1] = d;
-      else
-        p_permute_vec[i] = i;
+      for (int i = 0; i < num_inp_dims; i++) {
+        if (i == d)
+          p_permute_vec[i] = num_inp_dims - 1;
+        else if (i == (num_inp_dims - 1))
+          p_permute_vec[num_inp_dims - 1] = d;
+        else
+          p_permute_vec[i] = i;
 
-      p_out_shape[i] = p_inp_shape[p_permute_vec[i]];
+        p_out_shape[i] = p_inp_shape[p_permute_vec[i]];
 
-      if (i != d)
-        outer_size = outer_size * p_inp_shape[i];
-    }
-
-    outer_stride = size;
-
-    int* p_out =
-        (int*)kernels::allocate_temp_memory(ctx, out.numel() * sizeof(int));
-
-    ET_KERNEL_CHECK(ctx, p_out != nullptr, MemoryAllocationFailed, out);
-
-    int* p_out1 =
-        (int*)kernels::allocate_temp_memory(ctx, out.numel() * sizeof(int));
-
-    ET_KERNEL_CHECK(ctx, p_out1 != nullptr, MemoryAllocationFailed, out);
-
-    WORD32 ret_val = xa_nn_transpose_32_32(
-        p_out,
-        p_out_shape,
-        p_inp,
-        p_inp_shape,
-        p_permute_vec,
-        num_out_dims,
-        num_inp_dims);
-
-    ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
-
-    for (size_t outer_idx = 0; outer_idx < outer_size; ++outer_idx) {
-      size_t outer = outer_idx * outer_stride;
-      for (size_t inner_idx = 0; inner_idx < stride; ++inner_idx) {
-        size_t base = outer + inner_idx;
-
-        float* p_in_data = (float*)&p_out[base];
-        float* p_out_data = (float*)&p_out1[base];
-
-        ret_val = xa_nn_vec_softmax_f32_f32(p_out_data, p_in_data, size);
-
-        ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
+        if (i != d)
+          outer_size = outer_size * p_inp_shape[i];
       }
+
+      outer_stride = size;
+
+      int* p_out =
+          (int*)kernels::allocate_temp_memory(ctx, out.numel() * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, p_out != nullptr, MemoryAllocationFailed, out);
+
+      int* p_out1 =
+          (int*)kernels::allocate_temp_memory(ctx, out.numel() * sizeof(int));
+
+      ET_KERNEL_CHECK(ctx, p_out1 != nullptr, MemoryAllocationFailed, out);
+
+      WORD32 ret_val = xa_nn_transpose_32_32(
+          p_out,
+          p_out_shape,
+          p_inp,
+          p_inp_shape,
+          p_permute_vec,
+          num_out_dims,
+          num_inp_dims);
+
+      ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
+
+      for (size_t outer_idx = 0; outer_idx < outer_size; ++outer_idx) {
+        size_t outer = outer_idx * outer_stride;
+        for (size_t inner_idx = 0; inner_idx < stride; ++inner_idx) {
+          size_t base = outer + inner_idx;
+
+          float* p_in_data = (float*)&p_out[base];
+          float* p_out_data = (float*)&p_out1[base];
+
+          ret_val = xa_nn_vec_softmax_f32_f32(p_out_data, p_in_data, size);
+
+          ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
+        }
+      }
+
+      ret_val = xa_nn_transpose_32_32(
+          out_data,
+          p_inp_shape,
+          p_out1,
+          p_out_shape,
+          p_permute_vec,
+          num_out_dims,
+          num_inp_dims);
+      ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
     }
-
-    ret_val = xa_nn_transpose_32_32(
-        out_data,
-        p_inp_shape,
-        p_out1,
-        p_out_shape,
-        p_permute_vec,
-        num_out_dims,
-        num_inp_dims);
-
-    ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
-
     return out;
   }
 
