@@ -153,7 +153,7 @@ ComputeGraph::ComputeGraph(GraphConfig config)
   }
   if (config_.execute_threshold_node_count == 0) {
     config_.execute_threshold_node_count = 128;
-    config_.prepack_initial_threshold_nbytes = 64;
+    config_.execute_initial_threshold_node_count = 64;
   }
 }
 
@@ -866,9 +866,10 @@ void ComputeGraph::execute() {
       // execute_initial_threshold_node_count or if its a multiple of
       // execute_threshold_node_count.
       const bool reached_threshold =
-          (encoded_node_count - config_.execute_initial_threshold_node_count) %
+      encoded_node_count >= config_.execute_initial_threshold_node_count &&
+          ((encoded_node_count - config_.execute_initial_threshold_node_count) %
               config_.execute_threshold_node_count ==
-          0;
+          0);
 
       // Create a new command buffer when threashold is reached
       if (reached_threshold) {
