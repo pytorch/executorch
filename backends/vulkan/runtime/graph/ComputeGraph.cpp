@@ -858,6 +858,41 @@ void ComputeGraph::execute() {
     context_->cmd_reset_querypool();
     uint32_t encoded_node_count = 0;
 
+    const size_t total_node_count = execute_nodes_.size();
+    size_t init_threshold = config_.execute_initial_threshold_node_count;
+    size_t count_threshold = config_.execute_threshold_node_count;
+
+    // If max command buffer count is set, we need to adjust the thresholds to
+    // accommodate execution within the limit, if total command buffers with
+    // current thresholds would exceed execute_max_cmds
+    if (config_.execute_max_cmds > 0) {
+      // Worse case scenario we have one command buffer for nodes before init
+      // threshold and config_.execute_max_cmds - 1 command buffers for the rest
+      // of dispatches
+
+      // If command buffers created after offsetting init_threshold would exceed
+      // max command buffer count, we need to adjust init and count thresholds
+      const bool slicing_exceeds_max_cmds =
+          (total_node_count - init_threshold) >
+          count_threshold * (config_.execute_max_cmds - 1);
+      if (total_node_count > init_threshold && slicing_exceeds_max_cmds) {
+        // Calculate the total number of commands that would be created if we
+        // were to slice the nodes using current thresholds
+        const double total_cmds = 1. +
+            ceil(double(total_node_count - init_threshold) / count_threshold);
+
+        // Calculate the scale factor to apply to the thresholds to ensure that
+        // the total number of commands does not exceed max command buffer count
+        const double cmd_scale = total_cmds / config_.execute_max_cmds;
+
+        // Apply the scale factor to the thresholds
+        init_threshold = static_cast<size_t>(ceil(init_threshold * cmd_scale));
+        count_threshold = static_cast<size_t>(ceil(
+            double(total_node_count - init_threshold) /
+            (config_.execute_max_cmds - 1)));
+      }
+    }
+
     for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
       node->encode(this);
       encoded_node_count++;
@@ -865,14 +900,13 @@ void ComputeGraph::execute() {
       // Threshold is reached when the node count reached
       // execute_initial_threshold_node_count or if its a multiple of
       // execute_threshold_node_count.
-      const bool reached_threshold =
-          encoded_node_count >= config_.execute_initial_threshold_node_count &&
-          ((encoded_node_count - config_.execute_initial_threshold_node_count) %
-               config_.execute_threshold_node_count ==
-           0);
+      const bool reached_threshold = encoded_node_count >= init_threshold &&
+          ((encoded_node_count - init_threshold) % count_threshold == 0);
 
       // Create a new command buffer when threashold is reached
-      if (reached_threshold) {
+      // But avoid it if this is the last node, since last cmd buf is submitted
+      // after the loop
+      if (reached_threshold && encoded_node_count != total_node_count) {
         context_->submit_cmd_to_gpu(VK_NULL_HANDLE, false);
         deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
         context_->set_cmd(true);
