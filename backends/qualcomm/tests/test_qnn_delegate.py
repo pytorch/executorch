@@ -1008,7 +1008,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_sdpa(self):
-        module = ScaledDotProductAttention()  # noqa: F405
+        modules = [
+            ScaledDotProductAttention(),  # noqa: F405
+            ScaledDotProductAttention(scale=0.5),  # noqa: F405
+            ScaledDotProductAttention(scale=1.0),  # noqa: F405
+        ]
         mask = torch.tril(torch.randn(1, 1, 100, 100))
         mask[mask == 0] = float("-inf")
         sample_input = (
@@ -1017,7 +1021,9 @@ class TestQNNFloatingPointOperator(TestQNN):
             torch.randn(1, 4, 100, 64),
             mask,
         )
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_sigmoid(self):
         module = Sigmoid()  # noqa: F405
@@ -2414,7 +2420,11 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_sdpa(self):
-        module = ScaledDotProductAttention()  # noqa: F405
+        modules = [
+            ScaledDotProductAttention(),  # noqa: F405
+            ScaledDotProductAttention(scale=0.5),  # noqa: F405
+            ScaledDotProductAttention(scale=1.0),  # noqa: F405
+        ]
         mask = torch.tril(torch.randn(1, 1, 100, 100))
         mask[mask == 0] = torch.finfo(torch.float32).min
         sample_input = (
@@ -2423,8 +2433,12 @@ class TestQNNQuantizedOperator(TestQNN):
             torch.randn(1, 4, 100, 64),
             mask,
         )
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    module, sample_input, quant_dtype=QuantDtype.use_16a8w
+                )
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_copy(self):
         module = SelectCopy()  # noqa: F405
@@ -4951,42 +4965,6 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 85)
 
-    def test_mobilevit_v1(self):
-        if not self.required_envs([self.image_dataset]):
-            self.skipTest("missing required envs")
-
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/mobilevit_v1.py"
-            "--dataset",
-            self.image_dataset,
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertGreaterEqual(msg["top_1"], 70)
-                self.assertGreaterEqual(msg["top_5"], 85)
-
     @unittest.skip("Only outputs good accuracy in QNN 2.29")
     def test_mobilevit_v2(self):
         if not self.required_envs([self.image_dataset]):
@@ -5026,6 +5004,42 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 50)
                 self.assertGreaterEqual(msg["top_5"], 85)
 
+    def test_mobilevit1(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/mobilevit1.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 70)
+                self.assertGreaterEqual(msg["top_5"], 85)
+
     def test_pvt(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -5033,7 +5047,11 @@ class TestExampleOssScript(TestQNN):
         cmds = [
             "python",
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/pvt.py",
+            "--dataset",
             self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
             self.build_folder,
             "--device",
             self.device,
