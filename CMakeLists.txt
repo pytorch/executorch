@@ -482,42 +482,6 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
-  if (NOT TARGET cpuinfo)
-     message(FATAL_ERROR "EXECUTORCH_BUILD_KERNELS_TORCHAO requires EXECUTORCH_BUILD_CPUINFO be set ON")
-  endif()
-  if (NOT TARGET pthreadpool)
-     message(FATAL_ERROR "EXECUTORCH_BUILD_KERNELS_TORCHAO requires EXECUTORCH_BUILD_PTHREADPOOL be set ON")
-  endif()
-
-  # Configure TorchAO kernels
-  set(TORCHAO_BUILD_ATEN_OPS OFF)
-  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-  set(TORCHAO_BUILD_CPU_AARCH64 ON)
-  set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
-
-  # TorchAO kernels look for EXECUTORCH_INCLUDE_DIRS
-  if(DEFINED EXECUTORCH_INCLUDE_DIRS)
-    message(FATAL_ERROR "EXECUTORCH_INCLUDE_DIRS is already defined")
-  endif()
-  set(EXECUTORCH_INCLUDE_DIRS
-    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
-    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
-  )
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental EXCLUDE_FROM_ALL)
-  unset(EXECUTORCH_INCLUDE_DIRS)
-
-  executorch_target_link_options_shared_lib(torchao_ops_executorch)
-  list(APPEND _executorch_kernels torchao_ops_executorch)
-  install(
-    TARGETS torchao_ops_executorch torchao_kernels_aarch64
-    EXPORT ExecuTorchTargets
-    DESTINATION lib
-    INCLUDES
-    DESTINATION ${_common_include_directories}
-  )
-endif()
-
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 
 # Install `executorch` library as well as `executorch-config.cmake` under
@@ -716,6 +680,44 @@ endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
+endif()
+
+if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
+  if (NOT TARGET cpuinfo)
+     message(FATAL_ERROR "EXECUTORCH_BUILD_KERNELS_TORCHAO requires EXECUTORCH_BUILD_CPUINFO be set ON")
+  endif()
+  if (NOT TARGET pthreadpool)
+     message(FATAL_ERROR "EXECUTORCH_BUILD_KERNELS_TORCHAO requires EXECUTORCH_BUILD_PTHREADPOOL be set ON")
+  endif()
+
+  # Configure TorchAO kernels
+  set(TORCHAO_BUILD_ATEN_OPS OFF)
+  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
+  set(TORCHAO_BUILD_CPU_AARCH64 ON)
+  set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
+  set(TORCHAO_BUILD_KLEIDIAI OFF) # TODO: enable
+
+  # TorchAO kernels look for EXECUTORCH_INCLUDE_DIRS
+  if(DEFINED EXECUTORCH_INCLUDE_DIRS)
+    message(FATAL_ERROR "EXECUTORCH_INCLUDE_DIRS is already defined")
+  endif()
+  set(EXECUTORCH_INCLUDE_DIRS
+    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
+    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
+  )
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental)
+  unset(EXECUTORCH_INCLUDE_DIRS)
+
+  executorch_target_link_options_shared_lib(torchao_ops_executorch)
+  list(APPEND _executorch_kernels torchao_ops_executorch)
+
+  install(
+    TARGETS torchao_ops_executorch torchao_kernels_aarch64
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+    INCLUDES
+    DESTINATION ${_common_include_directories}
+  )
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)

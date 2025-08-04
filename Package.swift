@@ -83,6 +83,11 @@ let products = deliverables([
       "threadpool",
     ],
   ],
+  "kernels_torchao": [
+    "targets": [
+      "threadpool",
+    ],
+  ],
   "kernels_quantized": [:],
 ])
 
