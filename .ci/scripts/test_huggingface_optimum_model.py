@@ -270,6 +270,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--recipe", type=str, required=True)
     parser.add_argument("--quantize", action="store_true", help="Enable quantization")
+    parser.add_argument("--model_dir", type=str, required=False)
     args = parser.parse_args()
 
     model_to_model_id_and_test_function = {
@@ -294,11 +295,20 @@ if __name__ == "__main__":
             f"Unknown model name: {args.model}. Available models: {model_to_model_id_and_test_function.keys()}"
         )
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        model_id, test_fn = model_to_model_id_and_test_function[args.model]
+    model_id, test_fn = model_to_model_id_and_test_function[args.model]
+    if args.model_dir is None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_fn(
+                model_id=model_id,
+                model_dir=tmp_dir,
+                recipe=args.recipe,
+                quantize=args.quantize,
+            )
+    else:
         test_fn(
             model_id=model_id,
-            model_dir=tmp_dir,
+            model_dir=args.model_dir,
             recipe=args.recipe,
             quantize=args.quantize,
+            run_only=False,
         )
