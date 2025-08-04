@@ -1,0 +1,58 @@
+# Copyright (c) 2025 Samsung Electronics Co. LTD
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+import logging
+from typing import Dict, final, List
+
+import torch
+from executorch.exir.backend.backend_details import (
+    BackendDetails,
+    CompileSpec,
+    PreprocessResult,
+)
+
+from executorch.exir.passes import PassManager
+
+from torch.export.exported_program import ExportedProgram
+
+
+@final
+class EnnBackend(BackendDetails):
+    @staticmethod
+    def preprocess(
+        edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+    ) -> PreprocessResult:
+        # 1 Converter Init
+        enn_preprocess_passes = PassManager(passes=[])
+
+        # 2 make enn graph
+        enn_preprocess_passes = PassManager(passes=[])
+        pass_result = enn_preprocess_passes(edge_program.graph_module)
+        # 3 node visitors
+        node_visitors = []
+
+        vals_to_ids: Dict[torch.fx.Node, int] = {}
+        for node in pass_result.graph_module.graph.nodes:
+            if node.op == "call_function":
+                logging.warning(f"Visiting: {node}, {node.target.__name__}")
+                if node.target.__name__ in node_visitors:
+                    pass
+                else:
+                    raise RuntimeError(
+                        f"{node.target.__name__}" " is not supported in ENN Delegate"
+                    )
+            elif node.op in [
+                "get_attr",
+                "placeholder",
+                "output",
+            ]:
+                continue
+            else:
+                raise RuntimeError(f"{node.op}" " is not supported in ENN Delegate")
+
+        # 4 Compile Graph
+        return PreprocessResult(processed_bytes=0, debug_handle_map={})
