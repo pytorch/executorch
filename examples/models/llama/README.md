@@ -384,7 +384,6 @@ The first step is to install ExecuTorch (the same as step 3.1 above):
 
 ```
 cmake -DPYTHON_EXECUTABLE=python \
-cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DCMAKE_BUILD_TYPE=Release \
@@ -395,12 +394,12 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-	  -DEXECUTORCH_BUILD_KERNELS_TORCHAO=ON \
-	  -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
-	  -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_TORCHAO=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out .
-cmake --build cmake-out -j16 --target install --config Release
+cmake --build cmake-out -j16 --config Release --target install
 ```
 
 Next install the llama runner with torchao kernels enabled (similar to step 3.2 above):
