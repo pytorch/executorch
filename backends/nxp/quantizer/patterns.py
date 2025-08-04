@@ -408,6 +408,31 @@ class ViewPattern(SharedSpecPattern):
         return [torch.ops.aten.view.default]
 
 
+def get_anchors_for_softmax_like_operators(
+    fused_partition: List[fx.GraphModule],
+) -> PartitionAnchors:
+    node = fused_partition[0].nodes[-1]
+    assert len(fused_partition[0].input_nodes) == 1
+
+    qspec = FixedQParamsQuantizationSpec(
+        dtype=torch.int8,
+        scale=1.0 / 256.0,
+        zero_point=-128,
+        quant_min=-128,
+        quant_max=127,
+        qscheme=torch.per_tensor_affine,
+    )
+
+    return PartitionAnchors(
+        inputs=[(node, 0)],
+        weights=[],
+        biases=[],
+        output=[
+            (node, qspec),
+        ],
+    )
+
+
 class SoftMaxPattern(QuantizationPattern):
     """
     Quantizer for Softmax operator.
@@ -421,23 +446,20 @@ class SoftMaxPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
-        node = fused_partition[0].nodes[-1]
-        assert len(fused_partition[0].input_nodes) == 1
+        return get_anchors_for_softmax_like_operators(fused_partition)
 
-        qspec = FixedQParamsQuantizationSpec(
-            dtype=torch.int8,
-            scale=1.0 / 256.0,
-            zero_point=-128,
-            quant_min=-128,
-            quant_max=127,
-            qscheme=torch.per_tensor_affine,
-        )
 
-        return PartitionAnchors(
-            inputs=[(node, 0)],
-            weights=[],
-            biases=[],
-            output=[
-                (node, qspec),
-            ],
-        )
+class SigmoidPattern(QuantizationPattern):
+    """
+    Quantizer for Sigmoid operator.
+
+    The quantization of Sigmoid output is fixed to scale 1/256, zero point -128, dtype int8.
+    """
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.sigmoid.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        return get_anchors_for_softmax_like_operators(fused_partition)
