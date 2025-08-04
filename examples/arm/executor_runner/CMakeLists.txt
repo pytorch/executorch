@@ -143,8 +143,28 @@ target_sources(
                               arm_memory_allocator.cpp
 )
 
-# Include the target's bare-metal linker script
-ethosu_eval_link_options(arm_executor_runner)
+# Use our own linkerscripts
+# Check for "U55" in SYSTEM_CONFIG
+string(FIND "${SYSTEM_CONFIG}" "U55" U55_FOUND)
+
+# Check for "U85" in SYSTEM_CONFIG
+string(FIND "${SYSTEM_CONFIG}" "U85" U85_FOUND)
+
+# Check if neither "U55" nor "U85" was found
+if(U55_FOUND EQUAL -1 AND U85_FOUND EQUAL -1)
+    message(FATAL_ERROR "SYSTEM_CONFIG does not contain 'U55' or 'U85'. Configuration aborting.")
+endif()
+
+# Proceed with specific actions if either is found
+if(NOT U55_FOUND EQUAL -1)
+    message(STATUS "SYSTEM_CONFIG contains 'U55'.")
+    target_link_options(arm_executor_runner PRIVATE "-T" "${CMAKE_SOURCE_DIR}/Corstone-300.ld")
+endif()
+
+if(NOT U85_FOUND EQUAL -1)
+    message(STATUS "SYSTEM_CONFIG contains 'U85'.")
+    target_link_options(arm_executor_runner PRIVATE "-T" "${CMAKE_SOURCE_DIR}/Corstone-320.ld")
+endif()
 
 set(arm_executor_runner_link)
 list(
