@@ -149,6 +149,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
     )
@@ -347,7 +348,6 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
         )
-
 
         runtime.cxx_library(
             name = "arange_util{}".format(suffix),
