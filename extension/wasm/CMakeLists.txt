@@ -54,6 +54,6 @@ target_link_libraries(
   INTERFACE executorch_kernels
 )
 
-if(EXECUTORCH_BUILD_WASM_TESTS)
+if(BUILD_TESTING)
   add_subdirectory(test)
 endif()

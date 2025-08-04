@@ -796,22 +796,6 @@ if(EXECUTORCH_BUILD_PYBIND)
 endif()
 
 if(EXECUTORCH_BUILD_WASM)
-  if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
-  endif()
-
-  if(NOT EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/flat_tensor)
-  endif()
-
-  if(NOT EXECUTORCH_BUILD_EXTENSION_MODULE)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
-  endif()
-
-  if(NOT EXECUTORCH_BUILD_EXTENSION_TENSOR)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
-  endif()
-
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm)
 endif()
 
