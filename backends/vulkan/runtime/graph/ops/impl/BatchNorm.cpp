@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
@@ -83,11 +84,11 @@ void add_native_batch_norm_node(
   const int32_t num_texel_per_batch =
       utils::div_up_4((dim_at<kChannel4D>(in_sizes)));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out_ref),
-      graph.create_local_wg_size(out_ref),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       {{out_ref, vkapi::kWrite},
        {{in_ref, arg_weight, arg_bias, arg_mean, arg_var}, vkapi::kRead}},
       {graph.logical_limits_ubo(out_ref),

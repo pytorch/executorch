@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
@@ -80,9 +81,6 @@ void add_max_pool2d_node(
 
   check_pool2d_args(graph, in, out_tensor);
 
-  utils::uvec3 global_size = graph.logical_limits_of(out_tensor);
-  utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   std::string kernel_name("max_pool2d");
   add_dtype_suffix(kernel_name, graph.dtype_of(out_tensor));
 
@@ -94,11 +92,11 @@ void add_max_pool2d_node(
       padding,
       dilation);
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{{out_val->at(0), out_val->at(1)}, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
@@ -154,9 +152,6 @@ void add_avg_pool2d_node(
     const ValueRef out) {
   check_pool2d_args(graph, in, out);
 
-  utils::uvec3 global_size = graph.logical_limits_of(out);
-  utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   std::string kernel_name("avg_pool2d");
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
@@ -166,11 +161,11 @@ void add_avg_pool2d_node(
   DivisorParams divisor_params =
       create_divisor_params(graph, divisor_override, count_include_pad);
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
