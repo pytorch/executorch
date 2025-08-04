@@ -20,6 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.expand.default"
@@ -98,6 +99,32 @@ def test_expand_u85_INT(test_data: Tuple):
         aten_op,
         exir_ops=[],
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Expand.test_parameters | Expand.test_reject_set)
+@common.SkipIfNoModelConverter
+def test_expand_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Expand(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Expand.test_parameters | Expand.test_reject_set)
+@common.SkipIfNoModelConverter
+def test_expand_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Expand(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
 
