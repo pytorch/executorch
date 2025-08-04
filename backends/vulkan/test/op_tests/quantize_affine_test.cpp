@@ -491,7 +491,6 @@ void test_vulkan_quantize_affine_impl(
 
   graph.prepare();
   graph.prepack();
-  graph.encode_execute();
 
   // Copy input data to GPU
   graph.copy_into_staging(
@@ -789,7 +788,6 @@ void test_vulkan_dequantize_affine_impl(
 
   graph.prepare();
   graph.prepack();
-  graph.encode_execute();
 
   // Copy input data to GPU
   graph.copy_into_staging(
@@ -1079,7 +1077,6 @@ void test_vulkan_choose_qparams_affine_impl(
 
   graph.prepare();
   graph.prepack();
-  graph.encode_execute();
 
   // Copy input data to GPU
   graph.copy_into_staging(

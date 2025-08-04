@@ -15,11 +15,11 @@
 
 namespace example {
 
-class ET_EXPERIMENTAL LlavaImagePrefiller
-    : public ::executorch::extension::llm::ImagePrefiller {
+class ET_EXPERIMENTAL LlavaImagePrefiller {
  public:
   explicit LlavaImagePrefiller(::executorch::extension::Module* module)
-      : ImagePrefiller(module){};
+      : module_(module) {}
+
   /**
    * Prefill an LLM Module with the given image input.
    * @param image The image input to LLaVa.
@@ -28,7 +28,7 @@ class ET_EXPERIMENTAL LlavaImagePrefiller
    */
   inline ::executorch::runtime::Result<executorch::aten::Tensor> prefill(
       ::executorch::extension::llm::Image& image,
-      int64_t& start_pos) override {
+      int64_t& start_pos) {
     auto image_tensor = executorch::extension::from_blob(
         image.data.data(),
         {3, image.height, image.width},
@@ -59,7 +59,7 @@ class ET_EXPERIMENTAL LlavaImagePrefiller
    * Load the Module for image prefill purpose.
    * @return The error code.
    */
-  inline ::executorch::runtime::Error load() override {
+  inline ::executorch::runtime::Error load() {
     if (is_method_loaded()) {
       return ::executorch::runtime::Error::Ok;
     }
@@ -72,7 +72,7 @@ class ET_EXPERIMENTAL LlavaImagePrefiller
    * Check if the required methods in the Module is loaded.
    * @return True if the Module is loaded, false otherwise.
    */
-  inline bool is_method_loaded() override {
+  inline bool is_method_loaded() {
     ::executorch::runtime::Result<std::unordered_set<std::string>> methods_res =
         module_->method_names();
     if (methods_res.error() != ::executorch::runtime::Error::Ok) {
@@ -88,16 +88,19 @@ class ET_EXPERIMENTAL LlavaImagePrefiller
       ET_CHECK_MSG(
           methods_exist,
           "Missing required methods (%s, %s) in the model",
-          kImageEncoderMethod.c_str(),
-          kTextModelMethod.c_str());
+          kImageEncoderMethod,
+          kTextModelMethod);
     }
     bool methods_loaded = module_->is_method_loaded(kImageEncoderMethod) &&
         module_->is_method_loaded(kTextModelMethod);
     return methods_loaded;
   }
 
-  inline static const std::string kImageEncoderMethod = "image_encoder";
-  inline static const std::string kTextModelMethod = "text_model";
+  inline static constexpr auto kImageEncoderMethod = "image_encoder";
+  inline static constexpr auto kTextModelMethod = "text_model";
+
+ private:
+  ::executorch::extension::Module* module_;
 };
 
 } // namespace example

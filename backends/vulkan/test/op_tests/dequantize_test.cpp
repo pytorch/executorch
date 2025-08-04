@@ -1140,7 +1140,6 @@ void test_vulkan_dequantize_per_token_impl(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   // Copy input data to GPU
   graph.copy_into_staging(
@@ -1671,7 +1670,6 @@ void test_vulkan_dequantize_per_channel_impl(
 
   graph.prepare();
   graph.prepack();
-  graph.encode_execute();
 
   // Copy input data to GPU
   graph.copy_into_staging(
@@ -2345,7 +2343,6 @@ void test_vulkan_dequantize_per_tensor_tensor_impl(
 
   graph.prepare();
   graph.prepack();
-  graph.encode_execute();
 
   // Run Vulkan dequantize_per_tensor.tensor
   graph.copy_into_staging(

@@ -10,9 +10,9 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
-    OpNotSupportedPipeline
 )
 
 input_t1 = Tuple[torch.Tensor]

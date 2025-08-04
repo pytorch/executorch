@@ -33,7 +33,33 @@ Tensor& opt_add_out(
   ScalarType out_type = out.scalar_type();
 
   if (b.numel() == 1) {
-    if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
+    if (executorch::runtime::isComplexType(a_type) ||
+        executorch::runtime::isComplexType(b_type) ||
+        executorch::runtime::isComplexType(out_type)) {
+      // TODO: The current support for complex dtype enforces that input and
+      // output tensors have the same dtype. Support mixed dtypes in the future.
+      ET_KERNEL_CHECK(
+          ctx, a_type == b_type && a_type == out_type, InvalidArgument, out);
+      ET_KERNEL_CHECK(
+          ctx,
+          resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+          InvalidArgument,
+          out);
+
+      ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, "add.out", CTYPE, [&]() {
+        CTYPE alpha_val = utils::scalar_to<CTYPE>(alpha);
+        CTYPE b_val = *b.const_data_ptr<CTYPE>();
+
+        using Vec = at::vec::Vectorized<CTYPE>;
+        at::vec::map<CTYPE>(
+            [alpha_val, b_val](Vec x) { return x + Vec(alpha_val * b_val); },
+            out.mutable_data_ptr<CTYPE>(),
+            a.const_data_ptr<CTYPE>(),
+            out.numel());
+      });
+      return out;
+    } else if (
+        a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
         a_type != ScalarType::BFloat16) {
       ET_KERNEL_CHECK(
           ctx,

@@ -16,9 +16,9 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
-    OpNotSupportedPipeline
 )
 
 aten_op = "torch.ops.aten.expand.default"

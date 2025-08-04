@@ -20,34 +20,28 @@ namespace vkapi {
 
 CommandBuffer::CommandBuffer(
     VkCommandBuffer handle,
-    VkSemaphore semaphore,
     const VkCommandBufferUsageFlags flags)
     : handle_(handle),
-      signal_semaphore_(semaphore),
       flags_(flags),
       state_(CommandBuffer::State::NEW),
       bound_{} {}
 
 CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept
     : handle_(other.handle_),
-      signal_semaphore_(other.signal_semaphore_),
       flags_(other.flags_),
       state_(other.state_),
       bound_(other.bound_) {
   other.handle_ = VK_NULL_HANDLE;
-  other.signal_semaphore_ = VK_NULL_HANDLE;
   other.bound_.reset();
 }
 
 CommandBuffer& CommandBuffer::operator=(CommandBuffer&& other) noexcept {
   handle_ = other.handle_;
-  signal_semaphore_ = other.signal_semaphore_;
   flags_ = other.flags_;
   state_ = other.state_;
   bound_ = other.bound_;
 
   other.handle_ = VK_NULL_HANDLE;
-  other.signal_semaphore_ = VK_NULL_HANDLE;
   other.bound_.reset();
   other.state_ = CommandBuffer::State::INVALID;
 
@@ -310,12 +304,6 @@ CommandPool::~CommandPool() {
   if (pool_ == VK_NULL_HANDLE) {
     return;
   }
-  for (auto& semaphore : semaphores_) {
-    if (semaphore != VK_NULL_HANDLE) {
-      vkDestroySemaphore(device_, semaphore, nullptr);
-    }
-  }
-
   vkDestroyCommandPool(device_, pool_, nullptr);
 }
 
@@ -326,7 +314,6 @@ CommandBuffer CommandPool::get_new_cmd(bool reusable) {
   allocate_new_batch(config_.cmd_pool_batch_size);
 
   VkCommandBuffer handle = buffers_[in_use_];
-  VkSemaphore semaphore = semaphores_[in_use_];
 
   VkCommandBufferUsageFlags cmd_flags = 0u;
   if (!reusable) {
@@ -334,7 +321,7 @@ CommandBuffer CommandPool::get_new_cmd(bool reusable) {
   }
 
   in_use_++;
-  return CommandBuffer(handle, semaphore, cmd_flags);
+  return CommandBuffer(handle, cmd_flags);
 }
 
 void CommandPool::flush() {
@@ -350,7 +337,6 @@ void CommandPool::allocate_new_batch(const uint32_t count) {
   }
 
   buffers_.resize(buffers_.size() + count);
-  semaphores_.resize(buffers_.size() + count);
 
   const VkCommandBufferAllocateInfo allocate_info{
       VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, // sType
@@ -362,17 +348,6 @@ void CommandPool::allocate_new_batch(const uint32_t count) {
 
   VK_CHECK(vkAllocateCommandBuffers(
       device_, &allocate_info, buffers_.data() + in_use_));
-
-  const VkSemaphoreCreateInfo semaphoreCreateInfo = {
-      VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0};
-
-  for (uint32_t i = 0; i < count; i++) {
-    VK_CHECK(vkCreateSemaphore(
-        device_,
-        &semaphoreCreateInfo,
-        nullptr,
-        semaphores_.data() + in_use_ + i));
-  }
 }
 
 } // namespace vkapi

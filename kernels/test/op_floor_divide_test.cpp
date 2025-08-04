@@ -57,10 +57,9 @@ class OpFloorDivideTest : public OperatorTest {
     Tensor out = tf.zeros(sizes);
 
     // floor_divide two tensors.
-    // std::floor(-0.5 / -0.1) == 5.0, but -0.5 // -0.1 yeilds 4.0
     op_floor_divide_out(
-        tf.make(sizes, /*data=*/{-5.3, 1.1, 2.2, 4.4, 6.8, -0.5}),
-        tf.make(sizes, /*data=*/{2.7, 2.0, 2.0, 2.0, 2.0, -0.1}),
+        tf.make(sizes, /*data=*/{-5.3, 1.1, 2.2, 4.4, 6.8, -0.9}),
+        tf.make(sizes, /*data=*/{2.7, 2.0, 2.0, 2.0, 2.0, -0.2}),
         out);
 
     // Check that it matches the expected output.
@@ -111,6 +110,14 @@ TEST_F(OpFloorDivideTest, FloatTensors) {
 
 TEST_F(OpFloorDivideTest, DoubleTensors) {
   test_floating_point_floor_divide<ScalarType::Double>();
+}
+
+TEST_F(OpFloorDivideTest, HalfTensors) {
+  test_floating_point_floor_divide<ScalarType::Half>();
+}
+
+TEST_F(OpFloorDivideTest, BFloat16Tensors) {
+  test_floating_point_floor_divide<ScalarType::BFloat16>();
 }
 
 TEST_F(OpFloorDivideTest, UnhandledDtypeDies) {
@@ -329,5 +336,19 @@ TEST_F(OpFloorDivideTest, DynamicShapeUnbound) {
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = op_floor_divide_out(x, y, out);
+  EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+// std::floor(0.5 / 0.1) == 5.0, but 0.5 // 0.1 yeilds 4.0
+TEST_F(OpFloorDivideTest, FloatFloorDivideEdgeCase) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor x = tf.make({1, 2}, {0.5, -0.5});
+  Tensor y = tf.make({1, 2}, {0.1, -0.1});
+  Tensor expected_result = tf.make({1, 2}, {4.0, 4.0});
+
+  Tensor out = tf.zeros({1, 2});
+  Tensor ret = op_floor_divide_out(x, y, out);
+  EXPECT_TENSOR_EQ(ret, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

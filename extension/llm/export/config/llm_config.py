@@ -60,7 +60,7 @@ class PreqMode(str, Enum):
 @dataclass
 class BaseConfig:
     """
-    Configurations specific to the model, e.g. whether it’s Qwen3 or Phi-4-mini,
+    Configurations specific to the model, e.g. whether it's Qwen3 or Phi-4-mini,
     and are the minimal set of parameters needed to load the pretrained
     eager model and its weights.
 
@@ -487,6 +487,10 @@ class LlmConfig:
             llm_config.base.checkpoint = args.checkpoint
         if hasattr(args, "checkpoint_dir"):
             llm_config.base.checkpoint_dir = args.checkpoint_dir
+        if hasattr(args, "adapter_checkpoint"):
+            llm_config.base.adapter_checkpoint = args.adapter_checkpoint
+        if hasattr(args, "adapter_config"):
+            llm_config.base.adapter_config = args.adapter_config
         if hasattr(args, "tokenizer_path"):
             llm_config.base.tokenizer_path = args.tokenizer_path
         if hasattr(args, "metadata"):

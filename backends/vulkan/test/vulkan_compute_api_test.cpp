@@ -1153,7 +1153,6 @@ TEST(VulkanComputeGraphTest, empty_init_graphnode_test) {
   // Encode an empty ExecuteNode and check that command buffer encoding does not
   // crash.
   graph.execute_nodes().emplace_back(new ExecuteNode(nullptr, {}));
-  EXPECT_NO_FATAL_FAILURE(graph.encode_execute());
 }
 
 TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
@@ -1178,7 +1177,6 @@ TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   // Run graph
 
@@ -1221,7 +1219,6 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   // Run graph
 
@@ -1307,7 +1304,6 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   // Run graph
 
@@ -1366,7 +1362,6 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   // Run graph
 
@@ -1437,8 +1432,6 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 
   graph.prepack();
 
-  graph.encode_execute();
-
   // Run graph
 
   for (float i = 5.0f; i < 30.0f; i += 10.0f) {
@@ -1465,6 +1458,7 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 
 TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   GraphConfig config;
+  config.expect_dynamic_shapes = true;
   ComputeGraph graph(config);
   size_t expected_vma_allocation_count = 0;
 
@@ -1526,7 +1520,6 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();
-  graph.encode_execute();
 
   // +3: shared memory allocations for tensors
   expected_vma_allocation_count += 3;
@@ -1667,7 +1660,6 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   // Run graph
 
@@ -1698,6 +1690,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
 TEST(VulkanComputeGraphTest, test_large_graph) {
   auto build_start_time = std::chrono::system_clock::now();
   GraphConfig config;
+  config.expect_dynamic_shapes = true;
   ComputeGraph graph(config);
 
   int64_t input_w = 256;
@@ -1733,7 +1726,6 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   auto build_end_time = std::chrono::system_clock::now();
 
@@ -1810,7 +1802,6 @@ void test_clone(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0.0f, /*iota = */ true);
 
@@ -1895,7 +1886,6 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0.0f, /*iota = */ true);
 
@@ -1959,7 +1949,6 @@ TEST(VulkanComputeGraphTest, DISABLED_test_etvk_copy_channel_offset_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0.0f, true);
 
@@ -2050,7 +2039,6 @@ TEST(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   float a_value = 1.0f;
   float b_value = 2.0f;
@@ -2163,7 +2151,6 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_int_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0, /*iota = */ true);
 
@@ -2227,7 +2214,6 @@ TEST(VulkanComputeGraphTest, DISABLED_test_etvk_copy_channel_offset_int_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0.0f, true);
 
@@ -2287,7 +2273,6 @@ TEST(VulkanComputeGraphTest, test_view_change_packing) {
     out.staging = graph.set_output_tensor(out.value);
 
     graph.prepare();
-    graph.encode_execute();
 
     fill_vtensor(graph, in, 0.0, true);
 
@@ -2446,7 +2431,6 @@ void compute_graph_round_trip_test(
   ValueRef r_staging_out = graph.set_output_tensor(r_tensor);
 
   graph.prepare();
-  graph.encode_execute();
 
   vTensorPtr tensor = graph.get_tensor(r_tensor);
 
@@ -2569,7 +2553,6 @@ void test_binary_op(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_arg1 = i + 1.5;
@@ -2644,7 +2627,6 @@ void test_mm(
   graph.prepack();
 
   for (int i = 1; i < 4; i++) {
-    graph.encode_execute();
     if (prepack) {
       float val_mat1 = i;
       float val_out = K * (val_mat1 * 2.0f);
@@ -2723,7 +2705,6 @@ void test_mm_with_resize_reencode(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_mat1 = i;
@@ -2801,7 +2782,6 @@ void test_max_pool2d(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   // Run graph
 
@@ -2880,7 +2860,6 @@ void test_grid_priors(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   vTensorPtr t_in = graph.get_tensor(in.value);
   vTensorPtr t_out = graph.get_tensor(out.value);
@@ -3050,7 +3029,6 @@ void test_to_copy() {
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
   graph.propagate_resize();
   graph.execute();
 
@@ -3204,6 +3182,7 @@ void add_dynamic_dispatch_test_node(
 vkcompute::ComputeGraph build_dynamic_dispatch_test_graph(int M, int N) {
   using namespace vkcompute;
   GraphConfig config;
+  config.expect_dynamic_shapes = true;
   ComputeGraph graph(config);
 
   vkapi::ScalarType dtype = vkapi::kFloat;
@@ -3237,7 +3216,6 @@ void test_dynamic_dispatch(int M, int N) {
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_mat1 = i;
@@ -3254,8 +3232,6 @@ void test_dynamic_dispatch(int M, int N) {
   graph.resize_input(0, new_mat1_size);
   graph.resize_input(1, new_mat2_size);
   graph.propagate_resize();
-
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_mat1 = i;

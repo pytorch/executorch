@@ -114,7 +114,6 @@ void test_reference(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   //
   // Run model
