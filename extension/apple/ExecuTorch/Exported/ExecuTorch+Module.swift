@@ -93,3 +93,86 @@ public extension Module {
     try forward(inputs)
   }
 }
+
+@available(*, deprecated, message: "This API is experimental.")
+public extension Module {
+  /// Executes a specific method and decodes the outputs into `Output` generic type.
+  ///
+  /// - Parameters:
+  ///   - method: The name of the method to execute.
+  ///   - inputs: An array of `ValueConvertible` inputs.
+  /// - Returns: An instance of `Output` decoded from the returned `[Value]`, or `nil` on mismatch.
+  /// - Throws: An error if loading, execution or result conversion fails.
+  func execute<Output: ValueSequenceConstructible>(_ method: String, _ inputs: [ValueConvertible]) throws -> Output {
+    try Output(__executeMethod(method, withInputs: inputs.map { $0.asValue() }))
+  }
+
+  /// Executes a specific method with variadic inputs and decodes into `Output` generic type.
+  ///
+  /// - Parameters:
+  ///   - method: The name of the method to execute.
+  ///   - inputs: A variadic list of `ValueConvertible` inputs.
+  /// - Returns: An instance of `Output` decoded from the returned `[Value]`, or `nil` on mismatch.
+  /// - Throws: An error if loading, execution or result conversion fails.
+  func execute<Output: ValueSequenceConstructible>(_ method: String, _ inputs: ValueConvertible...) throws -> Output {
+    try execute(method, inputs)
+  }
+
+  /// Executes a specific method with a single input and decodes into `Output` generic type.
+  ///
+  /// - Parameters:
+  ///   - method: The name of the method to execute.
+  ///   - input: A single `ValueConvertible` input.
+  /// - Returns: An instance of `Output` decoded from the returned `[Value]`, or `nil` on mismatch.
+  /// - Throws: An error if loading, execution or result conversion fails.
+  func execute<Output: ValueSequenceConstructible>(_ method: String, _ input: ValueConvertible) throws -> Output {
+    try execute(method, [input])
+  }
+
+  /// Executes a specific method with no inputs and decodes into `Output` generic type.
+  ///
+  /// - Parameter method: The name of the method to execute.
+  /// - Returns: An instance of `Output` decoded from the returned `[Value]`, or `nil` on mismatch.
+  /// - Throws: An error if loading, execution or result conversion fails.
+  func execute<Output: ValueSequenceConstructible>(_ method: String) throws -> Output {
+    try execute(method, [])
+  }
+
+  /// Executes the "forward" method and decodes into `Output` generic type.
+  ///
+  /// - Parameters:
+  ///   - inputs: An array of `ValueConvertible` inputs to pass to "forward".
+  /// - Returns: An instance of `Output` decoded from the returned `[Value]`, or `nil` on mismatch.
+  /// - Throws: An error if loading, execution or result conversion fails.
+  func forward<Output: ValueSequenceConstructible>(_ inputs: [ValueConvertible]) throws -> Output {
+    try execute("forward", inputs)
+  }
+
+  /// Executes the "forward" method with variadic inputs and decodes into `Output` generic type.
+  ///
+  /// - Parameters:
+  ///   - inputs: A variadic list of `ValueConvertible` inputs.
+  /// - Returns: An instance of `Output` decoded from the returned `[Value]`, or `nil` on mismatch.
+  /// - Throws: An error if loading, execution or result conversion fails.
+  func forward<Output: ValueSequenceConstructible>(_ inputs: ValueConvertible...) throws -> Output {
+    try forward(inputs)
+  }
+
+  /// Executes the "forward" method with a single input and decodes into `Output` generic type.
+  ///
+  /// - Parameters:
+  ///   - input: A single `ValueConvertible` to pass to "forward".
+  /// - Returns: An instance of `Output` decoded from the returned `[Value]`, or `nil` on mismatch.
+  /// - Throws: An error if loading, execution or result conversion fails.
+  func forward<Output: ValueSequenceConstructible>(_ input: ValueConvertible) throws -> Output {
+    try forward([input])
+  }
+
+  /// Executes the "forward" method with no inputs and decodes into `Output` generic type.
+  ///
+  /// - Returns: An instance of `Output` decoded from the returned `[Value]`, or `nil` on mismatch.
+  /// - Throws: An error if loading, execution or result conversion fails.
+  func forward<Output: ValueSequenceConstructible>() throws -> Output {
+    try execute("forward")
+  }
+}

@@ -13,6 +13,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -192,5 +193,57 @@ def test_ne_scalar_u85_INT(test_module):
         NotEqual.decomposed_ops,
         NotEqual.decomposed_exir_ops,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.SkipIfNoModelConverter
+def test_ne_tensor_vgf_FP(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.aten_op_Tensor,
+        NotEqual.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.SkipIfNoModelConverter
+def test_ne_tensor_vgf_INT(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.decomposed_ops,
+        NotEqual.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.SkipIfNoModelConverter
+def test_ne_scalar_vgf_FP(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.aten_op_Scalar,
+        NotEqual.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.SkipIfNoModelConverter
+def test_ne_scalar_vgf_INT(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module,
+        test_module.get_inputs(),
+        NotEqual.decomposed_ops,
+        NotEqual.exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
