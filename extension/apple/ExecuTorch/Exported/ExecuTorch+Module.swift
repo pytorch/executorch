@@ -63,16 +63,15 @@ public extension Module {
     try __executeMethod(method, withInputs: inputs.map { $0.asValue() } )
   }
 
-  /// Executes a specific method with a single input value.
-  /// The method is loaded on demand if not already loaded.
+  /// Executes a specific method with variadic inputs.
   ///
   /// - Parameters:
   ///   - method: The name of the method to execute.
-  ///   - input: A single `ValueConvertible` type representing the input.
+  ///   - inputs: A variadic list of `ValueConvertible` inputs.
   /// - Returns: An array of `Value` objects representing the outputs.
-  /// - Throws: An error if method execution fails.
-  func execute(_ method: String, _ input: ValueConvertible) throws -> [Value] {
-    try __executeMethod(method, withInputs: [input.asValue()])
+  /// - Throws: An error if loading or execution fails.
+  func execute(_ method: String, _ inputs: ValueConvertible...) throws -> [Value] {
+    try execute(method, inputs)
   }
 
   /// Executes the "forward" method with the provided input values.
@@ -85,13 +84,12 @@ public extension Module {
     try __executeMethod("forward", withInputs: inputs.map { $0.asValue() })
   }
 
-  /// Executes the "forward" method with a single input value.
-  /// The method is loaded on demand if not already loaded.
+  /// Executes the "forward" method with variadic inputs.
   ///
-  /// - Parameter input: A single `ValueConvertible` type representing the input.
+  /// - Parameter inputs: A variadic list of `ValueConvertible` inputs.
   /// - Returns: An array of `Value` objects representing the outputs.
-  /// - Throws: An error if method execution fails.
-  func forward(_ input: ValueConvertible) throws -> [Value] {
-    try __executeMethod("forward", withInputs: [input.asValue()])
+  /// - Throws: An error if loading or execution fails.
+  func forward(_ inputs: ValueConvertible...) throws -> [Value] {
+    try forward(inputs)
   }
 }
