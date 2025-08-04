@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -137,4 +138,58 @@ def test_max_dim_tosa_INT_not_delegated():
 def test_max_dim_tosa_FP_not_delegated():
     data, dim = Max.test_data["rank_4_dim_3"]()
     pipeline = OpNotSupportedPipeline[Max.input_t](MaxWithIndex(dim), data, {})
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amax.test_data)
+@common.SkipIfNoModelConverter
+def test_amax_vgf_FP(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    module = Amax(dim, keep_dims)
+    pipeline = VgfPipeline[Amax.input_t](
+        module,
+        data,
+        Amax.aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amax.test_data)
+@common.SkipIfNoModelConverter
+def test_amax_vgf_INT(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    module = Amax(dim, keep_dims)
+    pipeline = VgfPipeline[Amax.input_t](
+        module,
+        data,
+        Amax.aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Max.test_data)
+@common.SkipIfNoModelConverter
+def test_max_dim_vgf_FP_to_amax(test_data: Max.input_t):
+    data, dim = test_data()
+    pipeline = VgfPipeline[Max.input_t](
+        Max(dim),
+        data,
+        "torch.ops.aten.max",
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Max.test_data)
+@common.SkipIfNoModelConverter
+def test_max_dim_vgf_INT_to_amax(test_data: Max.input_t):
+    data, dim = test_data()
+    pipeline = VgfPipeline[Max.input_t](
+        Max(dim),
+        data,
+        "torch.ops.aten.amax",
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.run()
