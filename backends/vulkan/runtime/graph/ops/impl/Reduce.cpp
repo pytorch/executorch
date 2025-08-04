@@ -40,7 +40,8 @@ void resize_reduce2d_node(
   vTensorPtr in = graph->get_tensor(args[1].refs[0]);
 
   // Extract the dimensions to reduce over
-  const std::vector<int64_t> dims_list = graph->extract_int_or_symint_list(resize_args.at(0));
+  const std::vector<int64_t> dims_list =
+      graph->extract_int_or_symint_list(resize_args.at(0));
   int32_t reduce_dim1_nchw = dims_list[0];
   int32_t reduce_dim2_nchw = dims_list[1];
 
@@ -161,24 +162,25 @@ void add_reduce2d_node(
     const ValueRef dims_ref,
     const ValueRef out,
     const std::string& op_name) {
-  
   VK_CHECK_COND(
       !graph.is_buffer_storage(in) && !graph.is_buffer_storage(out),
       "Vulkan reduction only supports texture storage");
 
   const int64_t ndim = graph.dim_of(in);
-  
+
   // Extract the two dimensions to reduce over
-  const std::vector<int64_t> dims_list = graph.extract_int_or_symint_list(dims_ref);
-  VK_CHECK_COND(dims_list.size() == 2, "reduce2d requires exactly 2 dimensions");
-  
+  const std::vector<int64_t> dims_list =
+      graph.extract_int_or_symint_list(dims_ref);
+  VK_CHECK_COND(
+      dims_list.size() == 2, "reduce2d requires exactly 2 dimensions");
+
   int32_t reduce_dim1 = normalize(dims_list[0], ndim);
   int32_t reduce_dim2 = normalize(dims_list[1], ndim);
-  
+
   // Convert to WHCN format
   reduce_dim1 = nchw_dim_to_whcn_dim(reduce_dim1, ndim);
   reduce_dim2 = nchw_dim_to_whcn_dim(reduce_dim2, ndim);
-  
+
   // Check that none of the reduction dims are packed
   VK_CHECK_COND(graph.packed_dim_of(in) != reduce_dim1);
   VK_CHECK_COND(graph.packed_dim_of(in) != reduce_dim2);
@@ -193,7 +195,7 @@ void add_reduce2d_node(
     VK_CHECK_COND(graph.concat_dim_of(out) != reduce_dim2);
   }
 
-  std::string kernel_name = op_name + "2d";  // Add "2d" suffix
+  std::string kernel_name = op_name + "2d"; // Add "2d" suffix
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
@@ -206,8 +208,10 @@ void add_reduce2d_node(
     }
   }
 
-  const ValueRef reduce_dim1_whcn_ref = graph.get_or_add_value_for_int(reduce_dim1);
-  const ValueRef reduce_dim2_whcn_ref = graph.get_or_add_value_for_int(reduce_dim2);
+  const ValueRef reduce_dim1_whcn_ref =
+      graph.get_or_add_value_for_int(reduce_dim1);
+  const ValueRef reduce_dim2_whcn_ref =
+      graph.get_or_add_value_for_int(reduce_dim2);
   const ValueRef group_dim_whcn_ref = graph.get_or_add_value_for_int(group_dim);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -224,7 +228,10 @@ void add_reduce2d_node(
       // Specialization Constants
       {graph.packed_dim_of(out), reduce_dim1, reduce_dim2, group_dim},
       // Resize Args
-      {dims_ref, reduce_dim1_whcn_ref, reduce_dim2_whcn_ref, group_dim_whcn_ref},
+      {dims_ref,
+       reduce_dim1_whcn_ref,
+       reduce_dim2_whcn_ref,
+       group_dim_whcn_ref},
       // Resizing Logic
       resize_reduce2d_node));
 }
@@ -232,7 +239,7 @@ void add_reduce2d_node(
 #define DEFINE_REDUCE_FN(op_name, out_arg_idx)                           \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
     const std::vector<int64_t> dims_list =                               \
-      graph.extract_int_or_symint_list(args[1]);                         \
+        graph.extract_int_or_symint_list(args[1]);                       \
     if (dims_list.size() == 1) {                                         \
       const int64_t dim_val = dims_list.at(0);                           \
       const ValueRef dim_ref = graph.get_or_add_value_for_int(dim_val);  \
