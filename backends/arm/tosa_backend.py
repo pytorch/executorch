@@ -19,12 +19,12 @@ from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm._passes import (
     ArmPassManager,
 )  # usort: skip
+from executorch.backends.arm.common.debug import dbg_fail, dbg_tosa_dump
 from executorch.backends.arm.process_node import (
     process_call_function,
     process_output,
     process_placeholder,
 )
-from executorch.backends.arm.tosa_utils import dbg_fail, dbg_tosa_dump
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
