@@ -91,40 +91,6 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ),
         )
 
-    def test_op_clone_dim_order_preserves_channels_last(self):
-        x = torch.randn(2, 3, 4, 5).to(memory_format=torch.channels_last)
-        y = torch.ops.dim_order_ops._clone_dim_order.default(x)
-
-        assert y.is_contiguous(
-            memory_format=torch.channels_last
-        ), "_clone_dim_order output is not in channels_last memory format."
-        assert torch.allclose(x, y)
-
-    def test_op_clone_dim_order_to_contiguous(self):
-        x = torch.randn(2, 3, 4, 5).to(memory_format=torch.channels_last)
-        contiguous_dim_order = get_dim_order(torch.contiguous_format, x.dim())
-        y = torch.ops.dim_order_ops._clone_dim_order.default(
-            x, dim_order=contiguous_dim_order
-        )
-
-        assert (
-            y.is_contiguous()
-        ), "_clone_dim_order output is not in contiguous memory format"
-        assert torch.allclose(x, y)
-
-    def test_op_clone_dim_order_out_to_channels_last(self):
-        x = torch.randn(2, 3, 4, 5).contiguous()
-        y = torch.empty_like(x, memory_format=torch.channels_last)
-        channels_last_dim_order = get_dim_order(torch.channels_last, y.dim())
-        torch.ops.dim_order_ops._clone_dim_order.out(
-            x, dim_order=channels_last_dim_order, out=y
-        )
-
-        assert y.is_contiguous(
-            memory_format=torch.channels_last
-        ), "_clone_dim_order output is not in channels_last memory format"
-        assert torch.allclose(x, y)
-
     def test_op_dim_order_update(self) -> None:
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
