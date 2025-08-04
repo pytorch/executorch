@@ -243,7 +243,7 @@ let imageBuffer: UnsafeMutableRawPointer = ... // Existing image buffer
 let inputTensor = Tensor<Float>(&imageBuffer, shape: [1, 3, 224, 224])
 
 // Execute the 'forward' method with the given input tensor and get an output tensor back.
-let outputTensor: Tensor<Float> = try module.forward(inputTensor)[0].tensor()!
+let outputTensor: Tensor<Float> = try module.forward(inputTensor)!
 
 // Copy the tensor data into logits array for easier access.
 let logits = outputTensor.scalars()
