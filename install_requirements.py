@@ -59,7 +59,7 @@ def python_is_compatible():
 
 
 # The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
+TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cu121"
 
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
