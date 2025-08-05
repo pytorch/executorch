@@ -110,7 +110,7 @@ if __name__ == "__main__":
     )
 
     if args.etrecord is not False:
-        edge.get_etrecord().save(args.etrecord)
+        exec_prog.get_etrecord().save(args.etrecord)
         logging.info(f"Saved ETRecord to {args.etrecord}")
 
     quant_tag = "q8" if args.quantize else "fp32"
