@@ -15,6 +15,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = Tuple[torch.Tensor]  # Input x
@@ -218,6 +219,34 @@ def test_depthwise_convolution_2d_tosa_INT(test_data):
         aten_op=[],
         exir_op=exir_op,
         per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_conv1d_FP | test_data_conv2d_FP)
+@common.SkipIfNoModelConverter
+def test_depthwise_convolution_2d_vgf_FP(test_data: torch.nn.Module):
+    model = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_conv1d_INT | test_data_conv2d_INT)
+@common.SkipIfNoModelConverter
+def test_depthwise_convolution_2d_vgf_INT(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
 

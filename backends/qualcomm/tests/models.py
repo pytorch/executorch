@@ -1530,12 +1530,13 @@ class Rsqrt(torch.nn.Module):
 
 
 class ScaledDotProductAttention(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, scale=None):
         super().__init__()
+        self.scale = scale
 
     def forward(self, query_layer, key_layer, value_layer, attn_mask):
         attn_output = torch.nn.functional.scaled_dot_product_attention(
-            query_layer, key_layer, value_layer, attn_mask
+            query_layer, key_layer, value_layer, attn_mask, scale=self.scale
         )
         return attn_output
 
