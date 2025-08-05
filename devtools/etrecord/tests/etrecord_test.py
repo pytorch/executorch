@@ -1545,3 +1545,32 @@ class TestETRecord(unittest.TestCase):
                 custom_outputs["forward"], parsed_etrecord._reference_outputs["forward"]
             ):
                 self.assertTrue(torch.equal(expected[0], actual[0]))
+
+    def test_save_missing_essential_info(self):
+        def expected_runtime_error(etrecord, etrecord_path):
+            with self.assertRaises(RuntimeError) as context:
+                etrecord.save(etrecord_path)
+
+            self.assertIn(
+                "ETRecord must contain edge dialect program, graph map, and debug handle map to be saved",
+                str(context.exception),
+            )
+
+        """Test that save raises RuntimeError when essential info is missing."""
+        _, edge_output, et_output = self.get_test_model()
+
+        etrecord = ETRecord()
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            etrecord_path = tmpdirname + "/etrecord_no_edge.bin"
+
+            expected_runtime_error(etrecord, etrecord_path)
+            etrecord.add_edge_dialect_program(edge_output)
+
+            # Should raise runtime error due to  missing executorch program related info
+            expected_runtime_error(etrecord, etrecord_path)
+
+            etrecord.add_executorch_program(et_output)
+
+            # All essential components are now present, so save should succeed
+            etrecord.save(etrecord_path)

@@ -85,10 +85,18 @@ class ETRecord:
 
         Args:
             path: Path where the ETRecord file will be saved to.
+
+        Raises:
+            RuntimeError: If the ETRecord does not contain essential information for Inpector.
         """
         if isinstance(path, (str, os.PathLike)):
             # pyre-ignore[6]: In call `os.fspath`, for 1st positional argument, expected `str` but got `Union[PathLike[typing.Any], str]`
             path = os.fspath(path)
+
+        if not (self.edge_dialect_program and self.graph_map and self._debug_handle_map):
+            raise RuntimeError(
+                "ETRecord must contain edge dialect program, graph map, and debug handle map to be saved."
+            )
 
         etrecord_zip = ZipFile(path, "w")
 
