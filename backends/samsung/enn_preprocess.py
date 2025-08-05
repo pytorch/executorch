@@ -38,6 +38,9 @@ class EnnBackend(BackendDetails):
         # 2 make enn graph
         enn_preprocess_passes = PassManager(passes=[])
         pass_result = enn_preprocess_passes(edge_program.graph_module)
+
+        enn_graph = EnnGraph()
+        enn_graph.init("UnknownName", "")
         # 3 node visitors
         node_visitors = []
 
@@ -62,4 +65,9 @@ class EnnBackend(BackendDetails):
 
         # 4 Compile Graph
         enn_wrapper.Destroy()
-        return PreprocessResult(processed_bytes=0, debug_handle_map={})
+        enn_graph.finish()
+        ser_buf = enn_graph.serialize()
+        enn_context_binary = enn_wrapper.Compile(ser_buf)
+        assert enn_context_binary is not None and len(enn_context_binary) > 0
+        enn_wrapper.Destroy()
+        return PreprocessResult(processed_bytes=bytes(enn_context_binary), debug_handle_map={})
