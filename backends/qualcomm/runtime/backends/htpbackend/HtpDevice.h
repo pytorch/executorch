@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDeviceCustomConfig.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevicePlatformInfoConfig.h>
@@ -55,7 +56,7 @@ class HtpDevice : public QnnDevice {
   void ReleasePerformanceVote();
 
   inline bool IsPerfModeEnabled() {
-    return htp_options_->performance_mode() !=
+    return get_option(htp_options_->performance_mode()) !=
         QnnExecuTorchHtpPerformanceMode::kHtpDefault;
   }
 
