@@ -682,7 +682,6 @@ for (int i=0; i<out.size(); i++) {{
 
         graph_build += f"{self.graph}{self.dot}prepare();\n"
         graph_build += f"{self.graph}{self.dot}prepack();\n"
-        graph_build += f"{self.graph}{self.dot}encode_execute();\n"
 
         graph_build += "\n"
         return graph_build
