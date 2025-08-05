@@ -142,5 +142,5 @@ if __name__ == "__main__":
 
         m = _load_for_executorch_from_buffer(exec_prog.buffer)
         logging.info("Successfully loaded the model")
-        res = m.run_method("forward", example_inputs)
+        res = m.run_method("forward", *example_inputs)
         logging.info("Successfully ran the model")
