@@ -128,7 +128,10 @@ if __name__ == "__main__":
 
     if args.test_pybind:
         logging.info("Testing the pte with pybind")
-        from executorch.extension.pybindings.portable_lib import _load_for_executorch_from_buffer
+        from executorch.extension.pybindings.portable_lib import (
+            _load_for_executorch_from_buffer,
+        )
+
         # Import custom ops. This requires portable_lib to be loaded first.
         from executorch.extension.llm.custom_ops import (  # noqa: F401, F403
             custom_ops,
@@ -136,6 +139,7 @@ if __name__ == "__main__":
 
         # Import quantized ops. This requires portable_lib to be loaded first.
         from executorch.kernels import quantized  # usort: skip # noqa: F401, F403
+
         m = _load_for_executorch_from_buffer(exec_prog.buffer)
         logging.info("Successfully loaded the model")
         res = m.run_method("forward", example_inputs)
