@@ -7,6 +7,8 @@
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import executorch.backends.samsung.python.PyEnnWrapperAdaptor as PyEnnWrapper
+
 import torch
 from executorch.backends.samsung.enn_preprocess import EnnBackend
 
@@ -33,7 +35,9 @@ class EnnOperatorSupport(OperatorSupportBase):
         compile_specs: List[CompileSpec],
     ):
         self.edge_program = edge_program
+        self.enn_wrapper = PyEnnWrapper.EnnWrapper()
         option_spec = get_compile_spec(compile_specs, "Exynos compile", required=True)
+        self.enn_wrapper.Init(option_spec.value)
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
         if node.op != "call_function":
@@ -46,10 +50,11 @@ class EnnOperatorSupport(OperatorSupportBase):
         ]:
             return False
 
-        return False
+        supported = self.enn_wrapper.IsNodeSupportedByBackend()
+        return supported
 
     def __del__(self):
-        pass
+        self.enn_wrapper.Destroy()
 
 
 class EnnPartitioner(Partitioner):

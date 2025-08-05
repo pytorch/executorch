@@ -7,6 +7,7 @@
 import logging
 from typing import Dict, final, List
 
+import executorch.backends.samsung.python.PyEnnWrapperAdaptor as PyEnnWrapper
 import torch
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -26,7 +27,12 @@ class EnnBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
-        # 1 Converter Init
+        enn_wrapper = PyEnnWrapper.EnnWrapper()
+        option_spec = get_compile_spec(
+            compile_specs, ENN_COMPILE_OPTION_TITLE, required=True
+        )
+        enn_wrapper.Init(option_spec.value)
+
         enn_preprocess_passes = PassManager(passes=[])
 
         # 2 make enn graph
@@ -55,4 +61,5 @@ class EnnBackend(BackendDetails):
                 raise RuntimeError(f"{node.op}" " is not supported in ENN Delegate")
 
         # 4 Compile Graph
+        enn_wrapper.Destroy()
         return PreprocessResult(processed_bytes=0, debug_handle_map={})
