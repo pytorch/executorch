@@ -12,6 +12,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -110,5 +111,31 @@ def test_native_layer_norm_u85_INT(test_data):
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
         run_on_fvp=True,
         symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_native_layer_norm_vgf_FP(test_data):
+    test_input, model = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        test_input,
+        "torch.ops.aten.layer_norm.default",
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_native_layer_norm_vgf_INT(test_data):
+    test_input, model = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        test_input,
+        "torch.ops.aten.sub.Tensor",
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

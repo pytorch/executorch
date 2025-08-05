@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.hardsigmoid.default"
@@ -85,5 +86,27 @@ def test_hardsigmoid_u85_INT(test_data: torch.Tensor):
         exir_ops=[],
         run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_hardsigmoid_vgf_FP(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Hardsigmoid(), (test_data(),), aten_op, exir_op=[], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_hardsigmoid_vgf_INT(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Hardsigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

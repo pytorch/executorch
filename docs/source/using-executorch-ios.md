@@ -243,10 +243,10 @@ let imageBuffer: UnsafeMutableRawPointer = ... // Existing image buffer
 let inputTensor = Tensor<Float>(&imageBuffer, shape: [1, 3, 224, 224])
 
 // Execute the 'forward' method with the given input tensor and get an output tensor back.
-let outputTensor: Tensor<Float> = try module.forward(inputTensor)[0].tensor()!
+let outputTensor: Tensor<Float> = try module.forward(inputTensor)!
 
 // Copy the tensor data into logits array for easier access.
-let logits = try outputTensor.scalars()
+let logits = outputTensor.scalars()
 
 // Use logits...
 ```
@@ -444,11 +444,11 @@ Swift:
 let tensor = Tensor<Float>([1.0, 2.0, 3.0, 4.0], shape: [2, 2])
 
 // Get data copy as a Swift array.
-let scalars = try tensor.scalars()
+let scalars = tensor.scalars()
 print("All scalars: \(scalars)") // [1.0, 2.0, 3.0, 4.0]
 
 // Access data via a buffer pointer.
-try tensor.withUnsafeBytes { buffer in
+tensor.withUnsafeBytes { buffer in
   print("First float element: \(buffer.first ?? 0.0)")
 }
 
@@ -482,7 +482,7 @@ Swift:
 let tensor = Tensor<Float>([1.0, 2.0, 3.0, 4.0], shape: [2, 2])
 
 // Modify the tensor's data in place.
-try tensor.withUnsafeMutableBytes { buffer in
+tensor.withUnsafeMutableBytes { buffer in
   buffer[1] = 200.0
 }
 // tensor's data is now [1.0, 200.0, 3.0, 4.0]

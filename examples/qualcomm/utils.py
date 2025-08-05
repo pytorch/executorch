@@ -115,28 +115,30 @@ class SimpleADB:
             cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
         )
 
-    def push(self, inputs=None, input_list=None, files=None):
-        self._adb(["shell", f"rm -rf {self.workspace}"])
-        self._adb(["shell", f"mkdir -p {self.workspace}"])
+    def push(self, inputs=None, input_list=None, files=None, init_env=True):
+        artifacts = []
+        if init_env:
+            self._adb(["shell", f"rm -rf {self.workspace}"])
+            self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-        # necessary artifacts
-        artifacts = [
-            *self.pte_path,
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
-            (
-                f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
-                f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
-            ),
-            (
-                f"{self.qnn_sdk}/lib/aarch64-android/"
-                f"libQnnHtpV{self.htp_arch}Stub.so"
-            ),
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
-            f"{self.build_path}/{self.runner}",
-            f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
-        ]
+            # necessary artifacts
+            artifacts = [
+                *self.pte_path,
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
+                (
+                    f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                    f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
+                ),
+                (
+                    f"{self.qnn_sdk}/lib/aarch64-android/"
+                    f"libQnnHtpV{self.htp_arch}Stub.so"
+                ),
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
+                f"{self.build_path}/{self.runner}",
+                f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
+            ]
         input_list_file, input_files = generate_inputs(
             self.working_dir, self.input_list_filename, inputs, input_list
         )
