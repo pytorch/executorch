@@ -5,33 +5,38 @@
 
 import copy
 
-from torch import nn
-from torch.export import ExportedProgram
-from torch.fx.passes.infra.pass_base import PassResult
-from torch.fx.passes.infra.pass_manager import PassManager
-
 from executorch.backends.nxp.edge_passes.move_auxiliary_operator_into_separate_qdq_cluster_pass import (
     MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass,
     MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass,
 )
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
 from executorch.exir import EdgeProgramManager
-from executorch.exir.program._program import _get_updated_graph_signature, _get_updated_range_constraints
+from executorch.exir.program._program import (
+    _get_updated_graph_signature,
+    _get_updated_range_constraints,
+)
+
+from torch import nn
+from torch.export import ExportedProgram
+from torch.fx.passes.infra.pass_base import PassResult
+from torch.fx.passes.infra.pass_manager import PassManager
 
 
 class NeutronEdgePassManager(PassManager):
 
     def __init__(self, passes: list[NeutronEdgePass] = None):
         passes: list[NeutronEdgePass] = passes or [
+            MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(),
+            MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(),
         ]
 
         super().__init__(
             passes,
-            steps=10  # Empirical value. At most 10 cycles of passes will be run.
+            steps=10,  # Empirical value. At most 10 cycles of passes will be run.
         )
 
     def _transform_graph_module(self, module: nn.Module) -> PassResult:
-        """ Apply the passes to a single graph module. """
+        """Apply the passes to a single graph module."""
         pass_result: PassResult = super().__call__(module)
 
         graph_module = pass_result.graph_module
@@ -41,7 +46,7 @@ class NeutronEdgePassManager(PassManager):
         return pass_result
 
     def __call__(self, epm: EdgeProgramManager) -> EdgeProgramManager:
-        """ Apply the passes to all graph modules in the edge program. """
+        """Apply the passes to all graph modules in the edge program."""
         new_programs: dict[str, ExportedProgram] = {}
 
         for name, program in epm._edge_programs.items():
@@ -56,7 +61,9 @@ class NeutronEdgePassManager(PassManager):
                         program.graph_signature, pass_result.graph_module
                     ),
                     state_dict=program.state_dict,
-                    range_constraints=_get_updated_range_constraints(pass_result.graph_module),
+                    range_constraints=_get_updated_range_constraints(
+                        pass_result.graph_module
+                    ),
                     module_call_graph=copy.deepcopy(program._module_call_graph),
                     example_inputs=program.example_inputs,
                     constants=program.constants,
@@ -77,4 +84,6 @@ class NeutronEdgePassManager(PassManager):
 
         else:
             # Return a new EdgeProgramManager with the updated programs.
-            return EdgeProgramManager(new_programs, copy.deepcopy(epm._config_methods), epm.compile_config)
+            return EdgeProgramManager(
+                new_programs, copy.deepcopy(epm._config_methods), epm.compile_config
+            )

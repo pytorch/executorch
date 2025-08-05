@@ -4,14 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from torch import nn
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from executorch import exir
 from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
-from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import NeutronEdgePassManager
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -22,6 +22,8 @@ from executorch.exir import (
     ExecutorchProgramManager,
 )
 from executorch.extension.export_util.utils import export_to_edge
+from torch import nn
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
