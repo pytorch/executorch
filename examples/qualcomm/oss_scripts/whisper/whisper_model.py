@@ -6,10 +6,11 @@
 
 
 import torch
-from transformers import StaticCache, WhisperForConditionalGeneration
+from transformers.cache_utils import DynamicCache, EncoderDecoderCache, StaticCache
+from transformers.models.whisper.modeling_whisper import WhisperForConditionalGeneration
 
 
-class Seq2SeqLMEncoderExportableModule(torch.nn.Module):
+class QnnSeq2SeqLMEncoderExportableModule(torch.nn.Module):
     """
     A wrapper module designed to make a Seq2Seq LM encoder exportable with `torch.export`.
     This module ensures that the exported encoder model is compatible with ExecuTorch.
@@ -29,7 +30,7 @@ class Seq2SeqLMEncoderExportableModule(torch.nn.Module):
         return {}
 
 
-class Seq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
+class QnnSeq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
     """
     A wrapper module designed to make a Seq2Seq LM decoder exportable with `torch.export`,
     specifically for use with static caching. This module ensures the exported decoder
@@ -57,11 +58,7 @@ class Seq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
             device="cpu",
             dtype=torch.float32,
         )
-
-        # Register cache buffers to make them exportable
-        for i in range(len(self.static_cache.key_cache)):
-            self.register_buffer(f"key_cache_{i}", self.static_cache.key_cache[i])
-            self.register_buffer(f"value_cache_{i}", self.static_cache.value_cache[i])
+        self.cache = EncoderDecoderCache(self.static_cache, DynamicCache())
 
     def forward(
         self, decoder_input_ids, attention_mask, encoder_hidden_states, cache_position
@@ -71,7 +68,7 @@ class Seq2SeqLMDecoderExportableModuleWithStaticCache(torch.nn.Module):
             input_ids=decoder_input_ids,
             attention_mask=attention_mask,
             encoder_hidden_states=encoder_hidden_states,
-            past_key_values=self.static_cache,
+            past_key_values=self.cache,
             use_cache=True,
             cache_position=cache_position,
         )
