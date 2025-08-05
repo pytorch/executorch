@@ -61,6 +61,14 @@ if __name__ == "__main__":
         default="",
         help="Generate and save an ETRecord to the given file location",
     )
+    parser.add_argument(
+        "-t",
+        "--test_with_pybindings",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Test the pte with pybindings",
+    )
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
 
     args = parser.parse_args()
@@ -117,3 +125,10 @@ if __name__ == "__main__":
     quant_tag = "q8" if args.quantize else "fp32"
     model_name = f"{args.model_name}_xnnpack_{quant_tag}"
     save_pte_program(exec_prog, model_name, args.output_dir)
+
+    if args.test_pybind:
+        logging.info("Testing the pte with pybind")
+        from executorch.extension.pybindings.portable_lib import _load_for_executorch_from_buffer
+
+        m = _load_for_executorch_from_buffer(exec_prog.buffer)
+        m.run_method("forward", example_inputs)
