@@ -51,9 +51,9 @@ class LhdTokenGenerator : public TokenGenerator {
                 metadata.use_int64_token},
             stats),
         metadata_(metadata),
-        ngrams_pool_(metadata.vocab_size, metadata.ngram, metadata.gcap),
         lhd_branch_(metadata.ngram - 1, std::vector<int32_t>(metadata.window)),
-        lhd_branch_prev_(metadata.window) {
+        lhd_branch_prev_(metadata.window),
+        ngrams_pool_(metadata.vocab_size, metadata.ngram, metadata.gcap) {
     ET_LOG(
         Info,
         "Use Lookahead decoding: ngram=%d, window=%d, gcap=%d",
@@ -76,7 +76,8 @@ class LhdTokenGenerator : public TokenGenerator {
       std::vector<uint64_t> tokens,
       int64_t start_pos,
       int32_t seq_len,
-      std::function<void(const std::string&)> token_callback) override;
+      std::function<void(const std::string&)> token_callback,
+      bool dump_logits) override;
 
  private:
   /**

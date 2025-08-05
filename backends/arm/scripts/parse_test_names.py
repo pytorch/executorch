@@ -26,7 +26,7 @@ CUSTOM_EDGE_OPS = [
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 
 # Add all targets and TOSA profiles we support here.
-TARGETS = ["tosa_MI", "tosa_BI", "u55_BI", "u85_BI"]
+TARGETS = ["tosa_FP", "tosa_INT", "u55_INT", "u85_INT", "vgf_INT", "vgf_FP"]
 
 
 def get_op_name_map():
@@ -68,8 +68,8 @@ def parse_test_name(
     where OP must match a key in op_name_map and TARGET one string in TARGETS. The
     "not_delegated" suffix indicates that the test tests that the op is not delegated.
 
-    Examples of valid names: "test_mm_u55_BI_not_delegated" and
-    "test_add_scalar_tosa_MI_two_inputs".
+    Examples of valid names: "test_mm_u55_INT_not_delegated" and
+    "test_add_scalar_tosa_FP_two_inputs".
 
     Returns a tuple (OP, TARGET, IS_DELEGATED) if valid.
     """

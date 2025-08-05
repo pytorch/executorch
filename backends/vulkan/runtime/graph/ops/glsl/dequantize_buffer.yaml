@@ -17,3 +17,7 @@ dequantize_buffer:
       MODE: per_tensor
     - NAME: dequantize_per_token_buffer
       MODE: per_token
+    - NAME: dequantize_per_channel_buffer
+      MODE: per_channel
+    - NAME: dequantize_block_wise_buffer
+      MODE: block_wise

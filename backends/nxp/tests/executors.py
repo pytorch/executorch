@@ -2,7 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
+import warnings
 from typing import Dict, Union
 
 import numpy
@@ -14,7 +14,13 @@ from executorch.backends.nxp.backend.edge_program_converter import (
 )
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    create_channels_first_to_channels_last_permutation,
+    create_channels_last_to_channels_first_permutation,
+)
 from torch.export import ExportedProgram
+from torch.fx.graph import Graph
+
 
 # If executed on i.MX platform, there is no tensorflow module. And typically the intention is to use the tflite python
 # interpreter available in tflite_runtime
@@ -33,12 +39,14 @@ class EdgeProgramExecutor:
         self, input_data: Union[numpy.ndarray, Dict[int, numpy.ndarray]]
     ) -> Union[numpy.ndarray, Dict[str, numpy.ndarray]]:
 
-        if not isinstance(input_data, numpy.ndarray):
-            raise RuntimeError(
-                "Edge program inference with multiple inputs not implemented"
-            )
+        if isinstance(input_data, numpy.ndarray):
+            program_inputs = [torch.from_numpy(input_data)]
+        else:
+            program_inputs = [
+                torch.from_numpy(in_data) for in_data in input_data.values()
+            ]
 
-        output = self.edge_program.module()(torch.from_numpy(input_data))
+        output = self.edge_program.module()(*program_inputs)
 
         if isinstance(output, torch.Tensor):
             return output.detach().numpy()
@@ -183,26 +191,92 @@ def compare_output_arrays(
 
 class TFLiteIOPreprocess:
 
-    def preprocess(self, data: np.ndarray):
+    def preprocess(self, data: np.ndarray | dict[int, numpy.ndarray]):
         return data
+
+
+class ToChannelFirstPreprocess(TFLiteIOPreprocess):
+    def __init__(self, dim_0_reduced: bool | dict[int, bool] = False):
+        self.dim_0_reduced = dim_0_reduced
+
+    def preprocess(self, data: np.ndarray | dict[int, np.ndarray]):
+        def get_channel_first_permutation(tensor, dim_0_reduced):
+            tensor_rank = len(tensor.shape)
+            perm = create_channels_last_to_channels_first_permutation(tensor_rank)
+            if dim_0_reduced and tensor_rank > 1:
+                perm[0], perm[1] = perm[1], perm[0]
+            return perm
+
+        transpose_fn = lambda x, rank: np.transpose(  # noqa E731
+            x, get_channel_first_permutation(x, rank)
+        )
+        if isinstance(data, np.ndarray) and isinstance(self.dim_0_reduced, bool):
+            preprocessed_data = transpose_fn(data, self.dim_0_reduced)
+
+        elif isinstance(data, dict) and isinstance(self.dim_0_reduced, bool):
+            preprocessed_data = {
+                k: transpose_fn(v, self.dim_0_reduced) for k, v in data.items()
+            }
+
+        elif isinstance(data, dict) and isinstance(self.dim_0_reduced, dict):
+            preprocessed_data = {
+                k: transpose_fn(v, self.dim_0_reduced[k]) for k, v in data.items()
+            }
+
+        else:
+            raise ValueError(
+                "Invalid combination of inputs. Data can be either np.ndarray or dict. If original number "
+                "of dimension is used, it can be only int for np.ndarray data or dict of ints for dict "
+                "data with same keys."
+            )
+        return preprocessed_data
+
+
+class ToChannelLastPreprocess(TFLiteIOPreprocess):
+    def preprocess(self, data: np.ndarray | dict[int, np.ndarray]):
+        def get_channel_last_permutation(tensor):
+            return create_channels_first_to_channels_last_permutation(len(tensor.shape))
+
+        transpose_fn = lambda x: np.transpose(  # noqa E731
+            x, get_channel_last_permutation(x)
+        )
+        if isinstance(data, np.ndarray):
+            preprocessed_data = transpose_fn(data)
+        else:
+            preprocessed_data = {k: transpose_fn(v) for k, v in data.items()}
+        return preprocessed_data
 
 
 class ToNHWCPreprocess(TFLiteIOPreprocess):
 
-    def preprocess(self, data: np.ndarray):
-        assert isinstance(
-            data, np.ndarray
-        ), "Only single Numpy array preprocessing is currently supported"
-        return np.transpose(data, [0, 2, 3, 1])
+    def preprocess(self, data: np.ndarray | dict[int, numpy.ndarray]):
+        warnings.warn(
+            "Method is deprecated. Use ToChannelFirstPreprocess/ToChannelLastPreprocess instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        transpose_fn = lambda x: np.transpose(x, [0, 2, 3, 1])  # noqa E731
+        if isinstance(data, np.ndarray):
+            preprocessed_data = transpose_fn(data)
+        else:
+            preprocessed_data = {k: transpose_fn(v) for k, v in data.items()}
+        return preprocessed_data
 
 
 class ToNCHWPreprocess(TFLiteIOPreprocess):
 
-    def preprocess(self, data: np.ndarray):
-        assert isinstance(
-            data, np.ndarray
-        ), "Only single Numpy array preprocessing is currently supported"
-        return np.transpose(data, [0, 3, 1, 2])
+    def preprocess(self, data: np.ndarray | dict[int, numpy.ndarray]):
+        warnings.warn(
+            "Method is deprecated. Use ToChannelFirstPreprocess/ToChannelLastPreprocess instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        transpose_fn = lambda x: np.transpose(x, [0, 3, 1, 2])  # noqa E731
+        if isinstance(data, np.ndarray):
+            preprocessed_data = transpose_fn(data)
+        else:
+            preprocessed_data = {k: transpose_fn(v) for k, v in data.items()}
+        return preprocessed_data
 
 
 def convert_run_compare(
@@ -276,6 +350,10 @@ def convert_run_compare(
         )
 
     return tflite_executor, edge_program_executor
+
+
+def graph_contains_any_of_ops(graph: Graph, ops: list) -> bool:
+    return any(node.target in ops for node in graph.nodes)
 
 
 class OverrideSupportedTargets:

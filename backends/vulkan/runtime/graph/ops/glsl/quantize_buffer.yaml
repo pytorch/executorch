@@ -17,3 +17,7 @@ quantize_buffer:
       MODE: per_tensor
     - NAME: quantize_per_token_buffer
       MODE: per_token
+    - NAME: quantize_per_channel_buffer
+      MODE: per_channel
+    - NAME: quantize_block_wise_buffer
+      MODE: block_wise

@@ -123,6 +123,11 @@ class QnnOperatorSupport(OperatorSupportBase):
 
 
 class QnnPartitioner(Partitioner):
+    """
+    QnnPartitioner identifies subgraphs that can be lowered to QNN backend, by tagging nodes for delegation,
+    and manages special cases such as mutable buffers and consumed constants.
+    """
+
     def __init__(
         self,
         compiler_specs: List[CompileSpec],
@@ -130,6 +135,13 @@ class QnnPartitioner(Partitioner):
         skip_node_op_set: set = None,
         skip_mutable_buffer: bool = False,
     ):
+        """
+        Args:
+            compiler_specs (List[CompileSpec]): Backend compiler specifications.
+            skip_node_id_set (set, optional): Set of node IDs to exclude from partitioning.
+            skip_node_op_set (set, optional): Set of OpOverload to exclude from partitioning.
+            skip_mutable_buffer (bool, optional): If True, mutable buffers are not delegated to QNN.
+        """
         self.compiler_specs_snapshot = copy.deepcopy(compiler_specs)
 
         self.delegation_spec = DelegationSpec(
@@ -157,6 +169,9 @@ class QnnPartitioner(Partitioner):
     def tag_nodes(
         self, partitions: List[Partition], edge_program: torch.export.ExportedProgram
     ) -> None:
+        """
+        Tags nodes in the given partitions and the edge program's graph with delegation tags for QNN partitioning.
+        """
         for partition in partitions:
             for node in partition.nodes:
                 delegation_tag = f"qnn_{partition.id}"
@@ -180,7 +195,11 @@ class QnnPartitioner(Partitioner):
 
     # override
     def partition(self, edge_program: torch.export.ExportedProgram) -> PartitionResult:
+        # Generate partitions by QNN op_support checker
         partitions = self.generate_partitions(edge_program)
+        del self.op_support_checker
+
+        # If partitions are found, handle tagging of nodes, constant data, and mutated buffers for delegation
         if len(partitions) != 0:
             self.tag_nodes(partitions, edge_program)
             tag_constant_data(edge_program)
@@ -193,12 +212,12 @@ class QnnPartitioner(Partitioner):
                     "then please set `skip_mutable_buffer=True` and try again."
                 )
                 tag_mutated_buffer(edge_program)
+
+        # pop certain keys in meta for not affecting the passes in compilation
         for node in edge_program.graph_module.graph.nodes:
             if hasattr(node, "meta"):
-                # pop certain keys in meta for not affecting the passes in compilation
                 # TODO: need to put property name in common definitions
                 node.meta.pop(QCOM_AXIS_ORDER, "")
-        del self.op_support_checker
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )
@@ -207,5 +226,10 @@ class QnnPartitioner(Partitioner):
     def ops_to_not_decompose(
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        """
+        Determines which op should not be decomposed during partitioning.
+        The list of operators is obtained from `get_skip_decomp_table()`.
+        The filter function (`filter_fn`) can be used to further refine which nodes are not decomposed. (advanced use case)
+        """
         do_not_decompose = get_skip_decomp_table()
         return (do_not_decompose, filter_fn)

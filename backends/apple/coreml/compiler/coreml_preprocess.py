@@ -16,8 +16,8 @@ from typing import Any, Dict, final, List, Optional, Tuple
 
 import coremltools as ct
 import coremltools.optimize as cto
-
 from executorch.backends.apple.coreml import executorchcoreml
+from executorch.backends.apple.coreml.logging import get_coreml_log_level
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     ExportedProgram,
@@ -25,8 +25,10 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
+from executorch.backends.apple.coreml.compiler.torch_ops import *  # noqa: F401, F403
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(get_coreml_log_level(default_level=logging.WARNING))
 
 
 class COMPILE_SPEC_KEYS(Enum):
@@ -124,15 +126,18 @@ class CoreMLBackend(BackendDetails):
 
     @staticmethod
     def generate_minimum_deployment_target_compile_spec(
-        min_deployment_target: ct.target,
+        min_deployment_target: Optional[ct.target],
     ) -> CompileSpec:
         """
         Returns the compile spec representing the minimum deployment target on which the model can run,
         for additional details please refer to the documentation for ``coremltools.target``.
         """
+        value = str("").encode("utf-8")
+        if min_deployment_target is not None:
+            value = str(min_deployment_target.value).encode("utf-8")
         return CompileSpec(
             COMPILE_SPEC_KEYS.MIN_DEPLOYMENT_TARGET.value,
-            str(min_deployment_target.value).encode("utf-8"),
+            value,
         )
 
     @staticmethod
@@ -144,10 +149,13 @@ class CoreMLBackend(BackendDetails):
         """
         for compile_spec in compile_specs:
             if compile_spec.key == COMPILE_SPEC_KEYS.MIN_DEPLOYMENT_TARGET.value:
-                compile_spec_value: int = int(compile_spec.value.decode("utf-8"))
+                value = compile_spec.value.decode("utf-8")
+                if value == "":
+                    return None
+                compile_spec_value: int = int(value)
                 return ct.target(compile_spec_value)
 
-        return ct.target.iOS15
+        return None
 
     @staticmethod
     def compute_unit_from_compile_specs(
@@ -209,7 +217,7 @@ class CoreMLBackend(BackendDetails):
     @staticmethod
     def generate_compile_specs(
         compute_unit: ct.ComputeUnit = ct.ComputeUnit.ALL,
-        minimum_deployment_target: ct.target = ct.target.iOS15,
+        minimum_deployment_target: Optional[ct.target] = None,
         compute_precision: ct.precision = ct.precision.FLOAT16,
         model_type: MODEL_TYPE = MODEL_TYPE.MODEL,
         op_linear_quantizer_config: Optional[Dict] = None,
@@ -245,6 +253,13 @@ class CoreMLBackend(BackendDetails):
     ) -> ModelMetadata:
         input_names: List[str] = [input.name for input in model_spec.description.input]
         output_names = [output.name for output in model_spec.description.output]
+
+        if len(output_names) == 0:
+            raise ValueError("Cannot lower a model with no outputs in CoreML.")
+        if len(input_names) == 0:
+            assert (
+                model_spec.specificationVersion >= 9
+            ), "Deploying a model with no inputs in CoreML requires you set minimum_deployment_target to iOS18 or later in the CoreMLPartitioner."
 
         return ModelMetadata(
             inputNames=input_names, outputNames=output_names, identifier=identifier
@@ -350,6 +365,12 @@ class CoreMLBackend(BackendDetails):
         dir_path: Path = Path("tmp") / identifier
         model_dir_path: Path = dir_path / "lowered_module"
         model_spec: ct.proto.Model_pb2 = mlmodel.get_spec()
+        logger.warning(
+            f"The model with identifier {identifier} was exported with CoreML specification version {model_spec.specificationVersion}, and it will not run on all version of iOS/macOS."
+            " See https://apple.github.io/coremltools/mlmodel/Format/Model.html#model for information on what OS versions are compatible with this specifcation version."
+            " If you want to control the deployment target, please set the minimum_deployment_target compile spec in the CoreMLPartitioner."
+        )
+
         model_metadata: ModelMetadata = CoreMLBackend.model_metadata_from_spec(
             model_spec=model_spec,
             identifier=identifier,
@@ -407,6 +428,7 @@ class CoreMLBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
+        logger.info(f"Edge program: {edge_program}")
         model_type: CoreMLBackend.MODEL_TYPE = (
             CoreMLBackend.model_type_from_compile_specs(
                 compile_specs,
@@ -415,7 +437,7 @@ class CoreMLBackend(BackendDetails):
         model_compute_precision: ct.precision = (
             CoreMLBackend.model_compute_precision_from_compile_specs(compile_specs)
         )
-        minimum_deployment_target: ct.target = (
+        minimum_deployment_target: Optional[ct.target] = (
             CoreMLBackend.min_deployment_target_from_compile_specs(compile_specs)
         )
         compute_units: ct.ComputeUnit = CoreMLBackend.compute_unit_from_compile_specs(

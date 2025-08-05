@@ -17,3 +17,7 @@ dequantize_texture:
       MODE: per_tensor
     - NAME: dequantize_per_token_texture3d
       MODE: per_token
+    - NAME: dequantize_per_channel_texture3d
+      MODE: per_channel
+    - NAME: dequantize_block_wise_texture3d
+      MODE: block_wise

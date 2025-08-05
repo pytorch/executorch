@@ -23,6 +23,7 @@ from executorch.backends.vulkan.utils import (
     is_mutable_buffer_node,
     is_param_node,
     is_symint_node,
+    TensorRepr,
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
@@ -45,9 +46,11 @@ class VkGraphBuilder:
         self,
         program: ExportedProgram,
         delegate_mapping_builder: DelegateMappingBuilder,
+        downcast_64_bit: bool = True,
     ) -> None:
         self.program = program
         self.delegate_mapping_builder = delegate_mapping_builder
+        self.downcast_64_bit = downcast_64_bit
         self.chain = []
         self.values = []
         self.input_ids = []
@@ -72,13 +75,14 @@ class VkGraphBuilder:
             return vk_graph_schema.VkDataType.INT8
         elif torch_dtype == torch.int32:
             return vk_graph_schema.VkDataType.INT32
+        elif torch_dtype == torch.int64:
+            return vk_graph_schema.VkDataType.INT64
         elif torch_dtype == torch.float16:
             return vk_graph_schema.VkDataType.FLOAT16
         elif torch_dtype == torch.float32:
             return vk_graph_schema.VkDataType.FLOAT32
-        # Narrowing conversion for index tensor produced by max_poolNd_with_indices.
-        elif torch_dtype == torch.int64:
-            return vk_graph_schema.VkDataType.INT32
+        elif torch_dtype == torch.float64:
+            return vk_graph_schema.VkDataType.FLOAT64
         else:
             raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
 
@@ -132,7 +136,7 @@ class VkGraphBuilder:
 
     def create_node_value(self, node: Node) -> int:
         # If the node has been marked as a scalar tensor, create a SymInt instead of a tensor
-        if is_symint_node(node) or node.meta.get("vkdg_is_scalar_tensor", False):
+        if is_symint_node(node) or node.meta.get("etvk_is_scalar_tensor", False):
             new_id = self.create_symint_value()
             self.node_to_value_ids[node] = new_id
             return new_id
@@ -194,18 +198,26 @@ class VkGraphBuilder:
 
         storage_type = VkStorageType.DEFAULT_STORAGE
         memory_layout = VkMemoryLayout.DEFAULT_LAYOUT
-        if hasattr(spec, "vk_storage_type"):
+        if hasattr(spec, "etvk_node_repr"):
             # pyre-ignore[16]
-            storage_type = spec.vk_storage_type
-        if hasattr(spec, "vk_memory_layout"):
-            # pyre-ignore[16]
-            memory_layout = spec.vk_memory_layout
+            assert isinstance(spec.etvk_node_repr, TensorRepr)
+            storage_type = spec.etvk_node_repr.storage_type
+            memory_layout = spec.etvk_node_repr.memory_layout
+
+        # Apply downcast logic before getting VK datatype
+        effective_dtype = spec.dtype
+        if self.downcast_64_bit and spec.dtype == torch.float64:
+            effective_dtype = torch.float32
+        elif self.downcast_64_bit and spec.dtype == torch.int64:
+            effective_dtype = torch.int32
+
+        datatype = self.get_vk_datatype(effective_dtype)
 
         new_id = len(self.values)
         self.values.append(
             vk_graph_schema.VkValue(
                 value=vk_graph_schema.VkTensor(
-                    datatype=self.get_vk_datatype(spec.dtype),
+                    datatype=datatype,
                     dims=spec.shape,
                     constant_id=constant_id,
                     mem_obj_id=mem_obj_id,

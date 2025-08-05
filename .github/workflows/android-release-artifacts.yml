@@ -47,16 +47,14 @@ jobs:
     name: build-aar
     needs: check-if-aar-exists
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.7
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     secrets: inherit
     permissions:
       id-token: write
       contents: read
     with:
       secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
-      # As this job has access to Maven credential, run this on a fresh ephemeral runner
-      runner: ephemeral.linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12-android
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.sha }}
       timeout: 90
