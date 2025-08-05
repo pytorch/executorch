@@ -68,7 +68,7 @@ class ETRecord:
             Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]
         ] = None,
         _reference_outputs: Optional[Dict[str, List[ProgramOutput]]] = None,
-        _representative_inputs: Optional[List[ProgramOutput]] = None,
+        _representative_inputs: Optional[List[ProgramInput]] = None,
     ):
         self.exported_program = exported_program
         self.export_graph_id = export_graph_id
@@ -344,6 +344,56 @@ class ETRecord:
 
         # Set the extracted data
         self.edge_dialect_program = processed_edge_dialect_program
+
+    def update_representative_inputs(
+        self,
+        representative_inputs: Union[List[ProgramInput], BundledProgram],
+    ) -> None:
+        """
+        Update the representative inputs in the ETRecord.
+
+        This method allows users to customize the representative inputs that will be
+        included when the ETRecord is saved. The representative inputs can be provided
+        directly as a list or extracted from a BundledProgram.
+
+        Args:
+            representative_inputs: Either a list of ProgramInput objects or a BundledProgram
+                from which representative inputs will be extracted.
+        """
+        if isinstance(representative_inputs, BundledProgram):
+            self._representative_inputs = _get_representative_inputs(
+                representative_inputs
+            )
+        else:
+            self._representative_inputs = representative_inputs
+
+    def update_reference_outputs(
+        self,
+        reference_outputs: Union[
+            Dict[str, List[ProgramOutput]], List[ProgramOutput], BundledProgram
+        ],
+    ) -> None:
+        """
+        Update the reference outputs in the ETRecord.
+
+        This method allows users to customize the reference outputs that will be
+        included when the ETRecord is saved. The reference outputs can be provided
+        directly as a dictionary mapping method names to lists of outputs, as a
+        single list of outputs (which will be treated as {"forward": List[ProgramOutput]}),
+        or extracted from a BundledProgram.
+
+        Args:
+            reference_outputs: Either a dictionary mapping method names to lists of
+                ProgramOutput objects, a single list of ProgramOutput objects (treated
+                as outputs for the "forward" method), or a BundledProgram from which
+                reference outputs will be extracted.
+        """
+        if isinstance(reference_outputs, BundledProgram):
+            self._reference_outputs = _get_reference_outputs(reference_outputs)
+        elif isinstance(reference_outputs, list):
+            self._reference_outputs = {"forward": reference_outputs}
+        else:
+            self._reference_outputs = reference_outputs
 
 
 def _get_reference_outputs(
