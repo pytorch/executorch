@@ -8,12 +8,106 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
+
+// Custom global workgroup size function for linear_qcs8w
+utils::uvec3 linear_qcs8w_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  return {static_cast<uint32_t>(graph->numel_of(out)), 1, 1};
+}
+
+// Custom local workgroup size function for linear_qcs8w
+utils::uvec3 linear_qcs8w_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)graph;
+  (void)shader;
+  (void)global_workgroup_size;
+  (void)args;
+  (void)resize_args;
+  return {64, 1, 1};
+}
+
+// Custom global workgroup size function for linear_qcsnw_tiled
+utils::uvec3 linear_qcsnw_tiled_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mat1 = args.at(1).refs.at(0);
+
+  // Determine quantization bits from shader name
+  int quant_nbits = 8;
+  if (shader.kernel_name.find("qcs4w") != std::string::npos) {
+    quant_nbits = 4;
+  }
+
+  std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
+  const int64_t M = utils::val_at(-2, mat1_sizes);
+  uint32_t out_tile_nrows = 4;
+  if (M % 6 == 0) {
+    out_tile_nrows = 2;
+  } else if (M % 4 == 0) {
+    out_tile_nrows = 4;
+  } else if (M % 1 == 0) {
+    out_tile_nrows = 1;
+  } else {
+    out_tile_nrows = 4;
+  }
+
+  // Number of output texels in the output tile
+  uint32_t out_tile_ntxcols = 1;
+  if (quant_nbits == 4) {
+    out_tile_ntxcols = 2;
+  }
+
+  utils::uvec3 out_limits = graph->logical_limits_of(out);
+  uint32_t global_wg_x = utils::div_up(out_limits[0], out_tile_ntxcols);
+  return {
+      global_wg_x * (utils::div_up(out_limits[1], out_tile_nrows)),
+      1,
+      out_limits[2]};
+}
+
+// Custom local workgroup size function for linear_qcsnw_tiled
+utils::uvec3 linear_qcsnw_tiled_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)graph;
+  (void)global_workgroup_size;
+  (void)args;
+  (void)resize_args;
+
+  // Check if using cooperative algorithm from shader name
+  bool use_coop_algorithm =
+      shader.kernel_name.find("_coop") != std::string::npos;
+
+  if (use_coop_algorithm) {
+    return {8, 1, 8};
+  } else {
+    return {64, 1, 1};
+  }
+}
 
 void check_linear_qcsnw_args(
     const ComputeGraph& graph,
@@ -138,11 +232,11 @@ void add_linear_qcs8w_node(
       static_cast<uint32_t>(graph.numel_of(out_W_packed)), 1, 1};
   const utils::uvec3 local_wg{64, 1, 1};
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg,
-      local_wg,
+      linear_qcs8w_global_wg_size,
+      linear_qcs8w_local_wg_size,
       // Inputs and Outputs
       {{out_W_packed, vkapi::MemoryAccessType::WRITE},
        {{mat1_W_packed, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
@@ -247,11 +341,11 @@ void add_linear_qcsnw_tiled_node(
     local_wg_size = {8, 1, 8};
   }
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      local_wg_size,
+      linear_qcsnw_tiled_global_wg_size,
+      linear_qcsnw_tiled_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, q_mat2, scales}, vkapi::kRead}},
       // Shader params buffers

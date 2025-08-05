@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -92,15 +93,15 @@ void add_repeat_node(
 
   const auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      wg_size,
-      graph.create_local_wg_size(wg_size),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {
-          {out, vkapi::MemoryAccessType::WRITE},
-          {in, vkapi::MemoryAccessType::READ},
+          {out, vkapi::kWrite},
+          {in, vkapi::kRead},
       },
       // Parameter buffers
       {},
