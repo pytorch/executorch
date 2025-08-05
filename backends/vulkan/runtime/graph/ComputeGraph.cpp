@@ -151,6 +151,10 @@ ComputeGraph::ComputeGraph(GraphConfig config)
     config_.prepack_threshold_nbytes = 10 * MB;
     config_.prepack_initial_threshold_nbytes = 10 * MB;
   }
+  if (config_.execute_threshold_node_count == 0) {
+    config_.execute_threshold_node_count = 128;
+    config_.execute_initial_threshold_node_count = 64;
+  }
 }
 
 ComputeGraph::~ComputeGraph() {
@@ -852,15 +856,38 @@ void ComputeGraph::execute() {
     context_->set_cmd(/*reusable = */ true);
 
     context_->cmd_reset_querypool();
+    uint32_t encoded_node_count = 0;
 
     for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
       node->encode(this);
+      encoded_node_count++;
+
+      // Threshold is reached when the node count reached
+      // execute_initial_threshold_node_count or if its a multiple of
+      // execute_threshold_node_count.
+      const bool reached_threshold =
+          encoded_node_count >= config_.execute_initial_threshold_node_count &&
+          ((encoded_node_count - config_.execute_initial_threshold_node_count) %
+               config_.execute_threshold_node_count ==
+           0);
+
+      // Create a new command buffer when threashold is reached
+      if (reached_threshold) {
+        context_->submit_cmd_to_gpu(VK_NULL_HANDLE, false);
+        deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
+        context_->set_cmd(true);
+      }
     }
 
+    vkapi::VulkanFence fence = context_->fences().get_fence();
+    context_->submit_cmd_to_gpu(fence.get_submit_handle(), false);
+    fence.wait();
+    context_->fences().return_fence(fence);
     deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
+  } else {
+    submit_deferred_cmds_and_wait();
   }
 
-  submit_deferred_cmds_and_wait();
   execute_count_++;
 }
 

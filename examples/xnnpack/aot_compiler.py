@@ -58,6 +58,7 @@ if __name__ == "__main__":
         "-r",
         "--etrecord",
         required=False,
+        default="",
         help="Generate and save an ETRecord to the given file location",
     )
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
@@ -101,7 +102,7 @@ if __name__ == "__main__":
             _check_ir_validity=False if args.quantize else True,
             _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
         ),
-        generate_etrecord=args.etrecord is not False,
+        generate_etrecord=args.etrecord,
     )
     logging.info(f"Exported and lowered graph:\n{edge.exported_program().graph}")
 
@@ -109,7 +110,7 @@ if __name__ == "__main__":
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
-    if args.etrecord is not False:
+    if args.etrecord:
         exec_prog.get_etrecord().save(args.etrecord)
         logging.info(f"Saved ETRecord to {args.etrecord}")
 
