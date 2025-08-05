@@ -4,11 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from torch import nn
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from executorch import exir
 from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import NeutronEdgePassManager
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -17,10 +20,8 @@ from executorch.exir import (
     EdgeProgramManager,
     ExecutorchBackendConfig,
     ExecutorchProgramManager,
-    to_edge_transform_and_lower,
 )
-from torch import nn
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from executorch.extension.export_util.utils import export_to_edge
 
 
 def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
@@ -71,19 +72,22 @@ def to_quantized_edge_program(
         exir_program_aten.module(), calibration_inputs
     )
 
+    edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+    edge_program_manager = export_to_edge(
+        exir_program_aten__module_quant,
+        example_input,
+        edge_compile_config=edge_compile_config,
+    )
+
+    edge_program_manager = NeutronEdgePassManager()(edge_program_manager)
+
     compile_spec = generate_neutron_compile_spec(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
         neutron_converter_flavor=neutron_converter_flavor,
     )
     partitioner = NeutronPartitioner(compile_spec)
-    edge_program_manager = to_edge_transform_and_lower(
-        torch.export.export(
-            exir_program_aten__module_quant, example_input, strict=True
-        ),
-        partitioner=[partitioner],
-        compile_config=EdgeCompileConfig(_check_ir_validity=False),
-    )
+    edge_program_manager = edge_program_manager.to_backend(partitioner)
 
     if remove_quant_io_ops:
         edge_program_manager = edge_program_manager.transform(
