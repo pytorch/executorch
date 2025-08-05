@@ -132,6 +132,8 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kQwen2_5;
   } else if (decoder_model_version == "phi_4_mini") {
     decoder_model_version_ = DecoderModelVersion::kPhi4;
+  } else if (decoder_model_version == "smollm2_135m") {
+    decoder_model_version_ = DecoderModelVersion::kSmollm2_135m;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
