@@ -199,7 +199,7 @@ cmake ../examples/qualcomm \
 cmake --build examples/qualcomm -j$(nproc)
 
 # qnn_executor_runner can be found under examples/qualcomm
-# The full path is $EXECUTORCH_ROOT/build-android/examples/qualcomm/qnn_executor_runner
+# The full path is $EXECUTORCH_ROOT/build-android/examples/qualcomm/executor_runner/qnn_executor_runner
 ls examples/qualcomm
 ```
 
@@ -255,9 +255,9 @@ cmake ../examples/qualcomm \
 
 cmake --build examples/qualcomm -j$(nproc)
 
-# qnn_executor_runner can be found under examples/qualcomm
-# The full path is $EXECUTORCH_ROOT/build-x86/examples/qualcomm/qnn_executor_runner
-ls examples/qualcomm/
+# qnn_executor_runner can be found under examples/qualcomm/executor_runner
+# The full path is $EXECUTORCH_ROOT/build-x86/examples/qualcomm/executor_runner/qnn_executor_runner
+ls examples/qualcomm/executor_runner
 ```
 
 To run the HTP emulator, the dynamic linker need to access QNN libraries and `libqnn_executorch_backend.so`.
@@ -273,7 +273,7 @@ So, we can run `./deeplab_v3/dlv3_qnn.pte` by:
 ```bash
 cd $EXECUTORCH_ROOT/build-x86
 export LD_LIBRARY_PATH=$EXECUTORCH_ROOT/build-x86/lib/:$LD_LIBRARY_PATH
-examples/qualcomm/qnn_executor_runner --model_path ../deeplab_v3/dlv3_qnn.pte
+examples/qualcomm/executor_runner/qnn_executor_runner --model_path ../deeplab_v3/dlv3_qnn.pte
 ```
 
 We should see some outputs like the below. Note that the emulator can take some time to finish.
