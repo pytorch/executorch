@@ -378,6 +378,7 @@ ATEN_OPS = (
     op_target(
         name = "op_cat",
         deps = [
+            "//executorch/kernels/portable/cpu/util:cat_util",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
