@@ -771,7 +771,7 @@ do {
   let outputs3 = try module.execute("another_method", [inputTensor1])
 
   // Process outputs by converting the first output Value to a typed Tensor<Float>.
-  if let outputTensor: Tensor<Float> = outputs1.first?.toTensor() {
+  if let outputTensor: Tensor<Float> = outputs1.first?.tensor() {
     // Now you have a type-safe tensor and can access its data easily.
     let logits = try outputTensor.scalars()
     print("First 5 logits: \(logits.prefix(5))")
