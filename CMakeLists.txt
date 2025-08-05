@@ -587,6 +587,12 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
+  list(APPEND _executorch_backends coretex_m_backend)
+endif()
+
+if(EXECUTORCH_BUILD_AOTI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
+  list(APPEND _executorch_backends aoti_backend)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
