@@ -44,15 +44,44 @@ void print_performance_report(
   // in future if needed.
   std::ofstream outfile(performance_output_path.c_str());
   if (outfile.is_open()) {
-    double num_tok = (stats.num_generated_tokens) /
-        (double)(stats.inference_end_ms - stats.inference_start_ms) *
-        stats.SCALING_FACTOR_UNITS_PER_SECOND;
+    double num_tok = 0;
+    if (stats.num_generated_tokens == 0) {
+      // For cases like evaluate perplexity where prompt_len == cache_len
+      num_tok = ((stats.num_prompt_tokens)) /
+          (double)(stats.prompt_eval_end_ms - stats.inference_start_ms) *
+          stats.SCALING_FACTOR_UNITS_PER_SECOND;
+    } else {
+      num_tok = (stats.num_generated_tokens) /
+          (double)(stats.inference_end_ms - stats.inference_start_ms) *
+          stats.SCALING_FACTOR_UNITS_PER_SECOND;
+    }
+
     outfile << num_tok;
     outfile.close();
   } else {
     ET_CHECK_MSG(false, "Error saving the inference speed file");
   }
 }
+
+void save_logits(
+    const std::string& dump_logits_path,
+    const std::vector<uint16_t>& prefill_logits,
+    const std::vector<uint16_t>& decode_logits) {
+  std::ofstream outFile(dump_logits_path.c_str(), std::ios::binary);
+  if (outFile.is_open()) {
+    outFile.write(
+        reinterpret_cast<const char*>(prefill_logits.data()),
+        prefill_logits.size() * sizeof(uint16_t));
+
+    outFile.write(
+        reinterpret_cast<const char*>(decode_logits.data()),
+        decode_logits.size() * sizeof(uint16_t));
+    outFile.close();
+  } else {
+    ET_CHECK_MSG(false, "Error saving the dump logits file");
+  }
+}
+
 } // namespace
 
 std::unique_ptr<::tokenizers::Tokenizer> load_llama_tokenizer(
@@ -66,6 +95,7 @@ Runner::Runner(
     const std::string& decoder_model_version,
     const std::string& model_path,
     const std::string& tokenizer_path,
+    const std::string& dump_logits_path,
     const std::string& performance_output_path,
     const float temperature,
     const int eval_mode,
@@ -79,6 +109,7 @@ Runner::Runner(
       gcap_(gcap),
       tokenizer_path_(tokenizer_path),
       performance_output_path_(performance_output_path),
+      dump_logits_path_(dump_logits_path),
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
       tokenizer_(std::move(tokenizer)) {
@@ -279,6 +310,7 @@ Error Runner::load() {
 
 Error Runner::generate(
     const std::string& prompt,
+    bool tokenized_prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback,
@@ -294,13 +326,35 @@ Error Runner::generate(
 
   seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
   int32_t n_bos = (cur_pos_ == 0) ? 1 : 0;
-  tokenizers::Result<std::vector<uint64_t>> encode_res =
-      tokenizer_->encode(prompt, n_bos, 0);
-  ET_CHECK_TK_OK_OR_RETURN_ERROR(
-      encode_res.error(), "failed to encode prompt %s", prompt.c_str());
 
   // encode the (string) prompt into tokens sequence
-  std::vector<uint64_t> prompt_tokens = encode_res.get();
+  std::vector<uint64_t> prompt_tokens;
+  if (tokenized_prompt) {
+    std::ifstream inFile(prompt, std::ios::binary);
+    if (inFile.is_open()) {
+      // Get file size
+      inFile.seekg(0, std::ios::end);
+      size_t fileSize = inFile.tellg();
+      inFile.seekg(0, std::ios::beg);
+
+      // Resize vector and read raw data
+      prompt_tokens.resize(fileSize / sizeof(uint64_t));
+
+      inFile.read(reinterpret_cast<char*>(prompt_tokens.data()), fileSize);
+      inFile.close();
+    } else {
+      ET_CHECK_MSG(
+          false,
+          "Unable to read tokenized prompt from file: %s",
+          prompt.c_str());
+    }
+  } else {
+    tokenizers::Result<std::vector<uint64_t>> encode_res =
+        tokenizer_->encode(prompt, n_bos, 0);
+    ET_CHECK_TK_OK_OR_RETURN_ERROR(
+        encode_res.error(), "failed to encode prompt %s", prompt.c_str());
+    prompt_tokens = encode_res.get();
+  }
   int num_prompt_tokens = prompt_tokens.size();
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
   ET_CHECK_MSG(
@@ -311,7 +365,9 @@ Error Runner::generate(
   if (token_callback) {
     token_callback(prompt);
   }
-  auto prefill_res = prompt_processor_->prefill(prompt_tokens, cur_pos_);
+  bool dump_logits = dump_logits_path_.empty() ? false : true;
+  auto prefill_res =
+      prompt_processor_->prefill(prompt_tokens, cur_pos_, dump_logits);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
   cur_pos_ += num_prompt_tokens;
@@ -331,7 +387,7 @@ Error Runner::generate(
   // start the main loop
   prompt_tokens.push_back(cur_token);
   int64_t num_generated_tokens = ET_UNWRAP(token_generator_->generate(
-      prompt_tokens, cur_pos_, seq_len, token_callback));
+      prompt_tokens, cur_pos_, seq_len, token_callback, dump_logits));
   stats_.inference_end_ms = time_in_ms();
   ET_LOG(
       Info,
@@ -346,6 +402,12 @@ Error Runner::generate(
   stats_.num_generated_tokens = num_generated_tokens;
   print_report(stats_);
   print_performance_report(stats_, performance_output_path_);
+  if (dump_logits) {
+    save_logits(
+        dump_logits_path_,
+        prompt_processor_->get_all_logits(),
+        token_generator_->get_all_logits());
+  }
   if (stats_callback) {
     stats_callback(stats_);
   }
