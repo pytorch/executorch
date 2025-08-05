@@ -139,8 +139,10 @@ if __name__ == "__main__":
 
         # Import quantized ops. This requires portable_lib to be loaded first.
         from executorch.kernels import quantized  # usort: skip # noqa: F401, F403
+        from torch.utils._pytree import tree_flatten
 
         m = _load_for_executorch_from_buffer(exec_prog.buffer)
         logging.info("Successfully loaded the model")
-        res = m.run_method("forward", *example_inputs)
+        flattened = tree_flatten(example_inputs)[0]
+        res = m.run_method("forward", flattened)
         logging.info("Successfully ran the model")
