@@ -28,6 +28,8 @@ examples/mediatek
 ## Environment Setup
 - Follow the instructions of **Prerequisites** and **Setup** in `backends/mediatek/scripts/README.md`.
 
+- Build required libraries by `backends/mediatek/scripts/mtk_build.sh` before building examples.
+
 ## Build MediaTek Examples
 1. Build the backend and the examples by exedcuting the script:
 ```bash
