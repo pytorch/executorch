@@ -319,6 +319,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().numel();
   }
 
+  inline size_t staging_buffer_numel_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().staging_buffer_numel();
+  }
+
   inline utils::StorageType storage_type_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().storage_type();
   }
@@ -832,6 +836,20 @@ class ComputeGraph final {
    */
   utils::uvec3 create_local_wg_size(const ValueRef idx);
 
+  void bind_tensor_to_descriptor_set(
+      const ValueRef ref,
+      vkapi::PipelineBarrier& pipeline_barrier,
+      const vkapi::MemoryAccessFlags accessType,
+      vkapi::DescriptorSet& descriptor_set,
+      const uint32_t idx);
+
+  void bind_value_to_descriptor_set(
+      const ValueRef ref,
+      vkapi::PipelineBarrier& pipeline_barrier,
+      const vkapi::MemoryAccessFlags access_type,
+      vkapi::DescriptorSet& descriptor_set,
+      const uint32_t idx);
+
   //
   // Input/Output
   //
@@ -891,13 +909,26 @@ class ComputeGraph final {
   void execute();
 
   //
+  // Tensor View
+  //
+
+  void virtual_clone(const ValueRef dst, const ValueRef src);
+
+  void virtual_transpose(
+      const ValueRef tensor,
+      const int64_t dim0,
+      const int64_t dim1);
+
+  //
   // Dynamic Shape support
   //
 
   void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
+
   void virtual_resize(
       const ValueRef idx,
       const std::vector<int64_t>& new_sizes);
+
   void propagate_resize();
 
   //

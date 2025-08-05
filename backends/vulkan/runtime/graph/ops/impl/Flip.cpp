@@ -15,9 +15,12 @@
 
 namespace vkcompute {
 
-void check_flip_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
-  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
+void check_flip_args(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef out) {
+  VK_CHECK_COND(graph.packed_dim_of(in) == WHCN::kChannelsDim);
+  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kChannelsDim);
 }
 
 void resize_flip_node(
@@ -25,10 +28,10 @@ void resize_flip_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
 
-  out->virtual_resize(in->sizes());
+  graph->virtual_resize(out, graph->sizes_of(in));
 }
 
 utils::ivec4 create_whcn_bitmap(
@@ -48,15 +51,13 @@ void add_flip_node(
     const ValueRef in,
     const std::vector<int64_t>& dim_list,
     const ValueRef out) {
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_out = graph.get_tensor(out);
-  check_flip_args(*t_in, *t_out);
+  check_flip_args(graph, in, out);
 
-  const auto dim_bitmap = create_whcn_bitmap(dim_list, t_in->dim());
+  const auto dim_bitmap = create_whcn_bitmap(dim_list, graph.dim_of(in));
 
   std::string kernel_name("flip");
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,

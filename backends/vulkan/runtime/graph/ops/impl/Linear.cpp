@@ -54,29 +54,31 @@ void resize_addmm_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
-  vTensorPtr mat2 = graph->get_tensor(args[1].refs[1]);
-  vTensorPtr self = graph->get_tensor(args[1].refs[2]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mat1 = args.at(1).refs.at(0);
+  const ValueRef mat2 = args.at(1).refs.at(1);
 
-  bool mat2_is_transposed = graph->get_bool(extra_args[0]);
+  const bool mat2_is_transposed = graph->get_bool(extra_args.at(0));
 
-  const int out_cols = utils::val_at(-2, mat1->sizes());
-  const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2->sizes())
-                                          : utils::val_at(-1, mat2->sizes());
+  const std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
+  const std::vector<int64_t> mat2_sizes = graph->sizes_of(mat2);
+
+  const int out_cols = utils::val_at(-2, mat1_sizes);
+  const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2_sizes)
+                                          : utils::val_at(-1, mat2_sizes);
 
   std::vector<int64_t> new_out_sizes(3);
-  if (mat1->sizes().size() == 2) {
+  if (mat1_sizes.size() == 2) {
     new_out_sizes.resize(2);
     new_out_sizes.at(0) = out_cols;
     new_out_sizes.at(1) = out_rows;
   } else {
-    new_out_sizes.at(0) = mat1->sizes().at(0);
+    new_out_sizes.at(0) = mat1_sizes.at(0);
     new_out_sizes.at(1) = out_cols;
     new_out_sizes.at(2) = out_rows;
   }
 
-  out->virtual_resize(new_out_sizes);
+  graph->virtual_resize(out, new_out_sizes);
 }
 
 struct Params final {

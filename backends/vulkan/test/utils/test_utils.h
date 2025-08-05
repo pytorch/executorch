@@ -214,9 +214,7 @@ inline int64_t get_buf_idx(
     vkcompute::ComputeGraph& graph,
     vkcompute::IOValueRef ref,
     const std::vector<int64_t>& tensor_coor) {
-  vkcompute::vTensorPtr vten_ptr = graph.get_tensor(ref.value);
-
-  const std::vector<int64_t>& sizes = vten_ptr->sizes();
+  const std::vector<int64_t>& sizes = graph.sizes_of(ref.value);
 
   int64_t c = vkcompute::dim_at<vkcompute::kChannel4D>(sizes);
   int64_t h = vkcompute::dim_at<vkcompute::kHeight4D>(sizes);

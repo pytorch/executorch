@@ -23,15 +23,16 @@ using utils::GPUMemoryLayout;
 using utils::StorageType;
 
 void check_embedding_args(
-    const api::vTensor& weight,
-    const api::vTensor& in,
-    const api::vTensor& out) {
+    ComputeGraph& graph,
+    const ValueRef weight,
+    const ValueRef in,
+    const ValueRef out) {
   // The packing logic may not be trivial here. Input and output are Channel
   // Packed, which is default for the Vulkan backend. However, weight vector is
   // height-packed instead of channel-packed for space reason.
-  VK_CHECK_COND(check_packed_dim_is(weight, WHCN::kHeightDim));
-  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
-  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
+  VK_CHECK_COND(graph.packed_dim_of(weight) == WHCN::kHeightDim);
+  VK_CHECK_COND(graph.packed_dim_of(in) == WHCN::kChannelsDim);
+  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kChannelsDim);
 }
 
 void add_embedding_node(
@@ -39,15 +40,11 @@ void add_embedding_node(
     ValueRef weight,
     ValueRef in,
     ValueRef out) {
-  vTensorPtr t_weight = graph.get_tensor(weight);
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_out = graph.get_tensor(out);
-
-  check_embedding_args(*t_weight, *t_in, *t_out);
+  check_embedding_args(graph, weight, in, out);
 
   std::string kernel_name = "embedding";
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
@@ -56,14 +53,14 @@ void add_embedding_node(
       graph.create_local_wg_size(out),
       {{out, vkapi::kWrite}, {{in, weight}, vkapi::kRead}},
       {
-          t_out->sizes_ubo(),
+          graph.sizes_ubo(out),
       },
       // Push Constants
       {},
       // Specialization Constants
-      {t_out->hashed_layout(),
-       t_in->hashed_layout(),
-       t_weight->hashed_layout()},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(in),
+       graph.hashed_layout_of(weight)},
       // Resize Args
       {},
       // Resizing Logic

@@ -20,17 +20,17 @@ void resize_repeat_interleave_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
 
-  const int64_t nrepeats = graph->extract_scalar<int64_t>(extra_args[0]);
-  int64_t repeat_dim = graph->extract_scalar<int64_t>(extra_args[1]);
+  const int64_t nrepeats = graph->extract_scalar<int64_t>(extra_args.at(0));
+  int64_t repeat_dim = graph->extract_scalar<int64_t>(extra_args.at(1));
 
-  std::vector<int64_t> new_sizes = in->sizes();
+  std::vector<int64_t> new_sizes = graph->sizes_of(in);
   repeat_dim = normalize(repeat_dim, new_sizes.size());
   new_sizes.at(repeat_dim) *= nrepeats;
 
-  out->virtual_resize(new_sizes);
+  graph->virtual_resize(out, new_sizes);
 }
 
 void add_repeat_interleave_node(
