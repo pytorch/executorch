@@ -55,30 +55,33 @@ void resize_linear_qcsnw_node(
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
 
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
-  vTensorPtr qmat2 = graph->get_tensor(args[1].refs[1]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mat1 = args.at(1).refs.at(0);
+  const ValueRef qmat2 = args.at(1).refs.at(1);
 
-  const int out_cols = utils::val_at(-2, mat1->sizes());
-  int out_rows = utils::val_at(-1, qmat2->sizes());
+  const std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
+  const std::vector<int64_t> qmat2_sizes = graph->sizes_of(qmat2);
+
+  const int out_cols = utils::val_at(-2, mat1_sizes);
+  int out_rows = utils::val_at(-1, qmat2_sizes);
   // Byte dtype suggests 4-bit quantization in which case the weight tensor is
   // packed with 2 values per byte.
-  if (qmat2->dtype() == vkapi::kByte) {
+  if (graph->dtype_of(qmat2) == vkapi::kByte) {
     out_rows *= 2;
   }
 
   std::vector<int64_t> new_out_sizes(3);
-  if (mat1->sizes().size() == 2) {
+  if (mat1_sizes.size() == 2) {
     new_out_sizes.resize(2);
     new_out_sizes.at(0) = out_cols;
     new_out_sizes.at(1) = out_rows;
   } else {
-    new_out_sizes.at(0) = mat1->sizes().at(0);
+    new_out_sizes.at(0) = mat1_sizes.at(0);
     new_out_sizes.at(1) = out_cols;
     new_out_sizes.at(2) = out_rows;
   }
 
-  out->virtual_resize(new_out_sizes);
+  graph->virtual_resize(out, new_out_sizes);
 }
 
 void add_linear_qcs8w_node(
