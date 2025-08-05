@@ -350,24 +350,15 @@ def compile(args, pte_filename, tokenizer):
     start_ts = time.time()
 
     kv_config, prefill_config = None, None
-    params_path = ""
     if args.params:
-        params_path = args.params
-    else:
-        if args.decoder_model == "qwen2_5":
-            cur_dir = os.path.dirname(__file__)
-            params_path = os.path.join(
-                cur_dir,
-                "..",
-                "..",
-                "..",
-                "models",
-                "qwen2_5",
-                "config",
-                "0_5b_config.json",
-            )
-    with open(params_path) as f:
-        kv_config = ModelArgs(**json.load(f))
+        with open(args.params) as f:
+            kv_config = ModelArgs(**json.load(f))
+    elif args.decoder_model == "qwen2_5":
+        from importlib.resources import files
+
+        data_dir = files("executorch").joinpath("examples/models/qwen2_5/config")
+        config_file = data_dir.joinpath("0_5b_config.json")
+        kv_config = ModelArgs(**json.loads(config_file.read_text()))
 
     # TODO: support batch inputs if necessary
     kv_config.max_batch_size = 1
@@ -505,7 +496,7 @@ def compile(args, pte_filename, tokenizer):
             apply_spinquant(
                 model,
                 use_r1=True,
-                use_r2=True,
+                use_r2=False,
                 use_r4=False,
                 pretrained_rotation_path=None,
                 qkv_split=True,
