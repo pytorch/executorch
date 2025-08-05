@@ -9,6 +9,11 @@ from typing import Dict, final, List
 
 import executorch.backends.samsung.python.PyEnnWrapperAdaptor as PyEnnWrapper
 import torch
+from executorch.backends.samsung.serialization.compile_options import (
+    ENN_COMPILE_OPTION_TITLE,
+)
+from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
+
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
