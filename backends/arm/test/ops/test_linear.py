@@ -14,17 +14,18 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.linear.default"
 
 input_t1 = Tuple[torch.Tensor]
 
-test_data_rank1_MI = {
+test_data_rank1_FP = {
     # test_name: (test_data, out_features, has_bias)
     "model_linear_rank1_zeros": lambda: (
         torch.zeros(10),
@@ -58,7 +59,7 @@ test_data_rank1_MI = {
     ),
 }
 
-test_data_rank4_MI = {
+test_data_rank4_FP = {
     # test_name: (test_data, out_features, has_bias)
     "model_linear_rank4_zeros": lambda: (
         torch.zeros(5, 10, 25, 20),
@@ -93,16 +94,16 @@ test_data_rank4_MI = {
 }
 
 # Generate a new test set paired with per_channel_quant=True/False.
-test_data_rank1_BI = {
+test_data_rank1_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
-    for (k, v) in test_data_rank1_MI.items()
+    for (k, v) in test_data_rank1_FP.items()
     for q in [True, False]
 }
 
 # Generate a new test set paired with per_channel_quant=True/False.
-test_data_rank4_BI = {
+test_data_rank4_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (*v(), q))
-    for (k, v) in test_data_rank4_MI.items()
+    for (k, v) in test_data_rank4_FP.items()
     for q in [True, False]
 }
 
@@ -125,11 +126,11 @@ class Linear(torch.nn.Module):
         return self.fc(x)
 
 
-@common.parametrize("test_data", test_data_rank1_MI | test_data_rank4_MI)
-def test_linear_tosa_MI(test_data: torch.Tensor):
+@common.parametrize("test_data", test_data_rank1_FP | test_data_rank4_FP)
+def test_linear_tosa_FP(test_data: torch.Tensor):
     test_data, out_features, has_bias = test_data()
     in_features = test_data.shape[-1]
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         Linear(
             in_features=in_features,
             out_features=out_features,
@@ -143,11 +144,11 @@ def test_linear_tosa_MI(test_data: torch.Tensor):
 
 
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness.
-@common.parametrize("test_data", test_data_rank1_BI | test_data_rank4_BI)
-def test_linear_tosa_BI(test_data: torch.Tensor):
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+def test_linear_tosa_INT(test_data: torch.Tensor):
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         Linear(
             in_features=in_features,
             out_features=out_features,
@@ -162,12 +163,12 @@ def test_linear_tosa_BI(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_rank1_BI)
+@common.parametrize("test_data", test_data_rank1_INT)
 @common.XfailIfNoCorstone300
-def test_linear_u55_BI(test_data: torch.Tensor):
+def test_linear_u55_INT(test_data: torch.Tensor):
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
-    EthosU55PipelineBI[input_t1](
+    EthosU55PipelineINT[input_t1](
         Linear(
             in_features=in_features,
             out_features=out_features,
@@ -198,14 +199,14 @@ x_fail = {
 
 @common.parametrize(
     "test_data",
-    test_data_rank1_BI | test_data_rank4_BI,
+    test_data_rank1_INT | test_data_rank4_INT,
     x_fail,
 )
 @common.XfailIfNoCorstone320
-def test_linear_u85_BI(test_data: torch.Tensor):
+def test_linear_u85_INT(test_data: torch.Tensor):
     test_data, out_features, has_bias, per_channel_quantization = test_data()
     in_features = test_data.shape[-1]
-    EthosU85PipelineBI[input_t1](
+    EthosU85PipelineINT[input_t1](
         Linear(
             in_features=in_features,
             out_features=out_features,
@@ -218,3 +219,42 @@ def test_linear_u85_BI(test_data: torch.Tensor):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     ).run()
+
+
+@common.parametrize("test_data", test_data_rank1_FP | test_data_rank4_FP)
+@common.SkipIfNoModelConverter
+def test_linear_vgf_FP(test_data: torch.Tensor):
+    test_data, out_features, has_bias = test_data()
+    in_features = test_data.shape[-1]
+    pipeline = VgfPipeline[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op=aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@common.SkipIfNoModelConverter
+def test_linear_vgf_INT(test_data: torch.Tensor):
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+    pipeline = VgfPipeline[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op=aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()

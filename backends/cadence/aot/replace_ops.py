@@ -39,6 +39,7 @@ from executorch.backends.cadence.aot.fuse_ops import (
 )
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    none_throws,
     register_cadence_pass,
 )
 from executorch.backends.cadence.aot.remove_ops import RemoveNopSelectOpPass
@@ -1661,8 +1662,8 @@ class ReplaceNopTransposeOrPermuteWithViewPass(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
-        result = FuseCascadedViewOps()(result.graph_module)
-        assert result is not None
+        fuse_cascaded_result = none_throws(FuseCascadedViewOps()(result.graph_module))
+        result = none_throws(ExportPass()(fuse_cascaded_result.graph_module))
         return result
 
 
@@ -2328,12 +2329,15 @@ class ReplaceMulTensorWithMulAndFullOpsPass(ExportPass):
 
             # Extract an argument to a separate full op.
             with graph_module.graph.inserting_before(mul_node):
-                full_tensor = graph_module.graph.call_function(
+                full_node = graph_module.graph.call_function(
                     torch.ops.aten.full.default, args=([1], full_arg)
                 )
+                full_node.meta = mul_node.meta
+                full_node.meta["val"] = [1]
                 new_mul_node = graph_module.graph.call_function(
-                    torch.ops.aten.mul.Tensor, args=(x_arg, full_tensor)
+                    torch.ops.aten.mul.Tensor, args=(x_arg, full_node)
                 )
+                new_mul_node.meta = mul_node.meta
             # Replace the old mul with a newly created mul.
             mul_node.replace_all_uses_with(new_mul_node)
             graph_module.graph.erase_node(mul_node)

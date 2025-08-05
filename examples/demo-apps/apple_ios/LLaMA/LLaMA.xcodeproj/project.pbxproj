@@ -362,8 +362,8 @@
 				03D151D62E0E9E43007A38BE /* ExecuTorchLLM */,
 			);
 			name = apple;
-			path = /Users/shoumikhin/executorch/extension/llm/apple;
-			sourceTree = "<absolute>";
+			path = ../../../../../../extension/llm/apple;
+			sourceTree = "<group>";
 		};
 		F292B0842D88B0D200BE6839 /* tokenizers */ = {
 			isa = PBXGroup;
@@ -948,7 +948,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = "swiftpm-0.8.0.20250711";
+				branch = "swiftpm-0.8.0.20250724";
 				kind = branch;
 			};
 		};

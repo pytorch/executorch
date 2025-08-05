@@ -138,6 +138,10 @@ class VulkanBuffer final {
     return buffer_properties_.size;
   }
 
+  inline size_t mem_size_as_size_t() const {
+    return utils::safe_downcast<size_t>(mem_size());
+  }
+
   inline bool has_memory() const {
     return (memory_.allocation != VK_NULL_HANDLE);
   }

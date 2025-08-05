@@ -114,7 +114,7 @@ class MergedDataMap final : public NamedDataMap {
   ET_NODISCARD Result<const char*> get_key(uint32_t index) const override {
     uint32_t total_num_keys = get_num_keys().get();
     ET_CHECK_OR_RETURN_ERROR(
-        index >= 0 && index < total_num_keys,
+        index < total_num_keys,
         InvalidArgument,
         "Index %" PRIu32 " out of range of size %" PRIu32,
         index,

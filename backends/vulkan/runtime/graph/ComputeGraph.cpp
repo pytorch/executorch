@@ -145,7 +145,12 @@ ComputeGraph::ComputeGraph(GraphConfig config)
   execute_descriptor_counts_.descriptor_combined_sampler_count = 0;
   execute_descriptor_counts_.descriptor_storage_image_count = 0;
 
-  context_->set_cmd(/*reusable = */ true);
+  // If certain graph config variables are not specified, then set them
+  // automatically.
+  if (config_.prepack_threshold_nbytes == 0) {
+    config_.prepack_threshold_nbytes = 10 * MB;
+    config_.prepack_initial_threshold_nbytes = 10 * MB;
+  }
 }
 
 ComputeGraph::~ComputeGraph() {
@@ -153,6 +158,7 @@ ComputeGraph::~ComputeGraph() {
 
   prepack_nodes_.clear();
   execute_nodes_.clear();
+  clear_deferred_cmds();
 
   context_->flush();
 }
@@ -268,6 +274,14 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
     return val.toConstTensor().dtype();
   } else if (val.isTensorRef()) {
     return val.toConstTensorRef().dtype;
+  } else if (val.isBool()) {
+    return vkapi::ScalarType::Bool;
+  } else if (val.isDouble()) {
+    // We downcast anyway in the shader and we want to avoid having to
+    // write special cases there.
+    return vkapi::ScalarType::Float;
+  } else if (val.isInt()) {
+    return vkapi::ScalarType::Int;
   }
   VK_THROW("Could not get dtype of value with type ", val.type());
 }
@@ -431,6 +445,7 @@ ValueRef ComputeGraph::add_tensorref(
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
   values_.emplace_back(TensorRef(sizes, dtype, data));
+  total_constant_nbytes_ += values_.back().toConstTensorRef().nbytes();
   return idx;
 }
 
@@ -750,38 +765,102 @@ void ComputeGraph::prepare_pipelines() {
       vkapi::ComputePipelineCache::Hasher>();
 }
 
-void ComputeGraph::encode_prepack() {
-  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
-    node->encode(this);
-  }
+void ComputeGraph::submit_current_cmd(const bool final_use) {
+  context_->submit_cmd_to_gpu(VK_NULL_HANDLE, final_use);
 }
 
-void ComputeGraph::prepack() const {
-  // Submit and execute the command buffer
+void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
   vkapi::VulkanFence fence = context_->fences().get_fence();
-  context_->submit_cmd_to_gpu(fence.get_submit_handle(), /*final_use = */ true);
+  context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
   fence.wait();
   context_->fences().return_fence(fence);
-
-  context_->flush();
 }
 
-void ComputeGraph::encode_execute() {
-  context_->flush();
-  context_->set_cmd(/*reusable = */ true);
-
-  context_->cmd_reset_querypool();
-
-  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
-    node->encode(this);
+void ComputeGraph::submit_cmd(vkapi::CommandBuffer& cmd_buf, VkFence fence) {
+  if (cmd_buf) {
+    cmd_buf.end();
+    context_->adapter_ptr()->submit_cmd(
+        context_->queue(), cmd_buf.get_submit_handle(false), fence);
   }
+}
+
+void ComputeGraph::submit_deferred_cmds_and_wait() {
+  vkapi::VulkanFence fence = context_->fences().get_fence();
+
+  for (uint32_t i = 0; i < deferred_cmd_list_.size(); i++) {
+    auto& cmd = deferred_cmd_list_[i];
+
+    submit_cmd(
+        cmd,
+        i == (deferred_cmd_list_.size() - 1) ? fence.get_submit_handle()
+                                             : VK_NULL_HANDLE);
+  }
+  fence.wait();
+  context_->fences().return_fence(fence);
+}
+
+void ComputeGraph::clear_deferred_cmds() {
+  for (auto& cmd : deferred_cmd_list_) {
+    if (cmd) {
+      cmd.end();
+      cmd.invalidate();
+    }
+  }
+  deferred_cmd_list_.clear();
+}
+
+void ComputeGraph::prepack() {
+  int i = 0;
+  bool submitted = false;
+  const bool reduce_peak_memory = total_constant_nbytes_ > 500 * MB;
+  // int count = 0;
+  context_->set_cmd();
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    // Do not trigger on the first or last prepack node.
+    const bool not_terminal = i != 0 && i != (prepack_nodes_.size() - 1);
+    size_t threshold = submitted ? config_.prepack_threshold_nbytes
+                                 : config_.prepack_initial_threshold_nbytes;
+    if (not_terminal && staging_nbytes_in_cmd_ > threshold) {
+      // If reducing peak memory usage, wait for the current command buffer to
+      // finish executing and flush to recycle the staging memory. This will
+      // reduce peak memory usage, but will slightly increase load latency.
+      // Otherwise, just submit the current command buffer for execution and
+      // proceed. This results in lower load latency at the cost of higher peak
+      // memory usage.
+      if (reduce_peak_memory) {
+        submit_current_cmd_and_wait();
+        context_->flush();
+      } else {
+        submit_current_cmd();
+      }
+      staging_nbytes_in_cmd_ = 0;
+      context_->set_cmd();
+      submitted = true;
+    }
+
+    node->encode(this);
+    i++;
+  }
+  submit_current_cmd_and_wait(/*final_use=*/true);
+  context_->flush();
+  staging_nbytes_in_cmd_ = 0;
 }
 
 void ComputeGraph::execute() {
-  vkapi::VulkanFence fence = context_->fences().get_fence();
-  context_->submit_cmd_to_gpu(fence.get_submit_handle());
-  fence.wait();
-  context_->fences().return_fence(fence);
+  if (deferred_cmd_list_.empty()) {
+    context_->flush();
+    context_->set_cmd(/*reusable = */ true);
+
+    context_->cmd_reset_querypool();
+
+    for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+      node->encode(this);
+    }
+
+    deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
+  }
+
+  submit_deferred_cmds_and_wait();
   execute_count_++;
 }
 
@@ -804,7 +883,7 @@ void ComputeGraph::propagate_resize() {
   }
   // Only re-encode on resize if dynamic shapes are expected
   if (config_.expect_dynamic_shapes) {
-    encode_execute();
+    clear_deferred_cmds();
   }
 }
 
