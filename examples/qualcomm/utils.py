@@ -104,16 +104,22 @@ class SimpleADB:
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
 
-    def _adb(self, cmd):
+    def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
             cmds = ["adb", "-s", self.device_id]
         else:
             cmds = ["adb", "-H", self.host_id, "-s", self.device_id]
         cmds.extend(cmd)
 
-        subprocess.run(
-            cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
-        )
+        if output_callback:
+            result = subprocess.run(
+                cmds, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            output_callback(result)
+        else:
+            subprocess.run(
+                cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
+            )
 
     def push(self, inputs=None, input_list=None, files=None, init_env=True):
         artifacts = []
@@ -173,7 +179,12 @@ class SimpleADB:
             for file_name in files:
                 self._adb(["push", file_name, self.workspace])
 
-    def execute(self, custom_runner_cmd=None, method_index=0):
+    def execute(
+        self,
+        custom_runner_cmd=None,
+        method_index=0,
+        output_callback: Optional[Callable[[str], None]] = None,
+    ):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
@@ -205,8 +216,9 @@ class SimpleADB:
             )
         else:
             qnn_executor_runner_cmds = custom_runner_cmd
-
-        self._adb(["shell", f"{qnn_executor_runner_cmds}"])
+        self._adb(
+            ["shell", f"{qnn_executor_runner_cmds}"], output_callback=output_callback
+        )
 
     def pull(self, output_path, callback=None):
         self._adb(["pull", "-a", self.output_folder, output_path])
