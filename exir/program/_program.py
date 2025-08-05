@@ -291,6 +291,15 @@ def _copy_module(new_prog, new_gm):
                 setattr(new_prog, node.target, t)
 
 
+def _create_empty_etrecord():
+    # Import etrecord at runtime to resolve cyclic dependencies (program -> etrecord -> program).
+    # This also ensures that etrecord-related packages do not affect the export flow.
+    # @manual
+    from executorch.devtools.etrecord import ETRecord
+
+    return ETRecord()
+
+
 def lift_constant_tensor_pass(ep):
     """
     Takes an ExportedProgram and returns the ExportedProgram modified in-place,
@@ -1103,6 +1112,7 @@ def _gen_edge_manager_for_partitioners(
     aten_programs: Dict[str, ExportedProgram],
     config: EdgeCompileConfig,
     constant_methods: Optional[Dict[str, Any]],
+    generate_etrecord: Optional[bool] = False,
 ) -> "EdgeProgramManager":
     """
     Generates EdgeProgramManager for subsequent lowering to the
@@ -1179,6 +1189,13 @@ def _gen_edge_manager_for_partitioners(
         config,
         list(set().union(*ops_set_to_not_decompose_by_program.values())),
     )
+
+    if generate_etrecord:
+        etrecord = _create_empty_etrecord()
+        etrecord.add_exported_program(aten_programs)
+        etrecord.add_edge_dialect_program(copy.deepcopy(edge_manager))
+        edge_manager._etrecord = etrecord
+
     return edge_manager
 
 
@@ -1220,6 +1237,7 @@ def to_edge_transform_and_lower(  # noqa: C901
     ] = None,
     constant_methods: Optional[Dict[str, Any]] = None,
     compile_config: Optional[EdgeCompileConfig] = None,
+    generate_etrecord: bool = False,
 ) -> "EdgeProgramManager":
     """
     :func:`to_edge_transform_and_lower` constructs an EdgeProgramManager from a set of
@@ -1260,6 +1278,8 @@ def to_edge_transform_and_lower(  # noqa: C901
         compile_config: An optional argument used to provide greater control over the
             transformation to edge dialect process.
 
+        generate_etrecord: An optional argument used to generate an etrecord for debugging purposes.
+
     Returns:
         EdgeProgramManager
     """
@@ -1279,7 +1299,7 @@ def to_edge_transform_and_lower(  # noqa: C901
         partitioner, aten_programs
     )
     edge_manager = _gen_edge_manager_for_partitioners(
-        partitioner, aten_programs, config, constant_methods
+        partitioner, aten_programs, config, constant_methods, generate_etrecord
     )
 
     if transform_passes is not None:
@@ -1446,6 +1466,8 @@ class EdgeProgramManager:
             collect_named_data_store_from_exported_program(
                 program, self._named_data_store
             )
+
+        self._etrecord = None
 
     @property
     def methods(self) -> Set[str]:
@@ -1643,12 +1665,18 @@ class EdgeProgramManager:
             _copy_module(program.graph_module, new_gm)
             execution_programs[name] = program
 
-        return ExecutorchProgramManager(
+        et_pm = ExecutorchProgramManager(
             execution_programs,
             self._config_methods,
             config,
             self._named_data_store.get_named_data_store_output(),
         )
+
+        if self._etrecord is not None:
+            self._etrecord.add_executorch_program(et_pm)
+            et_pm._etrecord = self._etrecord
+
+        return et_pm
 
 
 class ExecutorchProgramManager:
@@ -1713,6 +1741,7 @@ class ExecutorchProgramManager:
             self._named_data,
         )
         self._buffer: Optional[bytes] = None
+        self._etrecord = None
 
     @property
     def methods(self) -> Set[str]:
@@ -1784,6 +1813,21 @@ class ExecutorchProgramManager:
         if self._buffer is None:
             self._buffer = bytes(self._pte_data)
         return self._buffer
+
+    def get_etrecord(self):
+        """
+        Get the generated ETRecord if etrecord generation was enabled.
+
+        Returns:
+            ETRecord object if generation was enabled, None otherwise
+
+        Raises:
+            RuntimeError: if ETRecord object was not generated.
+        """
+
+        if self._etrecord is None:
+            raise RuntimeError("ETRecord was not generated")
+        return self._etrecord
 
     def write_to_file(self, open_file: io.BufferedIOBase) -> None:
         """
