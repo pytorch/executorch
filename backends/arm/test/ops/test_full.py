@@ -19,6 +19,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor, int]
@@ -108,6 +109,18 @@ def test_full_like_tosa_FP(test_data: Tuple):
     pipeline.run()
 
 
+@common.parametrize("test_data", FullLike.test_parameters)
+def test_full_like_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
+        FullLike(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+    )
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
 @common.parametrize("test_data", AddVariableFull.test_parameters)
 def test_full_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
@@ -130,15 +143,54 @@ def test_full_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", FullLike.test_parameters)
-def test_full_like_tosa_INT(test_data: Tuple):
-    pipeline = TosaPipelineINT[input_t1](
-        FullLike(),
-        test_data(),
+@common.SkipIfNoModelConverter
+def test_full_vgf_FP_only():
+    pipeline = VgfPipeline[input_t1](
+        Full(),
+        (),
         aten_op=[],
         exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
     )
-    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_full_vgf_FP_const():
+    test_data = (torch.rand((2, 2, 3, 3)) * 10,)
+    pipeline = VgfPipeline[input_t1](
+        AddConstFull(),
+        test_data,
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddVariableFull.test_parameters)
+@common.SkipIfNoModelConverter
+def test_full_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        AddVariableFull(),
+        test_data,
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddVariableFull.test_parameters)
+@common.SkipIfNoModelConverter
+def test_full_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        AddVariableFull(),
+        test_data,
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.run()
 
 

@@ -13,6 +13,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -184,5 +185,57 @@ def test_lt_scalar_u85_INT(test_module):
         LessThan.aten_op_tensor,
         LessThan.exir_op,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.SkipIfNoModelConverter
+def test_lt_tensor_vgf_FP(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        LessThan.aten_op_tensor,
+        LessThan.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.SkipIfNoModelConverter
+def test_lt_scalar_vgf_FP(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        LessThan.aten_op_scalar,
+        LessThan.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.SkipIfNoModelConverter
+def test_lt_tensor_vgf_INT(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        LessThan.aten_op_tensor,
+        LessThan.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.SkipIfNoModelConverter
+def test_lt_scalar_vgf_INT(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        LessThan.aten_op_tensor,
+        LessThan.exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

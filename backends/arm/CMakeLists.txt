@@ -14,7 +14,9 @@ endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
-set(_common_include_directories ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
 
@@ -34,12 +36,11 @@ set(_arm_baremetal_sources backends/arm/runtime/EthosUBackend.cpp
 list(TRANSFORM _arm_baremetal_sources PREPEND "${EXECUTORCH_ROOT}/")
 
 add_library(executorch_delegate_ethos_u STATIC ${_arm_baremetal_sources})
-target_include_directories(
-  executorch_delegate_ethos_u PUBLIC ${_common_include_directories}
+target_link_libraries(
+  executorch_delegate_ethos_u PUBLIC executorch_core ethosu_core_driver
 )
-target_include_directories(
-  executorch_delegate_ethos_u PUBLIC ${DRIVER_ETHOSU_INCLUDE_DIR}
-)
+
+install(TARGETS executorch_delegate_ethos_u EXPORT ExecuTorchTargets)
 
 # end config for bare metal builds
 endif()

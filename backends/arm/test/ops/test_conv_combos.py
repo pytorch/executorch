@@ -15,6 +15,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]
@@ -275,6 +276,32 @@ def test_convolution_2d_u85_INT_meandim():
     pipeline.run()
 
 
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_FP_meandim():
+    model = ComboConv2dMeandim()
+    pipeline = VgfPipeline[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboConv2dMeandim.edge_op_list,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_INT_meandim():
+    model = ComboConv2dMeandim()
+    pipeline = VgfPipeline[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboConv2dMeandim.edge_op_list,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
 ##############################
 ## Conv + batch norm + relu ##
 ##############################
@@ -336,6 +363,37 @@ def test_convolution_2d_u85_INT_batchnorm_relu6(test_data):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ComboConvBatchnormRelu6.test_data_FP)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_FP_batchnorm_relu6(test_data):
+    affine = test_data
+    model = ComboConvBatchnormRelu6(affine)
+    pipeline = VgfPipeline[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboConvBatchnormRelu6.edge_op_list,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ComboConvBatchnormRelu6.test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_INT_batchnorm_relu6(test_data):
+    affine, per_channel_quantization = test_data
+    model = ComboConvBatchnormRelu6(affine)
+    pipeline = VgfPipeline[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboConvBatchnormRelu6.edge_op_list,
+        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -405,6 +463,36 @@ def test_convolution_2d_u85_INT_relu6(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", ComboConvRelu6.test_data_FP)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_FP_relu6(test_data):
+    model = ComboConvRelu6()
+    pipeline = VgfPipeline[input_t1](
+        model,
+        test_data(),
+        aten_op=[],
+        exir_op=ComboConvRelu6.edge_op_list,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ComboConvRelu6.test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_INT_relu6(test_data):
+    input, per_channel_quantization = test_data()
+    model = ComboConvRelu6()
+    pipeline = VgfPipeline[input_t1](
+        model,
+        input,
+        aten_op=[],
+        exir_op=ComboConvRelu6.edge_op_list,
+        tosa_version="TOSA-1.0+INT",
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
 ###############################
 ## Block bottleneck residual ##
 ###############################
@@ -467,6 +555,37 @@ def test_convolution_2d_u85_INT_block_bottleneck(test_data):
     pipeline.run()
 
 
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_FP_block_bottleneck():
+    model = ComboBlockBottleneckResidual()
+    pipeline = VgfPipeline[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboBlockBottleneckResidual.edge_op_list,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ComboBlockBottleneckResidual.test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_INT_block_bottleneck(test_data):
+    per_channel_quantization = test_data
+    model = ComboBlockBottleneckResidual()
+    pipeline = VgfPipeline[input_t1](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=ComboBlockBottleneckResidual.edge_op_list,
+        tosa_version="TOSA-1.0+INT",
+        per_channel_quantization=per_channel_quantization,
+    )
+    # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
+    # pipeline.change_args("run_method_and_compare_outputs", model.get_inputs(), qtol=1)
+    pipeline.run()
+
+
 ######################
 ## Conv + AvgPool2d ##
 ######################
@@ -526,6 +645,36 @@ def test_convolution_2d_u85_INT_avgpool2d(test_data):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data_FP)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_FP_avgpool2d(test_data):
+    model = ComboConvAvgPool2d()
+    pipeline = VgfPipeline[input_t1](
+        model,
+        test_data(),
+        aten_op=[],
+        exir_op=ComboConvAvgPool2d.edge_op_list,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ComboConvAvgPool2d.test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_INT_avgpool2d(test_data):
+    input, per_channel_quantization = test_data()
+    model = ComboConvAvgPool2d()
+    pipeline = VgfPipeline[input_t1](
+        model,
+        input,
+        aten_op=[],
+        exir_op=ComboConvAvgPool2d.edge_op_list,
+        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()

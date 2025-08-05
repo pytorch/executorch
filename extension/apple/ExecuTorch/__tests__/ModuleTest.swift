@@ -81,7 +81,34 @@ class ModuleTest: XCTestCase {
     XCTAssertEqual(outputs4?.first?.tensor(), Tensor([Float(5)]))
   }
 
-  func testmethodMetadata() throws {
+  func testForwardReturnConversion() throws {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    let inputs: [Tensor<Float>] = [Tensor([1]), Tensor([1])]
+
+    let outputValues: [Value] = try module.forward(inputs)
+    XCTAssertEqual(outputValues, [Value(Tensor<Float>([2]))])
+
+    let outputValue: Value = try module.forward(inputs)
+    XCTAssertEqual(outputValue, Value(Tensor<Float>([2])))
+
+    let outputTensors: [Tensor<Float>] = try module.forward(inputs)
+    XCTAssertEqual(outputTensors, [Tensor([2])])
+
+    let outputTensor: Tensor<Float> = try module.forward(Tensor<Float>([1]), Tensor<Float>([1]))
+    XCTAssertEqual(outputTensor, Tensor([2]))
+
+    let scalars = (try module.forward(Tensor<Float>([1]), Tensor<Float>([1])) as Tensor<Float>).scalars()
+    XCTAssertEqual(scalars, [2])
+
+    let scalars2 = try Tensor<Float>(module.forward(Tensor<Float>([1]), Tensor<Float>([1]))).scalars()
+    XCTAssertEqual(scalars2, [2])
+  }
+
+  func testMethodMetadata() throws {
     guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
       XCTFail("Couldn't find the model file")
       return

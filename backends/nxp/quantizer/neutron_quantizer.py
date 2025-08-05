@@ -32,6 +32,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     ReluPattern,
     ReshapePattern,
     SharedSpecPattern,
+    SigmoidPattern,
     SoftMaxPattern,
     ViewPattern,
 )
@@ -41,6 +42,7 @@ from executorch.backends.nxp.quantizer.utils import (
     no_outside_users,
 )
 from torch import fx
+from torch.ao.quantization.quantizer.utils import _annotate_output_qspec
 from torchao.quantization.pt2e import HistogramObserver, MinMaxObserver
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
@@ -217,6 +219,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(ReluPattern(), static_qconfig),
                 NeutronAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(ReshapePattern(), static_qconfig),
+                NeutronAtenQuantizer(SigmoidPattern(), static_qconfig),
                 NeutronAtenQuantizer(SoftMaxPattern(), static_qconfig),
                 NeutronAtenQuantizer(ViewPattern(), static_qconfig),
             ]
@@ -237,6 +240,8 @@ class NeutronQuantizer(ComposableQuantizer):
         return pass_runner(model).graph_module
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        self._annotate_inputs(model)
+
         nodes = list(model.graph.nodes)
         for node in nodes:
             if (
@@ -251,6 +256,26 @@ class NeutronQuantizer(ComposableQuantizer):
                     self.op_to_applied_quantizer[node.target] = True
 
         return model
+
+    def _is_input_annotated(self, node: fx.Node) -> bool:
+        return (
+            "quantization_annotation" in node.meta
+            and node.meta["quantization_annotation"]._annotated
+        )
+
+    def _mark_input_node_as_annotated(self, node: fx.Node) -> None:
+        if "quantization_annotation" not in node.meta:
+            node.meta["quantization_annotation"] = QuantizationAnnotation()
+        node.meta["quantization_annotation"]._annotated = True
+
+    def _annotate_inputs(self, model: fx.GraphModule):
+        for node in model.graph.nodes:
+            if self._is_input_annotated(node):
+                continue
+
+            if node.op == "placeholder" and len(node.users) > 0:
+                _annotate_output_qspec(node, act_qspec)
+                self._mark_input_node_as_annotated(node)
 
     def validate(self, model: torch.fx.GraphModule) -> None:
         return super().validate(model)

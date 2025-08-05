@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -115,6 +116,36 @@ def test_arange_start_step_u85_INT(test_data: test_data_t):
     pipeline.run()
 
 
+@common.parametrize("test_data", ArangeAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_arange_start_step_vgf_FP(test_data: test_data_t):
+    input_data, init_data = test_data
+    module = ArangeAdd(*init_data)
+    pipeline = VgfPipeline[input_t](
+        module,
+        input_data(),
+        module.aten_op,
+        module.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ArangeAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_arange_start_step_vgf_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    module = ArangeAdd(*init_data)
+    pipeline = VgfPipeline[input_t](
+        module,
+        input_data(),
+        module.aten_op,
+        module.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
 class LinspaceAdd(torch.nn.Module):
     aten_op: str = "torch.ops.aten.linspace.default"
     exir_op: str = "executorch_exir_dialects_edge__ops_aten_arange_default"
@@ -134,7 +165,7 @@ class LinspaceAdd(torch.nn.Module):
 
 
 @common.parametrize("test_data", LinspaceAdd.test_data)
-def test_linspace_tosa_FP(test_data):
+def test_linspace_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineFP[input_t](
         LinspaceAdd(*init_data),
@@ -154,7 +185,34 @@ def test_linspace_tosa_INT(test_data: test_data_t):
         LinspaceAdd.aten_op,
         LinspaceAdd.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize("test_data", LinspaceAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_linspace_vgf_FP(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        LinspaceAdd(*init_data),
+        input_data(),
+        LinspaceAdd.aten_op,
+        LinspaceAdd.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", LinspaceAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_linspace_vgf_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        LinspaceAdd(*init_data),
+        input_data(),
+        LinspaceAdd.aten_op,
+        LinspaceAdd.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.run()
 
 
@@ -178,4 +236,14 @@ def test_arange_u55_INT():
 
 @pytest.mark.skip(reason=skip_str)
 def test_arange_u85_INT():
+    pass
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_vgf_FP():
+    pass
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_vgf_INT():
     pass

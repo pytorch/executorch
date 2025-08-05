@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 exir_op = "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"
@@ -159,5 +160,33 @@ def test_adaptive_avg_pool2d_u85_INT(test_module):
         input_tensor,
         aten_ops=[],
         exir_ops=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_FP(test_module):
+    model, input_tensor = test_module()
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        [],
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_INT(test_module):
+    model, input_tensor = test_module()
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        [],
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

@@ -16,6 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x
@@ -238,6 +239,48 @@ def test_mul_tensor_u85_INT_int32(test_data: torch.Tensor):
         aten_op,
         exir_ops=[],
         run_on_fvp=True,
+    )
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_2 | test_data_suite_int32
+)
+@common.SkipIfNoModelConverter
+def test_mul_tensor_vgf_FP(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Mul(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite | test_data_suite_2)
+@common.SkipIfNoModelConverter
+def test_mul_tensor_vgf_INT(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Mul(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_int32)
+@common.SkipIfNoModelConverter
+def test_mul_tensor_vgf_INT_int32(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Mul(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

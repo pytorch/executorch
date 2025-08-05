@@ -16,6 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.clone.default"
@@ -158,5 +159,29 @@ def test_clone_tosa_FP_not_delegated(input_data):
         input_tensor,
         non_delegated_ops={exir_op: module.n_clones},
         n_expected_delegates=module.n_call_delegates,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", delegated_clones)
+@common.SkipIfNoModelConverter
+def test_clone_vgf_FP(input_data):
+    module, input_tensor = input_data()
+    pipeline = VgfPipeline[input_t](
+        module(), input_tensor, aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", delegated_clones)
+@common.SkipIfNoModelConverter
+def test_clone_vgf_INT(input_data):
+    module, input_tensor = input_data()
+    pipeline = VgfPipeline[input_t](
+        module(),
+        input_tensor,
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

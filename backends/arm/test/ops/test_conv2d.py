@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.conv2d.default"
@@ -450,6 +451,35 @@ def test_convolution_u85_INT(test_data):
         aten_op,
         exir_op,
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_FP)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_FP(test_data):
+    model = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_INT(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()

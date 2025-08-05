@@ -29,9 +29,7 @@ struct ModelMetadata {
     inline ModelMetadata() noexcept { }
 
     /// Returns `true` if the metadata is valid otherwise `false`.
-    inline bool is_valid() const noexcept {
-        return !identifier.empty() && !input_names.empty() && !output_names.empty();
-    }
+    inline bool is_valid() const noexcept { return !identifier.empty() && !output_names.empty(); }
 
     inline std::string to_json_string() const noexcept { return executorchcoreml::serde::json::to_json_string(*this); }
 

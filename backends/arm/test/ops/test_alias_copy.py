@@ -13,6 +13,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]
@@ -102,5 +103,31 @@ def test_alias_tosa_MI_not_delegated():
             "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
         },
         n_expected_delegates=0,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AliasCopy.test_data)
+@common.SkipIfNoModelConverter
+def test_alias_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AliasCopy(),
+        test_data(),
+        AliasCopy.aten_op,
+        AliasCopy.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AliasCopy.test_data)
+@common.SkipIfNoModelConverter
+def test_alias_vgf_INT(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AliasCopy(),
+        test_data(),
+        AliasCopy.aten_op,
+        AliasCopy.exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

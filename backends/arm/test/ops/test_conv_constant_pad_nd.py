@@ -16,6 +16,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.pad.default"
@@ -112,5 +113,33 @@ def test_constant_pad_nd_tosa_INT(test_data: Tuple):
         exir_op,
         atol=0.005,  # TODO: Investigate flakyness (MLETORCH-989)
         rtol=0.01,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_constant_pad_nd_vgf_FP(test_data: Tuple):
+    test_data, padding, value = test_data
+    pipeline = VgfPipeline[input_t1](
+        ConstantPadND(padding, value),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_constant_pad_nd_vgf_INT(test_data: Tuple):
+    test_data, padding, value = test_data
+    pipeline = VgfPipeline[input_t1](
+        ConstantPadND(padding, value),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

@@ -15,31 +15,13 @@ import executorch.backends.arm.tosa_specification as tosa_specification
 
 import torch.fx
 import torch.fx.node
+from executorch.backends.arm.constants import PER_CHANNEL_QDQ_OPS, PER_TENSOR_QDQ_OPS
 
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch import Tensor
 from torch.fx import Node
 from tosa.RoundingMode import RoundingMode  # type: ignore
-
-
-q_ops = (
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-)
-dq_ops = (
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-)
-per_tensor_q_dq_ops = (
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-)
-per_channel_q_dq_ops = (
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-)
-dq_q_ops = (*q_ops, *dq_ops)
 
 
 def insert_rescale_ops_to_int32(
@@ -185,7 +167,7 @@ class QuantArgs(NamedTuple):
 
     @classmethod
     def from_operator(cls, op, args):
-        if op in per_tensor_q_dq_ops:
+        if op in PER_TENSOR_QDQ_OPS:
             return cls(
                 scale=cast(float, args[1]),
                 zp=cast(int, args[2]),
@@ -195,7 +177,7 @@ class QuantArgs(NamedTuple):
                 axis=0,
                 per_channel=False,
             )
-        elif op in per_channel_q_dq_ops:
+        elif op in PER_CHANNEL_QDQ_OPS:
             return cls(
                 scale=cast(list[float], args[1].tolist()),
                 zp=cast(list[int], args[2].tolist()),

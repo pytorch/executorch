@@ -51,6 +51,13 @@ class TokenGenerator {
       executorch::runtime::Result<executorch::runtime::MethodMeta> method_meta);
 
   /**
+   * @brief Get the all logits generated
+   *
+   * @return std::vector<uint16_t>& all the logits generated
+   */
+  virtual const std::vector<uint16_t>& get_all_logits();
+
+  /**
      * @brief Generate tokens.
      * @param tokens Vector of input tokens.
      * @param start_pos Starting position for generation.
@@ -62,7 +69,8 @@ class TokenGenerator {
       std::vector<uint64_t> tokens,
       int64_t start_pos,
       int32_t seq_len,
-      std::function<void(const std::string&)> token_callback);
+      std::function<void(const std::string&)> token_callback,
+      bool dump_logits);
   inline const size_t total_token_generator_io_size_in_bytes() const {
     return input_toks_.size + input_pos_.size + attention_mask_.size +
         logits_.size;
@@ -108,5 +116,8 @@ class TokenGenerator {
 
   // metadata
   Metadata metadata_;
+
+  // Unused by default, only used when dump_logits_path is provided.
+  std::vector<uint16_t> token_all_logits_;
 };
 } // namespace example
