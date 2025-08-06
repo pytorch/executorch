@@ -654,6 +654,37 @@ ConstraintsGenPass: TypeAlias = Callable[
 ]
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class GenerateIdmaConstraints(PassBase):
+    """Generate constraints for idma ops."""
+
+    def __init__(self, constraint: MemConstraints) -> None:
+        self.constraint = constraint
+
+    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_wait.out
+        ):
+            # This is just an alias op.
+            self.constraint.add_relative_placement_constraint(node.args[0], node)
+
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_load.out
+        ):
+            # TODO: set correct dtcm bank here.
+            mem_id = 1
+            self.constraint.add_absolute_placement_constraint(node, mem_id, None)
+
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_store.out
+        ):
+            # TODO: set correct dtcm bank here.
+            mem_id = 1
+            self.constraint.add_absolute_placement_constraint(
+                node.args[0], mem_id, None
+            )
+
+
 # The class to generate all the constraints that will be passed on to the memory
 # planning algorithm.
 class GenerateMemConstraints:
@@ -671,6 +702,7 @@ class GenerateMemConstraints:
         constraint_gen_passes: Sequence[ConstraintsGenPass] = cast(
             list[ConstraintsGenPass],
             [
+                GenerateIdmaConstraints,
                 GenerateMemoryViewConstraints,
                 GenerateSliceAndSelectNopConstraints,
                 GenerateCatNopConstraints,
