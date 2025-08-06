@@ -103,6 +103,25 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::optional<const std::string> data_path = std::nullopt,
     float temperature = -1.0f);
 
+/**
+ * @brief Creates a MultimodalRunner instance with dependency injection
+ *
+ * This factory function creates and initializes a MultimodalRunner with all
+ * necessary components for multimodal text generation.
+ *
+ * @param model_path Path to the model file
+ * @param tokenizer Initialized tokenizer instance
+ * @param data_path Optional path to additional data required by the model
+ * @param temperature Optional temperature parameter for controlling randomness
+ * @return std::unique_ptr<MultimodalRunner> Initialized MultimodalRunner
+ * instance, or nullptr on failure
+ */
+ET_EXPERIMENTAL std::unique_ptr<MultimodalRunner> create_multimodal_runner(
+    const std::string& model_path,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    std::optional<const std::string> data_path = std::nullopt,
+    float temperature = 0.8f);
+
 } // namespace llm
 } // namespace extension
 } // namespace executorch
