@@ -334,6 +334,7 @@ def to_edge_transform_and_lower_to_qnn(
     skip_node_id_set: Optional[set] = None,
     skip_node_op_set: Optional[set] = None,
     skip_mutable_buffer: bool = False,
+    generate_etrecord: bool = False,
 ) -> EdgeProgramManager:
     """
     Transforms and lowers a given PyTorch module to the QNN backend.
@@ -442,6 +443,7 @@ def to_edge_transform_and_lower_to_qnn(
         partitioner=qnn_partitioners,
         constant_methods=constant_methods,
         compile_config=qnn_edge_config(),
+        generate_etrecord=generate_etrecord,
     )
 
 
