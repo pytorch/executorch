@@ -18,6 +18,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.linear.default"
@@ -218,3 +219,42 @@ def test_linear_u85_INT(test_data: torch.Tensor):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     ).run()
+
+
+@common.parametrize("test_data", test_data_rank1_FP | test_data_rank4_FP)
+@common.SkipIfNoModelConverter
+def test_linear_vgf_FP(test_data: torch.Tensor):
+    test_data, out_features, has_bias = test_data()
+    in_features = test_data.shape[-1]
+    pipeline = VgfPipeline[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op=aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@common.SkipIfNoModelConverter
+def test_linear_vgf_INT(test_data: torch.Tensor):
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+    pipeline = VgfPipeline[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op=aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()

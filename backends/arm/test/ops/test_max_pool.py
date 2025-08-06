@@ -17,6 +17,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 test_data_suite = {
@@ -272,5 +273,96 @@ def test_max_pool2d_tosa_INT_dilation(test_data):
         aten_op,
         exir_op,
         symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+# VGF tests
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_FP(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_INT(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_mult_batches)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_FP_mult_batches(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_mult_batches)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_INT_mult_batches(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", dilation_test_data)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_FP_dilation(test_data: torch.Tensor):
+    """
+    VGF FP pipeline with dilation > 1 (and dilation=1 sanity cases).
+    """
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", dilation_test_data)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_INT_dilation(test_data: torch.Tensor):
+    """
+    VGF INT pipeline with dilation > 1 (and dilation=1 sanity cases).
+    """
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
