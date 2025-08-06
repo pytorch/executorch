@@ -19,7 +19,7 @@ from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm._passes import (
     ArmPassManager,
 )  # usort: skip
-from executorch.backends.arm.common.debug import dbg_fail, dbg_tosa_dump
+from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.process_node import (
     process_call_function,
     process_output,
@@ -115,12 +115,12 @@ class TOSABackend(BackendDetails):
                     # any checking of compatibility.
                     raise RuntimeError(f"{node.name} is unsupported op {node.op}")
             except Exception:
-                dbg_fail(node, graph_module, tosa_graph, artifact_path)
+                debug_fail(node, graph_module, tosa_graph, artifact_path)
                 raise
 
         if artifact_path:
             tag = arm_get_first_delegation_tag(graph_module)
-            dbg_tosa_dump(
+            debug_tosa_dump(
                 tosa_graph,
                 artifact_path,
                 suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),

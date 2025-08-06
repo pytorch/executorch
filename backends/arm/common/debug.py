@@ -14,7 +14,7 @@ from executorch.exir.print_program import inspect_node
 logger = logging.getLogger(__name__)
 
 
-def dbg_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):
+def debug_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):
     # Debug output of node information
     logger.info(get_node_debug_info(node, graph_module))
 
@@ -51,7 +51,7 @@ def get_node_debug_info(
 
 
 # Output TOSA flatbuffer and test harness file
-def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
+def debug_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
     filename = f"output{suffix}.tosa"
 
     logger.info(f"Emitting debug output to: {path=}, {suffix=}")
@@ -74,7 +74,7 @@ def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
         raise IOError("Failed to write TOSA JSON")
 
 
-def dbg_fail(
+def debug_fail(
     node,
     graph_module,
     tosa_graph: Optional[ts.TosaSerializer] = None,
@@ -82,6 +82,6 @@ def dbg_fail(
 ):
     logger.warning("Internal error due to poorly handled node:")
     if tosa_graph is not None and path is not None:
-        dbg_tosa_dump(tosa_graph, path)
+        debug_tosa_dump(tosa_graph, path)
         logger.warning(f"Debug output captured in '{path}'.")
-    dbg_node(node, graph_module)
+    debug_node(node, graph_module)
