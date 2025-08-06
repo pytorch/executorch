@@ -109,8 +109,8 @@ except ImportError:
     # Define a stub decorator that does nothing
     def et_logger(api_name: str) -> Callable[[Any], Any]:
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-                return func(self, *args, **kwargs)
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
+                return func(*args, **kwargs)
 
             return wrapper
 
