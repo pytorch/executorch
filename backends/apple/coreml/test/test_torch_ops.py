@@ -14,10 +14,11 @@ import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+from executorch.exir.backend.utils import format_delegated_graph
 
 from torchao.prototype.quantization.codebook_coreml import CodebookWeightOnlyConfig
 from torchao.quantization import IntxWeightOnlyConfig, PerAxis, PerGroup, quantize_
-from executorch.exir.backend.utils import format_delegated_graph
+
 
 def is_fbcode():
     return not hasattr(torch.version, "git_version")
@@ -185,8 +186,10 @@ class TestTorchOps(unittest.TestCase):
                     "getitem",
                 ], f"Got unexpected node target after delegation: {node.target.__name__}"
 
-        print(format_delegated_graph(delegated_program.exported_program().graph_module))
-
+        assert (
+            "executorch.exir.dialects.edge._ops.quant.dequantize_codebook.default"
+            in format_delegated_graph(delegated_program.exported_program().graph_module)
+        )
 
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
@@ -210,6 +213,12 @@ class TestTorchOps(unittest.TestCase):
                     "executorch_call_delegate",
                     "getitem",
                 ], f"Got unexpected node target after delegation: {node.target.__name__}"
+
+        assert (
+            "executorch.exir.dialects.edge._ops.quant.dequantize_codebook.default"
+            in format_delegated_graph(delegated_program.exported_program().graph_module)
+        )
+
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
 
