@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
@@ -46,11 +47,11 @@ void add_embedding_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       {{out, vkapi::kWrite}, {{in, weight}, vkapi::kRead}},
       {
           graph.sizes_ubo(out),
