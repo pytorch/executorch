@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 import torch
 from executorch.backends.qualcomm._passes.utils import find_patterns
-
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -29,8 +29,14 @@ def _is_get_attr(node):
 def _is_add(node):
     return _is_call(node) and node.target in [
         exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.add.Scalar,
         torch.ops.aten.add.Tensor,
+        torch.ops.aten.add.Scalar,
     ]
+
+
+def _is_dq(node):
+    return _is_call(node) and node.target in dq_ops
 
 
 def _is_mean(node):
@@ -50,6 +56,7 @@ def _is_mul(node):
 def _is_pow(node):
     return _is_call(node) and node.target in [
         exir_ops.edge.aten.pow.Tensor_Tensor,
+        exir_ops.edge.aten.pow.Tensor_Scalar,
         torch.ops.aten.pow.Tensor_Scalar,
     ]
 
@@ -72,6 +79,7 @@ class RecomposeRmsNorm(ExportPass):
         self.skip_targets = [
             exir_ops.edge.aten.to.dtype,
         ]
+        self.quantization_capture = quantization_capture
         if quantization_capture:
             self.rms_norm_target = torch.ops.aten.rms_norm.default
             self.skip_targets = [
@@ -112,8 +120,9 @@ class RecomposeRmsNorm(ExportPass):
                 gamma_node = None
                 # weight should be a constant
                 for arg in last_mul_node.args:
-                    if _is_get_attr(arg) or _is_placeholder(arg):
+                    if _is_get_attr(arg) or _is_placeholder(arg) or _is_dq(arg):
                         gamma_node = arg
+
                 if gamma_node is None:
                     continue
 
