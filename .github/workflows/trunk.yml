@@ -100,9 +100,9 @@ jobs:
         python build_model.py \
             --executorch-root $ZEPHYR_PROJ_ROOT/modules/lib/executorch \
             --pte-file ~/modules/lib/executorch/${MODEL_NAME}.pte \
-            --output-path models/${MODEL_NAME}/src/
+            --output-path $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/src/
 
-        cd $ZEPHYR_PROJ_ROOT/zephyr/samples/modules/executorch/arm-fvp-tutorials/models/${MODEL_NAME}/
+        cd $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/
 
         # Build the zephyr elf
         west build -p always -b mps3/corstone300/fvp
