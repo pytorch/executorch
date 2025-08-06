@@ -87,28 +87,10 @@ class OpDimOrderCloneTest : public OperatorTest {
     }
   }
 
-  /* %python
-  import torch
-  torch.manual_seed(0)
-  x = torch.rand(2, 3)
-  res = x.clone(memory_format = torch.preserve_format)
-  op = "op__clone_dim_order_out"
-  opt_setup_params = """
-    bool non_blocking = false;
-    optional<MemoryFormat> memory_format;
-  """
-  opt_extra_params = "non_blocking, memory_format,"
-  out_args = "out_shape, dynamism"
-  dtype = "ScalarType::Float"
-  check = "EXPECT_TENSOR_EQ" */
-
   // Helper for testing dynamic shape outputs.
   void test_dynamic_shape(
       const std::vector<int32_t>& out_shape,
       enum torch::executor::TensorShapeDynamism dynamism) {
-    /* %python
-    %rewrite(unary_op) */
-
     TensorFactory<ScalarType::Float> tf;
 
     Tensor x = tf.make(
@@ -197,7 +179,7 @@ TEST_F(OpDimOrderCloneTest, MismatchedSizesDie) {
           out));
 }
 
-// Cloning with a non-contiguous memory format should fail.
+// Cloning with an unsupported memory format should fail.
 TEST_F(OpDimOrderCloneTest, MismatchedMemoryFormatDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP()
@@ -266,7 +248,7 @@ TEST_F(OpDimOrderCloneTest, DynamicShapeUpperBoundLargerThanExpected) {
 
 TEST_F(OpDimOrderCloneTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape unbound not supported.";
+    GTEST_SKIP() << "Skipping: Dynamic shape unbound not supported.";
   }
   test_dynamic_shape(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
@@ -275,6 +257,8 @@ TEST_F(OpDimOrderCloneTest, DynamicShapeUnbound) {
 TEST_F(OpDimOrderCloneTest, ContiguousToChannelsLast) {
   TensorFactory<ScalarType::Float> tf;
 
+  // x is in contiguous dim order {0, 1, 2, 3}.
+  // make_with_dimorder() defaults to contiguous when dim_order isn't specified.
   Tensor x = tf.make_with_dimorder(
       {3, 5, 2, 2},
       {0.2432, 0.5248, 0.5361, 0.8513, 0.8184, 0.8206, 0.7357, 0.9655, 0.6138,
@@ -311,6 +295,8 @@ TEST_F(OpDimOrderCloneTest, ChannelsLastToContiguous) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor out = tf.full({3, 5, 2, 2}, 0.0);
+
+  // x is in channels_last dim order {0, 2, 3, 1}.
   Tensor x = tf.make_with_dimorder(
       {3, 5, 2, 2},
       {0.2432, 0.8184, 0.6138, 0.9680, 0.2257, 0.5248, 0.8206, 0.1112, 0.2548,
