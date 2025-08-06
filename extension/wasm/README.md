@@ -33,7 +33,7 @@ emcmake cmake . -DEXECUTORCH_BUILD_WASM=ON \
 cmake --build cmake-out-wasm --target executorch_wasm -j32
 ```
 
-You may also use the selective build options found in the [Kernel Library Selective Build guide](../../docs/source/kernel-library-selective-build.md) or with optimized kernels using the `EXECUTORCH_BUILD_KERNELS_OPTIMIZED` option. Portable kernels are used by default.
+To reduce the binary size, you may also use the selective build options found in the [Kernel Library Selective Build guide](../../docs/source/kernel-library-selective-build.md). You may also use optimized kernels with the `EXECUTORCH_BUILD_KERNELS_OPTIMIZED` option. Portable kernels are used by default.
 
 ### Building for Web
 
@@ -63,37 +63,17 @@ Building this should output `executorch_wasm_lib.js` and `executorch_wasm_lib.wa
 <script src="executorch_wasm_lib.js"></script>
 ```
 
-Alternatively, you may want to have your code come after the JS library code.
-
-```html
-<script src="executorch_wasm_lib.js"></script>
-<script>
-  const et = Module; // Assign Module into et for ease of use
-  et.onRuntimeInitialized = () => {
-    // Emscripten calls Module.onRuntimeInitialized once the runtime is ready.
-    const model = et.Module.load("mv2.pte");
-    // ...
-  }
-</script>
-```
-
 ### Building for Node.js
 
-You can follow the [Building for Web](#building-for-web) instructions and access the API with:
-
-```js
-const et = require("./executorch_wasm_lib");
-```
-
-However, doing so does not give you access to the [Emscripten API](https://emscripten.org/docs/api_reference/index.html) which would be stored in the globals. For example, you may want to use the [File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) in your unit tests, which cannot be done if the library is loaded with `require`. Instead, you can use the `--pre-js` or `--post-js` to prepend or append your file to the end of the JS output.
+While the standard way to import a module in Node.js is to use the `require` function, doing so does not give you access to the [Emscripten API](https://emscripten.org/docs/api_reference/index.html) which would be stored in the globals. For example, you may want to use the [File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) in your unit tests, which cannot be done if the library is loaded with `require`. Instead, you can use the `--pre-js` option to prepend your file to the start of the JS output and behave similarly to the example in the [Web build](#building-for-web).
 
 ```cmake
 add_executable(my_project) # Emscripten outputs this as a JS and Wasm file
 target_link_libraries(my_project PRIVATE executorch_wasm)
-target_link_options(my_project PRIVATE --post-js my_code.js) # Add any additional link options here
+target_link_options(my_project PRIVATE --pre-js my_code.js) # Add any additional link options here
 ```
 
-The output `my_project.js` should contain both the emitted JS code and the contents of `my_code.js`.
+The output `my_project.js` should contain both the emitted JS code and the contents of `my_code.js` prepended.
 
 ## JavaScript API
 
