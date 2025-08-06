@@ -85,25 +85,28 @@ void resize_linear_qta8a_qga4w_node(
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
 
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
-  vTensorPtr mat2 = graph->get_tensor(args[1].refs[1]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mat1 = args.at(1).refs.at(0);
+  const ValueRef mat2 = args.at(1).refs.at(1);
 
-  const int64_t out_cols = utils::val_at(-2, mat1->sizes());
-  const int64_t out_rows = utils::val_at(-1, mat2->sizes()) * 2;
+  const std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
+  const std::vector<int64_t> mat2_sizes = graph->sizes_of(mat2);
+
+  const int64_t out_cols = utils::val_at(-2, mat1_sizes);
+  const int64_t out_rows = utils::val_at(-1, mat2_sizes) * 2;
 
   std::vector<int64_t> new_out_sizes(3);
-  if (mat1->sizes().size() == 2) {
+  if (mat1_sizes.size() == 2) {
     new_out_sizes.resize(2);
     new_out_sizes.at(0) = out_cols;
     new_out_sizes.at(1) = out_rows;
   } else {
-    new_out_sizes.at(0) = mat1->sizes().at(0);
+    new_out_sizes.at(0) = mat1_sizes.at(0);
     new_out_sizes.at(1) = out_cols;
     new_out_sizes.at(2) = out_rows;
   }
 
-  out->virtual_resize(new_out_sizes);
+  graph->virtual_resize(out, new_out_sizes);
 }
 
 /**
