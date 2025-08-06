@@ -13,15 +13,18 @@ fi
 which "${PYTHON_EXECUTABLE}"
 
 
-llama_artifacts="."
+llama_artifacts="260k_stories"
 PTE_ARTIFACT="examples/qualcomm/oss_scripts/llama/artifacts"
 
+mkdir ${llama_artifacts}
 # Download stories260K.pt and tokenizer from Github
-curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K/stories260K.pt" --output stories260K.pt
-curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K/tok512.model" --output tokenizer.model
+curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K/stories260K.pt" --output ${llama_artifacts}/stories260K.pt
+curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K/tok512.model" --output ${llama_artifacts}/tokenizer.model
+
+$PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t ${llama_artifacts}/tokenizer.model -o ${llama_artifacts}/tokenizer.bin
 # Create params.json file
-touch params.json
-echo '{"dim": 64, "n_layers": 5, "n_heads": 8, "n_kv_heads": 4, "vocab_size": 512, "multiple_of": 4, "max_seq_len": 512}' > params.json
+touch ${llama_artifacts}/params.json
+echo '{"dim": 64, "n_layers": 5, "n_heads": 8, "n_kv_heads": 4, "vocab_size": 512, "multiple_of": 4, "max_seq_len": 512}' > ${llama_artifacts}/params.json
 
 # Checks e2e accuracy
 expected=$($PYTHON_EXECUTABLE backends/qualcomm/tests/test_qnn_delegate.py -k TestExampleLLMScript.test_llama_stories_260k --model SM8650 --build_folder build-x86/ --executorch_root . --artifact_dir . --llama_artifacts $llama_artifacts --enable_x86_64 | grep "Model CI result:")
