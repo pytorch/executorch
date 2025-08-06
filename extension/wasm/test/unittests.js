@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-let et;
+var Module = {};
+const et = Module;
 beforeAll((done) => {
-    et = Module;
     et.onRuntimeInitialized = () => {
         done();
     }

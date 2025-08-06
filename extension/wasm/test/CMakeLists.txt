@@ -47,7 +47,7 @@ target_link_options(
   PRIVATE
   --embed-file
   "${MODELS_DIR}@/"
-  --post-js
+  --pre-js
   ${CMAKE_CURRENT_SOURCE_DIR}/unittests.js
   -sASSERTIONS=2
 )
