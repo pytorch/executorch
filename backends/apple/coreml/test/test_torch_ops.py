@@ -225,10 +225,10 @@ class TestTorchOps(unittest.TestCase):
 
 if __name__ == "__main__":
     test_runner = TestTorchOps()
-    # test_runner.test_dequantize_affine_b4w_embedding()
-    # test_runner.test_dequantize_affine_b4w_linear()
-    # test_runner.test_dequantize_affine_c4w_embedding()
-    # test_runner.test_dequantize_affine_c4w_linear()
-    # test_runner.test_dequantize_affine_c8w_embedding_b4w_linear()
+    test_runner.test_dequantize_affine_b4w_embedding()
+    test_runner.test_dequantize_affine_b4w_linear()
+    test_runner.test_dequantize_affine_c4w_embedding()
+    test_runner.test_dequantize_affine_c4w_linear()
+    test_runner.test_dequantize_affine_c8w_embedding_b4w_linear()
     test_runner.test_dequantize_codebook_linear()
     test_runner.test_dequantize_codebook_embedding()
