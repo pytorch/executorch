@@ -46,16 +46,26 @@ class PromptProcessor {
       executorch::runtime::Result<executorch::runtime::MethodMeta> method_meta);
 
   /**
+   * @brief Get the all logits generated
+   *
+   * @return std::vector<uint16_t>& all the logits generated
+   */
+  virtual const std::vector<uint16_t>& get_all_logits();
+
+  /**
    * Prefill an LLM Module with the given text input.
    * @param prompt_tokens The text prompt tokens to the LLM Module. Encoded by
    * tokenizer.
    * @param start_pos The starting position in KV cache of the input in the LLM
    * Module.
+   * @param dump_logits Used to save all logits. Only enable when analyzing
+   * accuracy.
    * @return The next token of the LLM Module after prefill.
    */
   executorch::runtime::Result<uint64_t> prefill(
       std::vector<uint64_t> prompt_tokens,
-      int64_t start_pos);
+      int64_t start_pos,
+      bool dump_logits);
   /**
    * @brief Get total I/O size in bytes (excluding the KV cache size)
    * @return Total I/O size in bytes.
@@ -107,5 +117,8 @@ class PromptProcessor {
   std::vector<executorch::runtime::EValue> inputs_;
   std::vector<executorch::aten::Tensor> input_tensors_;
   std::vector<executorch::aten::Tensor> output_tensors_;
+
+  // Unused by default, only used when dump_logits_path is provided.
+  std::vector<uint16_t> prompt_all_logits_;
 };
 } // namespace example

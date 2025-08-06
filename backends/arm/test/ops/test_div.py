@@ -16,6 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.div.Tensor"
@@ -132,5 +133,27 @@ def test_div_tensor_u85_INT(test_data: Tuple):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_div_tensor_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Div(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_div_tensor_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Div(),
+        test_data(),
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

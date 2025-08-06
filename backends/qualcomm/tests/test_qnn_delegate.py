@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from functools import partial
 from multiprocessing.connection import Listener
 from pathlib import Path
 
@@ -1008,7 +1009,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_sdpa(self):
-        module = ScaledDotProductAttention()  # noqa: F405
+        modules = [
+            ScaledDotProductAttention(),  # noqa: F405
+            ScaledDotProductAttention(scale=0.5),  # noqa: F405
+            ScaledDotProductAttention(scale=1.0),  # noqa: F405
+        ]
         mask = torch.tril(torch.randn(1, 1, 100, 100))
         mask[mask == 0] = float("-inf")
         sample_input = (
@@ -1017,7 +1022,9 @@ class TestQNNFloatingPointOperator(TestQNN):
             torch.randn(1, 4, 100, 64),
             mask,
         )
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_sigmoid(self):
         module = Sigmoid()  # noqa: F405
@@ -2414,7 +2421,11 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_sdpa(self):
-        module = ScaledDotProductAttention()  # noqa: F405
+        modules = [
+            ScaledDotProductAttention(),  # noqa: F405
+            ScaledDotProductAttention(scale=0.5),  # noqa: F405
+            ScaledDotProductAttention(scale=1.0),  # noqa: F405
+        ]
         mask = torch.tril(torch.randn(1, 1, 100, 100))
         mask[mask == 0] = torch.finfo(torch.float32).min
         sample_input = (
@@ -2423,8 +2434,12 @@ class TestQNNQuantizedOperator(TestQNN):
             torch.randn(1, 4, 100, 64),
             mask,
         )
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    module, sample_input, quant_dtype=QuantDtype.use_16a8w
+                )
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_copy(self):
         module = SelectCopy()  # noqa: F405
@@ -3038,6 +3053,104 @@ class TestQNNFloatingPointUtils(TestQNN):
             sample_input,
             expected_partitions=1,
             expected_profile_events=30,
+        )
+
+    def test_qnn_backend_runtime_option_htp_performance(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+
+        def output_callback(log_msg, is_burst):
+            msg = log_msg.stdout
+            # Refer to HtpDevice.cpp for the following values
+            min_voltage = (
+                "coreVoltageCornerMin 160" if is_burst else "coreVoltageCornerMin 80"
+            )
+            self.assertTrue(min_voltage in msg, f"Expecting '{min_voltage} ' in log")
+
+        burst_runtime_commands = (
+            " --htp_performance_mode 2 --log_level 4"  # kHtpBurst, kLogLevelVerbose
+        )
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            extra_cmds=burst_runtime_commands,
+            output_callback=partial(output_callback, is_burst=True),
+            save_inference_speed=True,
+        )
+        burst_speed = 1000 / self.inference_speed  # inferences per second
+
+        power_saver_runtime_commands = " --htp_performance_mode 6 --log_level 4"  # kHtpHighPowerSaver, kLogLevelVerbose
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            extra_cmds=power_saver_runtime_commands,
+            output_callback=partial(output_callback, is_burst=False),
+            save_inference_speed=True,
+        )
+        power_saver_speed = 1000 / self.inference_speed  # inferences per second
+
+        # Only need to ensure device burst is faster than high power saver
+        if not self.enable_x86_64:
+            self.assertGreater(
+                burst_speed,
+                power_saver_speed,
+                f"Burst mode should be faster than high power saver mode, Burst: {burst_speed} inference / second, High Power Saver: {power_saver_speed} inference /second.",
+            )
+
+    def test_qnn_backend_runtime_option_log(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        runtime_commands = " --log_level 4"  # kLogLevelVerbose
+
+        def output_callback(log_msg):
+            msg = log_msg.stdout
+            # Check log prefix, different QNN version will have slightly different message format.
+            self.assertTrue(
+                any(
+                    sub in msg
+                    for sub in [
+                        "[Qnn ExecuTorch]: QnnDsp <V>",
+                        "[Qnn ExecuTorch]:  <V>",
+                    ]
+                ),
+                "Expecting Verbose message in log",
+            )
+
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            extra_cmds=runtime_commands,
+            output_callback=output_callback,
+        )
+
+    def test_qnn_backend_runtime_option_profile(self):
+        TestQNN.enable_profile = True
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            profile=False,  # Turn on using runtime command
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        runtime_commands = " --profile_level 2"  # kProfileDetailed
+        # With same model, expected_profile events for this UT should match test_qnn_backend_profile_op
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_profile_events=30,
+            extra_cmds=runtime_commands,
         )
 
     def test_qnn_backend_shared_buffer(self):
@@ -3760,6 +3873,107 @@ class TestQNNQuantizedUtils(TestQNN):
             expected_profile_events=30,
         )
 
+    def test_qnn_backend_runtime_option_htp_performance(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+
+        def output_callback(log_msg, is_burst):
+            msg = log_msg.stdout
+            # Refer to HtpDevice.cpp for the following values
+            min_voltage = (
+                "coreVoltageCornerMin 160" if is_burst else "coreVoltageCornerMin 80"
+            )
+            self.assertTrue(min_voltage in msg, f"Expecting '{min_voltage} ' in log")
+
+        burst_runtime_commands = (
+            " --htp_performance_mode 2 --log_level 4"  # kHtpBurst, kLogLevelVerbose
+        )
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            extra_cmds=burst_runtime_commands,
+            output_callback=partial(output_callback, is_burst=True),
+            save_inference_speed=True,
+        )
+        burst_speed = 1000 / self.inference_speed  # num inference per second
+
+        power_saver_runtime_commands = " --htp_performance_mode 6 --log_level 4"  # kHtpHighPowerSaver, kLogLevelVerbose
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            extra_cmds=power_saver_runtime_commands,
+            output_callback=partial(output_callback, is_burst=False),
+            save_inference_speed=True,
+        )
+        power_saver_speed = 1000 / self.inference_speed  # num inference per second
+
+        # Only need to ensure device burst is faster than high power saver
+        if not self.enable_x86_64:
+            self.assertGreater(
+                burst_speed,
+                power_saver_speed,
+                f"Burst mode should be faster than high power saver mode, Burst: {burst_speed} inference / second, High Power Saver: {power_saver_speed} inference /second.",
+            )
+
+    def test_qnn_backend_runtime_option_log(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        runtime_commands = " --log_level 4"  # kLogLevelVerbose
+
+        def output_callback(log_msg):
+            msg = log_msg.stdout
+            # Check log prefix, different QNN version will have slightly different message format.
+            self.assertTrue(
+                any(
+                    sub in msg
+                    for sub in [
+                        "[Qnn ExecuTorch]: QnnDsp <V>",
+                        "[Qnn ExecuTorch]:  <V>",
+                    ]
+                ),
+                "Expecting Verbose message in log",
+            )
+
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            extra_cmds=runtime_commands,
+            output_callback=output_callback,
+        )
+
+    def test_qnn_backend_runtime_option_profile(self):
+        TestQNN.enable_profile = True
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.model],
+            backend_options=backend_options,
+            profile=False,  # Turn on using runtime command
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        runtime_commands = " --profile_level 2"  # kProfileDetailed
+        # With same model, expected_profile events for this UT should match test_qnn_backend_profile_op
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_profile_events=30,
+            extra_cmds=runtime_commands,
+        )
+
     def test_qnn_backend_shared_buffer(self):
         TestQNN.shared_buffer = True
         backend_options = generate_htp_compiler_spec(
@@ -4313,7 +4527,7 @@ class TestExampleLLMScript(TestQNN):
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
 
-    def test_qwen2_5(self):
+    def test_static_qwen2_5(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
 
@@ -4338,11 +4552,14 @@ class TestExampleLLMScript(TestQNN):
             "--decoder_model",
             "qwen2_5",
             "--model_mode",
-            "hybrid",
-            "--prefill_ar_len",
-            "32",
+            "kv",
             "--max_seq_len",
-            "128",
+            "1024",
+            "--eval_perplexity",
+            "--tasks",
+            "wikitext",
+            "--limit",
+            "1",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -4355,8 +4572,6 @@ class TestExampleLLMScript(TestQNN):
         if self.pre_gen_pte:
             cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
-        # Accuracy is bad for now. Just check user's prompt is returned.
-        golden_start_with = "My favourite condiment is "
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -4365,12 +4580,13 @@ class TestExampleLLMScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                model_out = msg["result"][0]
-                self.assertTrue(
-                    model_out.startswith(golden_start_with),
-                    f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
-                )
-                self.assertGreaterEqual(msg["inference_speed"], 95)  # Lanai
+                inference_speed_ref = {"SM8650": 110, "SM8750": 130}
+                self.assertLessEqual(msg["wiki_ppl"], 25)
+                self.assertLessEqual(msg["pte_size"], 800000000)  # 800mb
+                if self.model in inference_speed_ref:
+                    self.assertGreaterEqual(
+                        msg["inference_speed"], inference_speed_ref[self.model]
+                    )
 
 
 class TestExampleOssScript(TestQNN):
@@ -4949,42 +5165,6 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 85)
 
-    def test_mobilevit_v1(self):
-        if not self.required_envs([self.image_dataset]):
-            self.skipTest("missing required envs")
-
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/mobilevit_v1.py"
-            "--dataset",
-            self.image_dataset,
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertGreaterEqual(msg["top_1"], 70)
-                self.assertGreaterEqual(msg["top_5"], 85)
-
     @unittest.skip("Only outputs good accuracy in QNN 2.29")
     def test_mobilevit_v2(self):
         if not self.required_envs([self.image_dataset]):
@@ -5024,6 +5204,42 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 50)
                 self.assertGreaterEqual(msg["top_5"], 85)
 
+    def test_mobilevit1(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/mobilevit1.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 70)
+                self.assertGreaterEqual(msg["top_5"], 85)
+
     def test_pvt(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
@@ -5031,7 +5247,11 @@ class TestExampleOssScript(TestQNN):
         cmds = [
             "python",
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/pvt.py",
+            "--dataset",
             self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
             self.build_folder,
             "--device",
             self.device,

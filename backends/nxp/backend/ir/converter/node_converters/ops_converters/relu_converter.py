@@ -25,6 +25,8 @@ class ReLUConverter(NodeConverter):
         return True
 
     def convert(self, node: Node):
+        self.assert_convertible(node)
+
         t_op = self._create_tflite_op_with_io_tensors(node)
         t_op.opcode_index = self.builder.op_code_index_for_op_type(BuiltinOperator.RELU)
 

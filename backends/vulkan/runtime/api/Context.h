@@ -68,8 +68,6 @@ class Context final {
   // Command buffers submission
   std::mutex cmd_mutex_;
   vkapi::CommandBuffer cmd_;
-  // Semaphore for the previously submitted command buffer, if any
-  VkSemaphore prev_semaphore_;
   uint32_t submit_count_;
   // Memory Management
   std::mutex buffer_clearlist_mutex_;

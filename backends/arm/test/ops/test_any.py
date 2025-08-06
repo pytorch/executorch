@@ -13,6 +13,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -180,6 +181,36 @@ def test_any_u85_INT(test_data: input_t1):
         atol=0,
         rtol=0,
         qtol=0,
+    )
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data)
+@common.SkipIfNoModelConverter
+def test_any_vgf_FP(test_data: input_t1):
+    op, data_fn = test_data()
+    pipeline = VgfPipeline[input_t1](
+        op,
+        data_fn(),
+        op.aten_op,
+        op.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data)
+@common.SkipIfNoModelConverter
+def test_any_vgf_INT(test_data: input_t1):
+    op, data_fn = test_data()
+    pipeline = VgfPipeline[input_t1](
+        op,
+        data_fn(),
+        op.aten_op,
+        op.exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
