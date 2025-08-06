@@ -111,6 +111,7 @@ def test_llama_tosa_FP():
             llama_inputs,
             aten_op=[],
             exir_op=[],
+            run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
             use_to_edge_transform_and_lower=True,
             transform_passes=[InsertCastForOpsWithInt64InputPass()],
         )
@@ -129,6 +130,7 @@ def test_llama_tosa_INT():
             llama_inputs,
             aten_op=[],
             exir_op=[],
+            run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
             use_to_edge_transform_and_lower=True,
         )
         pipeline.run()

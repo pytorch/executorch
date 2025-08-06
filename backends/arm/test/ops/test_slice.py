@@ -7,8 +7,9 @@
 
 from typing import Tuple
 
-import torch
+import conftest
 
+import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -44,7 +45,13 @@ class Slice(torch.nn.Module):
 
 @common.parametrize("test_data", test_data_suite)
 def test_slice_tensor_tosa_FP(test_data: torch.Tensor):
-    pipeline = TosaPipelineFP[input_t1](Slice(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t1](
+        Slice(),
+        test_data(),
+        aten_op,
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 
@@ -55,6 +62,7 @@ def test_slice_tensor_tosa_INT_nchw(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -66,6 +74,7 @@ def test_slice_tensor_tosa_INT_nhwc(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 

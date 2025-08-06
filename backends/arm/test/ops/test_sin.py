@@ -43,6 +43,7 @@ def test_sin_tosa_FP(test_data: Tuple):
         (test_data,),
         aten_op,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     if conftest.get_option("tosa_version") == "1.0":
         pipeline.run()
@@ -55,6 +56,7 @@ def test_sin_tosa_INT(test_data: Tuple):
         (test_data,),
         aten_op,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 

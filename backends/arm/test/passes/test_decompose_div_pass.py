@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 
@@ -61,5 +62,6 @@ def test_decompose_div_tosa_FP(module):
         },
         ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten_div_Tensor"],
         pass_list=[DecomposeDivPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

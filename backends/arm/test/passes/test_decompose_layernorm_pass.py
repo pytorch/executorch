@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.decompose_layernorm_pass import (
     DecomposeLayerNormPass,
@@ -65,5 +66,6 @@ def test_decompose_layernorm_tosa_FP():
             "executorch_exir_dialects_edge__ops_aten_expand_copy_default"
         ],
         pass_list=[DecomposeLayerNormPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 
 from executorch.backends.arm._passes.decompose_cosine_similarity_pass import (
@@ -49,5 +50,6 @@ def test_decompose_cosine_similarity_tosa_INT(module):
         ops_not_after_pass=None,
         pass_list=[DecomposeCosineSimilarityPass],
         quantize=True,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

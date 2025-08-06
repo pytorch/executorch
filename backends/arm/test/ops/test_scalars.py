@@ -6,6 +6,7 @@
 
 from typing import Tuple
 
+import conftest
 import pytest
 
 import torch
@@ -174,21 +175,21 @@ xfails = {
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_add_tensor_tosa_FP_scalar(test_data):
     """Tests regular add with one scalar input."""
-    pipeline = TosaPipelineFP[input_t1](Add(), test_data, aten_op=Add.aten_op)
+    pipeline = TosaPipelineFP[input_t1](Add(), test_data, aten_op=Add.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_add_tensor_tosa_FP_inplace(test_data):
     """Tests inplace add with one scalar input."""
-    pipeline = TosaPipelineFP[input_t1](AddInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineFP[input_t1](AddInplace(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_const_tests, xfails=xfails)
 def test_add_tensor_tosa_FP_const(test_data):
     """Tests regular add with one scalar input, with one of inputs constant."""
-    pipeline = TosaPipelineFP[input_t1](AddConst(), test_data, aten_op=AddConst.aten_op)
+    pipeline = TosaPipelineFP[input_t1](AddConst(), test_data, aten_op=AddConst.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
@@ -196,7 +197,7 @@ def test_add_tensor_tosa_FP_const(test_data):
 def test_add_scalar_tosa_FP(test_data):
     """Tests a scalar add with one scalar input."""
     pipeline = TosaPipelineFP[input_t1](
-        AddScalar(), test_data, aten_op=AddScalar.aten_op
+        AddScalar(), test_data, aten_op=AddScalar.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model")
     )
     pipeline.run()
 
@@ -205,14 +206,14 @@ def test_add_scalar_tosa_FP(test_data):
 @common.parametrize("test_data", tensor_scalar_tests)
 def test_add_tensor_tosa_INT_scalar(test_data):
     """Tests regular add with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](Add(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](Add(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests)
 def test_add_tensor_tosa_INT_inplace(test_data):
     """Tests inplace add with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](AddInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](AddInplace(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
@@ -220,7 +221,7 @@ def test_add_tensor_tosa_INT_inplace(test_data):
 def test_add_tensor_tosa_INT_const(test_data):
     """Tests regular add with one scalar input, with one of inputs constant."""
     pipeline = TosaPipelineINT[input_t1](
-        AddConst(), test_data, aten_op=AddConst.aten_op
+        AddConst(), test_data, aten_op=AddConst.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model")
     )
     pipeline.run()
 
@@ -228,7 +229,7 @@ def test_add_tensor_tosa_INT_const(test_data):
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_add_scalar_tosa_INT(test_data):
     """Tests a scalar add with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](AddScalar(), test_data, aten_op=Add.aten_op)
+    pipeline = TosaPipelineINT[input_t1](AddScalar(), test_data, aten_op=Add.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
@@ -249,14 +250,14 @@ def test_add_scalar_u85_INT():
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_sub_tensor_tosa_FP_scalar(test_data):
     """Tests regular sub with one scalar input."""
-    pipeline = TosaPipelineFP[input_t1](Sub(), test_data, aten_op=Sub.aten_op)
+    pipeline = TosaPipelineFP[input_t1](Sub(), test_data, aten_op=Sub.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_sub_tensor_tosa_FP_inplace(test_data):
     """Tests inplace sub with one scalar input."""
-    pipeline = TosaPipelineFP[input_t1](SubInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineFP[input_t1](SubInplace(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
@@ -264,7 +265,7 @@ def test_sub_tensor_tosa_FP_inplace(test_data):
 def test_sub_scalar_tosa_FP(test_data):
     """Tests a scalar sub with one scalar input."""
     pipeline = TosaPipelineFP[input_t1](
-        SubScalar(), test_data, aten_op=SubScalar.aten_op
+        SubScalar(), test_data, aten_op=SubScalar.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model")
     )
     pipeline.run()
 
@@ -273,21 +274,21 @@ def test_sub_scalar_tosa_FP(test_data):
 @common.parametrize("test_data", tensor_scalar_tests)
 def test_sub_tensor_tosa_INT_scalar(test_data):
     """Tests regular sub with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](Sub(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](Sub(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests)
 def test_sub_tensor_tosa_INT_inplace(test_data):
     """Tests inplace sub with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](SubInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](SubInplace(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_sub_scalar_tosa_INT(test_data):
     """Tests a scalar sub with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](SubScalar(), test_data, aten_op=Sub.aten_op)
+    pipeline = TosaPipelineINT[input_t1](SubScalar(), test_data, aten_op=Sub.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
@@ -306,14 +307,14 @@ def test_sub_scalar_u85_INT():
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_mul_tensor_tosa_FP_scalar(test_data):
     """Tests regular mul with one scalar input."""
-    pipeline = TosaPipelineFP[input_t1](Mul(), test_data, aten_op=Mul.aten_op)
+    pipeline = TosaPipelineFP[input_t1](Mul(), test_data, aten_op=Mul.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_mul_tensor_tosa_FP_inplace(test_data):
     """Tests inplace mul with one scalar input."""
-    pipeline = TosaPipelineFP[input_t1](MulInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineFP[input_t1](MulInplace(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
@@ -321,7 +322,7 @@ def test_mul_tensor_tosa_FP_inplace(test_data):
 def test_mul_scalar_tosa_FP(test_data):
     """Tests a scalar mul with one scalar input."""
     pipeline = TosaPipelineFP[input_t1](
-        MulScalar(), test_data, aten_op=MulScalar.aten_op
+        MulScalar(), test_data, aten_op=MulScalar.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model")
     )
     pipeline.run()
 
@@ -330,21 +331,21 @@ def test_mul_scalar_tosa_FP(test_data):
 @common.parametrize("test_data", tensor_scalar_tests)
 def test_mul_tensor_tosa_INT_scalar(test_data):
     """Tests regular mul with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](Mul(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](Mul(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests)
 def test_mul_tensor_tosa_INT_inplace(test_data):
     """Tests inplace mul with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](MulInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](MulInplace(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_mul_scalar_tosa_INT(test_data):
     """Tests a scalar mul with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](MulScalar(), test_data, aten_op=Mul.aten_op)
+    pipeline = TosaPipelineINT[input_t1](MulScalar(), test_data, aten_op=Mul.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
@@ -363,14 +364,14 @@ def test_mul_scalar_u85_INT():
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_div_tensor_tosa_FP_scalar(test_data):
     """Tests regular div with one scalar input."""
-    pipeline = TosaPipelineFP[input_t1](Div(), test_data, aten_op=Div.aten_op)
+    pipeline = TosaPipelineFP[input_t1](Div(), test_data, aten_op=Div.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_div_tensor_tosa_FP_inplace(test_data):
     """Tests inplace div with one scalar input."""
-    pipeline = TosaPipelineFP[input_t1](DivInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineFP[input_t1](DivInplace(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
@@ -378,7 +379,7 @@ def test_div_tensor_tosa_FP_inplace(test_data):
 def test_div_scalar_tosa_FP(test_data):
     """Tests a scalar div with one scalar input."""
     pipeline = TosaPipelineFP[input_t1](
-        DivScalar(), test_data, aten_op=DivScalar.aten_op
+        DivScalar(), test_data, aten_op=DivScalar.aten_op, run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model")
     )
     pipeline.run()
 
@@ -387,21 +388,21 @@ def test_div_scalar_tosa_FP(test_data):
 @common.parametrize("test_data", tensor_scalar_tests)
 def test_div_tensor_tosa_INT_scalar(test_data):
     """Tests regular div with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](Div(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](Div(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests)
 def test_div_tensor_tosa_INT_inplace(test_data):
     """Tests inplace div with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](DivInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](DivInplace(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_div_scalar_tosa_INT(test_data):
     """Tests a scalar div with one scalar input."""
-    pipeline = TosaPipelineINT[input_t1](DivScalar(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](DivScalar(), test_data, aten_op=[], run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"))
     pipeline.run()
 
 
@@ -422,6 +423,7 @@ def test_bitwise_right_shift_tensor_tosa_FP_inplace():
         ShiftInplaceSub(),
         (torch.IntTensor(5),),
         aten_op="torch.ops.aten.__rshift__.Scalar",
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -431,6 +433,7 @@ def test_bitwise_right_shift_tensor_tosa_INT_inplace():
         ShiftInplaceSub(),
         (torch.IntTensor(5),),
         aten_op="torch.ops.aten.bitwise_right_shift.Tensor",
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

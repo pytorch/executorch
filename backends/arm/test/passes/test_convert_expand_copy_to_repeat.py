@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
@@ -47,5 +48,6 @@ def test_expand_to_repeat_tosa_INT():
             "executorch_exir_dialects_edge__ops_aten_expand_copy_default"
         ],
         pass_list=[ConvertExpandCopyToRepeatPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

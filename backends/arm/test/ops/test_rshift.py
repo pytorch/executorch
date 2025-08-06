@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import conftest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.common import (
@@ -80,6 +81,7 @@ def test_bitwise_right_shift_scalar_tosa_FP_scalar(test_data):
         test_data(),
         RshiftScalar.torch_op_FP,
         RshiftScalar.exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     ).run()
 
 
@@ -90,6 +92,7 @@ def test_bitwise_right_shift_tensor_tosa_INT_scalar(test_data):
         test_data(),
         RshiftScalar.torch_op_INT,
         RshiftScalar.exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -165,6 +168,7 @@ def test_bitwise_right_shift_tensor_tosa_FP(test_data):
         test_data(),
         RshiftTensor.torch_op,
         RshiftTensor.exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     ).run()
 
 
@@ -175,6 +179,7 @@ def test_bitwise_right_shift_tensor_tosa_INT(test_data):
         test_data(),
         RshiftTensor.torch_op,
         RshiftTensor.exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -62,14 +63,24 @@ class MatMulCombo(torch.nn.Module):
 
 @common.parametrize("test_data", MatMul.test_data_generators)
 def test_matmul_tosa_FP(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](MatMul(), test_data(), aten_op_mm, exir_op_mm)
+    pipeline = TosaPipelineFP[input_t1](
+        MatMul(), 
+        test_data(), 
+        aten_op_mm, 
+        exir_op_mm,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", MatMulSingleInput.test_data_generators)
 def test_matmul_single_input_tosa_FP(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](
-        MatMulSingleInput(), test_data(), aten_op_mm, exir_op_mm
+        MatMulSingleInput(), 
+        test_data(), 
+        aten_op_mm, 
+        exir_op_mm,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -77,7 +88,11 @@ def test_matmul_single_input_tosa_FP(test_data: input_t1):
 @common.parametrize("test_data", MatMulCombo.test_data_generators)
 def test_matmul_combo_tosa_FP(test_data: input_t1):
     pipeline = TosaPipelineFP[input_t1](
-        MatMulCombo(), test_data(), aten_op_mm, exir_op_mm
+        MatMulCombo(), 
+        test_data(), 
+        aten_op_mm, 
+        exir_op_mm,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -85,7 +100,12 @@ def test_matmul_combo_tosa_FP(test_data: input_t1):
 @common.parametrize("test_data", MatMul.test_data_generators)
 def test_matmul_tosa_INT(test_data: input_t1):
     pipeline = TosaPipelineINT[input_t1](
-        MatMul(), test_data(), aten_op_mm, exir_op_mm, qtol=1
+        MatMul(), 
+        test_data(), 
+        aten_op_mm, 
+        exir_op_mm, 
+        qtol=1,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -98,6 +118,7 @@ def test_matmul_single_input_tosa_INT(test_data: input_t1):
         aten_op_mm,
         exir_op_mm,
         qtol=1,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -110,6 +131,7 @@ def test_matmul_combo_tosa_INT(test_data: input_t1):
         aten_op_mm,
         exir_op_mm,
         qtol=1,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 

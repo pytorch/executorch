@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.decompose_softmax_pass import DecomposeSoftmaxPass
 
@@ -70,6 +71,7 @@ def test_softmax_basic_tosa_FP():
         },
         ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten__softmax_default"],
         pass_list=[DecomposeSoftmaxPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -99,5 +101,6 @@ def test_softmax_log_tosa_FP():
             "executorch_exir_dialects_edge__ops_aten__log_softmax_default"
         ],
         pass_list=[DecomposeSoftmaxPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

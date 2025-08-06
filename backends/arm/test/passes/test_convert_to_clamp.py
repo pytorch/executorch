@@ -6,6 +6,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.convert_to_clamp import ConvertToClampPass
 
@@ -64,6 +65,7 @@ def test_tosa_FP_hardtahn(test_data: input_t):
         ops_after_pass=op_checks_after_pass,
         ops_not_after_pass=op_checks_not_after_pass,
         pass_list=[ConvertToClampPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -88,5 +90,6 @@ def test_tosa_FP_relu(test_data: input_t):
         ops_after_pass=op_checks_after_pass,
         ops_not_after_pass=op_checks_not_after_pass,
         pass_list=[ConvertToClampPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

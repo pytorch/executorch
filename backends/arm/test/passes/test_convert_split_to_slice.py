@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
@@ -63,5 +64,6 @@ def test_split_to_slice_tosa_INT(module):
             "executorch_exir_dialects_edge__ops_aten_split_with_sizes_copy_default"
         ],
         pass_list=[ConvertSplitToSlicePass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

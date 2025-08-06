@@ -81,13 +81,25 @@ class Add3(torch.nn.Module):
 
 @common.parametrize("test_data", Add.test_data)
 def test_add_tensor_tosa_FP(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](Add(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t1](
+        Add(), 
+        test_data(), 
+        aten_op, 
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", Add.test_data)
 def test_add_tensor_tosa_INT(test_data: input_t1):
-    pipeline = TosaPipelineINT[input_t1](Add(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineINT[input_t1](
+        Add(), 
+        test_data(), 
+        aten_op, 
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 
@@ -146,25 +158,49 @@ def test_add_tensor_u85_INT(test_data: input_t1):
 
 @common.parametrize("test_data", Add2.test_data)
 def test_add_tensor_tosa_FP_2(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](Add2(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t2](
+        Add2(), 
+        test_data(), 
+        aten_op, 
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", Add3.test_data)
 def test_add_tensor_tosa_FP_3(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](Add3(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t2](
+        Add3(), 
+        test_data(), 
+        aten_op, 
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", Add3.test_data)
 def test_add_tensor_tosa_INT_3(test_data: input_t2):
-    pipeline = TosaPipelineINT[input_t2](Add3(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineINT[input_t2](
+        Add3(), 
+        test_data(), 
+        aten_op, 
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", Add2.test_data)
 def test_add_tensor_tosa_INT_2(test_data: input_t2):
-    pipeline = TosaPipelineINT[input_t2](Add2(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineINT[input_t2](
+        Add2(), 
+        test_data(), 
+        aten_op, 
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 

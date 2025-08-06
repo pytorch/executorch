@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes import ConvertIntPowToMuls
 
@@ -69,5 +70,6 @@ def test_convert_pow_to_muls(data):
         },
         ops_not_after_pass=["executorch_exir_dialects_edge__ops_pow_Tensor_Scalar"],
         pass_list=[ConvertIntPowToMuls],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

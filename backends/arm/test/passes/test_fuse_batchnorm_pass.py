@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.fuse_batchnorm2d_pass import FuseBatchnorm2DPass
 from executorch.backends.arm.test import common
@@ -148,5 +149,6 @@ def test_fuse_batchnorm_tosa_FP(module: torch.nn.Module):
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseBatchnorm2DPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

@@ -47,7 +47,14 @@ models = {
 
 @common.parametrize("model", models)
 def test_qat_tosa_INT(model: torch.nn.Module):
-    pipeline = TosaPipelineINT[input_t1](model, model.test_data, [], [], qtol=1)
+    pipeline = TosaPipelineINT[input_t1](
+        model, 
+        model.test_data, 
+        [], 
+        [], 
+        qtol=1,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     tosa_version = conftest.get_option("tosa_version")
     tosa_profiles = {
         "1.0": common.TosaSpecification.create_from_string("TOSA-1.0+INT"),

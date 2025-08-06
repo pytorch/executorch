@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 
@@ -80,5 +81,6 @@ def test_decompose_var_tosa_FP(module):
         },
         ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten_var_correction"],
         pass_list=[DecomposeVarPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

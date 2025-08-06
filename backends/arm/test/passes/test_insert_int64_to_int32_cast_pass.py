@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes import InsertCastForOpsWithInt64InputPass
 
@@ -41,6 +42,7 @@ def test_int64_model_tosa_FP():
         ops_before_pass=op_checks_before,
         ops_after_pass=op_checks_after,
         pass_list=[InsertCastForOpsWithInt64InputPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.pop_stage(-1)  # Do not compare output
     pipeline.run()

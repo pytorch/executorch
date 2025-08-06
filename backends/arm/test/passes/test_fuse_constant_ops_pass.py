@@ -6,6 +6,7 @@
 import operator
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOT,
@@ -124,6 +125,7 @@ def test_fuse_const_ops_tosa_FP(module: torch.nn.Module):
         ops_after_pass=module.ops_after_pass,
         ops_not_after_pass=module.ops_not_after_pass,
         passes_with_exported_program=[ComputeConstantOpsAOT, FuseConstantArgsPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -137,6 +139,7 @@ def test_fuse_const_ops_tosa_INT(module: torch.nn.Module):
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[ComputeConstantOpsAOT, FuseConstantArgsPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -150,5 +153,6 @@ def test_fuse_const_ops_tosa_BI_cat(module: torch.nn.Module):
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[ComputeConstantOpsAOT, FuseConstantArgsPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

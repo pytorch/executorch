@@ -8,6 +8,8 @@
 
 from typing import Tuple
 
+import conftest
+
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -70,12 +72,24 @@ class SigmoidAddSigmoid(torch.nn.Module):
 
 @common.parametrize("test_data", test_data_suite)
 def test_sigmoid_tosa_FP(test_data: torch.Tensor):
-    TosaPipelineFP[input_t1](Sigmoid(), (test_data(),), aten_op, exir_op).run()
+    TosaPipelineFP[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    ).run()
 
 
 @common.parametrize("test_data", test_data_suite)
 def test_sigmoid_tosa_INT(test_data: torch.Tensor):
-    TosaPipelineINT[input_t1](Sigmoid(), (test_data(),), aten_op, exir_op).run()
+    TosaPipelineINT[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    ).run()
 
 
 def test_sigmoid_tosa_FP_add():
@@ -84,6 +98,7 @@ def test_sigmoid_tosa_FP_add():
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     ).run()
 
 
@@ -93,6 +108,7 @@ def test_sigmoid_tosa_INT_add():
         (test_data_suite["ramp"](),),
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     ).run()
 
 
@@ -102,6 +118,7 @@ def test_sigmoid_tosa_FP_add_2():
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     ).run()
 
 
@@ -111,6 +128,7 @@ def test_sigmoid_tosa_INT_add_2():
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     ).run()
 
 
@@ -120,6 +138,7 @@ def test_sigmoid_tosa_FP_add_3():
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     ).run()
 
 
@@ -129,6 +148,7 @@ def test_sigmoid_tosa_INT_3():
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     ).run()
 
 

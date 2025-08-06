@@ -6,6 +6,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     FoldAndAnnotateQParamsPass,
@@ -42,6 +43,7 @@ def test_insert_table_tosa_INT(test_data: input_t):
         ops_not_after_pass=["aten_sigmoid_default"],
         pass_list=[FoldAndAnnotateQParamsPass],
         passes_with_exported_program=[InsertTableOpsPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.pop_stage(-1)  # Do not compare output
 

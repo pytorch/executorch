@@ -8,6 +8,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm.test import common
 
@@ -42,13 +43,25 @@ class Log(torch.nn.Module):
 
 @common.parametrize("test_data", test_data_suite)
 def test_log_tosa_FP(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](Log(), (test_data(),), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t1](
+        Log(), 
+        (test_data(),), 
+        aten_op, 
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 def test_log_tosa_INT(test_data: input_t1):
-    pipeline = TosaPipelineINT[input_t1](Log(), (test_data(),), aten_op, exir_op)
+    pipeline = TosaPipelineINT[input_t1](
+        Log(), 
+        (test_data(),), 
+        aten_op, 
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 

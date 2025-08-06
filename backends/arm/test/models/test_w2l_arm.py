@@ -8,6 +8,7 @@
 import unittest
 from typing import Tuple
 
+import conftest
 import pytest
 
 import torch
@@ -53,6 +54,7 @@ def test_w2l_tosa_FP():
         TestW2L.model_example_inputs,
         aten_op=[],
         exir_op=TestW2L.all_operators,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -66,6 +68,7 @@ def test_w2l_tosa_INT():
         TestW2L.model_example_inputs,
         aten_op=[],
         exir_op=TestW2L.all_operators,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

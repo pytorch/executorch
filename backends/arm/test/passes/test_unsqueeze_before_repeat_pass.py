@@ -5,6 +5,7 @@
 
 from typing import Dict, Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes import UnsqueezeBeforeRepeatPass
 from executorch.backends.arm.test import common
@@ -54,6 +55,7 @@ def test_unsqueeze_before_repeat_tosa_FP(test_data: input_t):
         ops_after_pass=ops_after_pass,
         ops_not_after_pass=ops_not_after_pass,
         pass_list=[UnsqueezeBeforeRepeatPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.pop_stage(-1)  # Do not compare output
     pipeline.run()

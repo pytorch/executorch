@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -45,6 +46,7 @@ def test_leaky_relu_tosa_FP(test_data):
         data,
         [],
         use_to_edge_transform_and_lower=True,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.add_stage_after(
         "to_edge_transform_and_lower", pipeline.tester.check_not, [exir_op]
@@ -60,6 +62,7 @@ def test_leaky_relu_tosa_INT(test_data):
         data,
         [],
         use_to_edge_transform_and_lower=True,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.run()

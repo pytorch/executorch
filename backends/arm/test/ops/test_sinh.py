@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -48,6 +49,7 @@ def test_sinh_tosa_FP(test_data: Tuple):
         (test_data,),
         aten_op,
         exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -55,7 +57,11 @@ def test_sinh_tosa_FP(test_data: Tuple):
 @common.parametrize("test_data", test_data_suite)
 def test_sinh_tosa_INT(test_data: Tuple):
     pipeline = TosaPipelineINT[input_t1](
-        Sinh(), (test_data,), aten_op=aten_op, exir_op=exir_op
+        Sinh(), 
+        (test_data,), 
+        aten_op=aten_op, 
+        exir_op=exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 

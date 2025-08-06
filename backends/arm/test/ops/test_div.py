@@ -8,6 +8,7 @@
 
 from typing import Optional, Tuple, Union
 
+import conftest
 import torch
 from executorch.backends.arm.test import common
 
@@ -91,13 +92,25 @@ class Div(torch.nn.Module):
 
 @common.parametrize("test_data", test_data_suite)
 def test_div_tensor_tosa_FP(test_data: Tuple):
-    pipeline = TosaPipelineFP[input_t1](Div(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t1](
+        Div(), 
+        test_data(), 
+        aten_op, 
+        exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 def test_div_tensor_tosa_INT(test_data: Tuple):
-    pipeline = TosaPipelineINT[input_t1](Div(), test_data(), aten_op=[], exir_op=[])
+    pipeline = TosaPipelineINT[input_t1](
+        Div(), 
+        test_data(), 
+        aten_op=[], 
+        exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 

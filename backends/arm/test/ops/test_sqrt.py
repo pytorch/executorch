@@ -6,6 +6,7 @@
 
 from typing import Dict, Tuple
 
+import conftest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -51,6 +52,7 @@ def test_sqrt_tosa_FP(test_data: Sqrt.input_t):
         test_data(),
         Sqrt.aten_op_FP,
         Sqrt.exir_op_FP,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -62,6 +64,7 @@ def test_sqrt_tosa_INT(test_data: Sqrt.input_t):
         test_data(),
         Sqrt.aten_op_INT,
         Sqrt.exir_op_INT,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 

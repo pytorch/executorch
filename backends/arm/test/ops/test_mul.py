@@ -8,6 +8,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 
 from executorch.backends.arm.test import common
@@ -114,6 +115,7 @@ def test_mul_tensor_tosa_FP(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -125,6 +127,7 @@ def test_mul_tensor_tosa_FP_diff_input_ranks(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -136,6 +139,7 @@ def test_mul_tensor_tosa_FP_int32(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -147,6 +151,7 @@ def test_mul_tensor_tosa_INT_diff_input_ranks(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -158,6 +163,7 @@ def test_mul_tensor_tosa_INT(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -169,6 +175,7 @@ def test_mul_tensor_tosa_INT_int32(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

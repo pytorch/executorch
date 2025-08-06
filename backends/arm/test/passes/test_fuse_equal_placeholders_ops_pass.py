@@ -6,6 +6,8 @@
 from copy import deepcopy
 from typing import Tuple
 
+import conftest
+
 import torch
 from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
     FuseEqualPlaceholdersPass,
@@ -86,6 +88,7 @@ def test_fuse_equal_placeholders_constants_tosa_FP():
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseEqualPlaceholdersPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -107,6 +110,7 @@ def test_fuse_equal_placeholders_state_dict_tosa_FP():
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseEqualPlaceholdersPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -135,5 +139,6 @@ def test_not_fuse_tensor_with_different_type_FP():
         module,
         data,
         aten_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

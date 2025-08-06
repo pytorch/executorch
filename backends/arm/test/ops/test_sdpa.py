@@ -6,6 +6,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -29,17 +30,26 @@ input_t = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 def test_sdpa_FP():
     test_input = tuple(torch.randn(1, 3, 197, 64) for x in range(3))
-    pipeline = TosaPipelineFP[input_t](SDPA(), test_input, [], [])
+    pipeline = TosaPipelineFP[input_t](
+        SDPA(), 
+        test_input, 
+        [], 
+        [],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
 def test_sdpa_INT():
     test_input = tuple(torch.randn(1, 3, 197, 64) for x in range(3))
-    pipeline = TosaPipelineINT[input_t](SDPA(), test_input, [], [])
+    pipeline = TosaPipelineINT[input_t](
+        SDPA(), 
+        test_input, 
+        [], 
+        [],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.pop_stage("check_count.exir")
-    pipeline.pop_stage(
-        "run_method_and_compare_outputs"
-    )  # TODO: reference is not quantized
     pipeline.run()

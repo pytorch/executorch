@@ -6,6 +6,7 @@
 
 from typing import Dict, Tuple
 
+import conftest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -39,13 +40,25 @@ class Neg(torch.nn.Module):
 
 @common.parametrize("test_data", Neg.test_data)
 def test_neg_tosa_FP(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](Neg(), test_data, Neg.aten_op, Neg.exir_op)
+    pipeline = TosaPipelineFP[input_t1](
+        Neg(), 
+        test_data, 
+        Neg.aten_op, 
+        Neg.exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", Neg.test_data)
 def test_neg_tosa_INT(test_data: input_t1):
-    pipeline = TosaPipelineINT[input_t1](Neg(), test_data, Neg.aten_op, Neg.exir_op)
+    pipeline = TosaPipelineINT[input_t1](
+        Neg(), 
+        test_data, 
+        Neg.aten_op, 
+        Neg.exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
+    )
     pipeline.run()
 
 

@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes.remove_clone_pass import RemoveClonePass
 
@@ -39,5 +40,6 @@ def test_remove_clone_tosa_INT():
         },
         ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten_clone_default"],
         pass_list=[RemoveClonePass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

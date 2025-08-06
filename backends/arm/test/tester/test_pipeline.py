@@ -637,6 +637,7 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
         pass_functions: List of functions applied directly to the exported program.
         passes_with_exported_program: List of passes initiated with an exported_program.
         custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+        run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
 
     Passes are run in order pass_list -> pass_functions -> passes_with_exported_program.
     See arm_tester.RunPasses() for more information.
@@ -655,6 +656,7 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
         pass_functions: Optional[List[Callable]] = None,
         passes_with_exported_program: Optional[List[Type[ExportPass]]] = None,
         custom_path: str = None,
+        run_on_tosa_ref_model: bool = True,
     ):
         tosa_profiles = {
             "1.0": TosaSpecification.create_from_string(
@@ -701,7 +703,8 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
             self.add_stage(self.tester.check_count, ops_after_pass, suffix="after")
         if ops_not_after_pass:
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
-        self.add_stage(self.tester.run_method_and_compare_outputs)
+        if run_on_tosa_ref_model:
+            self.add_stage(self.tester.run_method_and_compare_outputs)
 
 
 class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
@@ -713,6 +716,7 @@ class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
         test_data: Data used for testing the module.
 
         custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+        run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
 
     """
 
@@ -721,6 +725,7 @@ class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
         module: torch.nn.Module,
         test_data: T,
         custom_path: str = None,
+        run_on_tosa_ref_model: bool = True,
     ):
         tosa_profiles = {
             "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT"),
@@ -748,11 +753,12 @@ class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
         self.pop_stage("to_executorch")
         self.pop_stage("to_edge_transform_and_lower")
         self.pop_stage("check.aten")
-        self.add_stage(
-            self.tester.run_method_and_compare_outputs,
-            inputs=test_data,
-            run_eager_mode=True,
-        )
+        if run_on_tosa_ref_model:
+            self.add_stage(
+                self.tester.run_method_and_compare_outputs,
+                inputs=test_data,
+                run_eager_mode=True,
+            )
 
 
 class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):

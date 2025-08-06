@@ -6,6 +6,7 @@
 import operator
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes import BroadcastArgsPass
 
@@ -50,5 +51,6 @@ def test_multiple_broacasts_model(module: NeedsMultipleBroadcastsModel):
         ops_not_before_pass=ops_not_before_pass,
         ops_after_pass=ops_after_pass,
         pass_list=[BroadcastArgsPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

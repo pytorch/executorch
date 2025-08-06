@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm._passes import CastInt64BuffersToInt32Pass
 
@@ -39,6 +40,7 @@ def test_int64_model(test_data: input_t):
         ops_before_pass=op_checks,
         ops_after_pass=op_checks,
         passes_with_exported_program=[CastInt64BuffersToInt32Pass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 

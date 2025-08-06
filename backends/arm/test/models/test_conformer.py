@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import pytest
 
 import torch
@@ -56,6 +57,7 @@ def test_conformer_tosa_FP():
         TestConformer.model_example_inputs,
         aten_op=TestConformer.aten_ops,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -67,6 +69,7 @@ def test_conformer_tosa_INT():
         TestConformer.model_example_inputs,
         aten_op=TestConformer.aten_ops,
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
         use_to_edge_transform_and_lower=True,
     )
     pipeline.pop_stage("check_count.exir")

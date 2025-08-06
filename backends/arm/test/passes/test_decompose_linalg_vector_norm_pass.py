@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 
 from executorch.backends.arm._passes.decompose_linalg_vector_norm_pass import (
@@ -87,5 +88,6 @@ def test_decompose_vector_norm_tosa_INT(module):
             "executorch_exir_dialects_edge__ops_aten_linarg_vector_norm_default",
         ],
         pass_list=[DecomposeLinearVectorNormPass],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()

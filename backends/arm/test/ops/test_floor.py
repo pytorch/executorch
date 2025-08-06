@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import conftest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -51,6 +52,7 @@ def test_floor_tosa_FP(test_data: input_t1):
         (data,),
         module.aten_op,
         module.exir_op,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 
@@ -65,6 +67,7 @@ def test_floor_tosa_INT(test_data: input_t1):
         module.exir_op,
         atol=0.06,
         rtol=0.01,
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
     pipeline.run()
 

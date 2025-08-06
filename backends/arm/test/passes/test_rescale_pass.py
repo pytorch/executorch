@@ -125,9 +125,8 @@ def test_quantized_rescale_tosa_bi(test_data: tuple[torch.Tensor, torch.Tensor])
         test_data=test_data,
         aten_op=[],
         exir_op=[],
+        run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
     )
-    if not conftest.is_option_enabled("tosa_ref_model"):
-        pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
 
