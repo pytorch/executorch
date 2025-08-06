@@ -88,37 +88,6 @@ def external_mutable_weights_pass(
     return PassResult(gm, mutated)
 
 
-def delegate_external_constants_pass(
-    gm: GraphModule,
-    ep: ExportedProgram,
-    gen_tag_fn: Optional[Callable[[torch.fx.Node], str]] = None,
-) -> PassResult:
-    """
-    Tag external constants before to_backend.
-
-    Note: this pass must be run after run_decompositions(), as tags on
-    constants are removed then.
-
-    Args:
-        gm: GraphModule to tag.
-        ep: ExportedProgram, to distinguish if a node is a constant.
-        gen_tag_fn: node -> str callable indicating the tag for the node.
-    Returns:
-        PassResult: The resulting gm, and if it was mutated or not.
-    """
-    mutated = False
-    for module in gm.modules():
-        if not isinstance(module, torch.fx.GraphModule):
-            continue
-        for node in module.graph.nodes:
-            if node.op == "placeholder" and is_param_node(ep, node):
-                if gen_tag_fn is not None:
-                    node.meta.setdefault("custom", {})
-                    node.meta["custom"]["delegate_constant_tag"] = gen_tag_fn(node)
-                    mutated = True
-    return PassResult(gm, mutated)
-
-
 # Note: this pass must be run on an unlifted graph, e.g. ep.module(),
 # and not on a lifted graph, e.g. ep.graph_module.
 # This is using 'get_attr' to tag constants, which only appears in
