@@ -22,14 +22,15 @@ void resize_reduce_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
 
-  int32_t reduce_dim_nchw = graph->extract_scalar<int32_t>(resize_args.at(0));
+  const int32_t reduce_dim_nchw =
+      graph->extract_scalar<int32_t>(resize_args.at(0));
 
-  std::vector<int64_t> new_sizes = in->sizes();
+  std::vector<int64_t> new_sizes = graph->sizes_of(in);
   new_sizes.at(normalize(reduce_dim_nchw, new_sizes.size())) = 1;
-  out->virtual_resize(new_sizes);
+  graph->virtual_resize(out, new_sizes);
 }
 
 utils::uvec3 reduce_global_wg_size(
