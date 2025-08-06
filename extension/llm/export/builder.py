@@ -541,6 +541,9 @@ class LLMEdgeManager:
         filename = save_pte_program(self.export_program, output_name, self.output_dir)
         self._saved_pte_filename = filename
 
+        # If there are PTD files.
+        self.export_program.write_tensor_data_to_file(self.output_dir)
+
     def get_saved_pte_filename(self) -> Optional[str]:
         """
         Return the filename of the most recenet saved .pte file. Return None if the model is not saved.

@@ -227,6 +227,20 @@ class ExportConfig:
             )
 
 
+@dataclass
+class SerializationConfig:
+    """
+    Configures properties relevant to the serialization process.
+
+    Attributes:
+        foundation_weights_file: configure the foundation weights of a model
+            to be placed in a separate file, external to the PTE. Pass the
+            intended file name here.
+    """
+
+    foundation_weights_file: Optional[str] = None
+
+
 ################################################################################
 ################################# DebugConfig ##################################
 ################################################################################
@@ -466,6 +480,7 @@ class LlmConfig:
     base: BaseConfig = field(default_factory=BaseConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
+    serialization: SerializationConfig = field(default_factory=SerializationConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
@@ -545,6 +560,12 @@ class LlmConfig:
             llm_config.export.so_library = args.so_library
         if hasattr(args, "export_only"):
             llm_config.export.export_only = args.export_only
+
+        # SerializationConfig
+        if hasattr(args, "foundation_weights_file"):
+            llm_config.serialization.foundation_weights_file = (
+                args.foundation_weights_file
+            )
 
         # QuantizationConfig
         if hasattr(args, "quantization_mode"):
