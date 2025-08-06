@@ -169,16 +169,20 @@ Error Runner::load() {
       ET_CHECK_MSG(false, "Unsupported llama evaluation mode");
       break;
   }
-
-  tokenizer_ = load_llama_tokenizer(tokenizer_path_, Version::Default);
-  if (tokenizer_ == nullptr) {
-    ET_LOG(Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());
-    return Error::Internal;
+  auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>();
+  if (tokenizer_ != nullptr) {
+    eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+    eos_ids->insert(tokenizer_->encode("<|eot|>", 0, 0).get()[0]);
+    eos_ids->insert(tokenizer_->encode("<|end_of_text|>", 0, 0).get()[0]);
+  } else {
+    tokenizer_ = load_llama_tokenizer(tokenizer_path_, Version::Default);
+    if (tokenizer_ == nullptr) {
+      ET_LOG(
+          Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());
+      return Error::Internal;
+    }
+    eos_ids->insert(tokenizer_->eos_tok());
   }
-
-  auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
-      std::unordered_set<uint64_t>{tokenizer_->eos_tok()});
-
   if (decoder_model_version_ == DecoderModelVersion::kLlama3) {
     eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
   }
