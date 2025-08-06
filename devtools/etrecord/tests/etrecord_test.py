@@ -27,8 +27,7 @@ from executorch.devtools.etrecord._etrecord import (
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.program._program import to_edge, to_edge_transform_and_lower
 
-from executorch.export import export as etexport, ExportRecipe
-from executorch.export.types import StageType
+from executorch.export import export as etexport, ExportRecipe, StageType
 from torch.export import export
 
 
