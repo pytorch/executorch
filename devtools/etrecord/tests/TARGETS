@@ -13,6 +13,7 @@ python_unittest(
         "//executorch/devtools/etrecord:etrecord",
         "//executorch/exir:lib",
         "//executorch/exir/tests:models",
+        "//executorch/export:lib",
     ],
 )
 
