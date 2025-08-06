@@ -387,21 +387,21 @@ def register_reduce_op():
                 if memory_layout is not None:
                     for dim in dim_list:
                         # For WIDTH_PACKED layout, dimension 3 (W) is packed
-                        if (
-                            memory_layout == VkMemoryLayout.TENSOR_WIDTH_PACKED
-                            and dim == 3
-                        ):
-                            return False
                         # For HEIGHT_PACKED layout, dimension 2 (H) is packed
-                        elif (
-                            memory_layout == VkMemoryLayout.TENSOR_HEIGHT_PACKED
-                            and dim == 2
-                        ):
-                            return False
                         # For CHANNELS_PACKED layout, dimension 1 (C) is packed
-                        elif (
-                            memory_layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED
-                            and dim == 1
+                        if (
+                            (
+                                memory_layout == VkMemoryLayout.TENSOR_WIDTH_PACKED
+                                and dim == 3
+                            )
+                            or (
+                                memory_layout == VkMemoryLayout.TENSOR_HEIGHT_PACKED
+                                and dim == 2
+                            )
+                            or (
+                                memory_layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED
+                                and dim == 1
+                            )
                         ):
                             return False
             except (AssertionError, KeyError, AttributeError):
