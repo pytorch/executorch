@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -37,16 +38,11 @@ void add_where_texture_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  const utils::uvec3 global_wg_size = graph.create_global_wg_size(out);
-  const utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      // Shader
       VK_KERNEL_FROM_STR(kernel_name),
-      // Workgroup sizes
-      global_wg_size,
-      local_wg_size,
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{cond, self, other}, vkapi::kRead}},
       // Parameter buffers
@@ -72,9 +68,6 @@ void add_where_buffer_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  const utils::uvec3 global_wg_size = graph.create_global_wg_size(out);
-  const utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
-
   vkapi::ParamsBindList ubos = {
       graph.numel_ubo(out),
       graph.strides_ubo(out),
@@ -82,13 +75,11 @@ void add_where_buffer_node(
       graph.strides_ubo(self),
       graph.strides_ubo(other)};
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      // Shader
       VK_KERNEL_FROM_STR(kernel_name),
-      // Workgroup sizes
-      global_wg_size,
-      local_wg_size,
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{cond, self, other}, vkapi::kRead}},
       // Parameter buffers
