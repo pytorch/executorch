@@ -1351,6 +1351,7 @@ def to_edge(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     constant_methods: Optional[Dict[str, Any]] = None,
     compile_config: Optional[EdgeCompileConfig] = None,
+    generate_etrecord: Optional[bool] = False,
 ) -> "EdgeProgramManager":
     """
     :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in
@@ -1362,6 +1363,8 @@ def to_edge(
         constant_methods: An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.
 
         compile_config: An optional argument used to provide greater control over the transformation to edge dialect process.
+
+        generate_etrecord: An optional argument used to generate an etrecord for debugging purposes.
 
     Returns:
         EdgeProgramManager
@@ -1416,7 +1419,14 @@ def to_edge(
                 logging.info(f"Input program {name} is not in Edge dialect.")
                 raise e
 
-    return EdgeProgramManager(edge_programs, constant_methods, config)
+    epm = EdgeProgramManager(edge_programs, constant_methods, config)
+    if generate_etrecord:
+        etrecord = _create_empty_etrecord()
+        etrecord.add_exported_program(aten_programs)
+        etrecord.add_edge_dialect_program(copy.deepcopy(epm))
+        epm._etrecord = etrecord
+
+    return epm
 
 
 class EdgeProgramManager:
