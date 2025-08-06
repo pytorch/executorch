@@ -19,6 +19,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/kernels/portable/cpu:vec_ops",
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
+            "//executorch/kernels/portable/cpu/util:cat_util",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
             "//executorch/kernels/portable/cpu/util:transpose_util",
             "//executorch/kernels/portable/cpu/util:index_util",
@@ -300,6 +301,20 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "cat_util",
+        srcs = ["cat_util.cpp"],
+        exported_headers = ["cat_util.h"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     runtime.cxx_library(
