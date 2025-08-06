@@ -695,7 +695,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
   set(TORCHAO_BUILD_CPU_AARCH64 ON)
   set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
-  set(TORCHAO_BUILD_KLEIDIAI OFF) # TODO: enable
+  set(TORCHAO_BUILD_KLEIDIAI ON)
 
   # TorchAO kernels look for EXECUTORCH_INCLUDE_DIRS
   if(DEFINED EXECUTORCH_INCLUDE_DIRS)
@@ -718,6 +718,17 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
+  # If using KleidiAI and XNNPACK has not installed it already, install it
+  if (TORCHAO_BUILD_KLEIDIAI AND NOT (EXECUTORCH_BUILD_XNNPACK AND EXECUTORCH_XNNPACK_ENABLE_KLEIDI))
+    install(
+      TARGETS kleidiai
+      EXPORT ExecuTorchTargets
+      DESTINATION lib
+      INCLUDES
+      DESTINATION ${_common_include_directories}
+    )
+  endif()
+
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
