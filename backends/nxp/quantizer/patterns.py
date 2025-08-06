@@ -279,7 +279,7 @@ class FlattenPattern(SharedSpecPattern):
         return [torch.ops.aten.flatten.using_ints]
 
 
-class HardTanhPattern(SharedSpecPattern):
+class HardTanhPattern(QuantizationPattern):
     """
     Quantizer for HardTanh operator. Shared quantization spec is selected, as activation functions usually follows
     computation layer.
@@ -288,8 +288,23 @@ class HardTanhPattern(SharedSpecPattern):
     def partition_types(self):
         return [torch.ops.aten.hardtanh.default]
 
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
 
-class HardTanhInPlacePattern(SharedSpecPattern):
+        return PartitionAnchors(
+            inputs=[(node, 0)],
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+    def replacement_op(self):
+        raise AssertionError()
+
+
+class HardTanhInPlacePattern(QuantizationPattern):
     """
     Quantizer for HardTanh operator with param inplace=True. Shared quantization spec is selected, as activation
     functions usually follows computation layer.
@@ -297,6 +312,21 @@ class HardTanhInPlacePattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.hardtanh_.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[(node, 0)],
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+    def replacement_op(self):
+        raise AssertionError()
 
 
 class LinearPattern(QuantizationPattern):
