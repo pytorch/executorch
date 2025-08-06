@@ -2411,47 +2411,52 @@ class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(ExportPass):
         )
 
 
-# This class encapsulates all the functions that replace/switch one op in the
-# graph with another.
-class CadenceReplaceOpsInGraph:
+# Encapsulates the generic graph improvement passes.
+class GenericReplaceOpsInGraph:
     passes = [
-        ReplaceEmptyTensorsWithFullPass,
-        ReplaceFunctionallyEquivalentOpTargets,
+            ReplaceSqueezeAndUnsqueezeWithViewPass,
+            ReplaceSplitWithSlicePass,
+            ReplaceSelectWithViewOpPass,
+            ReplaceMMWithAddMMPass,
+            ReplaceRepeatWithCatPass,
+            ReplaceFullLikeWithFullPass,
+            ReplaceFunctionallyEquivalentOpTargets,
+            ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
+            ReplaceAddMMWithLinearPass,
+            ReplacePadWithCatPass,
+            ReplaceConstantPadNdWithSlicePass,
+            ReplaceTrivialConvWithLinear,
+            ReplaceScalarTensorWithFullPass,
+            ReplaceInfArgInFullWithValuePass,
+            ReplaceLogicalNotBooleanWhereWithWherePass,
+            ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
+            ReplaceAtenApproxGeluWithApproxGeluPass,
+            ReplaceAtenConvolutionWithJarvisConvolutionPass,
+            ReplacePT2QuantWithCadenceQuantPass,
+            ReplacePT2DequantWithCadenceDequantPass,
+            ReplacePowWithMulPass,
+            ReplaceEmptyTensorsWithFullPass,
+            ReplaceScalarWithTensorArgPass,
+            RemoveNopSelectOpPass,
+            ReplaceNopTransposeOrPermuteWithViewPass,
+        ]
+
+# Encapsulates all the passes which replace ops in graph including Sadence specific ones.
+class CadenceReplaceOpsInGraph:
+    cadence_specific_passes =  [
         ReplacePermuteWithTransposePass,
-        ReplaceScalarWithTensorArgPass,
-        ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
-        ReplaceMMWithAddMMPass,
-        ReplaceSqueezeAndUnsqueezeWithViewPass,
-        ReplaceAddMMWithLinearPass,
-        RemoveNopSelectOpPass,
-        ReplaceSelectWithViewOpPass,
-        ReplaceRepeatWithCatPass,
         ReplacePadWithCatPass,
-        ReplaceConstantPadNdWithSlicePass,
         ReplaceConvWithChannelLastConvPass,
-        ReplaceAtenConvolutionWithJarvisConvolutionPass,
         ForceChannelLastForConvPass,
-        ReplaceTrivialConvWithLinear,
         ReplaceConvWithIm2RowAndLinear,
         ReplaceTransposedConvWithLinearPass,
         # This pass should be after passes that replace conv -> im2row + linear.
         ReplaceIm2RowWithViewPass,
         MakeSliceAndCatDimOutermostPass,
         ReplaceMatmulWithTransposedMatmulPass,
-        ReplaceNopTransposeOrPermuteWithViewPass,
         ReplaceLinearWithFullyConnectedOpPass,
-        ReplaceScalarTensorWithFullPass,
-        ReplaceFullLikeWithFullPass,
-        ReplaceInfArgInFullWithValuePass,
-        ReplaceLogicalNotBooleanWhereWithWherePass,
-        ReplacePT2QuantWithCadenceQuantPass,
-        ReplacePT2DequantWithCadenceDequantPass,
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
-        ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
-        ReplaceAtenApproxGeluWithApproxGeluPass,
-        ReplaceSplitWithSlicePass,
-        ReplacePowWithMulPass,
-        ReplaceMulTensorWithMulAndFullOpsPass,
     ]
+    passes = GenericReplaceOpsInGraph.passes + cadence_specific_passes
