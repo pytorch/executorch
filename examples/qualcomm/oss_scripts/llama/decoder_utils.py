@@ -19,7 +19,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     DECODER_MODEL_VERSION,
     EVAL_MODE,
 )
-
 from executorch.examples.qualcomm.utils import make_output_dir, SimpleADB
 from executorch.exir._serialize._program import deserialize_pte_binary
 from pytorch_tokenizers.hf_tokenizer import HuggingFaceTokenizer
