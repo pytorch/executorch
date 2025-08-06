@@ -16,6 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 from executorch.examples.models import deeplab_v3
@@ -86,4 +87,38 @@ def test_dl3_u85_INT():
     pipeline.change_args(
         "run_method_and_compare_outputs", rtol=1.0, atol=1.0
     )  # TODO: MLETORCH-1036 decrease tolerance
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_dl3_vgf_INT():
+    pipeline = VgfPipeline[input_t](
+        TestDl3.dl3,
+        TestDl3.model_example_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        use_to_edge_transform_and_lower=True,
+    )
+    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
+    # pipeline.change_args(
+    #     "run_method_and_compare_outputs", rtol=1.0, atol=1.0
+    # )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_dl3_vgf_FP():
+    pipeline = VgfPipeline[input_t](
+        TestDl3.dl3,
+        TestDl3.model_example_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+        use_to_edge_transform_and_lower=True,
+    )
+    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
+    # pipeline.change_args(
+    #     "run_method_and_compare_outputs", rtol=1.0, atol=1.0
+    # )
     pipeline.run()
