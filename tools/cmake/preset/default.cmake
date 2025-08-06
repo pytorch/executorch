@@ -152,6 +152,9 @@ define_overridable_option(
   EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." BOOL
   OFF
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_AOTI "Build the AOTI backend" BOOL OFF
+)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_default_executorch_build_pthreadpool OFF)
@@ -304,6 +307,10 @@ check_required_options_on(
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_XNNPACK REQUIRES EXECUTORCH_BUILD_CPUINFO
   EXECUTORCH_BUILD_PTHREADPOOL
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_AOTI REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
 check_conflicting_options_on(
