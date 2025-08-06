@@ -243,7 +243,7 @@ let imageBuffer: UnsafeMutableRawPointer = ... // Existing image buffer
 let inputTensor = Tensor<Float>(&imageBuffer, shape: [1, 3, 224, 224])
 
 // Execute the 'forward' method with the given input tensor and get an output tensor back.
-let outputTensor: Tensor<Float> = try module.forward(inputTensor)!
+let outputTensor = try Tensor<Float>(module.forward(inputTensor))
 
 // Copy the tensor data into logits array for easier access.
 let logits = outputTensor.scalars()
@@ -711,7 +711,10 @@ Inputs can be any type conforming to `ValueConvertible` (like `Tensor`, `Int`, `
 - `forward(_:)`: A convenient shortcut for executing the common "forward" method.
 
 The API provides overloads for single inputs, multiple inputs, or no inputs.
-Outputs are always returned as an array of `Value`.
+
+Outputs are returned in two ways:
+- As an array of `Value`s, letting you inspect and cast results yourself.
+- As your expected type. The generic overloads decode the result directly into your desired Swift type (such as a single `Tensor<Float>`, an array, or any custom type conforming to the `ValueSequenceConstructible` protocol). If the output doesn’t match the expected type (e.g. multiple Values returned when a single object is expected, or a tensor data type mismatch), an invalid type error is thrown.
 
 Objective-C:
 
@@ -777,6 +780,10 @@ do {
     let logits = try outputTensor.scalars()
     print("First 5 logits: \(logits.prefix(5))")
   }
+
+  // Try casting the outputs to a single typed object.
+  let tensorOutput = try Tensor<Float>(module.forward(inputTensor1, inputTensor2))
+  let logits = tensorOutput.scalars()
 } catch {
   print("Execution failed: \(error)")
 }
