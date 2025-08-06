@@ -4588,6 +4588,65 @@ class TestExampleLLMScript(TestQNN):
                         msg["inference_speed"], inference_speed_ref[self.model]
                     )
 
+    def test_qwen3(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "My favourite condiment is "
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a8w",
+            "--decoder_model",
+            "qwen3_0.6b",
+            "--model_mode",
+            "hybrid",
+            "--prefill_ar_len",
+            "32",
+            "--max_seq_len",
+            "128",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        # Accuracy is bad for now. Just check user's prompt is returned.
+        golden_start_with = "My favourite condiment is "
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                model_out = msg["result"][0]
+                self.assertTrue(
+                    model_out.startswith(golden_start_with),
+                    f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                )
+                self.assertGreaterEqual(msg["inference_speed"], 70)  # Lanai
+
 
 class TestExampleOssScript(TestQNN):
     def test_albert(self):
