@@ -720,6 +720,9 @@ def _(
             fake_edge_program = copy.deepcopy(edge_program)
         partitioner_result = partitioner_instance(fake_edge_program)
         tagged_exported_program = partitioner_result.tagged_exported_program
+        # Make sure tagged_exported_program has the same example_inputs as edge_program
+        tagged_exported_program.example_inputs = edge_program.example_inputs
+
         method_to_tagged_exported_program[method_name] = tagged_exported_program
 
         # Check that the partitioner did not modify the original graph

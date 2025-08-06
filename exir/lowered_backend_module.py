@@ -735,6 +735,7 @@ def create_exported_program_from_submodule(
                     ),
                 )
             ],
+            example_inputs=owning_program.example_inputs,
             constants=subgraph_constants,
             verifiers=[owning_program.verifier],
         ),
