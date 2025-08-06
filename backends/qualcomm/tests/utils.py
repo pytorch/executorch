@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import collections
-import copy
 import os
 import subprocess
 import tempfile
@@ -30,7 +29,7 @@ from executorch.backends.qualcomm.utils.utils import (
     get_soc_to_chipset_map,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.devtools import generate_etrecord, Inspector
+from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
@@ -512,10 +511,8 @@ class TestQNN(unittest.TestCase):
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
             skip_mutable_buffer=skip_mutable_buffer,
+            generate_etrecord=self.enable_profile,
         )
-
-        # this is needed for the ETRecord as lowering modifies the graph in-place
-        edge_copy = copy.deepcopy(delegated_program)
 
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
@@ -543,7 +540,7 @@ class TestQNN(unittest.TestCase):
 
         etrecord_path = "etrecord.bin"
         if self.enable_profile:
-            generate_etrecord(etrecord_path, edge_copy, exec_prog)
+            exec_prog.get_etrecord().save(etrecord_path)
         # Check numerics
         if (
             assert_output_equal
