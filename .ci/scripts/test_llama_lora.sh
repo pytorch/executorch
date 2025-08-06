@@ -84,8 +84,8 @@ RESULT=$(cat result.txt)
 if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
+  # Do not clean up files if test passes, as they're re-used in the next test.
   echo "Success"
-  cleanup_files
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
