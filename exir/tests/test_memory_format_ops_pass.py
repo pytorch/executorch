@@ -12,6 +12,7 @@ from typing import Union
 import torch
 
 import torchvision
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -323,6 +324,58 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
 
         self.assertTrue(is_contiguous_dim_order(actual))
         self.assertTrue(is_contiguous_dim_order(expected))
+
+    def test_op_clone_replacement_channels_last_survives(self):
+        _clone_dim_order_op_str = (
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
+        )
+
+        model = SimpleCloneChannelsLastModule()
+        x = torch.randn(3, 4, 5, 6).to(memory_format=torch.contiguous_format)
+
+        exported = export(model.eval(), (x,), strict=True)
+        before_epm = to_edge(
+            exported, compile_config=EdgeCompileConfig(_skip_dim_order=False)
+        )
+
+        updated_epm = before_epm.transform([RemoveCloneOpsTransform()])
+
+        FileCheck().check_count(_clone_dim_order_op_str, 1, exactly=True).run(
+            updated_epm.exported_program().graph_module.code
+        )
+
+        expected = before_epm.exported_program().module()(x)
+        actual = updated_epm.exported_program().module()(x)
+        assert torch.allclose(actual, expected)
+        assert is_channel_last_dim_order(actual)
+
+    def test_op_clone_without_transformation_removed(self):
+        _clone_dim_order_op_str = (
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
+        )
+
+        model = SimpleCloneChannelsLastModule()
+        x = torch.randn(3, 4, 5, 6).to(memory_format=torch.channels_last)
+
+        exported = export(model.eval(), (x,), strict=True)
+        before_epm = to_edge(
+            exported, compile_config=EdgeCompileConfig(_skip_dim_order=False)
+        )
+
+        FileCheck().check_count(_clone_dim_order_op_str, 1, exactly=True).run(
+            before_epm.exported_program().graph_module.code
+        )
+
+        updated_epm = before_epm.transform([RemoveCloneOpsTransform()])
+
+        FileCheck().check_not(_clone_dim_order_op_str).run(
+            updated_epm.exported_program().graph_module.code
+        )
+
+        expected = before_epm.exported_program().module()(x)
+        actual = updated_epm.exported_program().module()(x)
+        assert torch.allclose(actual, expected)
+        assert is_channel_last_dim_order(actual)
 
     def test_resnet18(self) -> None:
         model = torchvision.models.resnet18()
