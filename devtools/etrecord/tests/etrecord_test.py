@@ -107,14 +107,12 @@ class TestETRecord(unittest.TestCase):
 
     def get_test_model(self):
         f = models.BasicSinMax()
-        captured_output = exir.capture(f, f.get_random_inputs(), exir.CaptureConfig())
-        captured_output_copy = copy.deepcopy(captured_output)
-        edge_output = captured_output.to_edge(
-            exir.EdgeCompileConfig(_check_ir_validity=False)
+        aten_dialect = export(f, f.get_random_inputs(), strict=True)
+        edge_program: EdgeProgramManager = to_edge(
+            aten_dialect, compile_config=EdgeCompileConfig(_check_ir_validity=False)
         )
-        edge_output_copy = copy.deepcopy(edge_output)
-        et_output = edge_output.to_executorch()
-        return (captured_output_copy, edge_output_copy, et_output)
+        edge_program_copy = copy.deepcopy(edge_program)
+        return (aten_dialect, edge_program_copy, edge_program.to_executorch())
 
     def get_test_model_with_bundled_program(self):
         f = models.BasicSinMax()
@@ -132,25 +130,9 @@ class TestETRecord(unittest.TestCase):
                 ],
             )
         ]
-        captured_output = exir.capture(f, inputs[0], exir.CaptureConfig())
-        captured_output_copy = copy.deepcopy(captured_output)
-        edge_output = captured_output.to_edge(
-            exir.EdgeCompileConfig(_check_ir_validity=False)
-        )
-        edge_output_copy = copy.deepcopy(edge_output)
-        et_output = edge_output.to_executorch()
-
+        aten_dialect, edge_program_copy, et_output = self.get_test_model()
         bundled_program = BundledProgram(et_output, method_test_suites)
-        return (captured_output_copy, edge_output_copy, bundled_program)
-
-    def get_test_model_with_manager(self):
-        f = models.BasicSinMax()
-        aten_dialect = export(f, f.get_random_inputs(), strict=True)
-        edge_program: EdgeProgramManager = to_edge(
-            aten_dialect, compile_config=EdgeCompileConfig(_check_ir_validity=False)
-        )
-        edge_program_copy = copy.deepcopy(edge_program)
-        return (aten_dialect, edge_program_copy, edge_program.to_executorch())
+        return (aten_dialect, edge_program_copy, bundled_program)
 
     # Serialized and deserialized graph modules are not completely the same, so we check
     # that they are close enough and match especially on the parameters we care about in the Developer Tools.
@@ -195,11 +177,11 @@ class TestETRecord(unittest.TestCase):
 
             self.check_graph_closeness(
                 etrecord.graph_map["aten_dialect_output/forward"],
-                captured_output.exported_program.graph_module,
+                captured_output.graph_module,
             )
             self.check_graph_closeness(
                 etrecord.edge_dialect_program,
-                edge_output.exported_program.graph_module,
+                edge_output.exported_program().graph_module,
             )
             self.assertEqual(
                 etrecord._debug_handle_map,
@@ -244,25 +226,6 @@ class TestETRecord(unittest.TestCase):
                 )
             )
 
-    def test_etrecord_generation_with_manager(self):
-        captured_output, edge_output, et_output = self.get_test_model_with_manager()
-        with tempfile.TemporaryDirectory() as tmpdirname:
-            generate_etrecord(
-                tmpdirname + "/etrecord.bin",
-                edge_output,
-                et_output,
-            )
-
-            etrecord = parse_etrecord(tmpdirname + "/etrecord.bin")
-            self.check_graph_closeness(
-                etrecord.edge_dialect_program,
-                edge_output.exported_program().graph_module,
-            )
-            self.assertEqual(
-                etrecord._debug_handle_map,
-                json.loads(json.dumps(et_output.debug_handle_map)),
-            )
-
     def test_etrecord_invalid_input(self):
         captured_output, edge_output, et_output = self.get_test_model()
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -284,14 +247,14 @@ class TestETRecord(unittest.TestCase):
                         edge_output,
                         et_output,
                         extra_recorded_export_modules={
-                            reserved_name: captured_output.exported_program.graph_module
+                            reserved_name: captured_output.graph_module
                         },
                     )
 
     def test_etrecord_generation_with_exported_program(self):
         """Test that exported program can be recorded and parsed back correctly."""
         captured_output, edge_output, et_output = self.get_test_model()
-        original_exported_program = captured_output.exported_program
+        original_exported_program = captured_output
         expected_graph_id = id(original_exported_program.graph)
 
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -316,7 +279,7 @@ class TestETRecord(unittest.TestCase):
             # Validate other components are still present
             self.check_graph_closeness(
                 etrecord.edge_dialect_program,
-                edge_output.exported_program.graph_module,
+                edge_output.exported_program().graph_module,
             )
             self.assertEqual(
                 etrecord._debug_handle_map,
@@ -482,13 +445,11 @@ class TestETRecord(unittest.TestCase):
         captured_output, edge_output, et_output = self.get_test_model()
 
         # Create an ETRecord instance with existing graph_map
-        initial_graph_map = {
-            "existing_module/forward": captured_output.exported_program
-        }
+        initial_graph_map = {"existing_module/forward": captured_output}
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             graph_map=initial_graph_map,
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
@@ -518,7 +479,7 @@ class TestETRecord(unittest.TestCase):
         # Verify the modules are correctly stored
         self.check_graph_closeness(
             etrecord.graph_map["existing_module/forward"],
-            captured_output.exported_program.graph_module,
+            captured_output.graph_module,
         )
         self.check_graph_closeness(
             etrecord.graph_map["new_module/forward"],
@@ -530,9 +491,9 @@ class TestETRecord(unittest.TestCase):
         captured_output, edge_output, et_output = self.get_test_model()
 
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -540,21 +501,19 @@ class TestETRecord(unittest.TestCase):
         # Test that reserved names are rejected
         for reserved_name in ETRecordReservedFileNames:
             with self.assertRaises(RuntimeError):
-                etrecord.add_extra_export_modules(
-                    {reserved_name: captured_output.exported_program}
-                )
+                etrecord.add_extra_export_modules({reserved_name: captured_output})
 
     def test_etrecord_class_constructor_and_save(self):
         """Test that ETRecord class constructor and save method work correctly."""
         captured_output, edge_output, et_output = self.get_test_model()
-        original_exported_program = captured_output.exported_program
+        original_exported_program = captured_output
         expected_graph_id = id(original_exported_program.graph)
 
         # Create ETRecord instance directly using constructor
         etrecord = ETRecord(
             exported_program=original_exported_program,
             export_graph_id=expected_graph_id,
-            edge_dialect_program=edge_output.exported_program,
+            edge_dialect_program=edge_output.exported_program(),
             graph_map={"test_module/forward": original_exported_program},
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
@@ -579,7 +538,7 @@ class TestETRecord(unittest.TestCase):
             self.assertIsNotNone(parsed_etrecord.edge_dialect_program)
             self.check_graph_closeness(
                 parsed_etrecord.edge_dialect_program,
-                edge_output.exported_program.graph_module,
+                edge_output.exported_program().graph_module,
             )
 
             # Validate graph map
@@ -617,9 +576,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create ETRecord instance with bundled program data
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=bundled_program.executorch_program.debug_handle_map,
             _delegate_map=bundled_program.executorch_program.delegate_map,
             _reference_outputs=reference_outputs,
@@ -663,7 +622,7 @@ class TestETRecord(unittest.TestCase):
     def test_etrecord_generation_with_exported_program_dict(self):
         """Test that exported program dictionary can be recorded and parsed back correctly."""
         captured_output, edge_output, et_output = self.get_test_model()
-        original_exported_program = captured_output.exported_program
+        original_exported_program = captured_output
         exported_program_dict = {"forward": original_exported_program}
         expected_graph_id = id(original_exported_program.graph)
 
@@ -689,7 +648,7 @@ class TestETRecord(unittest.TestCase):
             # Validate other components are still present
             self.check_graph_closeness(
                 etrecord.edge_dialect_program,
-                edge_output.exported_program.graph_module,
+                edge_output.exported_program().graph_module,
             )
             self.assertEqual(
                 etrecord._debug_handle_map,
@@ -705,9 +664,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance without executorch program data
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
         )
 
         # Verify initial state - no executorch program data
@@ -719,14 +678,8 @@ class TestETRecord(unittest.TestCase):
         # Verify executorch program data is now present
         self.assertIsNotNone(etrecord._debug_handle_map)
         self.assertIsNotNone(etrecord._delegate_map)
-        self.assertEqual(
-            etrecord._debug_handle_map,
-            json.loads(json.dumps(et_output.debug_handle_map)),
-        )
-        self.assertEqual(
-            etrecord._delegate_map,
-            json.loads(json.dumps(et_output.delegate_map)),
-        )
+        self.assertEqual(etrecord._debug_handle_map, et_output.debug_handle_map)
+        self.assertEqual(etrecord._delegate_map, et_output.delegate_map)
         # For regular ExecutorchProgram, reference_outputs and representative_inputs should be None
         self.assertIsNone(etrecord._reference_outputs)
         self.assertIsNone(etrecord._representative_inputs)
@@ -741,9 +694,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance without executorch program data
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
         )
 
         # Verify initial state - no executorch program data
@@ -792,9 +745,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance with existing executorch program data
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -814,9 +767,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance with only debug_handle_map (partial data)
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
         )
 
@@ -835,9 +788,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance without executorch program data
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
         )
 
         # Add executorch program
@@ -856,13 +809,13 @@ class TestETRecord(unittest.TestCase):
             self.assertIsNotNone(parsed_etrecord.exported_program)
             self.check_graph_closeness(
                 parsed_etrecord.exported_program,
-                captured_output.exported_program.graph_module,
+                captured_output.graph_module,
             )
 
             self.assertIsNotNone(parsed_etrecord.edge_dialect_program)
             self.check_graph_closeness(
                 parsed_etrecord.edge_dialect_program,
-                edge_output.exported_program.graph_module,
+                edge_output.exported_program().graph_module,
             )
 
             # Validate executorch program data
@@ -878,7 +831,7 @@ class TestETRecord(unittest.TestCase):
             # Validate export graph id
             self.assertEqual(
                 parsed_etrecord.export_graph_id,
-                id(captured_output.exported_program.graph),
+                id(captured_output.graph),
             )
 
     def test_add_exported_program(self):
@@ -887,7 +840,7 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance without exported program
         etrecord = ETRecord(
-            edge_dialect_program=edge_output.exported_program,
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -896,18 +849,18 @@ class TestETRecord(unittest.TestCase):
         self.assert_etrecord_has_no_exported_program(etrecord)
 
         # Add exported program
-        etrecord.add_exported_program(captured_output.exported_program)
+        etrecord.add_exported_program(captured_output)
 
         # Verify exported program is now present
         self.assertIsNotNone(etrecord.exported_program)
         self.assertIsNotNone(etrecord.export_graph_id)
         self.check_graph_closeness(
             etrecord.exported_program,
-            captured_output.exported_program.graph_module,
+            captured_output.graph_module,
         )
         self.assertEqual(
             etrecord.export_graph_id,
-            id(captured_output.exported_program.graph),
+            id(captured_output.graph),
         )
 
     def test_add_exported_program_with_dict(self):
@@ -916,7 +869,7 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance without exported program
         etrecord = ETRecord(
-            edge_dialect_program=edge_output.exported_program,
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -926,7 +879,7 @@ class TestETRecord(unittest.TestCase):
         self.assertIsNone(etrecord.export_graph_id)
 
         # Add exported program as dictionary
-        exported_program_dict = {"forward": captured_output.exported_program}
+        exported_program_dict = {"forward": captured_output}
         etrecord.add_exported_program(exported_program_dict)
 
         # Verify exported program is now present
@@ -934,11 +887,11 @@ class TestETRecord(unittest.TestCase):
         self.assertIsNotNone(etrecord.export_graph_id)
         self.check_graph_closeness(
             etrecord.exported_program,
-            captured_output.exported_program.graph_module,
+            captured_output.graph_module,
         )
         self.assertEqual(
             etrecord.export_graph_id,
-            id(captured_output.exported_program.graph),
+            id(captured_output.graph),
         )
 
     def test_add_exported_program_already_exists_exception(self):
@@ -947,9 +900,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance with existing exported program
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -975,15 +928,15 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance with only export_graph_id (partial data)
         etrecord = ETRecord(
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
 
         # Verify that adding exported program raises RuntimeError even with partial data
         with self.assertRaises(RuntimeError) as context:
-            etrecord.add_exported_program(captured_output.exported_program)
+            etrecord.add_exported_program(captured_output)
 
         self.assertIn(
             "Exported program already exists in the ETRecord",
@@ -996,7 +949,7 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance without exported program
         etrecord = ETRecord(
-            edge_dialect_program=edge_output.exported_program,
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -1016,13 +969,13 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance without exported program
         etrecord = ETRecord(
-            edge_dialect_program=edge_output.exported_program,
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
 
         # Add exported program
-        etrecord.add_exported_program(captured_output.exported_program)
+        etrecord.add_exported_program(captured_output)
 
         with tempfile.TemporaryDirectory() as tmpdirname:
             etrecord_path = tmpdirname + "/etrecord_with_added_exported_program.bin"
@@ -1037,19 +990,19 @@ class TestETRecord(unittest.TestCase):
             self.assertIsNotNone(parsed_etrecord.exported_program)
             self.check_graph_closeness(
                 parsed_etrecord.exported_program,
-                captured_output.exported_program.graph_module,
+                captured_output.graph_module,
             )
 
             self.assertIsNotNone(parsed_etrecord.edge_dialect_program)
             self.check_graph_closeness(
                 parsed_etrecord.edge_dialect_program,
-                edge_output.exported_program.graph_module,
+                edge_output.exported_program().graph_module,
             )
 
             # Validate export graph id
             self.assertEqual(
                 parsed_etrecord.export_graph_id,
-                id(captured_output.exported_program.graph),
+                id(captured_output.graph),
             )
 
     def test_add_edge_dialect_program(self):
@@ -1058,8 +1011,8 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance without edge dialect program
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -1074,37 +1027,7 @@ class TestETRecord(unittest.TestCase):
         self.assertIsNotNone(etrecord.edge_dialect_program)
         self.check_graph_closeness(
             etrecord.edge_dialect_program,
-            edge_output.exported_program.graph_module,
-        )
-
-    def test_add_edge_dialect_program_with_exir_exported_program(self):
-        """Test add_edge_dialect_program with ExirExportedProgram."""
-        captured_output, edge_output, et_output = self.get_test_model()
-
-        # Create an ETRecord instance without edge dialect program
-        etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            _debug_handle_map=et_output.debug_handle_map,
-            _delegate_map=et_output.delegate_map,
-        )
-
-        # Verify initial state - no edge dialect program
-        self.assertIsNone(etrecord.edge_dialect_program)
-
-        # Create ExirExportedProgram from captured output
-        exir_exported_program = captured_output.to_edge(
-            exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=False)
-        )
-
-        # Add edge dialect program using ExirExportedProgram
-        etrecord.add_edge_dialect_program(exir_exported_program)
-
-        # Verify edge dialect program is now present
-        self.assertIsNotNone(etrecord.edge_dialect_program)
-        self.check_graph_closeness(
-            etrecord.edge_dialect_program,
-            exir_exported_program.exported_program.graph_module,
+            edge_output.exported_program().graph_module,
         )
 
     def test_add_edge_dialect_program_already_exists_exception(self):
@@ -1113,9 +1036,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance with existing edge dialect program
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -1144,8 +1067,8 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance without edge dialect program
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -1166,19 +1089,19 @@ class TestETRecord(unittest.TestCase):
             self.assertIsNotNone(parsed_etrecord.exported_program)
             self.check_graph_closeness(
                 parsed_etrecord.exported_program,
-                captured_output.exported_program.graph_module,
+                captured_output.graph_module,
             )
 
             self.assertIsNotNone(parsed_etrecord.edge_dialect_program)
             self.check_graph_closeness(
                 parsed_etrecord.edge_dialect_program,
-                edge_output.exported_program.graph_module,
+                edge_output.exported_program().graph_module,
             )
 
             # Validate export graph id
             self.assertEqual(
                 parsed_etrecord.export_graph_id,
-                id(captured_output.exported_program.graph),
+                id(captured_output.graph),
             )
 
     def test_add_all_programs_sequentially(self):
@@ -1192,7 +1115,7 @@ class TestETRecord(unittest.TestCase):
         self.assert_etrecord_is_empty(etrecord)
 
         # Add exported program
-        etrecord.add_exported_program(captured_output.exported_program)
+        etrecord.add_exported_program(captured_output)
 
         # Add edge dialect program
         etrecord.add_edge_dialect_program(edge_output)
@@ -1210,24 +1133,18 @@ class TestETRecord(unittest.TestCase):
         # Verify the data matches expected values
         self.check_graph_closeness(
             etrecord.exported_program,
-            captured_output.exported_program.graph_module,
+            captured_output.graph_module,
         )
         self.check_graph_closeness(
             etrecord.edge_dialect_program,
-            edge_output.exported_program.graph_module,
+            edge_output.exported_program().graph_module,
         )
         self.assertEqual(
             etrecord.export_graph_id,
-            id(captured_output.exported_program.graph),
+            id(captured_output.graph),
         )
-        self.assertEqual(
-            etrecord._debug_handle_map,
-            json.loads(json.dumps(et_output.debug_handle_map)),
-        )
-        self.assertEqual(
-            etrecord._delegate_map,
-            json.loads(json.dumps(et_output.delegate_map)),
-        )
+        self.assertEqual(etrecord._debug_handle_map, et_output.debug_handle_map)
+        self.assertEqual(etrecord._delegate_map, et_output.delegate_map)
 
         # Test that the complete ETRecord can be saved and parsed
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -1243,19 +1160,19 @@ class TestETRecord(unittest.TestCase):
             self.assertIsNotNone(parsed_etrecord.exported_program)
             self.check_graph_closeness(
                 parsed_etrecord.exported_program,
-                captured_output.exported_program.graph_module,
+                captured_output.graph_module,
             )
 
             self.assertIsNotNone(parsed_etrecord.edge_dialect_program)
             self.check_graph_closeness(
                 parsed_etrecord.edge_dialect_program,
-                edge_output.exported_program.graph_module,
+                edge_output.exported_program().graph_module,
             )
 
             # Validate all metadata
             self.assertEqual(
                 parsed_etrecord.export_graph_id,
-                id(captured_output.exported_program.graph),
+                id(captured_output.graph),
             )
             self.assertEqual(
                 parsed_etrecord._debug_handle_map,
@@ -1272,9 +1189,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -1310,9 +1227,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=bundled_program.executorch_program.debug_handle_map,
             _delegate_map=bundled_program.executorch_program.delegate_map,
         )
@@ -1345,9 +1262,9 @@ class TestETRecord(unittest.TestCase):
         # Create an ETRecord instance with existing representative inputs
         initial_inputs = _get_representative_inputs(bundled_program)
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=bundled_program.executorch_program.debug_handle_map,
             _delegate_map=bundled_program.executorch_program.delegate_map,
             _representative_inputs=initial_inputs,
@@ -1377,9 +1294,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -1424,9 +1341,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -1463,9 +1380,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=bundled_program.executorch_program.debug_handle_map,
             _delegate_map=bundled_program.executorch_program.delegate_map,
         )
@@ -1501,9 +1418,9 @@ class TestETRecord(unittest.TestCase):
 
         # Create an ETRecord instance
         etrecord = ETRecord(
-            exported_program=captured_output.exported_program,
-            export_graph_id=id(captured_output.exported_program.graph),
-            edge_dialect_program=edge_output.exported_program,
+            exported_program=captured_output,
+            export_graph_id=id(captured_output.graph),
+            edge_dialect_program=edge_output.exported_program(),
             _debug_handle_map=et_output.debug_handle_map,
             _delegate_map=et_output.delegate_map,
         )
@@ -1552,7 +1469,7 @@ class TestETRecord(unittest.TestCase):
                 etrecord.save(etrecord_path)
 
             self.assertIn(
-                "ETRecord must contain edge dialect program, graph map, and debug handle map to be saved",
+                "ETRecord must contain edge dialect program and executorch program to be saved",
                 str(context.exception),
             )
 

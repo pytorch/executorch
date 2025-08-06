@@ -93,9 +93,9 @@ class ETRecord:
             # pyre-ignore[6]: In call `os.fspath`, for 1st positional argument, expected `str` but got `Union[PathLike[typing.Any], str]`
             path = os.fspath(path)
 
-        if not (self.edge_dialect_program and self.graph_map and self._debug_handle_map):
+        if not (self.edge_dialect_program and self._debug_handle_map):
             raise RuntimeError(
-                "ETRecord must contain edge dialect program, graph map, and debug handle map to be saved."
+                "ETRecord must contain edge dialect program and executorch program to be saved"
             )
 
         etrecord_zip = ZipFile(path, "w")
