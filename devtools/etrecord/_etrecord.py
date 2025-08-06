@@ -70,6 +70,22 @@ class ETRecord:
         _reference_outputs: Optional[Dict[str, List[ProgramOutput]]] = None,
         _representative_inputs: Optional[List[ProgramInput]] = None,
     ):
+        """
+        Please do not construct an ETRecord object directly.
+
+        If you want to create an ETRecord for logging AOT information to further analysis, please mark `generate_etrecord`
+        as True in your export api, and get the ETRecord object from the `ExecutorchProgramManager`.
+        For exmaple:
+        ```python
+            exported_program = torch.export.export(model, inputs)
+            edge_program = to_edge_transform_and_lower(exported_program, generate_etrecord=True)
+            executorch_program = edge_program.to_executorch()
+            etrecord = executorch_program.get_etrecord()
+        ```
+
+        If user need to create an ETRecord manually, please use the `create_etrecord` function.
+        """
+
         self.exported_program = exported_program
         self.export_graph_id = export_graph_id
         self.edge_dialect_program = edge_dialect_program
@@ -81,7 +97,9 @@ class ETRecord:
 
     def save(self, path: Union[str, os.PathLike, BinaryIO, IO[bytes]]) -> None:
         """
-        Serialize and save the ETRecord to the specified path.
+        Serialize and save the ETRecord to the specified path for use in Inspector. The ETRecord
+        should contains at least edge dialect program and executorch program information for further
+        analysis, otherwise it will raise an exception.
 
         Args:
             path: Path where the ETRecord file will be saved to.
