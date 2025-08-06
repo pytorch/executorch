@@ -1,6 +1,6 @@
 import random
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 
@@ -33,7 +33,7 @@ class Tester:
         self,
         module: torch.nn.Module,
         example_inputs: Tuple[torch.Tensor],
-        stage_classes: Dict[StageType, Type],
+        stage_classes: Dict[StageType, Callable],
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         module.eval()
@@ -81,7 +81,7 @@ class Tester:
         self.stage_output = None
 
     @staticmethod
-    def default_stage_classes() -> Dict[StageType, Type]:
+    def default_stage_classes() -> Dict[StageType, Callable]:
         """
         Returns a map of StageType to default Stage implementation.
         """
@@ -311,7 +311,10 @@ class Tester:
         print(f"Comparing Stage {stage} with Stage {reference_stage}")
         for run_iteration in range(number_of_runs):
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
-            input_shapes = [generated_input.shape for generated_input in inputs_to_run]
+            input_shapes = [
+                generated_input.shape if hasattr(generated_input, "shape") else None
+                for generated_input in inputs_to_run
+            ]
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
             # Reference output (and quantization scale)

@@ -10,19 +10,15 @@ import os
 from typing import Any, Optional
 
 import numpy as np
+import serializer.tosa_serializer as ts  # type: ignore
 
 import sympy  # type: ignore
 
 import torch
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta, TosaArg
 
-from executorch.backends.arm.tosa_specification import (
-    Tosa_0_80,
-    Tosa_1_00,
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa_specification import Tosa_1_00, TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.print_program import inspect_node
 
@@ -110,20 +106,6 @@ def getNodeArgs(node: Node, tosa_spec: TosaSpecification) -> list[TosaArg]:
         raise ValueError(f"Failed processing args to op:\n{node}") from e
 
 
-def get_output_node(node: Node) -> Node:
-    return list(node.users)[0]
-
-
-""" TOSA reshape returns a tensor with the same type/values as the input.
-    No data conversion happens during a reshape operation. """
-
-
-def build_reshape(tosa_fb, input_name, new_shape, output_name):
-    attr = ts.TosaSerializerAttribute()
-    attr.ReshapeAttribute(new_shape)
-    tosa_fb.addOperator(ts.TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
-
-
 def are_fake_tensors_broadcastable(
     fake_tensors: list[FakeTensor],
 ) -> tuple[bool, list[int]]:
@@ -187,11 +169,8 @@ def broadcast_tensors(
         for broadcast. However this function also performs the broadcast and
         does not have a limit on only two input tensors.
     """
-    if isinstance(tosa_spec, Tosa_0_80):
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        reshape_helper = build_reshape
-    elif isinstance(tosa_spec, Tosa_1_00):
+    if isinstance(tosa_spec, Tosa_1_00):
         import serializer.tosa_serializer as ts
 
         reshape_helper = build_reshape_tosa_1_0
@@ -225,16 +204,7 @@ def broadcast_tensors(
         multipliers = [
             comm if curr == 1 else 1 for comm, curr in zip(common_shape, new_shape)
         ]
-        if isinstance(tosa_spec, Tosa_0_80):
-            attr = ts.TosaSerializerAttribute()
-            attr.TileAttribute(multipliers)
-            tosa_fb.addOperator(
-                ts.TosaOp.Op().TILE,
-                [reshaped.name],
-                [tiled.name],
-                attr,
-            )
-        elif isinstance(tosa_spec, Tosa_1_00):
+        if isinstance(tosa_spec, Tosa_1_00):
             multiple_shapes = tosa_fb.addConst(
                 (len(multipliers),),
                 ts.DType.SHAPE,
@@ -276,45 +246,6 @@ def build_reshape_tosa_1_0(
     )
 
 
-def reshape_for_broadcast(tosa_fb, inputs, dim_order=None):
-    assert len(inputs) == 2
-    input1 = inputs[0]
-    input2 = inputs[1]
-
-    def get_new_shape(l_rank_in, h_rank_in):
-        rank_diff = len(h_rank_in.shape) - len(l_rank_in.shape)
-        new_shape = list(l_rank_in.shape)
-
-        for _ in range(rank_diff):
-            new_shape.insert(0, 1)
-        return tuple(new_shape)
-
-    if len(input1.shape) == len(input2.shape):
-        return input1, input2
-    elif len(input1.shape) > len(input2.shape):
-        l_rank_in = input2
-        h_rank_in = input1
-    elif len(input1.shape) < len(input2.shape):
-        l_rank_in = input1
-        h_rank_in = input2
-
-    new_shape = get_new_shape(l_rank_in, h_rank_in)
-    dim_order = h_rank_in.dim_order if dim_order is None else dim_order
-    new_shape = tosa_shape(new_shape, dim_order)
-
-    reshaped = tosa_fb.addIntermediate(
-        new_shape,
-        inputs[0].dtype,
-    )
-
-    build_reshape(tosa_fb, l_rank_in.name, new_shape, reshaped.name)
-
-    if len(input1.shape) > len(input2.shape):
-        return input1, reshaped
-    else:
-        return reshaped, input2
-
-
 def is_consumer_node_depthwise_conv2d(node: Node):
     consumer_node = list(node.users)[0]
     if consumer_node.target == exir_ops.edge.aten.convolution.default:
@@ -336,35 +267,6 @@ def tosa_shape(shape, dim_order):
         [-1 if isinstance(d, torch.SymInt) else d for d in reordered]
     )
     return removed_symints
-
-
-def expand_dims(
-    tosa_graph: ts.TosaSerializer,
-    input_node: TosaArg,
-    dtype: int,
-    dim: int,
-) -> Any:
-    """Inserts TOSA operators into the tosa_graph, that perform the equivalent
-    of the expand_dims (a.k.a unsqueeze) operation. A new axis is created at the
-    dim location.
-
-    Args:
-        tosa_graph (ts.TosaSerializer): The TOSA graph to manipulate.
-        input_node (TosaArg): The parent node of the expand dim operations.
-        dtype (ts.DType): The data type expand dims operations.
-        dim (int): The dimension to expand.
-
-    Returns:
-        Any: The output tensor of the inserted operation in the TOSA graph.
-    """
-    new_shape = list(input_node.shape)
-    new_shape.insert(dim, 1)
-
-    intermediate = tosa_graph.addIntermediate(new_shape, dtype)
-
-    build_reshape(tosa_graph, input_node.name, new_shape, intermediate.name)
-
-    return intermediate
 
 
 def get_resize_parameters_1d(

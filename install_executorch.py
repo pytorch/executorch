@@ -50,6 +50,10 @@ def clean():
     print("Cleaning buck-out/...")
     shutil.rmtree("buck-out/", ignore_errors=True)
 
+    # Removes all buck cached state and metadata
+    print("Cleaning buck cached state and metadata ...")
+    shutil.rmtree(os.path.expanduser("~/.buck/buckd"), ignore_errors=True)
+
     # Clean ccache if available
     try:
         result = subprocess.run(["ccache", "--version"], capture_output=True, text=True)

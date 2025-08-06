@@ -19,7 +19,6 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 set(_common_compile_options -Wno-deprecated-declarations)
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 set(_mps_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 
@@ -51,9 +50,10 @@ add_library(mps_schema INTERFACE ${_mps_schema__outputs})
 set_target_properties(mps_schema PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
   mps_schema
-  INTERFACE ${_mps_schema__include_dir}
-            ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
-            ${_common_include_directories}
+  INTERFACE
+    $<BUILD_INTERFACE:${_mps_schema__include_dir}>
+    $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
+    ${_common_include_directories}
 )
 
 list(TRANSFORM _mps_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
@@ -70,12 +70,13 @@ target_link_libraries(
           ${MPS_FRAMEWORK} ${MPS_GRAPH_FRAMEWORK}
 )
 
-target_link_options_shared_lib(mpsdelegate)
+executorch_target_link_options_shared_lib(mpsdelegate)
 target_compile_options(mpsdelegate PUBLIC ${_common_compile_options})
 target_compile_options(mpsdelegate PRIVATE "-fno-objc-arc")
 
 install(
-  TARGETS mpsdelegate
+  TARGETS mpsdelegate mps_schema
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
