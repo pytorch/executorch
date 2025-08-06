@@ -17,6 +17,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 from torchaudio import models
@@ -99,5 +100,32 @@ def test_w2l_u85_INT():
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@pytest.mark.slow
+def test_w2l_vgf_INT():
+    pipeline = VgfPipeline[input_t](
+        TestW2L.w2l,
+        TestW2L.model_example_inputs,
+        aten_op=[],
+        exir_op=TestW2L.all_operators,
+        tosa_version="TOSA-1.0+INT",
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_w2l_vgf_FP():
+    pipeline = VgfPipeline[input_t](
+        TestW2L.w2l,
+        TestW2L.model_example_inputs,
+        aten_op=[],
+        exir_op=TestW2L.all_operators,
+        tosa_version="TOSA-1.0+FP",
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

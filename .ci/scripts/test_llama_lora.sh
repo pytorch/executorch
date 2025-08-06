@@ -80,7 +80,7 @@ cmake-out/examples/models/llama/llama_main --model_path=${MODEL_NAME}.pte --prom
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
-RESULT=$(cat lora.txt)
+RESULT=$(cat result.txt)
 if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
