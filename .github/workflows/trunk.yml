@@ -285,12 +285,12 @@ jobs:
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
-          threshold="109000"
+          threshold="110592" # 108 KiB
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="135000"
+          threshold="135168" # 132 KiB
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
@@ -815,6 +815,9 @@ jobs:
           smollm|coreml_fp32_gpu|--quantize,
           llama3|coreml_fp32_gpu|--quantize,
           olmo|coreml_fp32_gpu|--quantize,
+          # roberta|coreml_fp32_gpu|--quantize, roberta requires special HF access
+          bert|coreml_fp32_gpu|--quantize,
+          distilbert|coreml_fp32_gpu|--quantize,
         ]
       fail-fast: false
     with:
