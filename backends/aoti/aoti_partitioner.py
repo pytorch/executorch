@@ -28,7 +28,7 @@ class AOTISupportedOperators(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         supported = node.op == "call_function" and node.target in [
             exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.aten._to_copy.default,
+            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
         ]
 
         return supported
