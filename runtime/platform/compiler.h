@@ -149,8 +149,10 @@
 // As of G3 RJ-2024.3 toolchain, zu format specifier is not supported for Xtensa
 #if defined(__XTENSA__)
 #define ET_PRIsize_t "lu"
+#define ET_PRIssize_t "ld"
 #else
 #define ET_PRIsize_t "zu"
+#define ET_PRIssize_t "zd"
 #endif
 
 // Whether the compiler supports GNU statement expressions.
