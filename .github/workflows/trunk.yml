@@ -60,7 +60,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
-        model: [add]
+        model: [add, softmax, mv2]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -72,6 +72,16 @@ jobs:
         MODEL_NAME=${{ matrix.model }}
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
+        if [[ ${{ matrix.model}} == "add" ]]; then
+          SIM_LIMIT_SEC=60
+        elif [[ ${{ matrix.model}} == "softmax" ]]; then
+          SIM_LIMIT_SEC=60
+        elif [[ ${{ matrix.model}} == "mv2" ]]; then
+          SIM_LIMIT_SEC=5000
+        else
+          echo "Failed unsupported model selection ${{ matrix.model }}"
+          exit 1
+        fi
 
         source .ci/scripts/utils.sh
         source .ci/scripts/zephyr-utils.sh
@@ -118,7 +128,7 @@ jobs:
             -C mps3_board.uart0.out_file='sim.out'  \
             -C cpu0.CFGITCMSZ=15 \
             -C cpu0.CFGDTCMSZ=15 \
-            --simlimit 120
+            --simlimit ${SIM_LIMIT_SEC}
 
         # Disable exit on error
         set +e
