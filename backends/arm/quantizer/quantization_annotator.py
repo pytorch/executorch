@@ -394,6 +394,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.view.default,
     torch.ops.aten.view_as.default,
     torch.ops.aten.view_copy.default,
+    torch.ops.aten._unsafe_view.default,
     torch.ops.aten.select.int,
     torch.ops.aten.select_copy.int,
     torch.ops.aten.slice.Tensor,
@@ -426,6 +427,7 @@ _one_to_one_shared_input_qspec = [
 ]
 
 _one_to_one_shared_input_or_input_act_qspec = [
+    torch.ops.aten.alias.default,
     torch.ops.aten.clone.default,
     torch.ops.aten.hardtanh.default,
     torch.ops.aten.hardtanh_.default,
@@ -693,10 +695,10 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = None
     elif node.target in [
-        torch.ops.aten.scalar_tensor.default,
         torch.ops.aten.full.default,
         torch.ops.aten.full,
         torch.ops.aten.fill_.Scalar,
+        torch.ops.aten.scalar_tensor.default,
     ]:
         quant_properties.quant_inputs = []
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
