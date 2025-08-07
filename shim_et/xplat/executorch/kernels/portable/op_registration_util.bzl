@@ -1192,7 +1192,7 @@ ATEN_OPS = (
     op_target(
         name = "op_stack",
         deps = [
-            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+            "//executorch/kernels/portable/cpu/util:stack_util",
         ],
     ),
     op_target(

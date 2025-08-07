@@ -179,17 +179,6 @@ void get_squeeze_copy_dims_out_target_size(
     executorch::aten::SizesType* out_sizes,
     size_t* out_ndim);
 
-bool check_stack_args(
-    executorch::aten::ArrayRef<Tensor> tensors,
-    int64_t dim,
-    Tensor& out);
-
-void get_stack_out_target_size(
-    executorch::aten::ArrayRef<Tensor> tensors,
-    int64_t dim,
-    executorch::aten::SizesType* out_sizes,
-    size_t* out_ndim);
-
 bool check_tril_args(const Tensor& in, Tensor& out);
 
 bool check_split_copy_args(

@@ -569,53 +569,6 @@ void get_squeeze_copy_dims_out_target_size(
   }
 }
 
-bool check_stack_args(
-    executorch::aten::ArrayRef<Tensor> tensors,
-    int64_t dim,
-    Tensor& out) {
-  // Ensure the input tensors list is non-empty
-  ET_LOG_AND_RETURN_IF_FALSE(tensors.size() > 0);
-
-  // All input tensors need to be of the same size
-  // https://pytorch.org/docs/stable/generated/torch.stack.html
-  for (const auto i : c10::irange(tensors.size())) {
-    // All input dtypes must be castable to the output dtype.
-    ET_LOG_AND_RETURN_IF_FALSE(
-        canCast(tensors[i].scalar_type(), out.scalar_type()));
-
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(tensors[i], tensors[0].dim()));
-    for (const auto d : c10::irange(tensors[i].dim())) {
-      ET_LOG_AND_RETURN_IF_FALSE(
-          tensors_have_same_size_at_dims(tensors[i], d, tensors[0], d));
-    }
-  }
-
-  // The output tensor will have a dimension inserted, so dim should be between
-  // 0 and ndim_of_inputs + 1
-  ET_LOG_AND_RETURN_IF_FALSE(dim >= 0 && dim < tensors[0].dim() + 1);
-
-  return true;
-}
-
-void get_stack_out_target_size(
-    executorch::aten::ArrayRef<Tensor> tensors,
-    int64_t dim,
-    executorch::aten::SizesType* out_sizes,
-    size_t* out_ndim) {
-  *out_ndim = tensors[0].dim() + 1;
-
-  for (const auto d : c10::irange(*out_ndim)) {
-    int64_t d_ = static_cast<int64_t>(d);
-    if (d_ < dim) {
-      out_sizes[d_] = tensors[0].size(d_);
-    } else if (d_ == dim) {
-      out_sizes[d_] = tensors.size();
-    } else {
-      out_sizes[d_] = tensors[0].size(d_ - 1);
-    }
-  }
-}
-
 bool check_tril_args(const Tensor& in, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 2));
