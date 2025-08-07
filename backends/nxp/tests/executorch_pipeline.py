@@ -54,7 +54,7 @@ def to_quantized_edge_program(
     input_shapes: tuple[int, ...] | list[tuple[int, ...]],
     operators_not_to_delegate: list[str] = None,
     target="imxrt700",
-    neutron_converter_flavor="SDK_25_03",
+    neutron_converter_flavor="SDK_25_06",
     remove_quant_io_ops=False,
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
 ) -> EdgeProgramManager:
