@@ -64,10 +64,10 @@ from executorch.examples.models.llama.hf_download import (
 from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
+from executorch.examples.qualcomm.oss_scripts.llama import SUPPORTED_HF_MODELS
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     DECODER_MODEL_VERSION,
     EVAL_MODE,
-    HUGGING_FACE_REPO_IDS,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
     graph_module_inference,
@@ -227,7 +227,6 @@ class SingleLlama:
 
         self.has_quant_io = True
         fx_graph_module = None
-
         with torch.no_grad():
             fx_graph_module = torch.export.export(
                 self.llama_graph_module, self.inputs, strict=True
@@ -350,22 +349,10 @@ def compile(args, pte_filename, tokenizer):
     start_ts = time.time()
 
     kv_config, prefill_config = None, None
-    params_path = ""
     if args.params:
         params_path = args.params
     else:
-        if args.decoder_model == "qwen2_5":
-            cur_dir = os.path.dirname(__file__)
-            params_path = os.path.join(
-                cur_dir,
-                "..",
-                "..",
-                "..",
-                "models",
-                "qwen2_5",
-                "config",
-                "0_5b_config.json",
-            )
+        params_path = SUPPORTED_HF_MODELS[args.decoder_model].params_path
     with open(params_path) as f:
         kv_config = ModelArgs(**json.load(f))
 
@@ -439,13 +426,10 @@ def compile(args, pte_filename, tokenizer):
             raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
     if args.checkpoint is None:  # HF models
-        model_id = HUGGING_FACE_REPO_IDS[args.decoder_model]
-        if args.decoder_model == "qwen2_5":
-            from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
-                convert_weights,
-            )
-
-            checkpoint = download_and_convert_hf_checkpoint(model_id, convert_weights)
+        checkpoint = download_and_convert_hf_checkpoint(
+            SUPPORTED_HF_MODELS[args.decoder_model].repo_id,
+            SUPPORTED_HF_MODELS[args.decoder_model].convert_weights,
+        )
         state_dict = torch.load(
             checkpoint, weights_only=True, map_location="cpu", mmap=True
         )
@@ -505,7 +489,7 @@ def compile(args, pte_filename, tokenizer):
             apply_spinquant(
                 model,
                 use_r1=True,
-                use_r2=True,
+                use_r2=False,
                 use_r4=False,
                 pretrained_rotation_path=None,
                 qkv_split=True,
@@ -973,8 +957,9 @@ def _build_parser():
 
     parser.add_argument(
         "--decoder_model",
-        choices=["stories260k", "stories110m", "llama3_2", "qwen2_5"],
-        help="The Llama model to export. Current available options are: [stories260k, stories110m, llama3_2, qwen2_5]",
+        choices=["stories260k", "stories110m", "llama3_2"]
+        + list(SUPPORTED_HF_MODELS.keys()),
+        help=f"The Llama model to export. Current available options are: [stories260k, stories110m, llama3_2] + {SUPPORTED_HF_MODELS.keys()}",
         required=True,
     )
 
@@ -1185,11 +1170,19 @@ def export_llama(args) -> None:
             tokenizer, TiktokenTokenizer
         ), f"Wrong tokenizer provided for llama3_2."
         runtime_tokenizer_path = args.tokenizer_model
-    elif args.decoder_model == "qwen2_5":
-        model_id = HUGGING_FACE_REPO_IDS[args.decoder_model]
+    elif args.decoder_model in {"qwen2_5", "qwen3_0_6b", "qwen3_1_7b"}:
+        model_id = SUPPORTED_HF_MODELS[args.decoder_model].repo_id
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path)
+        with open(runtime_tokenizer_path, "r+") as file:
+            data = json.load(file)
+            # TODO: Encountered the following error during runtime, so switched behavior for now.
+            # Error: libc++abi: terminating due to uncaught exception of type std::runtime_error: Unsupported Normalizer type: NFC.
+            data.pop("normalizer")
+            file.seek(0)
+            json.dump(data, file, indent=4)
+            file.truncate()
     else:
         raise RuntimeError(f"Unknown decoder_model: {args.decoder_model}.")
 

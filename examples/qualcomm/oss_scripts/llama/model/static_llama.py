@@ -15,7 +15,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.rope import precompute_freqs_cis
+from executorch.examples.models.llama.rope import (
+    hf_precompute_freqs_cis,
+    precompute_freqs_cis,
+)
 
 
 def apply_rotary_emb_single(
@@ -48,6 +51,14 @@ class LlamaAttention(nn.Module):
         self.max_seq_len = config.max_seq_len
         self.output_new_cache_only = output_new_cache_only
         self.enable_masked_softmax = getattr(config, "enable_masked_softmax", False)
+        self.use_qk_norm = config.use_qk_norm
+        self.qk_norm_before_rope = config.qk_norm_before_rope
+
+        if self.use_qk_norm:
+            q_norm_dim = self.head_dim
+            k_norm_dim = self.head_dim
+            self.q_norm_fn = torch.nn.RMSNorm(q_norm_dim, eps=config.norm_eps)
+            self.k_norm_fn = torch.nn.RMSNorm(k_norm_dim, eps=config.norm_eps)
 
         self.wq = nn.Linear(
             self.dim,
@@ -70,7 +81,7 @@ class LlamaAttention(nn.Module):
 
         self.scale = float(self.head_dim) ** 0.5
 
-        if config.enable_r3:
+        if hasattr(config, "enable_r3") and config.enable_r3:
             self.register_buffer(
                 "r3_weight",
                 torch.tensor(
@@ -151,7 +162,7 @@ class LlamaAttention(nn.Module):
                 )
         self.wo_sha.weight.data.copy_(self.wo.weight[:, :, None, None])
 
-    def forward_sha(
+    def forward_sha(  # noqa: C901
         self,
         hidden_states: torch.Tensor,
         freqs_cos: torch.Tensor,
@@ -184,15 +195,23 @@ class LlamaAttention(nn.Module):
             .reshape(bsz, seq_len, self.head_dim)
             for wv_sha in self.wv_sha
         ]
+
         for i in range(len(q)):
+            if self.use_qk_norm and self.qk_norm_before_rope:
+                q[i] = self.q_norm_fn(q[i])
             q[i] = apply_rotary_emb_single(q[i], freqs_cos, freqs_sin)
-            if self.config.enable_r3:
+            if hasattr(self.config, "enable_r3") and self.config.enable_r3:
                 q[i] = torch.matmul(q[i], self.r3_weight.T)
+            if self.use_qk_norm and not self.qk_norm_before_rope:
+                q[i] = self.q_norm_fn(q[i])
         for i in range(len(k)):
-            k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin)
-            if self.config.enable_r3:
+            if self.use_qk_norm and self.qk_norm_before_rope:
+                k[i] = self.k_norm_fn(k[i])
+            k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin).transpose(1, 2)
+            if hasattr(self.config, "enable_r3") and self.config.enable_r3:
                 k[i] = torch.matmul(k[i], self.r3_weight.T)
-            k[i] = k[i].transpose(1, 2)
+            if self.use_qk_norm and not self.qk_norm_before_rope:
+                k[i] = self.k_norm_fn(k[i])
 
         output_y = []
         kh, vh = [], []
@@ -249,8 +268,16 @@ class LlamaAttention(nn.Module):
         k = k.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
         v = v.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
 
+        if self.use_qk_norm and self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
+
         q = apply_rotary_emb_single(q, freqs_cos, freqs_sin)
         k = apply_rotary_emb_single(k, freqs_cos, freqs_sin).permute(0, 2, 3, 1)
+
+        if self.use_qk_norm and not self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
 
         output_kh, output_vh, output_y = [], [], []
         kh, vh = [], []
@@ -403,13 +430,23 @@ class LlamaModel(nn.Module):
         self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
-        freqs_cos, freqs_sin = precompute_freqs_cis(
-            config.head_dim,
-            config.max_seq_len,
-            config.rope_freq_base,
-            config.use_scaled_rope,
-            config.rope_scale_factor,
-        )
+        if config.use_hf_rope:
+            freqs_cos, freqs_sin = hf_precompute_freqs_cis(
+                config.head_dim,
+                config.max_seq_len,
+                config.rope_freq_base,
+                config.partial_rotary_factor,
+            )
+            freqs_cos = freqs_cos[:, : freqs_cos.shape[-1] // 2]
+            freqs_sin = freqs_sin[:, : freqs_sin.shape[-1] // 2]
+        else:
+            freqs_cos, freqs_sin = precompute_freqs_cis(
+                config.head_dim,
+                config.max_seq_len,
+                config.rope_freq_base,
+                config.use_scaled_rope,
+                config.rope_scale_factor,
+            )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
 
