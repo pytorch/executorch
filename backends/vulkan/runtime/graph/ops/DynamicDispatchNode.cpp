@@ -57,13 +57,8 @@ DynamicDispatchNode::DynamicDispatchNode(
     : DispatchNode(
           graph,
           shader,
-          pick_global_wg_fn(&graph, shader, args, resize_args),
-          pick_local_wg_fn(
-              &graph,
-              shader,
-              pick_global_wg_fn(&graph, shader, args, resize_args),
-              args,
-              resize_args),
+          {1u, 1u, 1u},
+          {8u, 8u, 1u},
           args,
           params,
           push_constants,
@@ -72,7 +67,12 @@ DynamicDispatchNode::DynamicDispatchNode(
           resize_fn),
       pick_shader_fn_{nullptr},
       pick_global_wg_fn_(pick_global_wg_fn),
-      pick_local_wg_fn_(pick_local_wg_fn) {}
+      pick_local_wg_fn_(pick_local_wg_fn) {
+  global_workgroup_size_ =
+      pick_global_wg_fn(&graph, shader_, args, resize_args);
+  local_workgroup_size_ = utils::WorkgroupSize(pick_local_wg_fn(
+      &graph, shader_, global_workgroup_size_, args, resize_args));
+}
 
 void DynamicDispatchNode::encode(ComputeGraph* graph) {
   if (pick_shader_fn_) {
