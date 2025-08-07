@@ -184,6 +184,7 @@ class TestExportSessionCoreFlow(unittest.TestCase):
             "export_recipe",
             "session_name",
             "artifact_dir",
+            "generate_etrecord"
         }
         self.assertEqual(set(session._run_context.keys()), expected_context_keys)
         self.assertEqual(session._run_context["session_name"], "test_session")
