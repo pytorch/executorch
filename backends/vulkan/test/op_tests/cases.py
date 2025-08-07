@@ -1137,7 +1137,7 @@ def get_repeat_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
-    test_suite_2d.storage_types = ["utils::kTexture2D"]
+    test_suite_2d.storage_types = ["utils::kTexture3D"]
     test_suite_2d.data_gen = "make_seq_tensor"
     test_suite_2d.dtypes = ["at::kFloat"]
     test_suite_2d.test_name_suffix = "2d"
