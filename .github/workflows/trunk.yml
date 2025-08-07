@@ -123,9 +123,8 @@ jobs:
         # Disable exit on error
         set +e
         # Report failure if any of the ouptut verification checks fail
-        # store 0 if found (failure), 1 if not (success)
         grep -qF "ERROR" sim.out
-        exit_status=$?
+        exit_status=$? #store 0 if found (failure), 1 if not (success)
         if [[ "$exit_status" -eq "0" ]]; then
             cat sim.out
             set -e
@@ -133,9 +132,8 @@ jobs:
         fi
 
         # Report fail if simulation does not complete successfully
-        # store 0 if found (success), 1 if not (failure)
         grep -qF "SUCCESS: Program complete, exiting." sim.out
-        exit_status=$?
+        exit_status=$? #store 0 if found (success), 1 if not (failure)
         if [[ "$exit_status" -eq "1" ]]; then
             cat sim.out
             set -e
