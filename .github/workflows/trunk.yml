@@ -120,13 +120,17 @@ jobs:
         grep -qF "ERROR" sim.out
         exit_status=$? #store 0 if found (failure), 1 if not (success)
         if [[ "$exit_status" -eq "0" ]]; then
+          cat sim.out
           exit 1
         fi
 
         # Report fail if simulation does not complete successfully
         grep -qF "SUCCESS: Program complete, exiting." sim.out
         exit_status=$? #store 0 if found (success), 1 if not (failure)
-        exit $exit_status
+        if [[ "$exit_status" -eq "1" ]]; then
+          cat sim.out
+          exit 1
+        fi
 
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
