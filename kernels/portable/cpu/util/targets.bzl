@@ -147,9 +147,11 @@ def define_common_targets():
             "copy_ops_util.h",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
+        exported_deps = [
+            ":broadcast_util",
+        ],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
     )
