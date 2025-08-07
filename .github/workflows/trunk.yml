@@ -121,16 +121,16 @@ jobs:
         cat sim.out
 
         # Report failure if any of the ouptut verification checks fail
-        grep -F "ERROR" sim.out
-        exit_status=$? #store 0 if found (failure), 1 if not (success)
+        # store 0 if found (failure), 1 if not (success)
+        exit_status=$(grep -F "ERROR" sim.out)
         if [[ "$exit_status" -eq "0" ]]; then
           cat sim.out
           exit 1
         fi
 
         # Report fail if simulation does not complete successfully
-        grep -F "SUCCESS: Program complete, exiting." sim.out
-        exit_status=$? #store 0 if found (success), 1 if not (failure)
+        # store 0 if found (success), 1 if not (failure)
+        exit_status= $(grep -F "SUCCESS: Program complete, exiting." sim.out)
         if [[ "$exit_status" -eq "1" ]]; then
           cat sim.out
           exit 1
