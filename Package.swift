@@ -9,7 +9,7 @@
 
 import PackageDescription
 
-let version = "__VERSION__"
+let version = "0.8.0.20250807"
 let url = "https://ossci-ios.s3.amazonaws.com/executorch/"
 let debug_suffix = "_debug"
 let dependencies_suffix = "_with_dependencies"
@@ -36,8 +36,8 @@ func deliverables(_ dict: [String: [String: Any]]) -> [String: [String: Any]] {
 
 let products = deliverables([
   "backend_coreml": [
-    "sha256": "__SHA256_backend_coreml__",
-    "sha256" + debug_suffix: "__SHA256_backend_coreml_debug__",
+    "sha256": "96c36c7d584b1f27b610697dd78f171c545b041acafe153aef7dd8f1ed4f2e25",
+    "sha256" + debug_suffix: "e40b3759372775e06725bb59c77833bfa8cc81e80561d31ccef92dd0437d6d4c",
     "frameworks": [
       "Accelerate",
       "CoreML",
@@ -47,8 +47,8 @@ let products = deliverables([
     ],
   ],
   "backend_mps": [
-    "sha256": "__SHA256_backend_mps__",
-    "sha256" + debug_suffix: "__SHA256_backend_mps_debug__",
+    "sha256": "7c799620a5930e4d2abb1737c7e3dd452bad2f37208c048e50ffcc26e39231ad",
+    "sha256" + debug_suffix: "76f7d2e9ddd18c8ccef5df544e63fe753ca3793f5758ebc178eeb81d7857af02",
     "frameworks": [
       "Metal",
       "MetalPerformanceShaders",
@@ -56,33 +56,33 @@ let products = deliverables([
     ],
   ],
   "backend_xnnpack": [
-    "sha256": "__SHA256_backend_xnnpack__",
-    "sha256" + debug_suffix: "__SHA256_backend_xnnpack_debug__",
+    "sha256": "6a0d767e4af01109fd4b87e7a4f9831498f5cf17e64e706088d84212fc96bc28",
+    "sha256" + debug_suffix: "510104fb5addccf7441751045d1319a0b6782086560999ab6540f730260b2498",
     "targets": [
       "threadpool",
     ],
   ],
   "executorch": [
-    "sha256": "__SHA256_executorch__",
-    "sha256" + debug_suffix: "__SHA256_executorch_debug__",
+    "sha256": "d10f559401153ce512a65c43707a83f2a8aba23d2ca9bfaa796f5e1fa0c3b80d",
+    "sha256" + debug_suffix: "66919a2bfbce89a0f5a70e8b9fcbadef911dc9c2189b67add907630168bf074c",
     "libraries": [
       "c++",
     ],
   ],
   "executorch_llm": [
-    "sha256": "__SHA256_executorch_llm__",
-    "sha256" + debug_suffix: "__SHA256_executorch_llm_debug__",
+    "sha256": "2d8c18f9a4a5f576475bb39bed606334b29bfcd9c514a15a1461a36b2bdea6f0",
+    "sha256" + debug_suffix: "b70c51fb7ba5bcfacf8a914eb2fb29729350fc4d19fdedc05640dab35d32ce3b",
     "targets": [
       "executorch",
     ],
   ],
   "kernels_llm": [
-    "sha256": "__SHA256_kernels_llm__",
-    "sha256" + debug_suffix: "__SHA256_kernels_llm_debug__",
+    "sha256": "6c93f8221b3198b8f4b3e41a34d030f223c5239f5bb7b5236158f7aba26451f0",
+    "sha256" + debug_suffix: "42871afe98548bcf34f5540813bd75af68557c401658feae12b027f9ebb0aad6",
   ],
   "kernels_optimized": [
-    "sha256": "__SHA256_kernels_optimized__",
-    "sha256" + debug_suffix: "__SHA256_kernels_optimized_debug__",
+    "sha256": "20006400efa8f530d44701e465be360d88c6172168b2c11b82667a938673b537",
+    "sha256" + debug_suffix: "07b01659089b376377377c2d5b6a675e4d24147dab116f901caead3f54c5a364",
     "frameworks": [
       "Accelerate",
     ],
@@ -91,15 +91,15 @@ let products = deliverables([
     ],
   ],
   "kernels_quantized": [
-    "sha256": "__SHA256_kernels_quantized__",
-    "sha256" + debug_suffix: "__SHA256_kernels_quantized_debug__",
+    "sha256": "594d1772439cd25f9f3f15d287699fa3fdab06fa33748613059ffe1de70df00f",
+    "sha256" + debug_suffix: "d0c88a3edf511dc37ce174a10b764d5003a3073c2a3d64a07443735a03fed0fb",
   ],
 ])
 
 let targets = deliverables([
   "threadpool": [
-    "sha256": "__SHA256_threadpool__",
-    "sha256" + debug_suffix: "__SHA256_threadpool_debug__",
+    "sha256": "d4802dd75eedfc8dbe80c0ff008a84c77187dd291c9710009bc36b964dd272b8",
+    "sha256" + debug_suffix: "c657473320861d14d639e8cced88068d3ef0b9aff826cdab413dca5bd39aebcc",
   ],
 ])
 
