@@ -234,6 +234,7 @@ jobs:
           - test_arm_baremetal: test_models_tosa
           - test_arm_baremetal: test_models_ethos-u55
           - test_arm_baremetal: test_models_ethos-u85
+          - test_arm_baremetal: test_smaller_stories_llama
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
