@@ -130,6 +130,12 @@ const float et_rtol = 0.01;
 
 #endif
 
+#if defined(ET_NUM_INFERENCES)
+const int num_inferences = ET_NUM_INFERENCES;
+#else
+const int num_inferences = 1;
+#endif
+
 /**
  * The temp_allocation_pool is used for allocating temporary data during kernel
  * or delegate execution. This will be reset after each kernel or delegate call.
@@ -638,21 +644,6 @@ void runner_init(
   ET_LOG(Info, "Input prepared.");
 }
 
-void run_model(RunnerContext& ctx) {
-  ET_LOG(Info, "Starting the model execution...");
-
-  StartMeasurements();
-  // Run the model.
-  Error status = ctx.method.value()->execute();
-  StopMeasurements();
-
-  ET_CHECK_MSG(
-      status == Error::Ok,
-      "Execution of method %s failed with status 0x%" PRIx32,
-      ctx.method_name,
-      status);
-}
-
 void log_mem_status(const RunnerContext& ctx) {
   size_t executor_memsize =
       ctx.method_allocator->used_size() - ctx.executor_membase;
@@ -853,6 +844,32 @@ void verify_result(RunnerContext& ctx, const void* model_pte) {
 #endif
 }
 
+void run_model(RunnerContext& ctx, const void* model_pte) {
+  Error status;
+  ET_LOG(Info, "Starting running %d inferences...", num_inferences);
+
+  int n = 0;
+  StartMeasurements();
+  for (n = 1; n <= num_inferences; n++) {
+    // Run the model.
+    status = ctx.method.value()->execute();
+    if (status != Error::Ok) {
+      break;
+    }
+  }
+  StopMeasurements(n);
+
+  ET_CHECK_MSG(
+      status == Error::Ok,
+      "Execution of method %s failed with status 0x%" PRIx32,
+      ctx.method_name,
+      status);
+
+  ET_LOG(Info, "%d inferences finished", num_inferences);
+  print_outputs(ctx);
+  verify_result(ctx, model_pte);
+}
+
 } // namespace
 
 int main(int argc, const char* argv[]) {
@@ -934,11 +951,9 @@ int main(int argc, const char* argv[]) {
       Info, "PTE in %p %c Size: %lu bytes", model_pte, model_pte[0], pte_size);
 
   runner_init(ctx, input_buffers, pte_size);
-  run_model(ctx);
+  run_model(ctx, model_pte);
   log_mem_status(ctx);
-  print_outputs(ctx);
   write_etdump(ctx);
-  verify_result(ctx, model_pte);
 
   ET_LOG(Info, "Program complete, exiting.");
 #if defined(SEMIHOSTING)
