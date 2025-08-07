@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -155,6 +156,11 @@ class VarCorrection(torch.nn.Module):
         return x.var(dim=self.dim, keepdim=self.keepdim, correction=self.correction)
 
 
+##########
+## Var ###
+##########
+
+
 @common.parametrize("test_data", Var.test_parameters)
 def test_var_dim_tosa_FP_no_dim(test_data: Tuple):
     test_data, keepdim, correction = test_data()
@@ -205,6 +211,35 @@ def test_var_dim_u85_INT_no_dim(test_data: Tuple):
         run_on_fvp=True,
     )
     pipeline.run()
+
+
+@common.parametrize("test_data", Var.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_FP_no_dim(test_data: Tuple):
+    data, keepdim, correction = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Var(keepdim, correction), (data,), [], [], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Var.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_INT_no_dim(test_data: Tuple):
+    data, keepdim, correction = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Var(keepdim, correction),
+        (data,),
+        [],
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+#############
+## VarDim ###
+#############
 
 
 @common.parametrize("test_data", VarDim.test_parameters)
@@ -260,6 +295,35 @@ def test_var_dim_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
+@common.parametrize("test_data", VarDim.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_FP(test_data: Tuple):
+    data, dim, keepdim, unbiased = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarDim(dim, keepdim, unbiased), (data,), [], [], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarDim.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_INT(test_data: Tuple):
+    data, dim, keepdim, unbiased = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarDim(dim, keepdim, unbiased),
+        (data,),
+        [],
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+####################
+## VarCorrection ###
+####################
+
+
 @common.parametrize("test_data", VarCorrection.test_parameters)
 def test_var_dim_tosa_FP_correction(test_data: Tuple):
     test_data, dim, keepdim, correction = test_data()
@@ -308,5 +372,29 @@ def test_var_dim_u85_INT_correction(test_data: Tuple):
         aten_ops=[],
         exir_ops=[],
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarCorrection.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_FP_correction(test_data: Tuple):
+    data, dim, keepdim, corr = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarCorrection(dim, keepdim, corr), (data,), [], [], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarCorrection.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_INT_correction(test_data: Tuple):
+    data, dim, keepdim, corr = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarCorrection(dim, keepdim, corr),
+        (data,),
+        [],
+        [],
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

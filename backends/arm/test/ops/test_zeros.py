@@ -12,6 +12,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -113,4 +114,34 @@ def test_zeros_tosa_INT_not_delegated(test_data: test_data_t):
     pipeline = OpNotSupportedPipeline[input_t](
         ZerosAdd(*init_data), input_data(), non_delegated_ops={}, quantize=True
     )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    ZerosAdd.test_data,
+)
+@common.SkipIfNoModelConverter
+def test_zeros_vgf_FP(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        ZerosAdd(*init_data), input_data(), ZerosAdd.aten_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    ZerosAdd.test_data,
+)
+@common.SkipIfNoModelConverter
+def test_zeros_vgf_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        ZerosAdd(*init_data),
+        input_data(),
+        ZerosAdd.aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
