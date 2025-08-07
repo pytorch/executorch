@@ -11,6 +11,9 @@ from typing import Tuple
 import pytest
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_16a8w_quantization_config,
+)
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -257,4 +260,34 @@ def test_linear_vgf_INT(test_data: torch.Tensor):
         tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
     )
+    pipeline.run()
+
+
+@pytest.mark.xfail(
+    reason="TOSA backend has limited INT16 support - view operations only support INT8/INT32/FP32/BOOL"
+)
+@common.parametrize("test_data", test_data_rank1_INT)
+def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
+    """Test linear operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+
+    # Create pipeline with custom 16A8W quantization config
+    pipeline = TosaPipelineINT[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op,
+        exir_op=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        quantization_config=get_16a8w_quantization_config(
+            is_per_channel=per_channel_quantization
+        ),
+    )
+
+    # Run the pipeline
     pipeline.run()

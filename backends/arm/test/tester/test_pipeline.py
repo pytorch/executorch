@@ -107,7 +107,6 @@ class BasePipelineMaker(Generic[T]):
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
     ):
-
         self.tester = ArmTester(
             module,
             example_inputs=test_data,
@@ -306,6 +305,7 @@ class TosaPipelineINT(BasePipelineMaker, Generic[T]):
         rtol: float = 1e-03,
         qtol: int = 1,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        quantization_config: Optional[Any] = None,
     ):
         tosa_profiles = {
             "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT"),
@@ -317,9 +317,11 @@ class TosaPipelineINT(BasePipelineMaker, Generic[T]):
         )
 
         quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-        quantization_config = get_symmetric_quantization_config(
-            is_per_channel=per_channel_quantization
-        )
+        # Use custom quantization config if provided, otherwise use default
+        if quantization_config is None:
+            quantization_config = get_symmetric_quantization_config(
+                is_per_channel=per_channel_quantization
+            )
         if symmetric_io_quantization:
             quantizer.set_io(quantization_config)
         quant_stage = Quantize(quantizer, quantization_config)
@@ -856,7 +858,6 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
     ):
-
         tosa_profile = TosaSpecification.create_from_string(tosa_version)
         compile_spec = common.get_vgf_compile_spec(
             tosa_profile, compiler_flags=vgf_compiler_flags, custom_path=custom_path
