@@ -1,22 +1,24 @@
-name: Add Unanswered PRs and Issues to PyTorch Project 133
+name: Add Unanswered PRs and Issues to PyTorch Org Project 136
 
 on:
   schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
+    - cron: '0 * * * *'    # every hour, on the hour (UTC)
+  workflow_dispatch:         # allows manual runs too
 
 jobs:
   add_to_project:
     runs-on: ubuntu-latest
     steps:
-      - name: Query unanswered PRs and issues and add to project
+      - name: Query open PRs and issues and add to org project
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.PYTORCH_PROJECT_PAT }}
           script: |
-            const projectId = "PVT_kwDOAUB9vs4A-j69";
+            const projectId = "PVT_kwDOAUB9vs4A_PUL"; // PyTorch org project 136
+            const owner = 'pytorch';
+            const repo = 'executorch';
 
-            async function addItem(contentId) {
+            async function addItem(contentId, type, number) {
               try {
                 await github.graphql(`
                   mutation {
@@ -25,52 +27,48 @@ jobs:
                     }
                   }
                 `);
-                console.log(`Added item with contentId: ${contentId}`);
+                console.log(`Added ${type} #${number} to project`);
               } catch (error) {
-                console.log(`Error adding item ${contentId}: ${error.message}`);
+                console.log(`Error adding ${type} #${number}: ${error.message}`);
               }
             }
 
             try {
-              // Get unanswered PRs: open, not draft, not approved
-              const prs = await github.paginate(
-                github.rest.pulls.list,
-                {
-                  owner: 'pytorch',
-                  repo: 'executorch',
-                  state: 'open',
-                  draft: false,
-                }
-              );
-
-              for (const pr of prs) {
-                const reviews = await github.rest.pulls.listReviews({
-                  owner: 'pytorch',
-                  repo: 'executorch',
-                  pull_number: pr.number
-                });
-                const approved = reviews.data.some(r => r.state === 'APPROVED');
-                if (!approved) {
-                  console.log(`Adding unanswered PR #${pr.number}`);
-                  await addItem(pr.node_id);
-                }
-              }
-
-              // Get open issues (not PRs)
+              // Add open issues (not PRs)
               const issues = await github.paginate(
                 github.rest.issues.listForRepo,
                 {
-                  owner: 'pytorch',
-                  repo: 'executorch',
+                  owner,
+                  repo,
                   state: 'open',
                   filter: 'all'
                 }
               );
-
               for (const issue of issues) {
                 if (!issue.pull_request) {
-                  console.log(`Adding open issue #${issue.number}`);
-                  await addItem(issue.node_id);
+                  await addItem(issue.node_id, 'issue', issue.number);
+                }
+              }
+
+              // Add open, non-draft PRs with NO approved reviews
+              const prs = await github.paginate(
+                github.rest.pulls.list,
+                {
+                  owner,
+                  repo,
+                  state: 'open',
+                  draft: false,
+                }
+              );
+              for (const pr of prs) {
+                const reviews = await github.rest.pulls.listReviews({
+                  owner,
+                  repo,
+                  pull_number: pr.number
+                });
+                const approved = reviews.data.some(r => r.state === 'APPROVED');
+                if (!approved) {
+                  await addItem(pr.node_id, 'pr', pr.number);
                 }
               }
             } catch (error) {
