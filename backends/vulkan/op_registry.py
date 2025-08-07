@@ -384,26 +384,14 @@ def register_reduce_op():
                 memory_layout = utils.get_node_memory_layout(node)
 
                 # If we have memory layout information, check if any dimension in dim_list corresponds to a packed dimension
-                if memory_layout is not None:
-                    for dim in dim_list:
-                        # For WIDTH_PACKED layout, dimension 3 (W) is packed
-                        # For HEIGHT_PACKED layout, dimension 2 (H) is packed
-                        # For CHANNELS_PACKED layout, dimension 1 (C) is packed
-                        if (
-                            (
-                                memory_layout == VkMemoryLayout.TENSOR_WIDTH_PACKED
-                                and dim == 3
-                            )
-                            or (
-                                memory_layout == VkMemoryLayout.TENSOR_HEIGHT_PACKED
-                                and dim == 2
-                            )
-                            or (
-                                memory_layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED
-                                and dim == 1
-                            )
-                        ):
-                            return False
+                if (
+                    memory_layout is not None
+                    and memory_layout != VkMemoryLayout.DEFAULT_LAYOUT
+                ):
+                    # For now only default layout is supported for 2D reduction.
+                    # Because we can't determine if the input is NCHW or NHWC here,
+                    # assume the reduction dimension is packed so we cannot support it.
+                    return False
             except (AssertionError, KeyError, AttributeError):
                 # If we can't get memory layout information, we'll assume the dims aren't packed
                 pass
