@@ -12,7 +12,7 @@ from typing import cast, List
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 
-from executorch.backends.arm.tosa_quant_utils import dq_ops, q_ops
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -62,7 +62,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
         }
         for partition in matmul_partitions:
             quantized_input = all(
-                input_node.target in dq_ops for input_node in partition.input_nodes
+                input_node.target in DQ_OPS for input_node in partition.input_nodes
             )
             matmul_node = [
                 node for node in partition.nodes if node.target in matmul_targets
@@ -93,7 +93,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
                     graph_module.graph.erase_node(partition_input)
 
             partition_output = list(partition.output_nodes[0].users)[0]
-            quantized_output = partition_output.target in q_ops
+            quantized_output = partition_output.target in Q_OPS
             if quantized_output:
                 with graph_module.graph.inserting_after(matmul_node):
                     # Create q-node after matmul

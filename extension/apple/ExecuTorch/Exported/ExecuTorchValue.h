@@ -50,6 +50,7 @@ typedef float ExecuTorchFloatValue
  */
 NS_SWIFT_NAME(Value)
 __attribute__((deprecated("This API is experimental.")))
+__attribute__((objc_subclassing_restricted))
 @interface ExecuTorchValue : NSObject <NSCopying>
 
 /**

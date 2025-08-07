@@ -17,7 +17,7 @@ allprojects {
 
         dependencies {
             classpath 'com.android.tools.build:gradle:8.9.0'
-            classpath 'com.vanniktech:gradle-maven-publish-plugin:0.31.0'
+            classpath 'com.vanniktech:gradle-maven-publish-plugin:0.34.0'
         }
 
     }

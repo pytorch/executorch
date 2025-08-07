@@ -582,7 +582,7 @@ public extension AnyTensor {
 /// This class encapsulates a type-erasing `AnyTensor` instance and provides a variety of
 /// initializers and utility methods to work with tensor data.
 @available(*, deprecated, message: "This API is experimental.")
-public class Tensor<T: Scalar>: Equatable {
+public final class Tensor<T: Scalar>: Equatable {
   /// The data type of the tensor's elements.
   public var dataType: DataType { anyTensor.dataType }
 
@@ -770,17 +770,14 @@ public class Tensor<T: Scalar>: Equatable {
   /// - Parameter body: A closure that receives an `UnsafeBufferPointer<T>` bound to the tensor’s data.
   /// - Returns: The value returned by `body`.
   /// - Throws: Any error thrown by `body`.
-  public func withUnsafeBytes<R>(_ body: (UnsafeBufferPointer<T>) throws -> R) throws -> R {
-    var result: Result<R, Error>?
-    anyTensor.bytes { pointer, count, _ in
-      result = Result { try body(
-        UnsafeBufferPointer(
-          start: pointer.assumingMemoryBound(to: T.self),
-          count: count
-        )
-      ) }
+  public func withUnsafeBytes<R>(_ body: (UnsafeBufferPointer<T>) throws -> R) rethrows -> R {
+    try withoutActuallyEscaping(body) { body in
+      var result: Result<R, Error>?
+      anyTensor.bytes { pointer, count, _ in
+        result = Result { try body(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: T.self), count: count)) }
+      }
+      return try result!.get()
     }
-    return try result!.get()
   }
 
   /// Calls the closure with a typed, mutable buffer pointer over the tensor’s elements.
@@ -788,17 +785,14 @@ public class Tensor<T: Scalar>: Equatable {
   /// - Parameter body: A closure that receives an `UnsafeMutableBufferPointer<T>` bound to the tensor’s data.
   /// - Returns: The value returned by `body`.
   /// - Throws: Any error thrown by `body`.
-  public func withUnsafeMutableBytes<R>(_ body: (UnsafeMutableBufferPointer<T>) throws -> R) throws -> R {
-    var result: Result<R, Error>?
-    anyTensor.mutableBytes { pointer, count, _ in
-      result = Result { try body(
-        UnsafeMutableBufferPointer(
-          start: pointer.assumingMemoryBound(to: T.self),
-          count: count
-        )
-      ) }
+  public func withUnsafeMutableBytes<R>(_ body: (UnsafeMutableBufferPointer<T>) throws -> R) rethrows -> R {
+    try withoutActuallyEscaping(body) { body in
+      var result: Result<R, Error>?
+      anyTensor.mutableBytes { pointer, count, _ in
+        result = Result { try body(UnsafeMutableBufferPointer(start: pointer.assumingMemoryBound(to: T.self), count: count)) }
+      }
+      return try result!.get()
     }
-    return try result!.get()
   }
 
   /// Resizes the tensor to a new shape.
@@ -830,9 +824,8 @@ public extension Tensor {
   /// Returns the tensor's elements as an array of scalars.
   ///
   /// - Returns: An array of scalars of type `T`.
-  /// - Throws: An error if the underlying data cannot be accessed.
-  func scalars() throws -> [T] {
-    try withUnsafeBytes { Array($0) }
+  func scalars() -> [T] {
+    withUnsafeBytes { Array($0) }
   }
 }
 

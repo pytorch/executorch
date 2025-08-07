@@ -115,7 +115,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   float temperature_ = 0.0f;
   int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
-  std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
+  std::unique_ptr<example::LlavaRunner> multi_modal_runner_;
 
  public:
   constexpr static auto kJavaDescriptor =

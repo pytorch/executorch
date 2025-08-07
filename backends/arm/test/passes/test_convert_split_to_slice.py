@@ -45,7 +45,7 @@ modules = {"split_basic": Split(), "split_tensor": SplitTensor()}
 
 
 @common.parametrize("module", modules)
-def test_split_to_slice_tosa_BI(module):
+def test_split_to_slice_tosa_INT(module):
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),

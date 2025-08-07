@@ -1,7 +1,7 @@
 import copy
 import itertools
 import unittest
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import torch
 from executorch.examples.models.llama.attention import AttentionMHA
@@ -12,6 +12,7 @@ from executorch.examples.models.llama.static_attention import (
     StaticAttention,
     StaticAttentionIOManager,
     StaticAttentionMask,
+    StaticKCache,
     StaticKVCache,
 )
 
@@ -19,6 +20,37 @@ from executorch.examples.models.llama.static_attention import (
 class StaticAttentionTest(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(42)
+
+    def test_sliding_window_cache_and_mask(self):
+        def test(style):
+            cache_len = 16
+
+            # Cache initialized to -128, mask to 64, integers from 0 are added to cache,
+            # check the set of positive values in cache + mask.
+            cache = StaticKCache(0, 0)
+            cache_data = torch.full((1, cache_len, 1), -128, dtype=torch.int64)
+            mask = StaticAttentionMask(
+                1, cache_len, style=style, mask_val=64, dtype=torch.int64
+            )
+            for i in range(0, 3 * cache_len, 3):
+                update = torch.tensor([i, i + 1, i + 2], dtype=torch.int64).view(
+                    1, 3, 1
+                )
+                cache_data = cache.apply_update(
+                    cache_data,
+                    update,
+                    i % cache_len,
+                    style,
+                )
+                mask.unmask(3)
+                unmasked_cache_data = cache_data.flatten() + mask.tensor.flatten()[:-1]
+                self.assertEqual(
+                    Counter([x for x in unmasked_cache_data.tolist() if x >= 0]),
+                    Counter(list(range(i + 2, -1, -1))[:cache_len]),
+                )
+
+        test("shift_pointer")
+        test("smart_mask")
 
     def test_without_cache(self):
         def test(
@@ -75,7 +107,7 @@ class StaticAttentionTest(unittest.TestCase):
                 x,
                 freqs_cos,
                 freqs_sin,
-                mask=mask,
+                masks={0: mask},
             )
             self.assertTrue(
                 torch.isclose(y, expected, rtol=1e-3).all(),
@@ -139,7 +171,7 @@ class StaticAttentionTest(unittest.TestCase):
                     x[:, i * chunk_len : (i + 1) * chunk_len, :],
                     hf_freqs_cos[i * chunk_len : (i + 1) * chunk_len],
                     hf_freqs_sin[i * chunk_len : (i + 1) * chunk_len],
-                    mask=mask.tensor,
+                    masks={cache_len: mask.tensor},
                     in_cache_state=(k_caches, v_caches),
                     out_cache_state=({}, {}),
                 )

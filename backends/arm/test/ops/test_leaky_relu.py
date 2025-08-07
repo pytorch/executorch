@@ -8,10 +8,11 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.leaky_relu.default"
@@ -37,9 +38,9 @@ class LeakyReLU(torch.nn.Module):
 
 
 @common.parametrize("test_data", LeakyReLU.test_data)
-def test_leaky_relu_tosa_MI(test_data):
+def test_leaky_relu_tosa_FP(test_data):
     data, slope = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         LeakyReLU(slope),
         data,
         [],
@@ -52,9 +53,9 @@ def test_leaky_relu_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", LeakyReLU.test_data)
-def test_leaky_relu_tosa_BI(test_data):
+def test_leaky_relu_tosa_INT(test_data):
     data, slope = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         LeakyReLU(slope),
         data,
         [],
@@ -66,9 +67,9 @@ def test_leaky_relu_tosa_BI(test_data):
 
 @common.parametrize("test_data", LeakyReLU.test_data)
 @common.XfailIfNoCorstone300
-def test_leaky_relu_u55_BI(test_data):
+def test_leaky_relu_u55_INT(test_data):
     data, slope = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         LeakyReLU(slope),
         data,
         [],
@@ -81,14 +82,46 @@ def test_leaky_relu_u55_BI(test_data):
 
 @common.parametrize("test_data", LeakyReLU.test_data)
 @common.XfailIfNoCorstone320
-def test_leaky_relu_u85_BI(test_data):
+def test_leaky_relu_u85_INT(test_data):
     data, slope = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         LeakyReLU(slope),
         data,
         [],
         run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
+    )
+    pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
+    pipeline.run()
+
+
+@common.parametrize("test_data", LeakyReLU.test_data)
+@common.SkipIfNoModelConverter
+def test_leaky_relu_vgf_FP(test_data):
+    data, slope = test_data()
+    pipeline = VgfPipeline[input_t1](
+        LeakyReLU(slope),
+        data,
+        [],
+        use_to_edge_transform_and_lower=True,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower", pipeline.tester.check_not, [aten_op]
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", LeakyReLU.test_data)
+@common.SkipIfNoModelConverter
+def test_leaky_relu_vgf_INT(test_data):
+    data, slope = test_data()
+    pipeline = VgfPipeline[input_t1](
+        LeakyReLU(slope),
+        data,
+        [],
+        use_to_edge_transform_and_lower=True,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.run()

@@ -104,39 +104,47 @@ class SimpleADB:
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
 
-    def _adb(self, cmd):
+    def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
             cmds = ["adb", "-s", self.device_id]
         else:
             cmds = ["adb", "-H", self.host_id, "-s", self.device_id]
         cmds.extend(cmd)
 
-        subprocess.run(
-            cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
-        )
+        if output_callback:
+            result = subprocess.run(
+                cmds, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            output_callback(result)
+        else:
+            subprocess.run(
+                cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
+            )
 
-    def push(self, inputs=None, input_list=None, files=None):
-        self._adb(["shell", f"rm -rf {self.workspace}"])
-        self._adb(["shell", f"mkdir -p {self.workspace}"])
+    def push(self, inputs=None, input_list=None, files=None, init_env=True):
+        artifacts = []
+        if init_env:
+            self._adb(["shell", f"rm -rf {self.workspace}"])
+            self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-        # necessary artifacts
-        artifacts = [
-            *self.pte_path,
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
-            (
-                f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
-                f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
-            ),
-            (
-                f"{self.qnn_sdk}/lib/aarch64-android/"
-                f"libQnnHtpV{self.htp_arch}Stub.so"
-            ),
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
-            f"{self.build_path}/{self.runner}",
-            f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
-        ]
+            # necessary artifacts
+            artifacts = [
+                *self.pte_path,
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
+                (
+                    f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                    f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
+                ),
+                (
+                    f"{self.qnn_sdk}/lib/aarch64-android/"
+                    f"libQnnHtpV{self.htp_arch}Stub.so"
+                ),
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
+                f"{self.build_path}/{self.runner}",
+                f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
+            ]
         input_list_file, input_files = generate_inputs(
             self.working_dir, self.input_list_filename, inputs, input_list
         )
@@ -171,7 +179,12 @@ class SimpleADB:
             for file_name in files:
                 self._adb(["push", file_name, self.workspace])
 
-    def execute(self, custom_runner_cmd=None, method_index=0):
+    def execute(
+        self,
+        custom_runner_cmd=None,
+        method_index=0,
+        output_callback: Optional[Callable[[str], None]] = None,
+    ):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
@@ -203,8 +216,9 @@ class SimpleADB:
             )
         else:
             qnn_executor_runner_cmds = custom_runner_cmd
-
-        self._adb(["shell", f"{qnn_executor_runner_cmds}"])
+        self._adb(
+            ["shell", f"{qnn_executor_runner_cmds}"], output_callback=output_callback
+        )
 
     def pull(self, output_path, callback=None):
         self._adb(["pull", "-a", self.output_folder, output_path])

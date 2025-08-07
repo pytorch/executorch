@@ -8,9 +8,11 @@ from typing import Tuple
 
 import torch
 
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -27,19 +29,41 @@ class SDPA(torch.nn.Module):
 input_t = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
-def test_sdpa_MI():
+def test_sdpa_tosa_FP():
     test_input = tuple(torch.randn(1, 3, 197, 64) for x in range(3))
-    pipeline = TosaPipelineMI[input_t](SDPA(), test_input, [], [])
+    pipeline = TosaPipelineFP[input_t](SDPA(), test_input, [], [])
     pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
-def test_sdpa_BI():
+def test_sdpa_tosa_INT():
     test_input = tuple(torch.randn(1, 3, 197, 64) for x in range(3))
-    pipeline = TosaPipelineBI[input_t](SDPA(), test_input, [], [])
+    pipeline = TosaPipelineINT[input_t](SDPA(), test_input, [], [])
     pipeline.pop_stage("check.quant_nodes")
     pipeline.pop_stage("check_count.exir")
     pipeline.pop_stage(
         "run_method_and_compare_outputs"
     )  # TODO: reference is not quantized
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sdpa_vgf_FP():
+    test_input = tuple(torch.randn(1, 3, 197, 64) for _ in range(3))
+    pipeline = VgfPipeline[input_t](
+        SDPA(), test_input, [], [], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sdpa_vgf_INT():
+    test_input = tuple(torch.randn(1, 3, 197, 64) for _ in range(3))
+    pipeline = VgfPipeline[input_t](
+        SDPA(),
+        test_input,
+        [],
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.run()

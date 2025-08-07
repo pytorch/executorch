@@ -458,7 +458,6 @@ void test_vulkan_choose_qparams_tensor_impl(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   // Run Vulkan choose_qparams_tensor
   graph.copy_into_staging(
@@ -678,7 +677,6 @@ void test_vulkan_choose_qparams_per_token_asymmetric_impl(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   // Run Vulkan choose_qparams_per_token_asymmetric
   graph.copy_into_staging(

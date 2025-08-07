@@ -10,8 +10,8 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    TosaPipelineBI,
+    EthosU55PipelineINT,
+    TosaPipelineINT,
 )
 
 input_t = Tuple[torch.Tensor]  # Input x
@@ -84,10 +84,10 @@ modules = {"meandim_basic": MeanDim(), "meandim_tensor": MeanDimTensor()}
 
 
 @common.parametrize("module", modules)
-def test_decompose_meandim_tosa_BI(module):
+def test_decompose_meandim_tosa_INT(module):
     # Decompose meandim_pass requires initiating the pas with args, which is not supported
     # by RunPasses in the arm_tester -> PassPipeline cannot be used.
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         module,
         module.get_inputs(),
         [],
@@ -106,10 +106,10 @@ def test_decompose_meandim_tosa_BI(module):
 
 
 @common.parametrize("module", modules)
-def test_decompose_meandim_u55_BI(module):
+def test_decompose_meandim_u55_INT(module):
     # Decompose meandim_pass requires initiating the pas with args, which is not supported
     # by RunPasses in the arm_tester -> PassPipeline cannot be used.
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         module, module.get_inputs(), [], run_on_fvp=False
     )
     pipeline.pop_stage("check_not.exir")

@@ -252,6 +252,17 @@ I 00:00:00.000764 executorch:executor_runner.cpp:180] Model executed successfull
 I 00:00:00.000770 executorch:executor_runner.cpp:184] 1 outputs:
 Output 0: tensor(sizes=[1], [2.])
 ```
+
+### CMake Targets
+
+To link against the ExecuTorch framework from CMake, the following top-level targets are exposed:
+
+ * `executorch::backends`: Contains all configured backends.
+ * `executorch::extensions`: Contains all configured extensions.
+ * `executorch::kernels`: Contains all configured kernel libraries.
+
+The backends, extensions, and kernels included in these targets are controlled by the various `EXECUTORCH_` CMake options specified by the build.
+
 ## Build ExecuTorch for Windows
 
 This document outlines the current known working build instructions for building and validating ExecuTorch on a Windows machine.

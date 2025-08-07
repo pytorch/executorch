@@ -19,3 +19,5 @@ dequantize_buffer:
       MODE: per_token
     - NAME: dequantize_per_channel_buffer
       MODE: per_channel
+    - NAME: dequantize_block_wise_buffer
+      MODE: block_wise

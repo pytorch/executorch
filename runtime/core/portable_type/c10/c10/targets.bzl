@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime", "is_arvr_mode")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def get_preprocessor_flags(is_fbcode):
     flags = ["-DSTANDALONE_TORCH_HEADER"]

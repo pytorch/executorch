@@ -11,10 +11,11 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.clamp.default"
@@ -51,12 +52,12 @@ class Clamp(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_clamp_tosa_MI(test_data):
+def test_clamp_tosa_FP(test_data):
 
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
 
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         model,
         (input_tensor,),
         aten_op,
@@ -67,12 +68,12 @@ def test_clamp_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_clamp_tosa_BI(test_data):
+def test_clamp_tosa_INT(test_data):
 
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
 
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         model,
         (input_tensor,),
         aten_op,
@@ -85,12 +86,12 @@ def test_clamp_tosa_BI(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-def test_clamp_u55_BI(test_data):
+def test_clamp_u55_INT(test_data):
 
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
 
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         model,
         (input_tensor,),
         aten_op,
@@ -104,12 +105,12 @@ def test_clamp_u55_BI(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_clamp_u85_BI(test_data):
+def test_clamp_u85_INT(test_data):
 
     input_tensor, min_val, max_val = test_data()
     model = Clamp(min_val, max_val)
 
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         model,
         (input_tensor,),
         aten_op,
@@ -118,4 +119,36 @@ def test_clamp_u85_BI(test_data):
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
 
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_clamp_vgf_FP(test_data):
+    input_tensor, min_val, max_val = test_data()
+    model = Clamp(min_val, max_val)
+    pipeline = VgfPipeline[input_t](
+        model,
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_clamp_vgf_INT(test_data):
+    input_tensor, min_val, max_val = test_data()
+    model = Clamp(min_val, max_val)
+    pipeline = VgfPipeline[input_t](
+        model,
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
+    # pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

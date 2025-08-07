@@ -39,6 +39,7 @@ class Runner {
       const std::string& model_path,
       const std::string& tokenizer_path,
       const std::string& performance_output_path,
+      const std::string& dump_logits_path,
       const float temperature = 0.8f,
       const int eval_mode = EvalMode::kKVCached,
       const std::string& kv_updater = "SmartMask",
@@ -52,6 +53,7 @@ class Runner {
   // TODO: Support echo and warming
   executorch::runtime::Error generate(
       const std::string& prompt,
+      bool tokenized_prompt,
       int32_t seq_len,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const executorch::llm::Stats&)> stats_callback = {},
@@ -78,6 +80,7 @@ class Runner {
 
   std::string tokenizer_path_;
   std::string performance_output_path_;
+  std::string dump_logits_path_;
   float temperature_;
   EvalMode eval_mode_;
   DecoderModelVersion decoder_model_version_;

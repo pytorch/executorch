@@ -23,7 +23,6 @@ class SinCosSupported(SupportedTOSAOperatorCheck):
     ]
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+BI"),
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]

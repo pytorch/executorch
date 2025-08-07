@@ -39,7 +39,7 @@ class Relu6ConvBlock(torch.nn.Module):
         return self.block(x)
 
 
-class CustomHardTanhBlock(torch.nn.Module):
+class ConvHardTanhBlock(torch.nn.Module):
     def __init__(
         self,
         conv_in_channels: int = 3,
@@ -89,7 +89,7 @@ def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool):
     )
 
 
-@pytest.mark.parametrize("input_shape", [(1, 3, 128, 128), (1, 3, 256, 256)])
+@pytest.mark.parametrize("input_shape", [(1, 3, 16, 16), (1, 3, 32, 32)])
 @pytest.mark.parametrize(
     "activation_range", list(HardTanhConverter.supported_modes_map.keys())
 )
@@ -97,8 +97,10 @@ def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool):
 def test_custom_hardtanh_quant(
     mocker, input_shape: tuple[int], activation_range: tuple[int, int], inplace: bool
 ):
+    # TODO(13063): This test suffers from non-ideal testing random quantization, because we always use range <0,1>.
+    #  We should update (decrease atol) when the Conv/Linear + Activation fuse at quantization is in place.
     min_val, max_val = activation_range
-    model = CustomHardTanhBlock(
+    model = ConvHardTanhBlock(
         conv_in_channels=input_shape[1],
         min_act_val=min_val,
         max_act_val=max_val,
@@ -122,5 +124,5 @@ def test_custom_hardtanh_quant(
         tflite_input_preprocess=ToNHWCPreprocess(),
         tflite_output_preprocess=ToNCHWPreprocess(),
         input_data=input_data,
-        atol=1.0,
+        atol=2.0,
     )

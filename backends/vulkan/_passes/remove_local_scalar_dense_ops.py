@@ -52,7 +52,7 @@ def tag_node_if_scalar_tensor(node: torch.fx.Node) -> None:
 
     for user in node.users:
         if node_is_local_scalar_dense_chain(user):
-            node.meta["vkdg_is_scalar_tensor"] = True
+            node.meta["etvk_is_scalar_tensor"] = True
 
 
 def remove_local_scalar_dense_chain(graph: torch.fx.Graph, node: torch.fx.Node) -> None:
@@ -74,7 +74,7 @@ def remove_local_scalar_dense_chain(graph: torch.fx.Graph, node: torch.fx.Node) 
         if replace_node.args[0].meta["val"].numel() == 1:
             replace_node = replace_node.args[0]
             assert isinstance(replace_node, torch.fx.Node)
-            assert replace_node.meta.get("vkdg_is_scalar_tensor", True)
+            assert replace_node.meta.get("etvk_is_scalar_tensor", True)
 
     with graph.inserting_after(node):
         node.replace_all_uses_with(replace_node)

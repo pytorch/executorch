@@ -24,7 +24,7 @@ from executorch.backends.arm.arm_backend import (
     is_tosa,
     is_vgf,
 )
-from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.ethosu import EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -343,6 +343,7 @@ targets = [
     "vgf",
     "TOSA-0.80+BI",
     "TOSA-1.0+INT",
+    "TOSA-1.0+FP",
 ]
 
 

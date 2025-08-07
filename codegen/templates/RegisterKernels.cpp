@@ -10,6 +10,7 @@
 // This implements register_all_kernels() API that is declared in
 // RegisterKernels.h
 #include "RegisterKernels.h"
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include "${fn_header}" // Generated Function import headers
 
 namespace torch {

@@ -334,9 +334,9 @@ Once the elf is prepared, regardless of the `.pte` file variant is used to gener
 ./run.sh --model_name=mv2 --delegate --target=ethos-u85-128
 ```
 
-- To run all the test models iteratively in a loop 
+- To run all the test models iteratively in a loop , simply run
 ```bash
-./run.sh --pte=mv2_arm_ethos_u55.pte --target=ethos-u55-128
+./run.sh
 ```
 
 Note that you could use `build_executor_runner.sh` and `run_fvp.sh` scripts in tandem by passing the relevant  --target argument (e.g., --target=ethos-u55-128), the correct FVP binary will be chosen automatically. For more details, see the [section on Runtime Integration](https://docs.pytorch.org/executorch/main/backends-arm-ethos-u.html#runtime-integration).

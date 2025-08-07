@@ -85,7 +85,11 @@ Tensor& opt_sub_out(
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  ET_KERNEL_CHECK(ctx, tensor_is_realh_type(out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      executorch::runtime::tensor_is_realhbf16_type(out),
+      InvalidArgument,
+      out);
   if (a.numel() == 1 || b.numel() == 1) {
     if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half) {
       const Tensor* tensor;
@@ -169,7 +173,7 @@ Tensor& opt_sub_scalar_out(
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
   if (a_type == common_type && a_type == out_type &&
-      a_type != ScalarType::Half) {
+      a_type != ScalarType::Half && a_type != ScalarType::BFloat16) {
     ET_SWITCH_REAL_TYPES(a_type, ctx, "sub.Scalar_out", CTYPE, [&]() {
       CTYPE b_casted = utils::scalar_to<CTYPE>(b);
       CTYPE alpha_val;
@@ -186,9 +190,9 @@ Tensor& opt_sub_scalar_out(
           out.numel());
     });
   } else {
-    ET_SWITCH_REALH_TYPES(a_type, ctx, "sub.Scalar_out", CTYPE_A, [&]() {
+    ET_SWITCH_REALHBF16_TYPES(a_type, ctx, "sub.Scalar_out", CTYPE_A, [&]() {
       ET_SWITCH_REAL_TYPES(common_type, ctx, "sub.Scalar_out", CTYPE_IN, [&]() {
-        ET_SWITCH_REALH_TYPES(
+        ET_SWITCH_REALHBF16_TYPES(
             out_type, ctx, "sub.Scalar_out", CTYPE_OUT, [&]() {
               CTYPE_IN b_casted = utils::scalar_to<CTYPE_IN>(b);
               CTYPE_IN alpha_val;

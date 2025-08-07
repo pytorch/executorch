@@ -67,7 +67,7 @@ class ExecuTorchTrainingJni
 
  public:
   constexpr static auto kJavaDescriptor =
-      "Lorg/pytorch/executorch/TrainingModule;";
+      "Lorg/pytorch/executorch/training/TrainingModule;";
 
   ExecuTorchTrainingJni(
       facebook::jni::alias_ref<jstring> modelPath,
@@ -226,7 +226,8 @@ class ExecuTorchTrainingJni
 
 class SGDHybrid : public facebook::jni::HybridClass<SGDHybrid> {
  public:
-  constexpr static const char* kJavaDescriptor = "Lorg/pytorch/executorch/SGD;";
+  constexpr static const char* kJavaDescriptor =
+      "Lorg/pytorch/executorch/training/SGD;";
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,

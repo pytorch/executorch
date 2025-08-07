@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -22,12 +23,12 @@ void resize_upsample_nearest2d_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
-  std::vector<int64_t> out_sizes = self->sizes(); // NCHW
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(0);
+  std::vector<int64_t> out_sizes = graph->sizes_of(self); // NCHW
 
-  const ValueRef output_sizes = extra_args[0]; // HW
-  const ValueRef scale_factors = extra_args[1]; // HW
+  const ValueRef output_sizes = extra_args.at(0); // HW
+  const ValueRef scale_factors = extra_args.at(1); // HW
   if (!graph->val_is_none(output_sizes)) {
     IntListPtr output_size_ref = graph->get_int_list(output_sizes);
     out_sizes.at(2) = output_size_ref->at(0);
@@ -38,7 +39,7 @@ void resize_upsample_nearest2d_node(
     out_sizes.at(3) *= scales->at(1);
   }
 
-  out->virtual_resize(out_sizes);
+  graph->virtual_resize(out, out_sizes);
 }
 
 void add_upsample_nearest2d_node(
@@ -114,11 +115,11 @@ void add_upsample_nearest2d_node(
   }
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},

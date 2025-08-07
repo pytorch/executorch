@@ -75,11 +75,11 @@ def define_common_targets():
                 "//executorch/backends/qualcomm:schema",
                 "//executorch/backends/qualcomm/aot/ir:qcir_utils",
                 "//executorch/backends/qualcomm/aot/wrappers:wrappers",
-                "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core:core",
                 "//executorch/extension/tensor:tensor",
             ],
             exported_deps = [
+                "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util",
                 "//executorch/runtime/core:event_tracer",
             ],

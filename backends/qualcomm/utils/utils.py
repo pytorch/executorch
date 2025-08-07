@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import operator
+import os
+import re
 import warnings
 from collections import defaultdict, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -11,7 +13,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
 import executorch.exir as exir
-
 import torch
 
 from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
@@ -333,6 +334,7 @@ def to_edge_transform_and_lower_to_qnn(
     skip_node_id_set: Optional[set] = None,
     skip_node_op_set: Optional[set] = None,
     skip_mutable_buffer: bool = False,
+    generate_etrecord: bool = False,
 ) -> EdgeProgramManager:
     """
     Transforms and lowers a given PyTorch module to the QNN backend.
@@ -441,6 +443,7 @@ def to_edge_transform_and_lower_to_qnn(
         partitioner=qnn_partitioners,
         constant_methods=constant_methods,
         compile_config=qnn_edge_config(),
+        generate_etrecord=generate_etrecord,
     )
 
 
@@ -1167,3 +1170,28 @@ def rewrite_prepared_observer(
             continue
         for target_name in module_name_list[old_module]:
             setattr(graph_module, target_name, new_observer)
+
+
+def get_sdk_build_id():
+    htp_library_path = (
+        os.environ.get("QNN_SDK_ROOT", None) + "/lib/x86_64-linux-clang/libQnnHtp.so"
+    )
+    # The GetQnnSdkBuildId API can be used without needing to create a backend first, so it works regardless of which backend is used.
+    sdk_build_id = PyQnnManagerAdaptor.GetQnnSdkBuildId(htp_library_path)
+    return sdk_build_id
+
+
+def is_qnn_sdk_version_less_than(target_version):
+    current_version = get_sdk_build_id()
+
+    match = re.search(r"v(\d+)\.(\d+)", current_version)
+    if match:
+        current_major, current_minor = map(int, match.groups()[:2])
+    else:
+        raise ValueError(
+            f"Failed to get current major and minor version from QNN sdk Build id {current_version}"
+        )
+
+    target_major, target_minor = map(int, target_version.split(".")[:2])
+
+    return current_major == target_major and current_minor < target_minor

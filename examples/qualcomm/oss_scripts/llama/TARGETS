@@ -26,6 +26,7 @@ python_library(
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/devtools:lib",
         "//executorch/examples/models:models",
+        "//executorch/examples/models/llama:hf_download",
         "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
         "//executorch/examples/qualcomm:utils",
         "//executorch/extension/export_util:export_util",

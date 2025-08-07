@@ -7,11 +7,12 @@
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -49,9 +50,9 @@ class OnesAdd(torch.nn.Module):
 
 
 @common.parametrize("test_data", OnesAdd.test_data)
-def test_ones_tosa_MI(test_data: test_data_t):
+def test_ones_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         OnesAdd(*init_data),
         input_data(),
         OnesAdd.aten_op,
@@ -60,9 +61,9 @@ def test_ones_tosa_MI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", OnesAdd.test_data)
-def test_ones_tosa_BI(test_data: test_data_t):
+def test_ones_tosa_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         OnesAdd(*init_data),
         input_data(),
         OnesAdd.aten_op,
@@ -73,9 +74,9 @@ def test_ones_tosa_BI(test_data: test_data_t):
 
 @common.parametrize("test_data", OnesAdd.test_data)
 @common.XfailIfNoCorstone300
-def test_ones_u55_BI(test_data: test_data_t):
+def test_ones_u55_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         OnesAdd(*init_data),
         input_data(),
         OnesAdd.aten_op,
@@ -87,9 +88,9 @@ def test_ones_u55_BI(test_data: test_data_t):
 
 @common.parametrize("test_data", OnesAdd.test_data)
 @common.XfailIfNoCorstone320
-def test_ones_u85_BI(test_data: test_data_t):
+def test_ones_u85_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         OnesAdd(*init_data),
         input_data(),
         OnesAdd.aten_op,
@@ -108,9 +109,33 @@ def test_ones_u85_BI(test_data: test_data_t):
         "int32_int64": "MLETORCG-716: Do not delegate empty networks to vela",
     },
 )
-def test_ones_tosa_BI_not_delegated(test_data: test_data_t):
+def test_ones_tosa_INT_not_delegated(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = OpNotSupportedPipeline[input_t](
         OnesAdd(*init_data), input_data(), non_delegated_ops={}, quantize=True
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", OnesAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_ones_vgf_FP(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        OnesAdd(*init_data), input_data(), OnesAdd.aten_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", OnesAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_ones_vgf_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        OnesAdd(*init_data),
+        input_data(),
+        OnesAdd.aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

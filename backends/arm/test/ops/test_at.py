@@ -8,8 +8,9 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op_mm = "torch.ops.aten.matmul.default"
@@ -78,56 +79,56 @@ class AtMatMulMixedPattern2(torch.nn.Module):
 
 
 @common.parametrize("test_data", AtMatMulSingleInput.test_data_generators)
-def test_atmatmul_single_input_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](
+def test_atmatmul_single_input_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
         AtMatMulSingleInput(), test_data(), aten_op_mm, exir_op_mm
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulDoubleInput.test_data_generators)
-def test_atmatmul_double_input_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](
+def test_atmatmul_double_input_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
         AtMatMulDoubleInput(), test_data(), aten_op_mm, exir_op_mm
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulMixedPattern1.test_data_generators)
-def test_atmatmul_mixed_pattern1_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](
+def test_atmatmul_mixed_pattern1_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
         AtMatMulMixedPattern1(), test_data(), aten_op_mm, exir_op_mm
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulMixedPattern2.test_data_generators)
-def test_atmatmul_mixed_pattern2_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](
+def test_atmatmul_mixed_pattern2_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
         AtMatMulMixedPattern2(), test_data(), aten_op_mm, exir_op_mm
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulSingleInput.test_data_generators)
-def test_atmatmul_single_input_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_atmatmul_single_input_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         AtMatMulSingleInput(), test_data(), aten_op_mm, exir_op_mm
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulDoubleInput.test_data_generators)
-def test_atmatmul_double_input_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_atmatmul_double_input_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         AtMatMulDoubleInput(), test_data(), aten_op_mm, exir_op_mm
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AtMatMulMixedPattern1.test_data_generators)
-def test_atmatmul_mixed_pattern1_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_atmatmul_mixed_pattern1_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         AtMatMulMixedPattern1(),
         test_data(),
         aten_op_mm,
@@ -138,12 +139,118 @@ def test_atmatmul_mixed_pattern1_tosa_BI(test_data: input_t1):
 
 
 @common.parametrize("test_data", AtMatMulMixedPattern2.test_data_generators)
-def test_atmatmul_mixed_pattern2_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_atmatmul_mixed_pattern2_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         AtMatMulMixedPattern2(),
         test_data(),
         aten_op_mm,
         exir_op_mm,
         qtol=1,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AtMatMulSingleInput.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_atmatmul_single_input_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AtMatMulSingleInput(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AtMatMulDoubleInput.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_atmatmul_double_input_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AtMatMulDoubleInput(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AtMatMulMixedPattern1.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_atmatmul_mixed_pattern1_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AtMatMulMixedPattern1(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AtMatMulMixedPattern2.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_atmatmul_mixed_pattern2_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AtMatMulMixedPattern2(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AtMatMulSingleInput.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_atmatmul_single_input_vgf_INT(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AtMatMulSingleInput(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AtMatMulDoubleInput.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_atmatmul_double_input_vgf_INT(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AtMatMulDoubleInput(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AtMatMulMixedPattern1.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_atmatmul_mixed_pattern1_vgf_INT(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AtMatMulMixedPattern1(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        qtol=1,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AtMatMulMixedPattern2.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_atmatmul_mixed_pattern2_vgf_INT(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AtMatMulMixedPattern2(),
+        test_data(),
+        aten_op_mm,
+        exir_op_mm,
+        qtol=1,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

@@ -9,6 +9,7 @@ import logging
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.arm_backend import (
     get_tosa_spec,
     is_tosa,
@@ -25,29 +26,12 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 
 logger = logging.getLogger(__name__)
-
-
-def is_quant_node(node: torch.fx.node.Node) -> bool:
-    return node.target in {
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-    }
-
-
-def is_dequant_node(node: torch.fx.node.Node) -> bool:
-    return node.target in {
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-    }
 
 
 class TOSAPartitioner(Partitioner):
@@ -99,14 +83,14 @@ class TOSAPartitioner(Partitioner):
             for node in exported_program.graph_module.graph.nodes:
                 if not is_partitioned(node):
                     continue
-                if is_quant_node(node):
+                if node.target in Q_OPS:
                     for input in node.all_input_nodes:
                         if not is_partitioned(input):
                             del node.meta["delegation_tag"]
                             break
                     continue
 
-                if is_dequant_node(node):
+                if node.target in DQ_OPS:
                     for user in node.users:
                         if not is_partitioned(user):
                             del node.meta["delegation_tag"]

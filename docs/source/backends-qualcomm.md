@@ -127,7 +127,7 @@ export PYTHONPATH=$EXECUTORCH_ROOT/..
 
 An example script for the below building instructions is [here](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh).
 We recommend to use the script because the ExecuTorch build-command can change from time to time.
-The above script is actively used. It is updated more frquently than this tutorial.
+The above script is actively used. It is updated more frequently than this tutorial.
 An example usage is
 ```bash
 cd $EXECUTORCH_ROOT
@@ -165,14 +165,14 @@ cmake --build $PWD --target "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j$(npro
 cp -f backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
 cp -f backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
 
-# Workaround for fbs files in exir/_serialize
+# Workaround for .fbs files in exir/_serialize
 cp $EXECUTORCH_ROOT/schema/program.fbs $EXECUTORCH_ROOT/exir/_serialize/program.fbs
 cp $EXECUTORCH_ROOT/schema/scalar_type.fbs $EXECUTORCH_ROOT/exir/_serialize/scalar_type.fbs
 ```
 
 ### Runtime:
 
-A example `qnn_executor_runner` executable would be used to run the compiled `pte` model.
+An example `qnn_executor_runner` executable would be used to run the compiled `pte` model.
 
 Commands to build `qnn_executor_runner` for Android:
 
@@ -271,7 +271,7 @@ cmake --build examples/qualcomm -j$(nproc)
 ls examples/qualcomm/executor_runner
 ```
 
-To run the HTP emulator, the dynamic linker need to access QNN libraries and `libqnn_executorch_backend.so`.
+To run the HTP emulator, the dynamic linker needs to access QNN libraries and `libqnn_executorch_backend.so`.
 We set the below two paths to `LD_LIBRARY_PATH` environment variable:
   1. `$QNN_SDK_ROOT/lib/x86_64-linux-clang/`
   2. `$EXECUTORCH_ROOT/build-x86/lib/`

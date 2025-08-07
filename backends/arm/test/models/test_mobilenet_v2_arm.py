@@ -12,10 +12,11 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 from torchvision import models, transforms  # type: ignore[import-untyped]
@@ -38,16 +39,16 @@ quant_test_data = {
 }
 
 
-def test_mv2_tosa_MI():
-    pipeline = TosaPipelineMI[input_t](
+def test_mv2_tosa_FP():
+    pipeline = TosaPipelineFP[input_t](
         mv2, model_inputs, aten_op=[], exir_op=[], use_to_edge_transform_and_lower=True
     )
     pipeline.run()
 
 
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_mv2_tosa_BI(per_channel_quantization):
-    pipeline = TosaPipelineBI[input_t](
+def test_mv2_tosa_INT(per_channel_quantization):
+    pipeline = TosaPipelineINT[input_t](
         mv2,
         model_inputs,
         aten_op=[],
@@ -63,8 +64,8 @@ def test_mv2_tosa_BI(per_channel_quantization):
 @pytest.mark.slow
 @common.XfailIfNoCorstone300
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_mv2_u55_BI(per_channel_quantization):
-    pipeline = EthosU55PipelineBI[input_t](
+def test_mv2_u55_INT(per_channel_quantization):
+    pipeline = EthosU55PipelineINT[input_t](
         mv2,
         model_inputs,
         aten_ops=[],
@@ -81,8 +82,8 @@ def test_mv2_u55_BI(per_channel_quantization):
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
 @common.parametrize("per_channel_quantization", quant_test_data)
-def test_mv2_u85_BI(per_channel_quantization):
-    pipeline = EthosU85PipelineBI[input_t](
+def test_mv2_u85_INT(per_channel_quantization):
+    pipeline = EthosU85PipelineINT[input_t](
         mv2,
         model_inputs,
         aten_ops=[],
@@ -93,4 +94,42 @@ def test_mv2_u85_BI(per_channel_quantization):
         atol=0.25,
         qtol=1,
     )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_mv2_vgf_INT(per_channel_quantization):
+    pipeline = VgfPipeline[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        use_to_edge_transform_and_lower=True,
+        per_channel_quantization=per_channel_quantization,
+        atol=0.25,
+        qtol=1,
+    )
+    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
+    # pipeline.change_args(
+    #     "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+    # )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_mv2_vgf_FP():
+    pipeline = VgfPipeline[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+        use_to_edge_transform_and_lower=True,
+    )
+    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
+    # pipeline.change_args(
+    #     "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+    # )  # TODO: MLETORCH-1036 decrease tolerance
     pipeline.run()

@@ -498,7 +498,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   std::string kernel_name("fill_texture__test");
-  add_dtype_suffix(kernel_name, a);
+  add_dtype_suffix(kernel_name, a.dtype());
 
   struct Params final {
     utils::ivec3 size;
@@ -1014,9 +1014,8 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
 // Compute Graph Tests
 //
 
-#define EXTRACT_TENSOR(name)                                 \
-  std::vector<float> data_##name(                            \
-      graph.get_tensor(name.value)->staging_buffer_numel()); \
+#define EXTRACT_TENSOR(name)                                                 \
+  std::vector<float> data_##name(graph.staging_buffer_numel_of(name.value)); \
   graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
 
 // The purpose of this test is simply to track the size of various classes over
@@ -1041,8 +1040,8 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   EXPECT_TRUE(sizeof(Value) < 56);
   // Current known size on 64 bit system: 120 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
-  // Current known size on 64 bit system: 384 B
-  EXPECT_TRUE(sizeof(ComputeGraph) < 500);
+  // Current known size on 64 bit system: 512 B
+  EXPECT_TRUE(sizeof(ComputeGraph) < 600);
   // Current known size on 64 bit system: 248 B
   EXPECT_TRUE(sizeof(DispatchNode) < 500);
 }
@@ -1153,7 +1152,6 @@ TEST(VulkanComputeGraphTest, empty_init_graphnode_test) {
   // Encode an empty ExecuteNode and check that command buffer encoding does not
   // crash.
   graph.execute_nodes().emplace_back(new ExecuteNode(nullptr, {}));
-  EXPECT_NO_FATAL_FAILURE(graph.encode_execute());
 }
 
 TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
@@ -1178,7 +1176,6 @@ TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   // Run graph
 
@@ -1195,7 +1192,7 @@ TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+    for (size_t i = 0; i < graph.numel_of(out.value); ++i) {
       CHECK_VALUE(data_out, i, val_c);
     }
   }
@@ -1221,7 +1218,6 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   // Run graph
 
@@ -1236,7 +1232,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+    for (size_t i = 0; i < graph.numel_of(out.value); ++i) {
       CHECK_VALUE(data_out, i, expected_val);
     }
   }
@@ -1307,7 +1303,6 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   // Run graph
 
@@ -1324,7 +1319,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+    for (size_t i = 0; i < graph.numel_of(out.value); ++i) {
       CHECK_VALUE(data_out, i, val_c);
     }
   }
@@ -1366,7 +1361,6 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   // Run graph
 
@@ -1387,7 +1381,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+    for (size_t i = 0; i < graph.numel_of(out.value); i++) {
       CHECK_VALUE(data_out, i, val_out);
     }
   }
@@ -1437,8 +1431,6 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 
   graph.prepack();
 
-  graph.encode_execute();
-
   // Run graph
 
   for (float i = 5.0f; i < 30.0f; i += 10.0f) {
@@ -1452,7 +1444,7 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+    for (size_t i = 0; i < graph.numel_of(out.value); ++i) {
       CHECK_VALUE(data_out, i, val_out);
     }
 
@@ -1465,6 +1457,7 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 
 TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   GraphConfig config;
+  config.expect_dynamic_shapes = true;
   ComputeGraph graph(config);
   size_t expected_vma_allocation_count = 0;
 
@@ -1526,7 +1519,6 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();
-  graph.encode_execute();
 
   // +3: shared memory allocations for tensors
   expected_vma_allocation_count += 3;
@@ -1538,9 +1530,9 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       {8, 44, 34}, {4, 13, 56}, {8, 12, 64}, {12, 55, 33}, {4, 54, 10}};
 
   for (auto& new_sizes : new_sizes_list) {
-    graph.get_tensor(a.value)->virtual_resize(new_sizes);
-    graph.get_tensor(b.value)->virtual_resize(new_sizes);
-    graph.get_tensor(d.value)->virtual_resize(new_sizes);
+    graph.virtual_resize(a.value, new_sizes);
+    graph.virtual_resize(b.value, new_sizes);
+    graph.virtual_resize(d.value, new_sizes);
     graph.propagate_resize();
 
     float val_a = new_sizes[1] + 4.0f;
@@ -1558,7 +1550,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
+    for (size_t i = 0; i < graph.numel_of(out.value); i++) {
       CHECK_VALUE(data_out, i, val_out);
     }
   }
@@ -1573,7 +1565,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
     graph.propagate_resize();
 
     // Check output shape
-    EXPECT_TRUE(graph.get_tensor(out.value)->sizes() == new_sizes);
+    EXPECT_TRUE(graph.sizes_of(out.value) == new_sizes);
 
     float val_a = new_sizes[1] + 6.0f;
     float val_b = new_sizes[2] + 2.5f;
@@ -1590,7 +1582,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
+    for (size_t i = 0; i < graph.numel_of(out.value); i++) {
       CHECK_VALUE(data_out, i, val_out);
     }
   }
@@ -1667,7 +1659,6 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   // Run graph
 
@@ -1689,7 +1680,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+    for (size_t i = 0; i < graph.numel_of(out.value); ++i) {
       CHECK_VALUE(data_out, i, val_out);
     }
   }
@@ -1698,6 +1689,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
 TEST(VulkanComputeGraphTest, test_large_graph) {
   auto build_start_time = std::chrono::system_clock::now();
   GraphConfig config;
+  config.expect_dynamic_shapes = true;
   ComputeGraph graph(config);
 
   int64_t input_w = 256;
@@ -1733,7 +1725,6 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   auto build_end_time = std::chrono::system_clock::now();
 
@@ -1775,7 +1766,7 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
     auto inference_time = std::chrono::duration_cast<std::chrono::microseconds>(
         inference_end_time - inference_start_time);
 
-    for (int i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
+    for (int i = 0; i < graph.numel_of(out.value); i++) {
       CHECK_VALUE(data_out, i, val_e);
     }
 
@@ -1810,7 +1801,6 @@ void test_clone(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0.0f, /*iota = */ true);
 
@@ -1895,7 +1885,6 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0.0f, /*iota = */ true);
 
@@ -1959,7 +1948,6 @@ TEST(VulkanComputeGraphTest, DISABLED_test_etvk_copy_channel_offset_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0.0f, true);
 
@@ -2050,7 +2038,6 @@ TEST(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   float a_value = 1.0f;
   float b_value = 2.0f;
@@ -2163,7 +2150,6 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_int_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0, /*iota = */ true);
 
@@ -2227,7 +2213,6 @@ TEST(VulkanComputeGraphTest, DISABLED_test_etvk_copy_channel_offset_int_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
-  graph.encode_execute();
 
   fill_vtensor(graph, a, 0.0f, true);
 
@@ -2287,7 +2272,6 @@ TEST(VulkanComputeGraphTest, test_view_change_packing) {
     out.staging = graph.set_output_tensor(out.value);
 
     graph.prepare();
-    graph.encode_execute();
 
     fill_vtensor(graph, in, 0.0, true);
 
@@ -2297,7 +2281,7 @@ TEST(VulkanComputeGraphTest, test_view_change_packing) {
 
     // The extracted data is a flattened nchw buffer. Hence, should expect the
     // all elements inside the out array to match the index.
-    for (int i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
+    for (int i = 0; i < graph.numel_of(out.value); i++) {
       CHECK_VALUE(data_out, i, i);
     }
   }
@@ -2332,7 +2316,7 @@ void run_from_gpu_test(
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
 
   std::string kernel_name("idx_fill_texture");
-  add_dtype_suffix(kernel_name, vten);
+  add_dtype_suffix(kernel_name, vten.dtype());
 
   int32_t offset = -50;
 
@@ -2446,11 +2430,8 @@ void compute_graph_round_trip_test(
   ValueRef r_staging_out = graph.set_output_tensor(r_tensor);
 
   graph.prepare();
-  graph.encode_execute();
 
-  vTensorPtr tensor = graph.get_tensor(r_tensor);
-
-  std::vector<T> data_in(tensor->numel());
+  std::vector<T> data_in(graph.numel_of(r_tensor));
   for (int i = 0; i < data_in.size(); i++) {
     data_in[i] = T(i * -1);
   }
@@ -2458,7 +2439,7 @@ void compute_graph_round_trip_test(
 
   graph.execute();
 
-  std::vector<T> data_out(tensor->staging_buffer_numel());
+  std::vector<T> data_out(graph.staging_buffer_numel_of(r_tensor));
   graph.copy_from_staging(r_staging_out, data_out.data(), data_out.size());
 
   for (int i = 0; i < data_in.size(); i++) {
@@ -2569,7 +2550,6 @@ void test_binary_op(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_arg1 = i + 1.5;
@@ -2644,7 +2624,6 @@ void test_mm(
   graph.prepack();
 
   for (int i = 1; i < 4; i++) {
-    graph.encode_execute();
     if (prepack) {
       float val_mat1 = i;
       float val_out = K * (val_mat1 * 2.0f);
@@ -2723,7 +2702,6 @@ void test_mm_with_resize_reencode(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_mat1 = i;
@@ -2759,95 +2737,6 @@ TEST(VulkanComputeGraphOpsTest, test_graph_resize_reencode) {
       utils::kWidthPacked);
 }
 
-void test_max_pool2d(
-    const std::vector<int64_t>& in_size,
-    const int64_t base_val,
-    std::vector<int64_t>& kernel) {
-  GraphConfig config;
-  ComputeGraph graph(config);
-
-  // Build graph
-
-  std::vector<int64_t> out_size(in_size);
-  int h = in_size.size() - 2;
-  int w = in_size.size() - 1;
-  out_size[h] = in_size[h] - kernel[0] + 1;
-  out_size[w] = in_size[w] - kernel[1] + 1;
-
-  IOValueRef in_ioval = graph.add_input_tensor(
-      in_size, vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
-  IOValueRef out_ioval;
-  out_ioval.value = graph.add_tensor(
-      out_size, vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
-  IOValueRef idx_ioval;
-  idx_ioval.value = graph.add_tensor(
-      out_size, vkapi::kInt, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
-  ValueRef out = graph.add_value_list({out_ioval.value, idx_ioval.value});
-
-  std::vector<int64_t> kernel_copy(kernel);
-  VK_GET_OP_FN("aten.max_pool2d_with_indices.default")
-  (graph,
-   {in_ioval.value,
-    graph.add_scalar_list<int64_t>(std::move(kernel)),
-    graph.add_scalar_list<int64_t>({1, 1}),
-    graph.add_scalar_list<int64_t>({0, 0}),
-    graph.add_scalar_list<int64_t>({1, 1}),
-    graph.add_scalar(false),
-    out});
-
-  out_ioval.staging = graph.set_output_tensor(out_ioval.value);
-  idx_ioval.staging = graph.set_output_tensor(idx_ioval.value);
-
-  graph.prepare();
-
-  graph.prepack();
-  graph.encode_execute();
-
-  // Run graph
-
-  fill_vtensor(graph, graph.inputs().at(0), base_val, /*iota = */ true);
-
-  vTensorPtr t_in = graph.get_tensor(in_ioval.value);
-  std::vector<float> input_data(t_in->staging_buffer_numel());
-  graph.copy_from_staging(
-      in_ioval.staging, input_data.data(), input_data.size());
-
-  graph.execute();
-
-  vTensorPtr t_out = graph.get_tensor(out_ioval.value);
-  std::vector<float> output_data(t_out->staging_buffer_numel());
-  graph.copy_from_staging(
-      out_ioval.staging, output_data.data(), output_data.size());
-  vTensorPtr t_idx = graph.get_tensor(idx_ioval.value);
-  std::vector<int> index_data(t_idx->staging_buffer_numel());
-  graph.copy_from_staging(
-      idx_ioval.staging, index_data.data(), index_data.size());
-
-  // Check results
-
-  int h_offset = kernel_copy[0] - 1;
-  int w_offset = kernel_copy[1] - 1;
-  int h_out = utils::val_at(-2, t_out->sizes());
-  int w_out = utils::val_at(-1, t_out->sizes());
-  int w_in = utils::val_at(-1, t_in->sizes());
-  for (size_t i = 0; i < h_out; ++i) {
-    for (size_t j = 0; j < w_out; ++j) {
-      size_t idx_out = i * w_out + j;
-      size_t idx_in = (i + h_offset) * w_in + (j + w_offset);
-      CHECK_VALUE(index_data, idx_out, idx_in);
-      CHECK_VALUE(output_data, idx_out, input_data[idx_in]);
-    }
-  }
-}
-
-TEST(VulkanComputeGraphOpsTest, max_pool2d_smoke_test) {
-  std::vector<int64_t> kernel = {2, 3};
-  test_max_pool2d(
-      /*in_size = */ {1, 4, 6},
-      /*base_val = */ 10.0f,
-      kernel);
-}
-
 void test_grid_priors(
     std::vector<int64_t> input_sizes,
     std::vector<int64_t> output_sizes,
@@ -2880,22 +2769,20 @@ void test_grid_priors(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
-  vTensorPtr t_in = graph.get_tensor(in.value);
-  vTensorPtr t_out = graph.get_tensor(out.value);
   // Resize input
   graph.propagate_resize();
 
   // run graph
   graph.execute();
 
-  std::vector<float> output_data(t_out->staging_buffer_numel());
+  std::vector<float> output_data(graph.staging_buffer_numel_of(out.value));
   graph.copy_from_staging(out.staging, output_data.data(), output_data.size());
 
   // check results
-  int h_out = utils::val_at(-2, t_out->sizes());
-  int w_out = utils::val_at(-1, t_out->sizes());
+  std::vector<int64_t> out_sizes = graph.sizes_of(out.value);
+  int h_out = utils::val_at(-2, out_sizes);
+  int w_out = utils::val_at(-1, out_sizes);
   for (size_t i = 0; i < h_out; ++i) {
     for (size_t j = 0; j < w_out; ++j) {
       size_t idx_out = i * w_out + j;
@@ -3050,7 +2937,6 @@ void test_to_copy() {
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
   graph.propagate_resize();
   graph.execute();
 
@@ -3173,7 +3059,7 @@ void resize_dynamic_dispatch_node(
   std::vector<int64_t> out_sizes = graph->sizes_of(mat1);
   out_sizes.at(out_sizes.size() - 2) = 1;
 
-  graph->get_tensor(out)->virtual_resize(out_sizes);
+  graph->virtual_resize(out, out_sizes);
 }
 
 void add_dynamic_dispatch_test_node(
@@ -3204,6 +3090,7 @@ void add_dynamic_dispatch_test_node(
 vkcompute::ComputeGraph build_dynamic_dispatch_test_graph(int M, int N) {
   using namespace vkcompute;
   GraphConfig config;
+  config.expect_dynamic_shapes = true;
   ComputeGraph graph(config);
 
   vkapi::ScalarType dtype = vkapi::kFloat;
@@ -3237,7 +3124,6 @@ void test_dynamic_dispatch(int M, int N) {
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_mat1 = i;
@@ -3254,8 +3140,6 @@ void test_dynamic_dispatch(int M, int N) {
   graph.resize_input(0, new_mat1_size);
   graph.resize_input(1, new_mat2_size);
   graph.propagate_resize();
-
-  graph.encode_execute();
 
   for (int i = 1; i < 4; i++) {
     float val_mat1 = i;

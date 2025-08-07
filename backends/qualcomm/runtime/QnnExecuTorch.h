@@ -16,6 +16,11 @@
 #include <stdint.h>
 #endif
 
+#define QNN_BACKEND "QnnBackend"
+#define QNN_RUNTIME_LOG_LEVEL "qnn_runtime_log_level"
+#define QNN_RUNTIME_HTP_PERFORMANCE_MODE "qnn_runtime_htp_performance_mode"
+#define QNN_RUNTIME_PROFILE_LEVEL "qnn_runtime_profile_level"
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus

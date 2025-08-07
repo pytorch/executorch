@@ -38,6 +38,7 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
@@ -128,7 +129,7 @@ struct KernelControl {
    */
   static void kernel_hook(
       KernelRuntimeContext& context,
-      ET_UNUSED EValue** args) {
+      ET_UNUSED Span<EValue*> args) {
     auto* control = KernelControl::singleton();
     control->call_count++;
     if (control->call_context_fail) {

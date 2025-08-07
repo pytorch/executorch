@@ -19,47 +19,10 @@ from torch.fx import Node
 
 
 @register_node_visitor
-class CatVisitor_0_80(NodeVisitor):
-    target = "aten.cat.default"
-
-    tosa_specs = NodeVisitor.tosa_specs_0_80
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, [1, 2])
-
-        tensors = inputs[0].special
-        dim = 0 if len(inputs) < 2 else inputs[1].number
-        rank = len(output.shape)
-        dim = (dim + rank) % rank
-        dim = output.dim_order.index(dim)
-
-        attr = ts.TosaSerializerAttribute()
-        attr.AxisAttribute(dim)
-
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().CONCAT,
-            [tensor.name for tensor in tensors],
-            [output.name],
-            attr,
-        )
-
-
-@register_node_visitor
 class CatVisitor(NodeVisitor):
     target = "aten.cat.default"
 
-    tosa_specs = NodeVisitor.tosa_specs_1_00
+    tosa_specs = NodeVisitor.tosa_specs
 
     def __init__(self, *args):
         super().__init__(*args)

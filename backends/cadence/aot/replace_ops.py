@@ -39,6 +39,7 @@ from executorch.backends.cadence.aot.fuse_ops import (
 )
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    none_throws,
     register_cadence_pass,
 )
 from executorch.backends.cadence.aot.remove_ops import RemoveNopSelectOpPass
@@ -1661,8 +1662,8 @@ class ReplaceNopTransposeOrPermuteWithViewPass(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
-        result = FuseCascadedViewOps()(result.graph_module)
-        assert result is not None
+        fuse_cascaded_result = none_throws(FuseCascadedViewOps()(result.graph_module))
+        result = none_throws(ExportPass()(fuse_cascaded_result.graph_module))
         return result
 
 

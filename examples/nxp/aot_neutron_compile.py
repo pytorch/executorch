@@ -16,6 +16,9 @@ import executorch.kernels.quantized  # noqa F401
 
 import torch
 
+from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import (
+    RemoveIOQuantOpsPass,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -192,6 +195,15 @@ if __name__ == "__main__":  # noqa C901
         help="Test the selected model and print the accuracy between 0 and 1.",
     )
     parser.add_argument(
+        "-r",
+        "--remove-quant-io-ops",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Remove I/O De/Quantize nodes. Model will start to accept quantized "
+        "inputs and produce quantized outputs.",
+    )
+    parser.add_argument(
         "--operators_not_to_delegate",
         required=False,
         default=[],
@@ -265,6 +277,14 @@ if __name__ == "__main__":  # noqa C901
         ),
     )
     logging.debug(f"Exported graph:\n{edge_program.exported_program().graph}")
+
+    if args.remove_quant_io_ops:
+        edge_program = edge_program.transform(
+            [RemoveIOQuantOpsPass(edge_program_manager=edge_program)]
+        )
+        logging.debug(
+            f"Exported graph (RemoveIOQuantOpsPass):\n{edge_program.exported_program().graph}"
+        )
 
     # 6. Export to ExecuTorch program
     try:

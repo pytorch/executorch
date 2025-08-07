@@ -12,9 +12,9 @@ import torch
 import torch.library
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineINT,
 )
 
 input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x
@@ -120,7 +120,7 @@ def test_quantized_rescale_tosa_bi(test_data: tuple[torch.Tensor, torch.Tensor])
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
     need the InsertRescalesPass, make sure that they play nicely together."""
     module = RescaleNetwork()
-    pipeline = TosaPipelineBI(
+    pipeline = TosaPipelineINT(
         module=module,
         test_data=test_data,
         aten_op=[],
@@ -137,7 +137,7 @@ def test_quantized_rescale_u55(test_data: tuple[torch.Tensor, torch.Tensor]):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
     need the InsertRescalesPass, make sure that they play nicely together."""
     module = RescaleNetwork()
-    pipeline = EthosU55PipelineBI(
+    pipeline = EthosU55PipelineINT(
         module=module,
         test_data=test_data,
         aten_ops=[],
@@ -153,7 +153,7 @@ def test_quantized_rescale_u85(test_data: tuple[torch.Tensor, torch.Tensor]):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
     need the InsertRescalesPass, make sure that they play nicely together."""
     module = RescaleNetwork()
-    pipeline = EthosU85PipelineBI(
+    pipeline = EthosU85PipelineINT(
         module=module,
         test_data=test_data,
         aten_ops=[],

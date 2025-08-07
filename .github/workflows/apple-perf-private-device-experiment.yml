@@ -23,7 +23,7 @@ on:
         description: Target devices to run benchmark
         required: false
         type: string
-        default: apple_iphone_15_private
+        default: apple_iphone_15+pro_private
       benchmark_configs:
         description: The list of configs used the benchmark
         required: false
@@ -39,7 +39,7 @@ on:
         description: Target devices to run benchmark
         required: false
         type: string
-        default: apple_iphone_15_private
+        default: apple_iphone_15+pro_private
       benchmark_configs:
         description: The list of configs used the benchmark
         required: false
@@ -58,5 +58,5 @@ jobs:
       contents: read
     with:
       models: ${{ inputs.models || github.event_name == 'schedule' && 'Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,meta-llama/Llama-3.2-1B,allenai/OLMo-1B-hf,google/gemma-3-1b-it' || 'google/gemma-3-1b-it' }}
-      devices: apple_iphone_15_private
+      devices: apple_iphone_15+pro_private
       benchmark_configs: ${{ inputs.benchmark_configs }}

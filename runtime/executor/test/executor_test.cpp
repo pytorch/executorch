@@ -31,6 +31,7 @@ using executorch::ET_RUNTIME_NAMESPACE::registry_has_op_function;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::runtime::testing::TensorFactory;
 
 namespace pytree = ::executorch::extension::pytree;
@@ -165,7 +166,7 @@ TEST_F(ExecutorTest, EValueToScalar) {
   ASSERT_EQ(s.to<int64_t>(), 2);
 }
 
-void test_op(KernelRuntimeContext& /*unused*/, EValue** /*unused*/) {}
+void test_op(KernelRuntimeContext& /*unused*/, Span<EValue*> /*unused*/) {}
 
 TEST_F(ExecutorTest, OpRegistration) {
   auto s1 = register_kernel(Kernel("test", test_op));
@@ -182,7 +183,7 @@ TEST_F(ExecutorTest, OpRegistration) {
 TEST_F(ExecutorTest, OpRegistrationWithContext) {
   auto op = Kernel(
       "test_op_with_context",
-      [](KernelRuntimeContext& context, EValue** values) {
+      [](KernelRuntimeContext& context, Span<EValue*> values) {
         (void)context;
         *(values[0]) = Scalar(100);
       });

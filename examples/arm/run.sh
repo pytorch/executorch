@@ -181,17 +181,15 @@ devtools_flag=""
 bundleio_flag=""
 et_dump_flag=""
 if [ "$build_with_etdump" = true ] ; then
-    devtools_flag="--devtools --etdump"
     et_dump_flag="--etdump"
 fi
 
 if [ "$bundleio" = true ] ; then
-    devtools_flag="--devtools --etdump"
+    devtools_flag="--devtools"
     bundleio_flag="--bundleio"
-    et_dump_flag="--etdump"
 fi
 
-backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag --toolchain="${toolchain}"
+backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
 backends/arm/scripts/build_portable_kernels.sh --et_build_root="${et_build_root}" --build_type=$build_type --portable_kernels=$portable_kernels --toolchain="${toolchain}"
 
 if [[ -z "$model_name" ]]; then

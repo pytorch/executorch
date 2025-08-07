@@ -58,13 +58,11 @@ dependencies {
     androidTestImplementation 'org.jetbrains.kotlin:kotlin-test:1.9.23'
 }
 
-import com.vanniktech.maven.publish.SonatypeHost
-
 mavenPublishing {
-  publishToMavenCentral(SonatypeHost.DEFAULT)
+  publishToMavenCentral()
   signAllPublications()
 
-  coordinates("org.pytorch", "executorch-android", "0.7.0")
+  coordinates("org.pytorch", "executorch-android", "0.7.0-SNAPSHOT")
 
   pom {
     name = "ExecuTorch Android"
@@ -96,6 +94,6 @@ mavenPublishing {
 
 repositories {
     maven {
-        url "https://oss.sonatype.org/content/repositories/snapshots"
+        url "https://central.sonatype.com/repository/maven-snapshots/"
     }
 }

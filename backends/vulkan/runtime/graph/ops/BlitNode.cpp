@@ -26,11 +26,9 @@ BlitNode::BlitNode(
 }
 
 void BlitNode::encode(ComputeGraph* graph) {
-  auto src_tensor = graph->get_tensor(src_);
-  auto dst_tensor = graph->get_tensor(dst_);
   VK_CHECK_COND(
-      src_tensor->storage_type() != utils::kBuffer &&
-          dst_tensor->storage_type() != utils::kBuffer,
+      graph->storage_type_of(src_) != utils::kBuffer &&
+          graph->storage_type_of(dst_) != utils::kBuffer,
       "BlitNode: Only texture backed tensors are supported.");
 
   api::Context* const context = graph->context();
@@ -41,18 +39,18 @@ void BlitNode::encode(ComputeGraph* graph) {
   // Hack to get timing data for non shader op
   std::string kernel_name("Blit_");
   kernel_name.reserve(32);
-  kernel_name += vkapi::to_string(src_tensor->dtype());
+  kernel_name += vkapi::to_string(graph->dtype_of(src_));
   kernel_name += "_to_";
-  kernel_name += vkapi::to_string(dst_tensor->dtype());
+  kernel_name += vkapi::to_string(graph->dtype_of(dst_));
 
   context->report_shader_dispatch_start(
       kernel_name, utils::uvec3(), utils::WorkgroupSize(), node_id_);
 
   context->register_blit(
       pipeline_barrier,
-      src_tensor->image(
+      graph->get_tensor(src_)->image(
           pipeline_barrier, vkapi::PipelineStage::TRANSFER, vkapi::kRead),
-      dst_tensor->image(
+      graph->get_tensor(dst_)->image(
           pipeline_barrier, vkapi::PipelineStage::TRANSFER, vkapi::kWrite));
 
   context->report_shader_dispatch_end();

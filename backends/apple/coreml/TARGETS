@@ -17,6 +17,7 @@ runtime.python_library(
     name = "backend",
     srcs = glob([
         "compiler/*.py",
+        "logging.py",
     ]),
     visibility = [
         "@EXECUTORCH_CLIENTS",
@@ -33,6 +34,7 @@ runtime.python_library(
     name = "partitioner",
     srcs = glob([
         "partition/*.py",
+        "logging.py",
     ]),
     visibility = [
         "@EXECUTORCH_CLIENTS",
