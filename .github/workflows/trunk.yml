@@ -93,7 +93,9 @@ jobs:
         source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
 
         # Get the model as PTE
-        python -m examples.arm.aot_arm_compiler --model_name="${MODEL_NAME}" --output="${MODEL_NAME}.pte"
+        python -m examples.arm.aot_arm_compiler \
+            --model_name="${MODEL_NAME}" \
+            --output="${MODEL_NAME}.pte"
 
         # Generate the C-style header
         cd $ARM_FVP_TUTORIALS_ROOT
