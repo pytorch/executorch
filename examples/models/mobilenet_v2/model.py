@@ -31,20 +31,29 @@ class MV2Model(EagerModelBase):
         if self.use_real_input:
             logging.info("Loaded real input image dog.jpg")
             import urllib
-            url, filename = ("https://github.com/pytorch/hub/raw/master/images/dog.jpg", "dog.jpg")
-            try: 
+
+            url, filename = (
+                "https://github.com/pytorch/hub/raw/master/images/dog.jpg",
+                "dog.jpg",
+            )
+            try:
                 urllib.URLopener().retrieve(url, filename)
-            except: 
+            except:
                 urllib.request.urlretrieve(url, filename)
             from PIL import Image
             from torchvision import transforms
+
             input_image = Image.open(filename)
-            preprocess = transforms.Compose([
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ])
+            preprocess = transforms.Compose(
+                [
+                    transforms.Resize(256),
+                    transforms.CenterCrop(224),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                    ),
+                ]
+            )
             input_tensor = preprocess(input_image)
             input_batch = input_tensor.unsqueeze(0)
             input_batch = (input_batch,)
