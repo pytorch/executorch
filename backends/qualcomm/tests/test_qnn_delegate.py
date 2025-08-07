@@ -4550,7 +4550,7 @@ class TestExampleLLMScript(TestQNN):
             "--ptq",
             "16a8w",
             "--decoder_model",
-            "qwen2_5",
+            "qwen2_5-0_5b",
             "--model_mode",
             "kv",
             "--max_seq_len",
@@ -4613,13 +4613,15 @@ class TestExampleLLMScript(TestQNN):
             "--ptq",
             "16a8w",
             "--decoder_model",
-            "qwen3_0_6b",
+            "qwen3-0_6b",
             "--model_mode",
             "hybrid",
             "--prefill_ar_len",
             "32",
             "--max_seq_len",
             "128",
+            "--r3",
+            "--enable_masked_softmax",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -4632,8 +4634,8 @@ class TestExampleLLMScript(TestQNN):
         if self.pre_gen_pte:
             cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
-        # Accuracy is bad for now. Just check user's prompt is returned.
-        golden_start_with = "My favourite condiment is "
+        # TODO: Change to PPL evaluation
+        golden_start_with = "<|im_start|>user"
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
