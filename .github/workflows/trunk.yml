@@ -119,6 +119,7 @@ jobs:
             -C cpu0.CFGITCMSZ=15 \
             -C cpu0.CFGDTCMSZ=15 \
             --simlimit 120
+        cat sim.out
 
         # Disable exit on error
         set +e
