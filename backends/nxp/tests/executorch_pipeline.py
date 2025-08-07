@@ -88,7 +88,7 @@ def to_quantized_edge_program(
         [tuple[ModelInputSpec, ...]], list[tuple[torch.Tensor, ...]]
     ] = get_random_calibration_inputs,
     target="imxrt700",
-    neutron_converter_flavor="SDK_25_03",
+    neutron_converter_flavor="SDK_25_06",
     remove_quant_io_ops=False,
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
 ) -> EdgeProgramManager:
