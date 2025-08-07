@@ -6,11 +6,10 @@
 
 set -euo pipefail
 
-# Installation script to manage transition to 1.0
+# Installation script for TOSA reference model
 
-# TOSA reference model
 tosa_reference_model_url="https://git.gitlab.arm.com/tosa/tosa-reference-model.git"
-tosa_reference_model_1_0_rev="1e6e4526df3391e1d6bc41562596bb18b3153bf3"
+tosa_reference_model_1_0_rev="8aa2896be5b0625a7cde57abb2308da0d426198d" #2025.07.0
 
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
