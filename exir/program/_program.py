@@ -613,7 +613,7 @@ class ExecutorchProgram:
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
         if self._emitter_output:
             return self._emitter_output.debug_handle_map
-        return {}
+        return self._get_emitter_output().debug_handle_map
 
     @property
     def delegate_map(
@@ -621,7 +621,7 @@ class ExecutorchProgram:
     ) -> Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]:
         if self._emitter_output:
             return self._emitter_output.method_to_delegate_debug_id_map
-        return {}
+        return self._get_emitter_output().method_to_delegate_debug_id_map
 
     @property
     def graph_module(self) -> torch.fx.GraphModule:
