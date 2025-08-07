@@ -8,7 +8,7 @@
 
 #include <cstring>
 
-#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <executorch/kernels/portable/cpu/util/stack_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -49,31 +49,7 @@ Tensor& stack_out(
       resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
       InvalidArgument,
       out);
-
-  const size_t outer = getLeadingDims(out, dim);
-  const size_t inner = getTrailingDims(out, dim);
-  const size_t ninputs = tensors.size();
-
-  const auto out_type = out.scalar_type();
-  ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, "stack.out", CTYPE_OUT, [&] {
-    CTYPE_OUT* out_ptr = out.mutable_data_ptr<CTYPE_OUT>();
-    for (size_t i = 0; i < outer; ++i) {
-      for (size_t j = 0; j < ninputs; ++j) {
-        const auto in_type = tensors[j].scalar_type();
-        ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "stack.out", CTYPE_IN, [&] {
-          const CTYPE_IN* const in_ptr =
-              tensors[j].const_data_ptr<CTYPE_IN>() + i * inner;
-
-          for (size_t k = 0; k < inner; ++k) {
-            out_ptr[k] = static_cast<CTYPE_OUT>(in_ptr[k]);
-          }
-          out_ptr += inner;
-        });
-      }
-    }
-  });
-
-  return out;
+  return stack_out_impl(ctx, tensors, dim, out);
 }
 
 } // namespace native
