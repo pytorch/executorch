@@ -20,6 +20,10 @@ option(ET_DUMP_OUTPUT "Dump output in log" ON)
 option(FETCH_ETHOS_U_CONTENT
        "Fetch ethos_u dependencies instead of relying on pre-downloads" ON
 )
+set(ET_NUM_INFERENCES
+    "1"
+    CACHE STRING "Number of inferences to run"
+)
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
@@ -77,6 +81,7 @@ set(MEMORY_MODE
 
 message(STATUS "SYSTEM_CONFIG is ${SYSTEM_CONFIG}")
 message(STATUS "MEMORY_MODE is ${MEMORY_MODE}")
+message(STATUS "ET_NUM_INFERENCES is ${ET_NUM_INFERENCES}")
 
 get_filename_component(ET_BUILD_DIR_PATH ${ET_BUILD_DIR_PATH} REALPATH)
 get_filename_component(ET_DIR_PATH ${ET_DIR_PATH} REALPATH)
@@ -253,6 +258,12 @@ endif()
 
 if(ET_DUMP_OUTPUT)
   target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_OUTPUT)
+endif()
+
+if(ET_NUM_INFERENCES)
+  target_compile_definitions(
+    arm_executor_runner PUBLIC ET_NUM_INFERENCES=${ET_NUM_INFERENCES}
+  )
 endif()
 
 # Fixup compilation of retarget.c
