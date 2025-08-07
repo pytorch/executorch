@@ -118,6 +118,7 @@ jobs:
             -C cpu0.CFGITCMSZ=15 \
             -C cpu0.CFGDTCMSZ=15 \
             --simlimit 120
+        cat sim.out
 
         # Report failure if any of the ouptut verification checks fail
         grep -F "ERROR" sim.out
