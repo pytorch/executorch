@@ -13,12 +13,8 @@ from pathlib import Path
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.exir import (
-    EdgeCompileConfig,
-    EdgeProgramManager,
-    to_edge_transform_and_lower,
-)
-from executorch.runtime import Method, Program, Runtime, Verification
+from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.runtime import Runtime, Verification
 from torch.export import export
 
 
@@ -29,7 +25,7 @@ class TopKModel(torch.nn.Module):
         super().__init__()
         self.k = k
 
-    def forward(self, x) -> torch.Tensor:
+    def forward(self, x) -> "tuple[torch.Tensor, torch.Tensor]":
         # This operation requires temporary memory allocation
         top_values, top_indices = torch.topk(x, self.k)
         return top_values, top_indices
@@ -42,7 +38,7 @@ class TopKModelWithOut(torch.nn.Module):
         super().__init__()
         self.k = k
 
-    def forward(self, x) -> torch.Tensor:
+    def forward(self, x) -> "tuple[torch.Tensor, torch.Tensor]":
         top_values = torch.ones(x.shape[0], self.k, dtype=torch.float32)
         top_indices = torch.ones(x.shape[0], self.k, dtype=torch.long)
         torch.topk(x.contiguous(), self.k, out=(top_values, top_indices))
