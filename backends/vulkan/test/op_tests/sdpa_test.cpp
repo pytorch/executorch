@@ -583,7 +583,6 @@ void test_vulkan_flash_attention(
   ValueRef staging_out = graph.set_output_tensor(r_out);
 
   graph.prepare();
-  graph.encode_prepack();
   graph.prepack();
 
   // Copy inputs and run
@@ -841,7 +840,6 @@ void test_reference_flash_attention(
   ValueRef staging_out = graph.set_output_tensor(r_out);
 
   graph.prepare();
-  graph.encode_prepack();
   graph.prepack();
 
   graph.copy_into_staging(r_q.staging, q.const_data_ptr(), q.numel());
