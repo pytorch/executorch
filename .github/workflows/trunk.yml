@@ -99,7 +99,7 @@ jobs:
         cd $ARM_FVP_TUTORIALS_ROOT
         python build_model.py \
             --executorch-root $ZEPHYR_PROJ_ROOT/modules/lib/executorch \
-            --pte-file ~/modules/lib/executorch/${MODEL_NAME}.pte \
+            --pte-file $ZEPHYR_PROJ_ROOT/modules/lib/executorch/${MODEL_NAME}.pte \
             --output-path $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/src/
 
         cd $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/
