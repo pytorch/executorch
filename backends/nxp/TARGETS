@@ -37,7 +37,7 @@ python_library(
     name = "neutron_sdk",
     srcs = glob(["backend/**/*.py"]),
     deps = [
-       "fbsource//third-party/pypi/neutron_convertor_SDK_25_03:neutron_convertor_SDK_25_03",
+       "fbsource//third-party/pypi/neutron_convertor_SDK_25_06:neutron_convertor_SDK_25_06",
     ],
 )
 
