@@ -59,6 +59,7 @@ class MV2Model(EagerModelBase):
             input_batch = (input_batch,)
         return input_batch
 
+
 class MV2UntrainedModel(EagerModelBase):
     def __init__(self):
         pass
