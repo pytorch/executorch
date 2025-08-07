@@ -41,6 +41,7 @@ python_library(
         ":ops_registrations",
         ":passes",
         ":replace_ops",
+        ":compiler_funcs",
         ":utils",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
@@ -329,6 +330,18 @@ python_library(
     typing = True,
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
+    ],
+)
+
+python_library(
+    name = "compiler_funcs",
+    srcs = [
+        "compiler_funcs.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
     ],
 )
 
