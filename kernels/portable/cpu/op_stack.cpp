@@ -14,6 +14,7 @@
 namespace torch {
 namespace executor {
 namespace native {
+namespace impl {
 
 using Tensor = executorch::aten::Tensor;
 
@@ -76,6 +77,27 @@ Tensor& stack_out(
   return out;
 }
 
+} // namespace impl
+
+Tensor& stack_out(
+    KernelRuntimeContext& ctx,
+    executorch::aten::ArrayRef<Tensor> tensors,
+    int64_t dim,
+    Tensor& out) {
+  return impl::stack_out(ctx, tensors, dim, out);
+}
+
+namespace utils {
+
+Tensor& stack_out(
+    KernelRuntimeContext& ctx,
+    executorch::aten::ArrayRef<Tensor> tensors,
+    int64_t dim,
+    Tensor& out) {
+  return impl::stack_out(ctx, tensors, dim, out);
+}
+
+} // namespace utils
 } // namespace native
 } // namespace executor
 } // namespace torch
