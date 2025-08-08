@@ -216,6 +216,10 @@ def annotate_matmul_16a8w(  # noqa: C901
         weight = node.args[1]
         input_qspec_map[weight] = quantization_config.weight
 
+        if len(node.args) > 2 and isinstance(node.args[2], Node):
+            bias = node.args[2]
+            input_qspec_map[bias] = quantization_config.bias(node)
+
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,

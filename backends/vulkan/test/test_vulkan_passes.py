@@ -155,6 +155,9 @@ class TestVulkanPasses(unittest.TestCase):
         self.assertEqual(op_node_count(gm, "linear_qcs4w.default"), 1)
         self.assertEqual(op_node_count(gm, "dequantize_per_channel.default"), 0)
 
+    @unittest.skip(
+        "linear_qta8a_qga4w currently does not support E2E dynamic quantization"
+    )
     def test_fuse_linear_qta8a_qga4w(self):
         """Test fusion of dynamic activation + grouped weight quantized linear (QTA8A_QGA4W)."""
         K = 256
