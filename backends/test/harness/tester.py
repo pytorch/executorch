@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 
+from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import (
     Export,
     Partition,
@@ -302,20 +303,15 @@ class Tester:
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         number_of_runs = 1 if inputs is not None else num_runs
         reference_stage = self.stages[StageType.EXPORT]
 
         stage = stage or self.cur
 
-        print(f"Comparing Stage {stage} with Stage {reference_stage}")
-        for run_iteration in range(number_of_runs):
+        for _ in range(number_of_runs):
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
-            input_shapes = [
-                generated_input.shape if hasattr(generated_input, "shape") else None
-                for generated_input in inputs_to_run
-            ]
-            print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
             # Reference output (and quantization scale)
             (
@@ -328,13 +324,25 @@ class Tester:
             # Output from running artifact at stage
             stage_output = self.stages[stage].run_artifact(inputs_to_run)
             self._compare_outputs(
-                reference_output, stage_output, quantization_scale, atol, rtol, qtol
+                reference_output,
+                stage_output,
+                quantization_scale,
+                atol,
+                rtol,
+                qtol,
+                statistics_callback,
             )
 
         return self
 
     @staticmethod
-    def _assert_outputs_equal(model_output, ref_output, atol=1e-03, rtol=1e-03):
+    def _assert_outputs_equal(
+        model_output,
+        ref_output,
+        atol=1e-03,
+        rtol=1e-03,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+    ):
         """
         Helper testing function that asserts that the model output and the reference output
         are equal with some tolerance. Due to numerical differences between eager mode and
@@ -349,6 +357,11 @@ class Tester:
         for i in range(len(model_output)):
             model = model_output[i]
             ref = ref_output[i]
+
+            error_stats = ErrorStatistics.from_tensors(model, ref)
+            if statistics_callback is not None:
+                statistics_callback(error_stats)
+
             assert (
                 ref.shape == model.shape
             ), f"Output {i} shape {model.shape} does not match reference output shape {ref.shape}"
@@ -386,6 +399,7 @@ class Tester:
         atol=1e-03,
         rtol=1e-03,
         qtol=0,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         """
         Compares the original of the original nn module with the output of the generated artifact.
@@ -408,6 +422,7 @@ class Tester:
             reference_output,
             atol=atol,
             rtol=rtol,
+            statistics_callback=statistics_callback,
         )
 
     @staticmethod
