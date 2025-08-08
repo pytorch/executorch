@@ -180,6 +180,16 @@ class NamedDataStore:
     def get_named_data_store_output(self) -> NamedDataStoreOutput:
         # Clean up empty maps inside self.external_data
         self.external_data = {k: v for k, v in self.external_data.items() if len(v) > 0}
+        if (
+            "c8afa3edf1f4a8da3b958d24fc4ca84a729a31708b73f375b12b15e27010f62f"
+            in self.pte_data.keys()
+        ):
+            breakpoint()
+        if (
+            "c8afa3edf1f4a8da3b958d24fc4ca84a729a31708b73f375b12b15e27010f62f"
+            in self.external_data.keys
+        ):
+            breakpoint()
         return NamedDataStoreOutput(self.buffers, self.pte_data, self.external_data)
 
     def merge_named_data_store(self, other: NamedDataStoreOutput) -> None:

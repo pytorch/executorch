@@ -648,9 +648,12 @@ class ExecutorchProgram:
         """
         assert self._tensor_data is not None
         # pyre-ignore[16]: `Optional` has no attribute `items`.
+        breakpoint()
         for filename, cord in self._tensor_data.items():
-            with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
-                logging.info(f"Writing data file to {filename}.ptd")
+            if not filename.endswith(".ptd"):
+                filename += ".ptd"
+            with open(os.path.join(outdir, f"{filename}"), "wb") as f:
+                logging.info(f"Writing data file to {filename}")
                 cord.write_to_file(f)
 
 
@@ -1218,6 +1221,18 @@ def collect_named_data_store_from_exported_program(
                 assert is_lowered_module(lbm)
                 data_store_output = lbm.named_data_store_output
                 if data_store_output is not None:
+                    if (
+                        "c8afa3edf1f4a8da3b958d24fc4ca84a729a31708b73f375b12b15e27010f62f"
+                        in data_store_output.pte_data.keys()
+                    ):
+                        print("pte data")
+                        breakpoint()
+                    if (
+                        "c8afa3edf1f4a8da3b958d24fc4ca84a729a31708b73f375b12b15e27010f62f"
+                        in named_data_store.external_data.keys()
+                    ):
+                        print("external data")
+                        breakpoint()
                     named_data_store.merge_named_data_store(data_store_output)
 
         for _, submod, _ in get_control_flow_submodules(graph_module):
@@ -1466,6 +1481,7 @@ class EdgeProgramManager:
             collect_named_data_store_from_exported_program(
                 program, self._named_data_store
             )
+        breakpoint()
 
         self._etrecord = None
 
@@ -1843,6 +1859,7 @@ class ExecutorchProgramManager:
         """
         assert self._tensor_data is not None
         for filename, cord in self._tensor_data.items():
+            breakpoint()
             with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
                 logging.info(f"Writing data file to {filename}")
                 cord.write_to_file(f)

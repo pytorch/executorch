@@ -32,6 +32,7 @@ def serialize_for_executorch(
 ) -> Tuple[Cord, Dict[str, Cord]]:
     """Serialize the output from Emitter into ExecuTorch artifacts; PTE and PTD files."""
 
+    breakpoint()
     # Serialize PTE file.
     pte_named_data = None
     if (
@@ -121,6 +122,11 @@ def serialize_for_executorch(
         # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
         key_to_buffer_index = named_data_store.external_data.get(tag, {})
         for key, index in key_to_buffer_index.items():
+            if (
+                key
+                == "c8afa3edf1f4a8da3b958d24fc4ca84a729a31708b73f375b12b15e27010f62f"
+            ):
+                breakpoint()
             assert key not in key_to_data_entry  # key must be unique
             key_to_data_entry[key] = DataEntry(
                 buffer_index=len(buffers),

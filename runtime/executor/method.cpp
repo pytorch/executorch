@@ -821,6 +821,21 @@ Error Method::init(
     const NamedDataMap* named_data_map = nullptr;
     if (external_data_map && pte_data_map.ok()) {
       // Merge external_data_map and pte_data_map if both are present.
+      auto buf = pte_data_map.get()->get_tensor_layout(
+          "c8afa3edf1f4a8da3b958d24fc4ca84a729a31708b73f375b12b15e27010f62f");
+      if (buf.ok()) {
+        ET_LOG(Info, "Key exists in PTE data map");
+      } else {
+        ET_LOG(
+            Info,
+            "Key does not exist in PTE data map, error: 0x%x",
+            buf.error());
+      }
+      auto buf2 = external_data_map->get_data(
+          "c8afa3edf1f4a8da3b958d24fc4ca84a729a31708b73f375b12b15e27010f62f");
+      if (buf2.ok()) {
+        ET_LOG(Info, "Key exists in external data map");
+      }
       auto merged =
           internal::MergedDataMap::load(external_data_map, pte_data_map.get());
       if (!merged.ok()) {

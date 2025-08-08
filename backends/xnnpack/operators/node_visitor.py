@@ -625,6 +625,11 @@ class NodeVisitor:
         external_tag = (
             custom_meta.get("delegate_constant_tag", None) if custom_meta else None
         )
+        if (
+            named_key
+            == "c8afa3edf1f4a8da3b958d24fc4ca84a729a31708b73f375b12b15e27010f62f"
+        ):
+            breakpoint()
         if external_tag is not None:
             external_tag = custom_meta.get("delegate_constant_tag", None)
             logging.info(
