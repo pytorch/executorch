@@ -15,6 +15,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.sigmoid.default"  # Used for checking that we do not have softmax in the graph after decompose
@@ -152,5 +153,103 @@ def test_sigmoid_u85_INT(test_data: Tuple):
         aten_op,
         exir_op,
         run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP_add():
+    pipeline = VgfPipeline[input_t1](
+        AddSigmoid(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT_add():
+    pipeline = VgfPipeline[input_t1](
+        AddSigmoid(),
+        (test_data_suite["ramp"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP_add_2():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAdd(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT_add_2():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAdd(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP_add_3():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAddSigmoid(),
+        (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT_add_3():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAddSigmoid(),
+        (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

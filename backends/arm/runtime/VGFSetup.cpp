@@ -517,14 +517,30 @@ bool VgfRepr::process_vgf(const char* vgf_data, ArrayRef<CompileSpec> specs) {
     return false;
   }
 
+  std::vector<VkDescriptorPoolSize> poolSizes;
+  poolSizes.reserve(layout_bindings.size());
+  for (const auto& b : layout_bindings) {
+    bool found = false;
+    for (size_t idx = 0; idx < poolSizes.size(); ++idx) {
+      if (poolSizes[idx].type == b.descriptorType) {
+        poolSizes[idx].descriptorCount += b.descriptorCount;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      poolSizes.push_back({b.descriptorType, b.descriptorCount});
+    }
+  }
+
   // Create descriptor pool and descriptors for pipeline
   const VkDescriptorPoolCreateInfo descriptor_pool_info = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
       .pNext = nullptr,
       .flags = 0,
       .maxSets = static_cast<uint32_t>(set_count),
-      .poolSizeCount = 0,
-      .pPoolSizes = nullptr,
+      .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+      .pPoolSizes = poolSizes.data(),
   };
   result = vkCreateDescriptorPool(
       vk_device, &descriptor_pool_info, nullptr, &vk_descriptor_pool);
