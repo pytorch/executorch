@@ -174,10 +174,6 @@ def install_optional_example_requirements(use_pytorch_nightly):
             "install",
             "-r",
             "requirements-examples.txt",
-            "--extra-index-url",
-            TORCH_NIGHTLY_URL,
-            "--upgrade-strategy",
-            "only-if-needed",
         ],
         check=True,
     )
