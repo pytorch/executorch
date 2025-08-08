@@ -10,7 +10,7 @@ from typing import Callable, cast, Dict, Iterator, Set
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
-from executorch.backends.arm.tosa_quant_utils import QuantArgs
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -59,6 +59,7 @@ class TableOps:
         exir_ops.edge.aten.acosh.default: torch.acosh,
         exir_ops.edge.aten.asin.default: torch.asin,
         exir_ops.edge.aten.asinh.default: torch.asinh,
+        exir_ops.edge.aten.cosh.default: torch.cosh,
     }
 
     # Targets that must be treated explicitly
