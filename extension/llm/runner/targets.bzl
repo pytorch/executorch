@@ -84,19 +84,24 @@ def define_common_targets():
         runtime.cxx_library(
             name = "image_prefiller" + aten_suffix,
             exported_headers = ["image_prefiller.h", "image.h"],
+            srcs = ["image_prefiller.cpp"],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
                 ":constants",
                 "//executorch/extension/module:module" + aten_suffix,
+                "//executorch/extension/tensor:tensor" + aten_suffix,
+                "//executorch/extension/llm/sampler:sampler" + aten_suffix,
             ],
         )
 
         runtime.cxx_library(
             name = "runner_lib" + aten_suffix,
             exported_headers = [
+                "multimodal_input.h",
                 "multimodal_runner.h",
+                "multimodal_text_decoder_runner.h",
                 "text_llm_runner.h",
                 "llm_runner_helper.h",
                 "constants.h",
@@ -104,6 +109,7 @@ def define_common_targets():
             srcs = [
                 "text_llm_runner.cpp",
                 "llm_runner_helper.cpp",
+                "multimodal_runner.cpp",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",

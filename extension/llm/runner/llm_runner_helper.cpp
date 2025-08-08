@@ -8,7 +8,10 @@
 
 // Implementation of helper utilities for creating and configuring LLM runners
 
+#include <executorch/extension/llm/runner/image_prefiller.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/multimodal_runner.h>
+#include <executorch/extension/llm/runner/multimodal_text_decoder_runner.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
@@ -203,6 +206,68 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       std::move(text_token_generator),
       std::move(stats),
       temperature);
+}
+
+std::unique_ptr<MultimodalRunner> create_multimodal_runner(
+    const std::string& model_path,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    std::optional<const std::string> data_path,
+    float temperature) {
+  // Sanity check tokenizer
+  if (!tokenizer || !tokenizer->is_loaded()) {
+    ET_LOG(Error, "Tokenizer is null or not loaded");
+    return nullptr;
+  }
+
+  // Create the Module
+  std::unique_ptr<Module> module;
+  if (data_path.has_value()) {
+    module = std::make_unique<Module>(
+        model_path, data_path.value(), Module::LoadMode::File);
+  } else {
+    module = std::make_unique<Module>(model_path, Module::LoadMode::File);
+  }
+
+  // Get metadata from Module
+  ET_LOG(Info, "Reading metadata from model");
+  auto metadata = get_llm_metadata(tokenizer.get(), module.get());
+
+  auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
+      get_eos_ids(tokenizer.get(), module.get()));
+
+  // Create text_decoder_runner
+  auto text_decoder_runner =
+      std::make_unique<MultimodalTextDecoderRunner>(module.get());
+
+  // Create text_prefiller
+  auto text_prefiller = std::make_unique<TextPrefiller>(
+      text_decoder_runner.get(),
+      metadata.at(kUseKVCache),
+      metadata.at(kEnableDynamicShape),
+      metadata.at(kMaxSeqLen));
+
+  // Create image_prefiller
+  auto image_prefiller = std::make_unique<ImagePrefiller>(module.get());
+
+  // Create text_token_generator with stats
+  auto stats = std::make_unique<Stats>();
+  auto text_token_generator = std::make_unique<TextTokenGenerator>(
+      tokenizer.get(),
+      text_decoder_runner.get(),
+      metadata.at(kUseKVCache),
+      std::move(eos_ids),
+      stats.get());
+
+  // Create and return the MultimodalRunner instance
+  return std::make_unique<MultimodalRunner>(
+      std::move(metadata),
+      std::move(tokenizer),
+      std::move(module),
+      std::move(text_decoder_runner),
+      std::move(text_prefiller),
+      std::move(image_prefiller),
+      std::move(text_token_generator),
+      std::move(stats));
 }
 
 } // namespace llm
