@@ -1,0 +1,16 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
+
+oncall("executorch")
+
+runtime.python_test(
+    name = "test_aoti_recipes",
+    srcs = [
+        "recipes/test_aoti_recipes.py",
+    ],
+    deps = [
+        "//executorch/backends/aoti:aoti_delegate",
+        "//executorch/export:lib",
+        "//executorch/examples/models:models",  # @manual
+    ],
+)
