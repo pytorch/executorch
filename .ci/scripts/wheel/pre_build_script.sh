@@ -15,3 +15,5 @@ set -euxo pipefail
 # able to see the installed torch package.
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh"  --example
+
+pip list

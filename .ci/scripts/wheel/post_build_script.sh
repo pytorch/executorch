@@ -12,3 +12,5 @@ set -eux
 # Rename pip-out directory, to avoid using shared libraries in pip-out during
 # smoke test.
 mv pip-out BACKUP-pip-out
+
+pip list

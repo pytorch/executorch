@@ -139,9 +139,12 @@ def install_optional_example_requirements(use_pytorch_nightly):
             "install",
             "-r",
             "requirements-examples.txt",
+            "--extra-index-url",
+            TORCH_URL,
         ],
         check=True,
     )
+
 
 # Prebuilt binaries for Intel-based macOS are no longer available on PyPI; users must compile from source.
 # PyTorch stopped building macOS x86_64 binaries since version 2.3.0 (January 2024).
