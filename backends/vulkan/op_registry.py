@@ -16,6 +16,8 @@ import executorch.backends.vulkan.utils as utils
 
 import torch
 
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkMemoryLayout
+
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -373,7 +375,29 @@ def register_softmax_op():
 def register_reduce_op():
     def check_reduce_node(node: torch.fx.Node) -> bool:
         dim_list = node.args[1]
-        if isinstance(dim_list, list) and len(dim_list) != 1:
+        if isinstance(dim_list, list) and len(dim_list) > 2:
+            return False
+
+        if isinstance(dim_list, list) and len(dim_list) == 2:
+            # Try to get the memory layout for this node
+            try:
+                memory_layout = utils.get_node_memory_layout(node)
+
+                # If we have memory layout information, check if any dimension in dim_list corresponds to a packed dimension
+                if (
+                    memory_layout is not None
+                    and memory_layout != VkMemoryLayout.DEFAULT_LAYOUT
+                ):
+                    # For now only default layout is supported for 2D reduction.
+                    # Because we can't determine if the input is NCHW or NHWC here,
+                    # assume the reduction dimension is packed so we cannot support it.
+                    return False
+            except (AssertionError, KeyError, AttributeError):
+                # If we can't get memory layout information, we'll assume the dims aren't packed
+                pass
+
+        keepdim = node.args[2]
+        if isinstance(keepdim, bool) and not keepdim:
             return False
 
         if len(node.args) > 2:

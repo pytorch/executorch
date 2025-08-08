@@ -8,12 +8,25 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
+
+// Custom global workgroup size function for flip
+utils::uvec3 flip_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  return graph->create_global_wg_size(out);
+}
 
 void check_flip_args(
     ComputeGraph& graph,
@@ -59,11 +72,11 @@ void add_flip_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      flip_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {
           {out, vkapi::kWrite},
