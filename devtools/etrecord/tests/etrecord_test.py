@@ -15,6 +15,7 @@ from typing import List
 import executorch.exir.tests.models as models
 import torch
 from executorch import exir
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.devtools.bundled_program.core import BundledProgram
 from executorch.devtools.etrecord import generate_etrecord, parse_etrecord
@@ -369,6 +370,41 @@ class TestETRecord(unittest.TestCase):
         self.assertEqual(etrecord._debug_handle_map, et_manager.debug_handle_map)
         self.assertEqual(etrecord._delegate_map, et_manager.delegate_map)
 
+    def test_get_etrecord_from_executorch_program_manager_with_partitioner(self):
+        """Test getting ETRecord from ExecutorchProgramManager using get_etrecord() method."""
+        f = models.BasicSinMax()
+        aten_program = export(f, f.get_random_inputs(), strict=True)
+
+        # Generate edge manager with ETRecord
+        edge_manager = to_edge_transform_and_lower(
+            aten_program,
+            partitioner=[XnnpackPartitioner()],
+            generate_etrecord=True,
+        )
+
+        # Convert to executorch
+        et_manager = edge_manager.to_executorch()
+
+        # Test get_etrecord method
+        etrecord = et_manager.get_etrecord()
+        self.assertIsNotNone(etrecord)
+        self.assert_etrecord_saveable(etrecord)
+
+        # Verify the data matches the original input
+        self.check_graph_closeness(
+            etrecord.exported_program,
+            aten_program.graph_module,
+        )
+        self.assertEqual(
+            etrecord.export_graph_id,
+            id(aten_program.graph),
+        )
+
+        # Verify the executorch program data matches
+        # ETRecord stores data directly (not JSON serialized), so compare with original data
+        self.assertEqual(etrecord._debug_handle_map, et_manager.debug_handle_map)
+        self.assertEqual(etrecord._delegate_map, et_manager.delegate_map)
+
     def test_get_etrecord_from_executorch_program_manager_without_generation(self):
         """Test getting ETRecord from ExecutorchProgramManager when ETRecord was not generated."""
         f = models.BasicSinMax()
@@ -400,6 +436,7 @@ class TestETRecord(unittest.TestCase):
         # Generate edge manager with ETRecord
         edge_manager = to_edge_transform_and_lower(
             aten_program,
+            partitioner=[XnnpackPartitioner()],
             generate_etrecord=True,
         )
 
@@ -1462,3 +1499,32 @@ class TestETRecord(unittest.TestCase):
                 custom_outputs["forward"], parsed_etrecord._reference_outputs["forward"]
             ):
                 self.assertTrue(torch.equal(expected[0], actual[0]))
+
+    def test_save_missing_essential_info(self):
+        def expected_runtime_error(etrecord, etrecord_path):
+            with self.assertRaises(RuntimeError) as context:
+                etrecord.save(etrecord_path)
+
+            self.assertIn(
+                "ETRecord must contain edge dialect program and executorch program to be saved",
+                str(context.exception),
+            )
+
+        """Test that save raises RuntimeError when essential info is missing."""
+        _, edge_output, et_output = self.get_test_model()
+
+        etrecord = ETRecord()
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            etrecord_path = tmpdirname + "/etrecord_no_edge.bin"
+
+            expected_runtime_error(etrecord, etrecord_path)
+            etrecord.add_edge_dialect_program(edge_output)
+
+            # Should raise runtime error due to  missing executorch program related info
+            expected_runtime_error(etrecord, etrecord_path)
+
+            etrecord.add_executorch_program(et_output)
+
+            # All essential components are now present, so save should succeed
+            etrecord.save(etrecord_path)
