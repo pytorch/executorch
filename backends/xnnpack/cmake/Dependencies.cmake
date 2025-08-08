@@ -36,6 +36,11 @@ set(XNNPACK_ENABLE_AVXVNNI
     OFF
     CACHE BOOL ""
   )
+
+set(XNNPACK_ENABLE_ARM_SME2
+    ON
+    CACHE BOOL ""
+  )
 # Work around observed failure: https://github.com/pytorch/executorch/pull/10362#issuecomment-2906391232
 set(XNNPACK_ENABLE_AVX512VNNIGFNI
   OFF
