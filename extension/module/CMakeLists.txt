@@ -27,10 +27,10 @@ if(CMAKE_TOOLCHAIN_IOS
 else()
   add_library(extension_module SHARED ${_extension_module__srcs})
 endif()
-target_link_libraries(
-  extension_module PRIVATE executorch_core extension_data_loader
-                           extension_flat_tensor
-)
+  target_link_libraries(
+    extension_module PRIVATE executorch_core extension_data_loader
+                             extension_flat_tensor
+  )
 target_include_directories(
   extension_module PUBLIC ${_common_include_directories}
 )
@@ -41,10 +41,10 @@ target_compile_options(
 # Module extension built as a static library. TODO(gjcomer) Remove this target
 # after cleaning up CMake targets.
 add_library(extension_module_static STATIC ${_extension_module__srcs})
-target_link_libraries(
-  extension_module_static PRIVATE executorch_core extension_data_loader
-                                  extension_flat_tensor
-)
+  target_link_libraries(
+    extension_module_static PRIVATE executorch_core extension_data_loader
+                                    extension_flat_tensor
+  )
 target_include_directories(
   extension_module_static PUBLIC ${_common_include_directories}
 )
