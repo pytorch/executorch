@@ -131,6 +131,9 @@ class TestCaseSummary:
     undelegated_op_counts: Counter | None = None
     """ The number of undelegated occurances of each operator in the graph. """
 
+    pte_size_bytes: int | None = None
+    """ The size of the PTE file in bytes. """
+
 
 class TestSessionState:
     test_case_summaries: list[TestCaseSummary]
@@ -302,6 +305,7 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
             "Undelegated Nodes",
             "Delegated Ops",
             "Undelegated Ops",
+            "PTE Size (Kb)",
         ]
     )
 
@@ -336,5 +340,8 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
         row["Undelegated Nodes"] = _sum_op_counts(record.undelegated_op_counts)
         row["Delegated Ops"] = _serialize_op_counts(record.delegated_op_counts)
         row["Undelegated Ops"] = _serialize_op_counts(record.undelegated_op_counts)
+        row["PTE Size (Kb)"] = (
+            record.pte_size_bytes / 1000.0 if record.pte_size_bytes else ""
+        )
 
         writer.writerow(row)
