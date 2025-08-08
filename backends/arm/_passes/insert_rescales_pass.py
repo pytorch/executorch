@@ -9,8 +9,8 @@ from typing import cast
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
-from executorch.backends.arm.tosa_quant_utils import QuantArgs
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch import Tensor
 from torch.fx import GraphModule, Node
