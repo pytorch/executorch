@@ -80,12 +80,13 @@ jobs:
         export ZEPHYR_PROJ_ROOT=$(realpath $(pwd))
         export ARM_FVP_TUTORIALS_ROOT=$ZEPHYR_PROJ_ROOT/zephyr/samples/modules/executorch/arm-fvp-tutorials
 
+        # TODO @Bujji: Should see if this can be moved into the docker image itself
         download_arm_zephyr_sdk
         ./zephyr-sdk-0.16.0/setup.sh -c -t arm-zephyr-eabi
-
         cd $ZEPHYR_PROJ_ROOT
         setup_zephyr_et_module
 
+        # Run setup scripts for Arm FVP and Arm AOT Compilation
         cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
         install_executorch "--use-pt-pinned-commit"
         .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
@@ -93,7 +94,9 @@ jobs:
         source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
 
         # Get the model as PTE
-        python -m examples.arm.aot_arm_compiler --model_name="${MODEL_NAME}" --output="${MODEL_NAME}.pte"
+        python -m examples.arm.aot_arm_compiler \
+            --model_name="${MODEL_NAME}" \
+            --output="${MODEL_NAME}.pte"
 
         # Generate the C-style header
         cd $ARM_FVP_TUTORIALS_ROOT
@@ -105,7 +108,8 @@ jobs:
         cd $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/
 
         # Build the zephyr elf
-        west build -p always -b mps3/corstone300/fvp
+        west build -p always -b mps3/corstone300/fvp -- \
+            -DET_PTE_FILE_PATH_FOR_SELECTIVE_BUILD=$ZEPHYR_PROJ_ROOT/modules/lib/executorch/${MODEL_NAME}.pte
 
         # Run the simulation
         FVP_Corstone_SSE-300_Ethos-U55 -a build/zephyr/zephyr.elf \
@@ -116,21 +120,29 @@ jobs:
             -C cpu0.CFGDTCMSZ=15 \
             --simlimit 120
 
+        # Disable exit on error
+        set +e
         # Report failure if any of the ouptut verification checks fail
+        # store 0 if found (failure), 1 if not (success)
         grep -qF "ERROR" sim.out
-        exit_status=$? #store 0 if found (failure), 1 if not (success)
+        exit_status=$?
         if [[ "$exit_status" -eq "0" ]]; then
-          cat sim.out
-          exit 1
+            cat sim.out
+            set -e
+            exit 1
         fi
 
         # Report fail if simulation does not complete successfully
+        # store 0 if found (success), 1 if not (failure)
         grep -qF "SUCCESS: Program complete, exiting." sim.out
-        exit_status=$? #store 0 if found (success), 1 if not (failure)
+        exit_status=$?
         if [[ "$exit_status" -eq "1" ]]; then
-          cat sim.out
-          exit 1
+            cat sim.out
+            set -e
+            exit 1
         fi
+        # Re-enable exit on error
+        set -e
 
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
