@@ -446,10 +446,24 @@ class ExportSession:
         """
         Print delegation information for the exported program.
         """
-        delegation_info = self._run_context.get("delegation_info", None)
+        lowering_stage = list(
+            set(self._pipeline_stages)
+            & {StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_BACKEND}
+        )
+        if not lowering_stage:
+            RuntimeError(
+                "No delegation info available, atleast one of the lowering stages should be present"
+            )
+
+        stage_artifact = self._stage_to_artifacts.get(lowering_stage[0])
+        if stage_artifact is None:
+            RuntimeError("No delegation info available, run the lowering stage first")
+
+        # pyre-ignore
+        delegation_info = stage_artifact.get_context("delegation_info", None)
         if delegation_info:
-            logging.info(delegation_info.get_summary())
+            print(delegation_info.get_summary())
             df = delegation_info.get_operator_delegation_dataframe()
-            logging.info(tabulate(df, headers="keys", tablefmt="fancy_grid"))
+            print(tabulate(df, headers="keys", tablefmt="fancy_grid"))
         else:
-            logging.info("No delegation info available")
+            print("No delegation info available")
