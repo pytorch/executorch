@@ -119,13 +119,12 @@ jobs:
             -C cpu0.CFGITCMSZ=15 \
             -C cpu0.CFGDTCMSZ=15 \
             --simlimit 120
-        cat sim.out
 
         # Disable exit on error
         set +e
         # Report failure if any of the ouptut verification checks fail
         # store 0 if found (failure), 1 if not (success)
-        grep -F "ERROR" sim.out
+        grep -qF "ERROR" sim.out
         exit_status=$?
         if [[ "$exit_status" -eq "0" ]]; then
             cat sim.out
@@ -135,7 +134,7 @@ jobs:
 
         # Report fail if simulation does not complete successfully
         # store 0 if found (success), 1 if not (failure)
-        grep -F "SUCCESS: Program complete, exiting." sim.out
+        grep -qF "SUCCESS: Program complete, exiting." sim.out
         exit_status=$?
         if [[ "$exit_status" -eq "1" ]]; then
             cat sim.out
