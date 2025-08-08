@@ -127,6 +127,7 @@ jobs:
 
           python install_requirements.py
           cmake --preset ${{ matrix.preset }}
+          Write-Host "Build exit code: \$LASTEXITCODE"
           \$numCores = [System.Environment]::GetEnvironmentVariable('NUMBER_OF_PROCESSORS') - 1
           cmake --build cmake-out -j \$numCores
         }"
