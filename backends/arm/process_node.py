@@ -8,11 +8,12 @@
 from typing import Any, cast, Dict
 
 import numpy as np
+import serializer.tosa_serializer as ts
 import torch
 import torch.fx
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import Tosa_1_00, TosaSpecification
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.backends.arm.tosa_utils import getNodeArgs, tosa_shape
 from torch._export.utils import (
     get_buffer,
@@ -80,11 +81,6 @@ def process_inputs(
             f"Failed processing input placeholder: {node.name}. "
             "Is the original torch function supported?"
         ) from e
-
-    if isinstance(tosa_spec, Tosa_1_00):
-        import serializer.tosa_serializer as ts
-    else:
-        raise ValueError(f"Unsupported TOSA spec: {tosa_spec}")
 
     input_shape = tosa_arg.shape
     input_dim_order = tosa_arg.dim_order

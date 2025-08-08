@@ -13,8 +13,7 @@
 import logging
 from typing import cast, final, List
 
-import executorch.backends.arm.tosa_specification as tosa_specification
-
+import serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.arm_backend import get_tosa_spec
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm._passes import (
@@ -85,13 +84,6 @@ class TOSABackend(BackendDetails):
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
-        if isinstance(tosa_spec, tosa_specification.Tosa_1_00):
-            import serializer.tosa_serializer as ts  # type: ignore
-        else:
-            raise RuntimeError(
-                f"Unknown TOSA version {tosa_spec}, no pip package installed to handle serialization to that version."
-            )
-
         tosa_graph = ts.TosaSerializer(artifact_path)
 
         assert (
