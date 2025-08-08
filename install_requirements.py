@@ -143,6 +143,24 @@ def install_optional_example_requirements(use_pytorch_nightly):
         check=True,
     )
 
+    print("Installing torch domain libraries")
+    DOMAIN_LIBRARIES = [
+        ("torchvision==0.23.0" if use_pytorch_nightly else "torchvision"),
+        "torchaudio==2.8.0" if use_pytorch_nightly else "torchaudio",
+    ]
+    # Then install domain libraries
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            *DOMAIN_LIBRARIES,
+            "--extra-index-url",
+            TORCH_URL,
+        ],
+        check=True,
+    )
 
 # Prebuilt binaries for Intel-based macOS are no longer available on PyPI; users must compile from source.
 # PyTorch stopped building macOS x86_64 binaries since version 2.3.0 (January 2024).
