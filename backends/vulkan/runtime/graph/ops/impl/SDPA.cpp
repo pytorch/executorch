@@ -33,7 +33,7 @@ void resize_sdpa_out(
   int arg_idx = 0;
   const ValueRef q_projected = extra_args[arg_idx++];
   const ValueRef out = extra_args[arg_idx++];
-  graph->get_tensor(out)->virtual_resize(graph->sizes_of(q_projected));
+  graph->virtual_resize(out, graph->sizes_of(q_projected));
 }
 
 void resize_flash_attention_out(
@@ -49,7 +49,7 @@ void resize_flash_attention_out(
   const ValueRef q_projected = args.at(1).refs.at(0);
 
   // Resize output to match query dimensions
-  graph->get_tensor(out)->virtual_resize(graph->sizes_of(q_projected));
+  graph->virtual_resize(out, graph->sizes_of(q_projected));
 }
 
 // Flash Attention implementation using single compute shader
@@ -338,7 +338,7 @@ void resize_cache_slice_view_node(
   std::vector<int64_t> slice_sizes = get_cache_slice_sizes(
       *graph, extra_args[0], extra_args[1], extra_args[2]);
 
-  graph->get_tensor(extra_args[3])->virtual_resize(slice_sizes);
+  graph->virtual_resize(extra_args[3], slice_sizes);
 }
 
 void add_cache_slice_view_node(
@@ -353,7 +353,7 @@ void add_cache_slice_view_node(
   // Initialize the slice to the maximum possible size to start
   slice_sizes.at(1) = max_seq_len;
 
-  graph.get_tensor(cache_sliced)->virtual_resize(slice_sizes);
+  graph.virtual_resize(cache_sliced, slice_sizes);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       resize_cache_slice_view_node,
@@ -489,7 +489,7 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   std::vector<int64_t> attn_weight_sizes = attn_weight_full_sizes;
   attn_weight_sizes.at(2) = graph.size_at<int64_t>(2, q_transposed);
   attn_weight_sizes.at(3) = graph.size_at<int64_t>(2, k_transposed);
-  graph.get_tensor(attn_weight)->virtual_resize(attn_weight_sizes);
+  graph.virtual_resize(attn_weight, attn_weight_sizes);
 
   // Calculate attention weight, which is a matmul of Q and K
   const ValueRef mat2_is_transposed = graph.add_scalar<bool>(false);
@@ -502,7 +502,7 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   TmpTensor attn_weight_softmax(
       &graph, attn_weight_full_sizes, graph.dtype_of(q_transposed));
-  graph.get_tensor(attn_weight_softmax)->virtual_resize(attn_weight_sizes);
+  graph.virtual_resize(attn_weight_softmax, attn_weight_sizes);
   add_softmax_node(graph, attn_weight, width, attn_weight_softmax, false);
 
   // Calculate final output

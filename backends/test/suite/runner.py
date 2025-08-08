@@ -35,6 +35,7 @@ def run_test(  # noqa: C901
     test_base_name: str,
     params: dict | None,
     dynamic_shapes: Any | None = None,
+    generate_random_test_inputs: bool = True,
 ) -> TestCaseSummary:
     """
     Top-level test run function for a model, input set, and tester. Handles test execution
@@ -106,7 +107,9 @@ def run_test(  # noqa: C901
         # the cause of a failure in run_method_and_compare_outputs. We can look for
         # AssertionErrors to catch output mismatches, but this might catch more than that.
         try:
-            tester.run_method_and_compare_outputs()
+            tester.run_method_and_compare_outputs(
+                inputs=None if generate_random_test_inputs else inputs
+            )
         except AssertionError as e:
             return build_result(TestResult.OUTPUT_MISMATCH_FAIL, e)
         except Exception as e:
