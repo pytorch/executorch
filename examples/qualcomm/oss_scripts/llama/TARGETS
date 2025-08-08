@@ -16,9 +16,29 @@ python_library(
 )
 
 python_library(
+    name = "decoder_utils",
+    srcs = [
+        "decoder_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:eval_library",
+    ],
+)
+
+python_library(
+    name = "decoder_constants",
+    srcs = [
+        "decoder_constants.py",
+    ],
+)
+
+python_library(
     name = "llama_lib",
     srcs = ["llama.py"],
     deps = [
+        ":decoder_constants",
+        ":decoder_utils",
         "//executorch/examples/models/llama:source_transformation",
         "//caffe2:torch",
         "//executorch/backends/qualcomm/partition:partition",
