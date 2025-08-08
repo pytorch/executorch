@@ -201,8 +201,9 @@ embedding_config = IntxWeightOnlyConfig(
     weight_dtype=torch.int8,
     granularity=PerAxis(0),
 )
-qunatize_(
+quantize_(
     eager_model,
+    embedding_config,
     lambda m, fqn: isinstance(m, torch.nn.Embedding),
 )
 
