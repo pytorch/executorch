@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import warnings as _warnings
 
 from typing import (
     Any,
@@ -39,6 +40,20 @@ from torch._export.pass_base import PassType
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 """ Generic type used for test data in the pipeline. Depends on which type the operator expects."""
+
+
+def is_tosa_ref_model_available():
+    """Checks if the TOSA reference model is available."""
+    # Not all deployments of ET have the TOSA reference model available.
+    # Make sure we don't try to use it if it's not available.
+    try:
+        import tosa_tools.tosa_ref_model as tosa_reference_model
+
+        if not dir(tosa_reference_model):
+            return False
+    except ImportError:
+        return False
+    return True
 
 
 class BasePipelineMaker(Generic[T]):
@@ -283,8 +298,6 @@ class TosaPipelineINT(BasePipelineMaker, Generic[T]):
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
        if not using use_edge_to_transform_and_lower.
 
-       run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
-
        tosa_version: A string for identifying the TOSA version, see common.get_tosa_compile_spec for
                      options.
        use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
@@ -297,7 +310,6 @@ class TosaPipelineINT(BasePipelineMaker, Generic[T]):
         test_data: T,
         aten_op: str | List[str],
         exir_op: Optional[str | List[str]] = None,
-        run_on_tosa_ref_model: bool = True,
         symmetric_io_quantization: bool = False,
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
@@ -360,13 +372,17 @@ class TosaPipelineINT(BasePipelineMaker, Generic[T]):
             suffix="quant_nodes",
         )
 
-        if run_on_tosa_ref_model:
+        if is_tosa_ref_model_available():
             self.add_stage(
                 self.tester.run_method_and_compare_outputs,
                 atol=atol,
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
+            )
+        else:
+            _warnings.warn(
+                "Warning: Skipping run_method_and_compare_outputs stage. tosa reference model is not available."
             )
 
 
@@ -381,8 +397,6 @@ class TosaPipelineFP(BasePipelineMaker, Generic[T]):
        aten_ops: Aten dialect ops expected to be found in the graph after export.
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
        if not using use_edge_to_transform_and_lower.
-
-       run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
 
        tosa_version: A string for identifying the TOSA version, see common.get_tosa_compile_spec for
                      options.
@@ -435,13 +449,17 @@ class TosaPipelineFP(BasePipelineMaker, Generic[T]):
             suffix="quant_nodes",
         )
 
-        if run_on_tosa_ref_model:
+        if is_tosa_ref_model_available():
             self.add_stage(
                 self.tester.run_method_and_compare_outputs,
                 atol=atol,
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
+            )
+        else:
+            _warnings.warn(
+                "Warning: Skipping run_method_and_compare_outputs stage. tosa reference model is not available"
             )
 
 
@@ -701,7 +719,12 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
             self.add_stage(self.tester.check_count, ops_after_pass, suffix="after")
         if ops_not_after_pass:
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
-        self.add_stage(self.tester.run_method_and_compare_outputs)
+        if is_tosa_ref_model_available():
+            self.add_stage(self.tester.run_method_and_compare_outputs)
+        else:
+            _warnings.warn(
+                "Warning: Skipping run_method_and_compare_outputs stage. Tosa reference model is not available."
+            )
 
 
 class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
@@ -748,11 +771,16 @@ class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
         self.pop_stage("to_executorch")
         self.pop_stage("to_edge_transform_and_lower")
         self.pop_stage("check.aten")
-        self.add_stage(
-            self.tester.run_method_and_compare_outputs,
-            inputs=test_data,
-            run_eager_mode=True,
-        )
+        if is_tosa_ref_model_available():
+            self.add_stage(
+                self.tester.run_method_and_compare_outputs,
+                inputs=test_data,
+                run_eager_mode=True,
+            )
+        else:
+            _warnings.warn(
+                "Warning: Skipping run_method_and_compare_outputs stage. Tosa reference model is not available."
+            )
 
 
 class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
