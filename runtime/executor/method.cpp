@@ -670,7 +670,7 @@ Error Method::resolve_operator(
     size_t kernel_index,
     InstructionArgs args,
     size_t n_args) {
-  // TODO(T153505381, T153506819) Investigate optimizing this function for both
+  // TODO(T153506819) Investigate optimizing this function for both
   // space and time.
 
   // resolve name
@@ -691,8 +691,16 @@ Error Method::resolve_operator(
   }
 
   // resolve tensor meta
-  auto method_allocator = memory_manager_->method_allocator();
-  TensorMeta* meta = method_allocator->allocateList<TensorMeta>(n_args);
+  // Since temp allocator can be freed, we optimistically
+  // try to use that allocator first.
+  auto allocator = memory_manager_->temp_allocator();
+  // However, it does not have to be provided, so if it
+  // is not provided (or an empty one is provided), we
+  // fall back to the method allocator.
+  if (allocator == nullptr || allocator->size() == 0) {
+    allocator = memory_manager_->method_allocator();
+  }
+  TensorMeta* meta = allocator->allocateList<TensorMeta>(n_args);
   if (meta == nullptr) {
     return Error::MemoryAllocationFailed;
   }
@@ -705,8 +713,7 @@ Error Method::resolve_operator(
       auto tensor = eval->toTensor();
       meta[count].dtype_ = tensor.scalar_type();
       executorch::aten::DimOrderType* dim_order_ptr =
-          method_allocator->allocateList<executorch::aten::DimOrderType>(
-              tensor.dim());
+          allocator->allocateList<executorch::aten::DimOrderType>(tensor.dim());
       if (dim_order_ptr == nullptr) {
         return Error::MemoryAllocationFailed;
       }
@@ -1319,7 +1326,7 @@ Error Method::execute_instruction() {
       // TODO(T147221312): Also expose tensor resizer via the context.
       KernelRuntimeContext context(event_tracer_, temp_allocator_);
       auto args = chain.argument_lists_[step_state_.instr_idx];
-      chain.kernels_[step_state_.instr_idx](context, args.data());
+      chain.kernels_[step_state_.instr_idx](context, args);
       // We reset the temp_allocator after the switch statement
       err = context.failure_state();
       if (err != Error::Ok) {
