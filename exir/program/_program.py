@@ -1583,9 +1583,12 @@ class EdgeProgramManager:
                 new_programs[name].graph_module
             )
 
-        return EdgeProgramManager(
+        epm = EdgeProgramManager(
             new_programs, copy.deepcopy(self._config_methods), compile_config
         )
+
+        epm._etrecord = self._etrecord
+        return epm
 
     @et_logger("to_backend")
     def to_backend(
@@ -1629,11 +1632,14 @@ class EdgeProgramManager:
 
         new_edge_programs = to_backend(method_to_programs_and_partitioners)
         config = EdgeCompileConfig(_check_ir_validity=False)
-        return EdgeProgramManager(
+        epm = EdgeProgramManager(
             new_edge_programs,
             copy.deepcopy(self._config_methods),
             config,
         )
+
+        epm._etrecord = self._etrecord
+        return epm
 
     @et_logger("to_executorch")
     def to_executorch(
