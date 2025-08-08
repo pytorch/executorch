@@ -9,7 +9,7 @@
 
 import math
 
-from typing import Any, cast, NamedTuple, Tuple
+from typing import Any, Tuple
 
 import executorch.backends.arm.tosa_specification as tosa_specification
 
@@ -17,29 +17,8 @@ import torch.fx
 import torch.fx.node
 
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.exir.dialects._ops import ops as exir_ops
-from torch import Tensor
 from torch.fx import Node
 from tosa.RoundingMode import RoundingMode  # type: ignore
-
-
-q_ops = (
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-)
-dq_ops = (
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-)
-per_tensor_q_dq_ops = (
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-)
-per_channel_q_dq_ops = (
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-)
-dq_q_ops = (*q_ops, *dq_ops)
 
 
 def insert_rescale_ops_to_int32(
@@ -127,122 +106,6 @@ def insert_rescale_op_to_int8(
     )
 
 
-class QuantArgs(NamedTuple):
-    scale: list[float] | float
-    zp: list[int] | int
-    qmin: int
-    qmax: int
-    dtype: torch.dtype
-    axis: int = 0
-    per_channel: bool = False
-
-    def quantize_value(self, x: torch.Tensor | float) -> Tensor:
-        """Quantizes the input tensor or value to a quantized tensor. If the input is
-        not a tensor, it is converted to a tensor first. If self.per_channel is True,
-        the quantization is done per channel, otherwise it is done per tensor.
-        """
-        if not isinstance(x, torch.Tensor):
-            x = torch.Tensor([x])
-        x = x.to(torch.float32)
-        if self.per_channel:
-            q_op = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
-            args = (
-                x,
-                torch.tensor(self.scale),
-                torch.tensor(self.zp),
-                self.axis,
-                self.qmin,
-                self.qmax,
-                self.dtype,
-            )
-        else:
-            q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-            args = (x, self.scale, self.zp, self.qmin, self.qmax, self.dtype)  # type: ignore[assignment]
-
-        return q_op(*args)
-
-    def dequantize_value(self, qx: torch.Tensor) -> torch.Tensor:
-        """Dequantizes the input tensor or value to a dequantized tensor  If the input
-        is not a tensor, it is converted to a tensor first. If self.per_channel is True,
-        the dequantization is done per channel, otherwise it is done per tensor.
-        """
-        if self.per_channel:
-            dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
-            args = (
-                qx,
-                torch.tensor(self.scale),
-                torch.tensor(self.zp),
-                self.axis,
-                self.qmin,
-                self.qmax,
-                self.dtype,
-            )
-        else:
-            dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
-            args = (qx, self.scale, self.zp, self.qmin, self.qmax, self.dtype)  # type: ignore[assignment]
-
-        return dq_op(*args)
-
-    @classmethod
-    def from_operator(cls, op, args):
-        if op in per_tensor_q_dq_ops:
-            return cls(
-                scale=cast(float, args[1]),
-                zp=cast(int, args[2]),
-                qmin=cast(int, args[3]),
-                qmax=cast(int, args[4]),
-                dtype=cast(torch.dtype, args[5]),
-                axis=0,
-                per_channel=False,
-            )
-        elif op in per_channel_q_dq_ops:
-            return cls(
-                scale=cast(list[float], args[1].tolist()),
-                zp=cast(list[int], args[2].tolist()),
-                axis=cast(int, args[3]),
-                qmin=cast(int, args[4]),
-                qmax=cast(int, args[5]),
-                dtype=cast(torch.dtype, args[6]),
-                per_channel=True,
-            )
-
-        else:
-            # We're only handling per tensor and per channel quantization
-            raise NotImplementedError(f"Unsupported quantization operation: {op}")
-
-    def get_scale_per_tensor(self) -> float:
-        if not isinstance(self.scale, float):
-            raise TypeError(
-                f"Expected scale {self.scale} to be a float but found scale of "
-                f"type {type(self.scale)}"
-            )
-        return self.scale
-
-    def get_zp_per_tensor(self) -> int:
-        if not isinstance(self.zp, int):
-            raise TypeError(
-                f"Expected zero point {self.zp} to be an int but found zp of "
-                f"type {type(self.zp)}"
-            )
-        return self.zp
-
-    def get_scale_per_channel(self) -> list[float]:
-        if not isinstance(self.scale, list):
-            raise TypeError(
-                f"Expected scale {self.scale} to be a list but found scale of "
-                f"type {type(self.scale)}"
-            )
-        return self.scale
-
-    def get_zp_per_channel(self) -> list[int]:
-        if not isinstance(self.zp, list):
-            raise TypeError(
-                f"Expected zero point {self.zp} to be a list but found zp of "
-                f"type {type(self.zp)}"
-            )
-        return self.zp
-
-
 # TOSA uses the RESCALE operation to scale between values with differing precision.
 # The RESCALE operator is defined using an integer multiply, add, and shift.
 # This utility function is for calculating the multier and shift given a scale.
@@ -288,45 +151,6 @@ def compute_multiplier_and_shift(
         multipliers.append(multiplier)
         shifts.append(shift)
     return multipliers, shifts
-
-
-def build_rescale_v0_80(
-    tosa_fb: Any,
-    scale: list[float],
-    input_node: Any,
-    output_name: str,
-    output_type: Any,
-    input_zp: list[int],
-    output_zp: list[int],
-    is_double_round: bool = False,
-    per_channel=False,
-):
-    import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-    import tosa_tools.v0_80.tosa.Op as TosaOp  # type: ignore
-
-    # Check if scale32 mode is used for given output element type
-    is_scale32 = output_type == ts.DType.INT8
-    scale_width = 32 if is_scale32 else 16
-    multipliers, shifts = compute_multiplier_and_shift(scale, scale_width)
-
-    attr_rescale = ts.TosaSerializerAttribute()
-    attr_rescale.RescaleAttribute(
-        input_zp=input_zp[0],
-        output_zp=output_zp[0],
-        multiplier=multipliers,
-        shift=shifts,
-        scale32=is_scale32,
-        double_round=is_double_round,
-        per_channel=per_channel,
-        input_unsigned=False,
-        output_unsigned=False,
-    )
-
-    tosa_fb.addOperator(
-        TosaOp.Op().RESCALE, [input_node.name], [output_name], attr_rescale
-    )
-
-    return
 
 
 # For TOSA spec v1.0 RESCALE operator requires multipler, shifts, input_zp and output_zp to be
@@ -422,25 +246,8 @@ def build_rescale_to_int32(
     tosa_spec=None,
 ) -> Any:
     input_A_rescaled_to_int32 = None
-    if not tosa_spec or isinstance(tosa_spec, tosa_specification.Tosa_0_80):
-        # default to TOSA v0.80 until we switch to v1.0
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 
-        input_A_rescaled_to_int32 = tosa_fb.addIntermediate(
-            input_arg.shape, ts.DType.INT32
-        )
-
-        build_rescale_v0_80(
-            tosa_fb=tosa_fb,
-            scale=[rescale_scale],
-            input_node=input_arg,
-            output_name=input_A_rescaled_to_int32.name,
-            output_type=ts.DType.INT32,
-            input_zp=[input_zp],
-            output_zp=[0],
-        )  # type: ignore[call-arg]
-
-    elif isinstance(tosa_spec, tosa_specification.Tosa_1_00):
+    if isinstance(tosa_spec, tosa_specification.Tosa_1_00):
         # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
         # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
         import serializer.tosa_serializer as ts  # type: ignore
@@ -474,21 +281,7 @@ def build_rescale_from_int32(
     per_channel: bool = False,
     tosa_spec=None,
 ) -> None:
-    if not tosa_spec or isinstance(tosa_spec, tosa_specification.Tosa_0_80):
-        # default to TOSA v0.80 until we switch to v1.0
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        build_rescale_v0_80(
-            tosa_fb=tosa_fb,
-            scale=[rescale_scale],
-            input_node=input_node,
-            output_name=output_name,
-            output_type=ts.DType.INT8,
-            input_zp=[0],
-            output_zp=[output_zp],
-        )  # type: ignore[call-arg]
-
-    elif isinstance(tosa_spec, tosa_specification.Tosa_1_00):
+    if isinstance(tosa_spec, tosa_specification.Tosa_1_00):
         import serializer.tosa_serializer as ts  # type: ignore
 
         # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
@@ -525,20 +318,7 @@ def build_rescale_conv_output(
         (inp * w) / out for inp, w, out in zip(input_scale, weight_scale, output_scale)
     ]
 
-    # Since we assume the input tensor that is being rescaled is int32 date type, zero point must be 0.
-    if not tosa_spec or isinstance(tosa_spec, tosa_specification.Tosa_0_80):
-        # default to TOSA v0.80 until we switch to v1.0
-        build_rescale_v0_80(
-            tosa_fb=tosa_fb,
-            scale=post_conv2d_scale,
-            input_node=op,
-            output_name=output_name,
-            output_type=output_type,
-            input_zp=[0],
-            output_zp=output_zp,
-            per_channel=isinstance(weight_scale, torch.Tensor),
-        )  # type: ignore[call-arg]
-    elif isinstance(tosa_spec[0], tosa_specification.Tosa_1_00):
+    if isinstance(tosa_spec[0], tosa_specification.Tosa_1_00):
         # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
         # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
         build_rescale(

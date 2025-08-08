@@ -71,7 +71,7 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250716"
+NIGHTLY_VERSION = "dev20250725"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -142,19 +142,6 @@ def install_requirements(use_pytorch_nightly):
 
 
 def install_optional_example_requirements(use_pytorch_nightly):
-    print("Installing packages in requirements-examples.txt")
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "-r",
-            "requirements-examples.txt",
-        ],
-        check=True,
-    )
-
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
         (
@@ -174,6 +161,19 @@ def install_optional_example_requirements(use_pytorch_nightly):
             *DOMAIN_LIBRARIES,
             "--extra-index-url",
             TORCH_NIGHTLY_URL,
+        ],
+        check=True,
+    )
+
+    print("Installing packages in requirements-examples.txt")
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "requirements-examples.txt",
         ],
         check=True,
     )

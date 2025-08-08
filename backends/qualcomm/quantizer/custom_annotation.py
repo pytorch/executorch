@@ -8,12 +8,15 @@ from typing import Sequence
 import torch
 from executorch.backends.qualcomm.quantizer.annotators import (
     _is_float_tensor,
-    QUANT_ANNOTATION_KEY,
+    Q_ANNOTATION_KEY,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a8w_qnn_ptq_config,
+    get_16a8w_qnn_qat_config,
     get_8a8w_qnn_ptq_config,
+    get_8a8w_qnn_qat_config,
     get_ptq_per_channel_quant_config,
+    get_qat_per_channel_quant_config,
     QuantizationConfig,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -50,7 +53,7 @@ def annotate_eurobert(gm: torch.fx.GraphModule):
             assert isinstance(to_node, Node)
             input_spec = quantization_config_8a8w.input_activation
             input_qspec_map[to_node] = input_spec
-            to_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            to_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
                 input_qspec_map=input_qspec_map,
                 output_qspec=quantization_config_8a8w.output_activation,
                 _annotated=True,
@@ -81,7 +84,7 @@ def annotate_mimi_decoder(gm: torch.fx.GraphModule):
                 bias = node.args[2]
                 input_qspec_map[bias] = quantization_config_8a8w.bias
 
-            node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
                 input_qspec_map=input_qspec_map,
                 output_qspec=quantization_config_8a8w.output_activation,
                 _annotated=True,
@@ -99,7 +102,7 @@ def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
         weight = node.args[1]
         input_qspec_map[weight] = quantization_config.weight
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -146,14 +149,18 @@ def annotate_prefill_kv_output(gm: torch.fx.GraphModule, kv_quant_attrs: dict):
                     if isinstance(input, Node):
                         input_qspec_map[input] = fixed_output_spec
 
-                prefill_output.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                prefill_output.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
                     input_qspec_map=input_qspec_map,
                     output_qspec=fixed_output_spec,
                     _annotated=True,
                 )
 
 
-def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
+def annotate_matmul_16a8w(  # noqa: C901
+    gm: torch.fx.GraphModule,
+    annotate_conv=True,
+    is_qat=False,
+) -> None:
     """
     This function is specific for matmul op 16a8w.
     For k, we will tag such as the below, and
@@ -174,7 +181,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
         input_spec1 = quantization_config.weight
         input_qspec_map[input_act1] = input_spec1
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -194,7 +201,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
             if input_node not in input_qspec_map:
                 input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=share_qparams_with_input_act0_qspec,
             _annotated=True,
@@ -209,7 +216,7 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
         weight = node.args[1]
         input_qspec_map[weight] = quantization_config.weight
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -236,12 +243,11 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
     def annotate_single_in_single_out(
         node: Node, quantization_config: QuantizationConfig
     ) -> None:
-
         input_qspec_map = {}
         input_act = node.args[0]
         input_qspec_map[input_act] = quantization_config.input_activation
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -250,12 +256,11 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
     def annotate_single_in_share_out(
         node: Node, quantization_config: QuantizationConfig
     ) -> None:
-
         input_qspec_map = {}
         input_act = node.args[0]
         input_qspec_map[input_act] = quantization_config.input_activation
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=SharedQuantizationSpec((input_act, node)),
             _annotated=True,
@@ -275,22 +280,33 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
             if input_node not in input_qspec_map:
                 input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=share_qparams_with_input_act0_qspec,
             _annotated=True,
         )
 
-    def annotate_matmul_input1(node: Node):
-        quantization_config_8a8w = get_8a8w_qnn_ptq_config(
-            act_symmetric=True, act_observer=MinMaxObserver
-        )
-        quantization_config_8a4w_per_channel = get_ptq_per_channel_quant_config(
-            act_dtype=torch.uint8,
-            weight_dtype=torch.int4,
-            act_observer=MinMaxObserver,
-            act_symmetric=True,
-        )
+    def annotate_matmul_input1(node: Node, is_qat: str):
+        if is_qat:
+            quantization_config_8a8w = get_8a8w_qnn_qat_config(
+                act_symmetric=True, act_observer=MinMaxObserver
+            )
+            quantization_config_8a4w_per_channel = get_qat_per_channel_quant_config(
+                act_dtype=torch.uint8,
+                weight_dtype=torch.int4,
+                act_observer=MinMaxObserver,
+                act_symmetric=True,
+            )
+        else:
+            quantization_config_8a8w = get_8a8w_qnn_ptq_config(
+                act_symmetric=True, act_observer=MinMaxObserver
+            )
+            quantization_config_8a4w_per_channel = get_ptq_per_channel_quant_config(
+                act_dtype=torch.uint8,
+                weight_dtype=torch.int4,
+                act_observer=MinMaxObserver,
+                act_symmetric=True,
+            )
         while isinstance(node, Node) and node.op == "call_function":
             if node.target in [
                 torch.ops.aten.permute.default,
@@ -317,9 +333,10 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
                 # The arguments of cat op: (the past kv cache, the new kv cache)
                 node = node.args[0][1]
             elif node.target == torch.ops.aten.conv2d.default:
-                annotate_conv2d(
-                    node, quantization_config=quantization_config_8a4w_per_channel
-                )
+                if annotate_conv:
+                    annotate_conv2d(
+                        node, quantization_config=quantization_config_8a4w_per_channel
+                    )
                 break
             elif node.target in [torch.ops.aten.add.Tensor, torch.ops.aten.sub.Tensor]:
                 break
@@ -327,12 +344,19 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
                 print(f"The node ({node}) is not expected in the input1 of the matmul")
                 node = node.args[0]
 
-    quantization_config_16a8w = get_16a8w_qnn_ptq_config(act_observer=MinMaxObserver)
+    if is_qat:
+        quantization_config_16a8w = get_16a8w_qnn_qat_config(
+            act_observer=MinMaxObserver
+        )
+    else:
+        quantization_config_16a8w = get_16a8w_qnn_ptq_config(
+            act_observer=MinMaxObserver
+        )
 
     for node in gm.graph.nodes:
         if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
             annotate_matmul(node, quantization_config_16a8w)
-            annotate_matmul_input1(node.args[1])
+            annotate_matmul_input1(node.args[1], is_qat=is_qat)
 
 
 def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
@@ -348,7 +372,7 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
         input_act1 = node.args[1]
         input_spec1 = quantization_config.weight
         input_qspec_map[input_act1] = input_spec1
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -361,7 +385,7 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
         input_qspec_map = {}
         input_qspec_map[value] = quantization_config.input_activation
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=SharedQuantizationSpec((value, node)),
             _annotated=True,
@@ -373,7 +397,7 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
         input_qspec_map = {}
         input_act = node.args[0]
         input_qspec_map[input_act] = quantization_config.input_activation
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -394,7 +418,7 @@ def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noq
             if input_node not in input_qspec_map:
                 assert isinstance(input_node, Node)
                 input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=share_qparams_with_input_act0_qspec,
             _annotated=True,
@@ -447,7 +471,7 @@ def custom_annotate_llama_last_conv_16a8w(gm: torch.fx.GraphModule) -> None:
         weight = node.args[1]
         input_qspec_map[weight] = quantization_config.weight
 
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,
@@ -480,7 +504,7 @@ def custom_annotate_matmul_16a8w(gm: torch.fx.GraphModule):
         input_act1 = node.args[1]
         input_spec1 = quantization_config.weight
         input_qspec_map[input_act1] = input_spec1
-        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=quantization_config.output_activation,
             _annotated=True,

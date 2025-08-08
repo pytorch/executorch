@@ -22,6 +22,16 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_library(
+        name = "constants",
+        exported_headers = [
+            "constants.h",
+        ],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
     for aten in (True, False):
         aten_suffix = "_aten" if aten else ""
 
@@ -36,6 +46,7 @@ def define_common_targets():
                 ":stats",
                 "//executorch/kernels/portable/cpu/util:arange_util" + aten_suffix,
                 "//executorch/extension/llm/sampler:sampler" + aten_suffix,
+                "//executorch/extension/llm/runner/io_manager:io_manager" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
@@ -77,6 +88,7 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
+                ":constants",
                 "//executorch/extension/module:module" + aten_suffix,
             ],
         )
@@ -86,9 +98,12 @@ def define_common_targets():
             exported_headers = [
                 "multimodal_runner.h",
                 "text_llm_runner.h",
+                "llm_runner_helper.h",
+                "constants.h",
             ],
             srcs = [
                 "text_llm_runner.cpp",
+                "llm_runner_helper.cpp",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
@@ -102,6 +117,7 @@ def define_common_targets():
                 ":text_decoder_runner" + aten_suffix,
                 ":text_prefiller" + aten_suffix,
                 ":text_token_generator" + aten_suffix,
+                "//executorch/extension/llm/runner/io_manager:io_manager" + aten_suffix,
                 "//pytorch/tokenizers:hf_tokenizer",
                 "//pytorch/tokenizers:llama2c_tokenizer",
                 "//pytorch/tokenizers:sentencepiece",

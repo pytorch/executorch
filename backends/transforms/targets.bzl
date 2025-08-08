@@ -109,6 +109,7 @@ def define_common_targets():
         srcs = ["remove_clone_ops.py"],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//caffe2:torch",
@@ -240,5 +241,17 @@ def define_common_targets():
             "//caffe2:torch",
             "//executorch/exir:lib",
             ":rank_0_to_rank_1",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_remove_clone_ops",
+        srcs = [
+            "test/test_remove_clone_ops.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":remove_clone_ops",
         ],
     )
