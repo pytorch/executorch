@@ -180,18 +180,19 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   )
 
   target_sources(
-    executorch_jni PRIVATE
-    ${EXECUTORCH_ROOT}/extension/llm/runner/llm_runner_helper.cpp
+    executorch_jni
+    PRIVATE ${EXECUTORCH_ROOT}/extension/llm/runner/llm_runner_helper.cpp
   )
 
   target_include_directories(
-    executorch_jni PRIVATE
-    ${EXECUTORCH_ROOT}/extension/llm/runner
+    executorch_jni
+    PRIVATE ${EXECUTORCH_ROOT}/extension/llm/runner
   )
 
   if(QNN_SDK_ROOT)
     target_sources(
-      executorch_jni PRIVATE
+      executorch_jni
+      PRIVATE
       ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/runner.cpp
       ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.cpp
       ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.cpp
@@ -202,8 +203,8 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     )
 
     target_include_directories(
-      executorch_jni PRIVATE
-      ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner
+      executorch_jni
+      PRIVATE ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner
     )
     target_compile_definitions(executorch_jni PRIVATE EXECUTORCH_BUILD_QNN=1)
   endif()

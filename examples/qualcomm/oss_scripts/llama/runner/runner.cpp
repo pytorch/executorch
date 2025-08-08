@@ -325,7 +325,8 @@ Error Runner<T>::generate(
   return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
 }
 
-Error Runner::generate_from_pos(
+template <typename T>
+Error Runner<T>::generate_from_pos(
     const std::string& prompt,
     int64_t start_pos,
     const llm::GenerationConfig& config,
@@ -336,7 +337,8 @@ Error Runner::generate_from_pos(
       prompt, false, config, token_callback, stats_callback);
 }
 
-Error Runner::generate_from_prompt_or_file(
+template <typename T>
+Error Runner<T>::generate_from_prompt_or_file(
     const std::string& prompt,
     bool tokenized_prompt,
     const llm::GenerationConfig& config,

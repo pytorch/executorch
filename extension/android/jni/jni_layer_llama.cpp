@@ -15,6 +15,7 @@
 
 #include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/runtime/platform/log.h>
@@ -181,10 +182,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           data_path_str);
 #if defined(EXECUTORCH_BUILD_QNN)
     } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {
-      std::unique_ptr<executorch::extension::Module> module =
-        std::make_unique<executorch::extension::Module>(
-            FLAGS_model_path.c_str(),
-            executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
+      std::unique_ptr<executorch::extension::Module> module = std::make_unique<
+          executorch::extension::Module>(
+          model_path->toStdString().c_str(),
+          executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
       std::string decoder_model = "llama3"; // use llama3 for now
       runner_ = std::make_unique<example::Runner<uint16_t>>( // QNN runner
           std::move(module),
