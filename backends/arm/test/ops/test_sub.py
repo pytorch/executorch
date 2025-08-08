@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.sub.Tensor"
@@ -162,5 +163,61 @@ def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
         aten_op,
         exir_op,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_test_data)
+@common.SkipIfNoModelConverter
+def test_sub_tensor_vgf_FP(test_data: Tuple[torch.Tensor]):
+    """Test Subtraction (VGF FP)"""
+    pipeline = VgfPipeline[input_t1](
+        Sub(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub2_test_data)
+@common.SkipIfNoModelConverter
+def test_sub_tensor_vgf_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction (VGF FP)"""
+    pipeline = VgfPipeline[input_t2](
+        Sub2(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_test_data)
+@common.SkipIfNoModelConverter
+def test_sub_tensor_vgf_INT(test_data: Tuple[torch.Tensor]):
+    """Test Subtraction (VGF INT)"""
+    pipeline = VgfPipeline[input_t1](
+        Sub(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub2_test_data)
+@common.SkipIfNoModelConverter
+def test_sub_tensor_vgf_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction (VGF INT)"""
+    pipeline = VgfPipeline[input_t2](
+        Sub2(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
