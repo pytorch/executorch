@@ -599,6 +599,7 @@ Error defineTensor(
   return Error::Ok;
 };
 
+#define MAYBE_UNUSED(x) (void)(x)
 
 /*
 Define Convert operator Node into the subgraph
