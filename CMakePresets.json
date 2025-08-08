@@ -8,7 +8,7 @@
     },
     {
       "name": "android-arm64-v8a",
-      "displayName": "Build everything buildable on android arm64-v8a",
+      "displayName": "Build executorch core and JNI bindings on android arm64-v8a",
       "inherits": ["common"],
       "binaryDir": "${sourceDir}/cmake-out-android-arm64-v8a",
       "cacheVariables": {
@@ -23,7 +23,7 @@
     },
     {
       "name": "android-x86_64",
-      "displayName": "Build everything buildable on android x86_64",
+      "displayName": "Build executorch core and JNI bindings on android x86_64",
       "inherits": ["common"],
       "binaryDir": "${sourceDir}/cmake-out-android-x86_64",
       "cacheVariables": {
