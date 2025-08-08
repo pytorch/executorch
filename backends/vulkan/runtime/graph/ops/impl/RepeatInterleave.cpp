@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/RepeatInterleave.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -49,16 +50,11 @@ void add_repeat_interleave_node(
   std::string kernel_name = "repeat_interleave";
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  const utils::uvec3 global_wg_size = graph.logical_limits_of(in);
-  const utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      // Shader
       VK_KERNEL_FROM_STR(kernel_name),
-      // Workgroup sizes
-      global_wg_size,
-      local_wg_size,
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::MemoryAccessType::WRITE},
        {in, vkapi::MemoryAccessType::READ}},
