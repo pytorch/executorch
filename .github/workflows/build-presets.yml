@@ -119,7 +119,8 @@ jobs:
         set -eux
         conda init powershell
         powershell -Command "& {
-          $$ErrorActionPreference = 'Stop'
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
           Set-PSDebug -Trace 1
 
           conda create --yes --quiet -n et python=3.12
