@@ -578,8 +578,24 @@
             <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_DelegateDebugIdentifierMap</span><span class="p">]]]]</span>
         <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">_reference_outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">_representative_inputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">_representative_inputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">ProgramInput</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Please do not construct an ETRecord object directly.</span>
+
+<span class="sd">        If you want to create an ETRecord for logging AOT information to further analysis, please mark `generate_etrecord`</span>
+<span class="sd">        as True in your export api, and get the ETRecord object from the `ExecutorchProgramManager`.</span>
+<span class="sd">        For exmaple:</span>
+<span class="sd">        ```python</span>
+<span class="sd">            exported_program = torch.export.export(model, inputs)</span>
+<span class="sd">            edge_program = to_edge_transform_and_lower(exported_program, generate_etrecord=True)</span>
+<span class="sd">            executorch_program = edge_program.to_executorch()</span>
+<span class="sd">            etrecord = executorch_program.get_etrecord()</span>
+<span class="sd">        ```</span>
+
+<span class="sd">        If user need to create an ETRecord manually, please use the `create_etrecord` function.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">exported_program</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">export_graph_id</span> <span class="o">=</span> <span class="n">export_graph_id</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">edge_dialect_program</span> <span class="o">=</span> <span class="n">edge_dialect_program</span>
@@ -591,14 +607,24 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">IO</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Serialize and save the ETRecord to the specified path.</span>
+<span class="sd">        Serialize and save the ETRecord to the specified path for use in Inspector. The ETRecord</span>
+<span class="sd">        should contains at least edge dialect program and executorch program information for further</span>
+<span class="sd">        analysis, otherwise it will raise an exception.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            path: Path where the ETRecord file will be saved to.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            RuntimeError: If the ETRecord does not contain essential information for Inpector.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">)):</span>
             <span class="c1"># pyre-ignore[6]: In call `os.fspath`, for 1st positional argument, expected `str` but got `Union[PathLike[typing.Any], str]`</span>
             <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">fspath</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">edge_dialect_program</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_debug_handle_map</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;ETRecord must contain edge dialect program and executorch program to be saved&quot;</span>
+            <span class="p">)</span>
 
         <span class="n">etrecord_zip</span> <span class="o">=</span> <span class="n">ZipFile</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
 
@@ -710,6 +736,201 @@
             <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_example_inputs&quot;</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">example_inputs</span>
         <span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_extra_export_modules</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">extra_recorded_export_modules</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span>
+            <span class="nb">str</span><span class="p">,</span>
+            <span class="n">Union</span><span class="p">[</span>
+                <span class="n">ExportedProgram</span><span class="p">,</span>
+                <span class="n">ExirExportedProgram</span><span class="p">,</span>
+                <span class="n">EdgeProgramManager</span><span class="p">,</span>
+            <span class="p">],</span>
+        <span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Add extra export modules to the ETRecord after it has been created.</span>
+
+<span class="sd">        This method allows users to add more export modules they want to record</span>
+<span class="sd">        to an existing ETRecord instance. The modules will be added to the graph_map</span>
+<span class="sd">        and will be included when the ETRecord is saved.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            extra_recorded_export_modules: A dictionary of graph modules with the key being</span>
+<span class="sd">                the user provided name and the value being the corresponding exported module.</span>
+<span class="sd">                The exported graph modules can be either the output of `torch.export()` or `exir.to_edge()`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_map</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">graph_map</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="c1"># Now self.graph_map is guaranteed to be non-None</span>
+        <span class="n">graph_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_map</span>
+        <span class="k">for</span> <span class="n">module_name</span><span class="p">,</span> <span class="n">export_module</span> <span class="ow">in</span> <span class="n">extra_recorded_export_modules</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">_add_module_to_graph_map</span><span class="p">(</span><span class="n">graph_map</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="n">export_module</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_executorch_program</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">executorch_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+            <span class="n">ExecutorchProgram</span><span class="p">,</span>
+            <span class="n">ExecutorchProgramManager</span><span class="p">,</span>
+            <span class="n">BundledProgram</span><span class="p">,</span>
+        <span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Add executorch program data to the ETRecord after it has been created.</span>
+
+<span class="sd">        This method allows users to add executorch program data they want to record</span>
+<span class="sd">        to an existing ETRecord instance. The executorch program data includes debug handle map,</span>
+<span class="sd">        delegate map, reference outputs, and representative inputs that will be included</span>
+<span class="sd">        when the ETRecord is saved.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            executorch_program: The ExecuTorch program for this model returned by the call to</span>
+<span class="sd">                `to_executorch()` or the `BundledProgram` of this model.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            RuntimeError: If executorch program data already exists in the ETRecord.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Check if executorch program data already exists</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_debug_handle_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;Executorch program data already exists in the ETRecord. &quot;</span>
+                <span class="s2">&quot;Cannot add executorch program data when it already exists.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Process executorch program and extract data</span>
+        <span class="n">debug_handle_map</span><span class="p">,</span> <span class="n">delegate_map</span><span class="p">,</span> <span class="n">reference_outputs</span><span class="p">,</span> <span class="n">representative_inputs</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">_process_executorch_program</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Set the extracted data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_debug_handle_map</span> <span class="o">=</span> <span class="n">debug_handle_map</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_map</span> <span class="o">=</span> <span class="n">delegate_map</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="o">=</span> <span class="n">reference_outputs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="o">=</span> <span class="n">representative_inputs</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_exported_program</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">exported_program</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Add exported program to the ETRecord after it has been created.</span>
+
+<span class="sd">        This method allows users to add an exported program they want to record</span>
+<span class="sd">        to an existing ETRecord instance. The exported program will be included</span>
+<span class="sd">        when the ETRecord is saved.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            exported_program: The exported program for this model returned by the call to</span>
+<span class="sd">                `torch.export()` or a dictionary with method names as keys and exported programs as values.</span>
+<span class="sd">                Can be None, in which case no exported program data will be added.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            RuntimeError: If exported program already exists in the ETRecord.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Check if exported program already exists</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">export_graph_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;Exported program already exists in the ETRecord. &quot;</span>
+                <span class="s2">&quot;Cannot add exported program when it already exists.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Process exported program and extract data</span>
+        <span class="n">processed_exported_program</span><span class="p">,</span> <span class="n">export_graph_id</span> <span class="o">=</span> <span class="n">_process_exported_program</span><span class="p">(</span>
+            <span class="n">exported_program</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Set the extracted data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">processed_exported_program</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">export_graph_id</span> <span class="o">=</span> <span class="n">export_graph_id</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_edge_dialect_program</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Add edge dialect program to the ETRecord after it has been created.</span>
+
+<span class="sd">        This method allows users to add an edge dialect program they want to record</span>
+<span class="sd">        to an existing ETRecord instance. The edge dialect program will be included</span>
+<span class="sd">        when the ETRecord is saved.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            edge_dialect_program: The edge dialect program for this model returned by the call to</span>
+<span class="sd">                `to_edge()` or `EdgeProgramManager` for this model.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            RuntimeError: If edge dialect program already exists in the ETRecord.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Check if edge dialect program already exists</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">edge_dialect_program</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;Edge dialect program already exists in the ETRecord. &quot;</span>
+                <span class="s2">&quot;Cannot add edge dialect program when it already exists.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Process edge dialect program and extract data</span>
+        <span class="n">processed_edge_dialect_program</span> <span class="o">=</span> <span class="n">_process_edge_dialect_program</span><span class="p">(</span>
+            <span class="n">edge_dialect_program</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Set the extracted data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">edge_dialect_program</span> <span class="o">=</span> <span class="n">processed_edge_dialect_program</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">update_representative_inputs</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">representative_inputs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">ProgramInput</span><span class="p">],</span> <span class="n">BundledProgram</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Update the representative inputs in the ETRecord.</span>
+
+<span class="sd">        This method allows users to customize the representative inputs that will be</span>
+<span class="sd">        included when the ETRecord is saved. The representative inputs can be provided</span>
+<span class="sd">        directly as a list or extracted from a BundledProgram.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            representative_inputs: Either a list of ProgramInput objects or a BundledProgram</span>
+<span class="sd">                from which representative inputs will be extracted.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">representative_inputs</span><span class="p">,</span> <span class="n">BundledProgram</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="o">=</span> <span class="n">_get_representative_inputs</span><span class="p">(</span>
+                <span class="n">representative_inputs</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="o">=</span> <span class="n">representative_inputs</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">update_reference_outputs</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">reference_outputs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+            <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">],</span> <span class="n">BundledProgram</span>
+        <span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Update the reference outputs in the ETRecord.</span>
+
+<span class="sd">        This method allows users to customize the reference outputs that will be</span>
+<span class="sd">        included when the ETRecord is saved. The reference outputs can be provided</span>
+<span class="sd">        directly as a dictionary mapping method names to lists of outputs, as a</span>
+<span class="sd">        single list of outputs (which will be treated as {&quot;forward&quot;: List[ProgramOutput]}),</span>
+<span class="sd">        or extracted from a BundledProgram.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            reference_outputs: Either a dictionary mapping method names to lists of</span>
+<span class="sd">                ProgramOutput objects, a single list of ProgramOutput objects (treated</span>
+<span class="sd">                as outputs for the &quot;forward&quot; method), or a BundledProgram from which</span>
+<span class="sd">                reference outputs will be extracted.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reference_outputs</span><span class="p">,</span> <span class="n">BundledProgram</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="o">=</span> <span class="n">_get_reference_outputs</span><span class="p">(</span><span class="n">reference_outputs</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reference_outputs</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">reference_outputs</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="o">=</span> <span class="n">reference_outputs</span>
+
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_reference_outputs</span><span class="p">(</span>
     <span class="n">bundled_program</span><span class="p">:</span> <span class="n">BundledProgram</span><span class="p">,</span>
@@ -795,37 +1016,24 @@
 <span class="sd">    Returns:</span>
 <span class="sd">        None</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Process all inputs and prepare data for ETRecord construction</span>
-    <span class="n">processed_exported_program</span><span class="p">,</span> <span class="n">export_graph_id</span> <span class="o">=</span> <span class="n">_process_exported_program</span><span class="p">(</span>
-        <span class="n">exported_program</span>
-    <span class="p">)</span>
-    <span class="n">graph_map</span> <span class="o">=</span> <span class="n">_process_extra_recorded_modules</span><span class="p">(</span><span class="n">extra_recorded_export_modules</span><span class="p">)</span>
-    <span class="n">processed_edge_dialect_program</span> <span class="o">=</span> <span class="n">_process_edge_dialect_program</span><span class="p">(</span><span class="n">edge_dialect_program</span><span class="p">)</span>
-    <span class="n">debug_handle_map</span><span class="p">,</span> <span class="n">delegate_map</span><span class="p">,</span> <span class="n">reference_outputs</span><span class="p">,</span> <span class="n">representative_inputs</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">_process_executorch_program</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">)</span>
-    <span class="p">)</span>
+    <span class="n">etrecord</span> <span class="o">=</span> <span class="n">ETRecord</span><span class="p">()</span>
+    <span class="n">etrecord</span><span class="o">.</span><span class="n">add_exported_program</span><span class="p">(</span><span class="n">exported_program</span><span class="p">)</span>
+    <span class="n">etrecord</span><span class="o">.</span><span class="n">add_edge_dialect_program</span><span class="p">(</span><span class="n">edge_dialect_program</span><span class="p">)</span>
+    <span class="n">etrecord</span><span class="o">.</span><span class="n">add_executorch_program</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">)</span>
 
-    <span class="c1"># Create ETRecord instance and save</span>
-    <span class="n">etrecord</span> <span class="o">=</span> <span class="n">ETRecord</span><span class="p">(</span>
-        <span class="n">exported_program</span><span class="o">=</span><span class="n">processed_exported_program</span><span class="p">,</span>
-        <span class="n">export_graph_id</span><span class="o">=</span><span class="n">export_graph_id</span><span class="p">,</span>
-        <span class="n">edge_dialect_program</span><span class="o">=</span><span class="n">processed_edge_dialect_program</span><span class="p">,</span>
-        <span class="n">graph_map</span><span class="o">=</span><span class="n">graph_map</span> <span class="k">if</span> <span class="n">graph_map</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">_debug_handle_map</span><span class="o">=</span><span class="n">debug_handle_map</span><span class="p">,</span>
-        <span class="n">_delegate_map</span><span class="o">=</span><span class="n">delegate_map</span><span class="p">,</span>
-        <span class="n">_reference_outputs</span><span class="o">=</span><span class="n">reference_outputs</span><span class="p">,</span>
-        <span class="n">_representative_inputs</span><span class="o">=</span><span class="n">representative_inputs</span><span class="p">,</span>
-    <span class="p">)</span>
+    <span class="c1"># Add extra export modules if user provided</span>
+    <span class="k">if</span> <span class="n">extra_recorded_export_modules</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">etrecord</span><span class="o">.</span><span class="n">add_extra_export_modules</span><span class="p">(</span><span class="n">extra_recorded_export_modules</span><span class="p">)</span>
 
     <span class="n">etrecord</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">et_record</span><span class="p">)</span></div>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_process_exported_program</span><span class="p">(</span>
     <span class="n">exported_program</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]]]</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">],</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Process exported program and return the processed program and export graph id.&quot;&quot;&quot;</span>
     <span class="n">processed_exported_program</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">export_graph_id</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">export_graph_id</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="k">if</span> <span class="n">exported_program</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exported_program</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="s2">&quot;forward&quot;</span> <span class="ow">in</span> <span class="n">exported_program</span><span class="p">:</span>
@@ -837,29 +1045,6 @@
             <span class="n">export_graph_id</span> <span class="o">=</span> <span class="nb">id</span><span class="p">(</span><span class="n">processed_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">processed_exported_program</span><span class="p">,</span> <span class="n">export_graph_id</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_process_extra_recorded_modules</span><span class="p">(</span>
-    <span class="n">extra_recorded_export_modules</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
-        <span class="n">Dict</span><span class="p">[</span>
-            <span class="nb">str</span><span class="p">,</span>
-            <span class="n">Union</span><span class="p">[</span>
-                <span class="n">ExportedProgram</span><span class="p">,</span>
-                <span class="n">ExirExportedProgram</span><span class="p">,</span>
-                <span class="n">EdgeProgramManager</span><span class="p">,</span>
-            <span class="p">],</span>
-        <span class="p">]</span>
-    <span class="p">]</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Process extra recorded export modules and return graph map.&quot;&quot;&quot;</span>
-    <span class="n">graph_map</span> <span class="o">=</span> <span class="p">{}</span>
-
-    <span class="k">if</span> <span class="n">extra_recorded_export_modules</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">module_name</span><span class="p">,</span> <span class="n">export_module</span> <span class="ow">in</span> <span class="n">extra_recorded_export_modules</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">_validate_module_name</span><span class="p">(</span><span class="n">module_name</span><span class="p">)</span>
-            <span class="n">_add_module_to_graph_map</span><span class="p">(</span><span class="n">graph_map</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="n">export_module</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">graph_map</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_validate_module_name</span><span class="p">(</span><span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -879,6 +1064,8 @@
     <span class="n">export_module</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">,</span> <span class="n">EdgeProgramManager</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Add export module to graph map based on its type.&quot;&quot;&quot;</span>
+    <span class="n">_validate_module_name</span><span class="p">(</span><span class="n">module_name</span><span class="p">)</span>
+
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">export_module</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">):</span>
         <span class="n">graph_map</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/forward&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">export_module</span><span class="o">.</span><span class="n">exported_program</span>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">export_module</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">):</span>

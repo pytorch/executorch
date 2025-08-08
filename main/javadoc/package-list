@@ -5,4 +5,5 @@ $dokka.location:org.pytorch.executorch.extension.llm/LlmModuleConfig.Builder///P
 org.pytorch.executorch
 org.pytorch.executorch.annotations
 org.pytorch.executorch.extension.llm
+org.pytorch.executorch.training
 
