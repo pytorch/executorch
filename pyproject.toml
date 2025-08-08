@@ -67,9 +67,9 @@ dependencies=[
   "pyyaml",
   "ruamel.yaml",
   "sympy",
-  "torch>=2.8.0,<2.9.0",
-  "torchaudio>=2.8.0,<2.9.0",
-  "torchvision>=0.23.0,<0.24.0",
+  "torch==2.8.0",
+  "torchaudio==2.8.0",
+  "torchvision==0.23.0",
   "torchao==0.12.0",
   "tabulate",
   # See also third-party/TARGETS for buck's typing-extensions version.
