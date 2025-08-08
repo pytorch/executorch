@@ -12,6 +12,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.sinh.default"
@@ -74,5 +75,26 @@ def test_sinh_u55_INT(test_data: Tuple):
 def test_sinh_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Sinh(), (test_data,), aten_ops=aten_op, exir_ops=exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sinh_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sinh(), (test_data,), aten_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sinh_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sinh(),
+        (test_data,),
+        aten_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

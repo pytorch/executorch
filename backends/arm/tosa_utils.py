@@ -6,8 +6,7 @@
 # pyre-unsafe
 
 import logging
-import os
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import serializer.tosa_serializer as ts  # type: ignore
@@ -18,85 +17,13 @@ import torch
 
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta, TosaArg
 
-from executorch.backends.arm.tosa_specification import Tosa_1_00, TosaSpecification
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.print_program import inspect_node
 
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.fx import Node
 
 logger = logging.getLogger(__name__)
-
-
-def dbg_node(node: torch.fx.Node, graph_module: torch.fx.GraphModule):
-    # Debug output of node information
-    logger.info(get_node_debug_info(node, graph_module))
-
-
-def get_node_debug_info(
-    node: torch.fx.Node, graph_module: torch.fx.GraphModule | None = None
-) -> str:
-    output = (
-        f"  {inspect_node(graph=graph_module.graph, node=node)}\n"
-        if graph_module
-        else ""
-        "-- NODE DEBUG INFO --\n"
-        f"  Op is {node.op}\n"
-        f"  Name is {node.name}\n"
-        f"  Node target is {node.target}\n"
-        f"  Node args is {node.args}\n"
-        f"  Node kwargs is {node.kwargs}\n"
-        f"  Node users is {node.users}\n"
-        "  Node.meta = \n"
-    )
-    for k, v in node.meta.items():
-        if k == "stack_trace":
-            matches = v.split("\n")
-            output += "      'stack_trace =\n"
-            for m in matches:
-                output += f"      {m}\n"
-        else:
-            output += f"    '{k}' = {v}\n"
-
-            if isinstance(v, list):
-                for i in v:
-                    output += f"      {i}\n"
-    return output
-
-
-# Output TOSA flatbuffer and test harness file
-def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
-    filename = f"output{suffix}.tosa"
-
-    logger.info(f"Emitting debug output to: {path=}, {suffix=}")
-
-    os.makedirs(path, exist_ok=True)
-
-    fb = tosa_graph.serialize()
-    js = tosa_graph.writeJson(filename)
-
-    filepath_tosa_fb = os.path.join(path, filename)
-    with open(filepath_tosa_fb, "wb") as f:
-        f.write(fb)
-    assert os.path.exists(filepath_tosa_fb), "Failed to write TOSA flatbuffer"
-
-    filepath_desc_json = os.path.join(path, f"desc{suffix}.json")
-    with open(filepath_desc_json, "w") as f:
-        f.write(js)
-    assert os.path.exists(filepath_desc_json), "Failed to write TOSA JSON"
-
-
-def dbg_fail(
-    node,
-    graph_module,
-    tosa_graph: Optional[ts.TosaSerializer] = None,
-    path: Optional[str] = None,
-):
-    logger.warning("Internal error due to poorly handled node:")
-    if tosa_graph is not None and path is not None:
-        dbg_tosa_dump(tosa_graph, path)
-        logger.warning(f"Debug output captured in '{path}'.")
-    dbg_node(node, graph_module)
 
 
 def getNodeArgs(node: Node, tosa_spec: TosaSpecification) -> list[TosaArg]:
@@ -169,14 +96,6 @@ def broadcast_tensors(
         for broadcast. However this function also performs the broadcast and
         does not have a limit on only two input tensors.
     """
-
-    if isinstance(tosa_spec, Tosa_1_00):
-        import serializer.tosa_serializer as ts
-
-        reshape_helper = build_reshape_tosa_1_0
-    else:
-        raise ValueError(f"Unsupported TOSA spec: {tosa_spec}")
-
     index_fake_tensors = [node.meta["val"] for node in nodes]
     broadcastable, common_shape = are_fake_tensors_broadcastable(index_fake_tensors)
     if not broadcastable:
@@ -198,26 +117,25 @@ def broadcast_tensors(
             tens_dtype,
         )
 
-        reshape_helper(tosa_fb, node.name, new_shape, reshaped.name)
+        build_reshape_tosa_1_0(tosa_fb, node.name, new_shape, reshaped.name)
 
         tiled = tosa_fb.addIntermediate(common_shape, tens_dtype)
         multipliers = [
             comm if curr == 1 else 1 for comm, curr in zip(common_shape, new_shape)
         ]
-        if isinstance(tosa_spec, Tosa_1_00):
-            multiple_shapes = tosa_fb.addConst(
-                (len(multipliers),),
-                ts.DType.SHAPE,
-                multipliers,
-                name=f"{node.name}_multiples",
-            )
+        multiple_shapes = tosa_fb.addConst(
+            (len(multipliers),),
+            ts.DType.SHAPE,
+            multipliers,
+            name=f"{node.name}_multiples",
+        )
 
-            tosa_fb.addOperator(
-                ts.TosaOp.Op().TILE,
-                [reshaped.name, multiple_shapes.name],
-                [tiled.name],
-                None,
-            )
+        tosa_fb.addOperator(
+            ts.TosaOp.Op().TILE,
+            [reshaped.name, multiple_shapes.name],
+            [tiled.name],
+            None,
+        )
 
         broadcast_tensors.append(tiled)
 
@@ -227,19 +145,17 @@ def broadcast_tensors(
 def build_reshape_tosa_1_0(
     tosa_graph, input_name, new_shape, output_name, shape_name_override=""
 ):
-    import serializer.tosa_serializer as ts_  # type: ignore
-
     shape = tosa_graph.addConst(
         np.array(new_shape).shape,
-        ts_.DType.SHAPE,
+        ts.DType.SHAPE,
         np.array(new_shape),
         name=shape_name_override if shape_name_override else output_name + "_shape",
     )
 
-    attr = ts_.TosaSerializerAttribute()
+    attr = ts.TosaSerializerAttribute()
     attr.ReshapeAttribute()
     tosa_graph.addOperator(
-        ts_.TosaOp.Op().RESHAPE,
+        ts.TosaOp.Op().RESHAPE,
         [input_name, shape.name],
         [output_name],
         attr,

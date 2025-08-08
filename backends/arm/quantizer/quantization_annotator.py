@@ -11,8 +11,8 @@ from typing import Callable, List, Optional, Sequence
 import torch
 import torch.fx
 import torch.nn.functional as F
+from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.quantizer import QuantizationConfig
-from executorch.backends.arm.tosa_utils import get_node_debug_info
 from torch._subclasses import FakeTensor
 
 from torch.fx import Node
@@ -287,6 +287,7 @@ _one_to_one = [
     torch.ops.aten.asin.default,
     torch.ops.aten.atanh.default,
     torch.ops.aten.asinh.default,
+    torch.ops.aten.cosh.default,
 ]
 
 _one_to_one_shared_input_qspec = [
