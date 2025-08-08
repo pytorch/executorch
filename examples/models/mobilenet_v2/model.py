@@ -57,7 +57,7 @@ class MV2Model(EagerModelBase):
             input_tensor = preprocess(input_image)
             input_batch = input_tensor.unsqueeze(0)
             input_batch = (input_batch,)
-        return (torch.randn(tensor_size),)
+        return input_batch
 
 
 class MV2UntrainedModel(EagerModelBase):
