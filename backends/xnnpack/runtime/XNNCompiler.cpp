@@ -118,10 +118,9 @@ xnn_datatype getDataType(const DataType& data_type) {
       return xnn_datatype::xnn_datatype_qcint32;
     case DataType::xnn_datatype_qcint4:
       return xnn_datatype::xnn_datatype_qcint4;
-    case DataType::xnn_datatype_qdint8:
-      return xnn_datatype::xnn_datatype_qdint8;
     case DataType::xnn_datatype_qbint4:
       return xnn_datatype::xnn_datatype_qbint4;
+    case DataType::xnn_datatype_qdint8: // always try to us kleidi
     case DataType::xnn_datatype_qpint8:
       return xnn_datatype::xnn_datatype_qpint8;
     case DataType::xnn_datatype_int32:
@@ -600,54 +599,6 @@ Error defineTensor(
   return Error::Ok;
 };
 
-#define MAYBE_UNUSED(x) (void)(x)
-
-#ifdef ENABLE_XNNPACK_KLEIDI
-bool isQP8(const fb_xnnpack::XNNGraph* graph, const NodePtr node) {
-  assert(node->xnode_union_type() == fb_xnnpack::XNodeUnion::XNNConvert);
-  auto graph_node = node->xnode_union_as_XNNConvert();
-  auto cvt_output_id = graph_node->output_id();
-
-  auto check_dtype = [graph](uint32_t id, DataType dtype) -> bool {
-    assert(
-        dtype == DataType::xnn_datatype_qdint8 ||
-        dtype == DataType::xnn_datatype_qbint4);
-    for (auto value : *graph->xvalues()) {
-      if (value->xvalue_union_type() !=
-          fb_xnnpack::XValueUnion::XNNQuantizedTensorValue) {
-        continue;
-      }
-      auto tensor =
-          value->xvalue_union_as_XNNQuantizedTensorValue()->tensor_value();
-      if (tensor->id_out() == id) {
-        return tensor->datatype() == dtype;
-      }
-    }
-    return false;
-  };
-
-  // Check if the output tensor is qint8 else bail early.
-  if (!check_dtype(cvt_output_id, DataType::xnn_datatype_qdint8)) {
-    return false;
-  }
-
-  // Find if the convert output is going to the right linear node.
-  // Assuming if we can find one valid linear node, then we can use QP8
-  // for all the linear nodes consuming this convert output.
-  for (auto node : *graph->xnodes()) {
-    if (node->xnode_union_type() == fb_xnnpack::XNodeUnion::XNNFullyConnected) {
-      auto linear_node = node->xnode_union_as_XNNFullyConnected();
-      if (linear_node->input1_id() == cvt_output_id) {
-        if (check_dtype(
-                linear_node->filter_id(), DataType::xnn_datatype_qbint4)) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-#endif // ENABLE_XNNPACK_KLEIDI
 
 /*
 Define Convert operator Node into the subgraph
@@ -661,19 +612,6 @@ Error defineConvertNode(
   auto graph_node = node->xnode_union_as_XNNConvert();
 
   int32_t flags = graph_node->flags();
-#ifdef ENABLE_XNNPACK_KLEIDI
-// This is not currently exposed at include/xnnpack.h yet once it is
-// we can remove this runtime logic and do this ahead-of-time
-#define XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM 0x00000100;
-  if (isQP8(flatbuffer_graph, node)) {
-    flags |= XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM;
-    ET_LOG(
-        Debug,
-        "Setting XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM flag for convert node %i",
-        node->debug_handle());
-  }
-#endif
-
   xnn_status status = xnn_define_convert(
       subgraph_ptr,
       remapped_ids.at(graph_node->input_id()),
