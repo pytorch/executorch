@@ -120,7 +120,10 @@ xnn_datatype getDataType(const DataType& data_type) {
       return xnn_datatype::xnn_datatype_qcint4;
     case DataType::xnn_datatype_qbint4:
       return xnn_datatype::xnn_datatype_qbint4;
-    case DataType::xnn_datatype_qdint8: // always try to us kleidi
+    case DataType::xnn_datatype_qdint8:
+#if !defined(ENABLE_XNNPACK_KLEIDI) || ENABLE_XNNPACK_KLEIDI == 0
+      return xnn_datatype::xnn_datatype_qdint8;
+#endif
     case DataType::xnn_datatype_qpint8:
       return xnn_datatype::xnn_datatype_qpint8;
     case DataType::xnn_datatype_int32:
