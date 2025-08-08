@@ -2,8 +2,6 @@
 #
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-import platform
-import sys
 import unittest
 
 import coremltools as ct
@@ -14,22 +12,15 @@ import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+from executorch.backends.apple.coreml.test.test_coreml_utils import (
+    IS_VALID_TEST_RUNTIME,
+)
 from executorch.exir.backend.utils import format_delegated_graph
 
 from torchao.prototype.quantization.codebook_coreml import CodebookWeightOnlyConfig
 from torchao.quantization import IntxWeightOnlyConfig, PerAxis, PerGroup, quantize_
 
-
-def is_fbcode():
-    return not hasattr(torch.version, "git_version")
-
-
-_TEST_RUNTIME = (
-    (sys.platform == "darwin")
-    and not is_fbcode()
-    and tuple(map(int, platform.mac_ver()[0].split("."))) >= (15, 0)
-)
-if _TEST_RUNTIME:
+if IS_VALID_TEST_RUNTIME:
     from executorch.runtime import Runtime
 
 
@@ -50,7 +41,7 @@ class TestTorchOps(unittest.TestCase):
         return model, example_inputs
 
     def _compare_outputs(self, executorch_program, eager_program, example_inputs):
-        if not _TEST_RUNTIME:
+        if not IS_VALID_TEST_RUNTIME:
             return
         runtime = Runtime.get()
         program = runtime.load_program(executorch_program.buffer)
