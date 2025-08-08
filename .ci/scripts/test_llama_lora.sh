@@ -108,7 +108,7 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     backend.xnnpack.enabled=true \
     backend.xnnpack.extended_ops=true \
     export.output_name="${MODEL_SEPARATE}.pte" \
-    serialization.foundation_weights_file="${MODEL_SEPARATE}.ptd"
+    export.foundation_weights_file="${MODEL_SEPARATE}.ptd"
 
 # Run llama runner.
 NOW=$(date +"%H:%M:%S")
