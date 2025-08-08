@@ -40,6 +40,7 @@ def run_test(  # noqa: C901
     test_base_name: str,
     params: dict | None,
     dynamic_shapes: Any | None = None,
+    generate_random_test_inputs: bool = True,
 ) -> TestCaseSummary:
     """
     Top-level test run function for a model, input set, and tester. Handles test execution
@@ -99,7 +100,7 @@ def run_test(  # noqa: C901
 
     lower_start_time = time.perf_counter()
     try:
-        tester.to_edge_transform_and_lower()
+        tester.to_edge_transform_and_lower(generate_etrecord=True)
         elapsed = time.perf_counter() - lower_start_time
         extra_stats["lower_time"] = timedelta(seconds=elapsed)
     except Exception as e:
@@ -107,8 +108,11 @@ def run_test(  # noqa: C901
         extra_stats["lower_time"] = timedelta(seconds=elapsed)
         return build_result(TestResult.LOWER_FAIL, e)
 
+    # Compute delegation statistics. Use the ETRecord to access the edge dialect graph between
+    # to_edge and delegation. Note that ETRecord only stores the edge dialect graph for a single
+    # method currently and assumes it is called "forward".
     edge_manager: EdgeProgramManager = tester.get_artifact()
-    edge_op_counts = count_ops(edge_manager.original_edge_programs)
+    edge_op_counts = count_ops({"forward": edge_manager._etrecord.edge_dialect_program})
     undelegated_op_counts = count_ops(edge_manager._edge_programs)
     delegated_op_counts = edge_op_counts - undelegated_op_counts
 
@@ -135,7 +139,8 @@ def run_test(  # noqa: C901
         # AssertionErrors to catch output mismatches, but this might catch more than that.
         try:
             tester.run_method_and_compare_outputs(
-                statistics_callback=lambda stats: error_statistics.append(stats)
+                inputs=None if generate_random_test_inputs else inputs,
+                statistics_callback=lambda stats: error_statistics.append(stats),
             )
         except AssertionError as e:
             return build_result(TestResult.OUTPUT_MISMATCH_FAIL, e)

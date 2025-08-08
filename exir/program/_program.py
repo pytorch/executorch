@@ -109,8 +109,8 @@ except ImportError:
     # Define a stub decorator that does nothing
     def et_logger(api_name: str) -> Callable[[Any], Any]:
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-                return func(self, *args, **kwargs)
+            def wrapper(*args: Any, **kwargs: Any) -> Any:
+                return func(*args, **kwargs)
 
             return wrapper
 
@@ -240,8 +240,29 @@ def _transform(
         isinstance(p, (list, Verifier)) for p in passes
     ), f"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: {list(passes)}"
 
-    pm = PassManager(list(passes))
-    res = pm(self.graph_module)
+    return _transform_with_pass_manager(
+        self, PassManager(list(passes)), override_verifiers
+    )
+
+
+def _transform_with_pass_manager(
+    self,
+    pass_manager: PassManager,
+    override_verifiers: None | list[Type[Verifier]] = None,
+) -> "ExportedProgram":
+    """
+    Transforms the program using the provided pass_manager.
+
+    Args:
+        self: The ExportedProgram instance to transform
+        pass_manager: An instance of PassManager to apply transformations.
+        override_verifiers: Optional list of verifier classes to use instead of the default verifiers.
+            This is needed if the transforms yields illegal graph that the default verifier cannot handle.
+
+    Returns:
+        ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made
+    """
+    res = pass_manager(self.graph_module)
     transformed_gm = res.graph_module if res is not None else self.graph_module
     assert transformed_gm is not None
 
@@ -289,6 +310,15 @@ def _copy_module(new_prog, new_gm):
             t = getattr(new_gm, node.target, None)
             if isinstance(t, torch.Tensor):
                 setattr(new_prog, node.target, t)
+
+
+def _create_empty_etrecord():
+    # Import etrecord at runtime to resolve cyclic dependencies (program -> etrecord -> program).
+    # This also ensures that etrecord-related packages do not affect the export flow.
+    # @manual
+    from executorch.devtools.etrecord import ETRecord
+
+    return ETRecord()
 
 
 def lift_constant_tensor_pass(ep):
@@ -604,7 +634,7 @@ class ExecutorchProgram:
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
         if self._emitter_output:
             return self._emitter_output.debug_handle_map
-        return {}
+        return self._get_emitter_output().debug_handle_map
 
     @property
     def delegate_map(
@@ -612,7 +642,7 @@ class ExecutorchProgram:
     ) -> Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]:
         if self._emitter_output:
             return self._emitter_output.method_to_delegate_debug_id_map
-        return {}
+        return self._get_emitter_output().method_to_delegate_debug_id_map
 
     @property
     def graph_module(self) -> torch.fx.GraphModule:
@@ -1103,6 +1133,7 @@ def _gen_edge_manager_for_partitioners(
     aten_programs: Dict[str, ExportedProgram],
     config: EdgeCompileConfig,
     constant_methods: Optional[Dict[str, Any]],
+    generate_etrecord: Optional[bool] = False,
 ) -> "EdgeProgramManager":
     """
     Generates EdgeProgramManager for subsequent lowering to the
@@ -1180,6 +1211,12 @@ def _gen_edge_manager_for_partitioners(
         list(set().union(*ops_set_to_not_decompose_by_program.values())),
     )
 
+    if generate_etrecord:
+        etrecord = _create_empty_etrecord()
+        etrecord.add_exported_program(aten_programs)
+        etrecord.add_edge_dialect_program(copy.deepcopy(edge_manager))
+        edge_manager._etrecord = etrecord
+
     return edge_manager
 
 
@@ -1214,13 +1251,14 @@ def collect_named_data_store_from_exported_program(
 def to_edge_transform_and_lower(  # noqa: C901
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
-        Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager]
     ] = None,
     partitioner: Optional[
         Union[List[Partitioner], Dict[str, List[Partitioner]]]
     ] = None,
     constant_methods: Optional[Dict[str, Any]] = None,
     compile_config: Optional[EdgeCompileConfig] = None,
+    generate_etrecord: bool = False,
 ) -> "EdgeProgramManager":
     """
     :func:`to_edge_transform_and_lower` constructs an EdgeProgramManager from a set of
@@ -1242,11 +1280,15 @@ def to_edge_transform_and_lower(  # noqa: C901
             to their corresponding ExportedPrograms. If only a single ExportedProgram is
             provided it will be assigned the name "forward".
 
-        transform_passes: The passes can either be a list of passes, or a dictionary
-            mapping method names to lists of passes. If it is just a list of passes, all methods
-            in the given EdgeProgramManager will be transformed with the provided passes. If it
-            is a dictionary, only method names specified in the dictionary will be transformed
-            with their corresponding passes.
+        transform_passes: The transform_passes can be one of:
+            1) a list of passes -
+                all methods in the given EdgeProgramManager will be transformed with the provided passes.
+            2) a dictionary -
+                only method names specified in the dictionary will be transformed
+                with their corresponding passes
+            3) an instance of a PassManager -
+                all methods in the given EdgeProgramManager will be
+                transformed with the given PassManager instance.
 
         partitioner: The partitioner can either be a Partitioner subclass instance, or a
             dictionary mapping method names to Partitioner subclass instance. If it is a
@@ -1260,6 +1302,8 @@ def to_edge_transform_and_lower(  # noqa: C901
 
         compile_config: An optional argument used to provide greater control over the
             transformation to edge dialect process.
+
+        generate_etrecord: An optional argument used to generate an etrecord for debugging purposes.
 
     Returns:
         EdgeProgramManager
@@ -1280,7 +1324,7 @@ def to_edge_transform_and_lower(  # noqa: C901
         partitioner, aten_programs
     )
     edge_manager = _gen_edge_manager_for_partitioners(
-        partitioner, aten_programs, config, constant_methods
+        partitioner, aten_programs, config, constant_methods, generate_etrecord
     )
 
     if transform_passes is not None:
@@ -1411,8 +1455,6 @@ class EdgeProgramManager:
     Manages the second link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
 
-    original_edge_programs: dict[str, ExportedProgram] | None = None
-
     def __init__(
         self,
         edge_programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
@@ -1450,6 +1492,8 @@ class EdgeProgramManager:
                 program, self._named_data_store
             )
 
+        self._etrecord = None
+
     @property
     def methods(self) -> Set[str]:
         """
@@ -1474,19 +1518,23 @@ class EdgeProgramManager:
     @et_logger("transform")
     def transform(
         self,
-        passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
+        passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]], PassManager],
         compile_config: Optional[EdgeCompileConfig] = None,
     ) -> "EdgeProgramManager":
         """
         Transforms the program according to the provided passes.
 
         Args:
-            passes: The passes can either be a list of passes, or a
-                dictionary mapping method names to lists of passes. If it is
-                just a list of passes, all methods in the given EdgeProgramManager
-                will be transformed with the provided passes. If it is a
-                dictionary, only method names specified in the dictionary will be
-                transformed with their corresponding passes.
+            passes: This param can be one of:
+                1) a list of passes -
+                    all methods in the given EdgeProgramManager
+                    will be transformed with the provided passes.
+                2) a dictionary mapping method names to lists of passes -
+                    only method names specified in the dictionary will be
+                    transformed with their corresponding passes.
+                3) a PassManager instance -
+                    all methods in the given EdgeProgramManager will be
+                    transformed with the given PassManager instance.
             compile_config: Compile config to use for veriy the correctness of model
                 graph after each pass. If not specified, the compile config of the
                 calling EdgeProgramManager will be used. It will be used in as compile
@@ -1496,28 +1544,51 @@ class EdgeProgramManager:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
             transformations applied.
         """
+
         compile_config = compile_config or self.compile_config
         new_programs: Dict[str, ExportedProgram] = {}
+
+        # Cast passes parameter upfront.
+        passes_seq: Optional[Sequence[PassType]] = None
+        passes_dict: Optional[Dict[str, Sequence[PassType]]] = None
+        pass_manager: Optional[PassManager] = None
+
+        if isinstance(passes, Sequence):
+            passes_seq = passes
         if isinstance(passes, dict):
-            for name, program in self._edge_programs.items():
-                if name in passes.keys():
-                    new_programs[name] = _transform(program, *passes[name])
-                    EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
-                        new_programs[name].graph_module
-                    )
-                else:
-                    new_programs[name] = copy.deepcopy(program)
+            passes_dict = passes
+        if isinstance(passes, PassManager):
+            pass_manager = passes
 
-        else:  # apply passes to every method
-            for name, program in self._edge_programs.items():
-                new_programs[name] = _transform(program, *passes)
-                EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
-                    new_programs[name].graph_module
-                )
+        for name, program in self._edge_programs.items():
+            # If the method name is enforced, but not matched, we skip transformation.
+            if (
+                isinstance(passes, dict)
+                and passes_dict
+                and name not in passes_dict.keys()
+            ):
+                new_programs[name] = copy.deepcopy(program)
+                continue
 
-        return EdgeProgramManager(
+            # Depending on the passes parameter, call the corresponding transform function.
+            if passes_seq is not None:
+                new_programs[name] = _transform(program, *passes_seq)
+            elif passes_dict is not None:
+                new_programs[name] = _transform(program, *passes_dict[name])
+            elif pass_manager is not None:
+                new_programs[name] = _transform_with_pass_manager(program, pass_manager)
+
+            # Verify the correctness of model graph after each transformation.
+            EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
+                new_programs[name].graph_module
+            )
+
+        epm = EdgeProgramManager(
             new_programs, copy.deepcopy(self._config_methods), compile_config
         )
+
+        epm._etrecord = self._etrecord
+        return epm
 
     @et_logger("to_backend")
     def to_backend(
@@ -1561,16 +1632,14 @@ class EdgeProgramManager:
 
         new_edge_programs = to_backend(method_to_programs_and_partitioners)
         config = EdgeCompileConfig(_check_ir_validity=False)
-        new_edge_manager = EdgeProgramManager(
+        epm = EdgeProgramManager(
             new_edge_programs,
             copy.deepcopy(self._config_methods),
             config,
         )
 
-        # Placeholder - not for land
-        new_edge_manager.original_edge_programs = copy.deepcopy(self._edge_programs)
-
-        return new_edge_manager
+        epm._etrecord = self._etrecord
+        return epm
 
     @et_logger("to_executorch")
     def to_executorch(
@@ -1651,12 +1720,18 @@ class EdgeProgramManager:
             _copy_module(program.graph_module, new_gm)
             execution_programs[name] = program
 
-        return ExecutorchProgramManager(
+        et_pm = ExecutorchProgramManager(
             execution_programs,
             self._config_methods,
             config,
             self._named_data_store.get_named_data_store_output(),
         )
+
+        if self._etrecord is not None:
+            self._etrecord.add_executorch_program(et_pm)
+            et_pm._etrecord = self._etrecord
+
+        return et_pm
 
 
 class ExecutorchProgramManager:
@@ -1721,6 +1796,7 @@ class ExecutorchProgramManager:
             self._named_data,
         )
         self._buffer: Optional[bytes] = None
+        self._etrecord = None
 
     @property
     def methods(self) -> Set[str]:
@@ -1792,6 +1868,21 @@ class ExecutorchProgramManager:
         if self._buffer is None:
             self._buffer = bytes(self._pte_data)
         return self._buffer
+
+    def get_etrecord(self):
+        """
+        Get the generated ETRecord if etrecord generation was enabled.
+
+        Returns:
+            ETRecord object if generation was enabled, None otherwise
+
+        Raises:
+            RuntimeError: if ETRecord object was not generated.
+        """
+
+        if self._etrecord is None:
+            raise RuntimeError("ETRecord was not generated")
+        return self._etrecord
 
     def write_to_file(self, open_file: io.BufferedIOBase) -> None:
         """

@@ -12,7 +12,7 @@ from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
 )
 from executorch.backends.arm.test.tester.test_pipeline import (
     PassPipeline,
-    TosaPipelineMI,
+    TosaPipelineFP,
 )
 
 input_t = Tuple[torch.Tensor]  # Input x
@@ -76,7 +76,7 @@ class NotFuseTensorWithDifferentType(torch.nn.Module):
         return m, n
 
 
-def test_fuse_equal_placeholders_constants_tosa_MI():
+def test_fuse_equal_placeholders_constants_tosa_FP():
     module = FuseWeightsConstants()
     data = (torch.rand(1, 2, 8),)
     pipeline = PassPipeline[input_t](
@@ -97,7 +97,7 @@ def test_fuse_equal_placeholders_constants_tosa_MI():
     assert "_common" in constant_keys[1], "FuseEqualPlaceholders constants failed"
 
 
-def test_fuse_equal_placeholders_state_dict_tosa_MI():
+def test_fuse_equal_placeholders_state_dict_tosa_FP():
     module = FuseWeightsStateDict()
     data = (torch.rand(1, 2, 8),)
     pipeline = PassPipeline[input_t](
@@ -118,7 +118,7 @@ def test_fuse_equal_placeholders_state_dict_tosa_MI():
     assert "_common" in state_dict_keys[1], "FuseEqualPlaceholders state_dict failed"
 
 
-def test_not_fuse_tensor_with_different_type_MI():
+def test_not_fuse_tensor_with_different_type_FP():
     module = NotFuseTensorWithDifferentType()
     data = (
         torch.rand(
@@ -131,7 +131,7 @@ def test_not_fuse_tensor_with_different_type_MI():
             dtype=torch.int,
         ),
     )
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         module,
         data,
         aten_op=[],
