@@ -34,12 +34,12 @@ class Tester:
         self,
         module: torch.nn.Module,
         example_inputs: Tuple[torch.Tensor],
-        stage_classes: Dict[StageType, Callable],
+        stage_classes: Dict[StageType, Callable] | None = None,
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         module.eval()
 
-        self.stage_classes = stage_classes
+        self.stage_classes = stage_classes or Tester.default_stage_classes()
         self.original_module = module
         self.example_inputs = example_inputs
         self.dynamic_shapes = dynamic_shapes
