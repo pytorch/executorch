@@ -24,7 +24,7 @@ from executorch.backends.arm.arm_backend import (
     is_tosa,
     is_vgf,
 )
-from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.ethosu import EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -341,8 +341,8 @@ targets = [
     "ethos-u85-1024",
     "ethos-u85-2048",
     "vgf",
-    "TOSA-0.80+BI",
     "TOSA-1.0+INT",
+    "TOSA-1.0+FP",
 ]
 
 
@@ -392,7 +392,7 @@ def get_compile_spec(
         try:
             tosa_spec = TosaSpecification.create_from_string(target)
         except:
-            tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         spec_builder = ArmCompileSpecBuilder().tosa_compile_spec(tosa_spec)
     elif "ethos-u" in target:
         spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(

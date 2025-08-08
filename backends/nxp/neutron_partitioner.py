@@ -1,4 +1,4 @@
-# Copyright (c) 2024-2025 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -203,6 +203,7 @@ supported_ops = {
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
+    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
 }
 
 

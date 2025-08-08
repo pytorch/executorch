@@ -27,6 +27,7 @@ from executorch.backends.xnnpack.utils.configs import (
 from executorch.export import (
     BackendRecipeProvider,
     ExportRecipe,
+    LoweringRecipe,
     QuantizationRecipe,
     RecipeType,
 )
@@ -88,12 +89,19 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
             )
         return None
 
+    def _get_xnnpack_lowering_recipe(
+        self, precision_type: Optional[ConfigPrecisionType] = None
+    ) -> LoweringRecipe:
+        return LoweringRecipe(
+            partitioners=[XnnpackPartitioner(precision_type=precision_type)],
+            edge_compile_config=get_xnnpack_edge_compile_config(),
+        )
+
     def _build_fp32_recipe(self, recipe_type: RecipeType) -> ExportRecipe:
         return ExportRecipe(
             name=recipe_type.value,
-            edge_compile_config=get_xnnpack_edge_compile_config(),
+            lowering_recipe=self._get_xnnpack_lowering_recipe(),
             executorch_backend_config=get_xnnpack_executorch_backend_config(),
-            partitioners=[XnnpackPartitioner()],
         )
 
     def _build_quantized_recipe(
@@ -120,9 +128,8 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
         return ExportRecipe(
             name=recipe_type.value,
             quantization_recipe=quant_recipe,
-            edge_compile_config=get_xnnpack_edge_compile_config(),
+            lowering_recipe=self._get_xnnpack_lowering_recipe(precision_type),
             executorch_backend_config=get_xnnpack_executorch_backend_config(),
-            partitioners=[XnnpackPartitioner(config_precision=precision_type)],
         )
 
     def _build_int8da_intx_weight_recipe(
@@ -150,9 +157,8 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
         return ExportRecipe(
             name=recipe_type.value,
             quantization_recipe=quant_recipe,
-            edge_compile_config=get_xnnpack_edge_compile_config(),
+            lowering_recipe=self._get_xnnpack_lowering_recipe(),
             executorch_backend_config=get_xnnpack_executorch_backend_config(),
-            partitioners=[XnnpackPartitioner()],
         )
 
     def _validate_recipe_kwargs(self, recipe_type: RecipeType, **kwargs: Any) -> None:

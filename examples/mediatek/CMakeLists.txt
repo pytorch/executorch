@@ -29,7 +29,10 @@ endif()
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories ${EXECUTORCH_ROOT}/..
+  ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -71,9 +74,13 @@ if(${ANDROID})
 
   target_link_libraries(
     mtk_executor_runner ${_executor_runner_libs} executorch neuron_backend
+    executorch_core
+    extension_evalue_util
+    extension_runner_util
     gflags
   )
   target_compile_options(mtk_executor_runner PUBLIC ${_common_compile_options})
+  add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
   set(_mtk_oss_executor_runner__srcs ${_executor_runner__srcs})
   list(
@@ -104,6 +111,7 @@ if(${ANDROID})
 
   target_link_libraries(mtk_oss_executor_runner
       ${_executor_runner_libs}
+      extension_module
       executorch
       neuron_backend
       gflags
@@ -142,6 +150,8 @@ if(${ANDROID})
   target_include_directories(
     tokenizer PUBLIC ${_common_include_directories} ${THIRD_PARTY_ABSL_DIR}
                      ${THIRD_PARTY_RE2_DIR} ${LLAMA2_TOKENIZER_DIR}/include
+                     ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/pcre2
+                     ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
   )
   target_link_libraries(tokenizer PRIVATE re2::re2)
   target_sources(
@@ -149,6 +159,9 @@ if(${ANDROID})
     PRIVATE
       ${LLAMA2_TOKENIZER_DIR}/src/tiktoken.cpp
       ${LLAMA2_TOKENIZER_DIR}/src/llama2c_tokenizer.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/regex.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/bpe_tokenizer_base.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/re2_regex.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/../models/llama/tokenizer/llama_tiktoken.cpp
   )
 

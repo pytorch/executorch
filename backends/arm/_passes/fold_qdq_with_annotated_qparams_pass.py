@@ -16,7 +16,8 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     is_param_node,
 )
 
-from executorch.backends.arm.tosa_quant_utils import dq_ops, q_ops, QuantArgs
+from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -109,7 +110,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 return
 
             arg_quant_params = None
-            if arg.target in dq_ops:
+            if arg.target in DQ_OPS:
                 args = arg.args
                 scales = args[1]
                 if (
@@ -137,9 +138,9 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         if input_qparams is not None:
             node.meta["input_qparams"][i] = input_qparams
             for n in nodes_to_remove:
-                if n.target not in dq_ops:
+                if n.target not in DQ_OPS:
                     raise RuntimeError(
-                        f"Expected one of {dq_ops} dq_op, got {n.target}"
+                        f"Expected one of {DQ_OPS} dq_op, got {n.target}"
                     )
 
                 node.replace_input_with(n, cast(Node, n.args[0]))
@@ -154,7 +155,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             if n.op != "call_function":
                 continue
             # Don't fold chains of quant-ops into each other.
-            if n.target in (*q_ops, *dq_ops):
+            if n.target in (*Q_OPS, *DQ_OPS):
                 continue
 
             # Make sure we haven't already set qparams meta information on the node
@@ -184,7 +185,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             # Copy the users, since we are modifying it.
             users_copy = copy.copy(n.users)
             for i, user in enumerate(users_copy):
-                if user.target not in q_ops:
+                if user.target not in Q_OPS:
                     continue
 
                 # quantization node found here, store the quantization parameters in meta value
@@ -221,7 +222,7 @@ class QuantizeOperatorArguments(ExportPass):
 
             # Make sure we have a quantized operator
             user = list(n.users)[0]
-            if user.target not in q_ops:
+            if user.target not in Q_OPS:
                 continue
 
             qargs = QuantArgs.from_operator(user.target, user.args)

@@ -10,10 +10,11 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -99,16 +100,16 @@ test_modules = {
 
 
 @common.parametrize("test_module", test_modules)
-def test_masked_fill_scalar_tosa_MI(test_module):
+def test_masked_fill_scalar_tosa_FP(test_module):
     module, inputs = test_module()
-    pipeline = TosaPipelineMI[input_t](module, inputs, aten_op=[])
+    pipeline = TosaPipelineFP[input_t](module, inputs, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
-def test_masked_fill_scalar_tosa_BI(test_module):
+def test_masked_fill_scalar_tosa_INT(test_module):
     module, inputs = test_module()
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         module,
         inputs,
         aten_op=[],
@@ -118,7 +119,7 @@ def test_masked_fill_scalar_tosa_BI(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone300
-def test_masked_fill_scalar_u55_BI(test_module):
+def test_masked_fill_scalar_u55_INT(test_module):
     module, inputs = test_module()
     pipeline = OpNotSupportedPipeline[input_t](
         module,
@@ -133,12 +134,32 @@ def test_masked_fill_scalar_u55_BI(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone320
-def test_masked_fill_scalar_u85_BI(test_module):
+def test_masked_fill_scalar_u85_INT(test_module):
     module, inputs = test_module()
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         module,
         inputs,
         aten_ops=[],
         exir_ops=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_masked_fill_scalar_vgf_FP(test_module):
+    module, inputs = test_module()
+    pipeline = VgfPipeline[input_t](
+        module, inputs, aten_op=[], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_masked_fill_scalar_vgf_INT(test_module):
+    module, inputs = test_module()
+    pipeline = VgfPipeline[input_t](
+        module, inputs, aten_op=[], tosa_version="TOSA-1.0+INT"
     )
     pipeline.run()

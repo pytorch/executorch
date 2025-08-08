@@ -248,7 +248,16 @@ class ComputeGraph final {
     return values_.at(idx).is##type_name();                                \
   }
 
-  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(vTensorPtr, tensor, Tensor)
+ protected:
+  inline vTensorPtr get_tensor(const ValueRef idx) {
+    return vTensorPtr(this, idx);
+  }
+
+ public:
+  inline bool val_is_tensor(const ValueRef idx) const {
+    return values_.at(idx).isTensor();
+  }
+
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(TensorRefPtr, tref, TensorRef)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(StagingPtr, staging, Staging)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(IntListPtr, int_list, IntList)
@@ -317,6 +326,10 @@ class ComputeGraph final {
 
   inline int32_t numel_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().numel();
+  }
+
+  inline size_t staging_buffer_numel_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().staging_buffer_numel();
   }
 
   inline utils::StorageType storage_type_of(const ValueRef idx) const {
@@ -832,6 +845,20 @@ class ComputeGraph final {
    */
   utils::uvec3 create_local_wg_size(const ValueRef idx);
 
+  void bind_tensor_to_descriptor_set(
+      const ValueRef ref,
+      vkapi::PipelineBarrier& pipeline_barrier,
+      const vkapi::MemoryAccessFlags accessType,
+      vkapi::DescriptorSet& descriptor_set,
+      const uint32_t idx);
+
+  void bind_value_to_descriptor_set(
+      const ValueRef ref,
+      vkapi::PipelineBarrier& pipeline_barrier,
+      const vkapi::MemoryAccessFlags access_type,
+      vkapi::DescriptorSet& descriptor_set,
+      const uint32_t idx);
+
   //
   // Input/Output
   //
@@ -857,11 +884,7 @@ class ComputeGraph final {
   /*
    * Submit one command buffer to the GPU.
    */
-  void submit_cmd(
-      vkapi::CommandBuffer& cmd_buf,
-      VkSemaphore wait_semaphore,
-      VkSemaphore signal_semaphore,
-      VkFence fence);
+  void submit_cmd(vkapi::CommandBuffer& cmd_buf, VkFence fence);
 
   /*
    * Submits all the commands gathered in deferred_cmd_bufs_ to the GPU.
@@ -892,17 +915,29 @@ class ComputeGraph final {
   // Graph Execution
   //
 
-  void encode_execute();
   void execute();
+
+  //
+  // Tensor View
+  //
+
+  void virtual_clone(const ValueRef dst, const ValueRef src);
+
+  void virtual_transpose(
+      const ValueRef tensor,
+      const int64_t dim0,
+      const int64_t dim1);
 
   //
   // Dynamic Shape support
   //
 
   void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
+
   void virtual_resize(
       const ValueRef idx,
       const std::vector<int64_t>& new_sizes);
+
   void propagate_resize();
 
   //
@@ -944,6 +979,8 @@ class ComputeGraph final {
   friend class SymIntPtr;
 
   friend struct TmpTensor;
+  friend struct SharedObject;
+  friend class BlitNode;
 };
 
 template <typename T>
