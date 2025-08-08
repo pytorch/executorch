@@ -144,6 +144,111 @@ def get_symmetric_quantization_config(
     return quantization_config
 
 
+@functools.lru_cache
+def get_16a8w_quantization_config(
+    is_per_channel: bool = True,
+    is_qat: bool = False,
+    is_dynamic: bool = False,
+    weight_qmin: int = -127,
+    weight_qmax: int = 127,
+):
+    """
+    16A8W quantization config: 16-bit activations, 8-bit weights.
+
+    This configuration provides better accuracy than 8A8W while maintaining
+    reasonable memory usage through 8-bit weights.
+
+    Args:
+        is_per_channel: Whether to use per-channel quantization for weights
+        is_qat: Whether this is for Quantization Aware Training
+        is_dynamic: Whether to use dynamic quantization
+        weight_qmin: Minimum quantization value for weights
+        weight_qmax: Maximum quantization value for weights
+
+    Returns:
+        QuantizationConfig with 16-bit activations and 8-bit weights
+    """
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+
+    # Setup observer/fake-quant for 16-bit activations
+    if is_qat:
+        if is_dynamic:
+            act_observer_or_fake_quant_ctr = FakeQuantize
+            dynamic_quant_observer = MovingAverageMinMaxObserver.with_args(
+                averaging_constant=1
+            )
+            extra_args["observer"] = dynamic_quant_observer
+        else:
+            act_observer_or_fake_quant_ctr = FusedMovingAvgObsFakeQuantize  # type: ignore[assignment]
+    else:
+        if is_dynamic:
+            act_observer_or_fake_quant_ctr = PlaceholderObserver  # type: ignore[assignment]
+        else:
+            # HistogramObserver works well for 16-bit range
+            act_observer_or_fake_quant_ctr = HistogramObserver  # type: ignore[assignment]
+
+    # 16-bit activation quantization spec
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int16).min,  # -32768
+        quant_max=torch.iinfo(torch.int16).max,  # 32767
+        qscheme=torch.per_tensor_affine,
+        is_dynamic=is_dynamic,
+        observer_or_fake_quant_ctr=act_observer_or_fake_quant_ctr.with_args(
+            **extra_args,
+        ),
+    )
+
+    # Setup quantization config for weights (same as 8A8W - use 8-bit weights)
+    weight_qscheme = (
+        torch.per_channel_symmetric if is_per_channel else torch.per_tensor_symmetric
+    )
+    weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
+        MinMaxObserver
+    )
+    # Determine the right observer/fake-quant constructor
+    if is_qat:
+        # Set plain fake-quant with true min/max
+        weight_observer_or_fake_quant_ctr = FakeQuantize
+    else:
+        # PTQ: set min/max observer
+        weight_observer_or_fake_quant_ctr = (
+            PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
+        )
+
+    weight_extra_args = {"eps": 2**-12}
+
+    # 8-bit weight quantization spec (keep weights at 8-bit for memory efficiency)
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=weight_qmin,
+        quant_max=weight_qmax,
+        qscheme=weight_qscheme,
+        ch_axis=0,
+        is_dynamic=False,
+        observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr.with_args(
+            **weight_extra_args
+        ),
+    )
+
+    bias_quantization_spec = None
+    if is_dynamic:
+        quantization_config = QuantizationConfig(
+            act_quantization_spec,  # 16-bit input activations
+            None,
+            weight_quantization_spec,  # 8-bit weights
+            bias_quantization_spec,
+        )
+    else:
+        quantization_config = QuantizationConfig(
+            act_quantization_spec,  # 16-bit input activations
+            act_quantization_spec,  # 16-bit output activations
+            weight_quantization_spec,  # 8-bit weights
+            bias_quantization_spec,
+        )
+    return quantization_config
+
+
 NodeFilterType = Callable[[Node], bool]
 """Type for a Node Filter used by annotators. A Node filter is a function that takes
     a Node and returns whether the node should be annotated or not.
@@ -217,7 +322,6 @@ def _get_not_module_type_or_name_filter(
 
 
 class TOSAQuantizer(Quantizer):
-
     def __init__(
         self, compile_spec_or_tosa_spec: Union[TosaSpecification, List[CompileSpec]]
     ) -> None:
