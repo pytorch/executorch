@@ -8,7 +8,6 @@
 
 #ifdef __aarch64__
 #include <arm_neon.h>
-#include <sleef.h>
 #endif
 
 #include <cmath>
