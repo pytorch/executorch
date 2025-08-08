@@ -14,10 +14,11 @@ using executorch::runtime::Result;
 using executorch::runtime::TensorInfo;
 
 namespace example {
-TokenGenerator::TokenGenerator(
+template <typename T>
+TokenGenerator<T>::TokenGenerator(
     tokenizers::Tokenizer* tokenizer,
     DecoderRunner* decoder_runner,
-    KVManager* kv_manager,
+    KVManager<T>* kv_manager,
     const std::string& method_name,
     std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
     Metadata metadata,
@@ -41,7 +42,9 @@ TokenGenerator::TokenGenerator(
       metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
   logits_.size = metadata_.ar_len * metadata_.vocab_size * sizeof(uint16_t);
 }
-void TokenGenerator::init_io(
+
+template <typename T>
+void TokenGenerator<T>::init_io(
     IMemAlloc* buffer_manager,
     Result<MethodMeta> method_meta) {
   input_tensors_.reserve(method_meta->num_inputs());
@@ -94,14 +97,14 @@ void TokenGenerator::init_io(
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
     std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
         (cache_group == 0 ? k_cache_in_ : v_cache_in_);
-    std::vector<std::vector<KVCache>> cache_ptrs = (cache_group == 0)
+    std::vector<std::vector<KVCache<T>>> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
     for (int layer = 0; layer < metadata_.num_layers; ++layer) {
       for (int head = 0; head < metadata_.num_heads; ++head, ++index) {
         Result<TensorInfo> kv_cache = method_meta->input_tensor_meta(index);
 
-        uint8_t* cache_ptr = cache_ptrs[layer][head].buffer;
+        T* cache_ptr = cache_ptrs[layer][head].buffer;
 
         cache[layer].emplace_back(std::make_unique<TensorImpl>(
             kv_cache->scalar_type(),
@@ -135,13 +138,13 @@ void TokenGenerator::init_io(
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
     std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
         (cache_group == 0 ? k_cache_out_ : v_cache_out_);
-    std::vector<std::vector<KVCache>> cache_ptrs = (cache_group == 0)
+    std::vector<std::vector<KVCache<T>>> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
     for (int layer = 0; layer < metadata_.num_layers; ++layer) {
       for (int head = 0; head < metadata_.num_heads; ++head, ++index) {
         Result<TensorInfo> kv_cache = method_meta->output_tensor_meta(index);
-        uint8_t* cache_ptr = cache_ptrs[layer][head].output_buffer;
+        T* cache_ptr = cache_ptrs[layer][head].output_buffer;
         cache[layer].emplace_back(std::make_unique<TensorImpl>(
             kv_cache->scalar_type(),
             kv_cache->sizes().size(),
@@ -162,12 +165,14 @@ void TokenGenerator::init_io(
   }
 }
 
-const std::vector<uint16_t>& TokenGenerator::get_all_logits() {
+template <typename T>
+const std::vector<uint16_t>& TokenGenerator<T>::get_all_logits() {
   return token_all_logits_;
 }
 
 // This function only considers the case where token_generator_ar_len equals 1.
-void TokenGenerator::prepare_io(uint64_t cur_token, int64_t start_pos) {
+template <typename T>
+void TokenGenerator<T>::prepare_io(uint64_t cur_token, int64_t start_pos) {
   // update input_tok
   *input_toks_.data =
       metadata_.use_int64_token ? cur_token : static_cast<int32_t>(cur_token);
@@ -175,7 +180,8 @@ void TokenGenerator::prepare_io(uint64_t cur_token, int64_t start_pos) {
   *input_pos_.data = static_cast<int32_t>(start_pos);
 }
 
-Result<int64_t> TokenGenerator::generate(
+template <typename T>
+Result<int64_t> TokenGenerator<T>::generate(
     std::vector<uint64_t> tokens,
     int64_t start_pos,
     int32_t seq_len,
@@ -261,4 +267,9 @@ Result<int64_t> TokenGenerator::generate(
   }
   return pos - start_pos;
 }
+
+// Explicit instantiations
+template class TokenGenerator<uint16_t>;
+template class TokenGenerator<uint8_t>;
+
 } // namespace example
