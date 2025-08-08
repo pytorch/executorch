@@ -183,24 +183,9 @@ def test_linear_u55_INT(test_data: torch.Tensor):
     ).run()
 
 
-x_fail = {
-    f"{k},per_channel_quant={q}": reason
-    for k, reason in {
-        "model_linear_rank4_zeros": "AssertionError: Output 0 does not match reference output.",
-        "model_linear_rank4_ones": "AssertionError: Output 0 does not match reference output.",
-        "model_linear_rank4_negative_ones": "AssertionError: Output 0 does not match reference output.",
-        "model_linear_rank4_rand": "AssertionError: Output 0 does not match reference output.",
-        "model_linear_rank4_negative_large_rand": "AssertionError: Output 0 does not match reference output.",
-        "model_linear_rank4_large_randn": "AssertionError: Output 0 does not match reference output.",
-    }.items()
-    for q in [True, False]
-}
-
-
 @common.parametrize(
     "test_data",
     test_data_rank1_INT | test_data_rank4_INT,
-    x_fail,
 )
 @common.XfailIfNoCorstone320
 def test_linear_u85_INT(test_data: torch.Tensor):
