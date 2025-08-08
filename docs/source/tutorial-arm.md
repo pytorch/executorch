@@ -1,5 +1,4 @@
-<!---- Name is a WIP - this reflects better what it can do today ----->
-# Arm Ethos-U Backend Tutorial
+# Arm(R) Backend Tutorial
 
 <!----This will show a grid card on the page----->
 ::::{grid} 2
@@ -13,17 +12,24 @@
 
 :::{grid-item-card}  What you will learn in this tutorial:
 :class-card: card-prerequisites
-In this tutorial you will learn how to export a simple PyTorch model for ExecuTorch Arm Ethos-U backend delegate and run it on a Corstone FVP emulators.
+In this tutorial you will learn how to export a simple PyTorch model for ExecuTorch Arm backends.
 :::
 
 ::::
 
 ```{warning}
-This ExecuTorch backend delegate is under active development. You may encounter some rough edges and features which may be documented or planned but not implemented.
+This delegate is under active development, to get best results please use a recent version.
+The TOSA and Ethos(tm) backend support is reasonably mature and used in production by some users.
+The VGF backend support is in early development and you may encounter issues.
+You may encounter some rough edges and features which may be documented or planned but not implemented, please refer to the in-tree documentation for the latest status of features.
 ```
 
 ```{tip}
-If you are already familiar with this delegate, you may want to jump directly to the examples source dir - [https://github.com/pytorch/executorch/tree/main/examples/arm](https://github.com/pytorch/executorch/tree/main/examples/arm)
+If you are already familiar with this delegate, you may want to jump directly to the examples:
+* [https://github.com/pytorch/executorch/tree/main/examples/arm](https://github.com/pytorch/executorch/tree/main/examples/arm)
+* [https://github.com/pytorch/executorch/blob/main/examples/arm/ethos_u_minimal_example.ipynb](Compilation for Ethos-U)
+* [https://github.com/pytorch/executorch/blob/main/examples/arm/vgf_minimal_example.ipynb](Compilation for VGF/ML-SDK)
+* [https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py](A commandline compiler for example models)
 ```
 
 ## Prerequisites
@@ -32,110 +38,65 @@ Let's make sure you have everything you need before you get started.
 
 ### Hardware
 
-To successfully complete this tutorial, you will need a Linux-based host machine with Arm aarch64 or x86_64 processor architecture.
+To successfully complete this tutorial, you will need a Linux or MacOS host machine with Arm aarch64 or x86_64 processor architecture.
 
-The target device will be an embedded platform with an Arm Cortex-M CPUs and Ethos-U NPUs (ML processor). This tutorial will show you how to run PyTorch models on both.
+The target device will be an emulated platform to enable development without a specific development board. This tutorial has guidance for both Ethos-U targets and VGF via the ML SDK for Vulkan®.
 
-We will be using a [Fixed Virtual Platform (FVP)](https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms), simulating [Corstone-300](https://developer.arm.com/Processors/Corstone-300)(cs300) and [Corstone-320](https://developer.arm.com/Processors/Corstone-320)(cs320)systems. Since we will be using the FVP (think of it as virtual hardware), we won't be requiring any real embedded hardware for this tutorial.
+For Ethos-U and Cortex-M, We will be using a [Fixed Virtual Platform (FVP)](https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms), simulating [Corstone-300](https://developer.arm.com/Processors/Corstone-300)(cs300) and [Corstone-320](https://developer.arm.com/Processors/Corstone-320)(cs320)systems. Since we will be using the FVP (think of it as virtual hardware), we won't be requiring any real embedded hardware for this tutorial.
+
+For VGF we will be using the [ML SDK for Vulkan(R)](https://github.com/arm/ai-ml-sdk-for-vulkan/)) to emulate the program consumer.
 
 ### Software
 
-First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven't already, to set up a working ExecuTorch development environment.
+First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven't already, to set up a working ExecuTorch development environment. For the VGF backend it's recommended you [install from source](https://docs.pytorch.org/executorch/stable/using-executorch-building-from-source.html), or from a [nightly](https://download.pytorch.org/whl/nightly/executorch/).
 
-To generate software which can be run on an embedded platform (real or virtual), we will need a tool chain for cross-compilation and an Arm Ethos-U software development kit, including the Vela compiler for Ethos-U NPUs.
-
-In the following sections we will walk through the steps to download each of the dependencies listed above.
+In addition to this, you need to install a number of SDK dependencies for generating Ethos-U command streams or VGF files. There are scripts which automate this, which are found in the main [ExecuTorch repository](https://github.com/pytorch/executorch/examples/arm/).
 
 ## Set Up the Developer Environment
 
-In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial.
+In this section, we will do a one-time setup of the platform support files needed to run ExecuTorch programs in this tutorial. It is recommended to run the script in a conda or venv environment.
 
-For that we will use the `examples/arm/setup.sh` script to pull each item in an automated fashion. It is recommended to run the script in a conda environment.
+With a checkout of the ExecuTorch repository, we will use the `examples/arm/setup.sh` script to pull each item in an automated fashion. 
+
+For Ethos-U run:
 ```bash
-examples/arm/setup.sh --i-agree-to-the-contained-eula
+./examples/arm/setup.sh --i-agree-to-the-contained-eula
 ```
+
+For VGF run:
+```bash
+./examples/arm/setup.sh --i-agree-to-the-contained-eula --disable-ethos-u-deps --enable-mlsdk-deps
+```
+It is possible to install both sets of dependencies if you omit the disable options.
+
 Upon successful execution, you can directly go to [the next step](#convert-the-pytorch-model-to-the-pte-file).
-
-As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.
-
-```bash
-uname -s
-# Linux
-
-uname -m
-# x86_64 or aarch64
-```
-
-Next we will walk through the steps performed by the `setup.sh` script to better understand the development setup.
-
-### Download and Set Up the Corstone-300 and Corstone-320 FVP
-
-Fixed Virtual Platforms (FVPs) are pre-configured, functionally accurate simulations of popular system configurations. Here in this tutorial, we are interested in Corstone-300 and Corstone-320 systems. We can download this from the Arm website.
-
-```{note}
- By downloading and running the FVP software, you will be agreeing to the FVP [End-user license agreement (EULA)](https://developer.arm.com/downloads/-/arm-ecosystem-fvps/eula).
-```
-
-To download, we can either download `Corstone-300 Ecosystem FVP` and `Corstone-320 Ecosystem FVP`from [here](https://developer.arm.com/downloads/-/arm-ecosystem-fvps). or `setup.sh` script does that for you under `setup_fvp` function.
-
-### Download and Install the Arm GNU AArch32 Bare-Metal Toolchain
-
-Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55/M85 CPU available on the Corstone-300/Corstone-320 platform.
-
-These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 13.3.rel1 targeting `arm-none-eabi` here for our tutorial. Just like FVP, `setup.sh` script will down the toolchain for you. See `setup_toolchain` function.
-
-### Setup the Arm Ethos-U Software Development
-
-This git repository is the root directory for all Arm Ethos-U software. It is to help us download required repositories and place them in a tree structure. See `setup_ethos_u` function of the setup script for more details.
-
-Once this is done, you should have a working FVP simulator, a functioning toolchain for cross compilation, and the Ethos-U software development setup ready for the bare-metal developement.
-
-### Install the Vela Compiler
-Once this is done, the script will finish the setup by installing the Vela compiler for you, details are in `setup_vela` function.
-
-### Install the TOSA reference model
-This is the last step of the setup process, using `setup_tosa_reference_model` function `setup.sh` script will install TOSA reference model for you.
-
-At the end of the setup, if everything goes well, your top level devlopement dir might look something like this,
-
-```bash
-.
-├── arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi # for x86-64 hosts
-├── arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz
-├── ethos-u
-│   ├── core_platform
-│   ├── core_software
-│   ├── fetch_externals.py
-│   └── [...]
-├── FVP-corstone300
-│   ├── FVP_Corstone_SSE-300.sh
-│   └── [...]
-├── FVP-corstone320
-│   ├── FVP_Corstone_SSE-320.sh
-│   └── [...]
-├── FVP_corstone300.tgz
-├── FVP_corstone320.tgz
-└── setup_path.sh
-```
 
 ### Notes:
 
-The `setup.sh` script has generated a `setup_path.sh` script that you need to source everytime you restart you shell.
+```{warning}
+The `setup.sh` script has generated a `setup_path.sh` script that you need to source whenever you restart your shell.
+```
 
-e.g. run
+i.e. run
 `source  executorch/examples/arm/ethos-u-scratch/setup_path.sh`
 
-As `setup.sh` will download and setup the needed Arm toolchain make sure it is used by calling
 
-`which arm-none-eabi-gcc`
+To confirm your environment is set up correctly and will enable you to generate .pte's for your target:
 
-It should show `arm-none-eabi-gcc` in the `executorch` project and not anything in `/usr/bin` something like:
+For Ethos-U run:
+```bash
+# Check for Vela, which converts TOSA to Ethos-U command streams.
+which vela
+```
 
-`<EXECUTORCH_ROOT>/examples/arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi/bin/arm-none-eabi-gcc`
-or
-`<EXECUTORCH_ROOT>/examples/arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc`
+For VGF run:
+```bash
+# Check for model-converter, which converts TOSA to ML-SDK VGF format.
+which model-converter
+```
 
-If not you might need to uninstall `arm-none-eabi-gcc` or make sure its picked after the one in the project in your $PATH env varable.
+To ensure there's no environment pollution you should confirm these binaries reside within your executorch checkout, under the examples/arm tree. Other versions may present compatibility issues, so this should be corrected by modifying your environment variables such as ${PATH} appropriately.
+
 
 ## Convert the PyTorch Model to the `.pte` File
 
