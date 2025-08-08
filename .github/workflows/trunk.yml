@@ -80,12 +80,13 @@ jobs:
         export ZEPHYR_PROJ_ROOT=$(realpath $(pwd))
         export ARM_FVP_TUTORIALS_ROOT=$ZEPHYR_PROJ_ROOT/zephyr/samples/modules/executorch/arm-fvp-tutorials
 
+        # TODO @Bujji: Should see if this can be moved into the docker image itself
         download_arm_zephyr_sdk
         ./zephyr-sdk-0.16.0/setup.sh -c -t arm-zephyr-eabi
-
         cd $ZEPHYR_PROJ_ROOT
         setup_zephyr_et_module
 
+        # Run setup scripts for Arm FVP and Arm AOT Compilation
         cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
         install_executorch "--use-pt-pinned-commit"
         .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
