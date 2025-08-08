@@ -11,6 +11,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    is_tosa_ref_model_available,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -51,7 +52,16 @@ def test_lstm_tosa_FP():
         exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", get_test_inputs(), atol=3e-1)
+    try:
+        if pipeline.find_pos("run_method_and_compare_outputs") >= 0:
+            pipeline.change_args(
+                "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1
+            )
+    except Exception as e:
+        # tosa_ref_model must not be available
+        assert (
+            is_tosa_ref_model_available() == False
+        ), "Expected TOSA reference model to be disabled, but error occurred: {e}"
     pipeline.run()
 
 
@@ -63,9 +73,16 @@ def test_lstm_tosa_INT():
         exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.change_args(
-        "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
-    )
+    try:
+        if pipeline.find_pos("run_method_and_compare_outputs") >= 0:
+            pipeline.change_args(
+                "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
+            )
+    except Exception as e:
+        # tosa_ref_model must not be available
+        assert (
+            is_tosa_ref_model_available() == False
+        ), "Expected TOSA reference model to be disabled, but error occurred: {e}"
     pipeline.run()
 
 
