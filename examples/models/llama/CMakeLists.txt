@@ -224,3 +224,6 @@ target_include_directories(
 )
 target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
+set_target_properties(
+  llama_main PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
+)

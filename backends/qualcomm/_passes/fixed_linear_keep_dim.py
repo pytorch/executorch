@@ -29,9 +29,14 @@ class FixedLinearKeepDim(ExportPass):
         )
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
-                linear_node = [
+                linear_nodes = [
                     n for n in src_partition.nodes if n.target == self.linear
-                ][0]
+                ]
+
+                # If apply convert_linear_to_conv2d, there will no longer be any linear layers.
+                if len(linear_nodes) != 1:
+                    continue
+                linear_node = linear_nodes[0]
                 input_node = linear_node.args[0]
                 # Since QNN has no keep dims for linear op, we will need to add squeeze and unsqueeze around linear node
                 # TODO: Find a more general conditional statement.
