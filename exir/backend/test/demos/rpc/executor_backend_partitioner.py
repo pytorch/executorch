@@ -65,7 +65,9 @@ class ExecutorBackendPartitioner(Partitioner):
                 partition_tags[delegation_tag] = self.delegation_spec
 
                 # Tag the delegate submodules
+                # pyre-ignore[16]: node.args[0] is checked above but Pyre can't infer it
                 if node.args[0].op == "get_attr":
+                    # pyre-ignore[16]: node.args[0] is checked above but Pyre can't infer it
                     node.args[0].meta["delegation_tag"] = delegation_tag
 
         return PartitionResult(
