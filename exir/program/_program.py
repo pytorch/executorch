@@ -1376,7 +1376,7 @@ def to_edge(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     constant_methods: Optional[Dict[str, Any]] = None,
     compile_config: Optional[EdgeCompileConfig] = None,
-    generate_etrecord: Optional[bool] = False,
+    generate_etrecord: bool = False,
 ) -> "EdgeProgramManager":
     """
     :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in
@@ -1389,7 +1389,7 @@ def to_edge(
 
         compile_config: An optional argument used to provide greater control over the transformation to edge dialect process.
 
-        generate_etrecord: An optional argument used to generate an etrecord for debugging purposes.
+        generate_etrecord: An optional argument used to generate an etrecord for debugging purposes. Default is False.
 
     Returns:
         EdgeProgramManager
