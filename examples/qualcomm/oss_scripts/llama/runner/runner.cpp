@@ -130,6 +130,8 @@ Runner::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama3;
   } else if (decoder_model_version == "qwen2_5") {
     decoder_model_version_ = DecoderModelVersion::kQwen2_5;
+  } else if (decoder_model_version == "phi_4_mini") {
+    decoder_model_version_ = DecoderModelVersion::kPhi4;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -185,6 +187,8 @@ Error Runner::load() {
   }
   if (decoder_model_version_ == DecoderModelVersion::kLlama3) {
     eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+  } else if (decoder_model_version_ == DecoderModelVersion::kPhi4) {
+    eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
   }
   // Try avoid getMetadataHelper as it is time consuming.
   Result<MethodMeta> method_meta =

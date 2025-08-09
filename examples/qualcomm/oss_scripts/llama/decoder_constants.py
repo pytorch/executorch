@@ -15,4 +15,5 @@ DECODER_MODEL_VERSION = {
     "stories110m": "llama2",
     "llama3_2": "llama3",
     "qwen2_5": "qwen2_5",
+    "phi_4_mini": "phi_4_mini",
 }
