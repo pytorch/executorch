@@ -707,7 +707,7 @@ jobs:
 
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
-
+        # debug
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-mediatek-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-mediatek-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "mv3" "buck2" "mediatek"
