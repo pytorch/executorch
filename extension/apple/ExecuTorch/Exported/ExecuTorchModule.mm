@@ -331,12 +331,21 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                             withInputs:(NSArray<ExecuTorchValue *> *)values
                                                  error:(NSError **)error {
-  std::vector<EValue> inputs;
-  inputs.reserve(values.count);
-  for (ExecuTorchValue *value in values) {
-    inputs.push_back(toEValue(value));
+  const char *methodNameString = methodName.UTF8String;
+  __block auto errorCode = Error::Ok;
+  [values enumerateObjectsUsingBlock:^(ExecuTorchValue *value, NSUInteger index, BOOL *stop) {
+    errorCode = _module->set_input(methodNameString, toEValue(value), index);
+    if (errorCode != Error::Ok) {
+      *stop = YES;
+    }
+  }];
+  if (errorCode != Error::Ok) {
+    if (error) {
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
+    }
+    return nil;
   }
-  const auto result = _module->execute(methodName.UTF8String, inputs);
+  const auto result = _module->execute(methodNameString);
   if (!result.ok()) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
