@@ -48,8 +48,17 @@ DOWNLOADED_PATH=$(
     --model_id "${HF_MODEL_REPO}" \
     --files "adapter_config.json" "adapter_model.pt" "consolidated.00.pth" "params.json" "tokenizer.model"
 )
-EXPORTED_MODEL_NAME="llama_3_2_1B_lora.pte"
-# Export model.
+# Build llama runner.
+cmake_install_executorch_libraries
+cmake_build_llama_runner
+
+# Constants.
+RUNTIME_ARGS="--tokenizer_path=${DOWNLOADED_PATH}/tokenizer.model --temperature=0 --seq_len=20 --warmup=1"
+PROMPT="What happens if you eat watermelon seeds?"
+EXPECTED_PREFIX="What happens if you eat watermelon seeds? Watermelon seeds are a good source of vitamin C,"
+
+# Export LoRA PTE file.
+MODEL_NAME="llama_3_2_1B_lora"
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
     base.params="${DOWNLOADED_PATH}/params.json" \
@@ -61,36 +70,64 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     model.dtype_override="fp32" \
     backend.xnnpack.enabled=true \
     backend.xnnpack.extended_ops=true \
-    export.output_name="${EXPORTED_MODEL_NAME}"
+    export.output_name="${MODEL_NAME}.pte"
 
-# Build llama runner.
-cmake_install_executorch_libraries
-cmake_build_llama_runner
-
-PROMPT="What happens if you eat watermelon seeds?"
 # Run llama runner
-RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=${DOWNLOADED_PATH}/tokenizer.model --temperature=0 --seq_len=20 --warmup=1"
-
 NOW=$(date +"%H:%M:%S")
 echo "Starting to run llama runner at ${NOW}"
 # shellcheck source=/dev/null
-cmake-out/examples/models/llama/llama_main --prompt="${PROMPT}" ${RUNTIME_ARGS} > result.txt
+cmake-out/examples/models/llama/llama_main --model_path=${MODEL_NAME}.pte --prompt="${PROMPT}" ${RUNTIME_ARGS} > result.txt
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
 RESULT=$(cat result.txt)
-EXPECTED_PREFIX="What happens if you eat watermelon seeds? Watermelon seeds are a good source of vitamin C,"
-
 if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
+  # Do not clean up files if test passes, as they're re-used in the next test.
   echo "Success"
-  cleanup_files
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Failure; results not the same"
+  cleanup_files
+  exit 1
+fi
 
+# Export LoRA PTE, PTD file.
+MODEL_SEPARATE="${MODEL_NAME}_separate"
+$PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
+    base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+    base.params="${DOWNLOADED_PATH}/params.json" \
+    base.adapter_checkpoint="${DOWNLOADED_PATH}/adapter_model.pt" \
+    base.adapter_config="${DOWNLOADED_PATH}/adapter_config.json" \
+    base.tokenizer_path="${DOWNLOADED_PATH}/tokenizer.model" \
+    model.use_kv_cache=true \
+    model.use_sdpa_with_kv_cache=true \
+    model.dtype_override="fp32" \
+    backend.xnnpack.enabled=true \
+    backend.xnnpack.extended_ops=true \
+    export.output_name="${MODEL_SEPARATE}.pte" \
+    export.foundation_weights_file="${MODEL_SEPARATE}.ptd"
+
+# Run llama runner.
+NOW=$(date +"%H:%M:%S")
+echo "Starting to run llama runner at ${NOW}"
+# shellcheck source=/dev/null
+cmake-out/examples/models/llama/llama_main --model_path=${MODEL_SEPARATE}.pte --data_path=${MODEL_SEPARATE}.ptd --prompt="${PROMPT}" ${RUNTIME_ARGS} > result2.txt
+NOW=$(date +"%H:%M:%S")
+echo "Finished at ${NOW}"
+
+RESULT2=$(cat result2.txt)
+if [[ "${RESULT2}" == "${EXPECTED_PREFIX}"* ]]; then
+  echo "Expected result prefix: ${EXPECTED_PREFIX}"
+  echo "Actual result: ${RESULT2}"
+  echo "Success"
+  cleanup_files
+else
+  echo "Expected result prefix: ${EXPECTED_PREFIX}"
+  echo "Actual result: ${RESULT2}"
+  echo "Failure; results not the same"
   cleanup_files
   exit 1
 fi
