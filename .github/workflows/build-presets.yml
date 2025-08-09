@@ -6,6 +6,8 @@ on:
     branches:
       - main
       - release/*
+    paths:
+      - .github/workflows/build-presets.yml
   workflow_dispatch:
 
 concurrency:
@@ -109,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [pybind]
+        preset: [pybind, windows]
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -119,24 +121,14 @@ jobs:
         set -eux
         conda init powershell
         powershell -Command "& {
-          Set-PSDebug -Trace 1
           \$ErrorActionPreference = 'Stop'
-          \$PSNativeCommandUseErrorActionPreference = \$true
+          Set-PSDebug -Trace 2
 
           conda create --yes --quiet -n et python=3.12
           conda activate et
 
           python install_requirements.py
           cmake --preset ${{ matrix.preset }}
-          if (\$LASTEXITCODE -ne 0) {
-            Write-Host "CMake configuration was unsuccessful. Exit code: \$LASTEXITCODE."
-            exit \$LASTEXITCODE
-          }
-
           \$numCores = [System.Environment]::GetEnvironmentVariable('NUMBER_OF_PROCESSORS') - 1
           cmake --build cmake-out -j \$numCores
-          if (\$LASTEXITCODE -ne 0) {
-            Write-Host "CMake build was unsuccessful. Exit code: \$LASTEXITCODE."
-            exit \$LASTEXITCODE
-          }
         }"
