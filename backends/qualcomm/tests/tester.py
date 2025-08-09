@@ -52,7 +52,9 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
             default_partitioner_cls=QnnPartitioner,
         )
 
-    def run(self, artifact: ExportedProgram, inputs=None) -> None:
+    def run(
+        self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
+    ) -> None:
         ep = QnnPassManager().transform_for_export_pipeline(artifact)
         transform_passes = QnnPassManager().get_to_edge_transform_passes(ep)
 
@@ -61,6 +63,7 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
             transform_passes=transform_passes,
             partitioner=self.partitioners,
             compile_config=self.edge_compile_conf,
+            generate_etrecord=generate_etrecord,
         )
 
 
