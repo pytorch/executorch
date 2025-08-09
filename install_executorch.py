@@ -203,9 +203,13 @@ def main(args):
     os.environ["CMAKE_ARGS"] = " ".join(cmake_args)
 
     check_and_update_submodules()
+    # This option is used in CI to make sure that PyTorch build from the pinned commit
+    # is used instead of release. CI jobs wouldn't be able to catch regression from the
+    # latest PT commit otherwise
+    use_pytorch_release = not args.use_pt_pinned_commit
 
     # Step 1: Install core dependencies first
-    install_requirements()
+    install_requirements(use_pytorch_release)
 
     # Step 2: Install core package
     cmd = (
@@ -226,7 +230,7 @@ def main(args):
 
     # Step 3: Extra (optional) packages that is only useful for running examples.
     if not args.minimal:
-        install_optional_example_requirements()
+        install_optional_example_requirements(use_pytorch_release)
 
 
 if __name__ == "__main__":

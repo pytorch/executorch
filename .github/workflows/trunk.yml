@@ -204,7 +204,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
+        install_executorch
 
         .ci/scripts/setup-arm-baremetal-tools.sh
 
@@ -235,7 +235,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
+        install_executorch
         .ci/scripts/setup-arm-baremetal-tools.sh
         source examples/arm/ethos-u-scratch/setup_path.sh
 
@@ -690,7 +690,7 @@ jobs:
         MODE=${{ matrix.mode }}
         PT2E_QUANTIZE=${{ matrix.pt2e_quantize }}
 
-        ./install_requirements.sh --use-pt-pinned-commit
+        ./install_requirements.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
