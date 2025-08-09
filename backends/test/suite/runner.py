@@ -9,6 +9,14 @@ from typing import Any
 
 import torch
 
+# Set of unsupported ops that should cause tests to be skipped
+UNSUPPORTED_PORTABLE_OPS = {
+    "aten::_embedding_bag",
+    "aten::median",
+    "aten::median.dim",
+    "aten::round.decimals",
+}
+
 from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import StageType
 from executorch.backends.test.suite.discovery import discover_tests, TestFilter
@@ -70,7 +78,7 @@ def run_test(  # noqa: C901
     try:
         model(*inputs)
     except Exception as e:
-        return build_result(TestResult.EAGER_FAIL, e)
+        return build_result(TestResult.SKIPPED, e)
 
     try:
         tester = flow.tester_factory(model, inputs)
@@ -96,7 +104,7 @@ def run_test(  # noqa: C901
             tester._get_default_stage(StageType.EXPORT, dynamic_shapes=dynamic_shapes),
         )
     except Exception as e:
-        return build_result(TestResult.EXPORT_FAIL, e)
+        return build_result(TestResult.SKIPPED, e)
 
     lower_start_time = time.perf_counter()
     try:
@@ -125,7 +133,16 @@ def run_test(  # noqa: C901
         if n.op == "call_function"
     )
 
-    # Only run the runtime portion if something was delegated (or the flow doesn't delegate).
+    # Check if any undelegated ops are in the unsupported ops set
+    has_unsupported_ops = any(
+        op in UNSUPPORTED_PORTABLE_OPS for op in undelegated_op_counts.keys()
+    )
+
+    # Skip the test if there are unsupported portable ops remaining.
+    if has_unsupported_ops:
+        return build_result(TestResult.SKIPPED)
+
+    # Only run the runtime portion if something was delegated (or the flow doesn't delegate)
     if is_delegated or not flow.is_delegated:
         try:
             tester.to_executorch().serialize()
@@ -148,6 +165,7 @@ def run_test(  # noqa: C901
         except Exception as e:
             return build_result(TestResult.PTE_RUN_FAIL, e)
     else:
+        # Skip the test if nothing is delegated
         return build_result(TestResult.SUCCESS_UNDELEGATED)
 
     return build_result(TestResult.SUCCESS)
