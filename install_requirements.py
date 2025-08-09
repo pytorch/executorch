@@ -156,8 +156,6 @@ def install_optional_example_requirements(use_pytorch_release):
             "pip",
             "install",
             *DOMAIN_LIBRARIES,
-            "--extra-index-url",
-            TORCH_URL,
         ],
         check=True,
     )
