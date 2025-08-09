@@ -44,7 +44,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         tokenizer: Union[
             SentencePieceTokenizer, TiktokenTokenizer, HuggingFaceTokenizer
         ],
-        max_seq_length: Optional[int],
+        max_seq_length: int,
         ar_len: int,
         use_kv_cache: bool,
         get_example_inputs: Callable,
@@ -52,6 +52,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         use_i64_token: bool,
     ):
         # n seq len = n-1 cache len, so we len(inps) = n-1 during _model_call
+        assert max_seq_length is not None, "max_seq_length must be provided"
         super().__init__(
             model=model, tokenizer=tokenizer, max_seq_length=max_seq_length - 1
         )
@@ -119,8 +120,10 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
         for method in program.execution_plan:
             # Don't use tokenizer.n_words, the numbers are off once calling get_tokenizer()
             if method.name == "get_vocab_size":
+                # pyre-ignore
                 self.output_vocab_size = method.values[0].val.int_val
             if method.name == "get_max_seq_len":
+                # pyre-ignore
                 pte_max_seq_len = method.values[0].val.int_val
         assert self.output_vocab_size is not None, "Couldn't find the vocab size"
         assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
@@ -156,6 +159,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
         )
         self.adb.push(inputs=[], input_list="", files=[self.runtime_tokenizer_path])
         # n seq len = n-1 cache len, so we len(inps) = n-1 during _model_call
+        # pyre-ignore
         super().__init__(None, tokenizer, max_seq_length - 1)
 
     def _model_call(self, inps):
@@ -278,6 +282,7 @@ def kv_inference(
         else:
             raise RuntimeError("Unknown tokenizer")
     else:
+        # pyre-ignore
         token_list = prompt.flatten().tolist()
     pos = len(token_list) if len(token_list) < ar_len else ar_len
     dtype = torch.int64 if use_i64_token else torch.int32
@@ -359,6 +364,7 @@ def prefill_inference(
         else:
             raise RuntimeError("Unknown tokenizer")
     else:
+        # pyre-ignore
         token_list = prompt.flatten().tolist()
 
     pos = len(token_list)
@@ -405,7 +411,7 @@ def graph_module_inference(
     max_seq_len=512,
     kv_updater=smart_mask_updater,
     use_i64_token=False,
-    event_name: str = None,
+    event_name: Optional[str] = None,
 ):
     if args.tasks is None:
         if use_kv_cache:
