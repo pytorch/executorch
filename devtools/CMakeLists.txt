@@ -7,7 +7,7 @@
 # The include directory that will contain the generated schema headers.
 set(DEVTOOLS_INCLUDE_DIR_NO_BUILD_INTERFACE ${CMAKE_BINARY_DIR}/devtools/include)
 set(DEVTOOLS_INCLUDE_DIR
-    "$<BUILD_INTERFACE:${DEVTOOLS_INCLUDE_DIR_NO_BUILD_INTERFACE}>"
+    $<BUILD_INTERFACE:${DEVTOOLS_INCLUDE_DIR_NO_BUILD_INTERFACE}>
 )
 
 add_subdirectory(etdump)
