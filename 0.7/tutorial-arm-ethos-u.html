@@ -820,9 +820,9 @@ arm_test/add/cmake-out/arm_executor_runner
 </pre></div>
 </div>
 <ul class="simple">
-<li><p>To run all the test models iteratively in a loop</p></li>
+<li><p>To run all the test models iteratively in a loop , simply run</p></li>
 </ul>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./run.sh<span class="w"> </span>--pte<span class="o">=</span>mv2_arm_ethos_u55.pte<span class="w"> </span>--target<span class="o">=</span>ethos-u55-128
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./run.sh
 </pre></div>
 </div>
 <p>Note that you could use <code class="docutils literal notranslate"><span class="pre">build_executor_runner.sh</span></code> and <code class="docutils literal notranslate"><span class="pre">run_fvp.sh</span></code> scripts in tandem by passing the relevant  –target argument (e.g., –target=ethos-u55-128), the correct FVP binary will be chosen automatically. For more details, see the <a class="reference external" href="https://docs.pytorch.org/executorch/main/backends-arm-ethos-u.html#runtime-integration">section on Runtime Integration</a>.</p>

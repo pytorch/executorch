@@ -546,15 +546,12 @@
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">mobilenetv2</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">executorch.kernels.quantized</span>
 
 <span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span>
     <span class="n">weights</span><span class="o">=</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span>
 <span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),)</span>
-<span class="c1"># .so suffix is .dylib on MacOS.</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">load_library</span><span class="p">(</span>
-    <span class="s2">&quot;cmake-out-aot-lib/kernels/quantized/libquantized_ops_aot_lib.so&quot;</span>
-<span class="p">)</span>
 
 <span class="n">compile_spec</span> <span class="o">=</span> <span class="n">ArmCompileSpecBuilder</span><span class="p">()</span><span class="o">.</span><span class="n">ethosu_compile_spec</span><span class="p">(</span>
         <span class="s2">&quot;ethos-u55-128&quot;</span><span class="p">,</span>
