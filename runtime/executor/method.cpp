@@ -407,10 +407,21 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
   auto flatbuffer_values = serialization_plan_->values();
   ET_CHECK_OR_RETURN_ERROR(
       flatbuffer_values != nullptr, InvalidProgram, "Missing values");
-  size_t n_value = flatbuffer_values->size();
+  const size_t n_value = flatbuffer_values->size();
   values_ = memory_manager_->method_allocator()->allocateList<EValue>(n_value);
   if (values_ == nullptr) {
     return Error::MemoryAllocationFailed;
+  }
+  const size_t n_input = inputs_size();
+  if (n_input > 0) {
+    input_set_ =
+        memory_manager_->method_allocator()->allocateList<bool>(n_input);
+    if (input_set_ == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+    for (size_t i = 0; i < n_input; ++i) {
+      input_set_[i] = false;
+    }
   }
 
   // Count the number of tensors marked as EXTERNAL for this method. The actual
@@ -1159,31 +1170,15 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
 
     return Error::InvalidArgument;
   }
+  input_set_[input_idx] = true;
+
   return Error::Ok;
 }
 
 ET_NODISCARD Error
 Method::set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues) {
-  ET_CHECK_OR_RETURN_ERROR(
-      initialized(),
-      InvalidState,
-      "Inputs can not be set until method has been initialized.");
-
-  ET_CHECK_OR_RETURN_ERROR(
-      step_state_.instr_idx == 0 && step_state_.chain_idx == 0,
-      InvalidState,
-      "Inputs can not be set mid execution.");
-
-  size_t input_size = inputs_size();
-  ET_CHECK_OR_RETURN_ERROR(
-      input_size == input_evalues.size(),
-      InvalidArgument,
-      "The length of given input array (%" ET_PRIsize_t
-      ") must be same as the number of inputs in method (%" ET_PRIsize_t ").",
-      input_evalues.size(),
-      input_size);
-
-  for (size_t i = 0; i < input_size; i++) {
+  const size_t n_input = inputs_size();
+  for (size_t i = 0; i < n_input; ++i) {
     ET_CHECK_OK_OR_RETURN_ERROR(set_input(input_evalues[i], i));
   }
   return Error::Ok;
@@ -1277,20 +1272,21 @@ ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
       initialized(),
       InvalidState,
       "Inputs can not be retrieved until method has been initialized.");
-
+  const size_t n_input = inputs_size();
   ET_CHECK_OR_RETURN_ERROR(
-      length >= inputs_size(),
+      length >= n_input,
       InvalidArgument,
       "The given array is not large enough to hold all inputs.");
 
-  for (size_t i = 0; i < inputs_size(); i++) {
+  for (size_t i = 0; i < n_input; ++i) {
     input_evalues[i] = values_[get_input_index(i)];
+    // Accessing inputs this way is deprecated.
+    // We assume the users to be responsible to set the inputs they get.
+    input_set_[i] = true;
   }
-
-  for (size_t i = inputs_size(); i < length; i++) {
+  for (size_t i = n_input; i < length; ++i) {
     input_evalues[i] = EValue();
   }
-
   return Error::Ok;
 }
 
@@ -1538,6 +1534,14 @@ Error Method::execute() {
       initialized(),
       NotSupported,
       "Cannot execute until method has been initialized.");
+  const size_t n_input = inputs_size();
+  for (size_t i = 0; i < n_input; ++i) {
+    ET_CHECK_OR_RETURN_ERROR(
+        input_set_[i],
+        InvalidArgument,
+        "Input %" ET_PRIsize_t " has not been set.",
+        i);
+  }
   ET_LOG(Debug, "Executing method: %s.", method_meta().name());
 
   // Chains are executed sequentially today, but future async designs may
@@ -1615,10 +1619,16 @@ size_t Method::get_input_index(size_t i) const {
 }
 
 const EValue& Method::get_input(size_t i) const {
+  // Accessing inputs this way is deprecated.
+  // We assume the users to be responsible to set the inputs they get.
+  input_set_[i] = true;
   return get_value(get_input_index(i));
 }
 
 EValue& Method::mutable_input(size_t i) {
+  // Accessing inputs this way is deprecated.
+  // We assume the users to be responsible to set the inputs they get.
+  input_set_[i] = true;
   return mutable_value(get_input_index(i));
 }
 
