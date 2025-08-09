@@ -491,17 +491,9 @@ def register_view_ops():
 # for both texture and buffer storage types.
 @update_features(exir_ops.edge.aten.cat.default)
 def register_cat_op():
-    def check_cat_node(node: torch.fx.Node) -> bool:
-        inputs = node.args[0]
-        if isinstance(inputs, (list, tuple)) and len(inputs) <= 3:
-            return True
-
-        return False
-
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_cat_node,
     )
 
 
