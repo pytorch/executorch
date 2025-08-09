@@ -1076,26 +1076,22 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         executorch::runtime::toString(t_src.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
-    Error err = resize_tensor(t_dst, t_src.sizes());
-    ET_CHECK_OR_RETURN_ERROR(
-        err == Error::Ok,
-        InvalidArgument,
-        "Error setting input %" ET_PRIsize_t ": 0x%" PRIx32,
-        input_idx,
-        static_cast<uint32_t>(err));
-    Error error;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        resize_tensor(t_dst, t_src.sizes()),
+        "Error resizing tensor at input %" ET_PRIsize_t,
+        input_idx);
     auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
     if (tensor_meta->is_memory_planned()) {
-      error = internal::copy_tensor_data(t_dst, t_src);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          internal::copy_tensor_data(t_dst, t_src),
+          "Error copying tensor data at input %" ET_PRIsize_t,
+          input_idx);
     } else {
-      error = internal::share_tensor_data(t_dst, t_src);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          internal::share_tensor_data(t_dst, t_src),
+          "Error sharing tensor data at input %" ET_PRIsize_t,
+          input_idx);
     }
-    ET_CHECK_OR_RETURN_ERROR(
-        error == Error::Ok,
-        InvalidArgument,
-        "Error setting data_ptr %" ET_PRIsize_t ": 0x%" PRIx32,
-        input_idx,
-        static_cast<uint32_t>(error));
     // Prims have to be the same as what was traced
   } else if (e.isInt()) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -1188,10 +1184,7 @@ Method::set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues) {
       input_size);
 
   for (size_t i = 0; i < input_size; i++) {
-    Error status = set_input(input_evalues[i], i);
-    if (status != Error::Ok) {
-      return status;
-    }
+    ET_CHECK_OK_OR_RETURN_ERROR(set_input(input_evalues[i], i));
   }
   return Error::Ok;
 }
