@@ -71,8 +71,6 @@ char* model_pte = nullptr;
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::aten::TensorImpl;
-using executorch::extension::BufferCleanup;
 using executorch::extension::BufferDataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
