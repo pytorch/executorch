@@ -39,6 +39,7 @@ et_build_root="${et_root_dir}/arm_test"
 ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
 scratch_dir_set=false
 toolchain=arm-none-eabi-gcc
+select_ops_list="aten::_softmax.out"
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -49,7 +50,10 @@ function help() {
     echo "  --aot_arm_compiler_flags=<FLAGS>       Extra flags to pass to aot compiler"
     echo "  --no_delegate                          Do not delegate the model (can't override builtin models)"
     echo "  --no_quantize                          Do not quantize the model (can't override builtin models)"
-    echo "  --portable_kernels=<OPS>               Comma separated list of portable (non delagated) kernels to include Default: ${portable_kernels}"
+    echo "  --portable_kernels=<OPS>               TO BE DEPRECATED: Alias to select_ops_list."
+    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"    
+    echo "                                           NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
+    echo "                                           See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
     echo "  --output=<FOLDER>                      Target build output folder Default: ${output_folder}"
     echo "  --bundleio                             Create Bundled pte using Devtools BundelIO with Input/RefOutput included"
@@ -74,7 +78,8 @@ for arg in "$@"; do
       --aot_arm_compiler_flags=*) aot_arm_compiler_flags="${arg#*=}";;
       --no_delegate) aot_arm_compiler_flag_delegate="" ;;
       --no_quantize) aot_arm_compiler_flag_quantize="" ;;
-      --portable_kernels=*) portable_kernels="${arg#*=}";;
+      --portable_kernels=*) select_ops_list="${arg#*=}";;
+      --select_ops_list=*) select_ops_list="${arg#*=}";;
       --target=*) target="${arg#*=}";;
       --toolchain=*) toolchain="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
@@ -190,7 +195,6 @@ if [ "$bundleio" = true ] ; then
 fi
 
 backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
-backends/arm/scripts/build_portable_kernels.sh --et_build_root="${et_build_root}" --build_type=$build_type --portable_kernels=$portable_kernels --toolchain="${toolchain}"
 
 if [[ -z "$model_name" ]]; then
     # the test models run, and whether to delegate
@@ -274,7 +278,7 @@ for i in "${!test_model[@]}"; do
     else
         set -x
         # Rebuild the application as the pte is imported as a header/c array
-        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}"
+        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
             elf_file="${output_folder}/${elf_folder}/cmake-out/arm_executor_runner"
