@@ -1329,6 +1329,13 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
+    op_target(
+        name = "op__clone_dim_order",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
 )
 
 # Operators that are not listed in `functions.yaml` (i.e., operators listed in
