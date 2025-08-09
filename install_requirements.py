@@ -62,9 +62,9 @@ def python_is_compatible():
 TORCH_URL = "https://download.pytorch.org/whl/test/cpu"
 
 
-def install_requirements(use_pytorch_nightly):
-    # Skip pip install on Intel macOS if using nightly.
-    if use_pytorch_nightly and is_intel_mac_os():
+def install_requirements(use_pytorch_release):
+    # Skip pip install on Intel macOS if using release
+    if use_pytorch_release and is_intel_mac_os():
         print(
             "ERROR: Prebuilt PyTorch wheels are no longer available for Intel-based macOS.\n"
             "Please build from source by following https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html",
@@ -77,7 +77,7 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        "torch==2.8.0" if use_pytorch_nightly else "torch",
+        "torch==2.8.0" if use_pytorch_release else "torch",
     ]
 
     # Install the requirements for core ExecuTorch package.
@@ -129,7 +129,7 @@ def install_requirements(use_pytorch_nightly):
     )
 
 
-def install_optional_example_requirements(use_pytorch_nightly):
+def install_optional_example_requirements(use_pytorch_release):
     print("Installing packages in requirements-examples.txt")
     subprocess.run(
         [
@@ -145,8 +145,8 @@ def install_optional_example_requirements(use_pytorch_nightly):
 
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
-        ("torchvision==0.23.0" if use_pytorch_nightly else "torchvision"),
-        "torchaudio==2.8.0" if use_pytorch_nightly else "torchaudio",
+        "torchvision==0.23.0+cpu" if use_pytorch_release else "torchvision",
+        "torchaudio==2.8.0+cpu" if use_pytorch_release else "torchaudio",
     ]
     # Then install domain libraries
     subprocess.run(
@@ -156,12 +156,9 @@ def install_optional_example_requirements(use_pytorch_nightly):
             "pip",
             "install",
             *DOMAIN_LIBRARIES,
-            "--extra-index-url",
-            TORCH_URL,
         ],
         check=True,
     )
-
 
 # Prebuilt binaries for Intel-based macOS are no longer available on PyPI; users must compile from source.
 # PyTorch stopped building macOS x86_64 binaries since version 2.3.0 (January 2024).
@@ -187,10 +184,10 @@ def main(args):
         help="Also installs required packages for running example scripts.",
     )
     args = parser.parse_args(args)
-    use_pytorch_nightly = not bool(args.use_pt_pinned_commit)
-    install_requirements(use_pytorch_nightly)
+    use_pytorch_release = not bool(args.use_pt_pinned_commit)
+    install_requirements(use_pytorch_release)
     if args.example:
-        install_optional_example_requirements(use_pytorch_nightly)
+        install_optional_example_requirements(use_pytorch_release)
 
 
 if __name__ == "__main__":
