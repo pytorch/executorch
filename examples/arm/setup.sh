@@ -23,9 +23,9 @@ target_toolchain=""
 enable_fvps=1
 enable_vela=1
 enable_model_converter=0   # model-converter tool for VGF output
-enable_vgf_lib=0  # vgf reader - runtime backend dependency 
+enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
-mlsdk_manifest_url=""
+mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
 
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
@@ -178,6 +178,11 @@ function check_options() {
                     print_usage "$@"
                     exit 1
                 fi
+                ;;
+            --setup-test-dependency)
+                echo "Installing test dependency..."
+                source $et_dir/backends/arm/scripts/install_models_for_test.sh
+                exit 0
                 ;;
             --help)
                 print_usage "$@"
@@ -365,14 +370,19 @@ function create_setup_path(){
     # Add Path for vgf-lib and emulation-layer
     if [[ "${enable_vgf_lib}" -eq 1 ]]; then
         cd "${root_dir}"
-        model_vgf_lib_bin_path="$(cd ${mlsdk_manifest_dir}/sw/vgf-lib/build && pwd)"
-        echo "export PATH=\${PATH}:${model_vgf_lib_bin_path}" >> ${setup_path_script}
+        model_vgf_path="$(cd ${mlsdk_manifest_dir}/sw/vgf-lib/deploy && pwd)"
+        echo "export PATH=\${PATH}:${model_vgf_path}/bin" >> ${setup_path_script}
+        echo "export LD_LIBRARY_PATH=\${LD_LIBRARY_PATH}:${model_vgf_path}/lib" >> ${setup_path_script}
+        echo "export DYLD_LIBRARY_PATH=\${DYLD_LIBRARY_PATH}:${model_vgf_path}/lib" >> ${setup_path_script}
     fi
 
     if [[ "${enable_emulation_layer}" -eq 1 ]]; then
         cd "${root_dir}"
-        model_emulation_layer_bin_path="$(cd ${mlsdk_manifest_dir}/sw/vgf-lib/build && pwd)"
-        echo "export PATH=\${PATH}:${model_emulation_layer_bin_path}" >> ${setup_path_script}
+        model_emulation_layer_path="$(cd ${mlsdk_manifest_dir}/sw/emulation-layer/ && pwd)"
+        echo "export LD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${LD_LIBRARY_PATH}" >> ${setup_path_script}
+        echo "export DYLD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${DYLD_LIBRARY_PATH}" >> ${setup_path_script}
+        echo "export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation:\${VK_INSTANCE_LAYERS}" >> ${setup_path_script}
+        echo "export VK_ADD_LAYER_PATH=${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d:\${VK_ADD_LAYER_PATH}" >> ${setup_path_script}
     fi
 }
 
@@ -429,19 +439,11 @@ if [[ $is_script_sourced -eq 0 ]]; then
         setup_fvp
     fi
 
-
-    if [[ -z "$mlsdk_manifest_url" && "${enable_model_converter}" -eq 1 ]]; then
-        echo "Warning: mlsdk-manifest-url is not set, but model converter setup is not skipped."
-        echo "         Please set the --mlsdk-manifest-url option to the correct URL."
-        echo "         Skipping MLSDK model converter setup."
-        enable_model_converter=0  # Q: Can we assume if we enable mlsdk, we will always enable model converter
-        enable_vgf_lib=0
-        enable_emulation_layer=0
-    fi
-
-    if [[ "${enable_model_converter}" -eq 1 ]]; then
+    if [[ "${enable_model_converter}" -eq 1 || \
+          "${enable_vgf_lib}" -eq 1 || \
+          "${enable_emulation_layer}" -eq 1 ]]; then
         source $et_dir/backends/arm/scripts/mlsdk_utils.sh -u "${mlsdk_manifest_url}"
-        setup_model_converter ${root_dir} ${mlsdk_manifest_dir} ${enable_vgf_lib} ${enable_emulation_layer}
+        setup_model_converter ${root_dir} ${mlsdk_manifest_dir} ${enable_model_converter} ${enable_vgf_lib} ${enable_emulation_layer}
     fi
 
     # Create new setup_path script

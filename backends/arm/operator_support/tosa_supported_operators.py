@@ -19,13 +19,13 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55DtypeSupport,
     EthosU55NotSupported,
     EthosU55TransposeCheck,
     EthosU55ViewCheck,
 )
-from executorch.backends.arm.tosa_quant_utils import dq_ops, q_ops
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
@@ -69,8 +69,6 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
 
 # container for all SupportedTosaOperatorCheck classes
 _tosa_spec_support: dict[TosaSpecification, list[Type[SupportedTOSAOperatorCheck]]] = {
-    TosaSpecification.create_from_string("TOSA-0.80+BI"): [],
-    TosaSpecification.create_from_string("TOSA-0.80+MI"): [],
     TosaSpecification.create_from_string("TOSA-1.0+INT"): [],
     TosaSpecification.create_from_string("TOSA-1.0+FP"): [],
 }
@@ -258,6 +256,8 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.atanh.default,
             exir_ops.edge.aten.addmm.default,
             exir_ops.edge.aten.masked_fill.Scalar,
+            exir_ops.edge.aten.asinh.default,
+            exir_ops.edge.aten.cosh.default,
         ]
 
         return supported
@@ -369,7 +369,7 @@ class CheckProperQuantization(OperatorSupportBase):
                     matched_partition = partition
             if matched_partition is not None:
                 input_quantized = all(
-                    input_node.target in dq_ops
+                    input_node.target in DQ_OPS
                     for input_node in matched_partition.input_nodes
                 )
                 if not input_quantized:
@@ -378,7 +378,7 @@ class CheckProperQuantization(OperatorSupportBase):
                     )
                     return False
                 output_quantized = all(
-                    output_node_user.target in q_ops
+                    output_node_user.target in Q_OPS
                     for output_node_user in matched_partition.output_nodes[0].users
                 )
                 if not output_quantized:
@@ -414,7 +414,7 @@ class CheckProperQuantization(OperatorSupportBase):
             users = node.users
             output_quantized = all(
                 user.target == operator.getitem
-                and all(user_user.target in q_ops for user_user in user.users)
+                and all(user_user.target in Q_OPS for user_user in user.users)
                 for user in users
             )
         elif FuseQuantizedActivationPass._is_fuseable_input(node):
@@ -428,7 +428,7 @@ class CheckProperQuantization(OperatorSupportBase):
             input_quantized = FuseQuantizedActivationPass._is_fuseable_input(input_node)
 
         input_quantized = input_quantized or all(
-            (input_node.target in dq_ops)
+            (input_node.target in DQ_OPS)
             or (not get_first_fake_tensor(input_node).dtype.is_floating_point)
             for input_node in node.all_input_nodes
         )
@@ -437,7 +437,7 @@ class CheckProperQuantization(OperatorSupportBase):
             self.reporter.report_reject(node, "One or more inputs were not quantized.")
             return False
 
-        all_q_users = all((output_node.target in q_ops) for output_node in node.users)
+        all_q_users = all((output_node.target in Q_OPS) for output_node in node.users)
         is_floating_point = get_first_fake_tensor(node).dtype.is_floating_point
         output_quantized = output_quantized or all_q_users or not is_floating_point
 
