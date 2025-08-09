@@ -130,7 +130,7 @@ test_model_with_xnnpack() {
     bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" "${MODEL_NAME}"
     return 0
   fi
-
+  pip list
   # Delegation
   if [[ ${WITH_QUANTIZATION} == true ]]; then
     SUFFIX="q8"
