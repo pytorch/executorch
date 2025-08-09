@@ -111,30 +111,8 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
                 f"Output dtype {output_val.dtype} is not supported in "
                 f"{node.target} for input dtype {input_dtype}. "
                 f"Supported output types: "
-                f"{''.join(str(t) for t in supported_dtypes[input_dtype])}",
+                f"{' '.join(str(t) for t in supported_dtypes[input_dtype])}",
             )
             return False
-
-        # Check memory format (to_copy)
-        if "memory_format" in node.kwargs:
-            if node.kwargs["memory_format"] in (torch.preserve_format,):
-                self.reporter.report_reject(
-                    node,
-                    f"Argument 'memory_format' is not supported for "
-                    f"{node.target} right now.",
-                )
-                return False
-
-        # Check dim_order (to_dim_order_copy)
-        if "dim_order" in node.kwargs:
-            dim_order = node.kwargs["dim_order"]
-            # pyre-ignore[6]
-            if dim_order != list(range(len(dim_order))):  # type: ignore[arg-type]
-                self.reporter.report_reject(
-                    node,
-                    f"Argument {dim_order=} is not supported for "
-                    f"{node.target} right now.",
-                )
-                return False
 
         return True

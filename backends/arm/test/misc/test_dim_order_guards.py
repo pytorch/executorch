@@ -6,62 +6,107 @@
 
 from typing import Tuple
 
-import pytest
-
 import torch
-from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineFP,
+    OpNotSupportedPipeline,
     TosaPipelineINT,
 )
 
 
-input_t1 = Tuple[torch.Tensor]  # Input x
+input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input y
 
 
-class Conv2D(torch.nn.Module):
-    inputs: dict[str, input_t1] = {
-        "randn": (torch.randn(1, 2, 20, 20),),
-    }
+class ChannelsLastInput(torch.nn.Module):
+    """
+    Test rejection of a partition which has a channels last input.
+    """
+
+    inputs: input_t1 = (
+        torch.randn(1, 2, 2, 2).to(memory_format=torch.channels_last),
+        torch.randn(1, 2, 2, 2),
+    )
+
+    def forward(self, x, y):
+        x = x * y
+        x = x.to(dtype=torch.int32, memory_format=torch.channels_last)
+        x = x / 2
+        return x, y
+
+
+class ChannelsLastOutput(torch.nn.Module):
+    """
+    Test rejection of a partition which has a channels last output
+    """
+
+    inputs: input_t1 = (
+        torch.randn(
+            1,
+            2,
+            2,
+            2,
+        ),
+        torch.randn(1, 2, 2, 2),
+    )
+
+    def forward(self, x, y):
+        x = x * y
+        x = x.clone(memory_format=torch.channels_last)
+        x = x / 2
+        return x, y
+
+
+class ChannelsLastInsidePartition(torch.nn.Module):
+    """
+    Test a non rejection of a fully partitioned module which changes memory inside the partition.
+    The TOSA backend ignores this memory format change, and since the input and output
+    has the expected channels_last memory format, the partition should be accepted.
+    """
+
+    inputs: input_t1 = (
+        torch.randn(
+            1,
+            2,
+            2,
+            2,
+        ),
+        torch.randn(1, 2, 2, 2),
+    )
 
     def __init__(self):
         super().__init__()
-        self.conv2d = torch.nn.Conv2d(in_channels=2, out_channels=3, kernel_size=(3, 3))
+        self.conv = torch.nn.Conv2d(2, 2, kernel_size=1, bias=False)
 
-    def forward(self, x):
-        return self.conv2d(x.to(memory_format=torch.channels_last))
-
-
-@common.parametrize("test_data", Conv2D.inputs)
-def test_tosa_FP_pipeline(test_data: input_t1):
-    module = Conv2D()
-    pipeline = TosaPipelineFP[input_t1](
-        module,
-        test_data,
-        [],
-        [],
-        use_to_edge_transform_and_lower=False,
-    )
-    pos = pipeline.find_pos("partition")
-    pipeline._stages = pipeline._stages[:pos]
-    pipeline.run()
-    with pytest.raises(RuntimeError):
-        pipeline.tester.partition()
+    def forward(self, x, y):
+        x = x * y
+        x = x.to(memory_format=torch.channels_last)
+        x = self.conv(x)
+        x = x.clone(memory_format=torch.contiguous_format)
+        return x, y
 
 
-@common.parametrize("test_data", Conv2D.inputs)
-def test_tosa_INT_pipeline(test_data: input_t1):
-    module = Conv2D()
+def test_dim_order_ok():
     pipeline = TosaPipelineINT[input_t1](
-        module,
-        test_data,
-        [],
-        [],
-        use_to_edge_transform_and_lower=False,
+        ChannelsLastInsidePartition(), ChannelsLastInsidePartition.inputs, []
     )
-    pos = pipeline.find_pos("partition")
-    pipeline._stages = pipeline._stages[:pos]
     pipeline.run()
-    with pytest.raises(RuntimeError):
-        pipeline.tester.partition()
+
+
+def test_channels_last_input():
+    pipeline = OpNotSupportedPipeline[input_t1](
+        ChannelsLastInput(),
+        ChannelsLastInput.inputs,
+        non_delegated_ops={},
+        n_expected_delegates=0,
+    )
+    pipeline.run()
+
+
+def test_channels_last_output():
+    pipeline = OpNotSupportedPipeline[input_t1](
+        ChannelsLastOutput(),
+        ChannelsLastOutput.inputs,
+        non_delegated_ops={},
+        n_expected_delegates=0,
+    )
+    pipeline.run()
