@@ -28,35 +28,32 @@ class TestResult(IntEnum):
     SUCCESS_UNDELEGATED = 1
     """ The test succeeded without the backend delegating anything. """
 
-    EAGER_FAIL = 2
-    """ The test failed due to the model failing to run in eager mode. """
+    SKIPPED = 2
+    """ The test was skipped due to a non-backend failure. """
 
     QUANTIZE_FAIL = 3
     """ The test failed due to the quantization stage failing. """
 
-    EXPORT_FAIL = 4
-    """ The test failed due to the model failing to export. """
-
-    LOWER_FAIL = 5
+    LOWER_FAIL = 4
     """ The test failed due to a failure in partitioning or lowering. """
 
-    PTE_LOAD_FAIL = 6
+    PTE_LOAD_FAIL = 5
     """ The test failed due to the resulting PTE failing to load. """
 
-    PTE_RUN_FAIL = 7
+    PTE_RUN_FAIL = 6
     """ The test failed due to the resulting PTE failing to run. """
 
-    OUTPUT_MISMATCH_FAIL = 8
+    OUTPUT_MISMATCH_FAIL = 7
     """ The test failed due to a mismatch between runtime and reference outputs. """
 
-    UNKNOWN_FAIL = 9
+    UNKNOWN_FAIL = 8
     """ The test failed in an unknown or unexpected manner. """
 
     def is_success(self):
         return self in {TestResult.SUCCESS, TestResult.SUCCESS_UNDELEGATED}
 
     def is_non_backend_failure(self):
-        return self in {TestResult.EAGER_FAIL, TestResult.EAGER_FAIL}
+        return self in {TestResult.SKIPPED}
 
     def is_backend_failure(self):
         return not self.is_success() and not self.is_non_backend_failure()
@@ -66,12 +63,10 @@ class TestResult(IntEnum):
             return "Success (Delegated)"
         elif self == TestResult.SUCCESS_UNDELEGATED:
             return "Success (Undelegated)"
-        elif self == TestResult.EAGER_FAIL:
-            return "Fail (Eager)"
+        elif self == TestResult.SKIPPED:
+            return "Skipped"
         elif self == TestResult.QUANTIZE_FAIL:
             return "Fail (Quantize)"
-        elif self == TestResult.EXPORT_FAIL:
-            return "Fail (Export)"
         elif self == TestResult.LOWER_FAIL:
             return "Fail (Lowering)"
         elif self == TestResult.PTE_LOAD_FAIL:
