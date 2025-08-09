@@ -77,7 +77,7 @@ def install_requirements(use_pytorch_release):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        "torch==2.8.0+cpu" if use_pytorch_release else "torch",
+        "torch==2.8.0" if use_pytorch_release else "torch",
     ]
 
     # Install the requirements for core ExecuTorch package.
