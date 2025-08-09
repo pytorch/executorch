@@ -63,6 +63,14 @@ TORCH_URL = "https://download.pytorch.org/whl/test/cpu"
 
 
 def install_requirements():
+    # Error out on Intel macOS.
+    if is_intel_mac_os():
+        print(
+            "ERROR: Prebuilt PyTorch wheels are no longer available for Intel-based macOS.\n"
+            "Please build from source by following https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # pip packages needed by exir.
     TORCH_PACKAGE = [
