@@ -133,7 +133,7 @@ def run_test(  # noqa: C901
         if n.op == "call_function"
     )
 
-    # Check if any undelegated ops are in the unsupported ops set
+    # Check if any undelegated ops are in the unsupported ops set.
     has_unsupported_ops = any(
         op in UNSUPPORTED_PORTABLE_OPS for op in undelegated_op_counts.keys()
     )
