@@ -9,8 +9,8 @@
 #include <c10/util/irange.h>
 #include <cmath>
 
-#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
