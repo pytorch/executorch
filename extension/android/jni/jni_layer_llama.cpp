@@ -15,6 +15,7 @@
 
 #include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/runtime/platform/log.h>
@@ -124,6 +125,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
   constexpr static int MODEL_TYPE_MEDIATEK_LLAMA = 3;
+  constexpr static int MODEL_TYPE_QNN_LLAMA = 4;
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
@@ -174,6 +176,14 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           model_path->toStdString(),
           tokenizer_path->toStdString(),
           data_path_str);
+    } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {
+      std::string decoder_model = "llama3"; // use llama3 for now
+      runner_ = std::make_unique<example::Runner>( // QNN runner
+          decoder_model.c_str(),
+          model_path->toStdString().c_str(),
+          tokenizer_path->toStdString().c_str(),
+          data_path->toStdString().c_str());
+      model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(
@@ -318,6 +328,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           [callback](std::string result) { callback->onResult(result); },
           [callback](const llm::Stats& stats) { callback->onStats(stats); }));
     }
+    return static_cast<jint>(executorch::runtime::Error::InvalidArgument);
   }
 
   void stop() {
