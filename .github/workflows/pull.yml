@@ -706,7 +706,8 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
+        install_executorch
+        pip list
         # debug
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-mediatek-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-mediatek-sdk.sh
