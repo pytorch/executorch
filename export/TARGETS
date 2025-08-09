@@ -50,6 +50,7 @@ runtime.python_library(
     deps = [
         ":recipe",
         ":types",
+        "//executorch/backends/aoti:aoti_delegate_module",
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir:pass_manager",

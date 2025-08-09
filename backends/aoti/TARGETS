@@ -1,0 +1,31 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "aoti_delegate",
+    srcs = [
+        "__init__.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//executorch/export:lib",
+        "//executorch/backends/aoti/recipes:aoti_recipe_provider",
+        "//executorch/backends/aoti/recipes:aoti_recipe_types",
+    ],
+)
+
+runtime.python_library(
+    name = "aoti_delegate_module",
+    srcs = [
+        "aoti_delegate_module.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:libtorch",
+    ],
+)
