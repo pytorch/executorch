@@ -9,6 +9,9 @@ from abc import ABC
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Type
 
+from executorch.examples.models.phi_4_mini import (
+    convert_weights as convert_phi_4_mini_weights,
+)
 from executorch.examples.models.qwen2_5 import (
     convert_weights as convert_qwen2_5_weights,
 )
@@ -71,3 +74,14 @@ class Qwen3_1_7B(HFModel):
     )
     runner_version: str = field(default=DECODER_MODEL_VERSION["qwen2_5"])
     convert_weights = convert_qwen3_weights
+
+
+@register_hf_model("phi_4_mini")
+@dataclass(init=False, frozen=True)
+class Phi4Mini(HFModel):
+    repo_id: str = "microsoft/Phi-4-mini-instruct"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/phi_4_mini/config/config.json"
+    )
+    runner_version: str = field(default=DECODER_MODEL_VERSION["phi_4_mini"])
+    convert_weights = convert_phi_4_mini_weights
