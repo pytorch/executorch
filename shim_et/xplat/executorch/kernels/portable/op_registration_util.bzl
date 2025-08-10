@@ -1136,6 +1136,7 @@ ATEN_OPS = (
         name = "op_sign",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
