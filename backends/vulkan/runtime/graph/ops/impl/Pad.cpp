@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
@@ -41,17 +42,17 @@ void resize_constant_pad_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
-  IntListPtr pad_vec = graph->get_int_list(extra_args[0]);
-  std::vector<int64_t> in_size = self->sizes();
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(0);
+  const IntListPtr pad_vec = graph->get_int_list(extra_args.at(0));
+  std::vector<int64_t> in_size = graph->sizes_of(self);
   int dim = in_size.size() - 1;
   for (int i = 0; i < pad_vec->size(); i += 2) {
     in_size.at(dim) += pad_vec->at(i) + pad_vec->at(i + 1);
     dim--;
   }
 
-  out->virtual_resize(in_size);
+  graph->virtual_resize(out, in_size);
 }
 
 void add_constant_pad_nd_node(
@@ -60,34 +61,32 @@ void add_constant_pad_nd_node(
     const ValueRef& pad,
     const ValueRef& fill_value,
     const ValueRef& out) {
-  float fill_value_val = graph.extract_scalar<float>(fill_value);
-  IntListPtr pad_vec = graph.get_int_list(pad);
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_out = graph.get_tensor(out);
+  const float fill_value_val = graph.extract_scalar<float>(fill_value);
+  const IntListPtr pad_vec = graph.get_int_list(pad);
 
   std::string kernel_name = "";
-  PadParam pad_param = creat_pad_param(*pad_vec);
+  const PadParam pad_param = creat_pad_param(*pad_vec);
 
   if (pad_vec->size() <= 4) {
     kernel_name = "pad_height_width";
     kernel_name.reserve(kShaderNameReserve);
-    add_dtype_suffix(kernel_name, *t_out);
+    add_dtype_suffix(kernel_name, graph.dtype_of(out));
   } else {
     kernel_name = "pad_channel";
     kernel_name.reserve(kShaderNameReserve);
-    add_dtype_suffix(kernel_name, *t_out);
+    add_dtype_suffix(kernel_name, graph.dtype_of(out));
   }
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
-      {t_out->sizes_ubo(),
-       t_in->sizes_ubo(),
+      {graph.sizes_ubo(out),
+       graph.sizes_ubo(in),
        graph.create_params_buffer(pad_param),
        graph.create_params_buffer(fill_value_val)},
       // Push Constants

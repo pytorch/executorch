@@ -1078,9 +1078,9 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         llm_config.backend.xnnpack.enabled = True
 
     if llm_config.backend.xnnpack.enabled:
-        if llm_config.serialization.foundation_weights_file is not None:
+        if llm_config.export.foundation_weights_file is not None:
             gen_tag_fn: Callable[[torch.fx.Node], str] = lambda x: (
-                llm_config.serialization.foundation_weights_file
+                llm_config.export.foundation_weights_file
                 if "lora" not in x.name
                 else None
             )

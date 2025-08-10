@@ -80,12 +80,12 @@ cmake-out/examples/models/llama/llama_main --model_path=${MODEL_NAME}.pte --prom
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
-RESULT=$(cat lora.txt)
+RESULT=$(cat result.txt)
 if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
+  # Do not clean up files if test passes, as they're re-used in the next test.
   echo "Success"
-  cleanup_files
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
@@ -108,7 +108,7 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     backend.xnnpack.enabled=true \
     backend.xnnpack.extended_ops=true \
     export.output_name="${MODEL_SEPARATE}.pte" \
-    serialization.foundation_weights_file="${MODEL_SEPARATE}.ptd"
+    export.foundation_weights_file="${MODEL_SEPARATE}.ptd"
 
 # Run llama runner.
 NOW=$(date +"%H:%M:%S")

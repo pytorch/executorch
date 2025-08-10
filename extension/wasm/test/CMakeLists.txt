@@ -41,13 +41,13 @@ add_custom_target(
 )
 
 add_executable(executorch_wasm_tests)
-target_link_libraries(executorch_wasm_tests PUBLIC executorch_wasm)
+target_link_libraries(executorch_wasm_tests PRIVATE executorch_wasm)
 target_link_options(
   executorch_wasm_tests
-  PUBLIC
+  PRIVATE
   --embed-file
   "${MODELS_DIR}@/"
-  --post-js
+  --pre-js
   ${CMAKE_CURRENT_SOURCE_DIR}/unittests.js
   -sASSERTIONS=2
 )
