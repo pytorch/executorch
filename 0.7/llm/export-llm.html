@@ -404,6 +404,8 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Exporting LLMs with export_llm</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#supported-models">Supported Models</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#the-export-llm-api">The export_llm API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#basic-export">Basic export</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#export-settings">Export settings</a></li>
@@ -522,6 +524,15 @@
   <div class="section" id="exporting-llms">
 <h1>Exporting LLMs<a class="headerlink" href="#exporting-llms" title="Permalink to this heading">¶</a></h1>
 <p>Instead of needing to manually write code to call torch.export(), use ExecuTorch’s assortment of lowering APIs, or even interact with TorchAO quantize_ APIs for quantization, we have provided an out of box experience which performantly exports a selection of supported models to ExecuTorch.</p>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<p>The LLM export functionality requires the <code class="docutils literal notranslate"><span class="pre">pytorch_tokenizers</span></code> package. If you encounter a <code class="docutils literal notranslate"><span class="pre">ModuleNotFoundError:</span> <span class="pre">No</span> <span class="pre">module</span> <span class="pre">named</span> <span class="pre">'pytorch_tokenizers'</span></code> error, install it from the ExecutorTorch source code:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>./extension/llm/tokenizers/
+</pre></div>
+</div>
+</div>
+<div class="section" id="supported-models">
+<h2>Supported Models<a class="headerlink" href="#supported-models" title="Permalink to this heading">¶</a></h2>
 <p>As of this doc, the list of supported LLMs include the following:</p>
 <ul class="simple">
 <li><p>Llama 2/3/3.1/3.2</p></li>
@@ -530,6 +541,7 @@
 <li><p>SmolLM2</p></li>
 </ul>
 <p>The up-to-date list of supported LLMs can be found in the code <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L32">here</a>.</p>
+</div>
 <div class="section" id="the-export-llm-api">
 <h2>The export_llm API<a class="headerlink" href="#the-export-llm-api" title="Permalink to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">export_llm</span></code> is ExecuTorch’s high-level export API for LLMs. In this tutorial, we will focus on exporting Llama 3.2 1B using this API. <code class="docutils literal notranslate"><span class="pre">export_llm</span></code>’s arguments are specified either through CLI args or through a yaml configuration whose fields are defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py"><code class="docutils literal notranslate"><span class="pre">LlmConfig</span></code></a>. To call <code class="docutils literal notranslate"><span class="pre">export_llm</span></code>:</p>
@@ -850,6 +862,8 @@ Number of non-delegated nodes: 2513 <br/></p>
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">Exporting LLMs</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a class="reference internal" href="#supported-models">Supported Models</a></li>
 <li><a class="reference internal" href="#the-export-llm-api">The export_llm API</a></li>
 <li><a class="reference internal" href="#basic-export">Basic export</a></li>
 <li><a class="reference internal" href="#export-settings">Export settings</a></li>

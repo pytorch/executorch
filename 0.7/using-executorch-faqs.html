@@ -524,6 +524,13 @@
 </div>
 <p>if you are using Ubuntu, or use an equivalent install command.</p>
 </div>
+<div class="section" id="modulenotfounderror-no-module-named-pytorch-tokenizers">
+<h3>ModuleNotFoundError: No module named ‘pytorch_tokenizers’<a class="headerlink" href="#modulenotfounderror-no-module-named-pytorch-tokenizers" title="Permalink to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">pytorch_tokenizers</span></code> package is required for LLM export functionality. Install it from the ExecutorTorch source code:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">pip</span> <span class="n">install</span> <span class="o">-</span><span class="n">e</span> <span class="o">./</span><span class="n">extension</span><span class="o">/</span><span class="n">llm</span><span class="o">/</span><span class="n">tokenizers</span><span class="o">/</span>
+</pre></div>
+</div>
+</div>
 </div>
 <div class="section" id="export">
 <h2>Export<a class="headerlink" href="#export" title="Permalink to this heading">¶</a></h2>
@@ -622,6 +629,7 @@
 <li><a class="reference internal" href="#">Frequently Asked Questions</a><ul>
 <li><a class="reference internal" href="#installation">Installation</a><ul>
 <li><a class="reference internal" href="#missing-usr-include-python3-x">Missing /usr/include/python3.x</a></li>
+<li><a class="reference internal" href="#modulenotfounderror-no-module-named-pytorch-tokenizers">ModuleNotFoundError: No module named ‘pytorch_tokenizers’</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#export">Export</a><ul>
