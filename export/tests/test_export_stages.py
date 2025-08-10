@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
-from executorch.export import QuantizationRecipe
+from executorch.export import AOQuantizationConfig, QuantizationRecipe
 from executorch.export.stages import (
     EdgeTransformAndLowerStage,
     ExecutorchStage,
@@ -29,7 +29,7 @@ from torch.export import ExportedProgram
 class SimpleTestModel(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.linear = torch.nn.Linear(10, 5)
+        self.linear: torch.nn.Module = torch.nn.Linear(10, 5)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.linear(x)
@@ -163,7 +163,7 @@ class TestSourceTransformStage(unittest.TestCase):
 
     def test_source_transform_stage_no_quantization(self) -> None:
         mock_recipe = Mock(spec=QuantizationRecipe)
-        mock_recipe.ao_base_config = None
+        mock_recipe.ao_quantization_configs = None
         stage = SourceTransformStage(mock_recipe)
         artifact = PipelineArtifact(data=self.models_dict, context={})
 
@@ -174,12 +174,19 @@ class TestSourceTransformStage(unittest.TestCase):
 
     @patch("executorch.export.stages.quantize_")
     @patch("executorch.export.stages.unwrap_tensor_subclass")
-    def test_run_with_ao_base_config(
+    def test_run_with_ao_quantization_configs(
         self, mock_unwrap: Mock, mock_quantize: Mock
     ) -> None:
-        mock_config = Mock()
+        from torchao.core.config import AOBaseConfig
+
+        mock_config = Mock(spec=AOBaseConfig)
+        mock_filter_fn = Mock()
+        # pyre-ignore[28]: Unexpected keyword argument error is a false positive for dataclass
+        mock_ao_config: AOQuantizationConfig = AOQuantizationConfig(
+            ao_base_config=mock_config, filter_fn=mock_filter_fn
+        )
         mock_recipe = Mock(spec=QuantizationRecipe)
-        mock_recipe.ao_base_config = [mock_config]
+        mock_recipe.ao_quantization_configs = [mock_ao_config]
 
         stage = SourceTransformStage(mock_recipe)
 
@@ -188,7 +195,7 @@ class TestSourceTransformStage(unittest.TestCase):
         stage.run(artifact)
 
         # Verify quantize_ was called with the model and config
-        mock_quantize.assert_called_once_with(self.model, mock_config)
+        mock_quantize.assert_called_once_with(self.model, mock_config, mock_filter_fn)
 
         # Verify unwrap_tensor_subclass was called with the model
         mock_unwrap.assert_called_once_with(self.model)

@@ -20,7 +20,6 @@ from torch import nn
 from torch._export.pass_base import PassType
 from torchao.quantization import quantize_
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torchao.quantization.pt2e.quantizer import ComposableQuantizer
 from torchao.utils import unwrap_tensor_subclass
 
 
@@ -287,7 +286,7 @@ class SourceTransformStage(Stage):
         """
         if (
             not self._quantization_recipe
-            or not self._quantization_recipe.ao_base_config
+            or not self._quantization_recipe.ao_quantization_configs
         ):
             logging.info(
                 "Quantization recipe is invalid to run SourceTransform, returning original artifact"
@@ -303,10 +302,11 @@ class SourceTransformStage(Stage):
         # Apply torchao quantize_ to each model
         for method_name, model in artifact.data.items():
             # pyre-ignore
-            for config in self._quantization_recipe.ao_base_config:
-                quantize_(model, config)
+            for ao_config in self._quantization_recipe.ao_quantization_configs:
+                quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
                 unwrap_tensor_subclass(model)
-                self._transformed_models[method_name] = model
+
+            self._transformed_models[method_name] = model
 
         self._artifact = artifact.copy_with_new_data(self._transformed_models)
 
@@ -330,6 +330,38 @@ class QuantizeStage(Stage):
     @property
     def can_start_pipeline(self) -> bool:
         return True
+
+    def _get_quantizer_for_prepare_pt2e(self, quantizers: List[Any]):
+        torch_ao_quantizers = []
+        torchao_pt2e_quantizers = []
+
+        for quantizer in quantizers:
+            from torchao.quantization.pt2e.quantizer import (
+                Quantizer as TorchAOPT2EQuantizer,
+            )
+
+            if isinstance(quantizer, TorchAOPT2EQuantizer):
+                torchao_pt2e_quantizers.append(quantizer)
+            else:
+                torch_ao_quantizers.append(quantizer)
+
+        if torch_ao_quantizers and torchao_pt2e_quantizers:
+            raise ValueError("Mixed quantizer types are not supported")
+        if len(torch_ao_quantizers) > 1:
+            raise ValueError(
+                "Multiple quantizers of torch.ao.quantization.quantizer not supported"
+            )
+
+        if torch_ao_quantizers:
+            # prepare_pt2e has backward compat with torch.ao quantizer
+            return torch_ao_quantizers[0]
+        elif torchao_pt2e_quantizers:
+            # Multiple torchao quantizers - use ComposableQuantizer
+            from torchao.quantization.pt2e.quantizer import ComposableQuantizer
+
+            return ComposableQuantizer(torchao_pt2e_quantizers)
+        else:
+            raise ValueError("No quantizers detected")
 
     def run(self, artifact: PipelineArtifact) -> None:
         if not self._quantization_recipe or not self._quantization_recipe.quantizers:
@@ -355,11 +387,10 @@ class QuantizeStage(Stage):
             inputs = example_inputs[method_name][0]
             captured_graph = torch.export.export(model, inputs, strict=True).module()
 
-            composed_quantizer = ComposableQuantizer(
-                # pyre-ignore
+            quantizer = self._get_quantizer_for_prepare_pt2e(
                 self._quantization_recipe.quantizers
             )
-            prepared_model = prepare_pt2e(captured_graph, composed_quantizer)
+            prepared_model = prepare_pt2e(captured_graph, quantizer)
 
             for calibration_input in example_inputs[method_name]:
                 prepared_model(*calibration_input)
