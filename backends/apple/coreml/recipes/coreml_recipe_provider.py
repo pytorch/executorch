@@ -28,7 +28,6 @@ from executorch.export import (
 )
 from torchao.quantization.granularity import PerAxis, PerGroup
 from torchao.quantization.quant_api import IntxWeightOnlyConfig
-from torchao.quantization.quant_primitives import _DTYPE_TO_BIT_WIDTH
 
 
 class CoreMLRecipeProvider(BackendRecipeProvider):
