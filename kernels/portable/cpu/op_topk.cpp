@@ -10,8 +10,8 @@
 #include <cmath>
 #include <tuple>
 
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {

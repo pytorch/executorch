@@ -8,11 +8,12 @@
 
 #pragma once
 
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+
 #if defined(ET_USE_PYTORCH_HEADERS) && ET_USE_PYTORCH_HEADERS
 #include <ATen/cpu/vec/vec.h>
 #endif
 
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <type_traits>
 
 namespace torch {
