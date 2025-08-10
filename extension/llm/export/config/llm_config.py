@@ -211,6 +211,9 @@ class ExportConfig:
         so_library: Shared library to specify custom quantized operators.
         export_only: Whether to stop right after torch.export() and
             just save the exported .pt2 graph file.
+        foundation_weights_file: configure the foundation weights of a model
+            to be placed in a separate file, external to the PTE. Pass the
+            intended file name here.
     """
 
     max_seq_length: int = 128
@@ -219,26 +222,13 @@ class ExportConfig:
     output_name: Optional[str] = None
     so_library: Optional[str] = None
     export_only: bool = False
+    foundation_weights_file: Optional[str] = None
 
     def __post_init__(self):
         if self.max_context_length < self.max_seq_length:
             raise ValueError(
                 f"max_context_length of {self.max_context_length} cannot be shorter than max_seq_length of {self.max_seq_length}"
             )
-
-
-@dataclass
-class SerializationConfig:
-    """
-    Configures properties relevant to the serialization process.
-
-    Attributes:
-        foundation_weights_file: configure the foundation weights of a model
-            to be placed in a separate file, external to the PTE. Pass the
-            intended file name here.
-    """
-
-    foundation_weights_file: Optional[str] = None
 
 
 ################################################################################
@@ -480,7 +470,6 @@ class LlmConfig:
     base: BaseConfig = field(default_factory=BaseConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
-    serialization: SerializationConfig = field(default_factory=SerializationConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
@@ -560,12 +549,8 @@ class LlmConfig:
             llm_config.export.so_library = args.so_library
         if hasattr(args, "export_only"):
             llm_config.export.export_only = args.export_only
-
-        # SerializationConfig
         if hasattr(args, "foundation_weights_file"):
-            llm_config.serialization.foundation_weights_file = (
-                args.foundation_weights_file
-            )
+            llm_config.export.foundation_weights_file = args.foundation_weights_file
 
         # QuantizationConfig
         if hasattr(args, "quantization_mode"):

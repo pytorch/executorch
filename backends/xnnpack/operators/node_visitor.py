@@ -622,7 +622,9 @@ class NodeVisitor:
         )
 
         custom_meta = tensor.meta.get("custom", None)
-        external_tag = custom_meta.get("delegate_constant_tag", None) if custom_meta else None
+        external_tag = (
+            custom_meta.get("delegate_constant_tag", None) if custom_meta else None
+        )
         if external_tag is not None:
             external_tag = custom_meta.get("delegate_constant_tag", None)
             logging.info(

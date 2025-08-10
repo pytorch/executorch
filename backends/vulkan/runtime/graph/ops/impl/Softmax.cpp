@@ -67,11 +67,11 @@ void resize_softmax_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)resize_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
 
-  std::vector<int64_t> in_sizes = in->sizes();
-  out->virtual_resize(in_sizes);
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+  graph->virtual_resize(out, in_sizes);
 }
 
 void add_softmax_node(
