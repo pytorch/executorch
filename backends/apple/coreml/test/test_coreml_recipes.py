@@ -342,7 +342,6 @@ class TestCoreMLRecipes(unittest.TestCase):
         recipe = ExportRecipe.get_recipe(
             CoreMLRecipeType.INT8_STATIC, minimum_deployment_target=ct.target.iOS17
         )
-        print(f"**29 recipe: {recipe}")
 
         session = export(
             model=model,
