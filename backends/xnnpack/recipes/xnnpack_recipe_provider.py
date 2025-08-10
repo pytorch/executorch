@@ -25,6 +25,7 @@ from executorch.backends.xnnpack.utils.configs import (
     get_xnnpack_executorch_backend_config,
 )
 from executorch.export import (
+    AOQuantizationConfig,
     BackendRecipeProvider,
     ExportRecipe,
     LoweringRecipe,
@@ -144,14 +145,16 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
         else:
             weight_granularity = PerGroup(group_size=group_size)
 
-        config = Int8DynamicActivationIntxWeightConfig(
-            weight_dtype=weight_dtype,
-            weight_granularity=weight_granularity,
+        config = AOQuantizationConfig(
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=weight_dtype,
+                weight_granularity=weight_granularity,
+            )
         )
 
         quant_recipe = QuantizationRecipe(
             quantizers=None,
-            ao_base_config=[config],
+            ao_quantization_configs=[config],
         )
 
         return ExportRecipe(
