@@ -19,6 +19,7 @@ set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 set_overridable_option(XNNPACK_ENABLE_AVX256SKX OFF)
 set_overridable_option(XNNPACK_ENABLE_AVX256VNNI OFF)
 set_overridable_option(XNNPACK_ENABLE_AVX256VNNIGFNI OFF)
+set_overridable_option(XNNPACK_ENABLE_AVX512BF16 OFF)
 
 # Below options are not yet buildable on Windows, but should be.
 #set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
