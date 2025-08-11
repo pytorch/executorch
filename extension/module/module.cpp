@@ -42,28 +42,28 @@ using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::Program;
 
 namespace {
-runtime::Result<std::unique_ptr<runtime::DataLoader>> load_file(
+runtime::Result<std::unique_ptr<runtime::DataLoader>> make_data_loader(
     const std::string& file_path,
     Module::LoadMode mode) {
-  std::unique_ptr<runtime::DataLoader> res = nullptr;
+  std::unique_ptr<runtime::DataLoader> data_loader;
   switch (mode) {
     case Module::LoadMode::File:
-      res = ET_UNWRAP_UNIQUE(FileDataLoader::from(file_path.c_str()));
+      data_loader = ET_UNWRAP_UNIQUE(FileDataLoader::from(file_path.c_str()));
       break;
     case Module::LoadMode::Mmap:
-      res = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
+      data_loader = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
           file_path.c_str(), MmapDataLoader::MlockConfig::NoMlock));
       break;
     case Module::LoadMode::MmapUseMlock:
-      res = ET_UNWRAP_UNIQUE(MmapDataLoader::from(file_path.c_str()));
+      data_loader = ET_UNWRAP_UNIQUE(MmapDataLoader::from(file_path.c_str()));
       break;
     case Module::LoadMode::MmapUseMlockIgnoreErrors:
-      res = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
+      data_loader = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
           file_path.c_str(),
           MmapDataLoader::MlockConfig::UseMlockIgnoreErrors));
       break;
   }
-  return res;
+  return data_loader;
 }
 } // namespace
 
@@ -137,29 +137,17 @@ Module::Module(
 
 runtime::Error Module::load(const Program::Verification verification) {
   if (!is_loaded()) {
-    // Load the program
     if (!data_loader_) {
-      auto res = load_file(file_path_, load_mode_);
-      if (!res.ok()) {
-        return res.error();
-      }
-      data_loader_ = std::move(res.get());
+      data_loader_ = ET_UNWRAP(make_data_loader(file_path_, load_mode_));
     }
-    // If a .ptd path was given load it.
-    if (data_map_path_ != "") {
-      auto res = load_file(data_map_path_, load_mode_);
-      if (!res.ok()) {
-        return res.error();
-      }
-      data_map_loader_ = std::move(res.get());
+    if (!data_map_path_.empty()) {
+      data_map_loader_ =
+          ET_UNWRAP(make_data_loader(data_map_path_, load_mode_));
     }
-    // If we have a .ptd loader, then load the map.
     if (data_map_loader_) {
       data_map_ =
           ET_UNWRAP_UNIQUE(FlatTensorDataMap::load(data_map_loader_.get()));
     }
-    // else: either the map itself was provided or we have no data map, either
-    // way no work to do.
     auto program =
         ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
     program_ = std::shared_ptr<Program>(

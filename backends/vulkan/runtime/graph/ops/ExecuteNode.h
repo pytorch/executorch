@@ -43,7 +43,7 @@ class ExecuteNode {
   friend class ComputeGraph;
 
  public:
-  using ResizeFunction = const std::function<void(
+  using ResizeFunction = std::function<void(
       ComputeGraph*,
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
@@ -69,12 +69,10 @@ class ExecuteNode {
     (void)graph;
   }
 
-  virtual inline bool trigger_resize(ComputeGraph* graph) {
+  virtual inline void trigger_resize(ComputeGraph* graph) {
     if (resize_fn_ != nullptr) {
       resize_fn_(graph, args_, resize_args_);
-      return true;
     }
-    return false;
   }
 
   inline void set_node_id(uint32_t node_id) {

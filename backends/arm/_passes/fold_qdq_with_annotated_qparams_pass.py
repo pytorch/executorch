@@ -15,9 +15,9 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_param_tensor,
     is_param_node,
 )
-from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 
-from executorch.backends.arm.tosa_quant_utils import QuantArgs
+from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
