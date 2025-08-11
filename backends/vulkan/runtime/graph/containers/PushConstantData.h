@@ -66,15 +66,15 @@ class PushConstantDataInfo {
       const uint32_t dst_offset,
       const uint32_t max_dst_size) const;
 
-  inline bool is_tensor_metadata() const {
+  inline bool is_tensor_metadata() const noexcept {
     return tensorUniformData != nullptr;
   }
 
-  inline void set_value(ValueRef value) {
+  inline void set_value(ValueRef value) noexcept {
     value_ = value;
   }
 
-  inline ValueRef value() const {
+  inline ValueRef value() const noexcept {
     return value_;
   }
 };

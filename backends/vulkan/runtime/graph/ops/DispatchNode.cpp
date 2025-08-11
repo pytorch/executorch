@@ -91,7 +91,7 @@ void DispatchNode::write_push_constant_data() {
 
 bool DispatchNode::trigger_resize(ComputeGraph* graph) {
   bool any_value_updated = was_any_value_updated(graph);
-  if (resize_fn_ != nullptr && any_value_updated) {
+  if (resize_fn_ && any_value_updated) {
     resize_fn_(graph, args_, resize_args_);
 
     // If this shader uses push constants, and the tensor metadata associated
@@ -99,7 +99,7 @@ bool DispatchNode::trigger_resize(ComputeGraph* graph) {
     // re-encoded since push constants cannot be updated.
     for (const auto& push_constant : push_constants_) {
       if (push_constant.is_tensor_metadata() &&
-          graph->was_value_ref_updated(push_constant.value())) {
+          graph->was_value_updated(push_constant.value())) {
         graph->set_requires_reencode();
       }
     }
@@ -111,7 +111,7 @@ bool DispatchNode::was_any_value_updated(ComputeGraph* graph) const {
   // Check all ValueRefs in ArgGroups
   for (const auto& arg_group : args_) {
     for (const auto& value_ref : arg_group.refs) {
-      if (graph->was_value_ref_updated(value_ref)) {
+      if (graph->was_value_updated(value_ref)) {
         return true;
       }
     }
@@ -119,7 +119,7 @@ bool DispatchNode::was_any_value_updated(ComputeGraph* graph) const {
 
   // Check all ValueRefs in resize_args
   for (const auto& value_ref : resize_args_) {
-    if (graph->was_value_ref_updated(value_ref)) {
+    if (graph->was_value_updated(value_ref)) {
       return true;
     }
   }

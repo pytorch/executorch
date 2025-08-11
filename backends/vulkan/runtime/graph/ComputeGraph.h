@@ -242,6 +242,9 @@ class ComputeGraph final {
     return config_;
   }
 
+  // Check if the ComputeGraph has a value at the specified index
+  bool is_valid_value_idx(const ValueRef idx) const noexcept;
+
   //
   // Value Extraction
   //
@@ -958,14 +961,10 @@ class ComputeGraph final {
 
   // Check if a specific ValueRef (or ValueList) was updated, with recursive
   // handling
-  bool was_value_updated(const ValueRef value_ref) const;
-
-  // Check if a specific ValueRef (or ValueList) was updated, with recursive
-  // handling
-  bool was_value_ref_updated(const ValueRef value_ref) const;
+  bool was_value_updated(const ValueRef idx) const noexcept;
 
   // Set the flag to indicate that re-encoding is required
-  inline void set_requires_reencode() {
+  inline void set_requires_reencode() noexcept {
     requires_reencode_ = true;
   }
 

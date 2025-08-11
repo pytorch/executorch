@@ -384,26 +384,14 @@ def register_reduce_op():
                 memory_layout = utils.get_node_memory_layout(node)
 
                 # If we have memory layout information, check if any dimension in dim_list corresponds to a packed dimension
-                if memory_layout is not None:
-                    for dim in dim_list:
-                        # For WIDTH_PACKED layout, dimension 3 (W) is packed
-                        # For HEIGHT_PACKED layout, dimension 2 (H) is packed
-                        # For CHANNELS_PACKED layout, dimension 1 (C) is packed
-                        if (
-                            (
-                                memory_layout == VkMemoryLayout.TENSOR_WIDTH_PACKED
-                                and dim == 3
-                            )
-                            or (
-                                memory_layout == VkMemoryLayout.TENSOR_HEIGHT_PACKED
-                                and dim == 2
-                            )
-                            or (
-                                memory_layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED
-                                and dim == 1
-                            )
-                        ):
-                            return False
+                if (
+                    memory_layout is not None
+                    and memory_layout != VkMemoryLayout.DEFAULT_LAYOUT
+                ):
+                    # For now only default layout is supported for 2D reduction.
+                    # Because we can't determine if the input is NCHW or NHWC here,
+                    # assume the reduction dimension is packed so we cannot support it.
+                    return False
             except (AssertionError, KeyError, AttributeError):
                 # If we can't get memory layout information, we'll assume the dims aren't packed
                 pass
@@ -447,7 +435,19 @@ def register_2d_pool_op():
 )
 def register_convolution_op():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # transposed (non tensor)
+            utils.NO_STORAGE,  # output_padding (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # output_min (non tensor)
+            utils.NO_STORAGE,  # output_max (non tensor)
+        ],
         supports_resize=True,
         supports_prepacking=True,
     )
@@ -503,17 +503,9 @@ def register_view_ops():
 # for both texture and buffer storage types.
 @update_features(exir_ops.edge.aten.cat.default)
 def register_cat_op():
-    def check_cat_node(node: torch.fx.Node) -> bool:
-        inputs = node.args[0]
-        if isinstance(inputs, (list, tuple)) and len(inputs) <= 3:
-            return True
-
-        return False
-
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_cat_node,
     )
 
 

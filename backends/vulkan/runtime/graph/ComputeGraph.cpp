@@ -206,36 +206,21 @@ utils::StorageType ComputeGraph::suggested_storage_type() {
   return utils::kTexture3D;
 }
 
-bool ComputeGraph::was_value_updated(const ValueRef value_ref) const {
+bool ComputeGraph::was_value_updated(const ValueRef idx) const noexcept {
   // Check if this ValueRef itself was updated
-  if (updated_values_.find(value_ref) != updated_values_.end()) {
+  if (updated_values_.find(idx) != updated_values_.end()) {
     return true;
   }
 
-  // If this is a ValueList, check each ValueRef in the list
-  if (val_is_value_list(value_ref)) {
-    const auto& value_list = values_.at(value_ref).toConstValueList();
-    for (const auto& nested_value_ref : value_list) {
-      if (was_value_updated(nested_value_ref)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-bool ComputeGraph::was_value_ref_updated(const ValueRef value_ref) const {
-  // Check if this ValueRef itself was updated
-  if (updated_values_.find(value_ref) != updated_values_.end()) {
-    return true;
+  if (!is_valid_value_idx(idx)) {
+    return false;
   }
 
   // If this is a ValueList, check each ValueRef in the list
-  if (val_is_value_list(value_ref)) {
-    const auto& value_list = values_.at(value_ref).toConstValueList();
-    for (const auto& nested_value_ref : value_list) {
-      if (was_value_ref_updated(nested_value_ref)) {
+  if (val_is_value_list(idx)) {
+    const auto& value_list = values_.at(idx).toConstValueList();
+    for (const auto& nested_idx : value_list) {
+      if (was_value_updated(nested_idx)) {
         return true;
       }
     }
@@ -272,6 +257,10 @@ void ComputeGraph::check_no_active_value_ptrs() {
       "`ComputeGraph::get_*()` functions in scope before adding Values to the "
       "graph. Modifying the graph's values may cause existing pointers to be "
       "invalidated.");
+}
+
+bool ComputeGraph::is_valid_value_idx(const ValueRef idx) const noexcept {
+  return idx >= 0 && idx < static_cast<int>(values_.size());
 }
 
 std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {

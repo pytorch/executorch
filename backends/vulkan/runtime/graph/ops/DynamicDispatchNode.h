@@ -75,7 +75,7 @@ class DynamicDispatchNode final : public DispatchNode {
   const PickGlobalFn pick_global_wg_fn_;
   const PickLocalFn pick_local_wg_fn_;
 
-  utils::uvec3 wg_dispatch_grid_;
+  utils::uvec3 wg_dispatch_grid_{1u, 1u, 1u};
 
  public:
   operator bool() const {

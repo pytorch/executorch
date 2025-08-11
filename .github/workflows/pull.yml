@@ -315,7 +315,7 @@ jobs:
         bash examples/models/moshi/mimi/install_requirements.sh
 
         # reinstall executorch
-        bash ./install_executorch.sh
+        bash ./install_executorch.sh --minimal
 
         # run python unittest
         python -m unittest examples.models.moshi.mimi.test_mimi
