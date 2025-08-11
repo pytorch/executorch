@@ -62,7 +62,7 @@ mavenPublishing {
   publishToMavenCentral()
   signAllPublications()
 
-  coordinates("org.pytorch", "executorch-android", "0.7.0-SNAPSHOT")
+  coordinates("org.pytorch", "executorch-android", "0.7.0")
 
   pom {
     name = "ExecuTorch Android"
