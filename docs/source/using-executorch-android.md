@@ -90,7 +90,7 @@ implementation("com.facebook.fbjni:fbjni:0.5.1")
 In your app working directory, such as executorch/examples/demo-apps/android/LlamaDemo,
 ```
 mkdir -p app/libs
-curl https://ossci-android.s3.amazonaws.com/executorch/release/v0.7.0/executorch.aar -o app/libs/executorch.aar
+curl https://ossci-android.s3.amazonaws.com/executorch/release/0.7.0/executorch.aar -o app/libs/executorch.aar
 ```
 
 And include it in gradle:
