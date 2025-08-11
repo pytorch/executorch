@@ -118,12 +118,10 @@ xnn_datatype getDataType(const DataType& data_type) {
       return xnn_datatype::xnn_datatype_qcint32;
     case DataType::xnn_datatype_qcint4:
       return xnn_datatype::xnn_datatype_qcint4;
+    case DataType::xnn_datatype_qdint8:
+      return xnn_datatype::xnn_datatype_qdint8;
     case DataType::xnn_datatype_qbint4:
       return xnn_datatype::xnn_datatype_qbint4;
-    case DataType::xnn_datatype_qdint8:
-#if !defined(ENABLE_XNNPACK_KLEIDI) || ENABLE_XNNPACK_KLEIDI == 0
-      return xnn_datatype::xnn_datatype_qdint8;
-#endif
     case DataType::xnn_datatype_qpint8:
       return xnn_datatype::xnn_datatype_qpint8;
     case DataType::xnn_datatype_int32:
@@ -663,6 +661,18 @@ Error defineConvertNode(
     const fb_xnnpack::XNNGraph* flatbuffer_graph) noexcept {
   MAYBE_UNUSED(flatbuffer_graph);
   auto graph_node = node->xnode_union_as_XNNConvert();
+#ifdef ENABLE_XNNPACK_KLEIDI
+  // This is not currently exposed at include/xnnpack.h yet once it is
+  // we can remove this runtime logic and do this ahead-of-time
+  #define XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM 0x00000100;
+    if (isQP8(flatbuffer_graph, node)) {
+      flags |= XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM;
+      ET_LOG(
+          Debug,
+          "Setting XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM flag for convert node %i",
+          node->debug_handle());
+    }
+#endif
 
   int32_t flags = graph_node->flags();
   xnn_status status = xnn_define_convert(
