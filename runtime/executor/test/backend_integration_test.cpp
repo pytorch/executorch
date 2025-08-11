@@ -603,6 +603,25 @@ TEST_P(BackendIntegrationTest, GetMethodNameDuringExecuteSuccess) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method = program->load_method("forward", &mmm.get());
   EXPECT_TRUE(method.ok());
+
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 1);
+  input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
 }

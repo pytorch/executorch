@@ -522,7 +522,6 @@ class Module {
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
-    std::vector<runtime::EValue> inputs;
   };
 
   std::string file_path_;
