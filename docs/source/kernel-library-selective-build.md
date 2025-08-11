@@ -34,9 +34,25 @@ The basic flow looks like this:
 3. A _kernel resolver _takes in the linked kernel libraries as well as the merged op info yaml file, then makes a decision on which kernels to be registered into ExecuTorch runtime.
 
 
+## Selective Build CMake Options
+
+To enable selective build when building the executorch kernel libraries as part of a CMake build, the following CMake options are exposed. These options affect the `executorch_kernels` CMake target. Make sure to link this target when using selective build.
+
+ * `EXECUTORCH_SELECT_OPS_YAML`: A path to a YAML file specifying the operators to include.
+ * `EXECUTORCH_SELECT_OPS_LIST`: A string containing the operators to include.
+ * `EXECUTORCH_SELECT_OPS_MODEL`: A path to a PTE file. Only operators used in this model will be included.
+ * `EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD`: If enabled, operators will be further specialized to only operator on the data types specified in the operator selection.
+
+Note that `EXECUTORCH_SELECT_OPS_YAML`, `EXECUTORCH_SELECT_OPS_LIST`, and `EXECUTORCH_SELECT_OPS_MODEL` are mutually exclusive. Only one operator specifier directive is allowed.
+
+As an example, to build with only operators used in mv2_xnnpack_fp32.pte, the CMake build can be configured as follows.
+```
+cmake .. -DEXECUTORCH_SELECT_OPS_MODEL=mv2_xnnpack_fp32.pte
+```
+
 ## APIs
 
-We expose a CMake macro [gen_selected_ops](https://github.com/pytorch/executorch/blob/main/tools/cmake/Codegen.cmake#L12), to allow users specifying op info:
+For fine-grained control, we expose a CMake macro [gen_selected_ops](https://github.com/pytorch/executorch/blob/main/tools/cmake/Codegen.cmake#L12) to allow users to specify op info:
 
 ```
 gen_selected_ops(
@@ -75,7 +91,7 @@ Beyond pruning the binary to remove unused operators, the binary size can furthe
 
 ## Example Walkthrough
 
-In [CMakeLists.txt](https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L48-L72), we have the following cmake config options:
+In [examples/selective_build/CMakeLists.txt](https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L48-L72), we have the following cmake config options:
 
 1. `EXECUTORCH_SELECT_OPS_YAML`
 2. `EXECUTORCH_SELECT_OPS_LIST`

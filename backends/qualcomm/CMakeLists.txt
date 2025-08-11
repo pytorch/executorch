@@ -116,6 +116,7 @@ add_library(qcir INTERFACE qcir_schema_output)
 add_library(qcir_utils STATIC)
 add_library(qnn_backend STATIC)
 add_library(qnn_backend_cache STATIC)
+add_library(qnn_backend_options STATIC)
 add_library(qnn_context STATIC)
 add_library(qnn_custom_protocol STATIC)
 add_library(qnn_dlc_manager STATIC)
@@ -159,6 +160,7 @@ target_link_libraries(
   qnn_backend PRIVATE qnn_implementation qnn_logger qnn_op_package_manager
 )
 target_link_libraries(qnn_custom_protocol PRIVATE qnn_logger)
+target_link_libraries(qnn_backend_options PRIVATE qnn_schema)
 target_link_libraries(
   qnn_device PRIVATE qnn_executorch_logging qnn_implementation qnn_logger
 )
@@ -196,8 +198,9 @@ target_link_libraries(
                       qnn_dlc_manager
 )
 target_link_libraries(
-  qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
-                                 executorch_core extension_tensor
+  qnn_executorch_backend
+  PRIVATE qnn_executorch_header qnn_schema qnn_manager executorch_core
+          extension_tensor qnn_backend_options
 )
 set_target_properties(
   qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
@@ -229,7 +232,11 @@ add_subdirectory(
   ${QNN_EXECUTORCH_ROOT_DIR}/aot/ir
   ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/ir
 )
-install(TARGETS qnn_executorch_backend DESTINATION lib)
+install(
+  TARGETS qnn_executorch_backend
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
+)
 
 # QNN pybind
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
@@ -257,6 +264,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
             qnn_executorch_header
             executorch
             extension_tensor
+            qnn_backend_options
   )
   target_link_libraries(
     PyQnnWrapperAdaptor PRIVATE pybind11::module pybind11::lto wrappers

@@ -37,8 +37,10 @@ class MergedDataMap final : public NamedDataMap {
     // Check for duplicate keys.
     for (uint32_t k = 0; k < first->get_num_keys().get(); k++) {
       const auto key = first->get_key(k).get();
+      const auto error = second->get_tensor_layout(key).error();
+      // TODO(lfq): add API to check if key exists.
       ET_CHECK_OR_RETURN_ERROR(
-          second->get_tensor_layout(key).error() == Error::NotFound,
+          error == Error::NotFound || error == Error::NotImplemented,
           InvalidArgument,
           "Duplicate key %s.",
           key);

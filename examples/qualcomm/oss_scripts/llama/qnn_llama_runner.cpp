@@ -9,8 +9,8 @@
 /**
  * @file
  *
- * This tool can run Llama2 110M, Llama3.2 1B / 3B, Qwen2.5 0.5B with Qualcomm
- * AI Engine Direct.
+ * This tool can run Llama2 110M, Llama3.2 1B / 3B, Qwen2.5 0.5B, Qwen3 0.6B
+ * / 1.7B phi4-mini-instruct with Qualcomm AI Engine Direct.
  *
  */
 
@@ -34,11 +34,19 @@ DEFINE_string(
     performance_output_path,
     "inference_speed.txt",
     "Records inference speed. For CI purpose.");
+DEFINE_string(
+    dump_logits_path,
+    "",
+    "If path is provided, program will dump all logits generated. This option is for analysis purpose. It is not recommended for general usage as it will cause token rate drop and increase in memory usage.");
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 DEFINE_string(
     prompt,
     "The answer to the ultimate question is",
     "User prompts for Llama. When multiple prompts are entered, a multi-turn conversation will be initiated. Note that this feature is currently for testing purposes only.");
+DEFINE_string(
+    tokenized_prompt,
+    "",
+    "This is an alternative of passing prompts. Users could provide this in a raw file, with tokens saved in uint64 format.");
 DEFINE_string(
     system_prompt,
     "",
@@ -96,6 +104,16 @@ std::string get_formatted_prompt(
     case example::DecoderModelVersion::kQwen2_5:
       formatted_prompt.append(prompt);
       break;
+    case example::DecoderModelVersion::kPhi4:
+      if (!system_prompt.empty()) {
+        formatted_prompt.append("<|system|>");
+        formatted_prompt.append(system_prompt);
+        formatted_prompt.append("<|end|>");
+      }
+      formatted_prompt.append("<|user|>");
+      formatted_prompt.append(prompt);
+      formatted_prompt.append("<|end|><|assistant|>");
+      break;
     case example::DecoderModelVersion::kLlama3:
       if (!system_prompt.empty()) {
         formatted_prompt.append(
@@ -118,11 +136,25 @@ std::string get_formatted_prompt(
 int main(int argc, char** argv) {
   std::vector<std::string> prompts = CollectPrompts(argc, argv);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
+  if (!gflags::GetCommandLineFlagInfoOrDie("prompt").is_default &&
+      !gflags::GetCommandLineFlagInfoOrDie("tokenized_prompt").is_default) {
+    ET_CHECK_MSG(false, "Only provide prompt or tokenized_input but not both.");
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("dump_logits_path").is_default &&
+      FLAGS_eval_mode != 0) {
+    ET_CHECK_MSG(
+        false, "Only TokenGenerator(kv) mode is supported to dump all logits.");
+  }
+
+  bool use_tokenized_prompt =
+      gflags::GetCommandLineFlagInfoOrDie("tokenized_prompt").is_default ? false
+                                                                         : true;
   // create llama runner
   example::Runner runner(
       FLAGS_decoder_model_version.c_str(),
       FLAGS_model_path.c_str(),
       FLAGS_tokenizer_path.c_str(),
+      FLAGS_dump_logits_path.c_str(),
       FLAGS_performance_output_path.c_str(),
       FLAGS_temperature,
       FLAGS_eval_mode,
@@ -139,15 +171,29 @@ int main(int argc, char** argv) {
       buf.push_back(c);
     }
   };
-  // generate tokens & store inference output
-  for (int i = 0; i < FLAGS_num_iters; i++) {
-    for (const auto& prompt : prompts) {
-      std::string formatted_prompt;
-      formatted_prompt = get_formatted_prompt(
-          prompt, FLAGS_system_prompt, decoder_model_version.get());
-      runner.generate(formatted_prompt.c_str(), FLAGS_seq_len, callback);
+
+  if (use_tokenized_prompt) {
+    runner.generate(
+        FLAGS_tokenized_prompt.c_str(),
+        use_tokenized_prompt,
+        FLAGS_seq_len,
+        callback);
+  } else {
+    // generate tokens & store inference output
+    for (int i = 0; i < FLAGS_num_iters; i++) {
+      for (const auto& prompt : prompts) {
+        std::string formatted_prompt;
+        formatted_prompt = get_formatted_prompt(
+            prompt, FLAGS_system_prompt, decoder_model_version.get());
+        runner.generate(
+            formatted_prompt.c_str(),
+            use_tokenized_prompt,
+            FLAGS_seq_len,
+            callback);
+      }
     }
   }
+
   fout.write(buf.data(), buf.size());
   fout.close();
   return 0;
