@@ -50,7 +50,7 @@ For VGF we will be using the [ML SDK for Vulkan(R)](https://github.com/arm/ai-ml
 
 First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven't already, to set up a working ExecuTorch development environment. For the VGF backend it's recommended you [install from source](https://docs.pytorch.org/executorch/stable/using-executorch-building-from-source.html), or from a [nightly](https://download.pytorch.org/whl/nightly/executorch/).
 
-In addition to this, you need to install a number of SDK dependencies for generating Ethos-U command streams or VGF files. There are scripts which automate this, which are found in the main [ExecuTorch repository](https://github.com/pytorch/executorch/examples/arm/).
+In addition to this, you need to install a number of SDK dependencies for generating Ethos-U command streams or VGF files. There are scripts which automate this, which are found in the main [ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm/).
 
 ## Set Up the Developer Environment
 
