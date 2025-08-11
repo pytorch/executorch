@@ -38,7 +38,7 @@ dependencies {
 }
 ```
 
-Note: If you want to use release v0.6.0, please use dependency `org.pytorch:executorch-android:0.6.0`.
+Note: If you want to use release v0.5.0, please use dependency `org.pytorch:executorch-android:0.5.1`.
 
 Click the screenshot below to watch the *demo video* on how to add the package and run a simple ExecuTorch model with Android Studio.
 <a href="_static/img/android_studio.mp4">
