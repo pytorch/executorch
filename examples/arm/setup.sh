@@ -275,38 +275,38 @@ function setup_fvp() {
 function select_toolchain() {
     if [[ "${ARCH}" == "x86_64" ]]; then
         if [[ "${OS}" == "Linux" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-	        # TODO can include support for zephyr toolchain for other host platforms later
+            if [[ "${target_toolchain}" == "zephyr" ]]; then
+                # TODO can include support for zephyr toolchain for other host platforms later
                 toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
                 toolchain_dir="arm-zephyr-eabi"
                 toolchain_md5_checksum="93128be0235cf5cf5f1ee561aa6eac5f"
             else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi"
-                toolchain_md5_checksum="0601a9588bc5b9c99ad2b56133b7f118"
-	    fi
+                toolchain_url="https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi.tar.xz"
+                toolchain_dir="arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi"
+                toolchain_md5_checksum="17272b6c72d476c82b692a06ada0636c"
+            fi
         else
             echo "[main] Error: only Linux is currently supported for x86-64 architecture now!"; exit 1;
-	fi
-   elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
+        fi
+    elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
         if [[ "${OS}" == "Darwin" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
+            if [[ "${target_toolchain}" == "zephyr" ]]; then
                 echo "[main] Error: only Linux OS is currently supported for aarch64 architecture targeting Zephyr now!"; exit 1;
-	    else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi"
-                toolchain_md5_checksum="f1c18320bb3121fa89dca11399273f4e"
-	    fi
+            else
+                toolchain_url="https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
+                toolchain_dir="arm-gnu-toolchain-14.3.rel1-darwin-arm64-arm-none-eabi"
+                toolchain_md5_checksum="1c4a092430c167d08de4b55c6840e46b"
+            fi
         elif [[ "${OS}" == "Linux" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
+            if [[ "${target_toolchain}" == "zephyr" ]]; then
                 toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
                 toolchain_dir="arm-zephyr-eabi"
-		toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
-	    else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
-                toolchain_md5_checksum="303102d97b877ebbeb36b3158994b218"
-	    fi
+                toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
+            else
+                toolchain_url="https://developer.arm.com/-/media/Files/downloads/gnu/14.3.rel1/binrel/arm-gnu-toolchain-14.3.rel1-aarch64-arm-none-eabi.tar.xz"
+                toolchain_dir="arm-gnu-toolchain-14.3.rel1-aarch64-arm-none-eabi"
+                toolchain_md5_checksum="5b44bdd1d983247ec153fe548b4ff8ed"
+            fi
         fi
     else
         echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
