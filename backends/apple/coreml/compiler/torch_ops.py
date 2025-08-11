@@ -8,22 +8,25 @@
 # coremltools than is used by ExecuTorch.  Each op registered here should have a link to a PR in coremltools that adds
 # the op to the coremltools library.
 
+import numpy as np
 import torch as _torch
-from coremltools import _logger as logger
+from coremltools import _logger
 from coremltools.converters.mil.frontend import _utils
 from coremltools.converters.mil.frontend.torch.ops import (
     _get_inputs,
+    _get_kwinputs,
     NUM_TO_NUMPY_DTYPE,
     NUM_TO_TORCH_DTYPE,
     split,
+    to,
     transpose,
     unbind,
 )
-
 from coremltools.converters.mil.frontend.torch.torch_op_registry import (
     register_torch_op,
 )
 from coremltools.converters.mil.mil import types
+from executorch.exir.dim_order_utils import get_memory_format
 
 
 # https://github.com/apple/coremltools/pull/2556
@@ -42,6 +45,26 @@ def unbind_copy(context, node):
 @register_torch_op(override=False)
 def split_copy(context, node):
     split(context, node)
+
+
+@register_torch_op(
+    torch_alias=[
+        "dim_order_ops::_to_dim_order_copy",
+        "dim_order_ops._to_dim_order_copy",
+    ],
+    override=False,
+)
+def _to_dim_order_copy(context, node):
+    dim_order = _get_kwinputs(context, node, "dim_order", default=[None])[0]
+    node.kwinputs.pop("dim_order")
+
+    # In CoreML, dim_order.val will be an ndarray, so we convert it to a list
+    dim_order = [int(d) for d in dim_order.val]
+    memory_format = get_memory_format(dim_order)
+    assert (
+        memory_format == _torch.contiguous_format
+    ), "Only contiguous memory format is supported in CoreML"
+    to(context, node)
 
 
 # https://github.com/apple/coremltools/pull/2558
@@ -88,7 +111,7 @@ def dequantize_affine(context, node):
     out_np_dtype = None
     if len(inputs) > 7:
         out_np_dtype = NUM_TO_NUMPY_DTYPE[inputs[7].val]
-        logger.warning(
+        _logger.warning(
             f"Core ML ignores output_dtype {out_np_dtype} on torchao.dequantize_affine and instead uses the native precision."
         )
 
@@ -106,6 +129,46 @@ def dequantize_affine(context, node):
         zero_point,
         scale,
         axis=-1,
+        name=node.name,
+    )
+    context.add(output, node.name)
+
+
+@register_torch_op(
+    torch_alias=["quant::dequantize_codebook", "quant.dequantize_codebook"],
+    override=False,
+)
+def dequantize_codebook(context, node):
+    inputs = _get_inputs(context, node, expected=[4, 5])
+    codes = inputs[0].val
+    codebook = inputs[1].val
+    nbits = inputs[2].val
+
+    # information in block_size is redundant with codebook.shape
+    block_size = inputs[3].val  # noqa: F841
+
+    assert len(codes.shape) == 2, "Only rank 2 inputs are supported"
+
+    # Assert codebook is as expected.  codebook.dim() = codes.dim() + 2
+    assert len(codebook.shape) == 4, "Only rank 4 inputs are supported for codebook"
+    assert codebook.shape[0] == 1, "Only grouped_channel granularity is supported"
+    n_luts = codebook.shape[1]
+    assert (
+        codes.shape[1] % n_luts == 0
+    ), "codes.shape[1] must be divisible by codebook.shape[1]"
+    assert codebook.shape[2] == 2**nbits
+    assert codebook.shape[3] == 1, "Only scalar look up values are supported"
+
+    if len(inputs) > 4:
+        output_dtype = inputs[4].val
+        out_np_dtype = NUM_TO_NUMPY_DTYPE[output_dtype]
+        _logger.warning(
+            f"Core ML ignores output_dtype {out_np_dtype} on torchao.dequantize_affine and instead uses the native precision."
+        )
+
+    output = _utils._construct_constexpr_lut_op(
+        codes.astype(np.int8),
+        codebook,
         name=node.name,
     )
     context.add(output, node.name)

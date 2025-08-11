@@ -84,6 +84,8 @@ set(optional_lib_list
     quantized_kernels
     quantized_ops_lib
     quantized_ops_aot_lib
+    torchao_ops_executorch
+    torchao_kernels_aarch64
 )
 
 foreach(lib ${optional_lib_list})

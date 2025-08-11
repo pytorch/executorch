@@ -65,7 +65,14 @@ constexpr size_t kTensorDimensionLimit = 16;
 // The output of each iteration (copy_from) is copied into the copy_to tensor at
 // the specified index. This operator is supported in both ATen and lean modes.
 void et_copy_index(KernelRuntimeContext& context, Span<EValue*> stack) {
-  (void)context;
+  ET_KERNEL_CHECK_MSG(
+      context,
+      stack.size() == 3,
+      InvalidProgram,
+      /* void */,
+      "Expected %zu args, got %zu",
+      (size_t)3,
+      stack.size());
   SizesType expected_output_size[kTensorDimensionLimit];
 
   auto copy_to = (*stack[0]).toTensor();
