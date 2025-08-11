@@ -604,6 +604,55 @@ Error defineTensor(
 
 #define MAYBE_UNUSED(x) (void)(x)
 
+#ifdef ENABLE_XNNPACK_KLEIDI
+bool isQP8(const fb_xnnpack::XNNGraph* graph, const NodePtr node) {
+  assert(node->xnode_union_type() == fb_xnnpack::XNodeUnion::XNNConvert);
+  auto graph_node = node->xnode_union_as_XNNConvert();
+  auto cvt_output_id = graph_node->output_id();
+
+  auto check_dtype = [graph](uint32_t id, DataType dtype) -> bool {
+    for (auto value : *graph->xvalues()) {
+      if (value->xvalue_union_type() !=
+          fb_xnnpack::XValueUnion::XNNQuantizedTensorValue) {
+        continue;
+      }
+      auto tensor =
+          value->xvalue_union_as_XNNQuantizedTensorValue()->tensor_value();
+      if (tensor->id_out() == id) {
+        return tensor->datatype() == dtype;
+      }
+    }
+    return false;
+  };
+
+  // Check if the output tensor is qint8 else bail early.
+  if (!check_dtype(cvt_output_id, DataType::xnn_datatype_qdint8)) {
+    return false;
+  }
+
+  std::vector<DataType> supported_filter_dtypes{
+      DataType::xnn_datatype_qcint8,
+      DataType::xnn_datatype_qcint4,
+      DataType::xnn_datatype_qbint4};
+  // Find if the convert output is going to the right linear node.
+  // Assuming if we can find one valid linear node, then we can use QP8
+  // for all the linear nodes consuming this convert output.
+  for (auto node : *graph->xnodes()) {
+    if (node->xnode_union_type() == fb_xnnpack::XNodeUnion::XNNFullyConnected) {
+      auto linear_node = node->xnode_union_as_XNNFullyConnected();
+      if (linear_node->input1_id() == cvt_output_id) {
+        for (auto supported_filter : supported_filter_dtypes) {
+          if (check_dtype(linear_node->filter_id(), supported_filter)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+#endif // ENABLE_XNNPACK_KLEIDI
+
 /*
 Define Convert operator Node into the subgraph
 */

@@ -45,14 +45,10 @@ void resize_flash_attention_out(
   // Find the output tensor in the args - it's the first tensor in the first
   // ArgGroup
   const ValueRef out = args.at(0).refs.at(0);
-  // Find the query tensor - it's the first tensor in the second ArgGroup
   const ValueRef q_projected = args.at(1).refs.at(0);
-
-  // Resize output to match query dimensions
   graph->virtual_resize(out, graph->sizes_of(q_projected));
 }
 
-// Flash Attention implementation using single compute shader
 utils::uvec3 flash_attention_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -74,7 +70,6 @@ utils::uvec3 flash_attention_global_wg_size(
   // Calculate number of row blocks
   const int32_t Tr = (N + Br - 1) / Br;
 
-  // Dispatch size: (B * H * Tr, 1, 1)
   return {static_cast<uint32_t>(B * H * Tr), 1, 1};
 }
 
@@ -116,11 +111,11 @@ void flash_attention_impl(
       graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
   VK_CHECK_COND(graph.val_is_none(attn_mask));
 
-  // Ensure all tensors use buffer storage for Flash Attention
-  VK_CHECK_COND(graph.is_buffer_storage(q_projected));
-  VK_CHECK_COND(graph.is_buffer_storage(k_cache_tensor));
-  VK_CHECK_COND(graph.is_buffer_storage(v_cache_tensor));
-  VK_CHECK_COND(graph.is_buffer_storage(out));
+  if (graph.is_buffer_storage(q_projected)) {
+    VK_CHECK_COND(graph.is_buffer_storage(k_cache_tensor));
+    VK_CHECK_COND(graph.is_buffer_storage(v_cache_tensor));
+    VK_CHECK_COND(graph.is_buffer_storage(out));
+  }
 
   // Calculate scale factor
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
@@ -142,21 +137,21 @@ void flash_attention_impl(
 
   // t_l stores row-wise normalization sums for softmax computation
   // t_m stores row-wise maximum values for numerical stability in softmax
-  TmpTensor t_l(&graph, lm_sizes, vkapi::kFloat);
-  TmpTensor t_m(&graph, lm_sizes, vkapi::kFloat);
+  TmpTensor t_l(&graph, lm_sizes, vkapi::kFloat, graph.storage_type_of(out));
+  TmpTensor t_m(&graph, lm_sizes, vkapi::kFloat, graph.storage_type_of(out));
 
+  // Choose kernel name based on storage type
   std::string kernel_name = "flash_attention";
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  // Set up parameter buffers
   vkapi::ParamsBindList param_ubos = {
       graph.sizes_ubo(q_projected), // Q_sizes
       graph.sizes_ubo(k_cache_tensor), // K_sizes
       graph.sizes_ubo(v_cache_tensor), // V_sizes
       graph.sizes_ubo(out), // O_sizes
-      graph.sizes_ubo(t_l), // l_sizes (3D)
-      graph.sizes_ubo(t_m), // m_sizes (3D)
+      graph.sizes_ubo(t_l), // l_sizes
+      graph.sizes_ubo(t_m), // m_sizes
       graph.create_params_buffer(scale_val), // scale
       graph.create_params_buffer(block_size_r), // block_size_r
       graph.create_params_buffer(block_size_c), // block_size_c
