@@ -475,10 +475,10 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
+        install_executorch
 
         .ci/scripts/setup-arm-baremetal-tools.sh
-
+        pip list
         ARM_TEST=${{ matrix.test_arm_baremetal }}
 
         # Test test_arm_baremetal.sh with test
