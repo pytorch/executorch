@@ -372,17 +372,17 @@ function create_setup_path(){
         cd "${root_dir}"
         model_vgf_path="$(cd ${mlsdk_manifest_dir}/sw/vgf-lib/deploy && pwd)"
         echo "export PATH=\${PATH}:${model_vgf_path}/bin" >> ${setup_path_script}
-        echo "export LD_LIBRARY_PATH=\${LD_LIBRARY_PATH}:${model_vgf_path}/lib" >> ${setup_path_script}
-        echo "export DYLD_LIBRARY_PATH=\${DYLD_LIBRARY_PATH}:${model_vgf_path}/lib" >> ${setup_path_script}
+        echo "export LD_LIBRARY_PATH=\${LD_LIBRARY_PATH-}:${model_vgf_path}/lib" >> ${setup_path_script}
+        echo "export DYLD_LIBRARY_PATH=\${DYLD_LIBRARY_PATH-}:${model_vgf_path}/lib" >> ${setup_path_script}
     fi
 
     if [[ "${enable_emulation_layer}" -eq 1 ]]; then
         cd "${root_dir}"
         model_emulation_layer_path="$(cd ${mlsdk_manifest_dir}/sw/emulation-layer/ && pwd)"
         echo "export LD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${LD_LIBRARY_PATH}" >> ${setup_path_script}
-        echo "export DYLD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${DYLD_LIBRARY_PATH}" >> ${setup_path_script}
-        echo "export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation:\${VK_INSTANCE_LAYERS}" >> ${setup_path_script}
-        echo "export VK_ADD_LAYER_PATH=${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d:\${VK_ADD_LAYER_PATH}" >> ${setup_path_script}
+        echo "export DYLD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${DYLD_LIBRARY_PATH-}" >> ${setup_path_script}
+        echo "export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation:\${VK_INSTANCE_LAYERS-}" >> ${setup_path_script}
+        echo "export VK_ADD_LAYER_PATH=${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d:\${VK_ADD_LAYER_PATH-}" >> ${setup_path_script}
     fi
 }
 
