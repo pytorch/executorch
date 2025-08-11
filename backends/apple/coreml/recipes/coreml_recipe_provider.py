@@ -276,7 +276,7 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
         else:
             weight_granularity = PerGroup(group_size=group_size)
 
-        # Use user-provided filter_fn or default to Linear/Embedding layers
+        # Use user-provided filter_fn if provided
         filter_fn = kwargs.get("filter_fn", None)
         config = AOQuantizationConfig(
             ao_base_config=IntxWeightOnlyConfig(
@@ -327,7 +327,7 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
         # Use user-provided filter_fn or default to Linear/Embedding layers
         filter_fn = kwargs.get(
             "filter_fn",
-            lambda m, _: (
+            lambda m, fqn: (
                 isinstance(m, torch.nn.Embedding) or isinstance(m, torch.nn.Linear)
             ),
         )
