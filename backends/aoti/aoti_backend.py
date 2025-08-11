@@ -43,7 +43,4 @@ class AotiBackend(BackendDetails):
             shell=True,
         )
 
-        # with open(so_path, "rb") as f:
-        #     data = f.read()
-
         return PreprocessResult(so_path.encode("utf-8"))

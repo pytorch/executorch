@@ -427,21 +427,6 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       FreeableBuffer* processed, // This will be the buffer from aoti_backend
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
-    // We could load the .so content directly. But I don't want to deal with
-    // relocation. So dumping a file and using dlopen
-
-    // // Create a temporary file
-    // std::ofstream outfile("/tmp/test.so", std::ios::binary);
-
-    // // Write the ELF buffer to the temporary file
-    // outfile.write((char*)processed->data(), sizeof(void*) * processed->size());
-
-    // // Finish writing the file to disk
-    // outfile.close();
-
-    // // Free the in-memory buffer
-    // processed->Free();
-
     const char* so_path = static_cast<const char*>(processed->data());
 
     printf("so path: %s\n", so_path);
@@ -452,6 +437,8 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       std::cout << dlerror() << std::endl;
       return Error::AccessFailed;
     }
+
+    processed->Free();
 
     AOTInductorModelContainerCreateWithDevice =
         reinterpret_cast<AOTInductorModelContainerCreateWithDeviceFunc>(
