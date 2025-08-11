@@ -662,16 +662,16 @@ Error defineConvertNode(
   MAYBE_UNUSED(flatbuffer_graph);
   auto graph_node = node->xnode_union_as_XNNConvert();
 #ifdef ENABLE_XNNPACK_KLEIDI
-  // This is not currently exposed at include/xnnpack.h yet once it is
-  // we can remove this runtime logic and do this ahead-of-time
-  #define XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM 0x00000100;
-    if (isQP8(flatbuffer_graph, node)) {
-      flags |= XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM;
-      ET_LOG(
-          Debug,
-          "Setting XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM flag for convert node %i",
-          node->debug_handle());
-    }
+// This is not currently exposed at include/xnnpack.h yet once it is
+// we can remove this runtime logic and do this ahead-of-time
+#define XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM 0x00000100;
+  if (isQP8(flatbuffer_graph, node)) {
+    flags |= XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM;
+    ET_LOG(
+        Debug,
+        "Setting XNN_FLAG_MAYBE_PACK_FOR_QB4W_GEMM flag for convert node %i",
+        node->debug_handle());
+  }
 #endif
 
   int32_t flags = graph_node->flags();
