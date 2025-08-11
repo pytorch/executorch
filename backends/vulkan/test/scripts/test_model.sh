@@ -117,7 +117,6 @@ build_core_libraries_and_devtools() {
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_BUILD_VULKAN=ON \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DEXECUTORCH_BUILD_TESTS=ON \
     -Bcmake-out && \
   cmake --build cmake-out -j64 --target install
 
