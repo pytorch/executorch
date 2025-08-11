@@ -39,6 +39,7 @@ utils::uvec3 pick_hw_square_wg_size(
     const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  (void)graph;
   (void)shader;
   (void)args;
   (void)resize_args;
@@ -49,7 +50,7 @@ utils::uvec3 pick_hw_square_wg_size(
   }
   // If width dim is sufficiently small, then bias towards height dim to reduce
   // the number of inactive invocations.
-  else if (global_workgroup_size[0u] < 6u) {
+  if (global_workgroup_size[0u] < 6u) {
     return {4u, 16u, 1u};
   }
   return {16u, 4u, 1u};

@@ -582,7 +582,13 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    if (should_propagate_resize) {
+    // propagate_resize() will re-encode the command buffer so that push
+    // constants are updated and DynamicDispatchNode can update the compute
+    // shader, global workgroup size, and local workgroup size to perform the
+    // model inference.
+    if (should_propagate_resize ||
+        (compute_graph->graphconfig().expect_dynamic_shapes &&
+         compute_graph->execute_count() == 0u)) {
       compute_graph->propagate_resize();
     }
 
