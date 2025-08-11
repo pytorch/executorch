@@ -61,7 +61,7 @@ foreach(kernel ${_kernels})
     set(_kernel_ops_lib "optimized_native_cpu_ops_lib")
     set(_kernel_ops_lib_path
         "${CMAKE_CURRENT_BINARY_DIR}/../../configurations/optimized_native_cpu_ops_lib"
-      )
+    )
   elseif(${kernel} STREQUAL "optimized_portable")
     set(_kernel_ops_lib "${kernel}_ops_lib")
     set(_kernel_ops_lib_path
@@ -312,9 +312,8 @@ if(TARGET optimized_portable_kernels)
   list(APPEND _optimized_kernels_test_sources ${all_test_sources})
   list(REMOVE_DUPLICATES _optimized_kernels_test_sources)
 
-  # Make sure that we still test optimized versions of portable
-  # kernels even if they would currently be shadowed by specific
-  # optimized implementations.
+  # Make sure that we still test optimized versions of portable kernels even if
+  # they would currently be shadowed by specific optimized implementations.
   et_cxx_test(
     optimized_portable_kernels_test
     SOURCES
@@ -323,9 +322,10 @@ if(TARGET optimized_portable_kernels)
     EXTRA_LIBS
     optimized_portable_kernels
   )
-   add_dependencies(optimized_portable_kernels_test generate_wrapper)
+  add_dependencies(optimized_portable_kernels_test generate_wrapper)
   target_include_directories(
-    optimized_portable_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable"
+    optimized_portable_kernels_test
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable"
   )
 endif()
 
