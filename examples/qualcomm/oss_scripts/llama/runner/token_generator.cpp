@@ -162,6 +162,10 @@ void TokenGenerator::init_io(
   }
 }
 
+const std::vector<uint16_t>& TokenGenerator::get_all_logits() {
+  return token_all_logits_;
+}
+
 // This function only considers the case where token_generator_ar_len equals 1.
 void TokenGenerator::prepare_io(uint64_t cur_token, int64_t start_pos) {
   // update input_tok
@@ -175,7 +179,8 @@ Result<int64_t> TokenGenerator::generate(
     std::vector<uint64_t> tokens,
     int64_t start_pos,
     int32_t seq_len,
-    std::function<void(const std::string&)> token_callback) {
+    std::function<void(const std::string&)> token_callback,
+    bool dump_logits) {
   ET_CHECK_MSG(
       !tokens.empty(), "Token generation loop shouldn't take empty tokens");
   int64_t pos = start_pos; // position in the sequence
@@ -220,6 +225,12 @@ Result<int64_t> TokenGenerator::generate(
     }
     // Run inference
     auto logits_res = decoder_runner_->step(method_name_, inputs_);
+    if (dump_logits) {
+      token_all_logits_.insert(
+          token_all_logits_.end(),
+          logits_.data,
+          logits_.data + metadata_.ar_len * metadata_.vocab_size);
+    }
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
     executorch::aten::Tensor& logits_tensor = logits_res.get();
 

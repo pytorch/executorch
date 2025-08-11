@@ -11,8 +11,9 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.pad.default"
@@ -53,9 +54,9 @@ class ConstantPadND(torch.nn.Module):
     "test_data",
     test_data_suite,
 )
-def test_constant_pad_nd_tosa_MI(test_data: Tuple):
+def test_constant_pad_nd_tosa_FP(test_data: Tuple):
     test_data, padding, value = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         ConstantPadND(padding, value),
         (test_data,),
         aten_op,
@@ -65,12 +66,40 @@ def test_constant_pad_nd_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_constant_pad_nd_tosa_BI(test_data: Tuple):
+def test_constant_pad_nd_tosa_INT(test_data: Tuple):
     test_data, padding, value = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         ConstantPadND(padding, value),
         (test_data,),
         aten_op,
         exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_constant_pad_nd_vgf_FP(test_data: Tuple):
+    inp, padding, value = test_data()
+    pipeline = VgfPipeline[input_t1](
+        ConstantPadND(padding, value),
+        (inp,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_constant_pad_nd_vgf_INT(test_data: Tuple):
+    inp, padding, value = test_data()
+    pipeline = VgfPipeline[input_t1](
+        ConstantPadND(padding, value),
+        (inp,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

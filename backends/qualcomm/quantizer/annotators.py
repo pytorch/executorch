@@ -217,6 +217,11 @@ def annotate_argmax(node: Node, quantization_config: QuantizationConfig) -> None
     annotate_single_in(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.amin.default])
+def annotate_amin(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.argmin.default])
 def annotate_argmin(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in(node, quantization_config)

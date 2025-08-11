@@ -195,8 +195,8 @@ def test_quantizer_single_maxpool2d():
     m(*example_input)
 
     nodes = list(m.graph.nodes)
-    assert len(nodes) == 3
-    assert nodes[1].name == "max_pool2d"
+    assert len(nodes) == 7
+    assert nodes[3].name == "max_pool2d"
     assert "quantization_annotation" not in nodes[1].meta
 
 
