@@ -11,12 +11,12 @@ import torch
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
-from .qnn_constants import OpElementWiseNotEqual, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpElementWiseXor, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class NotEqual(NodeVisitor):
-    target = ["aten.ne.Tensor"]
+class OpXor(NodeVisitor):
+    target = ["aten.bitwise_xor.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -34,9 +34,9 @@ class NotEqual(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        output_tensors = [output_tensor_wrapper]
+        xor_output_tensors = [output_tensor_wrapper]
 
-        input_tensors = []
+        xor_input_tensors = []
         for index in range(2):
             input_node = self.get_node(node.args[index])
             input_tensor = self.get_tensor(input_node, node)
@@ -49,14 +49,12 @@ class NotEqual(NodeVisitor):
                 tensor_type,
                 nodes_to_wrappers,
             )
-            input_tensors.append(input_tensor_wrapper)
-
-        ne_op = PyQnnWrapper.PyQnnOpWrapper(
+            xor_input_tensors.append(input_tensor_wrapper)
+        xor_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpElementWiseNotEqual.op_name,
+            OpElementWiseXor.op_name,
         )
-        ne_op.AddInputTensors(input_tensors)
-        ne_op.AddOutputTensors(output_tensors)
-
-        return ne_op
+        xor_op.AddInputTensors(xor_input_tensors)
+        xor_op.AddOutputTensors(xor_output_tensors)
+        return xor_op
