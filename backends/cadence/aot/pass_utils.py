@@ -7,14 +7,14 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Set, Union
+from typing import Callable, List, Optional, Set, Type, Union
 
 import torch
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
+from executorch.exir.pass_base import PassBase, PassResult
 
-from executorch.exir.pass_base import ExportPass
 from torch._ops import OpOverloadPacket
 
 
@@ -25,40 +25,40 @@ def allow_lifetime_and_storage_overlap(opt_level: int) -> bool:
 
 
 # A dataclass that stores the attributes of an ExportPass.
-@dataclass
+@dataclass(frozen=True)
 class CadencePassAttribute:
     opt_level: Optional[int] = None
     debug_pass: bool = False
 
 
 # A dictionary that maps an ExportPass to its attributes.
-ALL_CADENCE_PASSES: dict[ExportPass, CadencePassAttribute] = {}
+ALL_CADENCE_PASSES: dict[Type[PassBase], CadencePassAttribute] = {}
 
 
-def get_cadence_pass_attribute(p: ExportPass) -> Optional[CadencePassAttribute]:
+def get_cadence_pass_attribute(p: Type[PassBase]) -> Optional[CadencePassAttribute]:
     return ALL_CADENCE_PASSES.get(p, None)
 
 
 # A decorator that registers a pass.
 def register_cadence_pass(
     pass_attribute: CadencePassAttribute,
-) -> Callable[[ExportPass], ExportPass]:
-    def wrapper(cls: ExportPass) -> ExportPass:
+) -> Callable[[Type[PassBase]], Type[PassBase]]:
+    def wrapper(cls: Type[PassBase]) -> Type[PassBase]:
         ALL_CADENCE_PASSES[cls] = pass_attribute
         return cls
 
     return wrapper
 
 
-def get_all_available_cadence_passes() -> Set[ExportPass]:
+def get_all_available_cadence_passes() -> Set[Type[PassBase]]:
     return set(ALL_CADENCE_PASSES.keys())
 
 
 # Create a new filter to filter out relevant passes from all passes.
 def create_cadence_pass_filter(
     opt_level: int, debug: bool = False
-) -> Callable[[ExportPass], bool]:
-    def _filter(p: ExportPass) -> bool:
+) -> Callable[[Type[PassBase]], bool]:
+    def _filter(p: Type[PassBase]) -> bool:
         pass_attribute = get_cadence_pass_attribute(p)
         return (
             pass_attribute is not None
@@ -224,3 +224,8 @@ def set_arg(
         node.update_arg(idx, value)
     else:
         node.update_kwarg(kwarg_name, value)
+
+
+def none_throws(x: Optional[PassResult]) -> PassResult:
+    assert x is not None
+    return x

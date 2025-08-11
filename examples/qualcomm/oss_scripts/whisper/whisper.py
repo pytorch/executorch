@@ -3,6 +3,10 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# TODO: reenable pyre after fixing the issues
+# pyre-ignore-all-errors
+
 import getpass
 import json
 import logging
@@ -36,8 +40,8 @@ from executorch.backends.qualcomm.utils.utils import (
 
 from executorch.devtools.backend_debug import print_delegation_info
 from executorch.examples.qualcomm.oss_scripts.whisper.whisper_model import (
-    Seq2SeqLMDecoderExportableModuleWithStaticCache,
-    Seq2SeqLMEncoderExportableModule,
+    QnnSeq2SeqLMDecoderExportableModuleWithStaticCache,
+    QnnSeq2SeqLMEncoderExportableModule,
 )
 
 from executorch.examples.qualcomm.utils import (
@@ -169,14 +173,14 @@ class Whisper:
         )
 
         self.whisper_encoder = (
-            Seq2SeqLMEncoderExportableModule(whisper_model.get_encoder())
+            QnnSeq2SeqLMEncoderExportableModule(whisper_model.get_encoder())
             .to("cpu")
             .eval()
         )
         self.encoder_passes_job = get_capture_program_passes()
 
         self.whisper_decoder = (
-            Seq2SeqLMDecoderExportableModuleWithStaticCache(
+            QnnSeq2SeqLMDecoderExportableModuleWithStaticCache(
                 whisper_model=whisper_model,
                 max_cache_length=self.max_seq_length,
                 batch_size=batch_size,
@@ -190,20 +194,21 @@ class Whisper:
         self.exported_whisper_encoder = None
         self.exported_whisper_decoder = None
         self.has_quant_io = False
+        self.kv_shape = {
+            (self.max_seq_length, self.head_dim),
+        }
 
     def _tag_ios(self, node, fixed_point_type):
         if not self.has_quant_io:
             return
 
         quant_io_type = None
-        if node.op == "placeholder" and "static_cache_" in node.name:
+        if node.op == "placeholder" and node.meta["val"].size()[-2:] in self.kv_shape:
             quant_io_type = fixed_point_type
 
         if is_graph_output(node):
             # shape of k caches and v caches
-            if node.meta["val"].size()[-2:] in {
-                (self.max_seq_length, self.head_dim),
-            }:
+            if node.meta["val"].size()[-2:] in self.kv_shape:
                 quant_io_type = fixed_point_type
 
         return quant_io_type

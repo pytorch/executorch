@@ -24,7 +24,7 @@ from executorch.backends.arm.arm_backend import (
     is_tosa,
     is_vgf,
 )
-from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.ethosu import EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -160,8 +160,7 @@ def quantize(
     else:
         raise RuntimeError("Unsupported compilespecs for quantization!")
 
-    # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
-    operator_config = get_symmetric_quantization_config(is_per_channel=False)
+    operator_config = get_symmetric_quantization_config()
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
 
@@ -342,8 +341,8 @@ targets = [
     "ethos-u85-1024",
     "ethos-u85-2048",
     "vgf",
-    "TOSA-0.80+BI",
     "TOSA-1.0+INT",
+    "TOSA-1.0+FP",
 ]
 
 
@@ -393,7 +392,7 @@ def get_compile_spec(
         try:
             tosa_spec = TosaSpecification.create_from_string(target)
         except:
-            tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         spec_builder = ArmCompileSpecBuilder().tosa_compile_spec(tosa_spec)
     elif "ethos-u" in target:
         spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
@@ -581,6 +580,13 @@ def get_args():
         default="Arm/vela.ini",
         help="Specify custom vela configuration file (vela.ini)",
     )
+    parser.add_argument(
+        "--non_strict_export",
+        dest="strict_export",
+        required=False,
+        action="store_false",
+        help="Disable strict checking while exporting models.",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -697,7 +703,7 @@ def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
     )
     # Wrap quantized model back into an exported_program
     exported_program = torch.export.export_for_training(
-        model_int8, example_inputs, strict=True
+        model_int8, example_inputs, strict=args.strict_export
     )
 
     return model_int8, exported_program
@@ -792,7 +798,7 @@ if __name__ == "__main__":  # noqa: C901
     # export_for_training under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
     exported_program = torch.export.export_for_training(
-        model, example_inputs, strict=True
+        model, example_inputs, strict=args.strict_export
     )
     model = exported_program.module()
     model_fp32 = model

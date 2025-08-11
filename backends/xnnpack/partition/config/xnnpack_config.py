@@ -16,6 +16,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
 )
 from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import has_free_unbacked_symbols
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
@@ -168,8 +169,10 @@ class XNNPartitionerConfig(PartitionerConfig):
             if not isinstance(arg_val, torch.Tensor):
                 return False
 
-            # XNNPACK does not support empty tensors
-            if arg_val.numel() == 0:
+            # XNNPACK does not support empty tensors. But we can't get numel()
+            # for unbacked symints, so we conservatively bail out here if any
+            # dimension of the tensor is unbacked symint.
+            if has_free_unbacked_symbols(arg_val) or arg_val.numel() == 0:
                 return False
 
             if arg_val.dtype not in valid_dtypes:

@@ -1790,25 +1790,21 @@ class TestVulkanBackend(unittest.TestCase):
 
     def test_vulkan_backend_large_linear_layer(self):
         class LinearModel(torch.nn.Module):
-            def __init__(
-                self, n_pca_basis: int, n_sh_basis: int, n_gaussians: int
-            ) -> None:
+            def __init__(self, large_out_channels: int) -> None:
                 super(LinearModel, self).__init__()
-                self.fc1 = torch.nn.Linear(
-                    n_pca_basis, (n_sh_basis + 3 + 3 + 4) * n_gaussians
-                )
+                self.fc0 = torch.nn.Linear(1024, 128)
+                self.fc1 = torch.nn.Linear(128, large_out_channels)
 
             def forward(self, x: torch.Tensor):
+                x = self.fc0(x)
                 out = self.fc1(x)
                 return out
 
-        n_pca_basis = 64
-        n_sh_basis = 6
-        n_gaussians = 2**16
+        large_out_channels = 2**16
 
         self.lower_module_and_test_output(
-            LinearModel(n_pca_basis, n_sh_basis, n_gaussians),
-            (torch.ones(n_pca_basis),),
+            LinearModel(large_out_channels),
+            (torch.ones(1024),),
         )
 
     def test_vulkan_backend_sym_size_int(self):
@@ -1964,3 +1960,337 @@ class TestVulkanBackend(unittest.TestCase):
                     GroupNormModule(num_groups, num_channels),
                     sample_inputs,
                 )
+
+    def test_vulkan_backend_full_quantization_workflow(self):
+        class FullQuantizationWorkflowModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # Step 1: Choose quantization parameters per tensor
+                scale, zero_point = (
+                    torch.ops.quantized_decomposed.choose_qparams.tensor(
+                        x,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        eps=1e-5,
+                        dtype=torch.int32,
+                    )
+                )
+
+                # Step 2: Quantize using the calculated parameters
+                quantized = torch.ops.quantized_decomposed.quantize_per_tensor.tensor(
+                    x,
+                    scale,
+                    zero_point,
+                    quant_min=-2147483648,  # int32 min
+                    quant_max=2147483647,  # int32 max
+                    dtype=torch.int32,
+                )
+
+                # Step 3: Dequantize back to float
+                dequantized = (
+                    torch.ops.quantized_decomposed.dequantize_per_tensor.tensor(
+                        quantized,
+                        scale,
+                        zero_point,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        dtype=torch.int32,
+                    )
+                )
+
+                return dequantized
+
+        full_workflow_module = FullQuantizationWorkflowModule()
+        sample_inputs = (torch.rand(size=(2, 3, 4), dtype=torch.float32),)
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            full_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
+        )
+
+    def test_vulkan_backend_full_per_token_quantization_workflow(self):
+        class FullPerTokenQuantizationWorkflowModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # Step 1: Choose quantization parameters per token
+                scale, zero_point = (
+                    torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default(
+                        x,
+                        dtype=torch.int32,
+                    )
+                )
+
+                # Step 2: Quantize using the calculated parameters per token
+                quantized = torch.ops.quantized_decomposed.quantize_per_token.default(
+                    x,
+                    scale,
+                    zero_point,
+                    quant_min=-2147483648,  # int32 min
+                    quant_max=2147483647,  # int32 max
+                    dtype=torch.int32,
+                )
+
+                # Step 3: Dequantize back to float per token
+                dequantized = (
+                    torch.ops.quantized_decomposed.dequantize_per_token.default(
+                        quantized,
+                        scale,
+                        zero_point,
+                        quant_min=-2147483648,  # int32 min
+                        quant_max=2147483647,  # int32 max
+                        dtype=torch.int32,
+                        output_dtype=torch.float32,
+                    )
+                )
+
+                return dequantized
+
+        full_per_token_workflow_module = FullPerTokenQuantizationWorkflowModule()
+        sample_inputs = (torch.rand(size=(6, 4), dtype=torch.float32),)
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            full_per_token_workflow_module, sample_inputs, atol=5e-3, rtol=5e-3
+        )
+
+    def test_vulkan_backend_different_required_reprs(self):
+        class ComplexModule(torch.nn.Module):
+            """
+            This Module tests the tag memory metadata pass. The first few ops executed
+            are binary ops, which don't require any specific representation for input
+            and output tensors.
+
+            This is followed by a linear layer, which requires the input tensor to be
+            width packed.
+
+            Three linear layer outputs are then concatenated, and the result is passed
+            to a convolution layer which requires channels packing. Finally, group norm
+            is called and the output is postprocessed by a binary op before returning.
+
+            In addition to requiring memory layout transitions between the linear and
+            conv stages, the module also contains ops which have "non-standard"
+            torch.fx.Nodes; cat will contain an argument node that is a list of nodes,
+            and group norm's node will be associated with multiple output tensors.
+            """
+
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(10, 10)
+                self.conv = torch.nn.Conv2d(
+                    in_channels=3,  # Assuming concatenation triples the channels
+                    out_channels=16,
+                    kernel_size=3,
+                    padding=1,
+                )
+                self.group_norm = torch.nn.GroupNorm(num_groups=4, num_channels=16)
+
+            def forward(self, x, a, b, c, d):
+                w = a + b
+                y = a + c
+                z = a + d
+
+                b1 = x + y
+                b2 = x + z
+                b3 = x + w
+
+                l1 = self.linear(b1).unsqueeze(0)
+                l2 = self.linear(b2).unsqueeze(0)
+                l3 = self.linear(b3).unsqueeze(0)
+
+                concat = torch.cat([l1, l2, l3], dim=0)  # Concatenate along channels
+                conv = self.conv(concat + a)
+                g = self.group_norm(conv.unsqueeze(0))
+                return g + x
+
+        complex_module = ComplexModule()
+        sample_inputs = (
+            torch.rand(size=(10, 10), dtype=torch.float32),  # x
+            torch.rand(size=(10, 10), dtype=torch.float32),  # a
+            torch.rand(size=(10, 10), dtype=torch.float32),  # b
+            torch.rand(size=(10, 10), dtype=torch.float32),  # c
+            torch.rand(size=(10, 10), dtype=torch.float32),  # d
+        )
+
+        self.lower_module_and_test_output(complex_module, sample_inputs)
+
+    def test_vulkan_backend_cat_different_reprs(self):
+        class CustomComplexModule(torch.nn.Module):
+            """
+            This test validates that the memory metadata tagging pass can handle
+            transitioning arguments to the cat operator. Linear layers require width
+            packing, while conv layers require channels packing. Before executing the
+            cat operator, all input tensors should use the same representation.
+            """
+
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(10, 10)
+                self.linear2 = torch.nn.Linear(10, 10)
+                self.conv = torch.nn.Conv2d(
+                    in_channels=4,  # Assuming input b has 3 channels
+                    out_channels=8,
+                    kernel_size=3,
+                    padding=1,
+                )
+
+            def forward(self, a, b):
+                x1 = self.linear1(a).unsqueeze(0)
+                x2 = self.linear2(a).unsqueeze(0)
+                y = self.conv(b)
+                return torch.cat([x1, x2, y], dim=0)
+
+        custom_complex_module = CustomComplexModule()
+        sample_inputs = (
+            torch.rand(size=(10, 10), dtype=torch.float32),  # a
+            torch.rand(size=(4, 10, 10), dtype=torch.float32),  # b
+        )
+
+        self.lower_module_and_test_output(custom_complex_module, sample_inputs)
+
+    def test_vulkan_backend_cat_width_dynamic_shapes(self):
+        class CatWidthModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x1, x2, x3, x4, x5, x6):
+                return torch.cat([x1, x2, x3, x4, x5, x6], dim=3)
+
+        cat_width_module = CatWidthModule()
+
+        # Create 6 tensors with different widths but same batch, channel, and height dimensions
+        sample_inputs = (
+            torch.randn(size=(2, 3, 4, 5), dtype=torch.float32),  # width=5
+            torch.randn(size=(2, 3, 4, 3), dtype=torch.float32),  # width=3
+            torch.randn(size=(2, 3, 4, 7), dtype=torch.float32),  # width=7
+            torch.randn(size=(2, 3, 4, 2), dtype=torch.float32),  # width=2
+            torch.randn(size=(2, 3, 4, 4), dtype=torch.float32),  # width=4
+            torch.randn(size=(2, 3, 4, 6), dtype=torch.float32),  # width=6
+        )
+
+        # Define dynamic shapes for the width dimension (dim=3) for each input
+        width1 = Dim("width1", min=1, max=10)
+        width2 = Dim("width2", min=1, max=10)
+        width3 = Dim("width3", min=1, max=10)
+        width4 = Dim("width4", min=1, max=10)
+        width5 = Dim("width5", min=1, max=10)
+        width6 = Dim("width6", min=1, max=10)
+
+        dynamic_shapes = {
+            "x1": {3: width1},
+            "x2": {3: width2},
+            "x3": {3: width3},
+            "x4": {3: width4},
+            "x5": {3: width5},
+            "x6": {3: width6},
+        }
+
+        # Create test inputs with different width combinations
+        test_inputs = [
+            (
+                torch.randn(2, 3, 4, 2),  # width=2
+                torch.randn(2, 3, 4, 1),  # width=1
+                torch.randn(2, 3, 4, 3),  # width=3
+                torch.randn(2, 3, 4, 1),  # width=1
+                torch.randn(2, 3, 4, 2),  # width=2
+                torch.randn(2, 3, 4, 4),  # width=4
+            ),
+            (
+                torch.randn(2, 3, 4, 8),  # width=8
+                torch.randn(2, 3, 4, 2),  # width=2
+                torch.randn(2, 3, 4, 1),  # width=1
+                torch.randn(2, 3, 4, 3),  # width=3
+                torch.randn(2, 3, 4, 5),  # width=5
+                torch.randn(2, 3, 4, 1),  # width=1
+            ),
+            (
+                torch.randn(2, 3, 4, 1),  # width=1
+                torch.randn(2, 3, 4, 9),  # width=9
+                torch.randn(2, 3, 4, 2),  # width=2
+                torch.randn(2, 3, 4, 4),  # width=4
+                torch.randn(2, 3, 4, 1),  # width=1
+                torch.randn(2, 3, 4, 3),  # width=3
+            ),
+        ]
+
+        self.lower_module_and_test_output(
+            cat_width_module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
+    def test_vulkan_backend_cat_channels_dynamic_shapes(self):
+        class CatChannelsModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x1, x2, x3, x4, x5, x6):
+                return torch.cat([x1, x2, x3, x4, x5, x6], dim=1)
+
+        cat_channels_module = CatChannelsModule()
+
+        # Create 6 tensors with different channel counts but same batch, height, and width dimensions
+        sample_inputs = (
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=4
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=2
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=6
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=1
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=3
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=5
+        )
+
+        # Define dynamic shapes for the channels dimension (dim=1) for each input
+        channels1 = Dim("channels1", min=1, max=8)
+        channels2 = Dim("channels2", min=1, max=8)
+        channels3 = Dim("channels3", min=1, max=8)
+        channels4 = Dim("channels4", min=1, max=8)
+        channels5 = Dim("channels5", min=1, max=8)
+        channels6 = Dim("channels6", min=1, max=8)
+
+        dynamic_shapes = {
+            "x1": {1: channels1},
+            "x2": {1: channels2},
+            "x3": {1: channels3},
+            "x4": {1: channels4},
+            "x5": {1: channels5},
+            "x6": {1: channels6},
+        }
+
+        # Create test inputs with different channel combinations
+        test_inputs = [
+            (
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 2, 8, 6),  # channels=2
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 3, 8, 6),  # channels=3
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 2, 8, 6),  # channels=2
+            ),
+            (
+                torch.randn(2, 6, 8, 6),  # channels=6
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 3, 8, 6),  # channels=3
+                torch.randn(2, 2, 8, 6),  # channels=2
+                torch.randn(2, 4, 8, 6),  # channels=4
+                torch.randn(2, 1, 8, 6),  # channels=1
+            ),
+            (
+                torch.randn(2, 2, 8, 6),  # channels=2
+                torch.randn(2, 7, 8, 6),  # channels=7
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 3, 8, 6),  # channels=3
+                torch.randn(2, 2, 8, 6),  # channels=2
+            ),
+        ]
+
+        self.lower_module_and_test_output(
+            cat_channels_module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )

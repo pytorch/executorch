@@ -67,7 +67,7 @@ class TestSliceCopy(unittest.TestCase):
 
         inputs = (torch.randn(1, 1, 3, 3),)
         # Note that two of the slices are optimized away as they are identity.
-        self._test_slice_copy(ConvSlice(), inputs, 4, 2)
+        self._test_slice_copy(ConvSlice(), inputs, 2, 2)
 
     def test_fp32_slice_copy_default_start(self):
         """
@@ -95,7 +95,7 @@ class TestSliceCopy(unittest.TestCase):
         (
             Tester(module, inputs)
             .export()
-            .check_count({"torch.ops.aten.slice.Tensor": 3})
+            .check_count({"torch.ops.aten.slice.Tensor": 1})
             .to_edge_transform_and_lower()
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )

@@ -10,6 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from executorch.exir.debug_handle_utils import UNSET_DEBUG_HANDLE
+
 
 class ConvlLinearModel(nn.Module):
     """
@@ -42,6 +44,7 @@ class ConvlLinearModel(nn.Module):
         x = self.linear_layer(x)
         x = x + self.additional_bias
         x = x - 0.1
+        x = x.to(x.dtype)
         x = x * self.scale_factor
         x = x / (self.scale_factor + 1.0)
         x = F.relu(x)
@@ -57,9 +60,9 @@ class ConvlLinearModel(nn.Module):
         return torch.tensor([[[[1.0, 2.0], [3.0, 4.0]]]], requires_grad=True)
 
     @staticmethod
-    def get_expected_intermediate_outputs():
+    def get_edge_dialect_expected_intermediate_outputs():
         """
-        Returns the expected outputs of the debug handles and intermediate output mapping for this model for the given input.
+        Returns the expected outputs of the debug handles and intermediate output mapping for edge dialect graph of this model for the given input.
         """
         return {
             (1,): torch.tensor([[[[7.7000, 6.7000], [4.7000, 3.7000]]]]),
@@ -76,7 +79,7 @@ class ConvlLinearModel(nn.Module):
         }
 
     @staticmethod
-    def get_expected_debug_handle_to_op_names():
+    def get_edge_dialect_expected_debug_handle_to_op_names():
         """
         Returns the expected debug handle and op names mapping for this model for the given input.
         """
@@ -94,6 +97,46 @@ class ConvlLinearModel(nn.Module):
             (11,): ["aten_split_with_sizes_copy_default"],
         }
 
+    @staticmethod
+    def get_exported_program_expected_intermediate_outputs():
+        """
+        Returns the expected outputs of the debug handles and intermediate output mapping for export graph of this model for the given input.
+        """
+        return {
+            (UNSET_DEBUG_HANDLE,): torch.tensor([[5.4000, 13.5200]]),
+            (1,): torch.tensor([[[[7.7000, 6.7000], [4.7000, 3.7000]]]]),
+            (2,): torch.tensor([[7.7000, 6.7000, 4.7000, 3.7000]]),
+            (3,): torch.tensor([[5.0000, 14.1200]]),
+            (4,): torch.tensor([[5.5000, 13.6200]]),
+            (5,): torch.tensor([[5.4000, 13.5200]]),
+            (6,): torch.tensor([[10.8000, 6.7600]]),
+            (7,): torch.tensor([3.0000, 1.5000]),
+            (8,): torch.tensor([[3.6000, 4.5067]]),
+            (9,): torch.tensor([[3.6000, 4.5067]]),
+            (10,): torch.tensor([[0.9734, 0.9891]]),
+            (11,): [torch.tensor([[0.9734]]), torch.tensor([[0.9891]])],
+        }
+
+    @staticmethod
+    def get_exported_program_expected_debug_handle_to_op_names():
+        """
+        Returns the expected debug handle and op name mapping for this model for the given input.
+        """
+        return {
+            (UNSET_DEBUG_HANDLE,): ["_assert_tensor_metadata_default", "to"],
+            (1,): ["conv2d"],
+            (2,): ["view"],
+            (3,): ["linear"],
+            (4,): ["add"],
+            (5,): ["sub"],
+            (6,): ["mul"],
+            (7,): ["add_1"],
+            (8,): ["div"],
+            (9,): ["relu"],
+            (10,): ["sigmoid"],
+            (11,): ["split"],
+        }
+
 
 # Global model registry
 model_registry = {
@@ -102,13 +145,14 @@ model_registry = {
 }
 
 
-def check_if_final_outputs_match(model_name, actual_outputs_with_handles):
+def check_if_intermediate_outputs_match(
+    actual_outputs_with_handles, expected_outputs_with_handles
+):
     """
     Checks if the actual outputs match the expected outputs for the specified model.
     Returns True if all outputs match, otherwise returns False.
     """
-    model_instance = model_registry[model_name]
-    expected_outputs_with_handles = model_instance.get_expected_intermediate_outputs()
+
     if len(actual_outputs_with_handles) != len(expected_outputs_with_handles):
         return False
     for debug_handle, expected_output in expected_outputs_with_handles.items():
@@ -129,15 +173,13 @@ def check_if_final_outputs_match(model_name, actual_outputs_with_handles):
     return True
 
 
-def check_if_debug_handle_to_op_names_match(model_name, actual_debug_handle_to_op_name):
+def check_if_debug_handle_to_op_names_match(
+    actual_debug_handle_to_op_name, expected_debug_handle_to_op_name
+):
     """
     Checks if the actual op names match the expected op names for the specified model.
     Returns True if all match, otherwise returns False.
     """
-    model_instance = model_registry[model_name]
-    expected_debug_handle_to_op_name = (
-        model_instance.get_expected_debug_handle_to_op_names()
-    )
     if len(actual_debug_handle_to_op_name) != len(expected_debug_handle_to_op_name):
         return False
     for debug_handle, expected_op_name in expected_debug_handle_to_op_name.items():

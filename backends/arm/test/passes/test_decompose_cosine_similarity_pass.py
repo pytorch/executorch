@@ -28,13 +28,14 @@ modules = {"cosine_basic": CosineSimilarityModel()}
 
 
 @common.parametrize("module", modules)
-def test_decompose_cosine_similarity_tosa_BI(module):
+def test_decompose_cosine_similarity_tosa_INT(module):
 
     ops_after_pass = {
         "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 5,
         "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 3,
         "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 2,
-        "executorch_exir_dialects_edge__ops_aten_full_like_default": 1,
+        # TODO(masnesral): uncomment after https://github.com/pytorch/pytorch/pull/144765
+        # "executorch_exir_dialects_edge__ops_aten_full_default": 1,
         "executorch_exir_dialects_edge__ops_aten_maximum_default": 2,
         "executorch_exir_dialects_edge__ops_aten_reciprocal_default": 1,
     }

@@ -549,15 +549,13 @@ for (int i=0; i<out.size(); i++) {{
             return ""
 
         if ref.src_cpp_type == AT_TENSOR:
-            ret_str = f"{self.graph}{self.dot}get_tensor({ref.name}.value)"
-            ret_str += f"->virtual_resize({ref.src_cpp_name}.sizes().vec());\n"
+            ret_str = f"{self.graph}{self.dot}virtual_resize({ref.name}.value, "
+            ret_str += f"{ref.src_cpp_name}.sizes().vec());\n"
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             ret_str = ""
             ret_str += f"for (int i=0; i < {ref.name}_io_value_refs.size(); i++) {{\n"
-            ret_str += (
-                f"  {self.graph}{self.dot}get_tensor({ref.name}_io_value_refs[i].value)"
-            )
-            ret_str += f"->virtual_resize({ref.src_cpp_name}[i].sizes().vec());\n"
+            ret_str += f"  {self.graph}{self.dot}virtual_resize({ref.name}_io_value_refs[i].value, "
+            ret_str += f"{ref.src_cpp_name}[i].sizes().vec());\n"
             ret_str += "}\n"
         else:
             raise AssertionError(f"{ref.src_cpp_type} not expected")
@@ -681,9 +679,7 @@ for (int i=0; i<out.size(); i++) {{
             graph_build += self.set_output(self.refs["out"], include_declarations)
 
         graph_build += f"{self.graph}{self.dot}prepare();\n"
-        graph_build += f"{self.graph}{self.dot}encode_prepack();\n"
         graph_build += f"{self.graph}{self.dot}prepack();\n"
-        graph_build += f"{self.graph}{self.dot}encode_execute();\n"
 
         graph_build += "\n"
         return graph_build

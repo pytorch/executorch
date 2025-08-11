@@ -37,8 +37,10 @@ class MergedDataMap final : public NamedDataMap {
     // Check for duplicate keys.
     for (uint32_t k = 0; k < first->get_num_keys().get(); k++) {
       const auto key = first->get_key(k).get();
+      const auto error = second->get_tensor_layout(key).error();
+      // TODO(lfq): add API to check if key exists.
       ET_CHECK_OR_RETURN_ERROR(
-          second->get_tensor_layout(key).error() == Error::NotFound,
+          error == Error::NotFound || error == Error::NotImplemented,
           InvalidArgument,
           "Duplicate key %s.",
           key);
@@ -114,7 +116,7 @@ class MergedDataMap final : public NamedDataMap {
   ET_NODISCARD Result<const char*> get_key(uint32_t index) const override {
     uint32_t total_num_keys = get_num_keys().get();
     ET_CHECK_OR_RETURN_ERROR(
-        index >= 0 && index < total_num_keys,
+        index < total_num_keys,
         InvalidArgument,
         "Index %" PRIu32 " out of range of size %" PRIu32,
         index,

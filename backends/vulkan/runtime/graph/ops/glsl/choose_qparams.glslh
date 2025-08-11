@@ -9,61 +9,67 @@
 #ifndef CHOOSE_QPARAMS_GLSLH
 #define CHOOSE_QPARAMS_GLSLH
 
-// equivalent of the eps defined in the cpu implementation
-#define SMALL_SCALE_THRESHOLD 6.1e-5
-
-// Calculate scale and zero point from min and max values
-void calculate_scale_and_zero_point(
-    float min_val,
-    float max_val,
-    int qmin,
-    int qmax,
-    out float scale_val,
-    out int zero_point_val) {
-  // ensure we have zero included in our range
-  min_val = min(min_val, 0.0);
-  max_val = max(max_val, 0.0);
-
-  scale_val = (max_val - min_val) / float(qmax - qmin);
-
-  // Handle zero or very small scale
-  if (scale_val == 0.0 || isinf(1.0 / scale_val)) {
-    scale_val = 0.1;
+// mapping_type : 0 = ASYM, 1 = SYM, 2 = SYM_NO_CLIP
+void calc_scale_zp(
+    float lo, float hi,
+    int qmin, int qmax,
+    int mapping_type,
+    float eps,
+    out float scale, out int zp) {
+  // Handle case where lo and hi are +/-INF (no valid values found)
+  if (isinf(lo) || isinf(hi)) {
+    lo = 0.0;
+    hi = 0.0;
   }
 
-  // Cut off small scale
-  if (scale_val < SMALL_SCALE_THRESHOLD) {
-    float org_scale = scale_val;
-    scale_val = SMALL_SCALE_THRESHOLD;
+  float minv = min(lo, 0.0);
+  float maxv = max(hi, 0.0);
 
-    // Adjust min and max based on new scale
-    if (min_val == 0.0) {
-      max_val = SMALL_SCALE_THRESHOLD * float(qmax - qmin);
-    } else if (max_val == 0.0) {
-      min_val = -SMALL_SCALE_THRESHOLD * float(qmax - qmin);
-    } else {
-      float amplifier = SMALL_SCALE_THRESHOLD / org_scale;
-      min_val *= amplifier;
-      max_val *= amplifier;
+  if (mapping_type == 0) { // asymmetric
+    scale = (maxv - minv) / float(qmax - qmin);
+
+    // Handle zero or very small scale
+    if (scale == 0.0 || isinf(1.0/scale)) {
+      scale = eps;
     }
-  }
 
-  // Calculate zero point
-  float zero_point_from_min = float(qmin) - min_val / scale_val;
-  float zero_point_from_max = float(qmax) - max_val / scale_val;
-  float zero_point_from_min_error = abs(float(qmin)) - abs(min_val / scale_val);
-  float zero_point_from_max_error = abs(float(qmax)) - abs(max_val / scale_val);
-  float initial_zero_point = zero_point_from_min_error < zero_point_from_max_error
-      ? zero_point_from_min
-      : zero_point_from_max;
+    if (scale < eps) {
+      float org_scale = scale;
+      scale = eps;
 
-  // Nudge zero point to integer
-  if (initial_zero_point < float(qmin)) {
-    zero_point_val = qmin;
-  } else if (initial_zero_point > float(qmax)) {
-    zero_point_val = qmax;
-  } else {
-    zero_point_val = int(round(initial_zero_point));
+      // Adjust min and max based on new scale to maintain proper quantization range
+      if (minv == 0.0) {
+        maxv = eps * float(qmax - qmin);
+      } else if (maxv == 0.0) {
+        minv = -eps * float(qmax - qmin);
+      } else {
+        float amplifier = eps / org_scale;
+        minv *= amplifier;
+        maxv *= amplifier;
+      }
+    }
+
+    // Calculate zero_point (matching reference implementation)
+    float initial_zero_point = float(qmin) - round(minv / scale);
+    zp = int(clamp(initial_zero_point, float(qmin), float(qmax)));
+  } else { // symmetric -- centred
+    float scale_sym;
+    if (mapping_type == 1) { // SYM
+      float M = max(abs(minv), abs(maxv));
+      scale_sym = M / (float(qmax - qmin) * 0.5);
+    } else { // SYM_NO_CLIP
+      float smin = abs(minv) / max(abs(float(qmin)), 1.0); // Avoid division by zero
+      float smax = maxv / max(float(qmax), 1.0); // Avoid division by zero
+      scale_sym = max(smin, smax);
+    }
+
+    // Handle zero or very small scale
+    if (scale_sym == 0.0 || isinf(1.0/scale_sym)) {
+      scale_sym = eps;
+    }
+
+    scale = max(scale_sym, eps);
+    zp = int((qmax + qmin + 1) >> 1); // mid-point – always fits
   }
 }
 

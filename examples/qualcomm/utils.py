@@ -6,21 +6,24 @@
 
 # TODO: reenable pyre after fixing the issues
 # pyre-ignore-all-errors
-
 import argparse
+import csv
+import inspect
 import os
+import random
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
 import torch
 import torchao
+import transformers
 from executorch.backends.qualcomm.quantizer.quantizer import (
     ModuleQConfig,
     QnnQuantizer,
@@ -101,39 +104,47 @@ class SimpleADB:
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
 
-    def _adb(self, cmd):
+    def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
             cmds = ["adb", "-s", self.device_id]
         else:
             cmds = ["adb", "-H", self.host_id, "-s", self.device_id]
         cmds.extend(cmd)
 
-        subprocess.run(
-            cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
-        )
+        if output_callback:
+            result = subprocess.run(
+                cmds, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            output_callback(result)
+        else:
+            subprocess.run(
+                cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
+            )
 
-    def push(self, inputs=None, input_list=None, files=None):
-        self._adb(["shell", f"rm -rf {self.workspace}"])
-        self._adb(["shell", f"mkdir -p {self.workspace}"])
+    def push(self, inputs=None, input_list=None, files=None, init_env=True):
+        artifacts = []
+        if init_env:
+            self._adb(["shell", f"rm -rf {self.workspace}"])
+            self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-        # necessary artifacts
-        artifacts = [
-            *self.pte_path,
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
-            (
-                f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
-                f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
-            ),
-            (
-                f"{self.qnn_sdk}/lib/aarch64-android/"
-                f"libQnnHtpV{self.htp_arch}Stub.so"
-            ),
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
-            f"{self.build_path}/{self.runner}",
-            f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
-        ]
+            # necessary artifacts
+            artifacts = [
+                *self.pte_path,
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
+                (
+                    f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                    f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
+                ),
+                (
+                    f"{self.qnn_sdk}/lib/aarch64-android/"
+                    f"libQnnHtpV{self.htp_arch}Stub.so"
+                ),
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
+                f"{self.build_path}/{self.runner}",
+                f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
+            ]
         input_list_file, input_files = generate_inputs(
             self.working_dir, self.input_list_filename, inputs, input_list
         )
@@ -168,7 +179,12 @@ class SimpleADB:
             for file_name in files:
                 self._adb(["push", file_name, self.workspace])
 
-    def execute(self, custom_runner_cmd=None, method_index=0):
+    def execute(
+        self,
+        custom_runner_cmd=None,
+        method_index=0,
+        output_callback: Optional[Callable[[str], None]] = None,
+    ):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
@@ -200,8 +216,9 @@ class SimpleADB:
             )
         else:
             qnn_executor_runner_cmds = custom_runner_cmd
-
-        self._adb(["shell", f"{qnn_executor_runner_cmds}"])
+        self._adb(
+            ["shell", f"{qnn_executor_runner_cmds}"], output_callback=output_callback
+        )
 
     def pull(self, output_path, callback=None):
         self._adb(["pull", "-a", self.output_folder, output_path])
@@ -282,6 +299,74 @@ def make_quantizer(
     submodule_qconfig_list = submodule_qconfig_list or []
     quantizer.set_submodule_qconfig_list(submodule_qconfig_list)
     return quantizer
+
+
+def replace_module_with_custom_class(
+    model: torch.nn.Module,
+    target_class: torch.nn.Module,
+    custom_class: torch.nn.Module,
+    strict: bool = False,
+    extra_custom_kwargs: Optional[Dict] = None,
+):
+    """
+    Recursively replaces all instances of `target_class` in `model` with `custom_class`.
+
+    Args:
+        model (torch.nn.Module): The root module to search within.
+        target_class (type): The class to be replaced.
+        custom_class (type): The class to replace with.
+        strict (bool): Whether to strictly enforce that the keys in `state_dict` match the model.
+        extra_custom_kwargs: Extra keyword arguments to override or extend the constructor args.
+
+    Example:
+        >>> class MyDecoder(Decoder):
+        ...     def __init__(self, ...)
+        ...         super().__init__()
+        ...         freqs_cos, freqs_sin = precompute_freqs_cis(...)
+        ...         self.register_buffer("freqs_cos", freqs_cos)
+        ...         self.register_buffer("freqs_sin", freqs_sin)
+        ...
+        ...     def forward(self, x):
+        ...         ....
+        >>> model = Decoder()
+        >>> replace_module_with_custom_class(model, Decoder, MyDecoder)
+    """
+
+    def extract_init_args_from_instance(instance):
+        init_signature = inspect.signature(instance.__init__)
+        init_params = [
+            param
+            for param in init_signature.parameters.values()
+            if param.name != "self"
+        ]
+
+        extracted_args = {}
+        for param in init_params:
+            name = param.name
+            if hasattr(instance, name):
+                extracted_args[name] = getattr(instance, name)
+            elif param.default is not inspect.Parameter.empty:
+                extracted_args[name] = param.default
+
+        return extracted_args
+
+    if extra_custom_kwargs is None:
+        extra_custom_kwargs = {}
+
+    for name, child in model.named_children():
+        if isinstance(child, target_class):
+            state_dict = child.state_dict()
+
+            original_args = extract_init_args_from_instance(child)
+            new_module = custom_class(**{**original_args, **extra_custom_kwargs})
+            new_module.load_state_dict(state_dict, strict=strict)
+            new_module.eval()
+
+            setattr(model, name, new_module)
+        else:
+            replace_module_with_custom_class(
+                child, target_class, custom_class, strict, extra_custom_kwargs
+            )
 
 
 # TODO: refactor to support different backends
@@ -452,6 +537,32 @@ def class_agnostic_mIoU(predictions, targets):
     return total_iou / len(predictions)
 
 
+def evaluate_squad(predicted_texts: List[str], target_texts: List[str]):
+    import evaluate
+
+    squad_metric = evaluate.load("squad")
+
+    predictions = []
+    references = []
+
+    for i, (pred, target) in enumerate(zip(predicted_texts, target_texts)):
+        predictions.append({"id": str(i), "prediction_text": pred.strip()})
+        references.append(
+            {
+                "id": str(i),
+                "answers": {
+                    "text": [target.strip()],
+                    "answer_start": [0],  # answer_start could be dummy
+                },
+            }
+        )
+
+    results = squad_metric.compute(predictions=predictions, references=references)
+    results["f1"] /= 100
+    results["exact_match"] /= 100
+    return results
+
+
 def get_imagenet_dataset(
     dataset_path, data_size, image_shape, crop_size=None, shuffle=True
 ):
@@ -489,14 +600,9 @@ def get_imagenet_dataset(
 
 
 def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffle=True):
-    import random
-
-    import transformers
-
-    from torch.utils.data import Dataset
 
     def get_data_loader():
-        class MaskedSentencesDataset(Dataset):
+        class MaskedSentencesDataset(torch.utils.data.Dataset):
             def __init__(self, dataset_path, tokenizer, data_size) -> None:
                 self.data_size = data_size
                 self.dataset = self._get_val_dataset(dataset_path, data_size, tokenizer)
@@ -546,6 +652,108 @@ def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffl
         inputs.append((input_ids, attention_mask))
         targets.append(target)
         input_list += f"input_{index}_0.raw input_{index}_1.raw\n"
+
+    return inputs, targets, input_list
+
+
+def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
+    dataset_path,
+    tokenizer,
+    data_size,
+    max_hidden_seq_length=384,
+    shuffle=True,
+):
+
+    def get_data_loader(max_hidden_seq_length):
+        class SquadSeq2SeqDataset(torch.utils.data.Dataset):
+            def __init__(
+                self,
+                dataset_path,
+                tokenizer,
+                data_size,
+                max_hidden_seq_length,
+            ):
+                self.max_hidden_seq_length = max_hidden_seq_length
+                self.tokenizer = tokenizer
+                self.samples = self._load_and_process(dataset_path, data_size)
+
+            def _load_and_process(self, path, max_samples):
+                with open(path, "r", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    rows = list(reader)
+                if shuffle:
+                    random.shuffle(rows)
+                samples = []
+                for row in rows:
+                    question = row["question"].strip()
+                    context = row["context"].strip()
+                    answer = row["answer"].strip()
+                    if not question or not context or not answer:
+                        continue
+                    input_text = f"question: {question} context: {context}"
+                    target_text = answer
+                    samples.append((input_text, target_text))
+                    if len(samples) >= max_samples:
+                        break
+                return samples
+
+            def __len__(self):
+                return len(self.samples)
+
+            def __getitem__(self, idx):
+                input_text, target_text = self.samples[idx]
+                model_input = tokenizer(
+                    input_text,
+                    truncation=True,
+                    padding="max_length",
+                    max_length=self.max_hidden_seq_length,
+                    return_tensors="pt",
+                )
+
+                label = tokenizer(
+                    target_text,
+                    truncation=True,
+                    padding="max_length",
+                    max_length=64,
+                    return_tensors="pt",
+                )
+                return {
+                    "input_ids": model_input["input_ids"].squeeze(0),
+                    "attention_mask": model_input["attention_mask"].squeeze(0),
+                    "decoder_input_ids": torch.tensor([0], dtype=torch.long),
+                    "labels": label["input_ids"].squeeze(0),
+                }
+
+        dataset = SquadSeq2SeqDataset(
+            dataset_path, tokenizer, data_size, max_hidden_seq_length
+        )
+        collator = transformers.DataCollatorForSeq2Seq(tokenizer)
+        return torch.utils.data.DataLoader(
+            dataset, batch_size=1, shuffle=shuffle, collate_fn=collator
+        )
+
+    inputs, targets, input_list = [], [], ""
+    data_loader = get_data_loader(max_hidden_seq_length)
+    for idx, batch in enumerate(data_loader):
+        if len(inputs) >= data_size:
+            break
+        input_ids = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
+        decoder_input_ids = batch["decoder_input_ids"]
+        labels = batch["labels"][0]
+
+        if (labels != -100).sum().item() == 0:
+            continue
+
+        inputs.append(
+            (
+                input_ids.to(torch.long),
+                attention_mask.to(torch.long),
+                decoder_input_ids,
+            )
+        )
+        targets.append(labels)
+        input_list += f"input_{idx}_0.raw input_{idx}_1.raw input_{idx}_2.raw\n"
 
     return inputs, targets, input_list
 

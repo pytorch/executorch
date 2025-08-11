@@ -86,7 +86,7 @@ int loadResult = mModule.load();
 
 * `modelCategory`: Indicate whether it’s a text-only or vision model
 * `modePath`: path to the .pte file
-* `tokenizerPath`: path to the tokenizer .bin file
+* `tokenizerPath`: path to the tokenizer file
 * `temperature`: model parameter to adjust the randomness of the model’s output
 
 

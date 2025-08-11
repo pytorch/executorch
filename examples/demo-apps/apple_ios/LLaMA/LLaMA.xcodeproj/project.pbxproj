@@ -44,7 +44,6 @@
 		03D151D02E0E9ACB007A38BE /* text_llm_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151CD2E0E9ACB007A38BE /* text_llm_runner.cpp */; };
 		03D151D12E0E9ACB007A38BE /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D151CC2E0E9ACB007A38BE /* text_decoder_runner.cpp */; };
 		03D151D92E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 03D151D42E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm */; };
-		03D151DA2E0E9E43007A38BE /* BUCK in Resources */ = {isa = PBXBuildFile; fileRef = 03D151D72E0E9E43007A38BE /* BUCK */; };
 		03D151DB2E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D151D32E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h */; };
 		03D151DC2E0E9E43007A38BE /* ExecuTorchLLM.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D151D22E0E9E43007A38BE /* ExecuTorchLLM.h */; };
 		26A6A4282C8A3769005A761E /* ImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26A6A4272C8A3769005A761E /* ImagePicker.swift */; };
@@ -135,7 +134,6 @@
 		03D151D22E0E9E43007A38BE /* ExecuTorchLLM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExecuTorchLLM.h; sourceTree = "<group>"; };
 		03D151D32E0E9E43007A38BE /* ExecuTorchTextLLMRunner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExecuTorchTextLLMRunner.h; sourceTree = "<group>"; };
 		03D151D42E0E9E43007A38BE /* ExecuTorchTextLLMRunner.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ExecuTorchTextLLMRunner.mm; sourceTree = "<group>"; };
-		03D151D72E0E9E43007A38BE /* BUCK */ = {isa = PBXFileReference; lastKnownFileType = text; path = BUCK; sourceTree = "<group>"; };
 		26A6A4272C8A3769005A761E /* ImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePicker.swift; sourceTree = "<group>"; };
 		306A71352DC1DC0F00936B1F /* hf_tokenizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = hf_tokenizer.h; sourceTree = "<group>"; };
 		306A71362DC1DC0F00936B1F /* pcre2_regex.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pcre2_regex.h; sourceTree = "<group>"; };
@@ -362,11 +360,10 @@
 			isa = PBXGroup;
 			children = (
 				03D151D62E0E9E43007A38BE /* ExecuTorchLLM */,
-				03D151D72E0E9E43007A38BE /* BUCK */,
 			);
 			name = apple;
-			path = /Users/shoumikhin/executorch/extension/llm/apple;
-			sourceTree = "<absolute>";
+			path = ../../../../../../extension/llm/apple;
+			sourceTree = "<group>";
 		};
 		F292B0842D88B0D200BE6839 /* tokenizers */ = {
 			isa = PBXGroup;
@@ -548,7 +545,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03D151DA2E0E9E43007A38BE /* BUCK in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -952,7 +948,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = "swiftpm-0.8.0.20250711";
+				branch = "swiftpm-0.8.0.20250724";
 				kind = branch;
 			};
 		};

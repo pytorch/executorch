@@ -8,10 +8,11 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]
@@ -81,9 +82,9 @@ class Gelu(torch.nn.Module):
 
 
 @common.parametrize("test_data", Gelu.test_data)
-def test_gelu_tosa_MI(test_data: input_t1):
+def test_gelu_tosa_FP(test_data: input_t1):
     approximate, test_data = test_data()
-    TosaPipelineMI[input_t1](
+    TosaPipelineFP[input_t1](
         Gelu(approximate),
         (test_data,),
         Gelu.aten_op,
@@ -93,9 +94,9 @@ def test_gelu_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", Gelu.test_data)
-def test_gelu_tosa_BI(test_data: input_t1):
+def test_gelu_tosa_INT(test_data: input_t1):
     approximate, test_data = test_data()
-    TosaPipelineBI[input_t1](
+    TosaPipelineINT[input_t1](
         Gelu(approximate),
         (test_data,),
         Gelu.aten_op,
@@ -105,9 +106,9 @@ def test_gelu_tosa_BI(test_data: input_t1):
 
 @common.parametrize("test_data", Gelu.test_data)
 @common.XfailIfNoCorstone300
-def test_gelu_u55_BI(test_data: input_t1):
+def test_gelu_u55_INT(test_data: input_t1):
     approximate, test_data = test_data()
-    EthosU55PipelineBI[input_t1](
+    EthosU55PipelineINT[input_t1](
         Gelu(approximate),
         (test_data,),
         Gelu.aten_op,
@@ -117,11 +118,39 @@ def test_gelu_u55_BI(test_data: input_t1):
 
 @common.parametrize("test_data", Gelu.test_data)
 @common.XfailIfNoCorstone320
-def test_gelu_u85_BI(test_data: input_t1):
+def test_gelu_u85_INT(test_data: input_t1):
     approximate, test_data = test_data()
-    EthosU85PipelineBI[input_t1](
+    EthosU85PipelineINT[input_t1](
         Gelu(approximate),
         (test_data,),
         Gelu.aten_op,
         Gelu.exir_op,
     ).run()
+
+
+@common.parametrize("test_data", Gelu.test_data)
+@common.SkipIfNoModelConverter
+def test_gelu_vgf_FP(test_data: input_t1):
+    approximate, data = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Gelu(approximate),
+        (data,),
+        Gelu.aten_op,
+        Gelu.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Gelu.test_data)
+@common.SkipIfNoModelConverter
+def test_gelu_vgf_INT(test_data: input_t1):
+    approximate, data = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Gelu(approximate),
+        (data,),
+        Gelu.aten_op,
+        Gelu.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
