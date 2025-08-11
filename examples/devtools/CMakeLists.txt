@@ -65,6 +65,10 @@ target_link_libraries(
   portable_kernels
 )
 
+if (EXECUTORCH_BUILD_VULKAN)
+  target_link_libraries(example_runner vulkan_backend)
+endif()
+
 if(EXECUTORCH_BUILD_COREML)
   find_library(ACCELERATE_FRAMEWORK Accelerate)
   find_library(COREML_FRAMEWORK CoreML)
