@@ -430,20 +430,24 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
     // We could load the .so content directly. But I don't want to deal with
     // relocation. So dumping a file and using dlopen
 
-    // Create a temporary file
-    std::ofstream outfile("/tmp/test.so", std::ios::binary);
+    // // Create a temporary file
+    // std::ofstream outfile("/tmp/test.so", std::ios::binary);
 
-    // Write the ELF buffer to the temporary file
-    outfile.write((char*)processed->data(), sizeof(void*) * processed->size());
+    // // Write the ELF buffer to the temporary file
+    // outfile.write((char*)processed->data(), sizeof(void*) * processed->size());
 
-    // Finish writing the file to disk
-    outfile.close();
+    // // Finish writing the file to disk
+    // outfile.close();
 
-    // Free the in-memory buffer
-    processed->Free();
+    // // Free the in-memory buffer
+    // processed->Free();
+
+    const char* so_path = static_cast<const char*>(processed->data());
+
+    printf("so path: %s\n", so_path);
 
     // Load the ELF using dlopen
-    void* so_handle = dlopen("/tmp/test.so", RTLD_LAZY | RTLD_LOCAL);
+    void* so_handle = dlopen(so_path, RTLD_LAZY | RTLD_LOCAL);
     if (so_handle == nullptr) {
       std::cout << dlerror() << std::endl;
       return Error::AccessFailed;
