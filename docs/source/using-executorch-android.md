@@ -53,7 +53,7 @@ You can also directly specify an AAR file in the app. We upload pre-built AAR to
 
 | Version | AAR | SHASUMS |
 | ------- | --- | ------- |
-| [v0.7.0](https://github.com/pytorch/executorch/releases/tag/v0.7.0-rc5) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.7.0-rc5/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.7.0-rc5/executorch.aar.sha256sums) |
+| [v0.7.0](https://github.com/pytorch/executorch/releases/tag/v0.7.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/0.7.0/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/0.7.0/executorch.aar.sha256sums) |
 | [v0.6.0](https://github.com/pytorch/executorch/releases/tag/v0.6.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar.sha256sums) |
 
 ### Snapshots from main branch
