@@ -6,6 +6,8 @@ This file provides you the instructions to run LLM Decoder model with different 
  2. LLAMA3.2 1B
  3. LLAMA3.2 3B
  4. QWEN2.5 0.5B
+ 5. QWEN3 0.6B / 1.7B
+ 6. Phi4-mini-instruct
 
 We offer the following modes to execute the model:
 
