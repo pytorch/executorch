@@ -2150,3 +2150,147 @@ class TestVulkanBackend(unittest.TestCase):
         )
 
         self.lower_module_and_test_output(custom_complex_module, sample_inputs)
+
+    def test_vulkan_backend_cat_width_dynamic_shapes(self):
+        class CatWidthModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x1, x2, x3, x4, x5, x6):
+                return torch.cat([x1, x2, x3, x4, x5, x6], dim=3)
+
+        cat_width_module = CatWidthModule()
+
+        # Create 6 tensors with different widths but same batch, channel, and height dimensions
+        sample_inputs = (
+            torch.randn(size=(2, 3, 4, 5), dtype=torch.float32),  # width=5
+            torch.randn(size=(2, 3, 4, 3), dtype=torch.float32),  # width=3
+            torch.randn(size=(2, 3, 4, 7), dtype=torch.float32),  # width=7
+            torch.randn(size=(2, 3, 4, 2), dtype=torch.float32),  # width=2
+            torch.randn(size=(2, 3, 4, 4), dtype=torch.float32),  # width=4
+            torch.randn(size=(2, 3, 4, 6), dtype=torch.float32),  # width=6
+        )
+
+        # Define dynamic shapes for the width dimension (dim=3) for each input
+        width1 = Dim("width1", min=1, max=10)
+        width2 = Dim("width2", min=1, max=10)
+        width3 = Dim("width3", min=1, max=10)
+        width4 = Dim("width4", min=1, max=10)
+        width5 = Dim("width5", min=1, max=10)
+        width6 = Dim("width6", min=1, max=10)
+
+        dynamic_shapes = {
+            "x1": {3: width1},
+            "x2": {3: width2},
+            "x3": {3: width3},
+            "x4": {3: width4},
+            "x5": {3: width5},
+            "x6": {3: width6},
+        }
+
+        # Create test inputs with different width combinations
+        test_inputs = [
+            (
+                torch.randn(2, 3, 4, 2),  # width=2
+                torch.randn(2, 3, 4, 1),  # width=1
+                torch.randn(2, 3, 4, 3),  # width=3
+                torch.randn(2, 3, 4, 1),  # width=1
+                torch.randn(2, 3, 4, 2),  # width=2
+                torch.randn(2, 3, 4, 4),  # width=4
+            ),
+            (
+                torch.randn(2, 3, 4, 8),  # width=8
+                torch.randn(2, 3, 4, 2),  # width=2
+                torch.randn(2, 3, 4, 1),  # width=1
+                torch.randn(2, 3, 4, 3),  # width=3
+                torch.randn(2, 3, 4, 5),  # width=5
+                torch.randn(2, 3, 4, 1),  # width=1
+            ),
+            (
+                torch.randn(2, 3, 4, 1),  # width=1
+                torch.randn(2, 3, 4, 9),  # width=9
+                torch.randn(2, 3, 4, 2),  # width=2
+                torch.randn(2, 3, 4, 4),  # width=4
+                torch.randn(2, 3, 4, 1),  # width=1
+                torch.randn(2, 3, 4, 3),  # width=3
+            ),
+        ]
+
+        self.lower_module_and_test_output(
+            cat_width_module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
+    def test_vulkan_backend_cat_channels_dynamic_shapes(self):
+        class CatChannelsModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x1, x2, x3, x4, x5, x6):
+                return torch.cat([x1, x2, x3, x4, x5, x6], dim=1)
+
+        cat_channels_module = CatChannelsModule()
+
+        # Create 6 tensors with different channel counts but same batch, height, and width dimensions
+        sample_inputs = (
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=4
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=2
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=6
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=1
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=3
+            torch.randn(size=(2, 8, 8, 6), dtype=torch.float32),  # channels=5
+        )
+
+        # Define dynamic shapes for the channels dimension (dim=1) for each input
+        channels1 = Dim("channels1", min=1, max=8)
+        channels2 = Dim("channels2", min=1, max=8)
+        channels3 = Dim("channels3", min=1, max=8)
+        channels4 = Dim("channels4", min=1, max=8)
+        channels5 = Dim("channels5", min=1, max=8)
+        channels6 = Dim("channels6", min=1, max=8)
+
+        dynamic_shapes = {
+            "x1": {1: channels1},
+            "x2": {1: channels2},
+            "x3": {1: channels3},
+            "x4": {1: channels4},
+            "x5": {1: channels5},
+            "x6": {1: channels6},
+        }
+
+        # Create test inputs with different channel combinations
+        test_inputs = [
+            (
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 2, 8, 6),  # channels=2
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 3, 8, 6),  # channels=3
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 2, 8, 6),  # channels=2
+            ),
+            (
+                torch.randn(2, 6, 8, 6),  # channels=6
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 3, 8, 6),  # channels=3
+                torch.randn(2, 2, 8, 6),  # channels=2
+                torch.randn(2, 4, 8, 6),  # channels=4
+                torch.randn(2, 1, 8, 6),  # channels=1
+            ),
+            (
+                torch.randn(2, 2, 8, 6),  # channels=2
+                torch.randn(2, 7, 8, 6),  # channels=7
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 1, 8, 6),  # channels=1
+                torch.randn(2, 3, 8, 6),  # channels=3
+                torch.randn(2, 2, 8, 6),  # channels=2
+            ),
+        ]
+
+        self.lower_module_and_test_output(
+            cat_channels_module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
