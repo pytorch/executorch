@@ -28,17 +28,17 @@ The AAR library can be used for generic Android device with arm64-v8a or x86_64 
 
 ExecuTorch is available on [Maven Central](https://mvnrepository.com/artifact/org.pytorch/executorch-android).
 
-Simply add the target [`org.pytorch:executorch-android:0.6.0-rc1`](https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/0.6.0-rc1/) to your Android app dependency (build.gradle), and build your app.
+Simply add the target [`org.pytorch:executorch-android:0.7.0`](https://repo.maven.apache.org/maven2/org/pytorch/executorch-android/0.7.0/) to your Android app dependency (build.gradle), and build your app.
 
 For example:
 ```
 # app/build.gradle.kts
 dependencies {
-    implementation("org.pytorch:executorch-android:0.6.0-rc1")
+    implementation("org.pytorch:executorch-android:0.7.0")
 }
 ```
 
-Note: If you want to use release v0.5.0, please use dependency `org.pytorch:executorch-android:0.5.1`.
+Note: If you want to use release v0.6.0, please use dependency `org.pytorch:executorch-android:0.6.0`.
 
 Click the screenshot below to watch the *demo video* on how to add the package and run a simple ExecuTorch model with Android Studio.
 <a href="_static/img/android_studio.mp4">
@@ -53,8 +53,8 @@ You can also directly specify an AAR file in the app. We upload pre-built AAR to
 
 | Version | AAR | SHASUMS |
 | ------- | --- | ------- |
-| [v0.6.0-rc1](https://github.com/pytorch/executorch/releases/tag/v0.6.0-rc1) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar.sha256sums) |
-| [v0.5.0](https://github.com/pytorch/executorch/releases/tag/v0.5.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.5.0-rc3/executorch.aar.sha256sums) |
+| [v0.7.0](https://github.com/pytorch/executorch/releases/tag/v0.7.0-rc5) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.7.0-rc5/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.7.0-rc5/executorch.aar.sha256sums) |
+| [v0.6.0](https://github.com/pytorch/executorch/releases/tag/v0.6.0) | [executorch.aar](https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar) | [executorch.aar.sha256sums](https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar.sha256sums) |
 
 ### Snapshots from main branch
 
@@ -90,7 +90,7 @@ implementation("com.facebook.fbjni:fbjni:0.5.1")
 In your app working directory, such as executorch/examples/demo-apps/android/LlamaDemo,
 ```
 mkdir -p app/libs
-curl https://ossci-android.s3.amazonaws.com/executorch/release/v0.6.0-rc1/executorch.aar -o app/libs/executorch.aar
+curl https://ossci-android.s3.amazonaws.com/executorch/release/v0.7.0/executorch.aar -o app/libs/executorch.aar
 ```
 
 And include it in gradle:
