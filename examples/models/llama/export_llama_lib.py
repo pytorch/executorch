@@ -1078,6 +1078,22 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         llm_config.backend.xnnpack.enabled = True
 
     if llm_config.backend.xnnpack.enabled:
+        if llm_config.export.foundation_weights_file is not None:
+            gen_tag_fn: Callable[[torch.fx.Node], str] = lambda x: (
+                llm_config.export.foundation_weights_file
+                if "lora" not in x.name
+                else None
+            )
+
+            from executorch.exir.passes.external_constants_pass import (
+                delegate_external_constants_pass_unlifted,
+            )
+
+            delegate_external_constants_pass_unlifted(
+                gm=builder_exported.pre_autograd_graph_module,
+                gen_tag_fn=gen_tag_fn,
+            )
+
         builder = _to_edge_and_lower_llama_xnnpack(
             builder_exported,
             modelname,
