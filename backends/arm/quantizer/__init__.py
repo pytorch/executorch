@@ -19,11 +19,19 @@ from .arm_quantizer_utils import is_annotated  # noqa
 try:
     import executorch.extension.pybindings.portable_lib
     import executorch.kernels.quantized  # noqa
-except:
+except ImportError as e:
     import logging
 
-    logging.info(
-        "Failed to load portable_lib and quantized_aot_lib. To run quantized kernels AOT, either build "
+    logging.warning(
+        f"Failed to load portable_lib and quantized_aot_lib: {e}. To run quantized kernels AOT, either build "
+        "Executorch with pybindings, or load your own custom built op library using torch.ops.load_library."
+    )
+    del logging
+except Exception as e:
+    import logging
+
+    logging.warning(
+        f"Unexpected error loading quantized ops: {e}. To run quantized kernels AOT, either build "
         "Executorch with pybindings, or load your own custom built op library using torch.ops.load_library."
     )
     del logging

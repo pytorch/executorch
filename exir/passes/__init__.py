@@ -314,6 +314,18 @@ def make_alloc_node(
     return alloc
 
 
+# Ensure quantized operators are available for ToOutVarPass
+# This prevents "Missing out variants" errors for quantized_decomposed operators
+try:
+    from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
+    # Also import ExecutorTorch quantized kernels which define the out variants
+    import executorch.extension.pybindings.portable_lib  # noqa: F401
+    import executorch.kernels.quantized  # noqa: F401
+except ImportError:
+    # Quantized operators are optional, continue without them
+    pass
+
+
 class ToOutVarPass(PassBase):
     def __init__(self, ignore_to_out_var_failure: bool = False) -> None:
         self.ignore_to_out_var_failure = ignore_to_out_var_failure
