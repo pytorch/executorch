@@ -204,14 +204,14 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
+        install_executorch
 
         .ci/scripts/setup-arm-baremetal-tools.sh
 
         # Increase number of files user can monitor to bypass buck failures.
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
-
+        pip list
         ARM_TEST=${{ matrix.test_arm_baremetal }}
 
         # Test test_arm_baremetal.sh with test
