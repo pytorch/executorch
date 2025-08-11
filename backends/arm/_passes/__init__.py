@@ -37,6 +37,7 @@ from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
+from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv import DecomposeGroupedConv  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
