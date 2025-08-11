@@ -15,10 +15,11 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor, int]
@@ -76,8 +77,8 @@ class FullLike(torch.nn.Module):
         return input_tensor + torch.full_like(input_tensor, value)
 
 
-def test_full_tosa_MI_only():
-    pipeline = TosaPipelineMI[input_t1](
+def test_full_tosa_FP_only():
+    pipeline = TosaPipelineFP[input_t1](
         Full(),
         (),
         aten_op=[],
@@ -86,9 +87,9 @@ def test_full_tosa_MI_only():
     pipeline.run()
 
 
-def test_full_tosa_MI_const():
+def test_full_tosa_FP_const():
     test_data = (torch.rand((2, 2, 3, 3)) * 10,)
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         AddConstFull(),
         test_data,
         aten_op=[],
@@ -98,8 +99,8 @@ def test_full_tosa_MI_const():
 
 
 @common.parametrize("test_data", FullLike.test_parameters)
-def test_full_like_tosa_MI(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
+def test_full_like_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
         FullLike(),
         test_data(),
         aten_op=[],
@@ -108,31 +109,9 @@ def test_full_like_tosa_MI(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", AddVariableFull.test_parameters)
-def test_full_tosa_MI(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
-        AddVariableFull(),
-        test_data,
-        aten_op=[],
-        exir_op=exir_op,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", AddVariableFull.test_parameters)
-def test_full_tosa_BI(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
-        AddVariableFull(),
-        test_data,
-        aten_op=[],
-        exir_op=exir_op,
-    )
-    pipeline.run()
-
-
 @common.parametrize("test_data", FullLike.test_parameters)
-def test_full_like_tosa_BI(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
+def test_full_like_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
         FullLike(),
         test_data(),
         aten_op=[],
@@ -143,9 +122,82 @@ def test_full_like_tosa_BI(test_data: Tuple):
 
 
 @common.parametrize("test_data", AddVariableFull.test_parameters)
+def test_full_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
+        AddVariableFull(),
+        test_data,
+        aten_op=[],
+        exir_op=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddVariableFull.test_parameters)
+def test_full_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
+        AddVariableFull(),
+        test_data,
+        aten_op=[],
+        exir_op=exir_op,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_full_vgf_FP_only():
+    pipeline = VgfPipeline[input_t1](
+        Full(),
+        (),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_full_vgf_FP_const():
+    test_data = (torch.rand((2, 2, 3, 3)) * 10,)
+    pipeline = VgfPipeline[input_t1](
+        AddConstFull(),
+        test_data,
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddVariableFull.test_parameters)
+@common.SkipIfNoModelConverter
+def test_full_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        AddVariableFull(),
+        test_data,
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddVariableFull.test_parameters)
+@common.SkipIfNoModelConverter
+def test_full_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        AddVariableFull(),
+        test_data,
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddVariableFull.test_parameters)
 @common.XfailIfNoCorstone320
-def test_full_u85_BI(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_full_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         AddVariableFull(),
         test_data,
         aten_ops=[],
@@ -158,8 +210,8 @@ def test_full_u85_BI(test_data: Tuple):
 
 @common.parametrize("test_data", AddVariableFull.test_parameters)
 @common.XfailIfNoCorstone300
-def test_full_u55_BI(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_full_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         AddVariableFull(),
         test_data,
         aten_ops=[],
@@ -174,9 +226,9 @@ def test_full_u55_BI(test_data: Tuple):
 @pytest.mark.skip(
     "This fails since full outputs int64 by default if 'fill_value' is integer, which our backend doesn't support."
 )
-def test_full_tosa_MI_integer_value():
+def test_full_tosa_FP_integer_value():
     test_data = (torch.ones((2, 2)), 1.0)
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         AddVariableFull(),
         test_data,
         aten_op=[],
@@ -191,9 +243,9 @@ def test_full_tosa_MI_integer_value():
 @pytest.mark.skip(
     "This fails since the fill value in the full tensor is set at compile time by the example data (1.)."
 )
-def test_full_tosa_MI_set_value_at_runtime(tosa_version: str):
+def test_full_tosa_FP_set_value_at_runtime(tosa_version: str):
     test_data = (torch.ones((2, 2)), 1.0)
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         AddVariableFull(),
         test_data,
         aten_op=[],

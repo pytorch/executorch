@@ -26,10 +26,11 @@ void resize_unary_op_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(0);
 
-  out->virtual_resize(self->sizes());
+  const std::vector<int64_t> self_sizes = graph->sizes_of(self);
+  graph->virtual_resize(out, self_sizes);
 }
 
 void add_unary_op_node(
