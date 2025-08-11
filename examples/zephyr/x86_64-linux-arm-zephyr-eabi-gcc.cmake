@@ -97,10 +97,6 @@ add_compile_options(
   # -Wall -Wextra -Wcast-align -Wdouble-promotion -Wformat
   # -Wmissing-field-initializers -Wnull-dereference -Wredundant-decls -Wshadow
   # -Wswitch -Wswitch-default -Wunused -Wno-redundant-decls
-  -Wno-stringop-overread
-  -Wno-error=format=
-  -Wno-error=maybe-uninitialized
-  -Wno-error=deprecated-declarations
-  -Wno-error=shift-count-overflow
-  -Wno-psabi
+  -Wno-stringop-overread -Wno-error=format= -Wno-error=maybe-uninitialized
+  -Wno-error=deprecated-declarations -Wno-error=shift-count-overflow -Wno-psabi
 )
