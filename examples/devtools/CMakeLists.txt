@@ -65,7 +65,7 @@ target_link_libraries(
   portable_kernels
 )
 
-if (EXECUTORCH_BUILD_VULKAN)
+if(EXECUTORCH_BUILD_VULKAN)
   target_link_libraries(example_runner vulkan_backend)
 endif()
 

@@ -893,6 +893,13 @@ jobs:
 
         # Test models serially
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh mv2
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh mv3
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh edsr
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh resnet18
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh resnet50
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh dl3
+
+
 
   nxp-build-test:
     name: nxp-build-test
