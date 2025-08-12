@@ -44,6 +44,13 @@ list(
 
 add_library(executorch_wasm OBJECT wasm_bindings.cpp)
 
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  list(APPEND link_libraries etdump)
+  target_compile_definitions(
+    executorch_wasm PUBLIC EXECUTORCH_ENABLE_EVENT_TRACER
+  )
+endif()
+
 target_compile_options(executorch_wasm PUBLIC ${_common_compile_options})
 target_include_directories(
   executorch_wasm PUBLIC ${_common_include_directories}
