@@ -82,6 +82,7 @@ The output `my_project.js` should contain both the emitted JS code and the conte
 - `getMethods()`: Returns the list of methods in the model.
 - `loadMethod(methodName)`: Load a method from the model.
 - `getMethodMetadata(methodName)`: Get the metadata of a method.
+- `etdump()`: If enabled, flushes the etdump buffer and return the results.
 - `execute(methodName, inputs)`: Execute a method with the given inputs.
 - `forward(inputs)`: Execute the forward method with the given inputs.
 - `delete()`: Delete the model from memory.
@@ -117,6 +118,10 @@ The output `my_project.js` should contain both the emitted JS code and the conte
 - `nBytes`: The number of bytes in the tensor.
 - `name`: The name of the tensor.
 - These are value types and do not need to be manually deleted.
+
+### ETDumpResult
+- `buffer`: The buffer containing the ETDump data.
+- `delete()`: Delete the ETDumpResult from memory.
 
 ### ScalarType
 - Only `Float` and `Long` are currently supported.
