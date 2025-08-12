@@ -18,8 +18,8 @@ namespace vkcompute {
 
 void add_permute_node(
     ComputeGraph& graph,
-    ValueRef in,
-    const std::vector<int64_t>& permute_dims,
-    ValueRef out);
+    const ValueRef in,
+    const ValueRef permute_dims,
+    const ValueRef out);
 
 } // namespace vkcompute

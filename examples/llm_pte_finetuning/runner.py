@@ -84,7 +84,7 @@ def main() -> None:
         # params run from [param_start, outputs_end]
         grad_start = et_mod.run_method("__et_training_gradients_index_forward", [])[0]
         param_start = et_mod.run_method("__et_training_parameters_index_forward", [])[0]
-        learning_rate = 5e-3
+        learning_rate = cfg.learning_rate
         f.seek(0)
         losses = []
         for i, batch in tqdm(enumerate(train_dataloader), total=num_training_steps):

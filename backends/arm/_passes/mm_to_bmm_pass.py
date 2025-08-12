@@ -12,7 +12,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     insert_q_dq_pair,
 )
-from executorch.backends.arm.tosa_quant_utils import dq_op, q_op
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node
@@ -47,7 +47,7 @@ class ConvertMmToBmmPass(ExportPass):
 
                 with graph.inserting_before(node):
                     unsqueeze_before = create_node(
-                        graph, exir_ops.edge.aten.unsqueeze_copy.default
+                        graph, exir_ops.edge.aten.unsqueeze_copy.default, from_node=node
                     )
                     unsqueeze_before.args = (
                         input_node,  # Input is node's original input
@@ -56,15 +56,16 @@ class ConvertMmToBmmPass(ExportPass):
                     node.replace_input_with(input_node, unsqueeze_before)
 
                 # If Quantized we must insert unsqueeze --> q --> dq --> node
-                if input_node.target == dq_op:
+                if input_node.target in DQ_OPS:
                     q_params = input_node.args[1:]
-                    insert_q_dq_pair(graph, unsqueeze_before, q_params)
+                    insert_q_dq_pair(graph, unsqueeze_before, q_params, from_node=node)
 
             # Replace mm node with bmm
             with graph.inserting_before(node):
                 bmm_node = create_node(
                     graph,
                     exir_ops.edge.aten.bmm.default,
+                    from_node=node,
                 )
                 bmm_node.args = node.args
                 node.replace_all_uses_with(bmm_node)
@@ -75,6 +76,7 @@ class ConvertMmToBmmPass(ExportPass):
                 squeeze_after = create_node(
                     graph,
                     exir_ops.edge.aten.squeeze_copy.dims,
+                    from_node=node,
                 )
                 squeeze_after.args = (
                     bmm_node,
@@ -87,9 +89,9 @@ class ConvertMmToBmmPass(ExportPass):
                     user.replace_input_with(bmm_node, squeeze_after)
 
             # If quantized, insert mm --> q --> dq --> squeeze
-            if all(original_user.target == q_op for original_user in original_users):
+            if all(original_user.target in Q_OPS for original_user in original_users):
                 q_params = original_users[0].args[1:]
-                insert_q_dq_pair(graph, bmm_node, q_params)
+                insert_q_dq_pair(graph, bmm_node, q_params, from_node=node)
 
             modified_graph = True
 

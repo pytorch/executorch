@@ -13,6 +13,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
+
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -46,6 +48,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::kTensorDimensionLimit;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 using namespace vkcompute;
 
@@ -81,10 +84,14 @@ vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
       return vkapi::kChar;
     case vkgraph::VkDataType::INT32:
       return vkapi::kInt;
+    case vkgraph::VkDataType::INT64:
+      return vkapi::kLong;
     case vkgraph::VkDataType::FLOAT16:
       return vkapi::kHalf;
     case vkgraph::VkDataType::FLOAT32:
       return vkapi::kFloat;
+    case vkgraph::VkDataType::FLOAT64:
+      return vkapi::kDouble;
   }
 }
 
@@ -140,6 +147,14 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
 
       config.set_memory_layout_override(memory_layout);
     }
+    if (strcmp(spec.key, "require_dynamic_shapes") == 0) {
+      ET_CHECK_MSG(value_size == sizeof(uint8_t), "Unexpected value size!");
+      bool value = getBool(value_data);
+
+      if (value) {
+        config.expect_dynamic_shapes = true;
+      }
+    }
   }
 #ifdef ET_EVENT_TRACER_ENABLED
   config.enable_querypool = true;
@@ -152,7 +167,7 @@ class GraphBuilder {
   VkGraphPtr flatbuffer_;
   const uint8_t* constant_data_;
 
-  std::unordered_map<uint32_t, ValueRef> ref_mapping_;
+  std::vector<ValueRef> ref_mapping_;
 
  public:
   explicit GraphBuilder(
@@ -164,22 +179,20 @@ class GraphBuilder {
         constant_data_(constant_data),
         ref_mapping_() {}
 
-  bool fb_id_exists(const uint32_t fb_id) {
-    const std::unordered_map<uint32_t, ValueRef>::iterator found_ref =
-        ref_mapping_.find(fb_id);
+  void resize(uint32_t size) {
+    ref_mapping_.resize(size, INT32_MAX);
+  }
 
-    return found_ref != ref_mapping_.end();
+  bool fb_id_exists(const uint32_t fb_id) {
+    return fb_id < ref_mapping_.size() && ref_mapping_[fb_id] != INT32_MAX;
   }
 
   ValueRef get_fb_id_valueref(const uint32_t fb_id) {
-    const std::unordered_map<uint32_t, ValueRef>::iterator found_ref =
-        ref_mapping_.find(fb_id);
-
     ET_CHECK_MSG(
-        found_ref != ref_mapping_.end(),
+        fb_id_exists(fb_id),
         "Trying to extract a value that hasn't yet been added to the graph.");
 
-    return found_ref->second;
+    return ref_mapping_[fb_id];
   }
 
   void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
@@ -315,6 +328,9 @@ class GraphBuilder {
   }
 
   void build_graph() {
+    // Resize the mapping to the number of values in the flatbuffer
+    resize(flatbuffer_->values()->size());
+
     // First, add all values to the graph
     for (uint32_t fb_id = 0; fb_id < flatbuffer_->values()->size(); ++fb_id) {
       VkValuePtr value = flatbuffer_->values()->Get(fb_id);
@@ -338,27 +354,21 @@ class GraphBuilder {
       std::string op_name = op_call->name()->str();
       ET_CHECK_MSG(VK_HAS_OP(op_name), "Missing operator: %s", op_name.c_str());
 
-      const std::vector<int> arg_fb_ids(
-          op_call->args()->cbegin(), op_call->args()->cend());
-
       std::vector<ValueRef> args;
-      for (const int arg_fb_id : arg_fb_ids) {
-        args.push_back(get_fb_id_valueref(arg_fb_id));
+      args.reserve(op_call->args()->size());
+      for (const auto arg_fb_id : *op_call->args()) {
+        args.push_back(get_fb_id_valueref(static_cast<int>(arg_fb_id)));
       }
 
       auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
     }
 
-    // Parse the outputs, which will be mostly tensors.  For some reason,
-    // mutable buffers are shown to be returned in the fx.Graph but do not get
-    // returned by the delegate; this may be an implementation detail of how the
-    // executorch emitter handles mutable buffers.
+    // Parse the outputs, which will be mostly tensors but may contain tensorref
+    // values as well if the source graph returns parameter nodes.
     for (const uint32_t fb_id : *flatbuffer_->output_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      if (compute_graph_->val_is_tensor(ref)) {
-        compute_graph_->set_output_tensor(ref);
-      }
+      compute_graph_->set_output_value(ref);
     }
 
     if (compute_graph_->graphconfig().enable_querypool) {
@@ -381,18 +391,20 @@ bool maybe_resize_input(
     const size_t input_i,
     executorch::aten::Tensor& et_tensor) {
   ValueRef in_tensor_ref = graph->inputs()[input_i].value;
-  vTensorPtr in_tensor = graph->get_tensor(in_tensor_ref);
+
+  const std::vector<int64_t> in_tensor_vk_sizes =
+      graph->sizes_of(in_tensor_ref);
 
   ET_CHECK_MSG(
-      et_tensor.dim() == in_tensor->sizes().size(),
+      et_tensor.dim() == in_tensor_vk_sizes.size(),
       "Cannot resize input tensor: old ndim %zu does not match new ndim %zu",
-      static_cast<size_t>(in_tensor->sizes().size()),
+      static_cast<size_t>(in_tensor_vk_sizes.size()),
       static_cast<size_t>(et_tensor.dim()));
 
   bool should_resize = false;
   std::vector<int64_t> new_sizes(et_tensor.dim());
   for (size_t i = 0; i < et_tensor.dim(); i++) {
-    if (in_tensor->sizes()[i] != et_tensor.sizes()[i]) {
+    if (in_tensor_vk_sizes[i] != et_tensor.sizes()[i]) {
       should_resize = true;
     }
     new_sizes.at(i) = et_tensor.sizes()[i];
@@ -402,10 +414,11 @@ bool maybe_resize_input(
     graph->resize_input(input_i, new_sizes);
   }
 
+  const size_t in_tensor_vk_numel = graph->numel_of(in_tensor_ref);
   ET_CHECK_MSG(
-      in_tensor->numel() == et_tensor.numel(),
+      in_tensor_vk_numel == et_tensor.numel(),
       "Vulkan tensor numel %zu does not match ET tensor numel %zu",
-      static_cast<size_t>(in_tensor->numel()),
+      static_cast<size_t>(in_tensor_vk_numel),
       static_cast<size_t>(et_tensor.numel()));
 
   return should_resize;
@@ -436,12 +449,14 @@ void maybe_resize_output(
     const size_t output_i,
     executorch::aten::Tensor& et_tensor) {
   ValueRef out_tensor_ref = graph->outputs()[output_i].value;
-  vTensorPtr out_tensor = graph->get_tensor(out_tensor_ref);
+
+  const std::vector<int64_t> out_tensor_vk_sizes =
+      graph->sizes_of(out_tensor_ref);
 
   executorch::aten::SizesType new_output_size[kTensorDimensionLimit];
-  size_t ndim = out_tensor->sizes().size();
+  size_t ndim = out_tensor_vk_sizes.size();
   for (int i = 0; i < ndim; ++i) {
-    new_output_size[i] = out_tensor->sizes()[i];
+    new_output_size[i] = out_tensor_vk_sizes[i];
   }
 
   executorch::aten::ArrayRef<executorch::aten::SizesType> output_size{
@@ -491,17 +506,14 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     VkGraphPtr flatbuffer_graph = vkgraph::GetVkGraph(flatbuffer_data);
 
-    GraphBuilder builder =
-        GraphBuilder(compute_graph, flatbuffer_graph, constant_data);
+    GraphBuilder builder(compute_graph, flatbuffer_graph, constant_data);
 
     builder.build_graph();
 
     compute_graph->prepare();
+    compute_graph->prepare_pipelines();
 
-    compute_graph->encode_prepack();
     compute_graph->prepack();
-
-    compute_graph->encode_execute();
 
     return Error::Ok;
   }
@@ -510,10 +522,15 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    ComputeGraph* compute_graph = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        context.get_runtime_allocator(), ComputeGraph);
+    ComputeGraph* compute_graph =
+        context.get_runtime_allocator()->allocateInstance<ComputeGraph>();
+    if (compute_graph == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
 
-    new (compute_graph) ComputeGraph(get_graph_config(compile_specs));
+    GraphConfig graph_config = get_graph_config(compile_specs);
+    graph_config.external_adapter = vkapi::set_and_get_external_adapter();
+    new (compute_graph) ComputeGraph(graph_config);
 
     Error err = compileModel(processed->data(), compute_graph);
 
@@ -531,7 +548,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");
 
     ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
@@ -566,9 +583,16 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    if (should_propagate_resize) {
+    // propagate_resize() will re-encode the command buffer so that push
+    // constants are updated and DynamicDispatchNode can update the compute
+    // shader, global workgroup size, and local workgroup size to perform the
+    // model inference.
+    if (should_propagate_resize ||
+        (compute_graph->graphconfig().expect_dynamic_shapes &&
+         compute_graph->execute_count() == 0u)) {
       compute_graph->propagate_resize();
     }
+
     compute_graph->execute();
 
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
@@ -583,6 +607,12 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             compute_graph->outputs()[i].staging,
             args[o]->toTensor().mutable_data_ptr(),
             args[o]->toTensor().numel());
+      }
+      // TensorRef values represent constant tensors which will not have been
+      // modified by the graph execution. Therefore, if a constant tensor is
+      // returned as an output, no action is required.
+      else if (compute_graph->val_is_tref(oref)) {
+        continue;
       } else {
         VK_THROW(
             "Could not handle output with type ",

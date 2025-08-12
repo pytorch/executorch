@@ -16,8 +16,8 @@ cmake_minimum_required(VERSION 3.19)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
-include(${EXECUTORCH_ROOT}/build/Test.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs prim_ops_test.cpp)
 
-et_cxx_test(kernels_prim_ops_test SOURCES ${_test_srcs})
+et_cxx_test(kernels_prim_ops_test SOURCES ${_test_srcs} EXTRA_LIBS executorch)

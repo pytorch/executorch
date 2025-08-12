@@ -4,29 +4,31 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-from typing import List
+from typing import Any, List
 
 import executorch.backends.arm.tosa_quant_utils as tqutils
 import executorch.backends.arm.tosa_utils as tutils
 
-import serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-
-from serializer.tosa_serializer import TosaOp
 from torch.fx import Node
 
 
 @register_node_visitor
-class AbsVisitor_080_BI(NodeVisitor):
+class AbsVisitor_INT(NodeVisitor):
     target = "aten.abs.default"
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+BI"),
+        TosaSpecification.create_from_string("TOSA-1.0+INT"),
     ]
 
     def __init__(self, *args):
@@ -35,27 +37,29 @@ class AbsVisitor_080_BI(NodeVisitor):
     def define_node(
         self,
         node: Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        # Specification (0.80) states that input and output types
-        # should all be the same
-        if not (inputs[0].dtype == output.dtype):
-            raise ValueError(
-                "All inputs and outputs need same dtype."
-                f"Got {inputs[0].dtype=}, {output.dtype=}"
-            )
-        # Handle int8 (quantized) and int32
-        if not (inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]):
-            raise ValueError(
-                "All inputs need to be INT8 or INT32." f"Got {inputs[0].dtype=}"
-            )
 
+        import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 1)
+        validate_same_dtype(self.target, [*inputs, output], ts)
+
+        # Handle int8 (quantized) and int32
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            [ts.DType.INT8, ts.DType.INT32],
+            output.tosa_spec,
+        )
+
+        scale_back = 1.0
         if inputs[0].dtype == ts.DType.INT8:
             rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
-                tosa_graph, inputs, node
-            )
+                tosa_graph, inputs, node, self.tosa_spec
+            )  # type: ignore[possibly-undefined]
         else:
             # input[0].dtype == ts.DType.INT32
             # Non quantized input, natively support by TOSA.abs
@@ -70,7 +74,7 @@ class AbsVisitor_080_BI(NodeVisitor):
 
         # Do the INT32 Abs
         tosa_graph.addOperator(
-            TosaOp.Op().ABS,
+            ts.TosaOp.Op().ABS,
             [
                 rescaled_inputs[0].name,
             ],
@@ -81,16 +85,16 @@ class AbsVisitor_080_BI(NodeVisitor):
         if output.dtype == ts.DType.INT8:
             # Scale output back to 8 bit
             # pyre-ignore
-            tqutils.insert_rescale_op_to_int8(tosa_graph, abs_output, scale_back, node)  # type: ignore[possibly-undefined]
+            tqutils.insert_rescale_op_to_int8(
+                tosa_graph, abs_output, scale_back, node, self.tosa_spec
+            )  # type: ignore[possibly-undefined]
 
 
 @register_node_visitor
-class AbsVisitor_080_MI(AbsVisitor_080_BI):
+class AbsVisitor_FP(AbsVisitor_INT):
     # inheriting 'target' from BI class
 
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
-    ]
+    tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+FP")]
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -98,17 +102,15 @@ class AbsVisitor_080_MI(AbsVisitor_080_BI):
     def define_node(
         self,
         node: Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        # Specification (0.80) states that input and output types
-        # should all be the same
-        if not (inputs[0].dtype == output.dtype):
-            raise ValueError(
-                "All inputs and output need same dtype."
-                f"Got {inputs[0].dtype=}, {output.dtype=}"
-            )
+
+        import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 1)
+        validate_same_dtype(self.target, [*inputs, output], ts)
 
         if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
@@ -116,17 +118,13 @@ class AbsVisitor_080_MI(AbsVisitor_080_BI):
         else:
             # FP32 Abs lowering
 
-            if not (inputs[0].dtype == ts.DType.FP32):
-                raise ValueError(
-                    "All inputs need to be FP32." f"Got {inputs[0].dtype=}"
-                )
-
-            if not (output.dtype == ts.DType.FP32):
-                raise ValueError("All outputs need to be FP32." f"Got {output.dtype=}")
+            validate_valid_dtype(
+                self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
+            )
 
             # MI lowering
             tosa_graph.addOperator(
-                TosaOp.Op().ABS,
+                ts.TosaOp.Op().ABS,
                 [inputs[0].name],
                 [output.name],
                 None,

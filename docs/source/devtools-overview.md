@@ -1,6 +1,6 @@
 # Introduction to the ExecuTorch Developer Tools
 
-ExecuTorch has been designed with [productivity](./intro-overview.md) as one of its core objectives and the ExecuTorch Developer Tools enable this through the comprehensive suite of tools it provides users to help them profile, debug, and visualize models that they have onboarded onto ExecuTorch.
+ExecuTorch has been designed with [productivity](intro-overview.md) as one of its core objectives and the ExecuTorch Developer Tools enable this through the comprehensive suite of tools it provides users to help them profile, debug, and visualize models that they have onboarded onto ExecuTorch.
 
 All the components of the Developer Tools have been designed from the ground up with deep integration in both the export process and the runtime. This enables us to provide unique features such as linking back operator execution in the runtime to the line of code in the original eager model that this operator originated from.
 
@@ -15,6 +15,7 @@ The ExecuTorch Developer Tools support the following features:
 - **Delegate Integration** - Surfacing performance details from delegate backends
     - Link back delegate operator execution to the nodes they represent in the edge dialect graph (and subsequently linking back to source code and module hierarchy)
 - **Debugging** - Intermediate outputs and output quality analysis
+- **Numerical Discrepancy Detection** - Operator-level numerical discrepancy detection between AOT and runtime intermediate outputs to streamline numerical debugging and validation.
 - **Memory Allocation Insights** - Visualize how memory is planned, where all the live tensors are at any point in time
 - **Visualization** - Coming soon
 

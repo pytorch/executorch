@@ -27,8 +27,8 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -123,7 +123,8 @@ list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 add_executable(custom_ops_executor_runner ${_executor_runner__srcs})
 target_link_libraries(
-  custom_ops_executor_runner custom_ops_lib executorch gflags
+  custom_ops_executor_runner custom_ops_lib executorch extension_evalue_util
+  extension_runner_util gflags
 )
 target_compile_options(
   custom_ops_executor_runner PUBLIC ${_common_compile_options}

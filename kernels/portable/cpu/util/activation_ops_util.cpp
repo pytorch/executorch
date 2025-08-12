@@ -15,7 +15,10 @@
 namespace torch {
 namespace executor {
 
-bool check_gelu_args(const Tensor& in, string_view approximate, Tensor& out) {
+bool check_gelu_args(
+    const Tensor& in,
+    std::string_view approximate,
+    Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(in.scalar_type() != ScalarType::Bool);
   ET_CHECK_OR_RETURN_FALSE(
@@ -31,7 +34,7 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(in));
 
   const size_t non_negative_dim = dim < 0 ? dim + in.dim() : dim;
-  const size_t dim_size = in.size(non_negative_dim);
+  const ssize_t dim_size = in.size(non_negative_dim);
 
   ET_CHECK_OR_RETURN_FALSE(
       dim_size % 2 == 0,
@@ -43,7 +46,11 @@ bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(in, out));
   ET_CHECK_OR_RETURN_FALSE(
       out.size(non_negative_dim) == dim_size / 2,
-      "output tensor must have half the size of the input tensor along the specified dimension.");
+      "output tensor must have half the size of the input tensor along the specified dimension; out.size(%zu) = %" ET_PRI_TENSOR_SIZE
+      ", dim_size = %zd",
+      non_negative_dim,
+      out.size(non_negative_dim),
+      dim_size);
 
   for (const auto i : c10::irange(in.dim())) {
     if (static_cast<size_t>(i) != non_negative_dim) {

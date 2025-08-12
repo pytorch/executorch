@@ -7,8 +7,10 @@
 
 set -exu
 
-IMAGE_NAME="$1"
+FULL_IMAGE_NAME="$1"
 shift
+
+IMAGE_NAME=$(echo "${FULL_IMAGE_NAME}" | sed 's/ci-image://')
 
 echo "Building ${IMAGE_NAME} Docker image"
 
@@ -29,6 +31,10 @@ case "${IMAGE_NAME}" in
     LINTRUNNER=""
     CLANG_VERSION=12
     ;;
+  executorch-ubuntu-22.04-gcc11-aarch64)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ;;
   executorch-ubuntu-22.04-linter)
     LINTRUNNER=yes
     CLANG_VERSION=12
@@ -37,6 +43,10 @@ case "${IMAGE_NAME}" in
     ARM_SDK=yes
     CLANG_VERSION=12
     ;;
+  executorch-ubuntu-22.04-zephyr-sdk)
+    ZEPHYR_SDK=yes
+    GCC_VERSION=11
+    ;;
   executorch-ubuntu-22.04-qnn-sdk)
     QNN_SDK=yes
     CLANG_VERSION=12
@@ -44,6 +54,7 @@ case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-mediatek-sdk)
     MEDIATEK_SDK=yes
     CLANG_VERSION=12
+    ANDROID_NDK_VERSION=r27b
     ;;
   executorch-ubuntu-22.04-clang12-android)
     LINTRUNNER=""
@@ -80,6 +91,7 @@ docker build \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
   --build-arg "ARM_SDK=${ARM_SDK:-}" \
+  --build-arg "ZEPHYR_SDK=${ZEPHYR_SDK:-}" \
   --build-arg "QNN_SDK=${QNN_SDK:-}" \
   --build-arg "MEDIATEK_SDK=${MEDIATEK_SDK:-}" \
   --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \

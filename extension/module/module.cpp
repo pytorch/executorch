@@ -36,30 +36,34 @@
 
 namespace executorch {
 namespace extension {
+namespace ET_MODULE_NAMESPACE {
+
+using ET_RUNTIME_NAMESPACE::MethodMeta;
+using ET_RUNTIME_NAMESPACE::Program;
 
 namespace {
-runtime::Result<std::unique_ptr<runtime::DataLoader>> load_file(
+runtime::Result<std::unique_ptr<runtime::DataLoader>> make_data_loader(
     const std::string& file_path,
     Module::LoadMode mode) {
-  std::unique_ptr<runtime::DataLoader> res = nullptr;
+  std::unique_ptr<runtime::DataLoader> data_loader;
   switch (mode) {
     case Module::LoadMode::File:
-      res = ET_UNWRAP_UNIQUE(FileDataLoader::from(file_path.c_str()));
+      data_loader = ET_UNWRAP_UNIQUE(FileDataLoader::from(file_path.c_str()));
       break;
     case Module::LoadMode::Mmap:
-      res = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
+      data_loader = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
           file_path.c_str(), MmapDataLoader::MlockConfig::NoMlock));
       break;
     case Module::LoadMode::MmapUseMlock:
-      res = ET_UNWRAP_UNIQUE(MmapDataLoader::from(file_path.c_str()));
+      data_loader = ET_UNWRAP_UNIQUE(MmapDataLoader::from(file_path.c_str()));
       break;
     case Module::LoadMode::MmapUseMlockIgnoreErrors:
-      res = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
+      data_loader = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
           file_path.c_str(),
           MmapDataLoader::MlockConfig::UseMlockIgnoreErrors));
       break;
   }
-  return res;
+  return data_loader;
 }
 } // namespace
 
@@ -113,7 +117,7 @@ Module::Module(
 }
 
 Module::Module(
-    std::shared_ptr<runtime::Program> program,
+    std::shared_ptr<Program> program,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
     std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
     std::unique_ptr<runtime::EventTracer> event_tracer,
@@ -131,37 +135,30 @@ Module::Module(
   runtime::runtime_init();
 }
 
-runtime::Error Module::load(const runtime::Program::Verification verification) {
+runtime::Error Module::load(const Program::Verification verification) {
   if (!is_loaded()) {
-    // Load the program
     if (!data_loader_) {
-      auto res = load_file(file_path_, load_mode_);
-      if (!res.ok()) {
-        return res.error();
-      }
-      data_loader_ = std::move(res.get());
+      data_loader_ = ET_UNWRAP(make_data_loader(file_path_, load_mode_));
     }
-    // If a .ptd path was given load it.
-    if (data_map_path_ != "") {
-      auto res = load_file(data_map_path_, load_mode_);
-      if (!res.ok()) {
-        return res.error();
-      }
-      data_map_loader_ = std::move(res.get());
+    if (!data_map_path_.empty()) {
+      data_map_loader_ =
+          ET_UNWRAP(make_data_loader(data_map_path_, load_mode_));
     }
-    // If we have a .ptd loader, then load the map.
     if (data_map_loader_) {
       data_map_ =
           ET_UNWRAP_UNIQUE(FlatTensorDataMap::load(data_map_loader_.get()));
     }
-    // else: either the map itself was provided or we have no data map, either
-    // way no work to do.
-    auto program = ET_UNWRAP_UNIQUE(
-        runtime::Program::load(data_loader_.get(), verification));
-    program_ = std::shared_ptr<runtime::Program>(
-        program.release(), [](runtime::Program* pointer) { delete pointer; });
+    auto program =
+        ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
+    program_ = std::shared_ptr<Program>(
+        program.release(), [](Program* pointer) { delete pointer; });
   }
   return runtime::Error::Ok;
+}
+
+runtime::Result<size_t> Module::num_methods() {
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  return program_->num_methods();
 }
 
 runtime::Result<std::unordered_set<std::string>> Module::method_names() {
@@ -178,49 +175,56 @@ runtime::Result<std::unordered_set<std::string>> Module::method_names() {
 
 runtime::Error Module::load_method(
     const std::string& method_name,
+    runtime::HierarchicalAllocator* planned_memory,
     torch::executor::EventTracer* event_tracer) {
   if (!is_method_loaded(method_name)) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
 
     MethodHolder method_holder;
 
-    const auto method_metadata =
-        ET_UNWRAP(program_->method_meta(method_name.c_str()));
-    const auto planned_buffersCount =
-        method_metadata.num_memory_planned_buffers();
-    method_holder.planned_buffers.reserve(planned_buffersCount);
-    method_holder.planned_spans.reserve(planned_buffersCount);
+    if (!planned_memory) {
+      const auto method_metadata =
+          ET_UNWRAP(program_->method_meta(method_name.c_str()));
+      const auto planned_buffers_count =
+          method_metadata.num_memory_planned_buffers();
+      method_holder.planned_buffers.reserve(planned_buffers_count);
+      method_holder.planned_spans.reserve(planned_buffers_count);
 
-    for (auto index = 0; index < planned_buffersCount; ++index) {
-      const auto buffer_size =
-          method_metadata.memory_planned_buffer_size(index).get();
-      method_holder.planned_buffers.emplace_back(buffer_size);
-      method_holder.planned_spans.emplace_back(
-          method_holder.planned_buffers.back().data(), buffer_size);
+      for (auto index = 0; index < planned_buffers_count; ++index) {
+        const auto buffer_size =
+            method_metadata.memory_planned_buffer_size(index).get();
+        method_holder.planned_buffers.emplace_back(buffer_size);
+        method_holder.planned_spans.emplace_back(
+            method_holder.planned_buffers.back().data(), buffer_size);
+      }
+      method_holder.planned_memory =
+          std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
+              method_holder.planned_spans.data(),
+              method_holder.planned_spans.size()));
+      planned_memory = method_holder.planned_memory.get();
     }
-    method_holder.planned_memory =
-        std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
-            method_holder.planned_spans.data(),
-            method_holder.planned_spans.size()));
     method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
-        memory_allocator_.get(),
-        method_holder.planned_memory.get(),
-        temp_allocator_.get());
+        memory_allocator_.get(), planned_memory, temp_allocator_.get());
     method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
         event_tracer ? event_tracer : this->event_tracer(),
         data_map_.get()));
-    method_holder.inputs.resize(method_holder.method->inputs_size());
     methods_.emplace(method_name, std::move(method_holder));
   }
   return runtime::Error::Ok;
 }
 
-runtime::Result<runtime::MethodMeta> Module::method_meta(
+ET_NODISCARD runtime::Result<Method*> Module::method(
     const std::string& method_name) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
-  return methods_.at(method_name).method->method_meta();
+  return methods_[method_name].method.get();
+}
+
+runtime::Result<MethodMeta> Module::method_meta(
+    const std::string& method_name) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  return program_->method_meta(method_name.c_str());
 }
 
 runtime::Result<std::vector<runtime::EValue>> Module::execute(
@@ -228,22 +232,10 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
     const std::vector<runtime::EValue>& input_values) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& method = methods_.at(method_name).method;
-  auto& inputs = methods_.at(method_name).inputs;
-
-  for (size_t i = 0; i < input_values.size(); ++i) {
-    if (!input_values[i].isNone()) {
-      inputs[i] = input_values[i];
-    }
+  for (auto index = 0; index < input_values.size(); ++index) {
+    ET_CHECK_OK_OR_RETURN_ERROR(method->set_input(input_values[index], index));
   }
-  for (size_t i = 0; i < inputs.size(); ++i) {
-    ET_CHECK_OR_RETURN_ERROR(
-        !inputs[i].isNone(), InvalidArgument, "input %zu is none", i);
-  }
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      method->set_inputs(executorch::aten::ArrayRef<runtime::EValue>(
-          inputs.data(), inputs.size())));
   ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
-
   const auto outputs_size = method->outputs_size();
   std::vector<runtime::EValue> outputs(outputs_size);
   ET_CHECK_OK_OR_RETURN_ERROR(
@@ -257,23 +249,17 @@ runtime::Error Module::set_input(
     const runtime::EValue& input_value,
     size_t input_index) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
-  methods_.at(method_name).inputs.at(input_index) = input_value;
-  return runtime::Error::Ok;
+  auto& method = methods_.at(method_name).method;
+  return method->set_input(input_value, input_index);
 }
 
 runtime::Error Module::set_inputs(
     const std::string& method_name,
     const std::vector<runtime::EValue>& input_values) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
-  auto& inputs = methods_.at(method_name).inputs;
-  ET_CHECK_OR_RETURN_ERROR(
-      inputs.size() == input_values.size(),
-      InvalidArgument,
-      "input size: %zu does not match method input size: %zu",
-      input_values.size(),
-      inputs.size());
-  inputs = input_values;
-  return runtime::Error::Ok;
+  auto& method = methods_.at(method_name).method;
+  return method->set_inputs(executorch::aten::ArrayRef<runtime::EValue>(
+      input_values.data(), input_values.size()));
 }
 
 runtime::Error Module::set_output(
@@ -292,5 +278,6 @@ runtime::Error Module::set_output(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
+} // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch

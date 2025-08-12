@@ -19,8 +19,8 @@
 
 #include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/io_memory.h>
 #include <executorch/extension/llm/sampler/sampler.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 namespace example {
 
@@ -101,7 +101,7 @@ class Runner {
   std::vector<std::string> method_names_;
   std::string tokenizer_path_;
   float temperature_;
-  std::unique_ptr<executorch::extension::llm::Tokenizer> tokenizer_;
+  std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
   Stats stats_;
   std::unique_ptr<Memory> io_mem_;

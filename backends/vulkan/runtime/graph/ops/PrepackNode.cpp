@@ -18,9 +18,8 @@ namespace vkcompute {
 
 vkapi::ShaderInfo get_noop_shader(ComputeGraph& graph, const ValueRef packed) {
   std::string noop_shader_name("no_op");
-  vTensorPtr t_packed = graph.get_tensor(packed);
-  add_dtype_suffix(noop_shader_name, *t_packed);
-  add_storage_type_suffix(noop_shader_name, *t_packed);
+  add_dtype_suffix(noop_shader_name, graph.dtype_of(packed));
+  add_storage_type_suffix(noop_shader_name, graph.storage_type_of(packed));
   return VK_KERNEL_FROM_STR(noop_shader_name);
 }
 
@@ -32,7 +31,8 @@ PrepackNode::PrepackNode(
     const ValueRef tref,
     const ValueRef packed,
     const vkapi::ParamsBindList& params,
-    const vkapi::SpecVarList& spec_vars)
+    const vkapi::SpecVarList& spec_vars,
+    const std::vector<PushConstantDataInfo>& push_constants)
     : shader_(shader),
       noop_shader_(get_noop_shader(graph, packed)),
       global_workgroup_size_(global_workgroup_size),
@@ -40,19 +40,20 @@ PrepackNode::PrepackNode(
       tref_(tref),
       packed_(packed),
       params_(params),
-      spec_vars_(spec_vars) {
+      spec_vars_(spec_vars),
+      push_constants_(push_constants) {
   graph.update_descriptor_counts(shader, /*execute = */ false);
   graph.update_descriptor_counts(noop_shader_, /*execute = */ false);
 }
 
 api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
-  vTensorPtr packed = graph->get_tensor(packed_);
-
-  // If no TensorRef is provided, create a staging buffer of zeros according to
-  // the vkapi::vTensor metadata.
+  // If no TensorRef is provided, create a staging buffer of zeros based on the
+  // Tensor metadata.
   if (graph->val_is_none(tref_)) {
-    size_t numel = utils::multiply_integers(packed->sizes());
-    api::StagingBuffer staging(graph->context(), packed->dtype(), numel);
+    const std::vector<int64_t> packed_sizes = graph->sizes_of(packed_);
+    size_t numel = utils::multiply_integers(packed_sizes);
+    api::StagingBuffer staging(
+        graph->context(), graph->dtype_of(packed_), numel);
     staging.set_staging_zeros();
     return staging;
   }
@@ -60,9 +61,17 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   TensorRefPtr tref = graph->get_tref(tref_);
   size_t numel = utils::multiply_integers(tref->sizes);
   api::StagingBuffer staging(graph->context(), tref->dtype, numel);
+  graph->update_staging_nbytes_in_cmd(staging.buffer().mem_size_as_size_t());
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
   staging.copy_from(tref->data, nbytes);
   return staging;
+}
+
+void PrepackNode::prepare_pipelines(ComputeGraph* graph) {
+  graph->register_pipeline_to_create(
+      shader_, local_workgroup_size_, spec_vars_, push_constants_);
+  graph->register_pipeline_to_create(
+      noop_shader_, utils::WorkgroupSize(1, 1, 1), {}, {});
 }
 
 void PrepackNode::encode(ComputeGraph* graph) {
@@ -70,19 +79,28 @@ void PrepackNode::encode(ComputeGraph* graph) {
 
   context->check_device_capabilities(shader_);
 
-  vTensorPtr packed = graph->get_tensor(packed_);
   api::StagingBuffer staging = create_staging_buffer(graph);
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
+  std::array<uint8_t, kMaxPushConstantSize> push_constants_data;
+  uint32_t push_constants_offset = 0;
+
+  for (const auto& push_constant : push_constants_) {
+    push_constants_offset += push_constant.write(
+        push_constants_data.data(),
+        push_constants_offset,
+        kMaxPushConstantSize);
+  }
+
   {
     vkapi::PipelineBarrier pipeline_barrier{};
     vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
-        shader_, local_workgroup_size_, spec_vars_, 0u);
+        shader_, local_workgroup_size_, spec_vars_, push_constants_offset);
 
     uint32_t idx = 0;
-    bind_tensor_to_descriptor_set(
-        *packed,
+    graph->bind_tensor_to_descriptor_set(
+        packed_,
         pipeline_barrier,
         vkapi::MemoryAccessType::WRITE,
         descriptor_set,
@@ -91,7 +109,12 @@ void PrepackNode::encode(ComputeGraph* graph) {
     bind_params_to_descriptor_set(params_, descriptor_set, idx);
 
     context->register_shader_dispatch(
-        descriptor_set, pipeline_barrier, shader_, global_workgroup_size_);
+        descriptor_set,
+        pipeline_barrier,
+        shader_,
+        global_workgroup_size_,
+        push_constants_data.data(),
+        push_constants_offset);
   }
 
   // Submit a compute shader that performs a no-op with the packed tensor in
@@ -103,8 +126,8 @@ void PrepackNode::encode(ComputeGraph* graph) {
     vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
         noop_shader_, utils::WorkgroupSize(1, 1, 1));
 
-    bind_tensor_to_descriptor_set(
-        *packed,
+    graph->bind_tensor_to_descriptor_set(
+        packed_,
         pipeline_barrier,
         vkapi::MemoryAccessType::READ,
         descriptor_set,

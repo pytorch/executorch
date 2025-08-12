@@ -16,14 +16,14 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 Tensor&
-op_prod_out(const Tensor& self, optional<ScalarType> dtype, Tensor& out) {
-  executorch::runtime::KernelRuntimeContext context{};
+op_prod_out(const Tensor& self, std::optional<ScalarType> dtype, Tensor& out) {
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
   return torch::executor::aten::prod_outf(context, self, dtype, out);
 }
 
@@ -33,7 +33,7 @@ Tensor& op_prod_int_out(
     bool keepdim,
     optional<ScalarType> dtype,
     Tensor& out) {
-  executorch::runtime::KernelRuntimeContext context{};
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
   return torch::executor::aten::prod_outf(
       context, self, dim, keepdim, dtype, out);
 }

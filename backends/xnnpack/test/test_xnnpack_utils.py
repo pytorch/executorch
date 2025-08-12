@@ -70,11 +70,11 @@ from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
     prepare_fx,
 )
-
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export_for_training
 
 from torch.testing import FileCheck
+
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def randomize_bn(num_features: int, dimensionality: int = 2) -> torch.nn.Module:
@@ -317,10 +317,7 @@ class TestXNNPACK(unittest.TestCase):
         module.eval()
         # program capture
 
-        m = export_for_training(
-            module,
-            example_inputs,
-        ).module()
+        m = export_for_training(module, example_inputs, strict=True).module()
 
         quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config()

@@ -7,7 +7,6 @@
 
 #import "ETCoreMLModelDebugger.h"
 
-#import <CoreML/CoreML.h>
 #import "ETCoreMLAsset.h"
 #import "ETCoreMLAssetManager.h"
 #import "ETCoreMLLogging.h"
@@ -16,12 +15,14 @@
 #import "ETCoreMLModelStructurePath.h"
 #import "ETCoreMLPair.h"
 #import "ETCoreMLStrings.h"
-#import <format/MIL.pb.h>
-#import <format/Model.pb.h>
-#import <fstream>
-#import <iostream>
+#import "format/MIL.pb.h"
+#import "format/Model.pb.h"
 #import "model_package_info.h"
 #import "objc_json_serde.h"
+
+#import <CoreML/CoreML.h>
+#import <fstream>
+#import <iostream>
 #import <string>
 #import <unordered_map>
 
@@ -43,13 +44,19 @@ NSURL * _Nullable get_model_spec_url(NSURL *model_package_url,
     const auto& info_value = info.value();
     auto it = info_value.items.find(info_value.root_model_identifier);
     if (it == info_value.items.end()) {
-        ETCoreMLLogErrorAndSetNSError(error, 0, "%@ is broken, root model info doesn't exist.", model_package_url.lastPathComponent);
+        ETCoreMLLogErrorAndSetNSError(error, 
+                                      ETCoreMLErrorCorruptedModel,
+                                      "%@ is broken, root model info doesn't exist.",
+                                      model_package_url.lastPathComponent);
         return nil;
     }
     
     auto path = it->second.path;
     if (path.empty()) {
-        ETCoreMLLogErrorAndSetNSError(error, 0, "%@ is broken, root model path doesn't exist.", model_package_url.lastPathComponent);
+        ETCoreMLLogErrorAndSetNSError(error, 
+                                      ETCoreMLErrorCorruptedModel,
+                                      "%@ is broken, root model path doesn't exist.",
+                                      model_package_url.lastPathComponent);
         return nil;
     }
     
@@ -350,8 +357,8 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
     NSMutableArray<MLMultiArray *> *values = [NSMutableArray arrayWithCapacity:output_names.count];
     for (NSString *output_name in output_names) {
         MLFeatureValue *feature_value = [output_features featureValueForName:output_name];
-        NSCAssert(feature_value.multiArrayValue != nil, @"%@: Expected a multiarray value for output name=%@.",
-                  NSStringFromClass(ETCoreMLModelDebugger.class),
+        NSCAssert(feature_value.multiArrayValue != nil, 
+                  @"Expected a multiarray value for output name=%@.",
                   output_name);
         [values addObject:feature_value.multiArrayValue];
     }
@@ -570,8 +577,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> *get_operation_path_to_de
     
     if (localError) {
         ETCoreMLLogError(localError,
-                         "%@: Failed to retrieve asset with identifier=%@",
-                         NSStringFromClass(ETCoreMLModelDebugger.class),
+                         "Failed to retrieve asset with identifier=%@",
                          identifier);
     }
     
@@ -595,8 +601,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> *get_operation_path_to_de
     
     if (localError) {
         ETCoreMLLogError(localError, 
-                         "%@: Failed to store asset with identifier=%@",
-                         NSStringFromClass(ETCoreMLModelDebugger.class),
+                         "Failed to store asset with identifier=%@",
                          identifier);
     }
     
@@ -624,14 +629,14 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> *get_operation_path_to_de
     }
     
     if (localError) {
-        ETCoreMLLogError(localError, "%@: Failed to load model with outputs=%@",
-                         NSStringFromClass(ETCoreMLModelDebugger.class),
+        ETCoreMLLogError(localError,
+                         "Failed to load model with outputs=%@",
                          get_output_names(paths));
     }
     
     if ([self.assetManager removeAssetWithIdentifier:compiledAsset.identifier error:&localError]) {
-        ETCoreMLLogError(localError, "%@: Failed to remove compiled asset with identifier=%@",
-                         NSStringFromClass(ETCoreMLModelDebugger.class),
+        ETCoreMLLogError(localError,
+                         "Failed to remove compiled asset with identifier=%@",
                          compiledAsset.identifier);
     }
     
@@ -656,9 +661,15 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> *get_operation_path_to_de
 
 - (nullable NSArray<DebuggableModel *> *)modelsWithOutputsOfOperationsAtPath:(NSArray<ETCoreMLModelStructurePath *> *)paths
                                                                        error:(NSError* __autoreleasing *)error {
+    NSError *localError = nil;
+    NSArray<DebuggableModel *> *result = nil;
     @autoreleasepool {
-        return [self _modelsWithOutputsOfOperationsAtPath:paths error:error];
+        result = [self _modelsWithOutputsOfOperationsAtPath:paths error:&localError];
     }
+    if (!result && error) {
+        *error = localError;
+    }
+    return result;
 }
 
 - (nullable ETCoreMLModelOutputs *)outputsOfOperationsAtPaths:(NSArray<ETCoreMLModelStructurePath *> *)paths
@@ -666,27 +677,30 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> *get_operation_path_to_de
                                                        inputs:(id<MLFeatureProvider>)inputs
                                                  modelOutputs:(NSArray<MLMultiArray *> *_Nullable __autoreleasing *_Nonnull)modelOutputs
                                                         error:(NSError* __autoreleasing *)error {
-    NSArray<MLMultiArray *> *lModelOutputs = nil;
-    NSMutableDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *result = [NSMutableDictionary dictionaryWithCapacity:paths.count];
+    NSError *localError = nil;
+    BOOL success = NO;
+    NSArray<MLMultiArray *> *localModelOutputs = nil;
+    ETCoreMLModelOutputs *result = [NSMutableDictionary dictionaryWithCapacity:paths.count];
     @autoreleasepool {
-        NSArray<DebuggableModel *> *models = [self modelsWithOutputsOfOperationsAtPath:paths error:error];
-        if (!models) {
-            return nil;
-        }
-        
-        for (DebuggableModel *pair in models) {
-            id<MLFeatureProvider> outputFeatures = [pair.first predictionFromFeatures:inputs options:options error:error];
-            set_intermediate_outputs(outputFeatures, paths, result);
-            if (modelOutputs) {
-                set_model_outputs(outputFeatures, self.outputNames, &lModelOutputs);
-            }
+        NSArray<DebuggableModel *> *models = [self modelsWithOutputsOfOperationsAtPath:paths error:&localError];
+        success = models != nil;
+        if (success) {
+          for (DebuggableModel *pair in models) {
+              id<MLFeatureProvider> outputFeatures = [pair.first predictionFromFeatures:inputs options:options error:&localError];
+              set_intermediate_outputs(outputFeatures, paths, result);
+              if (modelOutputs) {
+                  set_model_outputs(outputFeatures, self.outputNames, &localModelOutputs);
+              }
+          }
         }
     }
-    
+    if (!success && error) {
+        *error = localError;
+        return nil;
+    }
     if (modelOutputs) {
-        *modelOutputs = lModelOutputs;
+        *modelOutputs = localModelOutputs;
     }
-    
     return result;
 }
 

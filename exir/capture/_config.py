@@ -39,13 +39,17 @@ class EdgeCompileConfig:
     _check_ir_validity: bool = True
     # TODO(larryliu): remove this
     _use_edge_ops: bool = True
+    # TODO(gasoonjia): remove this
+    _skip_dim_order: bool = False
     # Allow core ATen ops check to be skipped for certain ops, but continue with the rest of the checks.
+    # Note: only use this for core ATen ops that are missing decompositions. This is temporary,
+    # enabling verification on the rest of the program until decomposition coverage is improved.
     _core_aten_ops_exception_list: List[torch._ops.OpOverload] = field(
         default_factory=list
     )
-    _skip_type_promotion: bool = False
-    # TODO(gasoonjia): remove this
-    _skip_dim_order: bool = False
+    # Allow ops to be preserved in the graph, i.e., prevent them from being decomposed.
+    # These may be core or non-core ATen ops; custom ops should not be here.
+    preserve_ops: List[torch.torch._ops.OpOverload] = field(default_factory=list)
 
 
 @compatibility(is_backward_compatible=False)
@@ -97,3 +101,14 @@ class ExecutorchBackendConfig:
     # If set to true, all trainable weights will be stored in a separate file,
     # external to the PTE file.
     external_mutable_weights: bool = False
+
+    # If set to true, all mutable buffers will have their fully qualified names
+    # serialized in the PTE file. Its value is ignored if mutable buffers are not
+    # memory planned as the names must be serialized in that case.
+    emit_mutable_buffer_names: bool = False
+
+    # If set to true, we run quant fusion and constant propagation passes
+    do_quant_fusion_and_const_prop: bool = False
+
+    # Experimental: If set to true, we run a pass to reinplace ops in the graph.
+    run_reinplace_pass: bool = False

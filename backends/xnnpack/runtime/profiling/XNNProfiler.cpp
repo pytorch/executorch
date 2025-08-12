@@ -62,7 +62,7 @@ Error XNNProfiler::start(EventTracer* event_tracer) {
   state_ = XNNProfilerState::Running;
 
   // Log the start of execution timestamp.
-  start_time_ = et_pal_current_ticks();
+  start_time_ = runtime::pal_current_ticks();
 
   return Error::Ok;
 }
@@ -187,7 +187,7 @@ void XNNProfiler::log_operator_timings() {
 
 void XNNProfiler::submit_trace() {
   // Retrieve the system tick rate (ratio between ticks and nanoseconds).
-  auto tick_ns_conv_multiplier = et_pal_ticks_to_ns_multiplier();
+  auto tick_ns_conv_multiplier = runtime::pal_ticks_to_ns_multiplier();
 
   ET_CHECK(op_timings_.size() == op_count_);
   size_t name_len = 0;

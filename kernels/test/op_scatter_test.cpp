@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -364,6 +365,19 @@ class OpScatterValueOutTest : public OperatorTest {
     op_scatter_value_out(input, 2, index, value, out);
     EXPECT_TENSOR_EQ(out, expected);
   }
+
+  template <ScalarType DTYPE>
+  void expect_bad_scalar_value_dies(const Scalar& bad_value) {
+    TensorFactory<DTYPE> tf;
+    TensorFactory<ScalarType::Long> tf_index;
+
+    Tensor self = tf.ones({2, 2});
+    Tensor index = tf_index.zeros({2, 2});
+    Tensor out = tf.zeros({2, 2});
+
+    ET_EXPECT_KERNEL_FAILURE(
+        context_, op_scatter_value_out(self, 0, index, bad_value, out));
+  }
 };
 
 TEST_F(OpScatterSrcOutTest, AllValidInputOutputSupport) {
@@ -652,3 +666,5 @@ TEST_F(OpScatterSrcOutTest, InvalidOneDimInputAndZeroDimIndex) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_scatter_src_out(self, 0, index, src, out));
 }
+
+GENERATE_SCALAR_OVERFLOW_TESTS(OpScatterValueOutTest)

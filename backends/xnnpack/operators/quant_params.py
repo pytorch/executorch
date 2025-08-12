@@ -9,9 +9,6 @@ from __future__ import annotations
 from typing import cast, Optional, Union
 
 import torch
-from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
-    TagImplicitQDqPass,
-)
 from executorch.backends.xnnpack.utils.quant_utils import (
     extract_qdq_affine_op_args_for_decomposed_ops,
     is_affine_qdq,
@@ -20,6 +17,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_per_channel,
     is_per_channel_group,
     is_quant,
+    is_tagged_as_implicit_q_dq,
 )
 from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
@@ -102,6 +100,16 @@ class QuantParams:
             assert group_size > 0, "Group size must be greater than 0"
         self.is_per_channel_group = self.per_channel and self.group_size > 0
 
+        if per_channel and not self.is_per_channel_group:
+            tensor = q_input.meta["val"]
+            assert (
+                tensor.shape[self.axis] == cast(torch.Tensor, self.scale).shape[0]
+            ), f"Invalid size of per channel quantization scales, axis: {self.axis}, scale size: {self.scale.shape}, tensor shape: {tensor.shape}"
+
+            assert (
+                tensor.shape[self.axis] == cast(torch.Tensor, self.zp).shape[0]
+            ), f"Invalid size of per channel quantization zero-points, axis: {self.axis}, zp size: {self.zp.shape}, tensor shape: {tensor.shape}"
+
     def quantize_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         # Do nothing if already quantized by the Quantizer
         if tensor.dtype == self.dtype:
@@ -131,12 +139,29 @@ class QuantParams:
                 tensor, self.scale, self.zp, self.qmin, self.qmax, self.dtype
             )
 
+    # Temporary helper until non-batch dimensions can be inferred
+    # Detects if a node feeds into a conv op by checking all downstream users
+    @staticmethod
+    def _feeds_into_conv(node: torch.fx.Node) -> bool:
+        users_list = [node]
+
+        while users_list:
+            current_user = users_list.pop()
+            if "linear" in str(current_user.target):
+                return False
+            if "convolution" in str(current_user.target):
+                return True
+            users_list.extend(current_user.users)
+
+        return False
+
     @classmethod
     def _from_dynamic_input_node(cls, quant_node: torch.fx.Node) -> QuantParams:
         q_input = quant_node.args[0]  # fp32 input
         assert isinstance(q_input, torch.fx.Node)
         # TODO - materialize this from the quant_node scale count and val shape
-        num_nonbatch_dims = 1
+        # Set non-batch dims to 3 if node feeds into conv (only 2D is supported), otherwise set to 1 for linear
+        num_nonbatch_dims = 3 if cls._feeds_into_conv(quant_node) else 1
 
         return cls(
             per_channel=False,  # True is not valid
@@ -272,16 +297,13 @@ class QuantParams:
         cls, tensor_node: torch.fx.Node, ep: ExportedProgram
     ) -> Optional[QuantParams]:
         # tensor_node is quantized if it is produced by a dequant node
-        if is_dequant(tensor_node) and TagImplicitQDqPass.is_tagged_as_implicit_q_dq(
-            tensor_node
-        ):
+        if is_dequant(tensor_node) and is_tagged_as_implicit_q_dq(tensor_node):
             dq_input = cast(torch.fx.Node, tensor_node.args[0])
             if is_quant(dq_input):
                 q_input = cast(torch.fx.Node, dq_input.args[0])
                 if is_param_node(ep, q_input):
                     return cls.from_q_dq_node(dq_input)
             return cls.from_q_dq_node(tensor_node)
-
         return None
 
     @classmethod
@@ -290,7 +312,7 @@ class QuantParams:
         if len(tensor_node.users) == 1:
             q = list(tensor_node.users.keys())[0]
             # Check if user is a q node
-            if is_quant(q) and TagImplicitQDqPass.is_tagged_as_implicit_q_dq(q):
+            if is_quant(q) and is_tagged_as_implicit_q_dq(q):
                 return cls.from_q_dq_node(q)
 
         return None

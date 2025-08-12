@@ -21,6 +21,8 @@
 #include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
@@ -33,7 +35,6 @@
 #include <fstream>
 #include <memory>
 #include <numeric>
-
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
 DEFINE_string(
@@ -78,20 +79,35 @@ DEFINE_string(
     "",
     "Path to file with output shapes specified (used in dynamic shape scenario).");
 
-DEFINE_string(
-    input_type_size_path,
-    "",
-    "Path to file with input dtype sizes specified.");
-
-DEFINE_string(
-    output_type_size_path,
-    "",
-    "Path to file with output dtype sizes specified.");
-
 DEFINE_int32(
     debug_buffer_size,
     20000000, // 20MB
     "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
+
+DEFINE_string(
+    performance_output_path,
+    "inference_speed.txt",
+    "Records inference speed. For CI purpose.");
+
+DEFINE_int32(
+    log_level,
+    0,
+    "Log level between 1-5, higher is more verbose. "
+    "This is a runtime option and will override the log level set during AOT. "
+    "Refer to QnnExecuTorchLogLevel under qc_compiler_spec.fbs for more info.");
+DEFINE_int32(
+    htp_performance_mode,
+    0,
+    "HTP Performance mode between 0-8. "
+    "This is a runtime option and will override the performance mode set during AOT. "
+    "Refer to QnnExecuTorchHtpPerformanceMode under qc_compiler_spec.fbs for more info.");
+DEFINE_int32(
+    profile_level,
+    0,
+    "Profile level between 0-2. "
+    "Level 3(Optrace) must be turned on during AOT and cannot be enabled during runtime. "
+    "This is a runtime option and will override the profile level set during AOT. "
+    "Refer to QnnExecuTorchProfileLevel under qc_compiler_spec.fbs for more info.");
 
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
@@ -99,6 +115,7 @@ using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
 using executorch::extension::FileDataLoader;
 using executorch::extension::prepare_input_tensors;
+using executorch::runtime::BackendOption;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::EventTracerDebugLogLevel;
@@ -160,6 +177,40 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "%s", msg.c_str());
     return 1;
   }
+
+  // Set runtime options
+  executorch::runtime::BackendOptions<3> backend_options;
+  if (!gflags::GetCommandLineFlagInfoOrDie("log_level").is_default) {
+    ET_LOG(Info, "Setting runtime log level: %d", FLAGS_log_level);
+    ET_CHECK_MSG(
+        backend_options.set_option(QNN_RUNTIME_LOG_LEVEL, FLAGS_log_level) ==
+            Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_LOG_LEVEL);
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("htp_performance_mode").is_default) {
+    ET_LOG(
+        Info,
+        "Setting runtime performance mode: %d",
+        FLAGS_htp_performance_mode);
+    ET_CHECK_MSG(
+        backend_options.set_option(
+            QNN_RUNTIME_HTP_PERFORMANCE_MODE, FLAGS_htp_performance_mode) ==
+            Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_HTP_PERFORMANCE_MODE);
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("profile_level").is_default) {
+    ET_LOG(Info, "Setting runtime profile level: %d", FLAGS_profile_level);
+    ET_CHECK_MSG(
+        backend_options.set_option(
+            QNN_RUNTIME_PROFILE_LEVEL, FLAGS_profile_level) == Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_PROFILE_LEVEL);
+  }
+  ET_CHECK_MSG(
+      set_option(QNN_BACKEND, backend_options.view()) == Error::Ok,
+      "Failed to set runtime options.");
 
   // Create a loader to get the data of the program file. There are other
   // DataLoaders that use mmap() or point to data that's already in memory, and
@@ -368,23 +419,6 @@ int main(int argc, char** argv) {
         expected_output_shapes.emplace_back(std::move(shape));
       }
     }
-    // currently only expected_output_type_sizes is used
-    // TODO: remove following when meta could be correctly propagated
-    std::vector<int32_t> expected_input_type_sizes, expected_output_type_sizes;
-    if (!FLAGS_input_type_size_path.empty() &&
-        !FLAGS_output_type_size_path.empty()) {
-      std::ifstream input_type_size_list(FLAGS_input_type_size_path);
-      std::ifstream output_type_size_list(FLAGS_output_type_size_path);
-      std::string type_sizes_content;
-      while (std::getline(input_type_size_list, type_sizes_content)) {
-        expected_input_type_sizes.push_back(
-            std::stoi(split(type_sizes_content, ", ")[0]));
-      }
-      while (std::getline(output_type_size_list, type_sizes_content)) {
-        expected_output_type_sizes.push_back(
-            std::stoi(split(type_sizes_content, ", ")[0]));
-      }
-    }
 
     std::string file_path;
     int inference_index = 0;
@@ -495,10 +529,7 @@ int main(int argc, char** argv) {
           nbytes = std::accumulate(
               expected_output_shapes[output_index].begin(),
               expected_output_shapes[output_index].end(),
-              !expected_output_type_sizes.empty()
-                  ? expected_output_type_sizes[output_index]
-                  : executorch::runtime::elementSize(
-                        output_tensor.scalar_type()),
+              executorch::runtime::elementSize(output_tensor.scalar_type()),
               std::multiplies<int>());
         }
         auto output_file_name = FLAGS_output_folder_path + "/output_" +
@@ -513,10 +544,20 @@ int main(int argc, char** argv) {
     }
     ET_LOG(
         Info,
-        "%d inference took %f ms, avg %f ms",
+        "Total %d inference took %f ms, avg %f ms",
         inference_index,
         elapsed_time,
         elapsed_time / inference_index);
+
+    // Save avg inference time for CI
+    std::ofstream outfile(FLAGS_performance_output_path.c_str());
+    if (outfile.is_open()) {
+      double avg_time = elapsed_time / inference_index;
+      outfile << avg_time;
+      outfile.close();
+    } else {
+      ET_CHECK_MSG(false, "Error saving the inference speed file");
+    }
   } else {
     // if no input is provided, fill the inputs with default values
     auto inputs = prepare_input_tensors(*method);

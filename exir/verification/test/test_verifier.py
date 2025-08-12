@@ -153,7 +153,7 @@ class TestEdgeDialectVerifier(unittest.TestCase):
         net = TrainingNet(Net())
         inputs = (torch.randn(1, 6, 5, 5), torch.ones(1, dtype=torch.int64))
 
-        export_model = export(net, inputs)
+        export_model = export(net, inputs, strict=True)
         export_model = _export_forward_backward(export_model)
 
         edge = to_edge(export_model)
@@ -161,3 +161,17 @@ class TestEdgeDialectVerifier(unittest.TestCase):
         edge_verifier = EXIREdgeDialectVerifier()
 
         edge_verifier(edge.exported_program())
+
+    def test_verifier_preserve_ops_view(self) -> None:
+        class TestExpand(nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x.expand(2, 2, 2, 2)
+
+        model = TestExpand()
+        config = EdgeCompileConfig(preserve_ops=[torch.ops.aten.expand.default])
+        export_model = export(model, (torch.randn(2, 2, 2, 2),), strict=True)
+        with self.assertRaises(RuntimeError):
+            to_edge(export_model, compile_config=config)

@@ -11,19 +11,18 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  list(APPEND _common_compile_options "-march=armv8.2-a+dotprod")
+endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -36,8 +35,14 @@ extract_sources(${EXECUTORCH_SRCS_FILE})
 
 include(${EXECUTORCH_SRCS_FILE})
 
-# Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..,${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR},${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core/portable_type/c10>
+)
+
+list(APPEND _common_include_directories
+     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/ao>
+)
 
 # Custom op libraries
 set(custom_ops_libs pthreadpool)
@@ -49,7 +54,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7)$")
   list(APPEND _custom_ops__srcs
        "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_neon.c"
   )
-elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)")
   list(APPEND _custom_ops__srcs
        "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_avx.c"
   )
@@ -70,20 +75,24 @@ else()
 endif()
 
 add_library(custom_ops ${_custom_ops__srcs})
-
-target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
+find_package_torch_headers()
+target_include_directories(custom_ops PRIVATE "${_common_include_directories}")
 target_include_directories(
-  custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+  custom_ops
+  PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../../../include>
+          ${TORCH_INCLUDE_DIRS}
 )
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
 
-target_compile_options(
-  custom_ops PUBLIC ${_common_compile_options} -DET_USE_THREADPOOL
+target_compile_options(custom_ops PUBLIC ${_common_compile_options})
+
+install(
+  TARGETS custom_ops
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
 )
 
-install(TARGETS custom_ops DESTINATION lib)
-
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
+if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
   # Add a AOT library
   find_package_torch()
   add_library(
@@ -95,10 +104,12 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
     ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop_aot.cpp
   )
   target_include_directories(
-    custom_ops_aot_lib PUBLIC "${_common_include_directories}"
+    custom_ops_aot_lib PRIVATE "${_common_include_directories}"
   )
   target_include_directories(
-    custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+    custom_ops_aot_lib
+    PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../../../include>
+            ${TORCH_INCLUDE_DIRS}
   )
   # TODO: This only works if we install portable_lib.so to
   # <site-packages>/executorch/extension/pybindings/.
@@ -115,7 +126,9 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   else()
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
     # ops in PyTorch
-    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_core)
+    target_link_libraries(
+      custom_ops_aot_lib PUBLIC executorch_core kernels_util_all_deps
+    )
   endif()
 
   target_link_libraries(
@@ -128,13 +141,14 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
     target_link_libraries(custom_ops_aot_lib PUBLIC pthreadpool cpuinfo)
   endif()
   target_compile_options(
-    custom_ops_aot_lib
-    PUBLIC -Wno-deprecated-declarations -fPIC -frtti -fexceptions
-           ${_common_compile_options} -DET_USE_THREADPOOL
+    custom_ops_aot_lib PUBLIC -Wno-deprecated-declarations -fPIC -frtti
+                              -fexceptions ${_common_compile_options}
   )
 
-  install(TARGETS custom_ops_aot_lib
-          LIBRARY DESTINATION executorch/extension/llm/custom_ops
+  install(
+    TARGETS custom_ops_aot_lib
+    EXPORT ExecuTorchTargets
+    LIBRARY DESTINATION executorch/extension/llm/custom_ops
   )
 endif()
 

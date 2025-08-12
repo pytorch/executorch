@@ -38,7 +38,7 @@ test_cmake_qualcomm() {
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
-        -DANDROID_NATIVE_API_LEVEL=23 \
+        -DANDROID_NATIVE_API_LEVEL=30 \
         -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -B${build_dir} \

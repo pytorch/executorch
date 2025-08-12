@@ -45,17 +45,19 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   static constexpr const char op_name[] = "sigmoid.out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [](const CTYPE_COMPUTE val_in) {
-          CTYPE_COMPUTE out_val = static_cast<CTYPE_COMPUTE>(1.0) /
-              (static_cast<CTYPE_COMPUTE>(1.0) + exp(-val_in));
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::FLOATHBF16>(
+        [](const auto val_in) {
+          const auto one = static_cast<decltype(val_in)>(1.0);
+          auto out_val = one / (one + executorch::math::exp(-val_in));
           return out_val;
         },
         ctx,
         in,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::FLOATHBF16);
+        out);
   });
 
   return out;

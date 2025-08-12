@@ -30,3 +30,9 @@ jobs:
           test-infra-ref: main
           updatebot-token: ${{ secrets.UPDATEBOT_TOKEN }}
           pytorchbot-token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
+
+  link-check:
+    needs: update-pytorch-commit-hash
+    uses: ./.github/workflows/_link_check.yml
+    with:
+      ref: ${{ github.sha }}

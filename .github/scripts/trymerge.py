@@ -59,12 +59,7 @@ from gitutils import (
     patterns_to_regex,
     retries_decorator,
 )
-from label_utils import (
-    gh_add_labels,
-    gh_remove_label,
-    has_required_labels,
-    LABEL_ERR_MSG,
-)
+from label_utils import gh_add_labels, gh_remove_label
 from trymerge_explainer import get_revert_message, TryMergeExplainer
 
 # labels
@@ -1964,7 +1959,7 @@ def check_for_sev(org: str, project: str, skip_mandatory_checks: bool) -> None:
     response = cast(
         Dict[str, Any],
         gh_fetch_json_list(
-            "https://api.github.com/search/issues",
+            "https://api.github.com/search/issues",  # @lint-ignore
             params={"q": f'repo:{org}/{project} is:open is:issue label:"ci: sev"'},
         ),
     )
@@ -2115,9 +2110,6 @@ def merge(
 
     # Check for approvals
     find_matching_merge_rule(pr, repo, skip_mandatory_checks=True)
-
-    if not has_required_labels(pr):
-        raise RuntimeError(LABEL_ERR_MSG.lstrip(" #"))
 
     if ignore_current:
         checks = pr.get_checkrun_conclusions()

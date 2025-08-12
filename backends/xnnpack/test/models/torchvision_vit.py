@@ -12,6 +12,9 @@ from torchvision import models
 
 
 class TestViT(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     vit = models.vision_transformer.vit_b_16(weights="IMAGENET1K_V1")
     vit = vit.eval()
     model_inputs = (torch.randn(1, 3, 224, 224),)

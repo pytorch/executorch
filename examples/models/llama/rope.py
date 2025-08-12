@@ -9,7 +9,7 @@
 
 import math
 from functools import partial
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import torch
 from executorch.examples.models.llama.model_args import ModelArgs
@@ -17,10 +17,9 @@ from executorch.examples.models.llama.model_args import ModelArgs
 # ======================== Stock Implementation ========================
 
 
-def apply_scaling(freqs: torch.Tensor, scale_factor: int):
+def apply_scaling(freqs: torch.Tensor, scale_factor: int, high_freq_factor: int):
     # Values obtained from grid search
     low_freq_factor = 1
-    high_freq_factor = 4
     old_context_len = 8192  # original llama3 length
 
     low_freq_wavelen = old_context_len / low_freq_factor
@@ -47,14 +46,16 @@ def precompute_freqs_cis(
     theta: float = 10000.0,
     use_scaled: bool = False,
     scale_factor: Optional[int] = None,
+    high_freq_factor: int = 4,
+    device: Union[str, torch.device] = "cpu",
 ):
     freqs = 1.0 / (
-        theta ** (torch.arange(0, dim, 2, device="cpu")[: (dim // 2)].float() / dim)
+        theta ** (torch.arange(0, dim, 2, device=device)[: (dim // 2)].float() / dim)
     )
     t = torch.arange(end, device=freqs.device)  # pyre-ignore
     if use_scaled:
         assert scale_factor is not None
-        freqs = apply_scaling(freqs, scale_factor)  # pyre-ignore
+        freqs = apply_scaling(freqs, scale_factor, high_freq_factor)  # pyre-ignore
     freqs = torch.outer(t, freqs).float()
     freqs_cos = torch.cos(freqs)
     freqs_sin = torch.sin(freqs)
@@ -134,11 +135,21 @@ class RotaryEmbedding(torch.nn.Module):
 
 
 # Based on https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py#L77
-def hf_precompute_freqs_cis(dim: int, end: int, theta: float):
+# and https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_rope_utils.py#L242.
+# Current only support non-long rope.
+def hf_precompute_freqs_cis(
+    dim: int, end: int, theta: float, partial_rotary_factor: float = 1.0
+):
+    # Partial rotary embeddings.
+    dim = int(dim * partial_rotary_factor)
+
+    # Short factor scaling.
     freqs = 1.0 / (
         theta
         ** (torch.arange(0, dim, 2, device="cpu", dtype=torch.int64).float() / dim)
     )
+    # TODO: support long factor scaling.
+
     # pyre-ignore Undefined attribute [16]: `float` has no attribute `device`.
     t = torch.arange(end, device=freqs.device, dtype=torch.int64).type_as(
         freqs  # pyre-ignore
@@ -180,8 +191,13 @@ def hf_apply_rotary_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
+
+    rotary_dim = cos.shape[-1]
+    q_rot, q_pass = q[..., :rotary_dim], q[..., rotary_dim:]
+    k_rot, k_pass = k[..., :rotary_dim], k[..., rotary_dim:]
+
+    q_embed = torch.cat([(q_rot * cos) + (rotate_half(q_rot) * sin), q_pass], dim=-1)
+    k_embed = torch.cat([(k_rot * cos) + (rotate_half(k_rot) * sin), k_pass], dim=-1)
     return q_embed, k_embed
 
 
@@ -217,13 +233,17 @@ class Rope(torch.nn.Module):
 
         # Choose the appropriate RoPE implementation
         if self.params.use_hf_rope:
-            self.precompute_freqs_cis = hf_precompute_freqs_cis
+            self.precompute_freqs_cis = partial(
+                hf_precompute_freqs_cis,
+                partial_rotary_factor=self.params.partial_rotary_factor,
+            )
             self.apply_rotary_emb = hf_apply_rotary_emb
         else:
             self.precompute_freqs_cis = partial(
                 precompute_freqs_cis,
                 use_scaled=self.params.use_scaled_rope,
                 scale_factor=self.params.rope_scale_factor,
+                high_freq_factor=self.params.high_freq_factor,
             )
             self.apply_rotary_emb = RotaryEmbedding()
 
@@ -287,3 +307,15 @@ class Rope(torch.nn.Module):
             freqs_cos = self.freqs_cos[:seq_len]
             freqs_sin = self.freqs_sin[:seq_len]
         return freqs_cos, freqs_sin
+
+    def get_freqs_using_indices(self, indices: torch.Tensor):
+        """
+        Get the precomputed frequencies for given input indices.
+
+        Args:
+            indices (torch.Tensor): The input indices tensor.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: The precomputed frequencies for given input indices.
+        """
+        return self.freqs_cos[indices], self.freqs_sin[indices]

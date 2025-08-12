@@ -2,6 +2,10 @@ load("@fbsource//tools/build_defs:platform_defs.bzl", "ANDROID")
 load("@fbsource//xplat/caffe2:pt_defs.bzl", "get_pt_ops_deps")
 load("@fbsource//xplat/caffe2:pt_ops.bzl", "pt_operator_library")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(
+    "@fbsource//xplat/executorch/backends/vulkan:targets.bzl",
+    "get_platforms",
+)
 
 def define_test_targets(test_name, extra_deps = [], src_file = None, is_fbcode = False):
     deps_list = [
@@ -20,6 +24,7 @@ def define_test_targets(test_name, extra_deps = [], src_file = None, is_fbcode =
         compiler_flags = [
             "-Wno-unused-variable",
         ],
+        platforms = get_platforms(),
         define_static_target = False,
         deps = deps_list,
     )
@@ -134,6 +139,29 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/vulkan:vulkan_graph_runtime",
             runtime.external_dep_location("libtorch"),
         ],
+        platforms = get_platforms(),
+    )
+
+    runtime.cxx_library(
+        name = "test_utils",
+        srcs = [
+            "test_utils.cpp",
+        ],
+        headers = [
+            "test_utils.h",
+        ],
+        exported_headers = [
+            "test_utils.h",
+        ],
+        deps = [
+            "//executorch/backends/vulkan:vulkan_graph_runtime",
+            "//executorch/runtime/core/exec_aten:lib",
+            runtime.external_dep_location("libtorch"),
+        ],
+        visibility = [
+            "//executorch/backends/vulkan/test/op_tests/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     define_test_targets(
@@ -144,9 +172,53 @@ def define_common_targets(is_fbcode = False):
     define_test_targets(
         "sdpa_test",
         extra_deps = [
+            ":test_utils",
             "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
             "//executorch/extension/tensor:tensor",
         ]
     )
-    define_test_targets("linear_weight_int4_test")
-    define_test_targets("rotary_embedding_test")
+    define_test_targets(
+        "quantize_test",
+        extra_deps = [
+            ":test_utils",
+            "//executorch/kernels/quantized/cpu:op_quantize",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/extension/aten_util:aten_bridge",
+        ]
+    )
+    define_test_targets(
+        "dequantize_test",
+        extra_deps = [
+            ":test_utils",
+            "//executorch/kernels/quantized/cpu:op_dequantize",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/extension/aten_util:aten_bridge",
+        ]
+    )
+    define_test_targets(
+        "choose_qparams_test",
+        extra_deps = [
+            ":test_utils",
+            "//executorch/kernels/quantized/cpu:op_choose_qparams",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/extension/aten_util:aten_bridge",
+        ]
+    )
+    define_test_targets(
+        "quantized_linear_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "rotary_embedding_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "quantize_affine_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )

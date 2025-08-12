@@ -27,7 +27,7 @@ Tensor& op_diagonal_copy_out(
     int64_t dim1,
     int64_t dim2,
     Tensor& out) {
-  executorch::runtime::KernelRuntimeContext context{};
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
   return torch::executor::aten::diagonal_copy_outf(
       context, input, offset, dim1, dim2, out);
 }
@@ -50,11 +50,41 @@ class OpDiagonalCopyOutTest : public ::testing::Test {
     op_diagonal_copy_out(input, 1, 1, 0, out);
     EXPECT_TENSOR_CLOSE(out, out_expected);
   }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void run_2d_complex_dtype() {
+    TensorFactory<DTYPE> tf;
+    Tensor input = tf.make(
+        {3, 4},
+        {CTYPE(1, 1),
+         CTYPE(2, 2),
+         CTYPE(3, 3),
+         CTYPE(4, 4),
+         CTYPE(5, 5),
+         CTYPE(6, 6),
+         CTYPE(7, 7),
+         CTYPE(8, 8),
+         CTYPE(9, 9),
+         CTYPE(10, 10),
+         CTYPE(11, 11),
+         CTYPE(12, 12)});
+    Tensor out = tf.make({2}, {CTYPE(0, 0), CTYPE(0, 0)});
+    Tensor out_expected = tf.make({2}, {CTYPE(5, 5), CTYPE(10, 10)});
+    op_diagonal_copy_out(input, 1, 1, 0, out);
+    EXPECT_TENSOR_CLOSE(out, out_expected);
+  }
 };
 
 TEST_F(OpDiagonalCopyOutTest, SmokeTest2D) {
 #define TEST_ENTRY(ctype, dtype) test_2d_dtype<ScalarType::dtype>();
   ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpDiagonalCopyOutTest, ComplexSmokeTest2D) {
+#define TEST_ENTRY(ctype, dtype) \
+  run_2d_complex_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

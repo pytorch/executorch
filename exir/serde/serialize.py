@@ -22,6 +22,7 @@ import executorch.exir.serde.schema as schema
 import torch
 import torch.export.exported_program as ep
 from executorch.exir import delegate
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir.backend.compile_spec_schema import (
     CompileSpec as delegate_CompileSpec,
 )
@@ -31,7 +32,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.lowered_backend_module import (
     LoweredBackendModule as ExirLoweredBackendModule,
 )
-from executorch.exir.serde.export_serialize import GraphModuleOpUpgrader, SerializeError
+from executorch.exir.serde.export_serialize import SerializeError
 from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
@@ -40,6 +41,7 @@ from executorch.exir.serde.schema import (
 )
 from torch._export.verifier import load_verifier
 from torch.fx.experimental import symbolic_shapes
+from torch.fx.traceback import NodeSource
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -87,6 +89,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
         if node.target is memory.alloc:
             ex_node = schema.Node(
+                name=node.name,
                 target="memory.alloc",
                 inputs=self.serialize_alloc_inputs(node.args),
                 outputs=self.serialize_arbitrary_outputs(node),
@@ -97,6 +100,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         elif isinstance(node.target, EdgeOpOverload):
             assert node.target._op is not None
             ex_node = schema.Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 # pyre-ignore Undefined attribute [16]: Item `typing.Callable` of
                 # `typing.Union[typing.Callable[..., typing.Any], str]` has no attribute `_op`.
@@ -109,6 +113,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             return
         elif node.target is delegate.executorch_call_delegate:
             ex_node = schema.Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 inputs=self.serialize_call_delegate_inputs(node.args),
                 outputs=self.serialize_arbitrary_outputs(node),
@@ -140,7 +145,23 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             debug_handle = node.meta["debug_handle"]
             meta["debug_handle"] = str(debug_handle)
 
+        if "from_node" in node.meta:
+            from_node = node.meta["from_node"]
+            # Serialize from_node as JSON since it's a complex nested structure
+            meta["from_node"] = json.dumps(self._make_from_node_json_acceptable(from_node))
+
         return meta
+
+    def _make_from_node_json_acceptable(self, from_node: Optional[List[NodeSource]]):
+        """
+        Serialize from_node metadata from a list of NodeSource objects to a list of dictionaries.
+        """
+        if from_node is None:
+            return None
+
+        json_acceptable_from_node = [node_source.to_dict() for node_source in from_node if isinstance(node_source, NodeSource)]
+
+        return json_acceptable_from_node
 
     def serialize_alloc_inputs(
         self, inputs  # pyre-ignore
@@ -268,6 +289,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         assert isinstance(serialized_artifact.exported_program, schema.ExportedProgram)
 
         serialized_processed_bytes = serialize_bytes(lowered_module.processed_bytes)
+        named_data_store = json.dumps(export_serialize._dataclass_to_dict(lowered_module.named_data_store_output),cls=export_serialize.EnumEncoder) if lowered_module.named_data_store_output else None
 
         serialized_lowered_module = SerdeLoweredBackendModule(
             original_module=serialized_artifact.exported_program,
@@ -276,6 +298,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             processed_bytes=serialized_processed_bytes,
             compile_specs=serialized_compile_spec,
             backend_id=lowered_module.backend_id,
+            named_data_store=named_data_store,
         )
 
         json_lowered_module = json.dumps(
@@ -470,7 +493,21 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         if debug_handle := metadata.get("debug_handle"):
             res["debug_handle"] = int(debug_handle)
 
+        if from_node_str := metadata.get("from_node"):
+            res["from_node"] = self._deserialize_from_node(json.loads(from_node_str))
+
         return res
+
+    def _deserialize_from_node(self, from_node_data: Optional[List[Dict[str, Any]]]) -> Optional[List[NodeSource]]:
+        """
+        Recursively deserialize from_node metadata from JSON data.
+        """
+        if from_node_data is None:
+            return None
+
+        assert isinstance(from_node_data, list)
+
+        return [NodeSource._from_dict(fn_dict) for fn_dict in from_node_data]
 
     # pyre-ignore
     def deserialize_alloc_inputs(self, serialized_inputs: List[schema.NamedArgument]):
@@ -556,11 +593,19 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             None,
         )
 
+        if serialized_lowered_module.named_data_store is None:
+            named_data_store = None
+        else:
+            named_data_store = export_serialize._dict_to_dataclass(NamedDataStoreOutput, json.loads(serialized_lowered_module.named_data_store))
+            for buffer in named_data_store.buffers:
+                buffer.buffer = base64.b64decode(buffer.buffer.encode("ascii"))
+
         lowered_module = ExirLoweredBackendModule(
             original_module,
             backend_id,
             processed_bytes,
             compile_specs,
+            named_data_store
         )
         self.module.register_module(serialized_lowered_module_arg.name, lowered_module)
         return self.graph.get_attr(serialized_lowered_module_arg.name)
@@ -606,12 +651,6 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             symbol_name_to_range,
             res.names_to_symbols,
         )
-        model_opset_version: Optional[Dict[str, int]] = exported_program.opset_version
-        self._validate_model_opset_version(model_opset_version)
-
-        upgrader = GraphModuleOpUpgrader(
-            self.expected_opset_version, model_opset_version
-        )
 
         dummy_g = torch.fx.Graph()
         dummy_g.output(())
@@ -645,7 +684,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
                     node.target,
                     getattr(res.graph_module, node.target),
                 )
-        return upgrader.upgrade(exported_program)
+        return exported_program
 
 
 def serialize(
@@ -672,7 +711,6 @@ def serialize(
 
 def deserialize(
     artifact: export_serialize.SerializedArtifact,
-    expected_opset_version: Optional[Dict[str, int]] = None,
 ) -> ep.ExportedProgram:
     assert isinstance(artifact.exported_program, bytes)
     exported_program_str = artifact.exported_program.decode("utf-8")
@@ -680,7 +718,7 @@ def deserialize(
     serialized_exported_program = export_serialize._dict_to_dataclass(
         schema.ExportedProgram, exported_program_dict
     )
-    return ExportedProgramDeserializer(expected_opset_version).deserialize(
+    return ExportedProgramDeserializer().deserialize(
         serialized_exported_program,
         artifact.state_dict,
         artifact.constants,
@@ -724,7 +762,6 @@ def load(
     f: Union[str, os.PathLike[str], io.BytesIO],
     *,
     extra_files: Optional[Dict[str, Any]] = None,
-    expected_opset_version: Optional[Dict[str, int]] = None,
 ) -> ep.ExportedProgram:
     if isinstance(f, (str, os.PathLike)):
         f = os.fspath(str(f))
@@ -785,6 +822,6 @@ def load(
         )
 
         # Deserialize ExportedProgram
-        ep = deserialize(artifact, expected_opset_version)
+        ep = deserialize(artifact)
 
         return ep

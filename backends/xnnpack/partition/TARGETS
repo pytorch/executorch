@@ -12,7 +12,6 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
-        ":configs",
         ":partitioner_graphs",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition/config:xnnpack_partitioner_configs",
@@ -21,20 +20,6 @@ runtime.python_library(
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend:utils",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
-    ],
-)
-
-runtime.python_library(
-    name = "configs",
-    srcs = [
-        "configs.py",
-    ],
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
-    deps = [
-        "//executorch/exir:lib",
     ],
 )
 

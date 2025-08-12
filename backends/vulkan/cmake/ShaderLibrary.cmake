@@ -29,9 +29,11 @@ if(ANDROID)
     message(FATAL_ERROR "ANDROID_NDK not set")
   endif()
 
-  set(GLSLC_PATH
-      "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc"
-  )
+  if(NOT GLSLC_PATH)
+    set(GLSLC_PATH
+        "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc"
+    )
+  endif()
 else()
   find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
 
@@ -41,20 +43,33 @@ else()
 endif()
 
 # Required to enable linking with --whole-archive
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 function(gen_vulkan_shader_lib_cpp shaders_path)
   set(VULKAN_SHADERGEN_ENV "")
-  set(VULKAN_SHADERGEN_OUT_PATH ${CMAKE_BINARY_DIR}/${ARGV1})
+  set(VULKAN_SHADERGEN_OUT_PATH ${CMAKE_BINARY_DIR}/vulkan_compute_shaders)
 
-  execute_process(
+  set(GEN_SPV_ARGS "--optimize")
+  if(DEFINED ENV{ETVK_USING_SWIFTSHADER})
+    if("$ENV{ETVK_USING_SWIFTSHADER}" STREQUAL "1"
+       OR "$ENV{ETVK_USING_SWIFTSHADER}" STREQUAL "True"
+    )
+      list(APPEND GEN_SPV_ARGS "--replace-u16vecn")
+    endif()
+  endif()
+
+  add_custom_command(
+    COMMENT "Generating Vulkan Compute Shaders"
+    OUTPUT ${VULKAN_SHADERGEN_OUT_PATH}/spv.cpp
     COMMAND
       "${PYTHON_EXECUTABLE}"
       ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py --glsl-path
       ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
-      --glslc-path=${GLSLC_PATH} --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}
-      --env ${VULKAN_GEN_ARG_ENV}
-    RESULT_VARIABLE error_code
+      --glslc-path=${GLSLC_PATH}
+      --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}/shader_cache/ --env
+      ${VULKAN_GEN_ARG_ENV} ${GEN_SPV_ARGS}
+    DEPENDS ${shaders_path}/*
+            ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py
   )
 
   set(generated_spv_cpp
@@ -75,7 +90,7 @@ function(vulkan_shader_lib library_name generated_spv_cpp)
   target_link_libraries(${library_name} vulkan_backend)
   target_compile_options(${library_name} PRIVATE ${VULKAN_CXX_FLAGS})
   # Link this library with --whole-archive due to dynamic shader registrations
-  target_link_options_shared_lib(${library_name})
+  executorch_target_link_options_shared_lib(${library_name})
 endfunction()
 
 # Convenience macro to generate a SPIR-V shader library target. Given the path
@@ -85,13 +100,6 @@ endfunction()
 macro(vulkan_shader_library shaders_path library_name)
   set(VULKAN_SHADERGEN_ENV "")
   set(VULKAN_SHADERGEN_OUT_PATH ${CMAKE_BINARY_DIR}/${library_name})
-
-  # execute_process( COMMAND "${PYTHON_EXECUTABLE}"
-  # ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py --glsl-path
-  # ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
-  # --glslc-path=${GLSLC_PATH} --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH} --env
-  # ${VULKAN_GEN_ARG_ENV} RESULT_VARIABLE error_code ) set(ENV{PYTHONPATH}
-  # ${PYTHONPATH})
 
   set(generated_spv_cpp ${VULKAN_SHADERGEN_OUT_PATH}/spv.cpp)
 
@@ -106,7 +114,7 @@ macro(vulkan_shader_library shaders_path library_name)
   target_link_libraries(${library_name} vulkan_backend)
   target_compile_options(${library_name} PRIVATE ${VULKAN_CXX_FLAGS})
   # Link this library with --whole-archive due to dynamic shader registrations
-  target_link_options_shared_lib(${library_name})
+  executorch_target_link_options_shared_lib(${library_name})
 
   unset(VULKAN_SHADERGEN_ENV)
   unset(VULKAN_SHADERGEN_OUT_PATH)

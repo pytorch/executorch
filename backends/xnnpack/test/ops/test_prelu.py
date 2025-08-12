@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestPrelu(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class PReLU(torch.nn.Module):
         def __init__(self):
             super().__init__()

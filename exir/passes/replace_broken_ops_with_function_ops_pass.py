@@ -5,25 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-from typing import Dict
-
 import torch
 
 from executorch.exir.pass_base import ExportPass
-
-from torch._ops import OpOverload
-
-
-_NON_FUNCTIONAL_OPS_TO_FUNCTIONAL_OPS: Dict[OpOverload, OpOverload] = {
-    torch.ops.aten._unsafe_view.default: torch.ops.aten.view_copy.default,
-    torch.ops.aten.t.default: torch.ops.aten.t_copy.default,
-    torch.ops.aten.view.default: torch.ops.aten.view_copy.default,
-    torch.ops.aten.expand.default: torch.ops.aten.expand_copy.default,
-    torch.ops.aten.permute.default: torch.ops.aten.permute_copy.default,
-    torch.ops.aten.squeeze.default: torch.ops.aten.squeeze_copy.default,
-    torch.ops.aten.unsqueeze.default: torch.ops.aten.unsqueeze_copy.default,
-    torch.ops.aten.slice.Tensor: torch.ops.aten.slice_copy.Tensor,
-}
 
 
 class ReplaceBrokenOpsWithFunctionalOpsPass(ExportPass):
@@ -37,8 +21,22 @@ class ReplaceBrokenOpsWithFunctionalOpsPass(ExportPass):
 
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta):
-        if op in _NON_FUNCTIONAL_OPS_TO_FUNCTIONAL_OPS:
-            return super().call_operator(
-                _NON_FUNCTIONAL_OPS_TO_FUNCTIONAL_OPS[op], args, kwargs, meta
+        if op.is_view:
+            namespace, op_full_name = op.name().split("::")
+            split = op_full_name.split(".")
+            if len(split) == 2:
+                op_name, overload_name = split[0], split[1]
+            elif len(split) == 1:
+                # Add default overload if no overload listed
+                op_name = op_full_name
+                overload_name = "default"
+            else:
+                raise RuntimeError(
+                    f"Invalid op name expected only one '.' to be present: {op_full_name}"
+                )
+
+            view_copy_op = getattr(
+                getattr(getattr(torch.ops, namespace), f"{op_name}_copy"), overload_name
             )
+            return super().call_operator(view_copy_op, args, kwargs, meta)
         return super().call_operator(op, args, kwargs, meta)

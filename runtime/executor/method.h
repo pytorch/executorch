@@ -7,9 +7,12 @@
  */
 
 #pragma once
+
+#ifdef __GNUC__
 // Disable -Wdeprecated-declarations, as some builds use 'Werror'.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
@@ -17,6 +20,7 @@
 #include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/merged_data_map.h>
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/compiler.h>
 
@@ -29,7 +33,7 @@ struct EValue;
 } // namespace executorch_flatbuffer
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 // Forward declare NamedData. This is a public header and must not include
 // internal data types.
@@ -44,7 +48,7 @@ class Program;
 class BackendDelegate;
 struct Chain;
 class KernelRuntimeContext;
-using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
+using OpFunction = void (*)(KernelRuntimeContext&, Span<EValue*>);
 /// A list of pointers into the master values table that together compose the
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;
@@ -69,10 +73,12 @@ class Method final {
         event_tracer_(rhs.event_tracer_),
         n_value_(rhs.n_value_),
         values_(rhs.values_),
+        input_set_(rhs.input_set_),
         n_delegate_(rhs.n_delegate_),
         delegates_(rhs.delegates_),
         n_chains_(rhs.n_chains_),
         chains_(rhs.chains_),
+        merged_data_map_(std::move(rhs.merged_data_map_)),
         external_constants_(rhs.external_constants_),
         n_external_constants_(rhs.n_external_constants_),
         init_state_(rhs.init_state_) {
@@ -80,8 +86,11 @@ class Method final {
     // anything twice.
     rhs.n_value_ = 0;
     rhs.values_ = nullptr;
+    rhs.input_set_ = nullptr;
     rhs.n_delegate_ = 0;
     rhs.delegates_ = nullptr;
+
+    rhs.merged_data_map_ = nullptr;
     rhs.n_external_constants_ = 0;
     rhs.external_constants_ = nullptr;
 
@@ -174,6 +183,9 @@ class Method final {
   ET_NODISCARD Error get_outputs(EValue* output_evalues, size_t length);
 
   /**
+   * DEPRECATED: Use MethodMeta instead to access metadata, and set_input to
+   * update Method inputs.
+   *
    * Copies the method's inputs into the provided array.
    *
    * WARNING: The input contains shallow copies of internal tensor inputs.
@@ -187,7 +199,20 @@ class Method final {
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  ET_NODISCARD Error get_inputs(EValue* input_evalues, size_t length);
+  ET_DEPRECATED ET_NODISCARD Error
+  get_inputs(EValue* input_evalues, size_t length);
+
+  /**
+   *
+   * Retrieves the attribute tensor associated with the given name.
+   *
+   * @param[in] name The name of the attribute tensor to retrieve.
+   *
+   * @returns Result containing the attribute tensor on success, non-Ok on
+   * failure.
+   */
+  ET_NODISCARD Result<executorch::aten::Tensor> get_attribute(
+      std::string_view name);
 
   /**
    * Execute the method.
@@ -295,10 +320,12 @@ class Method final {
         event_tracer_(event_tracer),
         n_value_(0),
         values_(nullptr),
+        input_set_(nullptr),
         n_delegate_(0),
         delegates_(nullptr),
         n_chains_(0),
         chains_(nullptr),
+        merged_data_map_(nullptr),
         external_constants_(nullptr),
         n_external_constants_(0),
         init_state_(InitializationState::Uninitialized) {}
@@ -342,6 +369,7 @@ class Method final {
 
   size_t n_value_;
   EValue* values_;
+  bool* input_set_;
 
   size_t n_delegate_;
   BackendDelegate* delegates_;
@@ -349,6 +377,7 @@ class Method final {
   size_t n_chains_;
   Chain* chains_;
 
+  internal::MergedDataMap* merged_data_map_;
   NamedData* external_constants_;
   size_t n_external_constants_ = 0;
 
@@ -391,15 +420,17 @@ class Method final {
   void log_outputs();
 };
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::Method;
+using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 } // namespace executor
 } // namespace torch
 
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif

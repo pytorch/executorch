@@ -30,6 +30,10 @@ ARG BUCK2_VERSION
 COPY ./common/install_buck.sh install_buck.sh
 RUN bash ./install_buck.sh && rm install_buck.sh
 
+# Install java
+COPY ./common/install_java.sh install_java.sh
+RUN bash ./install_java.sh && rm install_java.sh
+
 # Setup user
 COPY ./common/install_user.sh install_user.sh
 RUN bash ./install_user.sh && rm install_user.sh
@@ -79,6 +83,12 @@ RUN if [ -n "${ANDROID_NDK_VERSION}" ]; then bash ./install_android.sh; fi
 RUN rm install_android.sh
 
 ARG ARM_SDK
+
+ARG ZEPHYR_SDK
+COPY ./common/install_zephyr.sh install_zephyr.sh
+COPY ./common/utils.sh utils.sh
+RUN if [ -n "${ZEPHYR_SDK}" ]; then bash ./install_zephyr.sh; fi
+RUN rm install_zephyr.sh utils.sh
 
 ARG QNN_SDK
 

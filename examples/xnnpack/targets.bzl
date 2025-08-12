@@ -14,6 +14,7 @@ def define_common_targets():
         ],
         visibility = [
             "//executorch/examples/xnnpack/...",
+            "//executorch/backends/xnnpack/test/...",
         ],
         deps = [
             "//executorch/examples/models:models",  # @manual

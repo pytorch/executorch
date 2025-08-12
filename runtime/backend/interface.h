@@ -12,16 +12,19 @@
 
 #include <executorch/runtime/backend/backend_execution_context.h>
 #include <executorch/runtime/backend/backend_init_context.h>
+#include <executorch/runtime/backend/backend_option_context.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 struct SizedBuffer {
   void* buffer;
@@ -96,7 +99,38 @@ class BackendInterface {
   ET_NODISCARD virtual Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const = 0;
+      Span<EValue*> args) const = 0;
+
+  /**
+   * Responsible update the backend status, if any. The backend options are
+   * passed in by users, and the backend can update its internal status based on
+   * the options.
+   *
+   * @param[in] context Runtime context if any. Currently it's not used.
+   * @param[in] args A list of BackendOptions passed in by users.
+   * @retval Error::Ok if successful.
+   */
+  ET_NODISCARD virtual Error set_option(
+      __ET_UNUSED BackendOptionContext& context,
+      const executorch::runtime::Span<BackendOption>& backend_options) {
+    return Error::Ok;
+  };
+
+  /**
+   * Responsible update the backend status, if any. The backend options are
+   * passed in by users, and the backend can update its internal status based on
+   * the options.
+   *
+   * @param[in] context Runtime context if any. Currently it's not used.
+   * @param[in] args A list of BackendOptions passed in by users, that will be
+   * filled by the backend
+   * @retval Error::Ok if successful.
+   */
+  ET_NODISCARD virtual Error get_option(
+      __ET_UNUSED BackendOptionContext& context,
+      executorch::runtime::Span<BackendOption>& backend_options) {
+    return Error::Ok;
+  };
 
   /**
    * Responsible for destroying a handle, if it's required for some backend.
@@ -149,19 +183,48 @@ size_t get_num_registered_backends();
  */
 Result<const char*> get_backend_name(size_t index);
 
-} // namespace runtime
+/**
+ * Sets backend options for a specific backend.
+ *
+ * @param backend_name The name of the backend to set options for
+ * @param backend_options The backend option list containing the options
+ * to set
+ * @return Error::Ok on success, Error::NotFound if backend is not found, or
+ * other error codes on failure
+ */
+Error set_option(
+    const char* backend_name,
+    const executorch::runtime::Span<executorch::runtime::BackendOption>
+        backend_options);
+
+/**
+ * Retrieves backend options for a specific backend.
+ *
+ * @param backend_name The name of the backend to get options from
+ * @param backend_options The backend option objects that will be filled with
+ * the populated values from the backend
+ * @return Error::Ok on success, Error::NotFound if backend is not found, or
+ * other error codes on failure
+ */
+Error get_option(
+    const char* backend_name,
+    executorch::runtime::Span<executorch::runtime::BackendOption>
+        backend_options);
+
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::Backend;
-using ::executorch::runtime::CompileSpec;
-using ::executorch::runtime::DelegateHandle;
-using ::executorch::runtime::get_backend_class;
-using ::executorch::runtime::register_backend;
-using ::executorch::runtime::SizedBuffer;
-using PyTorchBackendInterface = ::executorch::runtime::BackendInterface;
+using ::executorch::ET_RUNTIME_NAMESPACE::Backend;
+using ::executorch::ET_RUNTIME_NAMESPACE::CompileSpec;
+using ::executorch::ET_RUNTIME_NAMESPACE::DelegateHandle;
+using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_class;
+using ::executorch::ET_RUNTIME_NAMESPACE::register_backend;
+using ::executorch::ET_RUNTIME_NAMESPACE::SizedBuffer;
+using PyTorchBackendInterface =
+    ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface;
 } // namespace executor
 } // namespace torch

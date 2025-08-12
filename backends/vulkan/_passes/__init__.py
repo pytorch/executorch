@@ -6,6 +6,9 @@
 
 # pyre-strict
 
+from executorch.backends.vulkan._passes.fuse_quantized_ops import (
+    FuseQuantizedOpsTransform,
+)
 from executorch.backends.vulkan._passes.insert_prepack_nodes import insert_prepack_nodes
 from executorch.backends.vulkan._passes.int4_weight_only_quantizer import (
     VkInt4WeightOnlyQuantizer,
@@ -26,6 +29,7 @@ from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
 from executorch.backends.vulkan._passes.tag_memory_meta_pass import TagMemoryMetaPass
 
 __all__ = [
+    "FuseQuantizedOpsTransform",
     "insert_prepack_nodes",
     "VkInt4WeightOnlyQuantizer",
     "remove_asserts",

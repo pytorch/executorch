@@ -8,6 +8,8 @@
 
 #include <executorch/extension/aten_util/aten_bridge.h>
 
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_dimension_limit.h>
 #include <executorch/runtime/platform/assert.h>
 #include <cstring>
 
@@ -40,7 +42,12 @@ ET_CHECK_MSG(
         ssize_t(a.size(i)),
         ssize_t(b.size(i)));
   }
-  // check strides
+  // check strides and dim order
+  std::array<exec_aten::StridesType, executorch::runtime::kTensorDimensionLimit>
+      expected_strides{};
+  runtime::dim_order_to_stride_nocheck(
+      b.sizes().data(), b.dim_order().data(), b.dim(), expected_strides.data());
+
   for (size_t i = 0, dims = a.dim(); i < dims; ++i) {
     // Dont match strides if the size is 1.
     // Why? Because tensor is non-contig only if
@@ -52,6 +59,12 @@ ET_CHECK_MSG(
         i,
         ssize_t(a.stride(i)),
         ssize_t(b.strides()[i]));
+    ET_CHECK_MSG(
+        (b.size(i) == 1 || (b.strides()[i] == expected_strides[i])),
+        "Strides don't match dim order at index:%zd, stride: %zd != expected %zd",
+        i,
+        ssize_t(a.stride(i)),
+        ssize_t(expected_strides[i]));
   }
   // check dtype
   ET_CHECK_MSG(
@@ -109,13 +122,11 @@ c10::ScalarType executorch_to_torch_scalar_type(
 void alias_etensor_to_attensor(
     at::Tensor& aten_tensor,
     torch::executor::Tensor& mutable_et) {
-  // TODO(kimishpatel): contiguous according to memformat
-  // Right now we assume everything is channels first contiguous
-  // Note that input tensor must be contiguous for us to alias.
-  // Mixing aliasing and copying is dangerous since if we aliased
-  // the instance of mutatble_et to aten_tensor in the previous call,
-  // then in the next call copying will not be the correct behavior.
-  ET_CHECK_MSG(aten_tensor.is_contiguous(), "Input tensor must be contiguous");
+  ET_CHECK_MSG(
+      aten_tensor.is_contiguous() ||
+          aten_tensor.is_contiguous(at::MemoryFormat::ChannelsLast),
+      "Input tensor must have contiguous or channels last memory format");
+
   check_tensor_meta(aten_tensor, mutable_et);
   mutable_et.unsafeGetTensorImpl()->set_data(aten_tensor.mutable_data_ptr());
 }

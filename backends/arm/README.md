@@ -80,28 +80,10 @@ test                            #  Root test folder
 Some example commands to run these tests follow. Run a single test:
 
 ```
-python -m unittest backends.arm.test.ops.test_add.TestSimpleAdd -k test_add2_tosa_BI
-```
-
-or with pytest
-
-```
 pytest -c /dev/null -v -n auto backends/arm/test/ops/test_add.py -k test_add2_tosa_BI
 ```
 
-Or all tests in "TestSimpleAdd":
-
-```
-python -m unittest backends.arm.test.ops.test_add.TestSimpleAdd
-```
-
 Or discover and run many tests:
-
-```
-python -m unittest discover -s backends/arm/test/ops/
-```
-
-or with pytest
 
 ```
 pytest -c /dev/null -v -n auto backends/arm/test/ops/
@@ -119,8 +101,16 @@ backends/arm/test/setup_testing.sh
 The you can run the tests with
 
 ```
-pytest -c /dev/null -v -n auto backends/arm/test --arm_run_corstoneFVP
+pytest -c /dev/null -v -n auto backends/arm/test
 ```
+
+### Model test dependencies
+Some model tests in Arm backend require third-party libraries or packages. To run these tests, you need to install the required dependencies by running the script `examples/arm/setup.sh` with the flag `--setup-test-dependency`.
+
+Please note that installing model test dependencies is a standalone process. When using the `--setup-test-dependency` flag, the script will install only the necessary dependencies for model tests, skipping all other setup procedures.
+
+List of models with specific dependencies:
+- Stable Diffusion: [diffusers](https://github.com/huggingface/diffusers/tree/main)
 
 ## Passes
 
@@ -191,8 +181,8 @@ The Arm EthosU Backend should be considered a prototype quality at this point, l
 ## Current flows
 
 The EthosUBackend has a two stage process,
-- Compile to TOSA to rationalise the graph into known hardware support profiles. Currently this is to v0.80 TOSA BI with specific concern to a subset which gives support on Ethos-U55 and Ethos-U85, the target of the initial prototype efforts. This calls into the TOSABackend.
-- Lower via the ethos-u-vela compilation flow which takes TOSA v0.80 as an input and produces a low level commandstream for the hardware which is then passed via the delegate to the ethos-u-core-driver for direct execution.
+- Compile to TOSA to rationalise the graph into known hardware support profiles. Currently this is to v1.0 TOSA INT with specific concern to a subset which gives support on Ethos-U55 and Ethos-U85, the target of the initial prototype efforts. This calls into the TOSABackend.
+- Lower via the ethos-u-vela compilation flow which takes TOSA v1.0 as an input and produces a low level commandstream for the hardware which is then passed via the delegate to the ethos-u-core-driver for direct execution.
 
 The EthosUPartitioner is currenly used to ensure the operations converted are Ethos-U compatible, but will be extended to offer spec-correct TOSA Base inference and TOSA Main Inference generation in future.
 
@@ -205,3 +195,16 @@ It is possible to control the compilation flow to aid in development and debug o
 Configuration of the EthosUBackend export flow is controlled by CompileSpec information (essentially used as compilation flags) to determine which of these outputs is produced. In particular this allows for use of the tosa_reference_model to run intermediate output to check for correctness and quantization accuracy without a full loop via hardware implemntation.
 
 As this is in active development see the EthosUBackend for accurate information on [compilation flags](https://github.com/pytorch/executorch/blob/29f6dc9353e90951ed3fae3c57ae416de0520067/backends/arm/arm_backend.py#L319-L324)
+
+## Model specific and optional passes
+The current TOSA version does not support int64. However, int64 is commonly used in many models. In order to lower the operators with int64 inputs and/or outputs to TOSA, a few passes have been developed to handle the int64-related issues. The main idea behind these passes is to replace the uses of int64 with int32 where feasible.
+- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter.
+- For quantized models, these transformations will be automatically handled during annotation before the export stage.
+
+List of model specific and optional passes:
+- InsertCastForOpsWithInt64InputPass
+    - Functionality:
+        - For LLMs such as LLama, some opeartors like aten.embedding have int64 input. In order to lower these operators to TOSA, this pass will insert a casting node that converts the input from int64 to int32.
+        - Example usage: backends/arm/test/models/test_llama.py
+    - Supported Ops:
+        - aten.embedding.default, aten.slice_copy.Tensor

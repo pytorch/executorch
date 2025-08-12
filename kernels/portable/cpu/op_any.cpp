@@ -10,6 +10,8 @@
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+#include <optional>
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -79,6 +81,11 @@ Tensor& any_dims_out(
   ScalarType out_type = out.scalar_type();
   constexpr auto name = "any.dims_out";
 
+  const bool in_not_empty = in.numel() > 0;
+  std::optional<MapReduceOverDimListPlan> plan;
+  if ((!dim_list.has_value() || !dim_list.value().empty()) && in_not_empty) {
+    plan.emplace(in, dim_list);
+  }
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
@@ -89,18 +96,21 @@ Tensor& any_dims_out(
               static_cast<CTYPE_OUT>(static_cast<bool>(in_data[out_ix]));
         }
       } else {
-        for (const auto out_ix : c10::irange(out.numel())) {
-          bool any = false;
-          if (in.numel() > 0) {
-            any = map_reduce_over_dim_list<CTYPE_IN, bool>(
-                [](CTYPE_IN v) { return static_cast<bool>(v); },
-                [](bool outv, bool acc) { return acc || outv; },
-                in,
-                dim_list,
-                out_ix);
-          }
-          out_data[out_ix] = static_cast<CTYPE_OUT>(any);
-        }
+        const bool success =
+            parallel_for_each_reduce_over_dim_list_output_index(
+                in, dim_list, out, [&](const auto begin, const auto end) {
+                  for (const auto out_ix : c10::irange(begin, end)) {
+                    bool any = false;
+                    if (in_not_empty) {
+                      any = plan->execute<CTYPE_IN, bool>(
+                          [](CTYPE_IN v) { return static_cast<bool>(v); },
+                          [](bool outv, bool acc) { return acc || outv; },
+                          out_ix);
+                    }
+                    out_data[out_ix] = static_cast<CTYPE_OUT>(any);
+                  }
+                });
+        ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
       }
     });
   });
@@ -139,22 +149,26 @@ Tensor& any_out(
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-      for (const auto out_ix : c10::irange(out.numel())) {
-        CTYPE_OUT any = false;
-        if (in.numel() > 0) {
-          std::tuple<CTYPE_OUT, long> acc =
-              map_reduce_over_dim<CTYPE_IN, CTYPE_OUT>(
-                  [](CTYPE_IN v) { return static_cast<bool>(v); },
-                  [](bool outv, long, bool acc, long) {
-                    return std::tuple<bool, long>{acc || outv, 0};
-                  },
-                  in,
-                  dim,
-                  out_ix);
-          any = std::get<0>(acc);
-        }
-        out_data[out_ix] = any;
-      }
+      const bool success = parallel_for_each_reduce_over_dim_output_index(
+          in, dim, out, [&](const auto begin, const auto end) {
+            for (const auto out_ix : c10::irange(begin, end)) {
+              CTYPE_OUT any = false;
+              if (in.numel() > 0) {
+                std::tuple<CTYPE_OUT, long> acc =
+                    map_reduce_over_dim<CTYPE_IN, CTYPE_OUT>(
+                        [](CTYPE_IN v) { return static_cast<bool>(v); },
+                        [](bool outv, long, bool acc, long) {
+                          return std::tuple<bool, long>{acc || outv, 0};
+                        },
+                        in,
+                        dim,
+                        out_ix);
+                any = std::get<0>(acc);
+              }
+              out_data[out_ix] = any;
+            }
+          });
+      ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
     });
   });
 

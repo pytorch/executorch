@@ -10,7 +10,6 @@
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <sys/types.h>
 
 #include <cstring>
 
@@ -96,7 +95,8 @@ Tensor& expand_copy_out(
 
   ET_KERNEL_CHECK(
       ctx,
-      repeat_tensor(self, {repeats, repeats_size}, out) == Error::Ok,
+      repeat_tensor(self, makeArrayRef(repeats, repeats_size), out) ==
+          Error::Ok,
       InvalidArgument,
       out);
 
