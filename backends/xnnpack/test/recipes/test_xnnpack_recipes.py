@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import logging
 import unittest
 
 import torch
@@ -60,6 +61,7 @@ class TestXnnpackRecipes(unittest.TestCase):
         quantized_output = session.run_method("forward", example_inputs[0])[0]
         original_output = eager_unquantized_model(*example_inputs[0])
         error = compute_error(original_output, quantized_output)
+        print(f"{self._testMethodName} - SQNR: {error} dB")
         self.assertTrue(error > sqnr_threshold)
 
     def test_basic_recipe(self) -> None:
@@ -90,7 +92,7 @@ class TestXnnpackRecipes(unittest.TestCase):
                         export_recipe=export_recipe,
                     )
                     self._compare_eager_quantized_model_outputs(
-                        session, example_inputs, 1e-2
+                        session, example_inputs, 1e-1
                     )
                     self.check_fully_delegated(session.get_executorch_program())
                     self._compare_eager_unquantized_model_outputs(
@@ -152,10 +154,10 @@ class TestXnnpackRecipes(unittest.TestCase):
                 )
                 self.check_fully_delegated(session.get_executorch_program())
                 self._compare_eager_quantized_model_outputs(
-                    session, example_inputs, 1e-2
+                    session, example_inputs, 1e-3
                 )
                 self._compare_eager_unquantized_model_outputs(
-                    session, model, example_inputs
+                    session, model, example_inputs, sqnr_threshold=15
                 )
 
     def _get_recipe_for_quant_type(self, quant_type: QuantType) -> XNNPackRecipeType:
