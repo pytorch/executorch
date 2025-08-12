@@ -16,6 +16,7 @@ from executorch.backends.test.suite.operators import (
     OperatorTest,
 )
 
+
 class Model(torch.nn.Module):
     def __init__(
         self,
@@ -35,9 +36,10 @@ class Model(torch.nn.Module):
             return_indices=return_indices,
             ceil_mode=ceil_mode,
         )
-        
+
     def forward(self, x):
         return self.maxpool(x)
+
 
 @operator_test
 class MaxPool3d(OperatorTest):
@@ -49,7 +51,7 @@ class MaxPool3d(OperatorTest):
             ((torch.rand(1, 4, 8, 8, 8) * 10).to(dtype),),
             flow,
         )
-        
+
     def test_maxpool3d_kernel_size(self, flow: TestFlow) -> None:
         # Test with different kernel sizes
         self._test_op(
@@ -62,7 +64,7 @@ class MaxPool3d(OperatorTest):
             (torch.randn(1, 4, 8, 8, 8),),
             flow,
         )
-        
+
     def test_maxpool3d_stride(self, flow: TestFlow) -> None:
         # Test with different stride values
         self._test_op(
@@ -75,7 +77,7 @@ class MaxPool3d(OperatorTest):
             (torch.randn(1, 4, 8, 8, 8),),
             flow,
         )
-        
+
     def test_maxpool3d_padding(self, flow: TestFlow) -> None:
         # Test with different padding values
         self._test_op(
@@ -88,7 +90,7 @@ class MaxPool3d(OperatorTest):
             (torch.randn(1, 4, 8, 8, 8),),
             flow,
         )
-        
+
     def test_maxpool3d_dilation(self, flow: TestFlow) -> None:
         # Test with different dilation values
         self._test_op(
@@ -101,7 +103,7 @@ class MaxPool3d(OperatorTest):
             (torch.randn(1, 4, 8, 8, 8),),
             flow,
         )
-        
+
     def test_maxpool3d_ceil_mode(self, flow: TestFlow) -> None:
         # Test with ceil_mode=True
         self._test_op(
@@ -109,7 +111,7 @@ class MaxPool3d(OperatorTest):
             (torch.randn(1, 4, 8, 8, 8),),
             flow,
         )
-        
+
     def test_maxpool3d_return_indices(self, flow: TestFlow) -> None:
         # Test with return_indices=True
         class ModelWithIndices(torch.nn.Module):
@@ -121,20 +123,20 @@ class MaxPool3d(OperatorTest):
                     padding=1,
                     return_indices=True,
                 )
-            
+
             def forward(self, x):
                 # Return both output and indices
                 return self.maxpool(x)
-        
+
         # Create a test input tensor
         input_tensor = torch.randn(1, 4, 8, 8, 8)
-        
+
         self._test_op(
             Model(kernel_size=3, stride=2, padding=1),
             (input_tensor,),
             flow,
         )
-        
+
     def test_maxpool3d_batch_sizes(self, flow: TestFlow) -> None:
         # Test with batch inputs
         self._test_op(
@@ -152,7 +154,7 @@ class MaxPool3d(OperatorTest):
             (torch.randn(16, 4, 8, 8, 8),),
             flow,
         )
-        
+
     def test_maxpool3d_input_sizes(self, flow: TestFlow) -> None:
         # Test with different input sizes
         self._test_op(
@@ -165,7 +167,7 @@ class MaxPool3d(OperatorTest):
             (torch.randn(1, 8, 8, 8, 8),),
             flow,
         )
-        
+
     def test_maxpool3d_combinations(self, flow: TestFlow) -> None:
         # Test with combinations of parameters
         self._test_op(
@@ -179,7 +181,9 @@ class MaxPool3d(OperatorTest):
             flow,
         )
         self._test_op(
-            Model(kernel_size=(2, 2, 2), stride=(1, 2, 2), padding=(0, 1, 1), dilation=2),
+            Model(
+                kernel_size=(2, 2, 2), stride=(1, 2, 2), padding=(0, 1, 1), dilation=2
+            ),
             (torch.randn(1, 4, 8, 10, 10),),
             flow,
         )

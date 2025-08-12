@@ -31,6 +31,7 @@ enum DecoderModelVersion {
   kLlama2 = 0,
   kLlama3,
   kQwen2_5,
+  kPhi4,
 };
 class Runner {
  public:
