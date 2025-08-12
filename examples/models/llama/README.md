@@ -345,6 +345,8 @@ We now give instructions for quantizating and running your model with low-bit ke
 EXECUTORCH_BUILD_KERNELS_TORCHAO=1 python install_executorch.py
 ```
 
+(If you'd like lowbit to use KleidiAI when available, you can instead install with `EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_KLEIDIAI=1 python install_executorch.py`.)
+
 Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
 
 First export your model for lowbit quantization (step 2 above):
