@@ -8,7 +8,6 @@ from executorch.exir import (
 )
 from executorch.exir.backend.partitioner import Partitioner
 
-from sympy.ntheory import generate
 from torch.export import ExportedProgram
 
 
