@@ -186,7 +186,7 @@ class Tester:
     def _run_stage(self, stage_instance, inputs=None, *args, **kwargs):
         assert isinstance(stage_instance, Stage)
         prev_stage_artifact = self._pre(stage_instance)
-        stage_instance.run(prev_stage_artifact, inputs=inputs, *args, **kwargs)
+        stage_instance.run(prev_stage_artifact, inputs=inputs, *args, **kwargs)  # noqa
         self._post(stage_instance)
         return self
 
