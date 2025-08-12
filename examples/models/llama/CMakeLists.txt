@@ -123,7 +123,9 @@ endif()
 
 if(EXECUTORCH_BUILD_KERNELS_TORCHAO_MPS)
   # Currently only enable this on Arm-based Macs
-  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL
+                                             "arm64"
+  )
     if(EXECUTORCH_BUILD_MPS)
       add_subdirectory(
         ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/ao/torchao/experimental/ops/mps
