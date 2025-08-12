@@ -46,6 +46,7 @@ using executorch::runtime::FreeableBuffer;
 using executorch::runtime::get_backend_class;
 using executorch::runtime::Result;
 using executorch::aten::SizesType;
+using executorch::runtime::Span;
 using executorch::aten::Tensor;
 using executorch::runtime::kTensorDimensionLimit;
 
@@ -197,7 +198,7 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
 
 Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
                                      DelegateHandle* handle,
-                                     EValue** args) const {
+                                     Span<EValue*> args) const {
     const auto& nArgs = impl_->get_num_arguments(handle);
     std::vector<MultiArray> delegate_args;
     size_t nInputs = nArgs.first;
