@@ -661,6 +661,8 @@ Error defineConvertNode(
     const fb_xnnpack::XNNGraph* flatbuffer_graph) noexcept {
   MAYBE_UNUSED(flatbuffer_graph);
   auto graph_node = node->xnode_union_as_XNNConvert();
+
+  int32_t flags = graph_node->flags();
 #ifdef ENABLE_XNNPACK_KLEIDI
 // This is not currently exposed at include/xnnpack.h yet once it is
 // we can remove this runtime logic and do this ahead-of-time
@@ -674,7 +676,6 @@ Error defineConvertNode(
   }
 #endif
 
-  int32_t flags = graph_node->flags();
   xnn_status status = xnn_define_convert(
       subgraph_ptr,
       remapped_ids.at(graph_node->input_id()),
