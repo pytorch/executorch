@@ -179,6 +179,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.eq.Scalar,
             exir_ops.edge.aten.erf.default,
             exir_ops.edge.aten.exp.default,
+            exir_ops.edge.aten.expm1.default,
             exir_ops.edge.aten.log.default,
             exir_ops.edge.aten.linear.default,
             exir_ops.edge.aten.split_with_sizes_copy.default,
