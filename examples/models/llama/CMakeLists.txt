@@ -115,7 +115,7 @@ if(TARGET custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()
 
-if (TARGET torchao_ops_executorch)
+if(TARGET torchao_ops_executorch)
   executorch_target_link_options_shared_lib(torchao_ops_executorch)
   list(APPEND link_libraries torchao_ops_executorch)
 endif()
