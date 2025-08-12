@@ -7,6 +7,7 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.exir.backend.partitioner import Partitioner
+
 from torch.export import ExportedProgram
 
 
@@ -24,11 +25,14 @@ class ToEdgeTransformAndLower(Stage):
     def stage_type(self) -> StageType:
         return StageType.TO_EDGE_TRANSFORM_AND_LOWER
 
-    def run(self, artifact: ExportedProgram, inputs=None) -> None:
+    def run(
+        self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
+    ) -> None:
         self.edge_dialect_program = to_edge_transform_and_lower(
             artifact,
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
+            generate_etrecord=generate_etrecord,
         )
 
     @property

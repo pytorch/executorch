@@ -284,7 +284,9 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   set(TORCHAO_BUILD_CPU_AARCH64 ON)
   set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
 
-  list(APPEND TORCHAO_INCLUDE_DIRS
+  list(
+    APPEND
+    TORCHAO_INCLUDE_DIRS
     ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
     ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
     ${EXECUTORCH_ROOT}/third-party/ao
@@ -292,7 +294,9 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
 
   set(EXECUTORCH_INCLUDE_DIRS ${TORCHAO_INCLUDE_DIRS})
 
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental
+  )
   executorch_target_link_options_shared_lib(torchao_ops_executorch)
   list(APPEND _executorch_kernels torchao_ops_executorch)
 endif()
@@ -757,6 +761,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
     # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
     list(APPEND _dep_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
+  endif()
+
+  if(EXECUTORCH_BUILD_VULKAN)
+    list(APPEND _dep_libs vulkan_backend)
   endif()
 
   # compile options for pybind
