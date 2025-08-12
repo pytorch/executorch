@@ -6,6 +6,7 @@
 
 
 import logging
+from collections import OrderedDict
 from typing import List, Optional, Tuple
 
 import executorch.backends.vulkan.utils as utils
@@ -114,6 +115,10 @@ def check_outputs_equal(
     Helper function that checks if model output and reference output are equal with some tolerance.
     Returns True if equal, False otherwise.
     """
+    # Convert OrderedDict to list if needed
+    if isinstance(ref_output, OrderedDict):
+        ref_output = list(ref_output.values())
+
     # Compare the result from executor and eager mode directly
     if isinstance(ref_output, tuple) or isinstance(ref_output, list):
         # Multiple outputs executor always returns tuple, even if there is one output
