@@ -801,6 +801,8 @@ jobs:
       id-token: write
       contents: read
     strategy:
+      matrix:
+        enable-etdump: ['', '--enable-etdump']
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -820,7 +822,7 @@ jobs:
         source .ci/scripts/setup-emscripten.sh
 
         # Test selective build
-        bash scripts/build_wasm_tests.sh
+        bash scripts/build_wasm_tests.sh ${{ matrix.enable-etdump }}
 
         # Install Jest
         cd cmake-out-wasm/extension/wasm/test
