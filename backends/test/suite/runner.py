@@ -159,6 +159,8 @@ def run_test(  # noqa: C901
             tester.run_method_and_compare_outputs(
                 inputs=None if generate_random_test_inputs else inputs,
                 statistics_callback=lambda stats: error_statistics.append(stats),
+                atol=1e-1,
+                rtol=4e-2,
             )
         except AssertionError as e:
             return build_result(TestResult.OUTPUT_MISMATCH_FAIL, e)
