@@ -757,6 +757,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs openvino_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_VULKAN)
+    list(APPEND _dep_libs vulkan_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_XNNPACK)
     # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
     # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
