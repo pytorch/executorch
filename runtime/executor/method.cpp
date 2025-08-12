@@ -127,7 +127,7 @@ class BackendDelegate final {
 
   Error Execute(
       BackendExecutionContext& backend_execution_context,
-      EValue** args) const {
+      Span<EValue*> args) const {
     EXECUTORCH_SCOPE_PROF("delegate_execute");
     return backend_->execute(backend_execution_context, handle_, args);
   }
@@ -1366,7 +1366,7 @@ Error Method::execute_instruction() {
           /*method_name=*/serialization_plan_->name()->c_str());
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
-          chain.argument_lists_[step_state_.instr_idx].data());
+          chain.argument_lists_[step_state_.instr_idx]);
       if (err != Error::Ok) {
         ET_LOG(
             Error,
