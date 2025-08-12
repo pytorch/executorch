@@ -1,8 +1,8 @@
 name: Add Open External Contributor PRs and Issues to PyTorch Org Project 136
 
 on:
-  schedule:
-    - cron: '0 * * * *'
+ # schedule:
+  #  - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
