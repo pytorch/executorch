@@ -22,5 +22,6 @@ python_library(
         "//executorch/exir:lib",
         "//executorch/exir/tests:models",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/export:lib",
     ],
 )
