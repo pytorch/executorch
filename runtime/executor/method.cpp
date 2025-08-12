@@ -1181,7 +1181,7 @@ Method::set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues) {
   ET_CHECK_OR_RETURN_ERROR(
       input_evalues.size() == n_input,
       InvalidArgument,
-      "Invalid number of inputs provided. Expected %" PRId64 ", but got %" PRId64,
+      "Invalid number of inputs provided. Expected %" ET_PRIsize_t ", but got %" ET_PRIsize_t,
       n_input,
       input_evalues.size());
   for (size_t i = 0; i < n_input; ++i) {
