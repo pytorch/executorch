@@ -61,7 +61,7 @@ class TestCoreMLRecipes(unittest.TestCase):
     def _compare_eager_unquantized_model_outputs(
         self, session, eager_unquantized_model, example_inputs, sqnr_threshold=20
     ):
-        """tility to compare eager unquantized model output with session output using SQNR"""
+        """Utility to compare eager unquantized model output with session output using SQNR"""
         if IS_VALID_TEST_RUNTIME:
             quantized_output = session.run_method("forward", example_inputs[0])[0]
             original_output = eager_unquantized_model(*example_inputs[0])
@@ -127,7 +127,7 @@ class TestCoreMLRecipes(unittest.TestCase):
             model=model,
             example_inputs=example_inputs,
             export_recipe=ExportRecipe.get_recipe(
-                CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_CHANNEL
+                CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL
             ),
         )
         self.check_fully_delegated(session)
@@ -157,7 +157,7 @@ class TestCoreMLRecipes(unittest.TestCase):
                     model=model,
                     example_inputs=example_inputs,
                     export_recipe=ExportRecipe.get_recipe(
-                        CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP,
+                        CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP,
                         group_size=group_size,
                     ),
                 )
@@ -175,21 +175,21 @@ class TestCoreMLRecipes(unittest.TestCase):
         # Test invalid group size type
         with self.assertRaises(ValueError) as cm:
             self.provider.create_recipe(
-                CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP, group_size="32"
+                CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP, group_size="32"
             )
         self.assertIn("must be an integer", str(cm.exception))
 
         # Test negative group size
         with self.assertRaises(ValueError) as cm:
             self.provider.create_recipe(
-                CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP, group_size=-1
+                CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP, group_size=-1
             )
         self.assertIn("must be positive", str(cm.exception))
 
         # Test unexpected parameter
         with self.assertRaises(ValueError) as cm:
             self.provider.create_recipe(
-                CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_CHANNEL,
+                CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL,
                 group_size=32,  # group_size not valid for per-channel
             )
         self.assertIn("unexpected parameters", str(cm.exception))
@@ -203,7 +203,7 @@ class TestCoreMLRecipes(unittest.TestCase):
             model=model,
             example_inputs=example_inputs,
             export_recipe=ExportRecipe.get_recipe(
-                CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_CHANNEL
+                CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL
             ),
         )
         self.check_fully_delegated(session)
@@ -232,7 +232,7 @@ class TestCoreMLRecipes(unittest.TestCase):
                     model=model,
                     example_inputs=example_inputs,
                     export_recipe=ExportRecipe.get_recipe(
-                        CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_GROUP,
+                        CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP,
                         group_size=group_size,
                     ),
                 )
@@ -245,60 +245,8 @@ class TestCoreMLRecipes(unittest.TestCase):
                     session, model, example_inputs
                 )
 
-    def test_codebook_weight_only_default(self):
-        """Test codebook quantization with default parameters (3 bits)"""
-
-        class SimpleLinearModel(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.layer = nn.Linear(32, 2)
-
-            def forward(self, x):
-                return self.layer(x)
-
-        model = SimpleLinearModel().eval()
-        example_inputs = [(torch.randn(1, 32),)]
-
-        session = export(
-            model=model,
-            example_inputs=example_inputs,
-            export_recipe=ExportRecipe.get_recipe(
-                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY,
-                block_size=[-1, 8],
-            ),
-        )
-        self.check_fully_delegated(session)
-
-        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-3)
-        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
-
-    def test_codebook_weight_only_custom_bits(self):
-        """Test codebook quantization with different bit configurations"""
-
-        class SimpleLinearModel(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.layer = nn.Linear(32, 2)
-
-            def forward(self, x):
-                return self.layer(x)
-
-        model = SimpleLinearModel().eval()
-        example_inputs = [(torch.randn(1, 32),)]
-        session = export(
-            model=model,
-            example_inputs=example_inputs,
-            export_recipe=ExportRecipe.get_recipe(
-                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, bits=4
-            ),
-        )
-        self.check_fully_delegated(session)
-
-        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-3)
-        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
-
-    def test_codebook_weight_only_custom_block_size(self):
-        """Test codebook quantization with custom block sizes"""
+    def test_codebook_weight_only_recipe(self):
+        """Test codebook quantization recipe"""
 
         class SimpleLinearModel(nn.Module):
             def __init__(self):
@@ -331,22 +279,28 @@ class TestCoreMLRecipes(unittest.TestCase):
         """Test codebook parameter validation"""
         # Test invalid bits type
         with self.assertRaises(ValueError) as cm:
-            self.provider.create_recipe(CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, bits="3")
+            self.provider.create_recipe(
+                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, bits="3", block_size=[-1, 8]
+            )
         self.assertIn("must be an integer", str(cm.exception))
 
         # Test bits out of range
         with self.assertRaises(ValueError) as cm:
-            self.provider.create_recipe(CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, bits=0)
+            self.provider.create_recipe(
+                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, bits=0, block_size=[-1, 8]
+            )
         self.assertIn("must be between 1 and 8", str(cm.exception))
 
         with self.assertRaises(ValueError) as cm:
-            self.provider.create_recipe(CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, bits=9)
+            self.provider.create_recipe(
+                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, bits=9, block_size=[-1, 8]
+            )
         self.assertIn("must be between 1 and 8", str(cm.exception))
 
         # Test invalid block_size type
         with self.assertRaises(ValueError) as cm:
             self.provider.create_recipe(
-                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, block_size="[-1, 16]"
+                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, bits=3, block_size="[-1, 16]"
             )
         self.assertIn("must be a list", str(cm.exception))
 
@@ -457,10 +411,10 @@ class TestCoreMLRecipes(unittest.TestCase):
 
         # Test 1: TorchAO recipes accept filter_fn and default to None
         torchao_recipes = [
-            CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_CHANNEL,
-            CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP,
-            CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_CHANNEL,
-            CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_GROUP,
+            CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL,
+            CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP,
+            CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL,
+            CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP,
         ]
 
         for recipe_type in torchao_recipes:
@@ -480,7 +434,9 @@ class TestCoreMLRecipes(unittest.TestCase):
 
         # Test 2: Codebook recipe accepts filter_fn and has sensible default
         with self.subTest("codebook_default"):
-            recipe = self.provider.create_recipe(CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY)
+            recipe = self.provider.create_recipe(
+                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, bits=3, block_size=[-1, 16]
+            )
             config = recipe.quantization_recipe.ao_quantization_configs[0]
             self.assertIsNotNone(config.filter_fn)
 
@@ -495,7 +451,10 @@ class TestCoreMLRecipes(unittest.TestCase):
 
         with self.subTest("codebook_custom"):
             recipe = self.provider.create_recipe(
-                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, filter_fn=custom_filter
+                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY,
+                filter_fn=custom_filter,
+                bits=3,
+                block_size=[-1, 16],
             )
             config = recipe.quantization_recipe.ao_quantization_configs[0]
             self.assertEqual(config.filter_fn, custom_filter)
@@ -503,16 +462,21 @@ class TestCoreMLRecipes(unittest.TestCase):
     def test_quantization_recipe_structure(self):
         """Test that quantization recipes have proper structure"""
         quantization_recipes = [
-            CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_CHANNEL,
-            CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP,
-            CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_CHANNEL,
-            CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_GROUP,
+            CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL,
+            CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP,
+            CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL,
+            CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP,
             CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY,
         ]
 
         for recipe_type in quantization_recipes:
             with self.subTest(recipe=recipe_type.value):
-                recipe = self.provider.create_recipe(recipe_type)
+                kwargs = (
+                    {"bits": 3, "block_size": [-1, 16]}
+                    if recipe_type == CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY
+                    else {}
+                )
+                recipe = self.provider.create_recipe(recipe_type, **kwargs)
                 self.assertIsNotNone(recipe)
 
                 # Should have quantization recipe with ao_quantization_configs
@@ -532,39 +496,56 @@ class TestCoreMLRecipes(unittest.TestCase):
         all_recipes = [
             CoreMLRecipeType.FP32,
             CoreMLRecipeType.FP16,
-            CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_CHANNEL,
-            CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP,  # should use default group_size=32
-            CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_CHANNEL,
-            CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_GROUP,  # should use default group_size=32
+            CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL,
+            CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP,  # should use default group_size=32
+            CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL,
+            CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP,  # should use default group_size=32
             CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY,  # should use default bits=3, block_size=[-1,16]
         ]
 
         for recipe_type in all_recipes:
             with self.subTest(recipe=recipe_type.value):
-                recipe = self.provider.create_recipe(recipe_type)
+                kwargs = (
+                    {"bits": 3, "block_size": [-1, 16]}
+                    if recipe_type == CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY
+                    else {}
+                )
+                recipe = self.provider.create_recipe(recipe_type, **kwargs)
                 self.assertIsNotNone(recipe)
                 self.assertEqual(recipe.name, recipe_type.value)
 
     def test_minimum_deployment_target_validation(self):
         """Test that minimum_deployment_target validation works correctly for quantization recipes"""
         test_cases = [
-            (CoreMLRecipeType.PT2E_INT8_STATIC, ct.target.iOS17),
-            (CoreMLRecipeType.PT2E_INT8_WEIGHT_ONLY, ct.target.iOS17),
-            (CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_CHANNEL, ct.target.iOS18),
-            (CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18),
-            (CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_CHANNEL, ct.target.iOS18),
-            (CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18),
-            (CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, ct.target.iOS18),
+            (CoreMLRecipeType.PT2E_INT8_STATIC, ct.target.iOS17, {}),
+            (CoreMLRecipeType.PT2E_INT8_WEIGHT_ONLY, ct.target.iOS17, {}),
+            (
+                CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL,
+                ct.target.iOS18,
+                {},
+            ),
+            (CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18, {}),
+            (
+                CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL,
+                ct.target.iOS18,
+                {},
+            ),
+            (CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18, {}),
+            (
+                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY,
+                ct.target.iOS18,
+                {"bits": 3, "block_size": [-1, 16]},
+            ),
         ]
 
-        for recipe_type, min_target in test_cases:
+        for recipe_type, min_target, kwargs in test_cases:
             with self.subTest(recipe=recipe_type.value):
 
                 # Test 1: Providing deployment target below minimum should raise ValueError
                 too_low_target = ct.target.iOS15
                 with self.assertRaises(ValueError) as cm:
                     self.provider.create_recipe(
-                        recipe_type, minimum_deployment_target=too_low_target
+                        recipe_type, minimum_deployment_target=too_low_target, **kwargs
                     )
                 error_msg = str(cm.exception)
                 self.assertIn(
@@ -574,12 +555,12 @@ class TestCoreMLRecipes(unittest.TestCase):
 
                 # Test 2: Providing valid deployment target should work
                 valid_recipe = self.provider.create_recipe(
-                    recipe_type, minimum_deployment_target=min_target
+                    recipe_type, minimum_deployment_target=min_target, **kwargs
                 )
                 self.assertIsNotNone(valid_recipe)
 
                 # Test 3: Not providing deployment target should default to minimum
-                default_recipe = self.provider.create_recipe(recipe_type)
+                default_recipe = self.provider.create_recipe(recipe_type, **kwargs)
                 self.assertIsNotNone(default_recipe)
 
                 # Test 4: Providing deployment target higher than minimum should work
@@ -589,6 +570,6 @@ class TestCoreMLRecipes(unittest.TestCase):
                     else ct.target.iOS18
                 )
                 higher_recipe = self.provider.create_recipe(
-                    recipe_type, minimum_deployment_target=higher_target
+                    recipe_type, minimum_deployment_target=higher_target, **kwargs
                 )
                 self.assertIsNotNone(higher_recipe)

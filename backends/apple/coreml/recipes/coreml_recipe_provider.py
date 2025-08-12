@@ -67,14 +67,14 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
             return self._build_pt2e_quantized_recipe(
                 recipe_type, activation_dtype=torch.float32, **kwargs
             )
-        elif recipe_type == CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_CHANNEL:
+        elif recipe_type == CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL:
             return self._build_torchao_quantized_recipe(
                 recipe_type,
                 weight_dtype=torch.int4,
                 is_per_channel=True,
                 **kwargs,
             )
-        elif recipe_type == CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP:
+        elif recipe_type == CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP:
             group_size = kwargs.pop("group_size", 32)
             return self._build_torchao_quantized_recipe(
                 recipe_type,
@@ -83,11 +83,11 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
                 group_size=group_size,
                 **kwargs,
             )
-        elif recipe_type == CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_CHANNEL:
+        elif recipe_type == CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL:
             return self._build_torchao_quantized_recipe(
                 recipe_type, weight_dtype=torch.int8, is_per_channel=True, **kwargs
             )
-        elif recipe_type == CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_GROUP:
+        elif recipe_type == CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP:
             group_size = kwargs.pop("group_size", 32)
             return self._build_torchao_quantized_recipe(
                 recipe_type,
@@ -97,8 +97,8 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
                 **kwargs,
             )
         elif recipe_type == CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY:
-            bits = kwargs.pop("bits", 3)
-            block_size = kwargs.pop("block_size", [-1, 16])
+            bits = kwargs.pop("bits")
+            block_size = kwargs.pop("block_size")
             return self._build_codebook_quantized_recipe(
                 recipe_type, bits=bits, block_size=block_size, **kwargs
             )
@@ -124,13 +124,13 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
         common_keys = {"minimum_deployment_target", "compute_unit"}
 
         if recipe_type in [
-            CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP,
-            CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_GROUP,
+            CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP,
+            CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP,
         ]:
             return common_keys | {"group_size", "filter_fn"}
         elif recipe_type in [
-            CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_CHANNEL,
-            CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_CHANNEL,
+            CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL,
+            CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL,
         ]:
             return common_keys | {"filter_fn"}
         elif recipe_type == CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY:
@@ -161,8 +161,8 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
         if (
             recipe_type
             in [
-                CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP,
-                CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_GROUP,
+                CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP,
+                CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP,
             ]
             and "group_size" in kwargs
         ):
@@ -182,6 +182,12 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
         """Validate bits and block_size parameters for codebook recipe type"""
         if recipe_type != CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY:
             return
+
+        # Both bits and block_size must be present
+        if not ("bits" in kwargs and "block_size" in kwargs):
+            raise ValueError(
+                "Parameters 'bits' and 'block_size' must be present for codebook recipes"
+            )
 
         if "bits" in kwargs:
             bits = kwargs["bits"]

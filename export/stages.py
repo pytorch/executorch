@@ -21,6 +21,10 @@ from torch import nn
 from torch._export.pass_base import PassType
 from torchao.quantization import quantize_
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer import (
+    ComposableQuantizer,
+    Quantizer as TorchAOPT2EQuantizer,
+)
 from torchao.utils import unwrap_tensor_subclass
 
 
@@ -199,6 +203,7 @@ class EdgeTransformAndLowerStage(Stage):
         """
         exported_programs = artifact.data
         constant_methods = artifact.get_context("constant_methods")
+        generate_etrecord = artifact.get_context("generate_etrecord", False)
 
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
@@ -207,6 +212,7 @@ class EdgeTransformAndLowerStage(Stage):
                 transform_passes=self._transform_passes,
                 constant_methods=constant_methods,
                 compile_config=self._compile_config,
+                generate_etrecord=generate_etrecord,
             )
 
         delegation_info = get_delegation_info(
@@ -335,13 +341,13 @@ class QuantizeStage(Stage):
         torchao_pt2e_quantizers = []
 
         for quantizer in quantizers:
-            from torchao.quantization.pt2e.quantizer import (
-                Quantizer as TorchAOPT2EQuantizer,
-            )
-
             if isinstance(quantizer, TorchAOPT2EQuantizer):
                 torchao_pt2e_quantizers.append(quantizer)
             else:
+                # torch.ao quantizer support will soon be deprecated, remove this once CoreML moves to torchao quantizer
+                logging.warning(
+                    f"torch.ao quantizer {quantizer} is deprecated, consider moving to torchao quantizer"
+                )
                 torch_ao_quantizers.append(quantizer)
 
         if torch_ao_quantizers and torchao_pt2e_quantizers:
@@ -356,8 +362,6 @@ class QuantizeStage(Stage):
             return torch_ao_quantizers[0]
         elif torchao_pt2e_quantizers:
             # Multiple torchao quantizers - use ComposableQuantizer
-            from torchao.quantization.pt2e.quantizer import ComposableQuantizer
-
             return ComposableQuantizer(torchao_pt2e_quantizers)
         else:
             raise ValueError("No quantizers detected")
@@ -448,6 +452,7 @@ class ToEdgeStage(Stage):
             exported_programs,
             constant_methods=constant_methods,
             compile_config=self._edge_compile_config,
+            generate_etrecord=artifact.get_context("generate_etrecord", False),
         )
 
         self._artifact = artifact.copy_with_new_data(edge_program_manager)
