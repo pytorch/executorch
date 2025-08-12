@@ -579,7 +579,7 @@ def compile(args, pte_filename, tokenizer):
                 annotate_conv=args.ptq != "16a8w",
             ),
         )
-        if args.decoder_model == {"stories110m", "stories260k"}:
+        if args.decoder_model in {"stories110m", "stories260k"}:
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
@@ -1175,11 +1175,16 @@ def export_llama(args) -> None:
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path)
+    elif args.decoder_model == "phi_4_mini":
+        model_id = SUPPORTED_HF_MODELS[args.decoder_model].repo_id
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
+        tokenizer = get_tokenizer(runtime_tokenizer_path)
         with open(runtime_tokenizer_path, "r+") as file:
             data = json.load(file)
             # TODO: Encountered the following error during runtime, so switched behavior for now.
-            # Error: libc++abi: terminating due to uncaught exception of type std::runtime_error: Unsupported Normalizer type: NFC.
-            data.pop("normalizer")
+            # Error: libc++abi: terminating due to uncaught exception of type std::runtime_error: invert=true is not supported for Split PreTokenizer. Only invert=false is supported.
+            data["pre_tokenizer"]["pretokenizers"][-2]["invert"] = False
             file.seek(0)
             json.dump(data, file, indent=4)
             file.truncate()

@@ -307,6 +307,7 @@ class TestToEdgeStage(unittest.TestCase):
             self.exported_programs,
             constant_methods=None,
             compile_config=mock_config,
+            generate_etrecord=False,
         )
 
         # Verify artifacts are set correctly

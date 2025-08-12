@@ -16,6 +16,7 @@ from executorch.backends.test.suite.operators import (
     OperatorTest,
 )
 
+
 class Model(torch.nn.Module):
     def __init__(
         self,
@@ -27,9 +28,10 @@ class Model(torch.nn.Module):
             output_size=output_size,
             return_indices=return_indices,
         )
-        
+
     def forward(self, x):
         return self.adaptive_maxpool(x)
+
 
 @operator_test
 class AdaptiveMaxPool2d(OperatorTest):
@@ -41,7 +43,7 @@ class AdaptiveMaxPool2d(OperatorTest):
             ((torch.rand(1, 8, 20, 20) * 10).to(dtype),),
             flow,
         )
-        
+
     def test_adaptive_maxpool2d_output_size(self, flow: TestFlow) -> None:
         # Test with different output sizes
         self._test_op(
@@ -64,7 +66,7 @@ class AdaptiveMaxPool2d(OperatorTest):
             (torch.randn(1, 8, 20, 20),),
             flow,
         )
-        
+
     def test_adaptive_maxpool2d_return_indices(self, flow: TestFlow) -> None:
         # Test with return_indices=True
         class ModelWithIndices(torch.nn.Module):
@@ -74,18 +76,18 @@ class AdaptiveMaxPool2d(OperatorTest):
                     output_size=(5, 5),
                     return_indices=True,
                 )
-            
+
             def forward(self, x):
                 return self.adaptive_maxpool(x)
-        
+
         input_tensor = torch.randn(1, 8, 20, 20)
-        
+
         self._test_op(
             ModelWithIndices(),
             (input_tensor,),
             flow,
         )
-        
+
     def test_adaptive_maxpool2d_batch_sizes(self, flow: TestFlow) -> None:
         # Test with batch inputs
         self._test_op(
@@ -103,7 +105,7 @@ class AdaptiveMaxPool2d(OperatorTest):
             (torch.randn(16, 8, 20, 20),),
             flow,
         )
-        
+
     def test_adaptive_maxpool2d_input_sizes(self, flow: TestFlow) -> None:
         # Test with different input sizes
         self._test_op(

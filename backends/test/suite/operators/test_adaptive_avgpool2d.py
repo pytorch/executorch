@@ -16,6 +16,7 @@ from executorch.backends.test.suite.operators import (
     OperatorTest,
 )
 
+
 class Model(torch.nn.Module):
     def __init__(
         self,
@@ -25,9 +26,10 @@ class Model(torch.nn.Module):
         self.adaptive_avgpool = torch.nn.AdaptiveAvgPool2d(
             output_size=output_size,
         )
-        
+
     def forward(self, x):
         return self.adaptive_avgpool(x)
+
 
 @operator_test
 class AdaptiveAvgPool2d(OperatorTest):
@@ -39,7 +41,7 @@ class AdaptiveAvgPool2d(OperatorTest):
             ((torch.rand(1, 8, 20, 20) * 10).to(dtype),),
             flow,
         )
-        
+
     def test_adaptive_avgpool2d_output_size(self, flow: TestFlow) -> None:
         # Test with different output sizes
         self._test_op(
@@ -62,7 +64,7 @@ class AdaptiveAvgPool2d(OperatorTest):
             (torch.randn(1, 8, 20, 20),),
             flow,
         )
-        
+
     def test_adaptive_avgpool2d_batch_sizes(self, flow: TestFlow) -> None:
         # Test with batch inputs
         self._test_op(
@@ -80,7 +82,7 @@ class AdaptiveAvgPool2d(OperatorTest):
             (torch.randn(16, 8, 20, 20),),
             flow,
         )
-        
+
     def test_adaptive_avgpool2d_input_sizes(self, flow: TestFlow) -> None:
         # Test with different input sizes
         self._test_op(
