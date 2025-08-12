@@ -217,13 +217,6 @@ def is_vgf(compile_spec: List[CompileSpec]) -> bool:
     return False
 
 
-def get_tosa_spec(compile_spec: List[CompileSpec]) -> TosaSpecification:
-    for spec in compile_spec:
-        if spec.key == "tosa_spec":
-            return TosaSpecification.create_from_string(spec.value.decode())
-    raise ValueError("Could not find TOSA version in CompileSpec")
-
-
 def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:
     for spec in compile_spec:
         if spec.key == "debug_artifact_path":
