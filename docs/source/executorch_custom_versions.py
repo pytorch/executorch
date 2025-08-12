@@ -11,6 +11,8 @@ This custom extension pulls third-party version strings from files in the
 .ci/docker/ci_commit_pins directory, and uses them to expand specific strings in
 markdown files.
 
+Users can also specify their custom version strings in the global variable `variables`
+
 For example, `${executorch_version:pytorch}` will be replaced with the
 appropriate pytorch version string used by CI.
 """
@@ -24,7 +26,10 @@ version_file_names = [
     "pytorch.txt",
 ]
 
-variables: dict[str, str] = {}
+
+variables: dict[str, str] = {
+    "aar_version": "0.7.0",
+}
 
 
 def read_version_files():
