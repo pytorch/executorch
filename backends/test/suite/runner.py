@@ -26,7 +26,6 @@ from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
     count_ops,
-    generate_csv_report,
     RunSummary,
     TestCaseSummary,
     TestResult,
@@ -269,11 +268,6 @@ def runner_main():
 
     summary = complete_test_session()
     print_summary(summary)
-
-    if args.report is not None:
-        with open(args.report, "w") as f:
-            print(f"Writing CSV report to {args.report}.")
-            generate_csv_report(summary, f)
 
 
 if __name__ == "__main__":
