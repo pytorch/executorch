@@ -1,23 +1,20 @@
 import torch
 from executorch.backends.aoti.aoti_partitioner import AotiPartitioner
+from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.exir import to_edge
 from torch.export import export
+from torchvision import models
+from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
+mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights)
+mv2 = mv2.eval()
 
-# Start with a PyTorch model that adds two input tensors (matrices)
-class Add(torch.nn.Module):
-    def __init__(self):
-        super(Add, self).__init__()
-
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
-        # return triton_transpose_acc(x, y)
-        return (x.cuda() + y.cuda()).cpu()
+model_inputs = (torch.randn(1, 3, 224, 224),)
 
 
 # 1. torch.export: Defines the program with the ATen operator set.
-aten_dialect = export(
-    Add(), (torch.ones(10, device="cpu"), torch.ones(10, device="cpu"))
-)
+aten_dialect = export(mv2, model_inputs)
+
 # 2. to_edge: Make optimizations for Edge devices
 edge_program = to_edge(aten_dialect)
 
