@@ -154,3 +154,103 @@ TEST(ATenBridgeTest, AliasTensorPtrToATenTensor) {
   alias_etensor_to_attensor(at_tensor, *et_tensor_ptr);
   EXPECT_EQ(at_tensor.const_data_ptr(), et_tensor_ptr->const_data_ptr());
 }
+
+TEST(ATenBridgeTest, AliasATTensorToETensorChannelsLast) {
+  auto at_tensor = at::randn({2, 3, 4, 5}).to(at::MemoryFormat::ChannelsLast);
+  std::vector<Tensor::SizesType> sizes(
+      at_tensor.sizes().begin(), at_tensor.sizes().end());
+  std::vector<Tensor::DimOrderType> dim_order = {0, 2, 3, 1};
+  std::vector<Tensor::StridesType> strides(
+      at_tensor.strides().begin(), at_tensor.strides().end());
+  auto dtype = torchToExecuTorchScalarType(at_tensor.options().dtype());
+  std::vector<uint8_t> etensor_data(at_tensor.nbytes());
+  torch::executor::TensorImpl tensor_impl(
+      dtype,
+      at_tensor.dim(),
+      sizes.data(),
+      etensor_data.data(),
+      dim_order.data(),
+      strides.data());
+  torch::executor::Tensor etensor(&tensor_impl);
+  auto aliased_at_tensor = alias_attensor_to_etensor(etensor);
+  EXPECT_EQ(aliased_at_tensor.const_data_ptr(), etensor_data.data());
+}
+
+TEST(ATenBridgeTest, AliasATTensorToETensorFailDimOrder) {
+  auto at_tensor = at::randn({2, 3, 4, 5}).to(at::MemoryFormat::ChannelsLast);
+  std::vector<Tensor::SizesType> sizes(
+      at_tensor.sizes().begin(), at_tensor.sizes().end());
+  std::vector<Tensor::DimOrderType> dim_order = {0, 1, 2, 3};
+  std::vector<Tensor::StridesType> strides(
+      at_tensor.strides().begin(), at_tensor.strides().end());
+  auto dtype = torchToExecuTorchScalarType(at_tensor.options().dtype());
+  std::vector<uint8_t> etensor_data(at_tensor.nbytes());
+  torch::executor::TensorImpl tensor_impl(
+      dtype,
+      at_tensor.dim(),
+      sizes.data(),
+      etensor_data.data(),
+      dim_order.data(),
+      strides.data());
+  torch::executor::Tensor etensor(&tensor_impl);
+  ET_EXPECT_DEATH(alias_attensor_to_etensor(etensor), "");
+}
+
+TEST(ATenBridgeTest, AliasETensorToATenTensorChannelsLast) {
+  auto at_tensor = at::randn({2, 3, 4, 5}).to(at::MemoryFormat::ChannelsLast);
+  std::vector<Tensor::SizesType> sizes(
+      at_tensor.sizes().begin(), at_tensor.sizes().end());
+  std::vector<Tensor::DimOrderType> dim_order = {0, 2, 3, 1};
+  std::vector<Tensor::StridesType> strides(
+      at_tensor.strides().begin(), at_tensor.strides().end());
+  auto dtype = torchToExecuTorchScalarType(at_tensor.options().dtype());
+  torch::executor::TensorImpl tensor_impl(
+      dtype,
+      at_tensor.dim(),
+      sizes.data(),
+      nullptr,
+      dim_order.data(),
+      strides.data());
+  torch::executor::Tensor etensor(&tensor_impl);
+  alias_etensor_to_attensor(at_tensor, etensor);
+  EXPECT_EQ(at_tensor.const_data_ptr(), etensor.const_data_ptr());
+}
+
+TEST(ATenBridgeTest, AliasETensorToATenTensorFailDimOrder) {
+  auto at_tensor = at::randn({2, 3, 4, 5}).to(at::MemoryFormat::ChannelsLast);
+  std::vector<Tensor::SizesType> sizes(
+      at_tensor.sizes().begin(), at_tensor.sizes().end());
+  std::vector<Tensor::DimOrderType> dim_order = {0, 1, 2, 3};
+  std::vector<Tensor::StridesType> strides(
+      at_tensor.strides().begin(), at_tensor.strides().end());
+  auto dtype = torchToExecuTorchScalarType(at_tensor.options().dtype());
+  torch::executor::TensorImpl tensor_impl(
+      dtype,
+      at_tensor.dim(),
+      sizes.data(),
+      nullptr,
+      dim_order.data(),
+      strides.data());
+  torch::executor::Tensor etensor(&tensor_impl);
+  ET_EXPECT_DEATH(alias_etensor_to_attensor(at_tensor, etensor), "");
+}
+
+TEST(ATenBridgeTest, AliasETensorToATenTensorFailUnsupportedDimOrder) {
+  auto at_tensor =
+      at::randn({1, 2, 3, 4, 5}).to(at::MemoryFormat::ChannelsLast3d);
+  std::vector<Tensor::SizesType> sizes(
+      at_tensor.sizes().begin(), at_tensor.sizes().end());
+  std::vector<Tensor::DimOrderType> dim_order = {0, 2, 3, 4, 1};
+  std::vector<Tensor::StridesType> strides(
+      at_tensor.strides().begin(), at_tensor.strides().end());
+  auto dtype = torchToExecuTorchScalarType(at_tensor.options().dtype());
+  torch::executor::TensorImpl tensor_impl(
+      dtype,
+      at_tensor.dim(),
+      sizes.data(),
+      nullptr,
+      dim_order.data(),
+      strides.data());
+  torch::executor::Tensor etensor(&tensor_impl);
+  ET_EXPECT_DEATH(alias_etensor_to_attensor(at_tensor, etensor), "");
+}

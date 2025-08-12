@@ -8,6 +8,8 @@ import torch
 from executorch.exir import to_edge
 from executorch.exir.pass_base import ExportPass, PassResult
 
+from .utils import copy_nn_module_stack
+
 
 class LinalgVectorNorm(torch.nn.Module):
     def __init__(self, exp, dim, keepdim):
@@ -46,11 +48,13 @@ class DecomposeLinalgVectorNorm(ExportPass):
                 model = LinalgVectorNorm(ord, dim, keepdim)
                 if self.quantization_capture:
                     decomposed_module = torch.export.export(
-                        model, (node.args[0].meta["val"],)
+                        model, (node.args[0].meta["val"],), strict=True
                     ).module()
                 else:
                     edge_mgr = to_edge(
-                        torch.export.export(model, (node.args[0].meta["val"],))
+                        torch.export.export(
+                            model, (node.args[0].meta["val"],), strict=True
+                        )
                     )
                     decomposed_module = edge_mgr.exported_program()
 
@@ -60,6 +64,7 @@ class DecomposeLinalgVectorNorm(ExportPass):
                     remap = {"x": node.args[0]}
 
                     for decomposed_node in decomposed_module.graph.nodes:
+                        copy_nn_module_stack(node, decomposed_node)
                         # no need to copy existent 'output'
                         if decomposed_node.op == "output":
                             for user in node.users.copy():

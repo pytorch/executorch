@@ -3,7 +3,7 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Aten ops with portable kernel
 MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
-    "//executorch/kernels/portable:generated_lib",
+    "//executorch/configurations:optimized_native_cpu_ops",
     "//executorch/kernels/quantized:generated_lib",
 ]
 
@@ -21,9 +21,9 @@ PORTABLE_MODULE_DEPS = [
 ] + get_all_cpu_backend_targets()
 
 ATEN_MODULE_DEPS = [
-    "//executorch/runtime/kernel:operator_registry",
+    "//executorch/runtime/kernel:operator_registry_aten",
     "//executorch/runtime/executor:program_aten",
-    "//executorch/runtime/core/exec_aten:lib",
+    "//executorch/runtime/core/exec_aten:lib_aten",
     "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
@@ -41,6 +41,7 @@ MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
 
 def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = [], compiler_flags = []):
     runtime.cxx_python_extension(
+        # @autodeps-skip
         name = python_module_name,
         srcs = [
             "//executorch/extension/pybindings:pybindings.cpp",
@@ -52,8 +53,8 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
         ],
         deps = [
-            "//executorch/exir:_warnings",
             "//executorch/runtime/core:core",
+            "//executorch/extension/threadpool:threadpool",
         ] + cppdeps,
         external_deps = [
             "pybind11",

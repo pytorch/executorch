@@ -6,13 +6,14 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <multiarray.h>
+#import "multiarray.h"
+
+#import "objc_array_util.h"
 
 #import <Accelerate/Accelerate.h>
 #import <CoreML/CoreML.h>
 #import <functional>
 #import <numeric>
-#import <objc_array_util.h>
 #import <optional>
 #import <vector>
 
@@ -122,6 +123,9 @@ bool init_bnns_descriptor(BNNSNDArrayDescriptor& bnns_descriptor, const MultiArr
 }
 
 bool copy_using_bnns(const MultiArray& src, MultiArray& dst) {
+    if (src.layout().dataType() != dst.layout().dataType()) {
+        return false;
+    }
     if (dst.layout().num_bytes() < src.layout().num_bytes()) {
         return false;
     }
@@ -511,6 +515,24 @@ ssize_t get_data_offset(size_t index, const std::vector<size_t>& shape, const st
 }
 
 namespace executorchcoreml {
+
+void MultiArray::MemoryLayout::resize(const std::vector<size_t>& shape) {
+    assert(shape.size() == shape_.size());
+    for (int i = 0; i < shape.size(); ++i) {
+        assert (shape[i] >= 1);
+        assert(shape[i] <= shape_[i]);
+    }
+    int stride = 1;
+    for (int i = shape.size() - 1; i >= 0; --i) {
+        shape_[i] = shape[i];
+        strides_[i] = stride;
+        if (shape[i] > 1) {
+            stride *= shape[i];
+        }
+    }
+}
+
+
 
 size_t MultiArray::MemoryLayout::num_elements() const noexcept {
     if (shape_.size() == 0) {

@@ -6,8 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
+#include <c10/util/irange.h>
 #include <cstring>
 
 #include <executorch/runtime/core/portable_type/tensor.h>
@@ -41,11 +43,11 @@ Error get_dim_order(
 bool tensor_has_valid_dim_order(torch::executor::Tensor t) {
   if (!validate_dim_order(t.dim_order().data(), t.dim_order().size())) {
     ET_LOG(Error, "Tensor dim order is not valid:");
-    for (size_t d = 0; d < t.dim(); ++d) {
+    for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
-          static_cast<size_t>(d),
+          d,
           static_cast<size_t>(t.dim_order()[d]));
     }
     return false;
@@ -62,11 +64,11 @@ bool tensor_is_default_or_channels_last_dim_order(torch::executor::Tensor t) {
     ET_LOG(
         Error,
         "Expected tensor to have default or channels last dim order, but got");
-    for (size_t d = 0; d < t.dim(); ++d) {
+    for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
-          static_cast<size_t>(d),
+          d,
           static_cast<size_t>(t.dim_order()[d]));
     }
   }
@@ -79,11 +81,11 @@ bool tensor_is_default_dim_order(torch::executor::Tensor t) {
 
   if (!ret_val) {
     ET_LOG(Error, "Expected tensor to have default dim order, but got");
-    for (size_t d = 0; d < t.dim(); ++d) {
+    for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
-          static_cast<size_t>(d),
+          d,
           static_cast<size_t>(t.dim_order()[d]));
     }
   }
@@ -96,11 +98,11 @@ bool tensor_is_channels_last_dim_order(torch::executor::Tensor t) {
 
   if (!ret_val) {
     ET_LOG(Error, "Expected tensor to have channels last dim order, but got");
-    for (size_t d = 0; d < t.dim(); ++d) {
+    for ([[maybe_unused]] const auto d : c10::irange(t.dim())) {
       ET_LOG(
           Error,
           "    dim_order(%zu): %zu",
-          static_cast<size_t>(d),
+          d,
           static_cast<size_t>(t.dim_order()[d]));
     }
   }
@@ -114,7 +116,7 @@ bool tensors_have_same_dim_order(
   }
   bool all_contiguous = true;
   bool all_channels_last = true;
-  for (size_t i = 0; i < tensor_list.size(); ++i) {
+  for (const auto i : c10::irange(tensor_list.size())) {
     all_contiguous = all_contiguous &&
         is_contiguous_dim_order(
                          tensor_list[i].dim_order().data(),

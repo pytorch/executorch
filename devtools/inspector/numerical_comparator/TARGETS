@@ -1,0 +1,47 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+
+python_library(
+    name = "numerical_comparator_base",
+    srcs = ["numerical_comparator_base.py"],
+    deps = [],
+)
+
+python_library(
+    name = "l1_numerical_comparator",
+    srcs = ["l1_numerical_comparator.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:numerical_comparator_base",
+        "//executorch/devtools/inspector:inspector_utils",
+    ],
+)
+
+python_library(
+    name = "mse_numerical_comparator",
+    srcs = ["mse_numerical_comparator.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:numerical_comparator_base",
+        "//executorch/devtools/inspector:inspector_utils",
+    ],
+)
+
+python_library(
+    name = "snr_numerical_comparator",
+    srcs = ["snr_numerical_comparator.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:numerical_comparator_base",
+        "//executorch/devtools/inspector:inspector_utils",
+    ],
+)
+
+python_library(
+    name = "lib",
+    srcs = ["__init__.py"],
+    deps = [
+        ":l1_numerical_comparator",
+        ":mse_numerical_comparator",
+        ":snr_numerical_comparator",
+    ],
+)

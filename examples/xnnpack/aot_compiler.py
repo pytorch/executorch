@@ -9,12 +9,10 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
-import copy
 import logging
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.devtools import generate_etrecord
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -60,13 +58,14 @@ if __name__ == "__main__":
         "-r",
         "--etrecord",
         required=False,
+        default="",
         help="Generate and save an ETRecord to the given file location",
     )
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
 
     args = parser.parse_args()
 
-    if not args.delegate:
+    if not args.delegate and args.quantize:
         raise NotImplementedError(
             "T161880157: Quantization-only without delegation is not supported yet"
         )
@@ -79,20 +78,22 @@ if __name__ == "__main__":
             f"Available models are {list(MODEL_NAME_TO_OPTIONS.keys())}."
         )
 
+    quant_type = MODEL_NAME_TO_OPTIONS[args.model_name].quantization
+
     model, example_inputs, _, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    ep = torch.export.export_for_training(model, example_inputs)
+    ep = torch.export.export_for_training(model, example_inputs, strict=False)
     model = ep.module()
 
     if args.quantize:
         logging.info("Quantizing Model...")
         # TODO(T165162973): This pass shall eventually be folded into quantizer
-        model = quantize(model, example_inputs)
-        ep = torch.export.export_for_training(model, example_inputs)
+        model = quantize(model, example_inputs, quant_type)
+        ep = torch.export.export_for_training(model, example_inputs, strict=False)
 
     edge = to_edge_transform_and_lower(
         ep,
@@ -101,18 +102,16 @@ if __name__ == "__main__":
             _check_ir_validity=False if args.quantize else True,
             _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
         ),
+        generate_etrecord=args.etrecord,
     )
     logging.info(f"Exported and lowered graph:\n{edge.exported_program().graph}")
-
-    # this is needed for the ETRecord as lowering modifies the graph in-place
-    edge_copy = copy.deepcopy(edge)
 
     exec_prog = edge.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
-    if args.etrecord is not None:
-        generate_etrecord(args.etrecord, edge_copy, exec_prog)
+    if args.etrecord:
+        exec_prog.get_etrecord().save(args.etrecord)
         logging.info(f"Saved ETRecord to {args.etrecord}")
 
     quant_tag = "q8" if args.quantize else "fp32"

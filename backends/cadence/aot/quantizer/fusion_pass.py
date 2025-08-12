@@ -13,6 +13,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
     AddPattern,
     BmmPattern,
+    CatPattern,
     Conv1dPattern,
     Conv2dPattern,
     LayerNormPattern,
@@ -246,6 +247,16 @@ def get_args_and_kwargs_matmul(
     return args, kwargs
 
 
+def get_args_and_kwargs_cat(
+    inputs_inputs: List[fx.Node], other_inputs: List[fx.Node], op_node: fx.Node
+) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
+    args = tuple([inputs_inputs] + other_inputs)
+    dim = op_node.args[1] if len(op_node.args) > 1 else 0
+    # pyre-fixme[6]: Incompatible parameter type
+    kwargs = {"dim": int(dim)}
+    return args, kwargs
+
+
 def get_args_and_kwargs_conv(
     graph_module: GraphModule,
     inputs_inputs: List[fx.Node],
@@ -390,12 +401,17 @@ class QuantFusion(ExportPass):
                     self.mark_fused(p.nodes)
 
                 dequants_inputs = []
-                for node, idx in anchors.inputs:
+                for node, idx, *_spec in anchors.inputs:
+                    arg = (
+                        node.args[idx]
+                        if isinstance(idx, int)
+                        else node.args[idx[0]][idx[1]]
+                    )
                     if (
-                        node.args[idx].target
+                        arg.target
                         == torch.ops.quantized_decomposed.dequantize_per_tensor.default
                     ):
-                        dequants_inputs.append(node.args[idx])
+                        dequants_inputs.append(arg)
                 dequants_weights = []
                 for node, idx in anchors.weights:
                     if (
@@ -433,6 +449,10 @@ class QuantFusion(ExportPass):
                             inputs_inputs,
                             dequants_inputs,
                             quant_node,
+                        )
+                    elif isinstance(pattern, CatPattern):
+                        args, kwargs = get_args_and_kwargs_cat(
+                            inputs_inputs, other_inputs, op_node
                         )
                     elif isinstance(pattern, (Conv1dPattern, Conv2dPattern)):
                         args, kwargs = get_args_and_kwargs_conv(

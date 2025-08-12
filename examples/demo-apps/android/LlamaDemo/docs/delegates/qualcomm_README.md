@@ -19,19 +19,24 @@ Phone verified: OnePlus 12, Samsung 24+, Samsung 23
 ## Setup ExecuTorch
 In this section, we will need to set up the ExecuTorch repo first with Conda environment management. Make sure you have Conda available in your system (or follow the instructions to install it [here](https://anaconda.org/anaconda/conda)). The commands below are running on Linux (CentOS).
 
-Create a Conda environment
+Checkout ExecuTorch repo and sync submodules
+
 ```
-conda create -n et_qnn python=3.10.0
-conda activate et_qnn
+git clone -b viable/strict https://github.com/pytorch/executorch.git && cd executorch
 ```
 
-Checkout ExecuTorch repo and sync submodules
+Create either a Python virtual environment:
+
 ```
-git clone https://github.com/pytorch/executorch.git
-cd executorch
-git submodule sync
-git submodule update --init
+python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
+
+Or a Conda environment:
+
+```
+conda create -n et_xnnpack python=3.10.0 && conda activate et_xnnpack
+```
+
 Install dependencies
 ```
 ./install_executorch.sh
@@ -64,7 +69,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out .
 cmake --build cmake-out -j16 --target install --config Release
 ```
@@ -74,14 +79,14 @@ cmake --build cmake-out -j16 --target install --config Release
 ### Setup Llama Runner
 Next we need to build and compile the Llama runner. This is similar to the requirements for running Llama with XNNPACK.
 ```
-sh examples/models/llama/install_requirements.sh
+./examples/models/llama/install_requirements.sh
 
 cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_BUILD_QNN=ON \
     -Bcmake-out/examples/models/llama \
@@ -92,7 +97,7 @@ cmake --build cmake-out/examples/models/llama -j16 --config Release
 ## Export Llama Model
 QNN backend currently supports exporting to these data types: fp32, int4/ int8 with PTQ, int4 with SpinQuant (Llama 3 only).
 
-We also support export for different Qualcomm SoC. We have verified SM8650(V75) and SM8550(V73). To export for different SoC, add “--soc_model SM8550” in your export command. Without setting this flag, the export will default to SM8650.
+We also support export for different Qualcomm SoC. We have verified SM8650(V75) and SM8550(V73). To export for different SoC, add "--soc_model SM8550" in your export command. Without setting this flag, the export will default to SM8650.
 
 ### Export with PTQ
 We support PTQ by default. The entire export may take ~20 minutes (Llama 3.1 8B). However, there is accuracy regression and we are working on improving it.
@@ -101,12 +106,12 @@ We support PTQ by default. The entire export may take ~20 minutes (Llama 3.1 8B)
 Examples:
 ```
 # 4 bits weight only quantize
-python -m examples.models.llama.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" -p "${MODEL_DIR}/params.json" -kv --disable_dynamic_shape --qnn --pt2e_quantize qnn_16a4w -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="test.pte”
+python -m extension.llm.export.export_llm base.checkpoint="${MODEL_DIR}/consolidated.00.pth" base.params="${MODEL_DIR}/params.json" model.use_kv_cache=True model.enable_dynamic_shape=False backend.qnn.enabled=True backend.qnn.quantization="qnn_16a4w" model.dtype_override="fp32" base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="test.pte"
 ```
 If the model is really big, it may require model sharding because the Qualcomm DSP is a 32bit system and has a 4GB size limit . For example for Llama 3 8B models, we need to shard the model into 4, but ExecuTorch still packages it into one PTE file. Here is an example:
 ```
 # 8 bits quantization with 4 shards
-python -m examples.models.llama.export_llama --checkpoint "${MODEL_DIR}/consolidated.00.pth" -p "${MODEL_DIR}/params.json" -kv --disable_dynamic_shape --qnn --pt2e_quantize qnn_8a8w -d fp32 --num_sharding 4 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="test.pte”
+python -m extension.llm.export.export_llm base.checkpoint="${MODEL_DIR}/consolidated.00.pth" base.params="${MODEL_DIR}/params.json" model.use_kv_cache=True model.enable_dynamic_shape=False backend.qnn.enabled=True backend.qnn.quantization="qnn_8a8w" model.dtype_override="fp32" backend.qnn.num_sharding=4 base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="test.pte"
 ```
 Note: if you encountered issues below
 ```
@@ -130,7 +135,7 @@ You may also wonder what the "--metadata" flag is doing. This flag helps export 
 
 Convert tokenizer for Llama 2
 ```
-python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 ```
 Rename tokenizer for Llama 3 with command: `mv tokenizer.model tokenizer.bin`. We are updating the demo app to support tokenizer in original format directly.
 
@@ -158,7 +163,7 @@ To export Llama 3 8B instruct with the Qualcomm AI Engine Direct Backend, ensure
 * 8B models might need 16GB RAM on the device to run.
 ```
 # Please note that calibration_data must include the prompt template for special tokens.
-python -m examples.models.llama.export_llama -t <path_to_tokenizer.model> -p <path_to_params.json> -c <path_to_checkpoint_for_Meta-Llama-3-8B-Instruct>  --use_kv_cache  --qnn --pt2e_quantize qnn_16a4w --disable_dynamic_shape --num_sharding 8 --calibration_tasks wikitext --calibration_limit 1 --calibration_seq_length 128 --optimized_rotation_path <path_to_optimized_matrix> --calibration_data "<|start_header_id|>system<|end_header_id|>\n\nYou are a funny chatbot.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nCould you tell me about Facebook?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+python -m extension.llm.export.export_llm base.tokenizer=<path_to_tokenizer.model> base.params=<path_to_params.json> base.checkpoint=<path_to_checkpoint_for_Meta-Llama-3-8B-Instruct> model.use_kv_cache=True backend.qnn.enabled=True backend.qnn.quantization="qnn_16a4w" model.enable_dynamic_shape=False backend.qnn.num_sharding=8 backend.qnn.calibration_tasks="wikitext" backend.qnn.calibration_limit=1 backend.qnn.calibration_seq_length=128 backend.qnn.optimized_rotation_path=<path_to_optimized_matrix> backend.qnn.calibration_data="<|start_header_id|>system<|end_header_id|>\n\nYou are a funny chatbot.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nCould you tell me about Facebook?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
 ```
 
 ## Pushing Model and Tokenizer
@@ -173,41 +178,49 @@ adb push tokenizer.bin /data/local/tmp/llama
 
 
 ## Build AAR Library
-Open a terminal window and navigate to the root directory of the executorch.
+1. Open a terminal window and navigate to the root directory of the executorch
 Set the following environment variables:
-```
+```sh
 export ANDROID_NDK=<path_to_android_ndk>
-export ANDROID_ABI=arm64-v8a
+export ANDROID_ABIS=arm64-v8a
+export QNN_SDK_ROOT=<path_to_qnn_sdk>
 ```
-Note: <path_to_android_ndk> is the root for the NDK, which is usually under ~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md. We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.
-Build the Android Java extension code:
+
+*Note: <path_to_android_ndk> is the root for the NDK, which is usually under ~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md. We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.*
+
+3. Create a directory to hold the AAR
+```sh
+mkdir -p aar-out
+export BUILD_AAR_DIR=aar-out
 ```
-pushd extension/android
-./gradlew build
-popd
+
+4. Run the following command to build the AAR:
+```sh
+sh scripts/build_android_library.sh
 ```
-Run the following command set up the required JNI library:
+
+5. Copy the AAR to the app:
+```sh
+mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
+cp aar-out/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs/executorch.aar
 ```
-pushd examples/demo-apps/android/LlamaDemo
-./gradlew :app:setupQnn
-popd
-```
+
 Alternative you can also just run the shell script directly as in the root directory:
-```
+```sh
 sh examples/demo-apps/android/LlamaDemo/setup-with-qnn.sh
 ```
-This is running the shell script which configures the required core ExecuTorch, Llama2/3, and Android libraries, builds them, and copies them to jniLibs.
-Note: If you are building the Android app mentioned in the next section on a separate machine (i.e. MacOS but building and exporting for QNN backend on Linux), make sure you copy the aar file generated from setup-with-qnn script to “examples/demo-apps/android/LlamaDemo/app/libs” before building the Android app.
+This is running the shell script which configures the required core ExecuTorch, Llama2/3, and Android libraries, builds them into AAR, and copies it to the app.
+Note: If you are building the Android app mentioned in the next section on a separate machine (i.e. MacOS but building and exporting for QNN backend on Linux), make sure you copy the aar file generated from setup-with-qnn script to "examples/demo-apps/android/LlamaDemo/app/libs" before building the Android app.
 
 
 ## Run the Android Demo App
 
-First, make sure your Android phone’s chipset version is compatible with this demo (SM8650, SM8550). You can find the Qualcomm chipset version here in the [mapping](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/overview.html).
+First, make sure your Android phone's chipset version is compatible with this demo (SM8650, SM8550). You can find the Qualcomm chipset version here in the [mapping](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/overview.html).
 
-If you build and run the setup-with-qnn script on a separate machine rather than where you are building the Android app, make sure you copy the aar file it generated into “examples/demo-apps/android/LlamaDemo/app/libs”
+If you build and run the setup-with-qnn script on a separate machine rather than where you are building the Android app, make sure you copy the aar file it generated into "examples/demo-apps/android/LlamaDemo/app/libs"
 
 ### Alternative 1: Android Studio (Recommended)
-Open Android Studio and select “Open an existing Android Studio project” to open examples/demo-apps/android/LlamaDemo.
+Open Android Studio and select "Open an existing Android Studio project" to open examples/demo-apps/android/LlamaDemo.
 Run the app (^R). This builds and launches the app on the phone.
 
 ### Alternative 2: Command line

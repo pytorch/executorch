@@ -12,7 +12,7 @@
 #if defined(QAIHUB_LLAMA3_RUNNER)
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #else
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
 #endif
 #include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
@@ -79,7 +79,7 @@ Runner::Runner(
   eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
   version_ = LlamaVersion::kLlama3;
 #else
-  tokenizer_ = std::make_unique<executorch::extension::llm::BPETokenizer>();
+  tokenizer_ = std::make_unique<tokenizers::Llama2cTokenizer>();
   tokenizer_->load(tokenizer_path_);
   version_ = LlamaVersion::kLlama2;
 #endif
@@ -231,9 +231,9 @@ Error Runner::generate(
       break;
   }
 
-  Result<std::vector<uint64_t>> encode_res =
+  tokenizers::Result<std::vector<uint64_t>> encode_res =
       tokenizer_->encode(post_process_prompt, n_bos_, 0);
-  ET_CHECK_OK_OR_RETURN_ERROR(
+  ET_CHECK_TK_OK_OR_RETURN_ERROR(
       encode_res.error(),
       "failed to encode prompt %s",
       post_process_prompt.c_str());

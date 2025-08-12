@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from torch._higher_order_ops.map import map as torch_map
 from torch.nn import Module  # @manual
 
 
@@ -19,9 +20,7 @@ class FTCondBasic(Module):
         def false_branch(x):
             return x * x
 
-        return torch.ops.higher_order.cond(
-            inp.sum() > 4, true_branch, false_branch, [inp]
-        )
+        return torch.cond(inp.sum() > 4, true_branch, false_branch, [inp])
 
     def get_random_inputs(self):
         return (torch.rand(5),)
@@ -38,9 +37,7 @@ class FTCondDynShape(Module):
         def false_branch(x):
             return x * x * x
 
-        return torch.ops.higher_order.cond(
-            inp.sum() > 4, true_branch, false_branch, [inp]
-        )
+        return torch.cond(inp.sum() > 4, true_branch, false_branch, [inp])
 
     def get_upper_bound_inputs(self):
         return (torch.rand(8),)
@@ -71,9 +68,7 @@ class FTCondDeadCode(Module):
         def false_branch(x):
             return x * 2
 
-        return torch.ops.higher_order.cond(
-            inp.sum() > 4, true_branch, false_branch, [inp]
-        )
+        return torch.cond(inp.sum() > 4, true_branch, false_branch, [inp])
 
     def get_random_inputs(self):
         return (torch.eye(5) * 2,)
@@ -87,7 +82,7 @@ class FTMapBasic(Module):
         def f(x, y):
             return x + y
 
-        return torch.ops.higher_order.map(f, xs, y) + xs
+        return torch_map(f, xs, y) + xs
 
     def get_random_inputs(self):
         return torch.rand(2, 4), torch.rand(4)
@@ -101,7 +96,7 @@ class FTMapDynShape(Module):
         def f(x, y):
             return x + y
 
-        return torch.ops.higher_order.map(f, xs, y) + xs
+        return torch_map(f, xs, y) + xs
 
     def get_upper_bound_inputs(self):
         return torch.rand(4, 4), torch.rand(4)

@@ -20,7 +20,7 @@ We will walk through an example model to generate a `.pte` file in [portable mod
 from the [`models/`](../models) directory using scripts in the `portable/scripts` directory. Then we will run on the `.pte` model on the ExecuTorch runtime. For that we will use `executor_runner`.
 
 
-1. Following the setup guide in [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup)
+1. Following the setup guide in [Setting up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup)
 you should be able to get the basic development environment for ExecuTorch working.
 
 2. Using the script `portable/scripts/export.py` generate a model binary file by selecting a
@@ -78,4 +78,4 @@ Output 0: tensor(sizes=[1, 1000], [
 
 ## Custom Operator Registration
 
-Explore the demos in the [`custom_ops/`](./custom_ops) directory to learn how to register custom operators into ExecuTorch as well as register its kernels into ExecuTorch runtime.
+Explore the demos in the [`custom_ops/`](custom_ops) directory to learn how to register custom operators into ExecuTorch as well as register its kernels into ExecuTorch runtime.

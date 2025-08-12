@@ -14,8 +14,7 @@ namespace torch {
 namespace executor {
 
 using Tensor = executorch::aten::Tensor;
-using TensorOptList =
-    executorch::aten::ArrayRef<executorch::aten::optional<Tensor>>;
+using TensorOptList = executorch::aten::ArrayRef<std::optional<Tensor>>;
 
 /**
  * Performs preliminary checks on the arguments. However, it doesn't check that

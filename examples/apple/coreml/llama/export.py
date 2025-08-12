@@ -1,78 +1,35 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
-
-# pyre-strict
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 import argparse
-import json
-
-import sys
 
 import coremltools as ct
 import torch
 from executorch.backends.apple.coreml.compiler import CoreMLBackend  # pyre-ignore
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner  # pyre-ignore
-from executorch.examples.models.llama.source_transformation.quantize import (
-    EmbeddingQuantHandler,
+
+from executorch.examples.apple.coreml.llama.llama_transformer import (
+    InputManager,
+    load_model,
+)
+from executorch.examples.apple.coreml.llama.utils import (
+    replace_linear_with_split_linear,
 )
 
+from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.utils import format_delegated_graph
-from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+from executorch.extension.export_util.utils import save_pte_program
 
-sys.path.insert(0, ".")
-from llama_transformer import InputManager, ModelArgs, Transformer
-
-
-class SplitLinearModule(torch.nn.Module):
-    def __init__(self, in_features, out_features, target_split_size, max_splits):
-        super(SplitLinearModule, self).__init__()
-        num_splits = max(out_features // target_split_size, 1)
-        if num_splits > max_splits:
-            num_splits = max_splits
-
-        self.split_size = out_features // num_splits
-        self.split_remainder = out_features % num_splits
-        self.splits = torch.nn.ModuleList(
-            [torch.nn.Linear(in_features, self.split_size) for _ in range(num_splits)]
-        )
-        print(
-            f"Splitting out_features={out_features} into {num_splits} of size {self.split_size}"
-        )
-        if self.split_remainder > 0:
-            print(
-                f"Warning: remainder {self.split_remainder} after splitting out_features={out_features} into {num_splits} of size {self.split_size}"
-            )
-            self.splits.append(torch.nn.Linear(in_features, self.split_remainder))
-
-    def split_sizes(self):
-        return [split.out_features for split in self.splits]
-
-    def forward(self, x):
-        return torch.cat([split(x) for split in self.splits], dim=-1)
-
-
-def replace_linear_with_split_linear(model, target_split_size, max_splits):
-    for name, module in model.named_children():
-        if isinstance(module, torch.nn.Linear):
-            new_module = SplitLinearModule(
-                module.in_features, module.out_features, target_split_size, max_splits
-            )
-            split_sizes = new_module.split_sizes()
-            if module.bias is not None:
-                split_bias = module.bias.split(split_sizes)
-            split_weights = module.weight.split(split_sizes, dim=0)
-            for i, split in enumerate(new_module.splits):
-                split.weight = torch.nn.Parameter(split_weights[i])
-                if module.bias is not None:
-                    split.bias = torch.nn.Parameter(split_bias[i])
-                else:
-                    split.bias = None
-            setattr(model, name, new_module)
-        else:
-            replace_linear_with_split_linear(module, target_split_size, max_splits)
+from torchao.quantization.granularity import PerAxis, PerGroup
+from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+from torchao.utils import unwrap_tensor_subclass
 
 
 def main() -> None:
@@ -141,102 +98,94 @@ def main() -> None:
         default=8,
         help="Maximum number of splits to divide linear layers",
     )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="fp16",
+    )
 
     export_args = parser.parse_args()
-    params_path = export_args.params
-    checkpoint_path = export_args.checkpoint
-
-    # Load model args
-    with open(params_path, "r") as f:
-        params = json.loads(f.read())
-
-    args = ModelArgs(
-        max_seq_len=export_args.max_seq_length,
-        generate_full_logits=False,
+    model = load_model(
+        export_args.checkpoint,
+        export_args.params,
+        max_seq_length=export_args.max_seq_length,
         use_cache_list=export_args.use_cache_list,
-        **params,
     )
 
-    with torch.device("meta"):
-        model = Transformer(args)
+    float_dtype = {"fp16": torch.float16, "fp32": torch.float32}[
+        export_args.dtype
+    ]  # dtype for model/inputs
 
-    checkpoint = torch.load(
-        checkpoint_path, map_location="cpu", mmap=True, weights_only=True
-    )
-    if "model" in checkpoint:
-        checkpoint = checkpoint["model"]
-
-    missing, unexpected = model.load_state_dict(
-        checkpoint,
-        strict=False,
-        assign=True,
-    )
-    print("Missing keys: ", missing)
-    print("Unexpected keys: ", unexpected)
-
-    float_dtype = torch.float16  # dtype for model/inputs
     model.eval()
     model.to(float_dtype)
 
-    if export_args.embedding_quantize:
-        bitwidth, group_size = export_args.embedding_quantize.split(",")
-        if group_size == "none" or group_size == "None" or group_size == "0":
-            group_size = None
-        else:
-            group_size = int(group_size)
-        bitwidth = int(bitwidth)
-        model = EmbeddingQuantHandler(
-            model,
-            bitwidth=bitwidth,
-            group_size=group_size,
-            packed=(bitwidth in [2, 4]),
-        ).quantized_model()
-
     if export_args.target_split_size is not None:
         replace_linear_with_split_linear(
-            model, export_args.target_split_size, export_args.max_splits
+            model,
+            out_target_split_size=export_args.target_split_size,
+            out_max_splits=export_args.max_splits,
+            # I have not found splitting on in_features to be beneficial,
+            # and it often leads to OOM so I set in_max_splits to 1
+            in_target_split_size=1,
+            in_max_splits=1,
         )
 
-    model = model.to(float_dtype)
+    # Quantization
+    if export_args.embedding_quantize:
+        bitwidth, group_size = export_args.embedding_quantize.split(",")
+        bitwidth = int(bitwidth)
+        assert bitwidth in [4, 8], "CoreML only supports 4-bit and 8-bit quantization"
+        group_size = int(group_size)
+        if group_size == 0:
+            granularity = PerAxis(0)
+        else:
+            granularity = PerGroup(group_size)
+        weight_dtype = getattr(torch, f"int{bitwidth}")
 
-    op_linear_quantizer_config = None
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=weight_dtype, granularity=granularity),
+            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        )
+
     if export_args.coreml_quantize == "b4w":
-        op_linear_quantizer_config = {
-            "mode": "linear_symmetric",
-            "dtype": "int4",
-            "granularity": "per_block",
-            "block_size": 32,
-            "weight_threshold": 512,
-        }
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4,
+                granularity=PerGroup(32),
+            ),
+        )
     elif export_args.coreml_quantize == "c4w":
-        op_linear_quantizer_config = {
-            "mode": "linear_symmetric",
-            "dtype": "int4",
-            "granularity": "per_channel",
-        }
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4,
+                granularity=PerAxis(0),
+            ),
+        )
 
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=ct.target.iOS18,
-        compute_precision=ct.precision(ct.precision.FLOAT16.value),
+        compute_precision={
+            torch.float16: ct.precision.FLOAT16,
+            torch.float32: ct.precision.FLOAT32,
+        }[float_dtype],
         compute_unit=ct.ComputeUnit.CPU_AND_NE,
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
-        op_linear_quantizer_config=op_linear_quantizer_config,
     )
     partitioner = CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
         take_over_mutable_buffer=False,
-        skip_ops_for_coreml_delegation=[
-            "quantized_decomposed.embedding_4bit.dtype",
-            "aten.embedding.default",
-        ],
+        skip_ops_for_coreml_delegation=[],
     )
 
     input_manager = InputManager(
-        n_layers=args.n_layers,
-        max_batch_size=args.max_batch_size,
-        n_kv_heads=args.n_kv_heads,
-        max_seq_length=args.max_seq_len,
-        head_dim=args.head_dim,
+        n_layers=model.params.n_layers,
+        max_batch_size=model.params.max_batch_size,
+        n_kv_heads=model.params.n_kv_heads,
+        max_seq_length=model.params.max_seq_len,
+        head_dim=model.params.head_dim,
         use_cache_list=export_args.use_cache_list,
         seq_length=export_args.seq_length,
         dtype=float_dtype,
@@ -245,25 +194,18 @@ def main() -> None:
     )
     example_inputs = input_manager.get_inputs(tokens=[0])
 
-    edge_manager = export_to_edge(
-        model,
-        example_inputs,
-        edge_compile_config=EdgeCompileConfig(
-            _check_ir_validity=False,
-            _skip_type_promotion=(float_dtype == torch.float16),
-            _skip_dim_order=True,
-        ),
+    model = unwrap_tensor_subclass(model)
+
+    ep = torch.export.export(model, example_inputs, strict=True)
+    print("Exported program")
+    print(ep)
+
+    edge_manager = to_edge_transform_and_lower(
+        ep,
+        partitioner=[partitioner],
     )
-    print("Edge program")
-    print(edge_manager.exported_program())
-
-    for node in edge_manager.exported_program().graph_module.graph.nodes:
-        print(node.name, node.target, node.args, node.kwargs)
-
-    edge_manager = edge_manager.to_backend(partitioner)
 
     print("Delegated program")
-
     print(format_delegated_graph(edge_manager.exported_program().graph_module))
 
     executorch_program = edge_manager.to_executorch(

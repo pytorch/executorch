@@ -25,7 +25,7 @@ Tensor& op_reflection_pad1d_out(
     const Tensor& input,
     ArrayRef<int64_t> padding,
     Tensor& out) {
-  executorch::runtime::KernelRuntimeContext context{};
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
   return torch::executor::aten::reflection_pad1d_outf(
       context, input, padding, out);
 }

@@ -2,27 +2,33 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
+
+from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer import (
+    PerBlockParamObserver,
+)
 from torch import Tensor
-from torch.ao.quantization.fake_quantize import (
+from torch.fx import Node
+from torchao.quantization.pt2e import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
-)
-from torch.ao.quantization.observer import (
     MinMaxObserver,
     MovingAverageMinMaxObserver,
     MovingAveragePerChannelMinMaxObserver,
     PerChannelMinMaxObserver,
 )
-from torch.ao.quantization.quantizer import DerivedQuantizationSpec, QuantizationSpec
-from torch.fx import Node
+from torchao.quantization.pt2e.quantizer import (
+    DerivedQuantizationSpec,
+    QuantizationSpec,
+)
 
 
-@dataclass(eq=True, frozen=True)
+@dataclass(eq=True)
 class QuantizationConfig:
     input_activation: Optional[QuantizationSpec]
     output_activation: Optional[QuantizationSpec]
     weight: Optional[QuantizationSpec]
     bias: Optional[QuantizationSpec | Callable]
+    block_size: Optional[Tuple] = None
 
 
 def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
@@ -41,6 +47,10 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
         )
         derived_scale = (broadcast_act_scale * broadcast_weight_scale).to(torch.float32)
         derived_zero = torch.zeros(derived_scale.size()).to(torch.int32)
+        if isinstance(weight_obs_or_fq, PerBlockParamObserver):
+            # keep maximum scale of each channel for bias
+            derived_scale = derived_scale.view(derived_scale.size(0), -1).amax(dim=-1)
+            derived_zero = derived_zero.view(derived_zero.size(0), -1).amax(dim=-1)
         return (derived_scale, derived_zero)
 
     input_act = node.args[0]
@@ -177,6 +187,65 @@ def get_16a8w_qnn_ptq_config(
     return quantization_config
 
 
+def get_16a8w_qnn_qat_config(
+    act_observer=MovingAverageMinMaxObserver,
+) -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": 2**-20}
+    act_fake_quant_ctr = FakeQuantize.with_args(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.uint16).min,
+        quant_max=torch.iinfo(torch.uint16).max,
+        qscheme=torch.per_tensor_affine,
+        reduce_range=True,
+        observer=act_observer.with_args(**extra_args),
+    )
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.uint16).min,
+        quant_max=torch.iinfo(torch.uint16).max,
+        qscheme=torch.per_tensor_affine,
+        observer_or_fake_quant_ctr=act_fake_quant_ctr,
+    )
+    weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_tensor_symmetric,
+        reduce_range=True,
+        observer=MovingAverageMinMaxObserver,
+    )
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_tensor_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=weight_fake_quant_ctr,
+    )
+    bias_fake_quant_ctr = FakeQuantize.with_args(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer=MovingAverageMinMaxObserver,
+    )
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=bias_fake_quant_ctr,
+    )
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+    return quantization_config
+
+
 def get_16a16w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver,
 ) -> QuantizationConfig:
@@ -231,8 +300,7 @@ def get_ptq_per_channel_quant_config(
         torch.int8,
         torch.int16,
     }
-    # TODO accept "int4" temporally. Remove "int4" when torch support torch.int4 dtype
-    supported_weight_dtypes = {"int4", torch.int8, torch.int16}
+    supported_weight_dtypes = {torch.int4, torch.int8, torch.int16}
     assert (
         act_dtype in supported_act_types
     ), f"act_dtype, {act_dtype} is not one of supported types, {supported_act_types}"
@@ -241,7 +309,7 @@ def get_ptq_per_channel_quant_config(
         weight_dtype in supported_weight_dtypes
     ), f"weight_dtype, {weight_dtype} is not one of supported types, {supported_weight_dtypes}"
 
-    # torch do not support uint16 quantization, use int32 to bypass
+    # torch does not support uint16 quantization, use int32 to bypass
     if act_symmetric:
         # If zero_point is 128, htp can do optimizations.
         # If we keep quant_min and quant_max none, observer will default use 128 as zero_point.
@@ -266,9 +334,11 @@ def get_ptq_per_channel_quant_config(
         )
 
     weight_quantization_spec = QuantizationSpec(
-        dtype=torch.int8 if weight_dtype == "int4" else weight_dtype,
-        quant_min=-7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).min + 1,
-        quant_max=7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).max,
+        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
+        quant_min=(
+            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
+        ),
+        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
         observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(**extra_args),
@@ -284,6 +354,37 @@ def get_ptq_per_channel_quant_config(
     )
 
     return quantization_config
+
+
+def get_ptq_per_block_quant_config(
+    act_dtype=torch.uint8,
+    weight_dtype=torch.int8,
+    act_observer=MovingAverageMinMaxObserver,
+    act_symmetric: bool = False,
+) -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    quantization_config = get_ptq_per_channel_quant_config(
+        act_dtype=act_dtype,
+        weight_dtype=weight_dtype,
+        act_observer=act_observer,
+        act_symmetric=act_symmetric,
+    )
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
+        quant_min=(
+            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
+        ),
+        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
+        qscheme=torch.per_channel_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=PerBlockParamObserver.with_args(**extra_args),
+    )
+    return QuantizationConfig(
+        input_activation=quantization_config.input_activation,
+        output_activation=quantization_config.output_activation,
+        weight=weight_quantization_spec,
+        bias=quantization_config.bias,
+    )
 
 
 # TODO merge qat and ptq to a fucntion, and use a bool flag to control it
@@ -417,6 +518,7 @@ def get_qat_per_channel_quant_config(
     act_dtype=torch.uint8,
     weight_dtype=torch.int8,
     act_observer=MovingAverageMinMaxObserver,
+    act_symmetric=False,
 ) -> QuantizationConfig:
     supported_act_types = {
         torch.uint8,
@@ -424,8 +526,7 @@ def get_qat_per_channel_quant_config(
         torch.int8,
         torch.int16,
     }
-    # TODO accept "int4" temporally. Remove "int4" when torch support torch.int4 dtype
-    supported_weight_dtypes = {"int4", torch.int8, torch.int16}
+    supported_weight_dtypes = {torch.int4, torch.int8, torch.int16}
     assert (
         act_dtype in supported_act_types
     ), f"act_dtype, {act_dtype} is not one of supported types, {supported_act_types}"
@@ -434,41 +535,76 @@ def get_qat_per_channel_quant_config(
         weight_dtype in supported_weight_dtypes
     ), f"weight_dtype, {weight_dtype} is not one of supported types, {supported_weight_dtypes}"
 
-    # torch do not support uint16 quantization, use int32 to bypass
-    act_fake_quant_ctr = FakeQuantize.with_args(
-        dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
-        quant_min=torch.iinfo(act_dtype).min,
-        quant_max=torch.iinfo(act_dtype).max,
-        qscheme=torch.per_tensor_affine,
-        reduce_range=True,
-        observer=act_observer,
-    )
-    act_quantization_spec = QuantizationSpec(
-        dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
-        quant_min=torch.iinfo(act_dtype).min,
-        quant_max=torch.iinfo(act_dtype).max,
-        qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=act_fake_quant_ctr,
-    )
+    # torch does not support uint16 quantization, use int32 to bypass
+    if act_symmetric:
+        # If zero_point is 128, htp can do optimizations.
+        # If we keep quant_min and quant_max none, observer will default use 128 as zero_point.
+        # If we provide uint8 quant_min/max, it will use 127 as zero_point, which is undesired.
+        act_fake_quant_ctr = FakeQuantize.with_args(
+            dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
+            qscheme=torch.per_tensor_symmetric,
+            reduce_range=True,
+            observer=act_observer,
+        )
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
+            qscheme=torch.per_tensor_symmetric,
+            ch_axis=0,
+            observer_or_fake_quant_ctr=act_fake_quant_ctr,
+        )
+    else:
+        act_fake_quant_ctr = FakeQuantize.with_args(
+            dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
+            quant_min=torch.iinfo(act_dtype).min,
+            quant_max=torch.iinfo(act_dtype).max,
+            qscheme=torch.per_tensor_affine,
+            reduce_range=True,
+            observer=act_observer,
+        )
+        act_quantization_spec = QuantizationSpec(
+            dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
+            quant_min=torch.iinfo(act_dtype).min,
+            quant_max=torch.iinfo(act_dtype).max,
+            qscheme=torch.per_tensor_affine,
+            observer_or_fake_quant_ctr=act_fake_quant_ctr,
+        )
 
     weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
-        dtype=torch.int8 if weight_dtype == "int4" else weight_dtype,
-        quant_min=-7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).min + 1,
-        quant_max=7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).max,
+        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
+        quant_min=(
+            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
+        ),
+        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
         observer=MovingAveragePerChannelMinMaxObserver,
     )
     weight_quantization_spec = QuantizationSpec(
-        dtype=torch.int8 if weight_dtype == "int4" else weight_dtype,
-        quant_min=-7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).min + 1,
-        quant_max=7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).max,
+        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
+        quant_min=(
+            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
+        ),
+        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
         observer_or_fake_quant_ctr=weight_fake_quant_ctr,
     )
 
-    bias_quantization_spec = _derived_bias_quant_spec
+    bias_fake_quant_ctr = FakeQuantize.with_args(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        reduce_range=True,
+        observer=MovingAverageMinMaxObserver,
+    )
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=bias_fake_quant_ctr,
+    )
 
     quantization_config = QuantizationConfig(
         input_activation=act_quantization_spec,

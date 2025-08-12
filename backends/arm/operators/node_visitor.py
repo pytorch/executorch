@@ -5,10 +5,10 @@
 
 # pyre-unsafe
 
-from typing import Dict, List
+from typing import Any, Dict, List
 
-import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from torch.export import ExportedProgram
@@ -25,18 +25,18 @@ class NodeVisitor:
     # When all node_visitors has been refactored to target a specific
     # version, this list should be removed.
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+BI"),
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
+        TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     def __init__(self, exported_program: ExportedProgram, tosa_spec: TosaSpecification):
-        self._exported_program = exported_program or None
+        self._exported_program = exported_program
         self.tosa_spec = tosa_spec
 
     def define_node(
         self,
         node: torch.fx.Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
@@ -45,8 +45,8 @@ class NodeVisitor:
 
 # container for all node visitors
 _node_visitor_dicts: Dict[TosaSpecification, Dict] = {
-    TosaSpecification.create_from_string("TOSA-0.80+BI"): {},
-    TosaSpecification.create_from_string("TOSA-0.80+MI"): {},
+    TosaSpecification.create_from_string("TOSA-1.0+INT"): {},
+    TosaSpecification.create_from_string("TOSA-1.0+FP"): {},
 }
 
 

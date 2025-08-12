@@ -22,30 +22,14 @@ NPROC=8
 if hash nproc &> /dev/null; then NPROC=$(nproc); fi
 
 cmake_install_executorch_libraries() {
-  cmake -DPYTHON_EXECUTABLE=python \
-      -DCMAKE_INSTALL_PREFIX=${BUILD_DIR} \
-      -DEXECUTORCH_ENABLE_LOGGING=1 \
-      -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-      -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-      -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-      -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-      -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-      -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-      -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-      -B${BUILD_DIR} .
-
-  cmake --build ${BUILD_DIR} -j${NPROC} --target install --config ${BUILD_TYPE}
+  rm -rf cmake-out
+  cmake --preset llm -DCMAKE_INSTALL_PREFIX=cmake-out -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+  cmake --build cmake-out -j16 --target install --config ${BUILD_TYPE}
 }
 
 cmake_build_phi_3_mini() {
-  cmake -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
-      -DCMAKE_INSTALL_PREFIX=${BUILD_DIR} \
+  cmake -DCMAKE_PREFIX_PATH=${BUILD_DIR} \
       -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-      -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-      -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-      -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
       -B${BUILD_DIR}/${MODEL_DIR} \
       ${MODEL_DIR}
 
@@ -56,7 +40,7 @@ cmake_build_phi_3_mini() {
 prepare_tokenizer() {
   echo "Downloading and converting tokenizer.model"
   wget -O tokenizer.model "https://huggingface.co/microsoft/Phi-3-mini-128k-instruct/resolve/main/tokenizer.model?download=true"
-  $PYTHON_EXECUTABLE -m executorch.extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+  $PYTHON_EXECUTABLE -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 }
 
 # Export phi-3-mini model to pte
@@ -80,7 +64,7 @@ run_and_verify() {
     ${BUILD_DIR}/${MODEL_DIR}/phi_3_mini_runner \
     --model_path=phi-3-mini.pte \
     --tokenizer_path=tokenizer.bin \
-    --seq_len=128 \
+    --seq_len=60 \
     --temperature=0 \
     --prompt="<|system|>
 You are a helpful assistant.<|end|>

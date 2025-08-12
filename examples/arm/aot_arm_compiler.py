@@ -19,22 +19,30 @@ import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
 from executorch.backends.arm.arm_backend import (
     ArmCompileSpecBuilder,
-    get_tosa_spec,
     is_ethosu,
     is_tosa,
+    is_vgf,
 )
-from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
-from executorch.backends.arm.quantizer.arm_quantizer import (
+from executorch.backends.arm.ethosu import EthosUPartitioner
+from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
+    VgfQuantizer,
 )
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
 
 from executorch.backends.arm.util.arm_model_evaluator import (
     GenericModelEvaluator,
     MobileNetV2Evaluator,
+)
+
+from executorch.backends.arm.vgf_partitioner import VgfPartitioner
+
+# To use Cortex-M backend
+from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
+    ReplaceQuantNodesPass,
 )
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
@@ -47,13 +55,14 @@ from executorch.exir import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
+from torch.utils.data import DataLoader
 
 # Quantize model if required using the standard export quantizaion flow.
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.utils.data import DataLoader
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
+
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
@@ -145,11 +154,12 @@ def quantize(
         quantizer = EthosUQuantizer(compile_specs)
     elif is_tosa(compile_specs):
         quantizer = TOSAQuantizer(get_tosa_spec(compile_specs))
+    elif is_vgf(compile_specs):
+        quantizer = VgfQuantizer(compile_specs)
     else:
         raise RuntimeError("Unsupported compilespecs for quantization!")
 
-    # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
-    operator_config = get_symmetric_quantization_config(is_per_channel=False)
+    operator_config = get_symmetric_quantization_config()
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
 
@@ -210,6 +220,54 @@ class AddModule3(torch.nn.Module):
     can_delegate = True
 
 
+class QuantAddTest(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, a):
+        return a + a
+
+    example_input = (torch.rand([13, 3], dtype=torch.float32),)  # a - normal values
+    can_delegate = True  # when quantized
+
+
+class QuantAddTest2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, a, b):
+        p = a + a
+        q = b + b
+        r = p + q
+        return p, q, r
+
+    example_input = (
+        torch.randn([13, 7, 3], dtype=torch.float32),
+        torch.randn([13, 7, 3], dtype=torch.float32),
+    )
+    can_delegate = True  # when quantized
+
+
+class QuantOpTest(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, w, x, y, z):
+        o1 = w - x
+        o2 = o1 + y
+        o3 = o2 * z
+        return o1, o2, o3
+
+    example_input = (
+        torch.randn([3, 1, 2], dtype=torch.float32),  # w - normal values
+        torch.randn([3, 5, 2], dtype=torch.float32),  # x - normal values
+        torch.randn([3, 5, 1], dtype=torch.float32)
+        * -0.000001,  # y - small -ve values, needs to be calibration for tests
+        torch.randn([3, 5, 2], dtype=torch.float32) * 1000,  # z - large values
+    )
+    can_delegate = True  # when quantized
+
+
 class SoftmaxModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -224,7 +282,6 @@ class SoftmaxModule(torch.nn.Module):
 
 
 class MultipleOutputsModule(torch.nn.Module):
-
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         return (x * y, x.sum(dim=-1, keepdim=True))
 
@@ -236,6 +293,9 @@ models = {
     "add": AddModule,
     "add2": AddModule2,
     "add3": AddModule3,
+    "qadd": QuantAddTest,
+    "qadd2": QuantAddTest2,
+    "qops": QuantOpTest,
     "softmax": SoftmaxModule,
     "MultipleOutputsModule": MultipleOutputsModule,
 }
@@ -249,6 +309,17 @@ calibration_data = {
     "add3": (
         torch.randn(32, 5),
         torch.randn(32, 5),
+    ),
+    "qadd": (torch.randn(32, 2, 1),),
+    "qadd2": (
+        torch.randn(32, 2, 1),
+        torch.randn(32, 2, 1),
+    ),
+    "qops": (
+        torch.randn(32, 2, 1),
+        torch.randn(32, 2, 1),
+        torch.randn(32, 2, 1) * -0.000001,
+        torch.randn(32, 2, 1) * 1000,
     ),
     "softmax": (torch.randn(32, 2, 2),),
 }
@@ -268,7 +339,9 @@ targets = [
     "ethos-u85-512",
     "ethos-u85-1024",
     "ethos-u85-2048",
-    "TOSA",
+    "vgf",
+    "TOSA-1.0+INT",
+    "TOSA-1.0+FP",
 ]
 
 
@@ -310,28 +383,30 @@ def get_compile_spec(
     intermediates: Optional[str] = None,
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
+    quantize: bool = False,
+    config: Optional[str] = None,
 ) -> list[CompileSpec]:
     spec_builder = None
     if target.startswith("TOSA"):
         try:
             tosa_spec = TosaSpecification.create_from_string(target)
         except:
-            tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         spec_builder = ArmCompileSpecBuilder().tosa_compile_spec(tosa_spec)
-    elif "ethos-u55" in target:
+    elif "ethos-u" in target:
         spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
             target,
             system_config=system_config,
             memory_mode=memory_mode,
-            extra_flags="--debug-force-regor --output-format=raw --verbose-operators --verbose-cycle-estimate",
+            extra_flags="--verbose-operators --verbose-cycle-estimate",
+            config_ini=config,
         )
-    elif "ethos-u85" in target:
-        spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
-            target,
-            system_config=system_config,
-            memory_mode=memory_mode,
-            extra_flags="--output-format=raw --verbose-operators --verbose-cycle-estimate",
-        )
+    elif "vgf" in target:
+        if quantize:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
+        else:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
+        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec(tosa_spec)
 
     if intermediates is not None:
         spec_builder.dump_intermediate_artifacts_to(intermediates)
@@ -467,7 +542,7 @@ def get_args():
         "--so_library",
         required=False,
         default=None,
-        help="Provide path to so library. E.g., cmake-out/examples/portable/custom_ops/libcustom_ops_aot_lib.so",
+        help="Provide path to custom .so library.",
     )
     parser.add_argument(
         "--debug", action="store_true", help="Set the logging level to debug."
@@ -498,6 +573,19 @@ def get_args():
         default=None,
         help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U85 targets",
     )
+    parser.add_argument(
+        "--config",
+        required=False,
+        default="Arm/vela.ini",
+        help="Specify custom vela configuration file (vela.ini)",
+    )
+    parser.add_argument(
+        "--non_strict_export",
+        dest="strict_export",
+        required=False,
+        action="store_false",
+        help="Disable strict checking while exporting models.",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -510,12 +598,6 @@ def get_args():
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
 
-    if args.quantize and not args.so_library:
-        logging.warning(
-            "Quantization enabled without supplying path to libcustom_ops_aot_lib using -s flag."
-            + "This is required for running quantized models with unquantized input."
-        )
-
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:
         logging.info(f"Loading custom ops from {args.so_library}")
@@ -527,22 +609,6 @@ def get_args():
         and models[args.model_name].can_delegate is False
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
-
-    if "ethos-u" in args.target and args.system_config is None:
-        if "u55" in args.target:
-            args.system_config = "Ethos_U55_High_End_Embedded"
-        elif "u85" in args.target:
-            args.system_config = "Ethos_U85_SYS_DRAM_Mid"
-        else:
-            raise RuntimeError(f"Invalid target name {args.target}")
-
-    if "ethos-u" in args.target and args.memory_mode is None:
-        if "u55" in args.target:
-            args.memory_mode = "Shared_Sram"
-        elif "u85" in args.target:
-            args.memory_mode = "Sram_Only"
-        else:
-            raise RuntimeError(f"Invalid target name {args.target}")
 
     return args
 
@@ -620,14 +686,31 @@ def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: s
         )
 
     # Generate BundledProgram
+    output_dir = os.path.dirname(output_name)
+    os.makedirs(output_dir, exist_ok=True)
     save_bundled_program(exec_prog, method_test_suites, output_name)
 
 
+def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
+    model_int8 = quantize(
+        model,
+        args.model_name,
+        compile_spec,
+        example_inputs,
+        args.evaluate,
+        args.evaluate_config,
+    )
+    # Wrap quantized model back into an exported_program
+    exported_program = torch.export.export_for_training(
+        model_int8, example_inputs, strict=args.strict_export
+    )
+
+    return model_int8, exported_program
+
+
 def to_edge_TOSA_delegate(
-    args,
-    model: torch.nn.Module,
+    exported_program, args, model: torch.nn.Module, example_inputs
 ):
-    model_int8 = None
     # As we can target multiple output encodings, one must
     # be specified.
     compile_spec = get_compile_spec(
@@ -635,27 +718,23 @@ def to_edge_TOSA_delegate(
         args.intermediates,
         args.system_config,
         args.memory_mode,
+        args.quantize,
+        args.config,
     )
-    if args.quantize:
-        model = quantize(
-            model,
-            args.model_name,
-            compile_spec,
-            example_inputs,
-            args.evaluate,
-            args.evaluate_config,
-        )
-        model_int8 = model
-        # Wrap quantized model back into an exported_program
-        exported_program = torch.export.export_for_training(model, example_inputs)
 
-        if args.intermediates:
-            os.makedirs(args.intermediates, exist_ok=True)
+    model_int8 = None
+    if args.quantize:
+        model_int8, exported_program = quantize_model(
+            args, model, example_inputs, compile_spec
+        )
+        model = model_int8
 
     if is_ethosu(compile_spec):
         partitioner = EthosUPartitioner(compile_spec)
     elif is_tosa(compile_spec):
         partitioner = TOSAPartitioner(compile_spec)
+    elif is_vgf(compile_spec):
+        partitioner = VgfPartitioner(compile_spec)
     else:
         raise RuntimeError(f"Unhandled compile spec: {compile_spec}")
 
@@ -666,7 +745,44 @@ def to_edge_TOSA_delegate(
             _check_ir_validity=False,
         ),
     )
+
     return model_int8, edge
+
+
+def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_inputs):
+    model_int8 = None
+    if args.quantize:
+        # As we can target multiple output encodings, one must
+        # be specified.
+        compile_spec = get_compile_spec(
+            args.target,
+            args.intermediates,
+            args.system_config,
+            args.memory_mode,
+            args.quantize,
+            args.config,
+        )
+        model, exported_program = quantize_model(
+            args, model, example_inputs, compile_spec
+        )
+        model_int8 = model
+
+    edge = to_edge_transform_and_lower(
+        exported_program,
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+        ),
+    )
+
+    return model_int8, edge
+
+
+def transform_for_cortex_m_backend(edge):
+    # Let's make sure we are using optimized Cortex M backend
+    # NB: If we can't find and replace ops those are expected to be replaced,
+    # bad things will happen at runtime, like "missing operator" errors!
+    edge = edge.transform([ReplaceQuantNodesPass()])
+    return edge
 
 
 if __name__ == "__main__":  # noqa: C901
@@ -680,21 +796,28 @@ if __name__ == "__main__":  # noqa: C901
 
     # export_for_training under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
-    exported_program = torch.export.export_for_training(model, example_inputs)
+    exported_program = torch.export.export_for_training(
+        model, example_inputs, strict=args.strict_export
+    )
     model = exported_program.module()
     model_fp32 = model
+
+    if args.intermediates:
+        os.makedirs(args.intermediates, exist_ok=True)
 
     # Quantize if required
     model_int8 = None
     if args.delegate:
-        model_int8, edge = to_edge_TOSA_delegate(args, model)
-    else:
-        edge = to_edge_transform_and_lower(
-            exported_program,
-            compile_config=EdgeCompileConfig(
-                _check_ir_validity=False,
-            ),
+        model_int8, edge = to_edge_TOSA_delegate(
+            exported_program, args, model, example_inputs
         )
+    else:
+        model_int8, edge = to_edge_no_delegate(
+            exported_program, args, model, example_inputs
+        )
+
+    # Transform so we can use ops from the Cortex M backend
+    edge = transform_for_cortex_m_backend(edge)
 
     dump_delegation_info(edge, args.intermediates)
 
@@ -740,7 +863,9 @@ if __name__ == "__main__":  # noqa: C901
             output_name = os.path.join(args.output, output_name)
 
     if args.bundleio:
-        save_bpte_program(exec_prog, original_model, output_name)
+        # Realize the quantization impact on numerics when generating reference output
+        reference_model = original_model if not model_int8 else model_int8
+        save_bpte_program(exec_prog, reference_model, output_name)
         print(f"Bundle PTE file saved as {output_name}")
     else:
         save_pte_program(exec_prog, output_name)

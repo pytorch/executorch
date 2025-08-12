@@ -1,127 +1,112 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
 
 from typing import Tuple
 
-import pytest
-
 import torch
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.backend_details import CompileSpec
-from parameterized import parameterized
 
-test_data_suite = [
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
+
+test_data_suite = {
     # (test_name, test_data)
-    ("zeros", torch.zeros(1, 10, 10, 10)),
-    ("ones", torch.ones(10, 10, 10)),
-    ("rand", torch.rand(10, 10) - 0.5),
-    ("randn_pos", torch.randn(1, 4, 4, 4) + 10),
-    ("randn_neg", torch.randn(10) - 10),
-    ("ramp", torch.arange(-16, 16, 0.2)),
-]
+    "zeros": lambda: torch.zeros(1, 10, 10, 10),
+    "ones": lambda: torch.ones(10, 10, 10),
+    "rand": lambda: torch.rand(10, 10) - 0.5,
+    "randn_pos": lambda: torch.randn(1, 4, 4, 4) + 10,
+    "randn_neg": lambda: torch.randn(10) - 10,
+    "ramp": lambda: torch.arange(-16, 16, 0.2),
+}
+
+aten_op = "torch.ops.aten.exp.default"
+input_t1 = Tuple[torch.Tensor]  # Input x
 
 
-class TestExp(unittest.TestCase):
-    """Tests lowering of aten.exp"""
+class Exp(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.exp(x)
 
-    class Exp(torch.nn.Module):
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            return torch.exp(x)
 
-    def _test_exp_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check(["torch.ops.aten.exp.default"])
-            .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_exp_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_exp_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
+        Exp(),
+        (test_data(),),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.run()
 
-    def _test_exp_tosa_BI_pipeline(self, module: torch.nn.Module, test_data: Tuple):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .check(["torch.ops.aten.exp.default"])
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_exp_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
 
-    def _test_exp_ethosu_BI_pipeline(
-        self,
-        compile_spec: CompileSpec,
-        module: torch.nn.Module,
-        test_data: Tuple[torch.tensor],
-    ):
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
-            )
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.exp.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_exp_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+@common.parametrize("test_data", test_data_suite)
+def test_exp_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
+        Exp(),
+        (test_data(),),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    def test_exp_tosa_MI(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-    ):
-        self._test_exp_tosa_MI_pipeline(self.Exp(), (test_data,))
 
-    @parameterized.expand(test_data_suite)
-    def test_exp_tosa_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_exp_tosa_BI_pipeline(self.Exp(), (test_data,))
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_exp_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
+        Exp(),
+        (test_data(),),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    @pytest.mark.corstone_fvp
-    def test_exp_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_exp_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(), self.Exp(), (test_data,)
-        )
 
-    @parameterized.expand(test_data_suite)
-    @pytest.mark.corstone_fvp
-    def test_exp_tosa_u85_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_exp_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(), self.Exp(), (test_data,)
-        )
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_exp_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
+        Exp(),
+        (test_data(),),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_exp_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Exp(),
+        (test_data(),),
+        aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_exp_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Exp(),
+        (test_data(),),
+        aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

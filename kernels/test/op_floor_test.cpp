@@ -25,33 +25,28 @@ class OpFloorTest : public OperatorTest {
   Tensor& op_floor_out(const Tensor& self, Tensor& out) {
     return torch::executor::aten::floor_outf(context_, self, out);
   }
+
+  template <ScalarType DTYPE>
+  void test_floor_float_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor in = tf.make({1, 7}, {-3.0, -2.99, -1.01, 0.0, 1.01, 2.99, 3.0});
+    Tensor out = tf.zeros({1, 7});
+    Tensor expected = tf.make({1, 7}, {-3.0, -3.0, -2.0, 0.0, 1.0, 2.0, 3.0});
+
+    Tensor ret = op_floor_out(in, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
 };
 
-TEST_F(OpFloorTest, SanityCheck) {
-  TensorFactory<ScalarType::Float> tf;
-
-  Tensor in = tf.make({1, 7}, {-3.0, -2.99, -1.01, 0.0, 1.01, 2.99, 3.0});
-  Tensor out = tf.zeros({1, 7});
-  Tensor expected = tf.make({1, 7}, {-3.0, -3.0, -2.0, 0.0, 1.0, 2.0, 3.0});
-
-  Tensor ret = op_floor_out(in, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST_F(OpFloorTest, HalfSupport) {
+TEST_F(OpFloorTest, AllFloatDtypeSupport) {
+#define TEST_ENTRY(ctype, dtype) test_floor_float_dtype<ScalarType::dtype>();
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+    ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
+  } else {
+    ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
   }
-  TensorFactory<ScalarType::Half> tf;
-
-  Tensor in = tf.make({1, 7}, {-3.0, -2.99, -1.01, 0.0, 1.01, 2.99, 3.0});
-  Tensor out = tf.zeros({1, 7});
-  Tensor expected = tf.make({1, 7}, {-3.0, -3.0, -2.0, 0.0, 1.0, 2.0, 3.0});
-
-  Tensor ret = op_floor_out(in, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(out, expected);
+#undef TEST_ENTRY
 }

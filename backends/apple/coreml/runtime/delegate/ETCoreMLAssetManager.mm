@@ -6,12 +6,14 @@
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import "ETCoreMLAssetManager.h"
-#import <ETCoreMLAsset.h>
-#import <ETCoreMLLogging.h>
-#import <database.hpp>
+
+#import "ETCoreMLAsset.h"
+#import "ETCoreMLLogging.h"
+#import "database.hpp"
+#import "json_key_value_store.hpp"
+#import "serde_json.h"
+
 #import <iostream>
-#import <json_key_value_store.hpp>
-#import <serde_json.h>
 #import <sstream>
 
 namespace  {
@@ -365,8 +367,7 @@ get_assets_to_remove(ModelAssetsStore& store,
         NSError *cleanupError = nil;
         if (![self _removeAssetWithIdentifier:asset.identifier error:&cleanupError]) {
             ETCoreMLLogError(cleanupError,
-                             "%@: Failed to remove asset with identifier = %@",
-                             NSStringFromClass(ETCoreMLAssetManager.class),
+                             "Failed to remove asset with identifier = %@",
                              identifier);
         }
     });
@@ -440,9 +441,7 @@ get_assets_to_remove(ModelAssetsStore& store,
     dispatch_async(self.syncQueue, ^{
         NSError *localError = nil;
         if (![weakSelf _compact:self.maxAssetsSizeInBytes error:&localError]) {
-            ETCoreMLLogError(localError,
-                             "%@: Failed to compact asset store.",
-                             NSStringFromClass(ETCoreMLAssetManager.class));
+            ETCoreMLLogError(localError, "Failed to compact asset store.");
         }
     });
 }
@@ -486,11 +485,11 @@ get_assets_to_remove(ModelAssetsStore& store,
     
     if ([result keepAliveAndReturnError:error]) {
         [self.assetsInUseMap setObject:result forKey:identifier];
-    } else {
-        [self cleanupAssetIfNeeded:result];
-    }
+        return  result;
+    }         
     
-    return result;
+    [self cleanupAssetIfNeeded:result];
+    return nil;
 }
 
 - (BOOL)_containsAssetWithIdentifier:(NSString *)identifier
@@ -587,8 +586,7 @@ get_assets_to_remove(ModelAssetsStore& store,
             [assets addObject:asset];
         } else if (localError) {
             ETCoreMLLogError(localError,
-                             "%@: Failed to retrieve asset with identifier = %@",
-                             NSStringFromClass(ETCoreMLAssetManager.class),
+                             "Failed to retrieve asset with identifier = %@.",
                              identifier);
         }
         
@@ -647,8 +645,7 @@ get_assets_to_remove(ModelAssetsStore& store,
         NSString *identifier = @(asset.identifier.c_str());
         if (![self _removeAssetWithIdentifier:identifier error:&cleanupError] && cleanupError) {
             ETCoreMLLogError(cleanupError,
-                             "%@: Failed to remove asset with identifier = %@",
-                             NSStringFromClass(ETCoreMLAssetManager.class),
+                             "Failed to remove asset with identifier = %@.",
                              identifier);
         }
     }
@@ -689,8 +686,7 @@ get_assets_to_remove(ModelAssetsStore& store,
     for (NSURL *itemURL in enumerator) {
         if (![fileManager removeItemAtURL:itemURL error:&localError]) {
             ETCoreMLLogError(localError,
-                             "%@: Failed to remove item in trash directory with name = %@",
-                             NSStringFromClass(ETCoreMLAssetManager.class),
+                             "Failed to remove item in trash directory with name = %@",
                              itemURL.lastPathComponent);
         }
     }
@@ -720,9 +716,7 @@ get_assets_to_remove(ModelAssetsStore& store,
         NSError *localError = nil;
         // Create the assets directory, if we fail here it's okay.
         if (![self.fileManager createDirectoryAtURL:self.assetsDirectoryURL withIntermediateDirectories:NO attributes:@{} error:&localError]) {
-            ETCoreMLLogError(localError,
-                             "%@: Failed to create assets directory",
-                             NSStringFromClass(ETCoreMLAssetManager.class));
+            ETCoreMLLogError(localError, "Failed to create assets directory.");
         }
         
         return true;

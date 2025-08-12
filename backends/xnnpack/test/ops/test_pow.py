@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestPow(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class Pow(torch.nn.Module):
         def __init__(self, exp):
             super().__init__()

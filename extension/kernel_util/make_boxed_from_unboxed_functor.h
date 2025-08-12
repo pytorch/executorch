@@ -96,16 +96,15 @@ struct evalue_to_arg<const executorch::aten::Tensor&> final {
 };
 
 template <class T>
-struct evalue_to_arg<executorch::aten::optional<T>> final {
-  static executorch::aten::optional<T> call(executorch::runtime::EValue& v) {
+struct evalue_to_arg<std::optional<T>> final {
+  static std::optional<T> call(executorch::runtime::EValue& v) {
     return v.toOptional<T>();
   }
 };
 
 template <class T>
-struct evalue_to_arg<executorch::aten::ArrayRef<executorch::aten::optional<T>>>
-    final {
-  static executorch::aten::ArrayRef<executorch::aten::optional<T>> call(
+struct evalue_to_arg<executorch::aten::ArrayRef<std::optional<T>>> final {
+  static executorch::aten::ArrayRef<std::optional<T>> call(
       executorch::runtime::EValue& v) {
     return v.toListOptionalTensor();
   }
@@ -113,8 +112,8 @@ struct evalue_to_arg<executorch::aten::ArrayRef<executorch::aten::optional<T>>>
 
 template <class Functor, size_t... evalue_arg_indices, typename... ArgTypes>
 void call_functor_with_args_from_stack(
-    ::executorch::runtime::KernelRuntimeContext& ctx,
-    executorch::runtime::EValue** stack,
+    executorch::runtime::KernelRuntimeContext& ctx,
+    executorch::runtime::Span<executorch::runtime::EValue*> stack,
     std::index_sequence<evalue_arg_indices...>,
     typelist<ArgTypes...>*) {
   (*Functor::func_ptr())(
@@ -152,7 +151,7 @@ struct WrapUnboxedIntoFunctor {
 
   static void call(
       ::executorch::runtime::KernelRuntimeContext& ctx,
-      executorch::runtime::EValue** stack) {
+      executorch::runtime::Span<executorch::runtime::EValue*> stack) {
     constexpr size_t num_inputs =
         kernel_util_internal::size<ContextRemovedArgsType>::value;
     return kernel_util_internal::call_functor_with_args_from_stack<FuncType>(

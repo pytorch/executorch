@@ -1,4 +1,4 @@
-# Debug Backend Delegate
+# Debugging Delegation
 
 We provide a list of util functions to give users insights on what happened to the graph modules during the `to_backend()` stage.
 

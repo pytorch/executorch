@@ -13,6 +13,7 @@ public class PromptFormat {
   public static final String SYSTEM_PLACEHOLDER = "{{ system_prompt }}";
   public static final String USER_PLACEHOLDER = "{{ user_prompt }}";
   public static final String ASSISTANT_PLACEHOLDER = "{{ assistant_response }}";
+  public static final String THINKING_MODE_PLACEHOLDER = "{{ thinking_mode }}";
   public static final String DEFAULT_SYSTEM_PROMPT = "Answer the questions in a few sentences";
 
   public static String getSystemPromptTemplate(ModelType modelType) {
@@ -25,12 +26,14 @@ public class PromptFormat {
             + "<|eot_id|>";
       case LLAVA_1_5:
         return "USER: ";
+      case QWEN_3:
+        return "<|im_start|>system\n" + "You are a helpful assistant.\n" + "<|im_end|>\n";
       default:
         return SYSTEM_PLACEHOLDER;
     }
   }
 
-  public static String getUserPromptTemplate(ModelType modelType) {
+  public static String getUserPromptTemplate(ModelType modelType, boolean thinkingMode) {
     switch (modelType) {
       case LLAMA_3:
       case LLAMA_3_1:
@@ -41,6 +44,12 @@ public class PromptFormat {
             + "<|eot_id|>"
             + "<|start_header_id|>assistant<|end_header_id|>";
 
+      case QWEN_3:
+        return "<|im_start|>user\n"
+            + USER_PLACEHOLDER
+            + "\n<|im_end|>\n"
+            + "<|im_start|>assistant\n"
+            + THINKING_MODE_PLACEHOLDER;
       case LLAVA_1_5:
       default:
         return USER_PLACEHOLDER;
@@ -52,9 +61,14 @@ public class PromptFormat {
       case LLAMA_3:
       case LLAMA_3_1:
       case LLAMA_3_2:
-        return getUserPromptTemplate(modelType) + "\n" + ASSISTANT_PLACEHOLDER + "<|eot_id|>";
+        return getUserPromptTemplate(modelType, false)
+            + "\n"
+            + ASSISTANT_PLACEHOLDER
+            + "<|eot_id|>";
       case LLAVA_1_5:
         return USER_PLACEHOLDER + " ASSISTANT:";
+      case QWEN_3:
+        return getUserPromptTemplate(modelType, false) + "<|im_end|>\n";
       default:
         return USER_PLACEHOLDER;
     }
@@ -69,8 +83,35 @@ public class PromptFormat {
         return "<|eot_id|>";
       case LLAVA_1_5:
         return "</s>";
+      case QWEN_3:
+        return "<|endoftext|>";
       default:
         return "";
+    }
+  }
+
+  public static String getThinkingModeToken(ModelType modelType, boolean thinkingMode) {
+    switch (modelType) {
+      case QWEN_3:
+        return thinkingMode ? "" : "<think>\n\n</think>\n\n\n";
+      default:
+        return "";
+    }
+  }
+
+  public static String replaceSpecialToken(ModelType modelType, String token) {
+    switch (modelType) {
+      case QWEN_3:
+        switch (token) {
+          case "<|im_end|>":
+            return "";
+          case "<think>":
+            return "Thinking...\n";
+          case "</think>":
+            return "\nDone thinking";
+        }
+      default:
+        return token;
     }
   }
 
@@ -80,7 +121,7 @@ public class PromptFormat {
   }
 
   public static String getFormattedLlamaGuardPrompt(String userPrompt) {
-    return getUserPromptTemplate(ModelType.LLAMA_GUARD_3)
+    return getUserPromptTemplate(ModelType.LLAMA_GUARD_3, false)
         .replace(
             USER_PLACEHOLDER, getLlamaGuardPresetPrompt().replace(USER_PLACEHOLDER, userPrompt));
   }

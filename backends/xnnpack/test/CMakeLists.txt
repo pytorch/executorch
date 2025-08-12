@@ -15,11 +15,10 @@ cmake_minimum_required(VERSION 3.19)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
-include(${EXECUTORCH_ROOT}/build/Test.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_test_srcs
-    runtime/test_xnnexecutor.cpp
-    ${EXECUTORCH_ROOT}/extension/threadpool/test/threadpool_test.cpp
+set(_test_srcs runtime/test_xnnexecutor.cpp
+               ${EXECUTORCH_ROOT}/extension/threadpool/test/threadpool_test.cpp
 )
 
 et_cxx_test(
@@ -32,7 +31,7 @@ et_cxx_test(
   XNNPACK
   pthreadpool
   cpuinfo
-  microkernels-prod
+  xnnpack-microkernels-prod
 )
 target_include_directories(
   backends_xnnpack_test

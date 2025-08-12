@@ -44,7 +44,9 @@ def _from_pstat_to_static_html(stats: Stats, html_filename: str):
         html_filename: Output filename in which populated template is rendered
     """
     RESTR = r'(?<!] \+ ")/static/'
-    REPLACE_WITH = "https://cdn.rawgit.com/jiffyclub/snakeviz/v0.4.2/snakeviz/static/"
+    REPLACE_WITH = (
+        "https://cdn.jsdelivr.net/gh/jiffyclub/snakeviz@v0.4.2/snakeviz/static/"
+    )
 
     if not isinstance(html_filename, str):
         raise ValueError("A valid file name must be provided.")
