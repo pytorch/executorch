@@ -1,9 +1,22 @@
 import csv
+
 from collections import Counter
 from dataclasses import dataclass
+from datetime import timedelta
 from enum import IntEnum
 from functools import reduce
-from typing import TextIO
+from typing import Any, TextIO
+
+from executorch.backends.test.harness.error_statistics import ErrorStatistics
+from torch.export import ExportedProgram
+
+
+# Operators that are excluded from the counts returned by count_ops. These are used to
+# exclude operatations that are not logically relevant or delegatable to backends.
+OP_COUNT_IGNORED_OPS = {
+    "executorch_call_delegate",
+    "getitem",
+}
 
 
 class TestResult(IntEnum):
@@ -100,6 +113,27 @@ class TestCaseSummary:
     error: Exception | None
     """ The Python exception object, if any. """
 
+    tensor_error_statistics: list[ErrorStatistics]
+    """ 
+    Statistics about the error between the backend and reference outputs. Each element of this list corresponds to
+    a single output tensor.
+    """
+
+    quantize_time: timedelta | None = None
+    """ The total runtime of the quantization stage, or none, if the test did not run the quantize stage. """
+
+    lower_time: timedelta | None = None
+    """ The total runtime of the to_edge_transform_and_lower stage, or none, if the test did not run the quantize stage. """
+
+    delegated_op_counts: Counter | None = None
+    """ The number of delegated occurances of each operator in the graph. """
+
+    undelegated_op_counts: Counter | None = None
+    """ The number of undelegated occurances of each operator in the graph. """
+
+    pte_size_bytes: int | None = None
+    """ The size of the PTE file in bytes. """
+
 
 class TestSessionState:
     test_case_summaries: list[TestCaseSummary]
@@ -149,6 +183,40 @@ class RunSummary:
 _active_session: TestSessionState | None = None
 
 
+def _get_target_name(target: Any) -> str:
+    """Retrieve a string representation of a node target."""
+    if isinstance(target, str):
+        return target
+    elif hasattr(target, "name"):
+        return target.name()  # Op overloads have this
+    elif hasattr(target, "__name__"):
+        return target.__name__  # Some builtins have this
+    else:
+        return str(target)
+
+
+def _count_ops(program: ExportedProgram) -> Counter:
+    op_names = (
+        _get_target_name(n.target)
+        for n in program.graph.nodes
+        if n.op == "call_function"
+    )
+
+    return Counter(op for op in op_names if op not in OP_COUNT_IGNORED_OPS)
+
+
+def count_ops(program: dict[str, ExportedProgram] | ExportedProgram) -> Counter:
+    if isinstance(program, ExportedProgram):
+        return _count_ops(program)
+    else:
+        # Sum op counts for all methods in the program.
+        return reduce(
+            lambda a, b: a + b,
+            (_count_ops(p) for p in program.values()),
+            Counter(),
+        )
+
+
 def begin_test_session():
     global _active_session
 
@@ -173,6 +241,24 @@ def complete_test_session() -> RunSummary:
     return summary
 
 
+def _sum_op_counts(counter: Counter | None) -> int | None:
+    """
+    A utility function to count the total number of nodes in an op count dict.
+    """
+    return sum(counter.values()) if counter is not None else None
+
+
+def _serialize_op_counts(counter: Counter | None) -> str:
+    """
+    A utility function to serialize op counts to a string, for the purpose of including
+    in the test report.
+    """
+    if counter is not None:
+        return str(dict(sorted(counter.items())))
+    else:
+        return ""
+
+
 def generate_csv_report(summary: RunSummary, output: TextIO):
     """Write a run summary report to a file in CSV format."""
 
@@ -182,6 +268,8 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
         "Backend",
         "Flow",
         "Result",
+        "Quantize Time (s)",
+        "Lowering Time (s)",
     ]
 
     # Tests can have custom parameters. We'll want to report them here, so we need
@@ -197,6 +285,30 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
     )
     field_names += (s.capitalize() for s in param_names)
 
+    # Add tensor error statistic field names for each output index.
+    max_outputs = max(
+        len(s.tensor_error_statistics) for s in summary.test_case_summaries
+    )
+    for i in range(max_outputs):
+        field_names.extend(
+            [
+                f"Output {i} Error Max",
+                f"Output {i} Error MAE",
+                f"Output {i} Error MSD",
+                f"Output {i} Error L2",
+                f"Output {i} SQNR",
+            ]
+        )
+    field_names.extend(
+        [
+            "Delegated Nodes",
+            "Undelegated Nodes",
+            "Delegated Ops",
+            "Undelegated Ops",
+            "PTE Size (Kb)",
+        ]
+    )
+
     writer = csv.DictWriter(output, field_names)
     writer.writeheader()
 
@@ -207,7 +319,29 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
             "Backend": record.backend,
             "Flow": record.flow,
             "Result": record.result.display_name(),
+            "Quantize Time (s)": (
+                record.quantize_time.total_seconds() if record.quantize_time else None
+            ),
+            "Lowering Time (s)": (
+                record.lower_time.total_seconds() if record.lower_time else None
+            ),
         }
         if record.params is not None:
             row.update({k.capitalize(): v for k, v in record.params.items()})
+
+        for output_idx, error_stats in enumerate(record.tensor_error_statistics):
+            row[f"Output {output_idx} Error Max"] = error_stats.error_max
+            row[f"Output {output_idx} Error MAE"] = error_stats.error_mae
+            row[f"Output {output_idx} Error MSD"] = error_stats.error_msd
+            row[f"Output {output_idx} Error L2"] = error_stats.error_l2_norm
+            row[f"Output {output_idx} SQNR"] = error_stats.sqnr
+
+        row["Delegated Nodes"] = _sum_op_counts(record.delegated_op_counts)
+        row["Undelegated Nodes"] = _sum_op_counts(record.undelegated_op_counts)
+        row["Delegated Ops"] = _serialize_op_counts(record.delegated_op_counts)
+        row["Undelegated Ops"] = _serialize_op_counts(record.undelegated_op_counts)
+        row["PTE Size (Kb)"] = (
+            record.pte_size_bytes / 1000.0 if record.pte_size_bytes else ""
+        )
+
         writer.writerow(row)

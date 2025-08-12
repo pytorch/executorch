@@ -801,6 +801,8 @@ jobs:
       id-token: write
       contents: read
     strategy:
+      matrix:
+        enable-etdump: ['', '--enable-etdump']
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -820,7 +822,7 @@ jobs:
         source .ci/scripts/setup-emscripten.sh
 
         # Test selective build
-        bash scripts/build_wasm_tests.sh
+        bash scripts/build_wasm_tests.sh ${{ matrix.enable-etdump }}
 
         # Install Jest
         cd cmake-out-wasm/extension/wasm/test
@@ -892,12 +894,10 @@ jobs:
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh --build
 
         # Test models serially
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh mv2
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh mv3
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh edsr
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh resnet18
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh resnet50
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh dl3
+        models="mv2 mv3 edsr resnet18 resnet50 dl3"
+        for model in $models; do
+          python -m examples.vulkan.export --model_name=$model --test
+        done
 
 
 
