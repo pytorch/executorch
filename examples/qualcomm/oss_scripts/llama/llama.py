@@ -116,6 +116,8 @@ sys.setrecursionlimit(4096)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logging.getLogger().setLevel(logging.INFO)
+# Avoid the error message "Could not initialize NNPACK! Reason: Unsupported hardware."
+torch.backends.nnpack.set_flags(False)
 
 
 def next_power_of_two(n):
@@ -233,10 +235,16 @@ class SingleLlama:
             ).module()
 
             if quant_dtype == QuantDtype.use_16a4w_block:
+                if args.group_size is None:
+                    raise ValueError(
+                        "Group size is required when use quant_dtype 16a4w_block"
+                    )
                 conv_nodes = [
                     n for n in fx_graph_module.graph.nodes if "conv" in n.name
                 ]
-                block_size_map = {n.name: (1, 64, 1, 1) for n in conv_nodes}
+                block_size_map = {
+                    n.name: (1, args.group_size, 1, 1) for n in conv_nodes
+                }
                 quantizer.set_block_size_map(block_size_map)
 
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
@@ -584,7 +592,7 @@ def compile(args, pte_filename, tokenizer):
         if args.ptq != "16a8w":
             # 16a8w use 16bit kv io, so skip this custom annotation
             custom_annotations = custom_annotations + (annotate_matmul_16a8w,)
-        if args.decoder_model in {"stories110m", "stories260k"}:
+        if args.decoder_model in {"stories110m", "stories260k", "phi_4_mini"}:
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
@@ -801,12 +809,20 @@ def inference(args, pte_filename, runtime_tokenizer_path, tokenizer):
 
     seq_len = args.max_seq_len
     multi_prompts = " ".join([f'--prompt "{prompt}"' for prompt in args.prompt])
+    lookahead_args = " ".join(
+        [
+            f"--window {args.window}",
+            f"--gcap {args.gcap}",
+            f"--ngram {args.ngram}",
+        ]
+    )
     runner_args = " ".join(
         [
             multi_prompts,
             f"--eval_mode {EVAL_MODE[args.model_mode]}",
             f"--temperature {args.temperature}",
             f"--system_prompt '{args.system_prompt}'",
+            lookahead_args if args.model_mode == "lookahead" else "",
         ]
     )
 
@@ -856,9 +872,6 @@ def inference(args, pte_filename, runtime_tokenizer_path, tokenizer):
                 "--output_path outputs/outputs.txt",
                 f"--performance_output_path {performance_output_path}",
                 f"--kv_updater {'SmartMask' if args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
-                f"--window {args.window}",
-                f"--gcap {args.gcap}",
-                f"--ngram {args.ngram}",
                 runner_args,
             ]
         )
@@ -1122,6 +1135,13 @@ def _build_parser():
         help="Enable SpinQuant R3 quantization optimization. Please notice enable R3 could possibly cause performance drop.",
         action="store_true",
         default=False,
+    )
+    parser.add_argument(
+        "-G",
+        "--group_size",
+        type=int,
+        default=None,
+        help="group_size used in block quantization for weight quantization.",
     )
 
     parser.add_argument("-v", "--verbose", action="store_true")

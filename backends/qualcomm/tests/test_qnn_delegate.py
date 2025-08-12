@@ -1127,7 +1127,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             (torch.randn(30, 20),),
         ]
         for i, module in enumerate(modules):
-            self.lower_module_and_test_output(module, sample_inputs[i])
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_inputs[i])
 
     def test_qnn_backend_masked_fill(self):
         module = MaskedFill()  # noqa: F405
@@ -2556,8 +2557,9 @@ class TestQNNQuantizedOperator(TestQNN):
             (torch.randn(30, 20),),
         ]
         for i, module in enumerate(modules):
-            module = self.get_qdq_module(module, sample_inputs[i])
-            self.lower_module_and_test_output(module, sample_inputs[i])
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_inputs[i])
+                self.lower_module_and_test_output(module, sample_inputs[i])
 
     def test_qnn_backend_masked_fill(self):
         module = MaskedFill()  # noqa: F405
@@ -4526,6 +4528,77 @@ class TestExampleLLMScript(TestQNN):
                     self.assertLessEqual(pte_size, 130000000)
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
+
+    def test_static_phi4(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "My favourite condiment is "
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a4w_block",
+            "--group_size",
+            "16",
+            "--decoder_model",
+            "phi_4_mini",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            "1024",
+            "--num_sharding",
+            "8",
+            "--eval_perplexity",
+            "--tasks",
+            "wikitext",
+            "--limit",
+            "1",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+            cmds.extend(
+                [
+                    "--quant_attrs_path",
+                    f"{self.pre_gen_pte}/kv_llama_qnn_quant_attrs.json",
+                ]
+            )
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                inference_speed_ref = {"SM8650": 14, "SM8750": 19}
+                self.assertLessEqual(msg["wiki_ppl"], 12)
+                self.assertLessEqual(msg["pte_size"], 4000000000)  # 4gb
+                if self.model in inference_speed_ref:
+                    self.assertGreaterEqual(
+                        msg["inference_speed"], inference_speed_ref[self.model]
+                    )
 
     def test_static_qwen2_5(self):
         if not self.required_envs():
