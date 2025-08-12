@@ -1,12 +1,22 @@
 import csv
+
 from collections import Counter
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import IntEnum
 from functools import reduce
-from typing import TextIO
+from typing import Any, TextIO
 
 from executorch.backends.test.harness.error_statistics import ErrorStatistics
+from torch.export import ExportedProgram
+
+
+# Operators that are excluded from the counts returned by count_ops. These are used to
+# exclude operatations that are not logically relevant or delegatable to backends.
+OP_COUNT_IGNORED_OPS = {
+    "executorch_call_delegate",
+    "getitem",
+}
 
 
 class TestResult(IntEnum):
@@ -115,6 +125,12 @@ class TestCaseSummary:
     lower_time: timedelta | None = None
     """ The total runtime of the to_edge_transform_and_lower stage, or none, if the test did not run the quantize stage. """
 
+    delegated_op_counts: Counter | None = None
+    """ The number of delegated occurances of each operator in the graph. """
+
+    undelegated_op_counts: Counter | None = None
+    """ The number of undelegated occurances of each operator in the graph. """
+
 
 class TestSessionState:
     test_case_summaries: list[TestCaseSummary]
@@ -164,6 +180,40 @@ class RunSummary:
 _active_session: TestSessionState | None = None
 
 
+def _get_target_name(target: Any) -> str:
+    """Retrieve a string representation of a node target."""
+    if isinstance(target, str):
+        return target
+    elif hasattr(target, "name"):
+        return target.name()  # Op overloads have this
+    elif hasattr(target, "__name__"):
+        return target.__name__  # Some builtins have this
+    else:
+        return str(target)
+
+
+def _count_ops(program: ExportedProgram) -> Counter:
+    op_names = (
+        _get_target_name(n.target)
+        for n in program.graph.nodes
+        if n.op == "call_function"
+    )
+
+    return Counter(op for op in op_names if op not in OP_COUNT_IGNORED_OPS)
+
+
+def count_ops(program: dict[str, ExportedProgram] | ExportedProgram) -> Counter:
+    if isinstance(program, ExportedProgram):
+        return _count_ops(program)
+    else:
+        # Sum op counts for all methods in the program.
+        return reduce(
+            lambda a, b: a + b,
+            (_count_ops(p) for p in program.values()),
+            Counter(),
+        )
+
+
 def begin_test_session():
     global _active_session
 
@@ -186,6 +236,24 @@ def complete_test_session() -> RunSummary:
     _active_session = None
 
     return summary
+
+
+def _sum_op_counts(counter: Counter | None) -> int | None:
+    """
+    A utility function to count the total number of nodes in an op count dict.
+    """
+    return sum(counter.values()) if counter is not None else None
+
+
+def _serialize_op_counts(counter: Counter | None) -> str:
+    """
+    A utility function to serialize op counts to a string, for the purpose of including
+    in the test report.
+    """
+    if counter is not None:
+        return str(dict(sorted(counter.items())))
+    else:
+        return ""
 
 
 def generate_csv_report(summary: RunSummary, output: TextIO):
@@ -228,6 +296,14 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
                 f"Output {i} SQNR",
             ]
         )
+    field_names.extend(
+        [
+            "Delegated Nodes",
+            "Undelegated Nodes",
+            "Delegated Ops",
+            "Undelegated Ops",
+        ]
+    )
 
     writer = csv.DictWriter(output, field_names)
     writer.writeheader()
@@ -255,5 +331,10 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
             row[f"Output {output_idx} Error MSD"] = error_stats.error_msd
             row[f"Output {output_idx} Error L2"] = error_stats.error_l2_norm
             row[f"Output {output_idx} SQNR"] = error_stats.sqnr
+
+        row["Delegated Nodes"] = _sum_op_counts(record.delegated_op_counts)
+        row["Undelegated Nodes"] = _sum_op_counts(record.undelegated_op_counts)
+        row["Delegated Ops"] = _serialize_op_counts(record.delegated_op_counts)
+        row["Undelegated Ops"] = _serialize_op_counts(record.undelegated_op_counts)
 
         writer.writerow(row)
