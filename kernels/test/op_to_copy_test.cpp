@@ -22,9 +22,9 @@
 
 using namespace ::testing;
 using executorch::aten::MemoryFormat;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 // To further emphasize the accuracy of our op_to, we test the conversion

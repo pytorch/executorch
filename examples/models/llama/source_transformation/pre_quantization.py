@@ -13,7 +13,10 @@ from typing import Any, Optional
 import torch
 from torch import nn
 
-from torchao.quantization.GPTQ import _check_linear_int4_k, Int8DynActInt4WeightLinear
+from torchao.quantization.linear_quant_modules import (
+    _check_linear_int4_k,
+    Int8DynActInt4WeightLinear,
+)
 from torchao.quantization.quant_api import _replace_with_custom_fn_if_matches_filter
 
 from .quantize import Int8DynActInt8WeightLinear, QuantizedGroupEmbedding
@@ -44,7 +47,7 @@ def _replace_linear_with_linear_8da4w_for_pre_quantization(
             # pyre-fixme[6]: For 2nd argument expected `int` but got `Union[Module,
             #  Tensor]`.
             child.out_features,
-            bias=False,
+            bias=child.bias is not None,
             device=child.weight.device,
             groupsize=group_size,
             precision=precision,

@@ -6,14 +6,15 @@
 
 # Please refer to README.md in the same folder for more information.
 
+import logging
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from functools import partial
 from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
-
-from executorch.examples.models.llama.llama_transformer import RMSNorm
+from executorch.examples.models.llama.norm import RMSNorm
 
 from executorch.examples.models.llama.rope import (
     hf_apply_rotary_emb,
@@ -24,28 +25,7 @@ from executorch.examples.models.llama.rope import (
 
 from torch import nn
 
-
-# These are just to prevent to_edge from decomposing SDPA
-# A better method is to use the to_edge_transform_and_lower API for CoreML
-# and not decompose SDPA
-@torch.library.custom_op("coreml::sdpa", mutates_args=())
-def sdpa(
-    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attn_mask: torch.Tensor
-) -> torch.Tensor:
-    """Same as F.scaled_dot_product_attention, but with custom op to avoid lowering during dialect conversion."""
-    return torch.ops.aten.scaled_dot_product_attention.default(
-        q, k, v, attn_mask=attn_mask
-    )
-
-
-@torch.library.register_fake("coreml::sdpa")
-def _(
-    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, attn_mask: torch.Tensor
-) -> torch.Tensor:
-    """Fake implementation with the right output shape, which is required for torch.compile/export/fx tracing."""
-    expected_shape = list(q.shape)
-    expected_shape[-1] = v.shape[-1]
-    return q.new_empty(expected_shape)
+logger = logging.getLogger(__name__)
 
 
 def find_multiple(n: int, k: int) -> int:
@@ -89,6 +69,8 @@ class ModelArgs:
     use_scaled_rope: bool = True  # Use scaled RoPE, introduced in llama3.1.
     # Additional Model Metadata needed at runtime
     rope_scale_factor: int = 8
+    high_freq_factor: int = 4
+
     bos_idx: int = 1
     eos_idx: int = 3
     bos_count: int = -1  # i.e., a single EOS is used as BOS
@@ -98,6 +80,12 @@ class ModelArgs:
     lora_args: Optional[dict] = None
 
     use_cache_list: bool = True
+
+    use_kv_cache: bool = False
+    enable_dynamic_shape: bool = False
+
+    use_qk_norm: bool = False
+    qk_norm_before_rope: bool = False
 
     def __post_init__(self):
         if self.n_kv_heads is None:
@@ -121,15 +109,80 @@ class ModelArgs:
             self.head_dim = self.dim // self.n_heads
 
 
+class CoreMLRMSNorm(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        """
+        Initialize the RMSNorm normalization layer.
+
+        Args:
+            dim (int): The dimension of the input tensor.
+            eps (float, optional): A small value added to the denominator for numerical stability. Default is 1e-6.
+
+        Attributes:
+            eps (float): A small value added to the denominator for numerical stability.
+            weight (nn.Parameter): Learnable scaling parameter.
+
+        """
+        super().__init__()
+        self.dim = dim
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def _norm(self, x):
+        """
+        Apply the RMSNorm normalization to the input tensor.
+
+        Args:
+            x (torch.Tensor): The input tensor.
+
+        Returns:
+            torch.Tensor: The normalized tensor.
+
+        """
+        # CoreML ignores casts to FP32, so existing implementation of RMSNorm was not stable
+        # We instead use (x * sqrt(n)) / norm(x, dim=-1)
+        # Using torch.norm and preserving this op in CoreML improves stability
+        # Note, we ignore eps, but could add it by using torch.norm(torch.concat(x, sqrt(n*eps))) in the denominator
+        # In future, we want to add CoreML support for the functional RMSNorm op
+        # We have yet to do large scale evaluations on the numeric stability of this solution, but note that
+        # it appears better than what exists currently (removing FP32 casts and using FP16)
+        rms_norm_eps0 = (
+            x
+            * torch.sqrt(torch.tensor(self.dim, dtype=x.dtype))
+            * torch.reciprocal(torch.linalg.vector_norm(x, dim=-1, keepdim=True))
+        )
+        return rms_norm_eps0
+
+    def forward(self, x):
+        """
+        Forward pass through the RMSNorm layer.
+
+        Args:
+            x (torch.Tensor): The input tensor.
+
+        Returns:
+            torch.Tensor: The output tensor after applying RMSNorm.
+
+        """
+        output = self._norm(x)
+        return output * self.weight
+
+
 class Rope(torch.nn.Module):
     def __init__(self, params: ModelArgs):
         super().__init__()
         self.params = params
         if self.params.use_hf_rope:
-            self.precompute_freqs_cis = hf_precompute_freqs_cis
+            self.precompute_freqs_cis = partial(
+                hf_precompute_freqs_cis,
+                partial_rotary_factor=self.params.partial_rotary_factor,
+            )
         else:
             self.precompute_freqs_cis = partial(
-                precompute_freqs_cis, use_scaled=self.params.use_scaled_rope
+                precompute_freqs_cis,
+                use_scaled=self.params.use_scaled_rope,
+                scale_factor=self.params.rope_scale_factor,
+                high_freq_factor=self.params.high_freq_factor,
             )
         freqs_cos, freqs_sin = self.precompute_freqs_cis(
             self.params.head_dim,
@@ -269,6 +322,14 @@ class Attention(nn.Module):
 
         self.rope = rope
 
+        self.use_qk_norm = args.use_qk_norm
+        self.qk_norm_before_rope = args.qk_norm_before_rope
+        if self.use_qk_norm:
+            q_norm_dim = self.head_dim
+            k_norm_dim = self.head_dim
+            self.q_norm_fn = RMSNorm(q_norm_dim, eps=args.norm_eps)
+            self.k_norm_fn = RMSNorm(k_norm_dim, eps=args.norm_eps)
+
     def forward(
         self,
         x: torch.Tensor,
@@ -293,6 +354,10 @@ class Attention(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
+        if self.use_qk_norm and not self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
+
         new_k = k
         new_v = v
 
@@ -304,12 +369,11 @@ class Attention(nn.Module):
             k = k.repeat_interleave(self.n_rep, dim=1)
             v = v.repeat_interleave(self.n_rep, dim=1)
 
-        output = torch.ops.coreml.sdpa(q, k, v, attn_mask)
-
+        output = torch.ops.aten.scaled_dot_product_attention.default(
+            q, k, v, attn_mask=attn_mask
+        )
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
-
         output = self.wo(output)
-
         return output, new_k, new_v
 
 
@@ -410,10 +474,61 @@ class Transformer(nn.Module):
         if not self.use_cache_list:
             k_out = torch.stack(k_out, dim=0)
             v_out = torch.stack(v_out, dim=0)
-        return logits, k_out, v_out
+        return logits, k_out, v_out  # pyre-ignore[7]
+
+
+def load_model(checkpoint_path, params_path, max_seq_length, use_cache_list):
+    import json
+
+    with open(params_path, "r") as f:
+        params = json.loads(f.read())
+
+    args = ModelArgs(
+        max_seq_len=max_seq_length,
+        generate_full_logits=False,
+        use_cache_list=use_cache_list,
+        **params,
+    )
+
+    with torch.device("meta"):
+        model = Transformer(args)
+
+    checkpoint = torch.load(
+        checkpoint_path, map_location="cpu", mmap=True, weights_only=True
+    )
+    if "model" in checkpoint:
+        checkpoint = checkpoint["model"]
+
+    missing, unexpected = model.load_state_dict(
+        checkpoint,
+        strict=False,
+        assign=True,
+    )
+    print("Missing keys: ", missing)
+    print("Unexpected keys: ", unexpected)
+
+    return model
 
 
 class InputManager:
+    class NGramCache:
+        def __init__(self, max_size: int):
+            self.cache = deque()
+            self.max_size = max_size
+
+        def add(self, ngram: List[int]):
+            if ngram in self.cache:
+                return
+            if len(self.cache) == self.max_size:
+                self.cache.popleft()
+            self.cache.append(ngram)
+
+        def __iter__(self):
+            return iter(self.cache)
+
+        def __str__(self):
+            return str(self.cache)
+
     def __init__(
         self,
         n_layers: int,
@@ -426,6 +541,7 @@ class InputManager:
         dtype=torch.float16,
         minus_infinity=-torch.inf,
         cache_size=None,
+        lookahead_enabled: bool = False,
     ):
         if cache_size is None:
             cache_size = max_seq_length - seq_length
@@ -439,6 +555,8 @@ class InputManager:
 
         self.seq_length = seq_length
         self.use_cache_list = use_cache_list
+        self.lookahead_enabled = lookahead_enabled
+        self.minus_infinity = minus_infinity
 
         if self.use_cache_list:
             self.k_caches = [
@@ -516,10 +634,10 @@ class InputManager:
         if self.cache_pos == self.cache_size:
             self.cache_pos = 0
 
-    def update(self, input_length, new_k_caches, new_v_caches):
+    def update(self, input_length, new_k_caches, new_v_caches, update_pos=0):
         # Copy as much new cache data into cache as possible without wrapping
         amount_to_copy = min(input_length, self.cache_size - self.cache_pos)
-        self._update_cache(0, amount_to_copy, new_k_caches, new_v_caches)
+        self._update_cache(update_pos, amount_to_copy, new_k_caches, new_v_caches)
         if self.input_pos <= self.cache_size:
             self.attn_mask[:, (self.input_pos) : (self.input_pos + amount_to_copy)] = (
                 0.0
@@ -532,7 +650,10 @@ class InputManager:
         )
         if remaining_to_copy > 0:
             self._update_cache(
-                amount_to_copy, remaining_to_copy, new_k_caches, new_v_caches
+                update_pos + amount_to_copy,
+                remaining_to_copy,
+                new_k_caches,
+                new_v_caches,
             )
 
         self.input_pos += input_length
@@ -548,7 +669,7 @@ class InputManager:
                     torch.tensor(tokens, dtype=torch.int64),
                     torch.zeros(self.seq_length - input_length, dtype=torch.int64),
                 ],
-                axis=-1,
+                dim=-1,
             ).reshape(1, -1),
             # input_pos
             torch.tensor([self.input_pos], dtype=torch.long),
@@ -568,3 +689,270 @@ class InputManager:
             self.get_inputs(tokens[0:processed_tokens]),
             tokens[processed_tokens:],
         )
+
+    def _get_lookahead_decoding_mask(
+        self, ngram_size: int, window_size: int, n_verifications: int
+    ) -> torch.Tensor:
+        mask = torch.full((self.seq_length, self.seq_length), self.minus_infinity)
+        mask[0][0] = 0.0
+
+        lookahead_submask = torch.triu(
+            torch.full((window_size, window_size), self.minus_infinity),
+            diagonal=1,
+        )
+        for i in range(ngram_size - 1):
+            offset = window_size * i
+            mask[offset : offset + window_size, :window_size] = lookahead_submask
+            for j in range(1, i + 1):
+                mask[
+                    offset : offset + window_size,
+                    window_size * j : window_size * (j + 1),
+                ].fill_diagonal_(0.0)
+
+        verification_offset = max(window_size * (ngram_size - 1), 1)
+        verification_submask = torch.triu(
+            torch.full((ngram_size - 1, ngram_size - 1), self.minus_infinity),
+            diagonal=1,
+        )
+        for i in range(n_verifications):
+            mask[
+                verification_offset
+                + i * (ngram_size - 1) : verification_offset
+                + (i + 1) * (ngram_size - 1),
+                verification_offset
+                + i * (ngram_size - 1) : verification_offset
+                + (i + 1) * (ngram_size - 1),
+            ] = verification_submask
+        mask[verification_offset:, :1] = 0.0
+
+        return mask
+
+    def _get_lookahead_position_offsets(
+        self, ngram_size: int, window_size: int, n_verifications: int
+    ) -> torch.Tensor:
+        pos_offsets = torch.zeros(self.seq_length, dtype=torch.int32)
+        idx = 0
+        if window_size > 0:
+            for i in range(ngram_size - 1):
+                for j in range(window_size):
+                    pos_offsets[idx] = i + j
+                    idx += 1
+        else:
+            pos_offsets[0] = 0
+            idx += 1
+
+        # Verification branches: [1, 2, ..., ngram_size - 1].
+        for _ in range(n_verifications):
+            for j in range(1, ngram_size):
+                pos_offsets[idx] = j
+                idx += 1
+
+        return pos_offsets
+
+    def _validate_lookahead_config(
+        self, ngram_size: int, window_size: int, n_verifications: int
+    ) -> None:
+        """
+        Validate the lookahead decoding configuration.
+        """
+        if not self.lookahead_enabled:
+            raise RuntimeError("Lookahead decoding is not enabled")
+
+        if (ngram_size - 1) * (window_size + n_verifications) > self.seq_length:
+            raise RuntimeError(
+                f"Lookahead decoding configuration not compatible with seq_length {self.seq_length}. "
+                f"Required: {(ngram_size - 1) * (window_size + n_verifications)}"
+            )
+
+    def _setup_lookahead_mask(
+        self, ngram_size: int, window_size: int, n_verifications: int
+    ) -> None:
+        """
+        Set up the attention mask for lookahead decoding and log debug information.
+        """
+        self.attn_mask[:, self.cache_size :] = self._get_lookahead_decoding_mask(
+            ngram_size, window_size, n_verifications
+        )
+        logger.debug("Lookahead decoding mask: ")
+        for i in range(self.seq_length):
+            logger.debug(
+                " ".join(
+                    ("X" if x == 0.0 else " ")
+                    for x in self.attn_mask[i][self.cache_size :]
+                )
+            )
+
+    def _populate_verification_branches(
+        self, x: List[int], cache, verification_offset: int, ngram_size: int
+    ) -> None:
+        """
+        Populate verification branches with tokens from the n-gram cache.
+        """
+        for i, ngram in enumerate(cache):
+            for j, token in enumerate(ngram):
+                x[verification_offset + i * (ngram_size - 1) + j] = token
+
+    def _collect_ngrams(
+        self,
+        x: List[int],
+        y: List[int],
+        ngram_caches: Dict[int, "InputManager.NGramCache"],
+        window_size: int,
+        ngram_size: int,
+    ) -> None:
+        """
+        Collect new n-grams from the current state and predictions.
+        """
+        for i in range(window_size):
+            key = x[i]
+            suffix = []
+            for j in range(1, ngram_size - 1):
+                suffix.append(x[i + j * window_size])
+            suffix.append(y[i + window_size * (ngram_size - 2)])
+            ngram_caches[key].add(suffix)
+
+    def _find_longest_match(
+        self,
+        x: List[int],
+        y: List[int],
+        verification_offset: int,
+        n_verifications: int,
+        ngram_size: int,
+    ) -> Tuple[List[int], Optional[int]]:
+        """
+        Find the longest matching sequence from verification branches.
+        Returns the matched tokens and the branch index.
+        """
+        longest_match = []
+        matched_branch = None
+
+        for i in range(n_verifications):
+            match = [y[0]]
+            j = 0
+            while (
+                j < ngram_size - 1
+                and x[verification_offset + (ngram_size - 1) * i + j] == match[-1]
+            ):
+                match.append(y[verification_offset + (ngram_size - 1) * i + j])
+                j += 1
+            if len(match) - 1 > len(longest_match):
+                longest_match = match[1:]
+                matched_branch = i
+
+        return longest_match, matched_branch
+
+    def _update_lookahead_branches(
+        self, x: List[int], y: List[int], ngram_size: int, window_size: int
+    ) -> None:
+        """
+        Update the lookahead branches with new predictions.
+        """
+        # Shift window contents up
+        for i in range(ngram_size - 2):
+            for j in range(window_size):
+                x[window_size * i + j] = x[window_size * (i + 1) + j]
+
+        # Fill the last window with new predictions
+        for j in range(window_size):
+            x[window_size * (ngram_size - 2) + j] = y[
+                window_size * (ngram_size - 2) + j
+            ]
+
+    def lookahead_decode(
+        self,
+        model,
+        init_token: int,
+        n: int,
+        ngram_size: int,
+        window_size: int,
+        n_verifications: int,
+        stop_tokens: Optional[List[int]] = None,
+        ngram_caches: Optional[Dict[int, "InputManager.NGramCache"]] = None,
+    ) -> List[int]:
+        # Validate configuration
+        self._validate_lookahead_config(ngram_size, window_size, n_verifications)
+
+        # Setup attention mask and position offsets
+        self._setup_lookahead_mask(ngram_size, window_size, n_verifications)
+        offsets = self._get_lookahead_position_offsets(
+            ngram_size, window_size, n_verifications
+        )
+
+        # Initialize state
+        stop_tokens = stop_tokens or []
+        verification_offset = window_size * (ngram_size - 1)
+        if ngram_caches is None:
+            ngram_caches = defaultdict(lambda: InputManager.NGramCache(n_verifications))
+
+        new_tokens = [init_token]
+        x = [init_token] * self.seq_length
+        inference_count = 0
+
+        # Main decoding loop
+        while len(new_tokens) < n + 1:
+            # Populate verification branches
+            cache = ngram_caches[x[0]]
+            self._populate_verification_branches(
+                x, cache, verification_offset, ngram_size
+            )
+
+            # Run model inference
+            logits, new_k, new_v = model(
+                tokens=torch.tensor([x], dtype=torch.int64),
+                input_pos=torch.tensor([self.input_pos], dtype=torch.long),
+                k_caches=self.k_caches,
+                v_caches=self.v_caches,
+                attn_mask=self.attn_mask,
+                input_len=torch.tensor([len(x)], dtype=torch.long),
+                rope_indices=self.input_pos + offsets,
+            )
+            inference_count += 1
+
+            # Process model output (greedy selection)
+            y = logits[0].argmax(dim=-1).tolist()
+            new_tokens.append(y[0])
+            logger.debug(f"{self.input_pos}: x = {x[0]}, y = {y[0]}")
+            if new_tokens[-1] in stop_tokens:
+                break
+
+            # Collect new n-grams
+            self._collect_ngrams(x, y, ngram_caches, window_size, ngram_size)
+
+            # Find longest match from verification branches
+            longest_match, matched_branch = self._find_longest_match(
+                x, y, verification_offset, n_verifications, ngram_size
+            )
+
+            # Process match results
+            if matched_branch is not None:
+                logger.debug(
+                    f"Matched {len(longest_match)} additional tokens from n-grams: {longest_match}"
+                )
+                # Truncate at stop token if present
+                for stop in stop_tokens:
+                    if stop in longest_match:
+                        longest_match = longest_match[: longest_match.index(stop) + 1]
+
+                new_tokens.extend(longest_match)
+                branch_offset = verification_offset + (ngram_size - 1) * matched_branch
+                self.update(
+                    input_length=len(longest_match),
+                    new_k_caches=new_k,
+                    new_v_caches=new_v,
+                    update_pos=branch_offset,
+                )
+            else:
+                self.update(input_length=1, new_k_caches=new_k, new_v_caches=new_v)
+
+            # Update lookahead branches
+            self._update_lookahead_branches(x, y, ngram_size, window_size)
+
+            # Update first token and check for stop condition
+            x[0] = new_tokens[-1]
+            if new_tokens[-1] in stop_tokens:
+                break
+
+        logger.info(
+            f"Generated {len(new_tokens) - 1} tokens with {inference_count} inference(s)."
+        )
+        return new_tokens

@@ -12,7 +12,7 @@
 # long time; the problem is that OSS users would prefer not to have to deal with Buck at
 # all.
 # 2) List them in both Buck targets.bzl files and CMake's CMakeLists.txt files. This is
-# unnecessary duplication, and people will invariably forget to update one or the other
+# unnecessary duplication, and people will invariably forget to update one or the other.
 # 3) List them somewhere CMake and Buck can both get at them; that's this file. Buck
 # files can load() it, and our CMake build evaluates it with Python. (See
 # append_filelist in build/Codegen.cmake.)
@@ -42,6 +42,7 @@ PROGRAM_NO_PRIM_OPS_SRCS = [
 PLATFORM_SRCS = [
     "abort.cpp",
     "log.cpp",
+    "platform.cpp",
     "profiler.cpp",
     "runtime.cpp",
 ]
@@ -55,12 +56,14 @@ EXECUTORCH_CORE_SRCS = sorted([
     "runtime/core/tag.cpp",
     "runtime/core/tensor_layout.cpp",
     "runtime/executor/tensor_parser_portable.cpp",
+    "runtime/executor/pte_data_map.cpp",
     "runtime/kernel/operator_registry.cpp",
     "runtime/platform/default/posix.cpp",
     "schema/extended_header.cpp",
 ] + ["runtime/executor/" + x for x in PROGRAM_NO_PRIM_OPS_SRCS] + ["runtime/platform/" + x for x in PLATFORM_SRCS])
 
 PORTABLE_KERNELS_SRCS = [
+    "kernels/portable/cpu/op__clone_dim_order.cpp",
     "kernels/portable/cpu/op__empty_dim_order.cpp",
     "kernels/portable/cpu/op__to_dim_order_copy.cpp",
     "kernels/portable/cpu/op_abs.cpp",
@@ -103,6 +106,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_detach_copy.cpp",
     "kernels/portable/cpu/op_diagonal_copy.cpp",
     "kernels/portable/cpu/op_div.cpp",
+    "kernels/portable/cpu/op_elu.cpp",
     "kernels/portable/cpu/op_embedding.cpp",
     "kernels/portable/cpu/op_empty.cpp",
     "kernels/portable/cpu/op_eq.cpp",
@@ -148,6 +152,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_masked_select.cpp",
     "kernels/portable/cpu/op_max.cpp",
     "kernels/portable/cpu/op_max_pool2d_with_indices.cpp",
+    "kernels/portable/cpu/op_max_pool2d_with_indices_backward.cpp",
     "kernels/portable/cpu/op_maximum.cpp",
     "kernels/portable/cpu/op_mean.cpp",
     "kernels/portable/cpu/op_min.cpp",
@@ -156,6 +161,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_mul.cpp",
     "kernels/portable/cpu/op_narrow_copy.cpp",
     "kernels/portable/cpu/op_native_batch_norm.cpp",
+    "kernels/portable/cpu/op_native_dropout.cpp",
     "kernels/portable/cpu/op_native_group_norm.cpp",
     "kernels/portable/cpu/op_native_layer_norm.cpp",
     "kernels/portable/cpu/op_ne.cpp",
@@ -168,6 +174,8 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_pixel_unshuffle.cpp",
     "kernels/portable/cpu/op_pow.cpp",
     "kernels/portable/cpu/op_prod.cpp",
+    "kernels/portable/cpu/op_rand.cpp",
+    "kernels/portable/cpu/op_randn.cpp",
     "kernels/portable/cpu/op_reciprocal.cpp",
     "kernels/portable/cpu/op_reflection_pad1d.cpp",
     "kernels/portable/cpu/op_reflection_pad2d.cpp",
@@ -211,42 +219,28 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_tril.cpp",
     "kernels/portable/cpu/op_trunc.cpp",
     "kernels/portable/cpu/op_unbind_copy.cpp",
+    "kernels/portable/cpu/op_unfold_copy.cpp",
     "kernels/portable/cpu/op_unsqueeze_copy.cpp",
     "kernels/portable/cpu/op_upsample_bilinear2d.cpp",
     "kernels/portable/cpu/op_upsample_nearest2d.cpp",
     "kernels/portable/cpu/op_var.cpp",
+    "kernels/portable/cpu/op_view_as_real_copy.cpp",
     "kernels/portable/cpu/op_view_copy.cpp",
     "kernels/portable/cpu/op_where.cpp",
     "kernels/portable/cpu/op_zeros.cpp",
-    "kernels/portable/cpu/pattern/unary_ufunc_realh.cpp",
-    "kernels/portable/cpu/pattern/unary_ufunc_realhb_to_bool.cpp",
+    "kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_bool.cpp",
     "kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp",
-    "kernels/portable/cpu/util/activation_ops_util.cpp",
-    "kernels/portable/cpu/util/advanced_index_util.cpp",
-    "kernels/portable/cpu/util/broadcast_util.cpp",
-    "kernels/portable/cpu/util/copy_ops_util.cpp",
-    "kernels/portable/cpu/util/distance_util.cpp",
-    "kernels/portable/cpu/util/dtype_util.cpp",
-    "kernels/portable/cpu/util/index_util.cpp",
-    "kernels/portable/cpu/util/kernel_ops_util.cpp",
-    "kernels/portable/cpu/util/matmul_ops_util.cpp",
-    "kernels/portable/cpu/util/normalization_ops_util.cpp",
-    "kernels/portable/cpu/util/padding_util.cpp",
-    "kernels/portable/cpu/util/reduce_util.cpp",
-    "kernels/portable/cpu/util/repeat_util.cpp",
-    "kernels/portable/cpu/util/select_copy_util.cpp",
-    "kernels/portable/cpu/util/slice_util.cpp",
-    "kernels/portable/cpu/util/upsample_util.cpp",
+    "kernels/portable/cpu/pattern/unary_ufunc_realhbf16.cpp",
 ]
 
 OPTIMIZED_KERNELS_SRCS = [
-    "extension/parallel/thread_parallel.cpp",
-    "kernels/optimized/blas/BlasKernel.cpp",
-    "kernels/optimized/blas/CPUBlas.cpp",
+    "kernels/optimized/cpu/binary_ops.cpp",
     "kernels/optimized/cpu/op_add.cpp",
     "kernels/optimized/cpu/op_bmm.cpp",
     "kernels/optimized/cpu/op_div.cpp",
+    "kernels/optimized/cpu/op_elu.cpp",
     "kernels/optimized/cpu/op_exp.cpp",
+    "kernels/optimized/cpu/op_fft_c2r.cpp",
     "kernels/optimized/cpu/op_fft_r2c.cpp",
     "kernels/optimized/cpu/op_gelu.cpp",
     "kernels/optimized/cpu/op_le.cpp",
@@ -255,9 +249,8 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_mm.cpp",
     "kernels/optimized/cpu/op_mul.cpp",
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
-    "kernels/optimized/cpu/op_neg.cpp",
-    "kernels/optimized/cpu/op_sigmoid.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
+    "kernels/optimized/cpu/op_where.cpp",
 ]
 
 QUANTIZED_KERNELS_SRCS = [
@@ -279,9 +272,6 @@ PROGRAM_SCHEMA_SRCS = [
 ]
 
 OPTIMIZED_CPUBLAS_SRCS = [
-    "extension/parallel/thread_parallel.cpp",
-    "extension/threadpool/threadpool.cpp",
-    "extension/threadpool/threadpool_guard.cpp",
     "kernels/optimized/blas/BlasKernel.cpp",
     "kernels/optimized/blas/CPUBlas.cpp",
 ]
@@ -291,15 +281,13 @@ OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
     "codegen/templates/RegisterDispatchKeyCustomOps.cpp",
     "codegen/templates/RegisterKernels.cpp",
     "codegen/templates/RegisterSchema.cpp",
-    "extension/parallel/thread_parallel.cpp",
-    "extension/threadpool/threadpool.cpp",
-    "extension/threadpool/threadpool_guard.cpp",
-    "kernels/optimized/blas/BlasKernel.cpp",
-    "kernels/optimized/blas/CPUBlas.cpp",
+    "kernels/optimized/cpu/binary_ops.cpp",
     "kernels/optimized/cpu/op_add.cpp",
     "kernels/optimized/cpu/op_bmm.cpp",
     "kernels/optimized/cpu/op_div.cpp",
+    "kernels/optimized/cpu/op_elu.cpp",
     "kernels/optimized/cpu/op_exp.cpp",
+    "kernels/optimized/cpu/op_fft_c2r.cpp",
     "kernels/optimized/cpu/op_fft_r2c.cpp",
     "kernels/optimized/cpu/op_gelu.cpp",
     "kernels/optimized/cpu/op_le.cpp",
@@ -308,9 +296,8 @@ OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
     "kernels/optimized/cpu/op_mm.cpp",
     "kernels/optimized/cpu/op_mul.cpp",
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
-    "kernels/optimized/cpu/op_neg.cpp",
-    "kernels/optimized/cpu/op_sigmoid.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
+    "kernels/optimized/cpu/op_where.cpp",
 ]
 
 EXTENSION_DATA_LOADER_SRCS = [
@@ -319,8 +306,6 @@ EXTENSION_DATA_LOADER_SRCS = [
 ]
 
 EXTENSION_MODULE_SRCS = [
-    "extension/flat_tensor/flat_tensor_data_map.cpp",
-    "extension/flat_tensor/serialize/flat_tensor_header.cpp",
     "extension/module/module.cpp",
 ]
 
@@ -330,13 +315,11 @@ EXTENSION_RUNNER_UTIL_SRCS = [
 ]
 
 EXTENSION_LLM_RUNNER_SRCS = [
-    "extension/data_loader/file_data_loader.cpp",
-    "extension/data_loader/mmap_data_loader.cpp",
+    "extension/llm/runner/llm_runner_helper.cpp",
     "extension/llm/runner/text_decoder_runner.cpp",
+    "extension/llm/runner/text_llm_runner.cpp",
     "extension/llm/runner/text_prefiller.cpp",
     "extension/llm/sampler/sampler.cpp",
-    "extension/tensor/tensor_ptr.cpp",
-    "extension/tensor/tensor_ptr_maker.cpp",
 ]
 
 EXTENSION_TENSOR_SRCS = [
@@ -345,6 +328,7 @@ EXTENSION_TENSOR_SRCS = [
 ]
 
 EXTENSION_THREADPOOL_SRCS = [
+    "extension/threadpool/thread_parallel.cpp",
     "extension/threadpool/threadpool.cpp",
     "extension/threadpool/threadpool_guard.cpp",
 ]
@@ -357,9 +341,6 @@ EXTENSION_TRAINING_SRCS = [
     "extension/module/module.cpp",
     "extension/training/module/training_module.cpp",
     "extension/training/optimizer/sgd.cpp",
-    "kernels/prim_ops/et_copy_index.cpp",
-    "kernels/prim_ops/et_view.cpp",
-    "kernels/prim_ops/register_prim_ops.cpp",
 ]
 
 TRAIN_XOR_SRCS = [
@@ -379,14 +360,10 @@ TRAIN_XOR_SRCS = [
 EXECUTOR_RUNNER_SRCS = [
     "examples/portable/executor_runner/executor_runner.cpp",
     "extension/data_loader/file_data_loader.cpp",
-    "extension/evalue_util/print_evalue.cpp",
-    "extension/runner_util/inputs.cpp",
-    "extension/runner_util/inputs_portable.cpp",
     "runtime/executor/test/test_backend_compiler_lib.cpp",
 ]
 
 SIZE_TEST_SRCS = [
-    "extension/data_loader/file_data_loader.cpp",
     "test/size_test.cpp",
 ]
 
@@ -415,13 +392,11 @@ MPS_EXECUTOR_RUNNER_SRCS = [
     "backends/apple/mps/runtime/operations/ShapeOps.mm",
     "backends/apple/mps/runtime/operations/UnaryOps.mm",
     "devtools/bundled_program/bundled_program.cpp",
+    "devtools/etdump/data_sinks/buffer_data_sink.cpp",
     "devtools/etdump/emitter.cpp",
     "devtools/etdump/etdump_flatcc.cpp",
     "examples/apple/mps/executor_runner/mps_executor_runner.mm",
     "extension/data_loader/file_data_loader.cpp",
-    "extension/evalue_util/print_evalue.cpp",
-    "extension/runner_util/inputs.cpp",
-    "extension/runner_util/inputs_portable.cpp",
 ]
 
 MPS_BACKEND_SRCS = [
@@ -457,9 +432,6 @@ MPS_SCHEMA_SRCS = [
 XNN_EXECUTOR_RUNNER_SRCS = [
     "examples/portable/executor_runner/executor_runner.cpp",
     "extension/data_loader/file_data_loader.cpp",
-    "extension/evalue_util/print_evalue.cpp",
-    "extension/runner_util/inputs.cpp",
-    "extension/runner_util/inputs_portable.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = [
@@ -467,9 +439,8 @@ XNNPACK_BACKEND_SRCS = [
     "backends/xnnpack/runtime/XNNExecutor.cpp",
     "backends/xnnpack/runtime/XNNHeader.cpp",
     "backends/xnnpack/runtime/XNNPACKBackend.cpp",
+    "backends/xnnpack/runtime/XNNWeightsCache.cpp",
     "backends/xnnpack/runtime/profiling/XNNProfiler.cpp",
-    "extension/threadpool/threadpool.cpp",
-    "extension/threadpool/threadpool_guard.cpp",
 ]
 
 XNNPACK_SCHEMA_SRCS = [
@@ -492,12 +463,4 @@ CUSTOM_OPS_SRCS = [
 LLAMA_RUNNER_SRCS = [
     "examples/models/llama/runner/runner.cpp",
     "examples/models/llama/tokenizer/llama_tiktoken.cpp",
-    "extension/evalue_util/print_evalue.cpp",
-    "extension/llm/runner/text_decoder_runner.cpp",
-    "extension/llm/runner/text_prefiller.cpp",
-    "extension/llm/sampler/sampler.cpp",
-    "extension/llm/tokenizer/bpe_tokenizer.cpp",
-    "extension/llm/tokenizer/tiktoken.cpp",
-    "extension/tensor/tensor_ptr.cpp",
-    "extension/tensor/tensor_ptr_maker.cpp",
 ]

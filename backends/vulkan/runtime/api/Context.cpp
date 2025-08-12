@@ -24,10 +24,10 @@
 namespace vkcompute {
 namespace api {
 
-Context::Context(size_t adapter_i, const ContextConfig& config)
+Context::Context(vkapi::Adapter* adapter, const ContextConfig& config)
     : config_(config),
       // Important handles
-      adapter_p_(vkapi::runtime()->get_adapter_p(adapter_i)),
+      adapter_p_(adapter),
       device_(adapter_p_->device_handle()),
       queue_(adapter_p_->request_queue()),
       // Resource pools
@@ -124,11 +124,17 @@ vkapi::DescriptorSet Context::get_descriptor_set(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
+  vkapi::SpecVarList spec_constants = {
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
+
+  spec_constants.append(additional_constants);
+
   VkPipeline pipeline = pipeline_cache().retrieve(
       {pipeline_layout_cache().retrieve(shader_layout, push_constants_size),
        shader_cache().retrieve(shader_descriptor),
-       additional_constants,
-       local_workgroup_size});
+       spec_constants});
 
   cmd_.bind_pipeline(pipeline, pipeline_layout, local_workgroup_size);
 
@@ -192,14 +198,18 @@ void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
   if (cmd_) {
     cmd_.end();
     adapter_p_->submit_cmd(
-        queue_, cmd_.get_submit_handle(final_use), fence_handle);
+        queue_,
+        cmd_.get_submit_handle(final_use),
+        fence_handle,
+        VK_NULL_HANDLE,
+        VK_NULL_HANDLE);
 
     submit_count_ = 0u;
   }
 }
 
 void Context::flush() {
-  VK_CHECK(vkQueueWaitIdle(queue()));
+  VK_CHECK(vkQueueWaitIdle(queue().handle));
 
   command_pool_.flush();
   descriptor_pool_.flush();
@@ -250,7 +260,7 @@ Context* context() {
           query_pool_config,
       };
 
-      return new Context(vkapi::runtime()->default_adapter_i(), config);
+      return new Context(vkapi::runtime()->get_adapter_p(), config);
     } catch (...) {
     }
 
@@ -266,7 +276,7 @@ Context* context() {
 
 VkPipeline Context::get_shader_pipeline(
     const vkapi::ShaderInfo& shader,
-    const vkapi::SpecVarList& spec_constants) {
+    const vkapi::SpecVarList& additional_constants) {
   const uint32_t push_constants_size = 128u;
 
   VkDescriptorSetLayout shader_layout =
@@ -274,13 +284,16 @@ VkPipeline Context::get_shader_pipeline(
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout, push_constants_size);
 
-  vkapi::SpecVarList spec_constants_full_list = {4u, 4u, 1u};
-  spec_constants_full_list.append(spec_constants);
+  const utils::WorkgroupSize local_workgroup_size(4u, 4u, 1u);
+  vkapi::SpecVarList spec_constants = {
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
+
+  spec_constants.append(additional_constants);
 
   VkPipeline pipeline = pipeline_cache().retrieve(
-      {pipeline_layout,
-       shader_cache().retrieve(shader),
-       spec_constants_full_list});
+      {pipeline_layout, shader_cache().retrieve(shader), spec_constants});
 
   return pipeline;
 }

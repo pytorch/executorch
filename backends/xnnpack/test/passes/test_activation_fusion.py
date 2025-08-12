@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+from executorch.backends.test.harness.stages import StageType
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
@@ -15,6 +16,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 class TestActivationFusion(unittest.TestCase):
     PassStage = RunPasses([ConvertToLinearPass, FuseActivationPass])
+
+    def setUp(self):
+        torch._dynamo.reset()
 
     def check_node_has_tag(self, graph_module, node_target, tag):
         for n in graph_module.graph.nodes:
@@ -56,7 +60,7 @@ class TestActivationFusion(unittest.TestCase):
             .to_edge()
             .run_passes(self.PassStage)
             .check_not([activation_name])
-            .get_artifact(Tester.stage_name(self.PassStage))
+            .get_artifact(StageType.RUN_PASSES)
         )
 
         for node in artifact.exported_program().module().graph.nodes:

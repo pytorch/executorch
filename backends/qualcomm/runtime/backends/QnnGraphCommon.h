@@ -66,6 +66,12 @@ class QnnGraph {
     return handle_[graph_name];
   }
 
+  void SetGraphHandle(
+      const std::string& graph_name,
+      Qnn_GraphHandle_t graph_handle) {
+    handle_[graph_name] = graph_handle;
+  }
+
   QnnProfile* GetProfile(const std::string& graph_name) {
     return profile_[graph_name].get();
   }

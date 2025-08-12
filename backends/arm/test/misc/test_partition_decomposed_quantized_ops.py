@@ -14,8 +14,8 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 input_t1 = Tuple[torch.Tensor]
@@ -83,8 +83,8 @@ class LinearResidualModule(torch.nn.Module):
 # Softplus is decomposed which messes up the quantization. This test tests that CheckProperQuantization does not
 # partition nodes where quantization is not as expected.
 @common.parametrize("test_data", test_data)
-def test_softplus_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](
+def test_softplus_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
         SoftplusModule(),
         test_data=test_data,
         aten_op=softplus_aten_op,
@@ -96,8 +96,8 @@ def test_softplus_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", test_data)
-def test_softplus_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_softplus_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         SoftplusModule(),
         test_data=test_data,
         aten_op=softplus_aten_op,
@@ -115,11 +115,16 @@ def test_softplus_tosa_BI(test_data: input_t1):
 
 
 # Since GELU will not be quantized by TosaQuantizer, the Dropout's input will not be quantized either.
-# If so, the Dropout should not be partitioned by TosaPartitioner for TOSA BI profile. This test tests that the
-# partitioner indeed does not partition the Dropout (clone) for TOSA BI.
-@common.parametrize("test_data", test_data)
-def test_linear_residaul_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](
+# If so, the Dropout should not be partitioned by TosaPartitioner for TOSA INT profile. This test tests that the
+# partitioner indeed does not partition the Dropout (clone) for TOSA INT.
+@common.parametrize(
+    "test_data",
+    test_data,
+    {"3d_rand": "MLETORCH-909: Partition test to not rely on unsupported ops"},
+    strict=False,
+)
+def test_linear_residaul_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
         LinearResidualModule(),
         test_data=test_data,
         aten_op=linear_residual_aten_op,
@@ -145,9 +150,14 @@ def test_linear_residaul_tosa_MI(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data)
-def test_linear_residual_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+@common.parametrize(
+    "test_data",
+    test_data,
+    {"3d_rand": "MLETORCH-855: Issue with Quantization folding."},
+    strict=False,
+)
+def test_linear_residual_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         LinearResidualModule(),
         test_data=test_data,
         aten_op=linear_residual_aten_op,

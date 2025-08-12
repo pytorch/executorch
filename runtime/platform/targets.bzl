@@ -42,13 +42,16 @@ def define_common_targets():
     # client defined implementations will overide them.
     runtime.cxx_library(
         name = "platform_private",
-        srcs = _select_pal({
-            "minimal": ["default/minimal.cpp"],
-            "posix": ["default/posix.cpp"],
-        }),
+        srcs = select({
+            "ovr_config//os:android": ["default/android.cpp"],
+            "DEFAULT": _select_pal({
+                "minimal": ["default/minimal.cpp"],
+                "posix": ["default/posix.cpp"],
+        })}),
         deps = [
             ":pal_interface",
         ],
+        external_deps = ["log"],
         visibility = [
             "//executorch/core/...",
         ],
@@ -69,6 +72,7 @@ def define_common_targets():
             "log.h",
             "profiler.h",
             "runtime.h",
+            "compat_unistd.h",
         ],
         srcs = PLATFORM_SRCS,
         exported_preprocessor_flags = get_profiling_flags() + get_et_logging_flags(),

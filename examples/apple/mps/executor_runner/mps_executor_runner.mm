@@ -359,7 +359,7 @@ int main(int argc, char** argv) {
   if (FLAGS_bundled_program) {
     double rtol = 1e-05;
     double atol = 1e-08;
-    if (strstr(model_path, "fp16")) {
+    if (strstr(model_path, "float16")) {
       rtol = 1e-01;
       atol = 1e-01;
     } else if (strstr(model_path, "mv3")           ||

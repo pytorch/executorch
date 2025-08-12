@@ -12,12 +12,12 @@
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/log.h>
 
+using executorch::ET_RUNTIME_NAMESPACE::Method;
+using executorch::ET_RUNTIME_NAMESPACE::MethodMeta;
+using executorch::ET_RUNTIME_NAMESPACE::TensorInfo;
 using executorch::runtime::Error;
-using executorch::runtime::Method;
-using executorch::runtime::MethodMeta;
 using executorch::runtime::Result;
 using executorch::runtime::Tag;
-using executorch::runtime::TensorInfo;
 
 namespace executorch {
 namespace extension {

@@ -14,6 +14,9 @@ from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
 
 class TestMobileNetV2(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights)
     mv2 = mv2.eval()
     model_inputs = (torch.randn(1, 3, 224, 224),)

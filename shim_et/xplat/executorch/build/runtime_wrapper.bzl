@@ -29,6 +29,9 @@ use TARGETS files normally. Same for xplat-only directories and BUCK files.
 load(":env_interface.bzl", "env")
 load(":selects.bzl", "selects")
 
+def is_arvr_mode():
+    return env.is_arvr_mode()
+
 def is_xplat():
     return env.is_xplat()
 
@@ -37,6 +40,9 @@ def struct_to_json(x):
 
 def get_default_executorch_platforms():
     return env.default_platforms
+
+def get_executorch_supported_platforms():
+    return env.supported_platforms
 
 def _patch_executorch_references(targets, use_static_deps = False):
     """Patches up references to "//executorch/..." in lists of build targets.
@@ -104,6 +110,11 @@ def _patch_build_mode_flags(kwargs):
         # @oss-disable: "ovr_config//build_mode:ubsan": ["-D__ET_BUILD_MODE_UBSAN=1"],
         # @oss-disable: "ovr_config//build_mode:lto-fat": ["-D__ET_BUILD_MODE_LTO=1"],
         # @oss-disable: "ovr_config//build_mode:code-coverage": ["-D__ET_BUILD_MODE_COV=1"],
+    })
+
+    kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
+            "DEFAULT": [],
+            "ovr_config//os:macos": ["-fvisibility=default"],
     })
 
     return kwargs
@@ -187,10 +198,13 @@ def _patch_kwargs_common(kwargs):
     for dep_type in ("deps", "exported_deps"):
         env.patch_deps(kwargs, dep_type)
 
+    if "visibility" not in kwargs:
+        kwargs["visibility"] = ["//executorch/..."]
+
     # Patch up references to "//executorch/..." in lists of build targets,
     # if necessary.
     use_static_deps = kwargs.pop("use_static_deps", False)
-    for dep_type in ("deps", "exported_deps", "visibility"):
+    for dep_type in ("deps", "exported_deps", "visibility", "preload_deps"):
         if kwargs.get(dep_type):
             # deps may contain select() elements, dicts that map names to lists
             # of targets. selects.apply() will run the provided function on all
@@ -202,15 +216,14 @@ def _patch_kwargs_common(kwargs):
                 function = native.partial(_patch_executorch_references, use_static_deps = use_static_deps),
             )
 
-    # Make all targets private by default, like in xplat.
-    if "visibility" not in kwargs:
-        kwargs["visibility"] = []
-
     # If we see certain strings in the "visibility" list, expand them.
     if "@EXECUTORCH_CLIENTS" in kwargs["visibility"]:
         # See env.executorch_clients for this list.
         kwargs["visibility"].remove("@EXECUTORCH_CLIENTS")
         kwargs["visibility"].extend(env.executorch_clients)
+
+    # Meta: temporary, remove after D78422885 lands.
+    # @oss-disable: kwargs["visibility"] = kwargs["visibility"] + ["waios//..."]
 
     return kwargs
 

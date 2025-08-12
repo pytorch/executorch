@@ -20,7 +20,9 @@ et_root_dir=$(realpath ${et_root_dir})
 model_name=""
 model_input_set=false
 model_input=""
-aot_arm_compiler_flags="--delegate --quantize"
+aot_arm_compiler_flag_delegate="--delegate"
+aot_arm_compiler_flag_quantize="--quantize"
+aot_arm_compiler_flags=""
 portable_kernels="aten::_softmax.out"
 target="ethos-u55-128"
 output_folder_set=false
@@ -31,17 +33,27 @@ build_type="Release"
 extra_build_flags=""
 build_only=false
 system_config=""
+config=""
 memory_mode=""
 et_build_root="${et_root_dir}/arm_test"
 ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
+scratch_dir_set=false
+toolchain=arm-none-eabi-gcc
+select_ops_list="aten::_softmax.out"
 
 function help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
     echo "  --model_name=<MODEL>                   Model file .py/.pth/.pt, builtin model or a model from examples/models. Passed to aot_arm_compiler"
-    echo "  --model_input=<INPUT>                  Provide model input .pt file to override the input in the model file.  Passed to aot_arm_compiler"
-    echo "  --aot_arm_compiler_flags=<FLAGS>       Only used if --model_name is used Default: ${aot_arm_compiler_flags}"
-    echo "  --portable_kernels=<OPS>               Comma separated list of portable (non delagated) kernels to include Default: ${portable_kernels}"
+    echo "  --model_input=<INPUT>                  Provide model input .pt file to override the input in the model file. Passed to aot_arm_compiler"
+    echo "                                           NOTE: Inference in FVP is done with a dummy input full of ones. Use bundleio flag to run the model in FVP with the custom input or the input from the model file."
+    echo "  --aot_arm_compiler_flags=<FLAGS>       Extra flags to pass to aot compiler"
+    echo "  --no_delegate                          Do not delegate the model (can't override builtin models)"
+    echo "  --no_quantize                          Do not quantize the model (can't override builtin models)"
+    echo "  --portable_kernels=<OPS>               TO BE DEPRECATED: Alias to select_ops_list."
+    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"    
+    echo "                                           NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
+    echo "                                           See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
     echo "  --output=<FOLDER>                      Target build output folder Default: ${output_folder}"
     echo "  --bundleio                             Create Bundled pte using Devtools BundelIO with Input/RefOutput included"
@@ -51,7 +63,9 @@ function help() {
     echo "  --build_only                           Only build, don't run FVP"
     echo "  --system_config=<CONFIG>               System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                            NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
+    echo "  --config=<FILEPATH>                    System configuration file that specifies system configurations (vela.ini)"
     echo "  --memory_mode=<MODE>                   Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
+    echo "  --toolchain=<TOOLCHAIN>                Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
     exit 0
@@ -63,8 +77,12 @@ for arg in "$@"; do
       --model_name=*) model_name="${arg#*=}";;
       --model_input=*) model_input="${arg#*=}" ; model_input_set=true  ;;
       --aot_arm_compiler_flags=*) aot_arm_compiler_flags="${arg#*=}";;
-      --portable_kernels=*) portable_kernels="${arg#*=}";;
+      --no_delegate) aot_arm_compiler_flag_delegate="" ;;
+      --no_quantize) aot_arm_compiler_flag_quantize="" ;;
+      --portable_kernels=*) select_ops_list="${arg#*=}";;
+      --select_ops_list=*) select_ops_list="${arg#*=}";;
       --target=*) target="${arg#*=}";;
+      --toolchain=*) toolchain="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --bundleio) bundleio=true ;;
       --etdump) build_with_etdump=true ;;
@@ -72,9 +90,10 @@ for arg in "$@"; do
       --extra_build_flags=*) extra_build_flags="${arg#*=}";;
       --build_only) build_only=true ;;
       --system_config=*) system_config="${arg#*=}";;
+      --config=*) config="${arg#*=}";;
       --memory_mode=*) memory_mode="${arg#*=}";;
       --et_build_root=*) et_build_root="${arg#*=}";;
-      --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}";;
+      --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       *)
       ;;
     esac
@@ -83,7 +102,16 @@ done
 # Default Ethos-u tool folder override with --scratch-dir=<FOLDER>
 ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
 setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
-toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
+if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
+    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
+    toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+else
+    echo "Error: Invalid toolchain selection, provided: ${toolchain}"
+    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
+    exit 1;
+fi
+toolchain_cmake=$(realpath ${toolchain_cmake})
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
 
 
@@ -102,29 +130,56 @@ then
     memory_mode="Shared_Sram"
     if [[ ${target} =~ "ethos-u85" ]]
     then
-        memory_mode="Sram_Only"
+        memory_mode="Dedicated_Sram_384KB"
     fi
 fi
+
+if [[ ${config} == "" ]]
+then
+    config="Arm/vela.ini"
+fi
+
+function check_setup () {
+    # basic checks that setup.sh did everything needed before we get started
+
+    # check if setup_path_script was created, if so source it
+    if [[ -f ${setup_path_script} ]]; then
+        source $setup_path_script
+    else
+        echo "Could not find ${setup_path_script} file, ${_setup_msg}"
+        return 1
+    fi
+
+    # If setup_path_script was correct all these checks should now pass
+    hash ${toolchain} \
+        || { echo "Could not find ${toolchain} toolchain on PATH, ${_setup_msg}"; return 1; }
+
+    [[ -f ${toolchain_cmake} ]] \
+        || { echo "Could not find ${toolchain_cmake} file, ${_setup_msg}"; return 1; }
+
+    [[ -f ${et_root_dir}/CMakeLists.txt ]] \
+        || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; return 1; }
+
+    return 0
+}
 
 #######
 ### Main
 #######
-# Source the tools
-# This should be prepared by the setup.sh
-[[ -f ${setup_path_script} ]] \
-    || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
-
-source ${setup_path_script}
-
-# basic checks before we get started
-hash arm-none-eabi-gcc \
-    || { echo "Could not find arm baremetal toolchain on PATH, ${_setup_msg}"; exit 1; }
-
-[[ -f ${toolchain_cmake} ]] \
-    || { echo "Could not find ${toolchain_cmake} file, ${_setup_msg}"; exit 1; }
-
-[[ -f ${et_root_dir}/CMakeLists.txt ]] \
-    || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; exit 1; }
+if ! check_setup; then
+    if [ "$scratch_dir_set" = false ] ; then
+	# check setup failed, no scratchdir given as parameter. trying to run setup.sh
+	if ${script_dir}/setup.sh; then
+	    # and recheck setup. If this fails exit.
+	    if ! check_setup; then
+		exit 1
+	    fi
+	else
+	    # setup.sh failed, it should print why
+	    exit 1
+	fi
+    fi
+fi
 
 # Build executorch libraries
 cd $et_root_dir
@@ -132,34 +187,39 @@ devtools_flag=""
 bundleio_flag=""
 et_dump_flag=""
 if [ "$build_with_etdump" = true ] ; then
-    devtools_flag="--devtools --etdump"
     et_dump_flag="--etdump"
 fi
 
 if [ "$bundleio" = true ] ; then
-    devtools_flag="--devtools --etdump"
+    devtools_flag="--devtools"
     bundleio_flag="--bundleio"
-    et_dump_flag="--etdump"
 fi
 
-backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag
-backends/arm/scripts/build_portable_kernels.sh --et_build_root="${et_build_root}" --build_type=$build_type --portable_kernels=$portable_kernels
-
-# Build a lib quantized_ops_aot_lib
-backends/arm/scripts/build_quantized_ops_aot_lib.sh --et_build_root="${et_build_root}" --build_type=$build_type
-
-SO_EXT=$(python3 -c 'import platform; print({"Darwin": "dylib", "Linux": "so", "Windows": "dll"}.get(platform.system(), None))')
-# We are using the aot_lib from build_quantization_aot_lib below
-SO_LIB=$(find "${et_build_root}/cmake-out-aot-lib" -name libquantized_ops_aot_lib.${SO_EXT})
-
+backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
 
 if [[ -z "$model_name" ]]; then
     # the test models run, and whether to delegate
-    test_model=( "softmax" "add" "add3" "mv2" )
-    model_compiler_flags=( "" "--delegate" "--delegate" "--delegate --quantize" )
+    test_model=(
+        "softmax"  # 0
+        "add"      # 1
+        "add3"     # 2
+        "qadd"     # 3
+        "qadd2"    # 4
+        "qops"     # 5
+        "mv2"      # 6
+    )
+    model_compiler_flags=(
+        ""                      # 0 softmax
+        "--delegate"            # 1 add
+        "--delegate"            # 2 add3
+        "--delegate --quantize" # 3 qadd
+        "--delegate --quantize" # 4 qadd2
+        "--delegate --quantize" # 5 qops
+        "--delegate --quantize" # 6 mv2
+    )
 else
     test_model=( "$model_name" )
-    model_compiler_flags=( "$aot_arm_compiler_flags" )
+    model_compiler_flags=( "$aot_arm_compiler_flag_delegate $aot_arm_compiler_flag_quantize $aot_arm_compiler_flags" )
 fi
 
 # loop over running the AoT flow and executing the model on device
@@ -193,15 +253,18 @@ for i in "${!test_model[@]}"; do
         output_folder=${et_build_root}/${model_short_name}
     fi
 
+    mkdir -p ${output_folder}
     output_folder=$(realpath ${output_folder})
     pte_file="${output_folder}/${model_filename}"
 
-    mkdir -p ${output_folder}
-
     # Remove old pte files
     rm -f "${output_folder}/${model_filename}"
-    
-    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --so_library=$SO_LIB --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag"
+
+    if [ "$model_input_set" = true ]; then
+        model_compiler_flags="${model_compiler_flags} --model_input=${model_input}"
+    fi
+
+    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag --config=${config}"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 
@@ -216,7 +279,7 @@ for i in "${!test_model[@]}"; do
     else
         set -x
         # Rebuild the application as the pte is imported as a header/c array
-        backends/arm/scripts/build_executorch_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}"
+        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
             elf_file="${output_folder}/${elf_folder}/cmake-out/arm_executor_runner"

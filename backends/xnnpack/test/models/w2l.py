@@ -12,6 +12,9 @@ from torchaudio import models
 
 
 class TestW2L(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     batch_size = 10
     input_frames = 700
     vocab_size = 4096

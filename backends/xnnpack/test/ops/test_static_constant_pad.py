@@ -7,10 +7,40 @@
 import unittest
 
 import torch
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.test.tester import Tester
+from executorch.exir import to_edge_transform_and_lower
+from torch.export import export
 
 
 class TestStaticConstantPad(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
+    class NHWCStaticConstantPad(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = torch.nn.Conv2d(in_channels=2, out_channels=2, kernel_size=1)
+            self.conv2 = torch.nn.Conv2d(in_channels=13, out_channels=13, kernel_size=1)
+
+        def forward(self, x):
+            a = self.conv1(x)
+            pad_6 = (1, 2, 3, 4, 5, 6)
+            a = torch.nn.functional.pad(
+                input=a,
+                pad=pad_6,
+                mode="constant",
+                value=3.1,
+            )
+            # tensorshape = [1, 13, 10, 7]
+            a = self.conv2(a)
+
+            return a
+
+        def sample_inputs(self):
+            # NCHW
+            return (torch.randn(1, 2, 3, 4),)
+
     class StaticConstantPadFunctional(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -97,6 +127,45 @@ class TestStaticConstantPad(unittest.TestCase):
             .serialize()
             .run_method_and_compare_outputs()
         )
+
+    class NegativePadModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.pad = torch.nn.ConstantPad2d((0, 0, -2, 2), 0.0)
+
+        def forward(self, input):
+            input = self.pad(input)
+            return input
+
+    def test_negative_pad_model_with_ints(self):
+        """Test that negative padding with integer inputs falls back to PyTorch implementation as XNNPACK does not support negative padding dimensions"""
+        input_tensor = torch.tensor([[4], [5], [6]])
+        model = self.NegativePadModel()
+        model.eval()
+        model.to("cpu")
+
+        exported_model = export(model, (input_tensor,))
+
+        executorch_program = to_edge_transform_and_lower(
+            exported_model, partitioner=[XnnpackPartitioner()]
+        ).to_executorch()
+
+        self.assertIsNotNone(executorch_program)
+
+    def test_negative_pad_model_with_floats(self):
+        """Test that negative padding with float inputs is now rejected by XNNPACK partitioner as XNNPACK does not support negative padding dimensions"""
+        input_tensor = torch.tensor([[4.0], [5.0], [6.0]])
+        model = self.NegativePadModel()
+        model.eval()
+        model.to("cpu")
+
+        exported_model = export(model, (input_tensor,))
+
+        executorch_program = to_edge_transform_and_lower(
+            exported_model, partitioner=[XnnpackPartitioner()]
+        ).to_executorch()
+
+        self.assertIsNotNone(executorch_program)
 
     def test_fp16_static_constant_pad_functional(self):
         inputs = (
@@ -196,6 +265,27 @@ class TestStaticConstantPad(unittest.TestCase):
                 [
                     "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
                     "torch.ops.quantized_decomposed",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_fp32_static_constant_pad_nhwc(self):
+        conv = self.NHWCStaticConstantPad()
+        inputs = conv.sample_inputs()
+        (
+            Tester(conv, inputs)
+            .export()
+            .check_count({"torch.ops.aten.pad.default": 1})
+            .dump_artifact()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default",
                 ]
             )
             .to_executorch()

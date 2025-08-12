@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		38626BB42B225A560059413D /* libflatccrt.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 38626BB32B225A560059413D /* libflatccrt.a */; };
 		38626BB52B225A890059413D /* libetdump.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 38626BAF2B21C98F0059413D /* libetdump.a */; };
+		879121DA2D91DDBA001E6C66 /* libcoreml_inmemoryfs.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 879121D82D91DDBA001E6C66 /* libcoreml_inmemoryfs.a */; };
+		879121DB2D91DDBA001E6C66 /* libcoreml_util.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 879121D92D91DDBA001E6C66 /* libcoreml_util.a */; };
 		C94D51592ACF4BFC00AF47FD /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = C94D51582ACF4BFC00AF47FD /* main.mm */; };
 		C94D515E2ACFCBA000AF47FD /* libexecutorch.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D515C2ACFCBA000AF47FD /* libexecutorch.a */; };
 		C94D51622ACFCBBA00AF47FD /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51612ACFCBBA00AF47FD /* libsqlite3.tbd */; };
@@ -36,6 +38,8 @@
 /* Begin PBXFileReference section */
 		38626BAF2B21C98F0059413D /* libetdump.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libetdump.a; path = libraries/libetdump.a; sourceTree = "<group>"; };
 		38626BB32B225A560059413D /* libflatccrt.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libflatccrt.a; path = "../../../../third-party/flatcc/lib/libflatccrt.a"; sourceTree = "<group>"; };
+		879121D82D91DDBA001E6C66 /* libcoreml_inmemoryfs.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcoreml_inmemoryfs.a; path = "libraries/libcoreml_inmemoryfs.a"; sourceTree = "<group>"; };
+		879121D92D91DDBA001E6C66 /* libcoreml_util.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcoreml_util.a; path = "libraries/libcoreml_util.a"; sourceTree = "<group>"; };
 		C94D514E2ACF4B9300AF47FD /* coreml_executor_runner */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = coreml_executor_runner; sourceTree = BUILT_PRODUCTS_DIR; };
 		C94D51582ACF4BFC00AF47FD /* main.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		C94D515C2ACFCBA000AF47FD /* libexecutorch.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch.a; path = libraries/libexecutorch.a; sourceTree = "<group>"; };
@@ -54,6 +58,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				879121DA2D91DDBA001E6C66 /* libcoreml_inmemoryfs.a in Frameworks */,
+				879121DB2D91DDBA001E6C66 /* libcoreml_util.a in Frameworks */,
 				38626BB52B225A890059413D /* libetdump.a in Frameworks */,
 				F24817E72BC65B2000E80D98 /* libexecutorch_core.a in Frameworks */,
 				38626BB42B225A560059413D /* libflatccrt.a in Frameworks */,
@@ -91,6 +97,8 @@
 		C94D51602ACFCBBA00AF47FD /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				879121D82D91DDBA001E6C66 /* libcoreml_inmemoryfs.a */,
+				879121D92D91DDBA001E6C66 /* libcoreml_util.a */,
 				C988D69C2B998CD700979CF6 /* libprotobuf-lite.a */,
 				38626BB32B225A560059413D /* libflatccrt.a */,
 				38626BAF2B21C98F0059413D /* libetdump.a */,
@@ -214,7 +222,7 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
-                                	"C10_USING_CUSTOM_GENERATED_MACROS",
+					C10_USING_CUSTOM_GENERATED_MACROS,
 					"$(inherited)",
 				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -273,7 +281,7 @@
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_PREPROCESSOR_DEFINITIONS = (
-                                	"C10_USING_CUSTOM_GENERATED_MACROS",
+					C10_USING_CUSTOM_GENERATED_MACROS,
 					"$(inherited)",
 				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -297,9 +305,9 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				HEADER_SEARCH_PATHS = (
-                                	"$(SRCROOT)/include",
-                                	"$(SRCROOT)/include/executorch/runtime/core/portable_type/c10",
-                                );
+					"$(SRCROOT)/include",
+					"$(SRCROOT)/include/executorch/runtime/core/portable_type/c10",
+				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = (
 					"$(SRCROOT)/libraries",
@@ -319,9 +327,9 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				HEADER_SEARCH_PATHS = (
-                                	"$(SRCROOT)/include",
-                                	"$(SRCROOT)/include/executorch/runtime/core/portable_type/c10",
-                                );
+					"$(SRCROOT)/include",
+					"$(SRCROOT)/include/executorch/runtime/core/portable_type/c10",
+				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = (
 					"$(SRCROOT)/libraries",

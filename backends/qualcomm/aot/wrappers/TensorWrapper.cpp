@@ -221,8 +221,7 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(const Qnn_Tensor_t& tensor) {
       std::string(QNN_TENSOR_VER_PTR(tensor)->name),
       QNN_TENSOR_VER_PTR(tensor)->type,
       QNN_TENSOR_VER_PTR(tensor)->dataType,
-      CreateQuantizationParamWrapper(
-          QNN_TENSOR_VER_PTR(tensor)->quantizeParams),
+      CreateQuantizationParamWrapper(tensor),
       QNN_TENSOR_VER_PTR(tensor)->rank,
       QNN_TENSOR_VER_PTR(tensor)->dimensions,
       tensor.version == QNN_TENSOR_VERSION_2

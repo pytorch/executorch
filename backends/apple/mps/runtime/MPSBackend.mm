@@ -30,6 +30,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 class MPSBackend final : public ::executorch::runtime::BackendInterface {
  public:
@@ -43,8 +44,11 @@ class MPSBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    auto executor = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        context.get_runtime_allocator(), mps::delegate::MPSExecutor);
+    auto executor = context.get_runtime_allocator()->allocateInstance<mps::delegate::MPSExecutor>();
+    if (executor == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+
     // NOTE: Since we use placement new and since this type is not trivially
     // destructible, we must call the destructor manually in destroy().
     new (executor) mps::delegate::MPSExecutor;
@@ -69,7 +73,7 @@ class MPSBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
     ET_UNUSED BackendExecutionContext& context,
     DelegateHandle* handle,
-    EValue** args) const override {
+    Span<EValue*> args) const override {
     auto executor = static_cast<mps::delegate::MPSExecutor*>(handle);
     std::vector<const Tensor*> input_pointers;
     std::vector<const Tensor*> output_pointers;

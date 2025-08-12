@@ -9,7 +9,8 @@ from typing import cast
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
-from executorch.backends.arm.tosa_quant_utils import dq_op, q_op, QuantArgs
+from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch import Tensor
 from torch.fx import GraphModule, Node
@@ -38,17 +39,17 @@ def rescale_fake(
     """Casts the input tensor to dtype `dtype` to produce the correct tensor meta for a _rescale op.
     Additionally validates TOSA constraints of a RESCALE op.
     """
-    if not (dtype == torch.int32 or dtype == torch.int8):
+    if dtype not in (torch.int32, torch.int8, torch.int16):
         raise NotImplementedError(
-            "tosa::rescale currently only supports int32 and int8."
+            f"tosa::rescale currently only supports int32, int16 and int8, not {dtype}"
         )
-    if dtype == torch.int32 and out_zp != 0:
+    if dtype in (torch.int32, torch.int16) and out_zp != 0:
         raise ValueError(
-            "TOSA requires output_zp to be zero when the output dtype is int32."
+            f"TOSA requires output_zp to be zero when the output dtype is {dtype}."
         )
-    if x.dtype == torch.int32 and in_zp != 0:
+    if x.dtype in (torch.int32, torch.int16) and in_zp != 0:
         raise ValueError(
-            "TOSA requires input_zp to be zero when the input dtype is int32."
+            f"TOSA requires input_zp to be zero when the input dtype is {dtype}"
         )
     if x.dtype == torch.int8 and not -128 <= in_zp <= 127:
         raise ValueError(f"{in_zp=} outside valid range (-128,127) for int8.")
@@ -94,11 +95,11 @@ class InsertRescalePass(ExportPass):
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
 
-            if node.target is not dq_op:
+            if node.target not in DQ_OPS:
                 continue
             # Copy users since we remove them while iterating, modyfing the node.users list.
             for user in copy(node.users):
-                if user.target is q_op:
+                if user.target in Q_OPS:
                     self.fold_dq_q_to_rescale(node, user, graph_module)
                     modified = True
             if len(node.users) == 0:

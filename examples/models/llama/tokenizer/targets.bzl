@@ -15,7 +15,7 @@ def define_common_targets():
             "llama_tiktoken.h",
         ],
         exported_deps = [
-            "//executorch/extension/llm/tokenizer:tiktoken",
+            "//pytorch/tokenizers:tiktoken",
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",

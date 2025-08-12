@@ -12,6 +12,8 @@
 #include <cinttypes>
 #include <cstdint>
 
+#include <c10/util/safe_numerics.h>
+
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -84,7 +86,7 @@ class MemoryAllocator {
 
     // If the end of this allocation exceeds the end of this allocator, print
     // error messages and return nullptr
-    if (end > end_) {
+    if (end > end_ || end < start) {
       ET_LOG(
           Error,
           "Memory allocation failed: %zuB requested (adjusted for alignment), %zuB available",
@@ -137,7 +139,16 @@ class MemoryAllocator {
     // Some users of this method allocate lists of pointers, causing the next
     // line to expand to `sizeof(type *)`, which triggers a clang-tidy warning.
     // NOLINTNEXTLINE(bugprone-sizeof-expression)
-    return static_cast<T*>(this->allocate(size * sizeof(T), alignment));
+    size_t bytes_size = 0;
+    bool overflow = c10::mul_overflows(size, sizeof(T), &bytes_size);
+    if (overflow) {
+      ET_LOG(
+          Error,
+          "Failed to allocate list of type %zu: size * sizeof(T) overflowed",
+          size);
+      return nullptr;
+    }
+    return static_cast<T*>(this->allocate(bytes_size, alignment));
   }
 
   // Returns the allocator memory's base address.
@@ -197,176 +208,6 @@ class MemoryAllocator {
   uint32_t const size_;
   int32_t prof_id_ = -1;
 };
-
-#if ET_HAVE_GNU_STATEMENT_EXPRESSIONS
-/**
- * Tries allocating from the specified MemoryAllocator*.
- *
- * - On success, returns a pointer to the allocated buffer.
- * - On failure, executes the provided code block, which must return or panic.
- *
- * Example:
- * @code
- *   char* buf = ET_TRY_ALLOCATE_OR(
- *       memory_allocator, bufsize, {
- *         *out_err = Error::MemoryAllocationFailed;
- *         return nullopt;
- *       });
- * @endcode
- */
-#define ET_TRY_ALLOCATE_OR(memory_allocator__, nbytes__, ...)              \
-  ({                                                                       \
-    void* et_try_allocate_result = memory_allocator__->allocate(nbytes__); \
-    if (et_try_allocate_result == nullptr && nbytes__ > 0) {               \
-      __VA_ARGS__                                                          \
-      /* The args must return. */                                          \
-      ET_UNREACHABLE();                                                    \
-    }                                                                      \
-    et_try_allocate_result;                                                \
-  })
-
-/**
- * Tries allocating an instance of type__ from the specified MemoryAllocator*.
- *
- * - On success, returns a pointer to the allocated buffer. Note that the memory
- *   will not be initialized.
- * - On failure, executes the provided code block, which must return or panic.
- *
- * Example:
- * @code
- *   char* buf = ET_TRY_ALLOCATE_INSTANCE_OR(
- *       memory_allocator,
- *       MyType,
- *       { *out_err = Error::MemoryAllocationFailed; return nullopt; });
- * @endcode
- */
-#define ET_TRY_ALLOCATE_INSTANCE_OR(memory_allocator__, type__, ...) \
-  ({                                                                 \
-    type__* et_try_allocate_result =                                 \
-        memory_allocator__->allocateInstance<type__>();              \
-    if (et_try_allocate_result == nullptr) {                         \
-      __VA_ARGS__                                                    \
-      /* The args must return. */                                    \
-      ET_UNREACHABLE();                                              \
-    }                                                                \
-    et_try_allocate_result;                                          \
-  })
-
-/**
- * Tries allocating multiple elements of a given type from the specified
- * MemoryAllocator*.
- *
- * - On success, returns a pointer to the allocated buffer.
- * - On failure, executes the provided code block, which must return or panic.
- *
- * Example:
- * @code
- *   Tensor* tensor_list = ET_TRY_ALLOCATE_LIST_OR(
- *       memory_allocator, Tensor, num_tensors, {
- *         *out_err = Error::MemoryAllocationFailed;
- *         return nullopt;
- *       });
- * @endcode
- */
-#define ET_TRY_ALLOCATE_LIST_OR(memory_allocator__, type__, nelem__, ...) \
-  ({                                                                      \
-    type__* et_try_allocate_result =                                      \
-        memory_allocator__->allocateList<type__>(nelem__);                \
-    if (et_try_allocate_result == nullptr && nelem__ > 0) {               \
-      __VA_ARGS__                                                         \
-      /* The args must return. */                                         \
-      ET_UNREACHABLE();                                                   \
-    }                                                                     \
-    et_try_allocate_result;                                               \
-  })
-#else // !ET_HAVE_GNU_STATEMENT_EXPRESSIONS
-/**
- * The recommended alternative for statement expression-incompatible compilers
- * is to directly allocate the memory.
- * e.g. memory_allocator__->allocate(nbytes__);
- */
-#define ET_TRY_ALLOCATE_OR(memory_allocator__, nbytes__, ...) \
-  static_assert(                                              \
-      false,                                                  \
-      "ET_TRY_ALLOCATE_OR uses statement expressions and \
-      thus is not available for use with this compiler.");
-
-/**
- * The recommended alternative for statement expression-incompatible compilers
- * is to directly allocate the memory.
- * e.g. memory_allocator__->allocateInstance<type__>();
- */
-#define ET_TRY_ALLOCATE_INSTANCE_OR(memory_allocator__, type__, ...) \
-  static_assert(                                                     \
-      false,                                                         \
-      "ET_TRY_ALLOCATE_INSTANCE_OR uses statement \
-    expressions and thus is not available for use with this compiler.");
-
-/**
- * The recommended alternative for statement expression-incompatible compilers
- * is to directly use allocate the memory.
- * e.g. memory_allocator__->allocateList<type__>(nelem__);
- */
-#define ET_TRY_ALLOCATE_LIST_OR(memory_allocator__, type__, nelem__, ...) \
-  static_assert(                                                          \
-      false,                                                              \
-      "ET_TRY_ALLOCATE_LIST_OR uses statement \
-    expressions and thus is not available for use with this compiler.");
-#endif // !ET_HAVE_GNU_STATEMENT_EXPRESSIONS
-
-/**
- * Tries allocating from the specified MemoryAllocator*.
- *
- * - On success, returns a pointer to the allocated buffer.
- * - On failure, returns `Error::MemoryAllocationFailed` from the calling
- *   function, which must be declared to return `executorch::runtime::Error`.
- *
- * Example:
- * @code
- *   char* buf = ET_ALLOCATE_OR_RETURN_ERROR(memory_allocator, bufsize);
- * @endcode
- */
-#define ET_ALLOCATE_OR_RETURN_ERROR(memory_allocator__, nbytes__) \
-  ET_TRY_ALLOCATE_OR(memory_allocator__, nbytes__, {              \
-    return ::executorch::runtime::Error::MemoryAllocationFailed;  \
-  })
-
-/**
- * Tries allocating an instance of type__ from the specified MemoryAllocator*.
- *
- * - On success, returns a pointer to the allocated buffer. Note that the memory
- *   will not be initialized.
- * - On failure, returns `Error::MemoryAllocationFailed` from the calling
- *   function, which must be declared to return `executorch::runtime::Error`.
- *
- * Example:
- * @code
- *   char* buf = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(memory_allocator, MyType);
- * @endcode
- */
-#define ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(memory_allocator__, type__) \
-  ET_TRY_ALLOCATE_INSTANCE_OR(memory_allocator__, type__, {              \
-    return ::executorch::runtime::Error::MemoryAllocationFailed;         \
-  })
-
-/**
- * Tries allocating multiple elements of a given type from the specified
- * MemoryAllocator*.
- *
- * - On success, returns a pointer to the allocated buffer.
- * - On failure, returns `Error::MemoryAllocationFailed` from the calling
- *   function, which must be declared to return `executorch::runtime::Error`.
- *
- * Example:
- * @code
- *   Tensor* tensor_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
- *       memory_allocator, Tensor, num_tensors);
- * @endcode
- */
-#define ET_ALLOCATE_LIST_OR_RETURN_ERROR(memory_allocator__, type__, nelem__) \
-  ET_TRY_ALLOCATE_LIST_OR(memory_allocator__, type__, nelem__, {              \
-    return ::executorch::runtime::Error::MemoryAllocationFailed;              \
-  })
 
 } // namespace runtime
 } // namespace executorch

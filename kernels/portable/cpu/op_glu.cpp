@@ -8,6 +8,7 @@
 
 #include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 #include <cinttypes>
@@ -23,92 +24,46 @@ using ScalarType = executorch::aten::ScalarType;
 
 namespace {
 
-double exp_overload(double d) {
-  return exp(d);
-}
+struct SplitGLUInputTensor {
+  explicit SplitGLUInputTensor(const Tensor& self, int64_t dim);
+  using SizesArray =
+      std::array<executorch::aten::SizesType, kTensorDimensionLimit>;
+  SizesArray half_sizes;
+  TensorImpl first_half_impl;
+  TensorImpl second_half_impl;
+  Tensor first_half;
+  Tensor second_half;
 
-float exp_overload(float f) {
-  return expf(f);
-}
-
-/**
- * In-place element-wise sigmoid function , i.e., f(x) = 1 / (1 + e^{-x})
- */
-// TODO: T146333648, refactor this as a common helper function
-template <typename CTYPE_OUT>
-void sigmoid_tensor(Tensor& out) {
-  CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-  for (const auto i : c10::irange(out.numel())) {
-    out_data[i] = 1.0 / (1.0 + exp_overload(-out_data[i]));
+ private:
+  static SizesArray get_half_sizes(const Tensor& self, int64_t dim) {
+    SizesArray half_sizes;
+    std::copy(self.sizes().begin(), self.sizes().end(), half_sizes.begin());
+    half_sizes[dim] /= 2;
+    return half_sizes;
   }
-}
+};
 
-/**
- * Element-wise multiplication of the first half of `in` along the specified
- * dimension and `out`, overwriting `out`.
- */
-template <typename CTYPE_IN, typename CTYPE_OUT>
-void mul_tensors(const Tensor& in, int64_t dim, Tensor& out) {
-  size_t num_values = static_cast<size_t>(in.size(dim)) / 2;
-  size_t dim_length_in = static_cast<size_t>(in.size(dim));
-  size_t dim_length_out = static_cast<size_t>(out.size(dim));
-  size_t leading_dims = getLeadingDims(in, dim);
-  size_t trailing_dims = getTrailingDims(in, dim);
-
-  const CTYPE_IN* input_data_base = in.const_data_ptr<CTYPE_IN>();
-  CTYPE_OUT* output_data_base = out.mutable_data_ptr<CTYPE_OUT>();
-
-  for (const auto i : c10::irange(leading_dims)) {
-    const CTYPE_IN* input_data =
-        input_data_base + i * dim_length_in * trailing_dims;
-    CTYPE_OUT* output_data =
-        output_data_base + i * dim_length_out * trailing_dims;
-    for ([[maybe_unused]] const auto j : c10::irange(num_values)) {
-      for (const auto k : c10::irange(trailing_dims)) {
-        output_data[k] = static_cast<CTYPE_OUT>(input_data[k]) * output_data[k];
-      }
-      input_data += trailing_dims;
-      output_data += trailing_dims;
-    }
-  }
-}
-
-/**
- * Slice the tensor in the given dim, from start to end, assume tensor in and
- * out have same shape and dtype, the dim is a non-negative number and start,
- * end are valid non-negative number
- */
-template <typename CTYPE_IN, typename CTYPE_OUT>
-void slice_tensor(
-    const Tensor& in,
-    int64_t dim,
-    int64_t start,
-    int64_t end,
-    Tensor& out) {
-  size_t num_values = static_cast<size_t>(end - start);
-  size_t dim_length_in = static_cast<size_t>(in.size(dim));
-  size_t dim_length_out = static_cast<size_t>(out.size(dim));
-  size_t non_negative_start = static_cast<size_t>(start);
-  size_t leading_dims = getLeadingDims(in, dim);
-  size_t trailing_dims = getTrailingDims(in, dim);
-
-  const CTYPE_IN* input_data_base = in.const_data_ptr<CTYPE_IN>();
-  CTYPE_OUT* output_data_base = out.mutable_data_ptr<CTYPE_OUT>();
-
-  for (const auto i : c10::irange(leading_dims)) {
-    const CTYPE_IN* input_data = input_data_base +
-        (i * dim_length_in + non_negative_start) * trailing_dims;
-    CTYPE_OUT* output_data =
-        output_data_base + i * dim_length_out * trailing_dims;
-    for ([[maybe_unused]] const auto j : c10::irange(num_values)) {
-      for (const auto k : c10::irange(trailing_dims)) {
-        output_data[k] = static_cast<CTYPE_OUT>(input_data[k]);
-      }
-      input_data += trailing_dims;
-      output_data += trailing_dims;
-    }
-  }
-}
+SplitGLUInputTensor::SplitGLUInputTensor(const Tensor& self, int64_t dim)
+    : half_sizes(get_half_sizes(self, dim)),
+      first_half_impl(
+          self.scalar_type(),
+          self.dim(),
+          half_sizes.data(),
+          self.mutable_data_ptr(),
+          const_cast<executorch::aten::DimOrderType*>(self.dim_order().data()),
+          const_cast<executorch::aten::StridesType*>(self.strides().data()),
+          self.shape_dynamism()),
+      second_half_impl(
+          self.scalar_type(),
+          self.dim(),
+          half_sizes.data(),
+          reinterpret_cast<char*>(self.mutable_data_ptr()) +
+              self.strides()[dim] * self.size(dim) / 2 * self.element_size(),
+          const_cast<executorch::aten::DimOrderType*>(self.dim_order().data()),
+          const_cast<executorch::aten::StridesType*>(self.strides().data()),
+          self.shape_dynamism()),
+      first_half(&first_half_impl),
+      second_half(&second_half_impl) {}
 
 /**
  * Applies the gated linear unit function
@@ -120,11 +75,43 @@ void slice_tensor(
  *  2. The output shall be in float types (Float, Double)
  */
 template <typename CTYPE_IN, typename CTYPE_OUT>
-Tensor& glu_out_tensor(const Tensor& self, int64_t dim, Tensor& out) {
-  const auto self_size = self.size(dim);
-  slice_tensor<CTYPE_IN, CTYPE_OUT>(self, dim, self_size / 2, self_size, out);
-  sigmoid_tensor<CTYPE_OUT>(out);
-  mul_tensors<CTYPE_IN, CTYPE_OUT>(self, dim, out);
+Tensor& glu_out_tensor(
+    KernelRuntimeContext& ctx,
+    const Tensor& self,
+    int64_t dim,
+    Tensor& out) {
+  ET_KERNEL_CHECK(
+      ctx,
+      self.dim() <= static_cast<ssize_t>(kTensorDimensionLimit),
+      InvalidArgument,
+      out);
+  SplitGLUInputTensor split_input(self, dim);
+  ScalarType compute_type =
+      executorch::runtime::isFloatingType(self.scalar_type())
+      ? self.scalar_type()
+      : ScalarType::Float;
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "glu.out";
+  ET_SWITCH_FLOATHBF16_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+    utils::apply_bitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::FLOATHBF16>(
+        [](const auto val_a, const auto val_b) -> CTYPE_COMPUTE {
+          // TODO: rewrite this to be vectorization-capable? the
+          // tensors might not be contiguous; need to have
+          // apply_bitensor_elementwise_fn check that.
+          const auto one = static_cast<decltype(val_a)>(1.0);
+          return val_a * (one / (one + std::exp(-val_b)));
+        },
+        ctx,
+        split_input.first_half,
+        utils::SupportedTensorDtypes::FLOATHBF16,
+        split_input.second_half,
+        utils::SupportedTensorDtypes::FLOATHBF16,
+        out,
+        utils::internal::SupportNoncontiguousInputTensors());
+  });
   return out;
 }
 } // namespace
@@ -158,7 +145,7 @@ Tensor& glu_out(
 
   ET_SWITCH_FLOATHBF16_TYPES(in_dtype, ctx, "glu", CTYPE_IN, [&]() {
     ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, "glu", CTYPE_OUT, [&]() {
-      glu_out_tensor<CTYPE_IN, CTYPE_OUT>(self, non_negative_dim, out);
+      glu_out_tensor<CTYPE_IN, CTYPE_OUT>(ctx, self, non_negative_dim, out);
     });
   });
 

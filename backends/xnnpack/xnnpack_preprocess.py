@@ -12,9 +12,6 @@ import torch
 
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
-from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
-    TagImplicitQDqPass,
-)
 from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
@@ -31,6 +28,7 @@ from executorch.backends.xnnpack.utils.xnnpack_constants import (
     XNN_VALUE_FLAG_EXTERNAL_INPUT,
     XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
 )
+from executorch.exir._serialize._named_data_store import NamedDataStore
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -103,7 +101,7 @@ class XnnpackBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
-
+        named_data_store = NamedDataStore()
         xnnpack_edge_compile_config = get_xnnpack_edge_compile_config()
 
         # Need to wrap EP here because xnnpack does addmm to linear
@@ -135,7 +133,6 @@ class XnnpackBackend(BackendDetails):
         for spec in compile_specs:
             if spec.key == "dqlinear_partitioner":
                 passes.append(ConvertToLinearPass)
-                passes.append(TagImplicitQDqPass)
 
         passes = passes if len(passes) > 0 else None
         # XNNPACK Delegate Specific Passes
@@ -143,9 +140,6 @@ class XnnpackBackend(BackendDetails):
         graph_module = ep.graph_module
 
         node_to_external_map = generate_node_to_external_map(ep, graph_module)
-
-        # Make sure all inputs are contiguous_format or NCHW or default dim order
-        assert_default_dim_order(graph_module)
 
         # TODO retrace the graph module to lift the new params may have
         # been added to the graph in passes
@@ -162,7 +156,7 @@ class XnnpackBackend(BackendDetails):
         )
 
         constant_data_bytes = bytearray()
-        node_visitors = get_node_visitors(ep, node_to_external_map, constant_data_bytes)
+        node_visitors = get_node_visitors(ep, node_to_external_map, named_data_store)
 
         for node in graph_module.graph.nodes:
             if node.op == "call_function":
@@ -191,4 +185,5 @@ class XnnpackBackend(BackendDetails):
                 xnnpack_graph, constant_data_bytes
             ),
             debug_handle_map={},
+            data_store_output=named_data_store.get_named_data_store_output(),
         )

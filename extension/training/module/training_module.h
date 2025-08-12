@@ -33,13 +33,16 @@ class ET_EXPERIMENTAL TrainingModule final
       std::unique_ptr<runtime::DataLoader> data_loader,
       std::unique_ptr<runtime::MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<runtime::MemoryAllocator> temp_allocator = nullptr,
-      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr)
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr,
+      std::unique_ptr<runtime::DataLoader> data_map_data_loader = nullptr)
       : executorch::extension::Module(
             std::move(data_loader),
             std::move(memory_allocator),
             std::move(temp_allocator),
-            std::move(event_tracer)),
-        method_named_gradients_({}) {}
+            std::move(event_tracer),
+            std::move(data_map_data_loader)),
+        method_named_gradients_({}),
+        method_named_parameters_({}) {}
 
   explicit TrainingModule(const Module&) = delete;
   TrainingModule& operator=(const Module&) = delete;
@@ -72,8 +75,7 @@ class ET_EXPERIMENTAL TrainingModule final
    * parameter tensor, or an error if the method is not a joint graph.
    */
   ET_EXPERIMENTAL
-  runtime::Result<
-      const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
+  runtime::Result<const std::map<std::string_view, executorch::aten::Tensor>>
   named_parameters(const std::string& method_name);
 
   /**
@@ -88,15 +90,37 @@ class ET_EXPERIMENTAL TrainingModule final
    * or has not been executed yet.
    */
   ET_EXPERIMENTAL
-  runtime::Result<
-      const std::map<executorch::aten::string_view, executorch::aten::Tensor>>
+  runtime::Result<const std::map<std::string_view, executorch::aten::Tensor>>
   named_gradients(const std::string& method_name);
+
+  /**
+   * Retrieve the attributes for a method.
+   *
+   * @param[in] method_name The name of the  method to get the
+   * attributes for.
+   *
+   * @returns A Result object containing a map of the fully qualified name to
+   * attribute tensor.
+   */
+  ET_EXPERIMENTAL
+  runtime::Result<const std::map<std::string_view, executorch::aten::Tensor>>
+  named_attributes(const std::string& method_name);
 
  private:
   std::unordered_map<
       std::string,
-      std::map<executorch::aten::string_view, executorch::aten::Tensor>>
+      std::map<std::string_view, executorch::aten::Tensor>>
       method_named_gradients_;
+
+  std::unordered_map<
+      std::string,
+      std::map<std::string_view, executorch::aten::Tensor>>
+      method_named_parameters_;
+
+  std::unordered_map<
+      std::string,
+      std::map<std::string_view, executorch::aten::Tensor>>
+      method_named_attributes_;
 };
 
 } // namespace training

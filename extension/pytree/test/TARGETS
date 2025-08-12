@@ -10,12 +10,6 @@ cpp_unittest(
     deps = ["//executorch/extension/pytree:pytree"],
 )
 
-cpp_unittest(
-    name = "function_ref_test",
-    srcs = ["function_ref_test.cpp"],
-    deps = ["//executorch/extension/pytree:pytree"],
-)
-
 python_unittest(
     name = "pybindings_test",
     srcs = [

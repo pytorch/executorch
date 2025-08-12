@@ -4,20 +4,24 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import torch
+
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
+from executorch.backends.qualcomm.builders.utils import get_parameter, is_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
-
-from .utils import dq_ops
 
 
 class RecomposeRmsNorm(ExportPass):
     """
     Merge decomposed operators back to one super node.
+    TODO: After replacing export_to_edge with to_edge_transform_and_lowering
+    in examples/models/llama/export_llama_lib.py, this pass can be removed
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, edge_program: torch.export.ExportedProgram):
+        super(RecomposeRmsNorm, self).__init__()
+        self.edge_program = edge_program
 
     def _get_eps_node(self, nodes):
         # eps: one of inputs of add node
@@ -47,11 +51,15 @@ class RecomposeRmsNorm(ExportPass):
                     input_node = inp_0 if len(inp_0.users) == 2 else inp_1
                 else:
                     raise RuntimeError(
-                        f"Found a edge case of rms_node partitoin {src_partition}, which has {input_len} inputs"
+                        f"Found a edge case of rms_node partition {src_partition}, which has {input_len} inputs"
                     )
 
                 output_node = src_partition.output_nodes[0]
-                eps_node = self._get_eps_node(src_partition.nodes)
+                eps = self._get_eps_node(src_partition.nodes)
+                if isinstance(eps, torch.fx.Node) and is_parameter(
+                    eps, self.edge_program
+                ):
+                    eps = get_parameter(eps, self.edge_program).item()
                 gamma_node = self._get_gamma_node(output_node)
 
                 with graph.inserting_before(output_node):
@@ -64,7 +72,7 @@ class RecomposeRmsNorm(ExportPass):
                             input_node,
                             list(gamma_node.meta["val"].shape),
                             gamma_node,
-                            eps_node,
+                            eps,
                         ),
                     )
                     users = output_node.users.copy()

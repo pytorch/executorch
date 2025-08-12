@@ -56,13 +56,20 @@ class Adapter final {
       const uint32_t num_queues,
       const std::string& cache_data_path);
 
+  explicit Adapter(
+      VkInstance instance,
+      VkPhysicalDevice physical_device,
+      VkDevice logical_device,
+      const uint32_t num_queues,
+      const std::string& cache_data_path);
+
   Adapter(const Adapter&) = delete;
   Adapter& operator=(const Adapter&) = delete;
 
   Adapter(Adapter&&) = delete;
   Adapter& operator=(Adapter&&) = delete;
 
-  ~Adapter() = default;
+  ~Adapter();
 
   struct Queue {
     uint32_t family_index;
@@ -94,6 +101,7 @@ class Adapter final {
   Allocator vma_;
   // Miscellaneous
   bool linear_tiling_3d_enabled_;
+  bool owns_device_;
 
  public:
   // Physical Device metadata
@@ -120,6 +128,15 @@ class Adapter final {
 
   inline float timestamp_period() const {
     return physical_device_.timestamp_period;
+  }
+
+  // Device Identity
+  inline const std::string& device_name() const {
+    return physical_device_.device_name;
+  }
+
+  inline vkapi::DeviceType device_type() const {
+    return physical_device_.device_type;
   }
 
   // Queue Management
@@ -211,10 +228,26 @@ class Adapter final {
     return physical_device_.min_ubo_alignment;
   }
 
+  inline uint32_t max_texture2d_dim() const {
+    return physical_device_.properties.limits.maxImageDimension2D;
+  }
+
+  inline uint32_t max_texture3d_dim() const {
+    return physical_device_.properties.limits.maxImageDimension3D;
+  }
+
+  inline uint32_t max_buffer_numel() const {
+    return physical_device_.properties.limits.maxStorageBufferRange;
+  }
+
   // Command Buffer Submission
 
-  void
-  submit_cmd(const Queue&, VkCommandBuffer, VkFence fence = VK_NULL_HANDLE);
+  void submit_cmd(
+      const Queue&,
+      VkCommandBuffer,
+      VkFence fence = VK_NULL_HANDLE,
+      VkSemaphore wait_semaphore = VK_NULL_HANDLE,
+      VkSemaphore signal_semaphore = VK_NULL_HANDLE);
 
   std::string stringize() const;
   friend std::ostream& operator<<(std::ostream&, const Adapter&);

@@ -20,7 +20,10 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
 from executorch.backends.vulkan.utils import (
     is_constant,
     is_get_attr_node,
+    is_mutable_buffer_node,
     is_param_node,
+    is_symint_node,
+    TensorRepr,
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
@@ -43,9 +46,11 @@ class VkGraphBuilder:
         self,
         program: ExportedProgram,
         delegate_mapping_builder: DelegateMappingBuilder,
+        downcast_64_bit: bool = True,
     ) -> None:
         self.program = program
         self.delegate_mapping_builder = delegate_mapping_builder
+        self.downcast_64_bit = downcast_64_bit
         self.chain = []
         self.values = []
         self.input_ids = []
@@ -54,6 +59,8 @@ class VkGraphBuilder:
 
         # Mapping from Node to VkValue id
         self.node_to_value_ids = {}
+        # Mapping from const scalar value to created VkValue id
+        self.const_scalar_to_value_ids = {}
 
         # For logging
         self.seen_ops = set()
@@ -68,13 +75,14 @@ class VkGraphBuilder:
             return vk_graph_schema.VkDataType.INT8
         elif torch_dtype == torch.int32:
             return vk_graph_schema.VkDataType.INT32
+        elif torch_dtype == torch.int64:
+            return vk_graph_schema.VkDataType.INT64
         elif torch_dtype == torch.float16:
             return vk_graph_schema.VkDataType.FLOAT16
         elif torch_dtype == torch.float32:
             return vk_graph_schema.VkDataType.FLOAT32
-        # Narrowing conversion for index tensor produced by max_poolNd_with_indices.
-        elif torch_dtype == torch.int64:
-            return vk_graph_schema.VkDataType.INT32
+        elif torch_dtype == torch.float64:
+            return vk_graph_schema.VkDataType.FLOAT64
         else:
             raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
 
@@ -128,7 +136,7 @@ class VkGraphBuilder:
 
     def create_node_value(self, node: Node) -> int:
         # If the node has been marked as a scalar tensor, create a SymInt instead of a tensor
-        if node.meta.get("vkdg_is_scalar_tensor", False):
+        if is_symint_node(node) or node.meta.get("etvk_is_scalar_tensor", False):
             new_id = self.create_symint_value()
             self.node_to_value_ids[node] = new_id
             return new_id
@@ -146,14 +154,26 @@ class VkGraphBuilder:
             self.node_to_value_ids[node] = new_id
             return new_id
         else:
-            raise RuntimeError(f"Cannot create value for spec of type {type(spec)}")
+            raise RuntimeError(
+                f"Cannot create value for node {node} with spec of type {type(spec)}"
+            )
 
     def create_null_value(self) -> int:
         new_id = len(self.values)
         self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Null()))
         return new_id
 
-    def create_scalar_value(self, scalar: _ScalarType) -> int:
+    def get_or_create_scalar_value(self, scalar: _ScalarType) -> int:
+        scalar_key = scalar
+        # Since Python considers 1 and True to be "equivalent" (as well as 0 and False)
+        # to distinguish entries in the dictionary, if scalar is bool then convert it
+        # to a string representation to use as a key for the dictionary
+        if isinstance(scalar, bool):
+            scalar_key = str(scalar)
+
+        if scalar_key in self.const_scalar_to_value_ids:
+            return self.const_scalar_to_value_ids[scalar_key]
+
         new_id = len(self.values)
         if isinstance(scalar, bool):
             self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Bool(scalar)))
@@ -161,6 +181,8 @@ class VkGraphBuilder:
             self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Int(scalar)))
         elif isinstance(scalar, float):
             self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Double(scalar)))
+
+        self.const_scalar_to_value_ids[scalar_key] = new_id
         return new_id
 
     def create_symint_value(self) -> int:
@@ -176,18 +198,26 @@ class VkGraphBuilder:
 
         storage_type = VkStorageType.DEFAULT_STORAGE
         memory_layout = VkMemoryLayout.DEFAULT_LAYOUT
-        if hasattr(spec, "vk_storage_type"):
+        if hasattr(spec, "etvk_node_repr"):
             # pyre-ignore[16]
-            storage_type = spec.vk_storage_type
-        if hasattr(spec, "vk_memory_layout"):
-            # pyre-ignore[16]
-            memory_layout = spec.vk_memory_layout
+            assert isinstance(spec.etvk_node_repr, TensorRepr)
+            storage_type = spec.etvk_node_repr.storage_type
+            memory_layout = spec.etvk_node_repr.memory_layout
+
+        # Apply downcast logic before getting VK datatype
+        effective_dtype = spec.dtype
+        if self.downcast_64_bit and spec.dtype == torch.float64:
+            effective_dtype = torch.float32
+        elif self.downcast_64_bit and spec.dtype == torch.int64:
+            effective_dtype = torch.int32
+
+        datatype = self.get_vk_datatype(effective_dtype)
 
         new_id = len(self.values)
         self.values.append(
             vk_graph_schema.VkValue(
                 value=vk_graph_schema.VkTensor(
-                    datatype=self.get_vk_datatype(spec.dtype),
+                    datatype=datatype,
                     dims=spec.shape,
                     constant_id=constant_id,
                     mem_obj_id=mem_obj_id,
@@ -200,28 +230,50 @@ class VkGraphBuilder:
 
     def create_scalar_list_value(self, arg: List[_ScalarType]) -> int:
         new_id = len(self.values)
+
         if len(arg) == 0:
             self.values.append(
                 vk_graph_schema.VkValue(vk_graph_schema.IntList(items=[]))
             )
-        elif isinstance(arg[0], bool):
+
+        all_bool = True
+        all_int = True
+        all_float = True
+        all_int_or_symint = True
+
+        for val in arg:
+            if not isinstance(val, bool):
+                all_bool = False
+            if not isinstance(val, int):
+                all_int = False
+                if not (isinstance(val, Node) and is_symint_node(val)):
+                    all_int_or_symint = False
+            if not isinstance(val, float):
+                all_float = False
+
+        if all_bool:
             self.values.append(
                 vk_graph_schema.VkValue(
                     vk_graph_schema.BoolList(items=[cast(bool, e) for e in arg])
                 )
             )
-        elif isinstance(arg[0], int):
+        if all_int:
             self.values.append(
                 vk_graph_schema.VkValue(
                     vk_graph_schema.IntList(items=[cast(int, e) for e in arg])
                 )
             )
-        elif isinstance(arg[0], float):
+        elif all_float:
             self.values.append(
                 vk_graph_schema.VkValue(
                     vk_graph_schema.DoubleList(items=[cast(float, e) for e in arg])
                 )
             )
+        elif all_int_or_symint:
+            return self.create_value_list_value(arg)
+        else:
+            raise NotImplementedError(f"Cannot add value for list {arg}")
+
         return new_id
 
     def create_value_list_value(self, arg: tuple | list) -> int:
@@ -256,11 +308,11 @@ class VkGraphBuilder:
         ):
             return self.create_null_value()
         elif isinstance(arg, _ScalarType):
-            return self.create_scalar_value(arg)
+            return self.get_or_create_scalar_value(arg)
         elif isinstance(arg, TensorSpec):
             return self.create_tensor_value(arg)
         elif isinstance(arg, list) and (
-            len(arg) == 0 or isinstance(arg[0], _ScalarType)
+            len(arg) == 0 or any(isinstance(val, _ScalarType) for val in arg)
         ):
             # pyre-ignore[6]
             return self.create_scalar_list_value(arg)
@@ -301,17 +353,21 @@ class VkGraphBuilder:
 
         self.seen_ops.add(node.target)
 
-        for i, schema_arg in enumerate(node.target._schema.arguments):
-            if not schema_arg.kwarg_only and i < len(node.args):
-                function_arg = node.args[i]
-            elif schema_arg.name in node.kwargs:
-                function_arg = node.kwargs[schema_arg.name]
-            else:
-                function_arg = schema_arg.default_value
+        if hasattr(node.target, "_schema"):
+            for i, schema_arg in enumerate(node.target._schema.arguments):
+                if not schema_arg.kwarg_only and i < len(node.args):
+                    function_arg = node.args[i]
+                elif schema_arg.name in node.kwargs:
+                    function_arg = node.kwargs[schema_arg.name]
+                else:
+                    function_arg = schema_arg.default_value
 
-            # Create a Value for each function argument. If the argument has been
-            # previously encountered, then use the existing Value id.
-            operator_call_args.append(self.get_or_create_value_for(function_arg))
+                # Create a Value for each function argument. If the argument has been
+                # previously encountered, then use the existing Value id.
+                operator_call_args.append(self.get_or_create_value_for(function_arg))
+        else:
+            for _, arg_node in enumerate(node.args):
+                operator_call_args.append(self.get_or_create_value_for(arg_node))
 
         # Add output node
         operator_call_args.append(self.create_node_value(node))
@@ -339,6 +395,11 @@ class VkGraphBuilder:
                     "the output node is being serialized before its corresponding "
                     "internal node which is not allowed."
                 )
+            # Mutable buffers outputs are not included as an output to the
+            # delegate call. Skip marking them as an output.
+            if is_mutable_buffer_node(out_node, self.program):
+                continue
+
             self.output_ids.append(self.node_to_value_ids[out_node])
 
     def process_node(self, node: Node, call_node_debug_hdl: int) -> None:

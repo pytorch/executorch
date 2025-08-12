@@ -94,7 +94,7 @@ def define_common_targets():
             "utils.h",
         ],
         visibility = [
-
+            "//executorch/devtools/etdump/...",
         ],
     )
 
@@ -102,12 +102,19 @@ def define_common_targets():
         aten_suffix = "_aten" if aten_mode else ""
 
         runtime.cxx_library(
-            name = "data_sink_base" + aten_suffix,
+            name = "etdump_filter" + aten_suffix,
+            srcs = [
+                "etdump_filter.cpp",
+            ],
             exported_headers = [
-                "data_sink_base.h",
+                "etdump_filter.h",
+            ],
+            deps = [
+                "//executorch/runtime/platform:platform",
             ],
             exported_deps = [
-                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
+                "fbsource//third-party/re2:re2",
+                "//executorch/runtime/core:event_tracer" + aten_suffix,
             ],
             visibility = [
                 "//executorch/...",
@@ -115,26 +122,6 @@ def define_common_targets():
             ],
         )
 
-        runtime.cxx_library(
-            name = "buffer_data_sink" + aten_suffix,
-            headers = [
-                "buffer_data_sink.h",
-            ],
-            srcs = [
-                "buffer_data_sink.cpp",
-            ],
-            deps = [
-                ":utils",
-            ],
-            exported_deps = [
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-                ":data_sink_base" + aten_suffix,
-            ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
-        )
         runtime.cxx_library(
             name = "etdump_flatcc" + aten_suffix,
             srcs = [
@@ -153,6 +140,8 @@ def define_common_targets():
             exported_deps = [
                 ":etdump_schema_flatcc",
                 ":utils",
+                "//executorch/devtools/etdump/data_sinks:data_sink_base" + aten_suffix,
+                "//executorch/devtools/etdump/data_sinks:buffer_data_sink" + aten_suffix,
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],

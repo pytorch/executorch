@@ -2,7 +2,7 @@
 # Running Llama 3/3.1 8B on non-CPU backends
 
 ### QNN
-Please follow [the instructions](https://pytorch.org/executorch/stable/llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html) to deploy Llama 3 8B to an Android smartphone with Qualcomm SoCs.
+Please follow [the instructions](https://pytorch.org/executorch/main/llm/build-run-llama3-qualcomm-ai-engine-direct-backend) to deploy Llama 3 8B to an Android smartphone with Qualcomm SoCs.
 
 ### MPS
 Export:
@@ -10,7 +10,7 @@ Export:
 python -m examples.models.llama2.export_llama --checkpoint llama3.pt --params params.json -kv --disable_dynamic_shape --mps --use_sdpa_with_kv_cache -d fp32 -qmode 8da4w -G 32 --embedding-quantize 4,32
 ```
 
-After exporting the MPS model .pte file, the [iOS LLAMA](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) app can support running the model. ` --embedding-quantize 4,32` is an optional args for quantizing embedding to reduce the model size.
+After exporting the MPS model .pte file, the [iOS LLAMA](https://pytorch.org/executorch/main/llm/llama-demo-ios) app can support running the model. ` --embedding-quantize 4,32` is an optional args for quantizing embedding to reduce the model size.
 
 ### CoreML
 Export:

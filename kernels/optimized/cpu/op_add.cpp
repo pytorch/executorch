@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/binary_ops.h>
-#include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -33,7 +33,33 @@ Tensor& opt_add_out(
   ScalarType out_type = out.scalar_type();
 
   if (b.numel() == 1) {
-    if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
+    if (executorch::runtime::isComplexType(a_type) ||
+        executorch::runtime::isComplexType(b_type) ||
+        executorch::runtime::isComplexType(out_type)) {
+      // TODO: The current support for complex dtype enforces that input and
+      // output tensors have the same dtype. Support mixed dtypes in the future.
+      ET_KERNEL_CHECK(
+          ctx, a_type == b_type && a_type == out_type, InvalidArgument, out);
+      ET_KERNEL_CHECK(
+          ctx,
+          resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+          InvalidArgument,
+          out);
+
+      ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, "add.out", CTYPE, [&]() {
+        CTYPE alpha_val = utils::scalar_to<CTYPE>(alpha);
+        CTYPE b_val = *b.const_data_ptr<CTYPE>();
+
+        using Vec = at::vec::Vectorized<CTYPE>;
+        at::vec::map<CTYPE>(
+            [alpha_val, b_val](Vec x) { return x + Vec(alpha_val * b_val); },
+            out.mutable_data_ptr<CTYPE>(),
+            a.const_data_ptr<CTYPE>(),
+            out.numel());
+      });
+      return out;
+    } else if (
+        a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
         a_type != ScalarType::BFloat16) {
       ET_KERNEL_CHECK(
           ctx,
@@ -45,14 +71,12 @@ Tensor& opt_add_out(
         ET_SWITCH_REALB_TYPES(b_type, ctx, "add.out", CTYPE_B, [&]() {
           CTYPE alpha_val;
           ET_KERNEL_CHECK(
-              ctx,
-              torch::executor::native::utils::extract_scalar(alpha, &alpha_val),
-              InvalidArgument, );
+              ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
           CTYPE_B b_val = *b.const_data_ptr<CTYPE_B>();
           CTYPE b_casted = static_cast<CTYPE>(b_val);
 
-          using Vec = executorch::vec::Vectorized<CTYPE>;
-          executorch::vec::map<CTYPE>(
+          using Vec = at::vec::Vectorized<CTYPE>;
+          at::vec::map<CTYPE>(
               [alpha_val, b_casted](Vec x) {
                 return x + Vec(alpha_val * b_casted);
               },
@@ -81,7 +105,6 @@ Tensor& opt_add_scalar_out(
   (void)ctx;
 
   ScalarType a_type = a.scalar_type();
-  ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType common_type =
       utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ false);
   ScalarType out_type = out.scalar_type();
@@ -99,47 +122,43 @@ Tensor& opt_add_scalar_out(
   if (a_type == common_type && a_type == out_type &&
       a_type != ScalarType::Half && a_type != ScalarType::BFloat16) {
     ET_SWITCH_REALB_TYPES(a_type, ctx, "add.Scalar_out", CTYPE, [&]() {
-      ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "add.Scalar_out", CTYPE_B, [&]() {
-        CTYPE_B b_val;
-        ET_EXTRACT_SCALAR(b, b_val);
-        CTYPE b_casted = static_cast<CTYPE>(b_val);
-        CTYPE alpha_val;
-        ET_EXTRACT_SCALAR(alpha, alpha_val);
+      CTYPE b_casted = utils::scalar_to<CTYPE>(b);
+      CTYPE alpha_val;
+      ET_KERNEL_CHECK(
+          ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
 
-        using Vec = executorch::vec::Vectorized<CTYPE>;
-        executorch::vec::map<CTYPE>(
-            [alpha_val, b_casted](Vec x) {
-              return x + Vec(alpha_val * b_casted);
-            },
-            out.mutable_data_ptr<CTYPE>(),
-            a.const_data_ptr<CTYPE>(),
-            out.numel());
-      });
+      using Vec = at::vec::Vectorized<CTYPE>;
+      at::vec::map<CTYPE>(
+          [alpha_val, b_casted](Vec x) {
+            return x + Vec(alpha_val * b_casted);
+          },
+          out.mutable_data_ptr<CTYPE>(),
+          a.const_data_ptr<CTYPE>(),
+          out.numel());
     });
   } else {
     ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "add.Scalar_out", CTYPE_A, [&]() {
-      ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "add.Scalar_out", CTYPE_B, [&]() {
-        ET_SWITCH_REALB_TYPES(
-            common_type, ctx, "add.Scalar_out", CTYPE_IN, [&]() {
-              ET_SWITCH_REALHBBF16_TYPES(
-                  out_type, ctx, "add.Scalar_out", CTYPE_OUT, [&]() {
-                    CTYPE_B b_val;
-                    ET_EXTRACT_SCALAR(b, b_val);
-                    CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-                    CTYPE_IN alpha_val;
-                    ET_EXTRACT_SCALAR(alpha, alpha_val);
+      ET_SWITCH_REALB_TYPES(
+          common_type, ctx, "add.Scalar_out", CTYPE_IN, [&]() {
+            ET_SWITCH_REALHBBF16_TYPES(
+                out_type, ctx, "add.Scalar_out", CTYPE_OUT, [&]() {
+                  CTYPE_IN b_casted = utils::scalar_to<CTYPE_IN>(b);
+                  CTYPE_IN alpha_val;
+                  ET_KERNEL_CHECK(
+                      ctx,
+                      utils::extract_scalar(alpha, &alpha_val),
+                      InvalidArgument, );
 
-                    const size_t n = a.numel();
-                    const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
-                    CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-                    for (auto i = 0; i < n; ++i) {
-                      out_data[i] = static_cast<CTYPE_OUT>(
-                          static_cast<CTYPE_IN>(a_data[i]) +
-                          alpha_val * b_casted);
-                    }
-                  });
-            });
-      });
+                  const size_t n = a.numel();
+                  const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
+                  CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
+                  for (auto i = 0; i < n; ++i) {
+                    out_data[i] = static_cast<CTYPE_OUT>(
+                        static_cast<CTYPE_IN>(a_data[i]) +
+                        alpha_val * b_casted);
+                  }
+                });
+          });
     });
   }
 

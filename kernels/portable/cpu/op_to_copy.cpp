@@ -32,7 +32,7 @@ Tensor& to_copy_out(
     KernelRuntimeContext& ctx,
     const Tensor& self,
     bool non_blocking,
-    executorch::aten::optional<executorch::aten::MemoryFormat> memory_format,
+    std::optional<executorch::aten::MemoryFormat> memory_format,
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,

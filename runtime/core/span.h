@@ -35,6 +35,7 @@ namespace runtime {
 template <typename T>
 class Span final {
  public:
+  using value_type = T;
   using iterator = T*;
   using size_type = size_t;
 
@@ -53,6 +54,10 @@ class Span final {
   /// Construct a Span from a C array.
   template <size_t N>
   /* implicit */ constexpr Span(T (&Arr)[N]) : data_(Arr), length_(N) {}
+
+  /// Construct a Span from a single element reference.
+  /* implicit */ constexpr Span(T& single_element)
+      : data_(&single_element), length_(1) {}
 
   /// @returns a pointer to the start of the underlying element buffer.
   iterator begin() const noexcept {

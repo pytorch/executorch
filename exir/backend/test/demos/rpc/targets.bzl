@@ -23,9 +23,9 @@ def define_common_targets():
         ],
         platforms = [ANDROID, CXX],
         deps = [
-            "//executorch/runtime/executor:program",
-            "//executorch/kernels/portable:generated_lib",
+            "//executorch/configurations:optimized_native_cpu_ops",
             "//executorch/runtime/backend:interface",
+            "//executorch/runtime/executor:program",
             "//executorch/extension/data_loader:buffer_data_loader",
         ] + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
         exported_deps = [
@@ -40,6 +40,7 @@ def define_common_targets():
         ],
         visibility = [
             "//executorch/exir/backend/test/...",
+            "//executorch/runtime/executor/test/...",
         ],
         deps = [
             ":executor_backend",

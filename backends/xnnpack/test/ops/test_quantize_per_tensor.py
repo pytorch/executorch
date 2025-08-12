@@ -13,6 +13,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class TestQuantizePerTensor(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     def test_qs8_quantize_per_tensor(self):
         class Quant(torch.nn.Module):
             def forward(self, x):

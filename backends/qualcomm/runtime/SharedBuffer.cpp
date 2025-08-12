@@ -22,7 +22,7 @@ std::size_t std::hash<CustomMemTensorInfo>::operator()(
   hash_val ^= std::hash<size_t>()(info.pos);
   hash_val ^= std::hash<size_t>()(info.tensor_bytes);
   for (int i = 0; i < info.rank; ++i) {
-    hash_val ^= info.shape[i];
+    hash_val ^= std::hash<uint32_t>()(info.shape[i]);
   }
   hash_val ^= std::hash<uint32_t>()(info.rank);
   hash_val ^= std::hash<executorch::aten::ScalarType>()(info.dtype);

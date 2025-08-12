@@ -7,16 +7,20 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
-
+#include <executorch/backends/qualcomm/runtime/backends/QnnOpPackageManager.h>
+#include <unordered_set>
 #include <vector>
 
 #include "HTP/QnnHtpCommon.h"
 #include "QnnBackend.h"
 #include "QnnCommon.h"
 #include "QnnTypes.h"
+#include "Saver/QnnSaverCommon.h"
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -34,7 +38,8 @@ class QnnBackend {
     return false;
   }
 
-  executorch::runtime::Error Configure();
+  executorch::runtime::Error Configure(
+      const QnnExecuTorchOpPackageOptions* op_package_options);
 
   Qnn_ErrorHandle_t BackendValidateOpConfig(const Qnn_OpConfig_t& op_config) {
     return implementation_.GetQnnInterface().qnn_backend_validate_op_config(
@@ -45,8 +50,7 @@ class QnnBackend {
     return handle_;
   }
 
-  executorch::runtime::Error VerifyQNNSDKVersion(
-      const QnnExecuTorchBackendType backend_id);
+  executorch::runtime::Error VerifyQNNSDKVersion();
 
  protected:
   virtual Qnn_Version_t GetExpectedBackendVersion() const = 0;
@@ -56,8 +60,13 @@ class QnnBackend {
   };
 
  private:
+  void BackendRegisterOpPackage(
+      const flatbuffers::Vector<
+          flatbuffers::Offset<qnn_delegate::QnnExecuTorchOpPackageInfo>>*
+          op_packages_info);
   Qnn_BackendHandle_t handle_;
   const QnnImplementation& implementation_;
+  QnnOpPackageManager op_package_manager_;
   QnnLogger* logger_;
   executorch::runtime::Error VersionChecker(
       const Qnn_Version_t& qnn_version,

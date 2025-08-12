@@ -16,12 +16,11 @@ namespace native {
 namespace internal {
 
 Tensor& unary_ufunc_realhbbf16_to_floathbf16(
-    double (*fn)(double),
+    float (*fn_float)(float),
+    double (*fn_double)(double),
     KernelRuntimeContext& ctx,
     const Tensor& in,
     Tensor& out) {
-  (void)ctx;
-
   ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
 
   // Resize for dynamic shape
@@ -41,9 +40,16 @@ Tensor& unary_ufunc_realhbbf16_to_floathbf16(
   ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, __func__, CTYPE_IN, [&] {
     ET_SWITCH_FLOATHBF16_TYPES(out_type, ctx, __func__, CTYPE_OUT, [&] {
       apply_unary_map_fn(
-          [fn](const CTYPE_IN val_in) {
-            CTYPE_OUT xi = static_cast<CTYPE_OUT>(val_in);
-            return static_cast<CTYPE_OUT>(fn(xi));
+          [fn_double, fn_float](const CTYPE_IN val_in) {
+            if constexpr (std::is_same_v<CTYPE_IN, double>) {
+              (void)fn_float;
+              double xi = static_cast<double>(val_in);
+              return static_cast<CTYPE_OUT>(fn_double(xi));
+            } else {
+              (void)fn_double;
+              float xi = static_cast<float>(val_in);
+              return static_cast<CTYPE_OUT>(fn_float(xi));
+            }
           },
           in.const_data_ptr<CTYPE_IN>(),
           out.mutable_data_ptr<CTYPE_OUT>(),

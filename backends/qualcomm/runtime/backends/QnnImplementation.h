@@ -10,12 +10,19 @@
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnFunctionInterface.h>
 
+#include <dlfcn.h>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 namespace executorch {
 namespace backends {
 namespace qnn {
+
+template <typename Fn>
+Fn loadQnnFunction(void* handle, const char* function_name) {
+  return reinterpret_cast<Fn>(dlsym(handle, function_name)); // NOLINT
+}
+
 class QnnImplementation {
  public:
   using BackendIdType = decltype(QnnInterface_t{}.backendId);

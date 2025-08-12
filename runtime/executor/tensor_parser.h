@@ -7,9 +7,12 @@
  */
 
 #pragma once
+
+#ifdef __GNUC__
 // Disable -Wdeprecated-declarations, as some builds use 'Werror'.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -18,7 +21,7 @@
 #include <executorch/schema/program_generated.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 namespace deserialization {
 
 /// Data structure to hold key and data buffer for external data used
@@ -53,8 +56,7 @@ ET_NODISCARD Error validateTensorLayout(
 // list of optionals: list of optional Tensor, list of optional float etc, so we
 // just use a template to avoid boilerplate.
 template <typename T>
-ET_NODISCARD Result<BoxedEvalueList<executorch::aten::optional<T>>>
-parseListOptionalType(
+ET_NODISCARD Result<BoxedEvalueList<std::optional<T>>> parseListOptionalType(
     const flatbuffers::Vector<int32_t>* value_indices,
     EValue* values,
     size_t values_len,
@@ -66,8 +68,8 @@ parseListOptionalType(
   }
 
   auto* optional_tensor_list =
-      memory_manager->method_allocator()
-          ->allocateList<executorch::aten::optional<T>>(value_indices->size());
+      memory_manager->method_allocator()->allocateList<std::optional<T>>(
+          value_indices->size());
   if (optional_tensor_list == nullptr) {
     return Error::MemoryAllocationFailed;
   }
@@ -84,24 +86,24 @@ parseListOptionalType(
     // copy assignment is not defined if its non trivial.
     if (index == -1) {
       new (&optional_tensor_list[output_idx])
-          executorch::aten::optional<T>(executorch::aten::nullopt);
+          std::optional<T>(executorch::aten::nullopt);
       // no value to point to. BoxedEvalueList for optional tensor will convert
       // this to nullopt.
       // TODO(T161156879): do something less hacky here.
       evalp_list[output_idx] = nullptr;
     } else {
       ET_CHECK_OR_RETURN_ERROR(
-          index >= 0 && index < values_len,
+          index >= 0 && static_cast<size_t>(index) < values_len,
           InvalidProgram,
           "Invalid value index %" PRId32 " for ListOptional",
           index);
       new (&optional_tensor_list[output_idx])
-          executorch::aten::optional<T>(values[index].toOptional<T>());
+          std::optional<T>(values[index].toOptional<T>());
       evalp_list[output_idx] = &values[static_cast<size_t>(index)];
     }
     output_idx++;
   }
-  return BoxedEvalueList<executorch::aten::optional<T>>(
+  return BoxedEvalueList<std::optional<T>>(
       evalp_list, optional_tensor_list, value_indices->size());
 }
 
@@ -139,7 +141,7 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     Span<NamedData> external_constants = {});
 
 } // namespace deserialization
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
 
 namespace torch {
@@ -147,11 +149,15 @@ namespace executor {
 namespace deserialization {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::deserialization::getTensorDataPtr;
-using ::executorch::runtime::deserialization::parseListOptionalType;
-using ::executorch::runtime::deserialization::parseTensor;
-using ::executorch::runtime::deserialization::parseTensorList;
+using ::executorch::ET_RUNTIME_NAMESPACE::deserialization::getTensorDataPtr;
+using ::executorch::ET_RUNTIME_NAMESPACE::deserialization::
+    parseListOptionalType;
+using ::executorch::ET_RUNTIME_NAMESPACE::deserialization::parseTensor;
+using ::executorch::ET_RUNTIME_NAMESPACE::deserialization::parseTensorList;
 } // namespace deserialization
 } // namespace executor
 } // namespace torch
+
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
