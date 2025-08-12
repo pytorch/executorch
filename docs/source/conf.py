@@ -142,6 +142,12 @@ source_suffix = [".rst", ".md"]
 
 autodoc_typehints = "none"
 
+html_context = {
+    "version": version,
+    "aar_version": "0.7.0",
+}
+
+
 # Add any paths that contain templates here, relative to this directory.
 # templates_path = ["../_templates"]
 
