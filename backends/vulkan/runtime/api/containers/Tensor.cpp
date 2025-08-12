@@ -517,6 +517,7 @@ void vTensorStorage::transition(
   vkapi::MemoryAccessFlags prev_access = last_access_.access;
 
   const bool prev_written = (prev_access & vkapi::MemoryAccessType::WRITE) != 0;
+  const bool cur_written = (cur_access & vkapi::MemoryAccessType::WRITE) != 0;
 
   VkImageLayout cur_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   VkImageLayout new_layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -528,7 +529,13 @@ void vTensorStorage::transition(
     layout_changed = cur_layout != new_layout;
   }
 
-  if (prev_written || layout_changed) {
+  // RAW: need to make sure current read sees previous writes
+  // WAW: need to make sure the current write occurs after previous write so
+  //      the final value is correct.
+  // WAR: need to make sure previous read does not read the value from the
+  //      current write.
+  // RAR: no need for synchronization
+  if (prev_written || cur_written || layout_changed) {
     VkPipelineStageFlags src_stage = vkapi::vk_stage(prev_stage);
     if (0u == src_stage) {
       src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;

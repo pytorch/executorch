@@ -11,8 +11,7 @@ import math
 
 from typing import Any, Tuple
 
-import executorch.backends.arm.tosa_specification as tosa_specification
-
+import serializer.tosa_serializer as ts  # type: ignore
 import torch.fx
 import torch.fx.node
 
@@ -247,25 +246,18 @@ def build_rescale_to_int32(
 ) -> Any:
     input_A_rescaled_to_int32 = None
 
-    if isinstance(tosa_spec, tosa_specification.Tosa_1_00):
-        # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
-        # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
-        import serializer.tosa_serializer as ts  # type: ignore
+    input_A_rescaled_to_int32 = tosa_fb.addIntermediate(input_arg.shape, ts.DType.INT32)
 
-        input_A_rescaled_to_int32 = tosa_fb.addIntermediate(
-            input_arg.shape, ts.DType.INT32
-        )
-
-        build_rescale(
-            tosa_fb,
-            [rescale_scale],
-            input_arg,
-            input_A_rescaled_to_int32.name,
-            ts.DType.INT32,
-            [input_zp],
-            [0],
-            rounding_mode=RoundingMode.SINGLE_ROUND,
-        )  # type: ignore[call-arg]
+    build_rescale(
+        tosa_fb,
+        [rescale_scale],
+        input_arg,
+        input_A_rescaled_to_int32.name,
+        ts.DType.INT32,
+        [input_zp],
+        [0],
+        rounding_mode=RoundingMode.SINGLE_ROUND,
+    )  # type: ignore[call-arg]
 
     return input_A_rescaled_to_int32
 
@@ -281,21 +273,19 @@ def build_rescale_from_int32(
     per_channel: bool = False,
     tosa_spec=None,
 ) -> None:
-    if isinstance(tosa_spec, tosa_specification.Tosa_1_00):
-        import serializer.tosa_serializer as ts  # type: ignore
+    # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
+    # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
+    build_rescale(
+        tosa_fb,
+        [rescale_scale],
+        input_node,
+        output_name=output_name,
+        output_type=ts.DType.INT8,
+        input_zp=[0],
+        output_zp=[output_zp],
+        rounding_mode=RoundingMode.SINGLE_ROUND,
+    )  # type: ignore[call-arg]
 
-        # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
-        # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
-        build_rescale(
-            tosa_fb,
-            [rescale_scale],
-            input_node,
-            output_name=output_name,
-            output_type=ts.DType.INT8,
-            input_zp=[0],
-            output_zp=[output_zp],
-            rounding_mode=RoundingMode.SINGLE_ROUND,
-        )  # type: ignore[call-arg]
     return
 
 
@@ -318,18 +308,17 @@ def build_rescale_conv_output(
         (inp * w) / out for inp, w, out in zip(input_scale, weight_scale, output_scale)
     ]
 
-    if isinstance(tosa_spec[0], tosa_specification.Tosa_1_00):
-        # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
-        # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
-        build_rescale(
-            tosa_fb=tosa_fb,
-            scale=post_conv2d_scale,
-            input_node=op,
-            output_name=output_name,
-            output_type=output_type,
-            input_zp=[0],
-            output_zp=output_zp,
-            rounding_mode=RoundingMode.SINGLE_ROUND,
-            per_channel=isinstance(weight_scale, torch.Tensor),
-        )  # type: ignore[call-arg]
+    # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
+    # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
+    build_rescale(
+        tosa_fb=tosa_fb,
+        scale=post_conv2d_scale,
+        input_node=op,
+        output_name=output_name,
+        output_type=output_type,
+        input_zp=[0],
+        output_zp=output_zp,
+        rounding_mode=RoundingMode.SINGLE_ROUND,
+        per_channel=isinstance(weight_scale, torch.Tensor),
+    )  # type: ignore[call-arg]
     return
