@@ -51,8 +51,8 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
 
   set(GEN_SPV_ARGS "--optimize")
   if(DEFINED ENV{ETVK_USING_SWIFTSHADER}
-     AND (("$ENV{ETVK_USING_SWIFTSHADER}" STREQUAL "1")
-          OR ("$ENV{ETVK_USING_SWIFTSHADER}" STREQUAL "True"))
+     and (("$ENV{ETVK_USING_SWIFTSHADER}" strequal "1")
+          or ("$ENV{ETVK_USING_SWIFTSHADER}" strequal "True"))
   )
     list(APPEND GEN_SPV_ARGS "--replace-u16vecn")
   endif()
