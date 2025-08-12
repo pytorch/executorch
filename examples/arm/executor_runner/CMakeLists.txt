@@ -20,6 +20,10 @@ option(ET_DUMP_OUTPUT "Dump output in log" ON)
 option(FETCH_ETHOS_U_CONTENT
        "Fetch ethos_u dependencies instead of relying on pre-downloads" ON
 )
+set(ET_NUM_INFERENCES
+    "1"
+    CACHE STRING "Number of inferences to run"
+)
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
@@ -77,6 +81,7 @@ set(MEMORY_MODE
 
 message(STATUS "SYSTEM_CONFIG is ${SYSTEM_CONFIG}")
 message(STATUS "MEMORY_MODE is ${MEMORY_MODE}")
+message(STATUS "ET_NUM_INFERENCES is ${ET_NUM_INFERENCES}")
 
 get_filename_component(ET_BUILD_DIR_PATH ${ET_BUILD_DIR_PATH} REALPATH)
 get_filename_component(ET_DIR_PATH ${ET_DIR_PATH} REALPATH)
@@ -115,25 +120,6 @@ find_package(
   executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
 )
 
-add_library(arm_portable_ops_lib STATIC IMPORTED)
-set_property(
-  TARGET arm_portable_ops_lib
-  PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/examples/arm/libarm_portable_ops_lib.a"
-)
-add_library(cortex_m_ops_lib STATIC IMPORTED)
-set_property(
-  TARGET cortex_m_ops_lib
-  PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_ops_lib.a"
-)
-add_library(cortex_m_kernels STATIC IMPORTED)
-set_property(
-  TARGET cortex_m_kernels
-  PROPERTY IMPORTED_LOCATION
-           "${ET_BUILD_DIR_PATH}/backends/cortex_m/libcortex_m_kernels.a"
-)
-
 # Convert pte to header
 if(NOT ${SEMIHOSTING})
   add_custom_target(
@@ -168,10 +154,9 @@ list(
   ethosu_target_init
   executorch
   quantized_ops_lib
+  cortex_m_ops_lib
   "-Wl,--whole-archive"
   executorch_delegate_ethos_u
-  cortex_m_ops_lib
-  arm_portable_ops_lib
   quantized_kernels
   cortex_m_kernels
   portable_kernels
@@ -179,6 +164,75 @@ list(
   -Xlinker
   -Map=arm_executor_runner.map
 )
+
+# Prefer to generate kernel bindings from model file if possible, which is when
+# 1. Not building for semihosting 2. Not building with bundleio If that is not
+# the case, fallback to select_ops_list If the model file does not contain any
+# aten ops, a workaround is currently needed to avoid crashing.
+execute_process(
+  COMMAND
+    python "${ET_DIR_PATH}/codegen/tools/gen_oplist.py"
+    --model_file_path=${ET_PTE_FILE_PATH}
+    --output_path=${CURRENT_BINARY_DIR}/temp.yaml
+  OUTPUT_VARIABLE CMD_RESULT
+)
+if(NOT CMD_RESULT MATCHES "aten::")
+  set(NO_OPS_IN_FILE "true")
+else()
+  set(NO_OPS_IN_FILE "false")
+endif()
+
+if(${SEMIHOSTING} OR ${ET_BUNDLE_IO})
+  set(EXECUTORCH_SELECT_OPS_MODEL "")
+elseif(${NO_OPS_IN_FILE})
+  set(EXECUTORCH_SELECT_OPS_LIST "")
+  set(EXECUTORCH_SELECT_OPS_MODEL "")
+else()
+  set(EXECUTORCH_SELECT_OPS_LIST "")
+  set(EXECUTORCH_SELECT_OPS_MODEL "${ET_PTE_FILE_PATH}")
+endif()
+
+# Ensure that either executorch_select_ops_list or executorch_select_ops_model
+# is set - otherwise assume no kernels needs to be registered
+if(NOT ("${EXECUTORCH_SELECT_OPS_LIST}" STREQUAL ""
+        AND "${EXECUTORCH_SELECT_OPS_MODEL}" STREQUAL "")
+)
+  set(EXECUTORCH_ROOT ${ET_DIR_PATH})
+  include(${ET_DIR_PATH}/tools/cmake/Utils.cmake)
+  include(${ET_DIR_PATH}/tools/cmake/Codegen.cmake)
+
+  gen_selected_ops(
+    LIB_NAME
+    "arm_portable_ops_lib"
+    OPS_SCHEMA_YAML
+    ""
+    ROOT_OPS
+    "${EXECUTORCH_SELECT_OPS_LIST}"
+    INCLUDE_ALL_OPS
+    ""
+    OPS_FROM_MODEL
+    "${EXECUTORCH_SELECT_OPS_MODEL}"
+    DTYPE_SELECTIVE_BUILD
+    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
+  )
+
+  generate_bindings_for_kernels(
+    LIB_NAME "arm_portable_ops_lib" FUNCTIONS_YAML
+    ${ET_DIR_PATH}/kernels/portable/functions.yaml DTYPE_SELECTIVE_BUILD
+    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
+  )
+  gen_operators_lib(
+    LIB_NAME
+    "arm_portable_ops_lib"
+    KERNEL_LIBS
+    portable_kernels
+    DEPS
+    executorch
+    DTYPE_SELECTIVE_BUILD
+    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
+  )
+  list(APPEND arm_executor_runner_link arm_portable_ops_lib)
+endif()
 
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   target_compile_options(arm_executor_runner PUBLIC -DET_EVENT_TRACER_ENABLED)
@@ -253,6 +307,12 @@ endif()
 
 if(ET_DUMP_OUTPUT)
   target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_OUTPUT)
+endif()
+
+if(ET_NUM_INFERENCES)
+  target_compile_definitions(
+    arm_executor_runner PUBLIC ET_NUM_INFERENCES=${ET_NUM_INFERENCES}
+  )
 endif()
 
 # Fixup compilation of retarget.c

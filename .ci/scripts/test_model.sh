@@ -201,7 +201,6 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=bert
   elif [[ "${MODEL_NAME}" == "conv_former" ]]; then
     EXPORT_SCRIPT=conv_former
-    EXTRA_FLAGS="--dataset imagenet-mini/val"
   elif [[ "${MODEL_NAME}" == "cvt" ]]; then
     EXPORT_SCRIPT=cvt
   elif [[ "${MODEL_NAME}" == "distilbert" ]]; then

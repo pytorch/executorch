@@ -36,10 +36,13 @@ from executorch.backends.arm._passes import (
     DecomposeAtanPass,
     DecomposeAvgPool2d,
     DecomposeBatchNormNoStatsPass,
+    DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
     DecomposeDivPass,
     DecomposeEmbeddingPass,
+    DecomposeExpm1Pass,
     DecomposeGeluPass,
+    DecomposeGluPass,
     DecomposeGroupedConv,
     DecomposeGroupNormPass,
     DecomposeLayerNormPass,
@@ -162,11 +165,13 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(DecomposeExpm1Pass())
         self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeAcoshPass())
         self.add_pass(DecomposeAsinPass())
         self.add_pass(DecomposeAsinhPass())
+        self.add_pass(DecomposeCoshPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeAtanPass())
         self.add_pass(DecomposeAtanhPass())
@@ -182,6 +187,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(FuseBatchnorm2DPass(exported_program))
         self.add_pass(ConvertMmToBmmPass())
+        self.add_pass(DecomposeGluPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeGroupNormPass())
@@ -262,6 +268,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeMeanDimPass(graph_module, self.tosa_spec))
         self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeCosineSimilarityPass())
+        self.add_pass(DecomposeGluPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeLinearVectorNormPass())

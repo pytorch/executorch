@@ -4,6 +4,8 @@ python_library(
     name = "passes",
     srcs = glob(["*.py"]),
     deps = [
+        "//executorch/backends/arm:common",
+        "//executorch/backends/arm:constants",
         "//executorch/backends/arm:tosa_quant_utils",
         "//executorch/backends/arm:tosa_utils",
         "//executorch/backends/arm/tosa/dialect:lib",

@@ -71,8 +71,6 @@ char* model_pte = nullptr;
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::aten::TensorImpl;
-using executorch::extension::BufferCleanup;
 using executorch::extension::BufferDataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
@@ -128,6 +126,12 @@ const float et_rtol = ET_RTOL;
 const float et_rtol = 0.01;
 #endif
 
+#endif
+
+#if defined(ET_NUM_INFERENCES)
+const int num_inferences = ET_NUM_INFERENCES;
+#else
+const int num_inferences = 1;
 #endif
 
 /**
@@ -638,21 +642,6 @@ void runner_init(
   ET_LOG(Info, "Input prepared.");
 }
 
-void run_model(RunnerContext& ctx) {
-  ET_LOG(Info, "Starting the model execution...");
-
-  StartMeasurements();
-  // Run the model.
-  Error status = ctx.method.value()->execute();
-  StopMeasurements();
-
-  ET_CHECK_MSG(
-      status == Error::Ok,
-      "Execution of method %s failed with status 0x%" PRIx32,
-      ctx.method_name,
-      status);
-}
-
 void log_mem_status(const RunnerContext& ctx) {
   size_t executor_memsize =
       ctx.method_allocator->used_size() - ctx.executor_membase;
@@ -770,7 +759,7 @@ void write_etdump(RunnerContext& ctx) {
   if (result.buf != nullptr && result.size > 0) {
     // On a device with no file system we can't just write it out
     // to the file-system so we base64 encode it and dump it on the log.
-    int mode = 0;
+    int mode = base64_enc_modifier_padding | base64_dec_modifier_skipspace;
     size_t len = result.size;
     size_t encoded_len = base64_encoded_size(result.size, mode);
     uint8_t* encoded_buf = reinterpret_cast<uint8_t*>(
@@ -851,6 +840,32 @@ void verify_result(RunnerContext& ctx, const void* model_pte) {
   (void)ctx;
   (void)model_pte;
 #endif
+}
+
+void run_model(RunnerContext& ctx, const void* model_pte) {
+  Error status;
+  ET_LOG(Info, "Starting running %d inferences...", num_inferences);
+
+  int n = 0;
+  StartMeasurements();
+  for (n = 1; n <= num_inferences; n++) {
+    // Run the model.
+    status = ctx.method.value()->execute();
+    if (status != Error::Ok) {
+      break;
+    }
+  }
+  StopMeasurements(n);
+
+  ET_CHECK_MSG(
+      status == Error::Ok,
+      "Execution of method %s failed with status 0x%" PRIx32,
+      ctx.method_name,
+      status);
+
+  ET_LOG(Info, "%d inferences finished", num_inferences);
+  print_outputs(ctx);
+  verify_result(ctx, model_pte);
 }
 
 } // namespace
@@ -934,11 +949,9 @@ int main(int argc, const char* argv[]) {
       Info, "PTE in %p %c Size: %lu bytes", model_pte, model_pte[0], pte_size);
 
   runner_init(ctx, input_buffers, pte_size);
-  run_model(ctx);
+  run_model(ctx, model_pte);
   log_mem_status(ctx);
-  print_outputs(ctx);
   write_etdump(ctx);
-  verify_result(ctx, model_pte);
 
   ET_LOG(Info, "Program complete, exiting.");
 #if defined(SEMIHOSTING)

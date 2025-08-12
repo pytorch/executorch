@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import logging
 import os
 import sys
 from multiprocessing.connection import Client
@@ -44,8 +45,11 @@ def main(args):
         )
 
     data_num = 100
-    if args.compile_only:
+    if args.ci:
         inputs = [(torch.rand(1, 3, 224, 224),)]
+        logging.warning(
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
+        )
     else:
         inputs, targets, input_list = get_imagenet_dataset(
             dataset_path=f"{args.dataset}",
@@ -132,7 +136,7 @@ if __name__ == "__main__":
             "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
         ),
         type=str,
-        required=True,
+        required=False,
     )
 
     args = parser.parse_args()
