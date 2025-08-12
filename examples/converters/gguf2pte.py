@@ -14,9 +14,9 @@ import torch
 model_id = "bartowski/SmolLM2-135M-Instruct-GGUF" # Here we would have our HF model in GGUF form we wish to convert
 filename = "SmolLM2-135M-Instruct-Q8_0.gguf"
 
-torch_dtype = torch.float32
 tokenizer = AutoTokenizer.from_pretrained(model_id, gguf_file=filename)
 model = AutoModelForCausalLM.from_pretrained(model_id, gguf_file=filename)
+print(f"Model weights dtype: {model.dtype}")
 model.eval()
 
 # Generate some sample input for our torch export
