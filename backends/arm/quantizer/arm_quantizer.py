@@ -20,12 +20,11 @@ import torch
 from executorch.backends.arm._passes import ArmPassManager
 
 from executorch.backends.arm.quantizer import QuantizationConfig
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
 
 from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
 from .quantization_annotator import annotate_graph
 from executorch.backends.arm.arm_backend import (
-    get_tosa_spec,
     is_ethosu,
     is_vgf,
 )  # usort: skip

@@ -11,6 +11,8 @@
 import argparse
 import logging
 
+import backends.vulkan.test.utils as test_utils
+
 import torch
 
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
@@ -32,12 +34,14 @@ from torch.export import export
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
 
-
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 def main() -> None:
+    logger = logging.getLogger("")
+    logger.setLevel(logging.INFO)
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
@@ -93,6 +97,14 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Export as bundled program (.bpte) instead of regular program (.pte). Default is False",
+    )
+
+    parser.add_argument(
+        "-t",
+        "--test",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Execute lower_module_and_test_output to validate the model. Default is False",
     )
 
     args = parser.parse_args()
@@ -160,6 +172,24 @@ def main() -> None:
 
     # Save the program
     output_filename = f"{args.model_name}_vulkan"
+
+    # Test the model if --test flag is provided
+    if args.test:
+        test_result = test_utils.run_and_check_output(
+            reference_model=model,
+            executorch_program=exec_prog,
+            sample_inputs=example_inputs,
+        )
+
+        if test_result:
+            logging.info(
+                "✓ Model test PASSED - outputs match reference within tolerance"
+            )
+        else:
+            logging.error("✗ Model test FAILED - outputs do not match reference")
+            raise RuntimeError(
+                "Model validation failed: ExecutorTorch outputs do not match reference model outputs"
+            )
 
     if args.bundled:
         # Create bundled program
