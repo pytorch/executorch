@@ -25,7 +25,6 @@ from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
     count_ops,
-    generate_csv_report,
     RunSummary,
     TestCaseSummary,
     TestResult,
@@ -250,7 +249,7 @@ def build_test_filter(args: argparse.Namespace) -> TestFilter:
 def runner_main():
     args = parse_args()
 
-    begin_test_session()
+    begin_test_session(args.report)
 
     if len(args.suite) > 1:
         raise NotImplementedError("TODO Support multiple suites.")
@@ -264,11 +263,6 @@ def runner_main():
 
     summary = complete_test_session()
     print_summary(summary)
-
-    if args.report is not None:
-        with open(args.report, "w") as f:
-            print(f"Writing CSV report to {args.report}.")
-            generate_csv_report(summary, f)
 
 
 if __name__ == "__main__":
