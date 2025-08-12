@@ -1,4 +1,9 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 
 import logging
 from typing import List, Optional, Tuple
@@ -367,7 +372,7 @@ def print_occurrences(edge_program, operator_list: List):
         )
 
 
-def op_ablation_test(
+def op_ablation_test(  # noqa: C901
     model: torch.nn.Module,
     sample_inputs: Tuple[torch.Tensor],
     atol=1e-03,
