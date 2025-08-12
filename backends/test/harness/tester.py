@@ -183,10 +183,10 @@ class Tester:
         assert stage_type in self.stages
         self.stages[stage_type] = stage
 
-    def _run_stage(self, stage_instance, inputs=None):
+    def _run_stage(self, stage_instance, inputs=None, *args, **kwargs):
         assert isinstance(stage_instance, Stage)
         prev_stage_artifact = self._pre(stage_instance)
-        stage_instance.run(prev_stage_artifact, inputs=inputs)
+        stage_instance.run(prev_stage_artifact, inputs=inputs, *args, **kwargs)  # noqa
         self._post(stage_instance)
         return self
 
@@ -213,11 +213,14 @@ class Tester:
         return res
 
     def to_edge_transform_and_lower(
-        self, to_edge_and_transform_stage: Optional[ToEdgeTransformAndLower] = None
+        self,
+        to_edge_and_transform_stage: Optional[ToEdgeTransformAndLower] = None,
+        generate_etrecord: bool = False,
     ):
         return self._run_stage(
             to_edge_and_transform_stage
-            or self._get_default_stage(StageType.TO_EDGE_TRANSFORM_AND_LOWER)
+            or self._get_default_stage(StageType.TO_EDGE_TRANSFORM_AND_LOWER),
+            generate_etrecord=generate_etrecord,
         )
 
     def run_passes(self, run_passes_stage: Optional[RunPasses] = None):

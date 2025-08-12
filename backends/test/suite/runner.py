@@ -16,11 +16,13 @@ from executorch.backends.test.suite.flow import TestFlow
 from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
+    count_ops,
     generate_csv_report,
     RunSummary,
     TestCaseSummary,
     TestResult,
 )
+from executorch.exir import EdgeProgramManager
 
 
 # A list of all runnable test suites and the corresponding python package.
@@ -98,13 +100,24 @@ def run_test(  # noqa: C901
 
     lower_start_time = time.perf_counter()
     try:
-        tester.to_edge_transform_and_lower()
+        tester.to_edge_transform_and_lower(generate_etrecord=True)
         elapsed = time.perf_counter() - lower_start_time
         extra_stats["lower_time"] = timedelta(seconds=elapsed)
     except Exception as e:
         elapsed = time.perf_counter() - lower_start_time
         extra_stats["lower_time"] = timedelta(seconds=elapsed)
         return build_result(TestResult.LOWER_FAIL, e)
+
+    # Compute delegation statistics. Use the ETRecord to access the edge dialect graph between
+    # to_edge and delegation. Note that ETRecord only stores the edge dialect graph for a single
+    # method currently and assumes it is called "forward".
+    edge_manager: EdgeProgramManager = tester.get_artifact()
+    edge_op_counts = count_ops({"forward": edge_manager._etrecord.edge_dialect_program})
+    undelegated_op_counts = count_ops(edge_manager._edge_programs)
+    delegated_op_counts = edge_op_counts - undelegated_op_counts
+
+    extra_stats["delegated_op_counts"] = delegated_op_counts
+    extra_stats["undelegated_op_counts"] = undelegated_op_counts
 
     is_delegated = any(
         n.target == torch._higher_order_ops.executorch_call_delegate
