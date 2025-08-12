@@ -19,6 +19,7 @@ from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.examples.xnnpack import MODEL_NAME_TO_OPTIONS, QuantType
 from executorch.exir.schema import DelegateCall, Program
 from executorch.export import export, ExportRecipe, recipe_registry
+from export.types import StageType
 from torch import nn
 from torch.testing._internal.common_quantization import TestHelperModules
 
@@ -38,6 +39,19 @@ class TestXnnpackRecipes(unittest.TestCase):
         self.assertEqual(len(instructions), 1)
         self.assertIsInstance(instructions[0].instr_args, DelegateCall)
 
+    # pyre-ignore
+    def _compare_eager_quantized_model_outputs(
+        self, session, example_inputs, atol: float
+    ) -> None:
+        """Utility to compare eager quantized model output with session output after coreml lowering"""
+        source_transform_output = session.get_stage_artifacts()[
+            StageType.SOURCE_TRANSFORM
+        ]
+        eager_quantized_model = source_transform_output.data["forward"]
+        output = session.run_method("forward", example_inputs[0])[0]
+        expected = eager_quantized_model(*example_inputs[0])
+        self.assertTrue(torch.allclose(output, expected, atol=atol))
+
     def test_basic_recipe(self) -> None:
         m_eager = TestHelperModules.TwoLinearModule().eval()
         example_inputs = [(torch.randn(9, 8),)]
@@ -46,13 +60,7 @@ class TestXnnpackRecipes(unittest.TestCase):
             example_inputs=example_inputs,
             export_recipe=ExportRecipe.get_recipe(XNNPackRecipeType.FP32),
         )
-        self.assertTrue(
-            torch.allclose(
-                session.run_method("forward", example_inputs[0])[0],
-                m_eager(*example_inputs[0]),
-                atol=1e-3,
-            )
-        )
+        self._compare_eager_quantized_model_outputs(session, example_inputs, 1e-3)
         self.check_fully_delegated(session.get_executorch_program())
 
     def test_int8_dynamic_quant_recipe(self) -> None:
@@ -70,12 +78,8 @@ class TestXnnpackRecipes(unittest.TestCase):
                         example_inputs=example_inputs,
                         export_recipe=export_recipe,
                     )
-                    self.assertTrue(
-                        torch.allclose(
-                            session.run_method("forward", example_inputs[0])[0],
-                            m_eager(*example_inputs[0]),
-                            atol=1e-1,
-                        )
+                    self._compare_eager_quantized_model_outputs(
+                        session, example_inputs, 1e-2
                     )
                     self.check_fully_delegated(session.get_executorch_program())
 
@@ -95,12 +99,8 @@ class TestXnnpackRecipes(unittest.TestCase):
                         example_inputs=example_inputs,
                         export_recipe=export_recipe,
                     )
-                    self.assertTrue(
-                        torch.allclose(
-                            session.run_method("forward", example_inputs[0])[0],
-                            m_eager(*example_inputs[0]),
-                            atol=1e-1,
-                        )
+                    self._compare_eager_quantized_model_outputs(
+                        session, example_inputs, 1e-2
                     )
                     self.check_fully_delegated(session.get_executorch_program())
 
@@ -133,14 +133,10 @@ class TestXnnpackRecipes(unittest.TestCase):
                     example_inputs=example_inputs,
                     export_recipe=export_recipe,
                 )
-                self.assertTrue(
-                    torch.allclose(
-                        session.run_method("forward", example_inputs[0])[0],
-                        model(*example_inputs[0]),
-                        atol=1e-2,
-                    )
-                )
                 self.check_fully_delegated(session.get_executorch_program())
+                self._compare_eager_quantized_model_outputs(
+                    session, example_inputs, 1e-2
+                )
 
     def _get_recipe_for_quant_type(self, quant_type: QuantType) -> XNNPackRecipeType:
         # Map QuantType to corresponding recipe name.

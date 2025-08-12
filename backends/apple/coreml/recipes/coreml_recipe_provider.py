@@ -59,11 +59,11 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
             return self._build_fp_recipe(recipe_type, ct.precision.FLOAT32, **kwargs)
         elif recipe_type == CoreMLRecipeType.FP16:
             return self._build_fp_recipe(recipe_type, ct.precision.FLOAT16, **kwargs)
-        elif recipe_type == CoreMLRecipeType.INT8_STATIC:
+        elif recipe_type == CoreMLRecipeType.PT2E_INT8_STATIC:
             return self._build_pt2e_quantized_recipe(
                 recipe_type, activation_dtype=torch.quint8, **kwargs
             )
-        elif recipe_type == CoreMLRecipeType.INT8_WEIGHT_ONLY:
+        elif recipe_type == CoreMLRecipeType.PT2E_INT8_WEIGHT_ONLY:
             return self._build_pt2e_quantized_recipe(
                 recipe_type, activation_dtype=torch.float32, **kwargs
             )
@@ -201,6 +201,19 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
                     f"Parameter 'block_size' must be a list, got {type(block_size).__name__}: {block_size}"
                 )
 
+    def _validate_and_set_deployment_target(
+        self, kwargs: Any, min_target: ct.target, quantization_type: str
+    ) -> None:
+        """Validate or set minimum deployment target for quantization recipes"""
+        minimum_deployment_target = kwargs.get("minimum_deployment_target", None)
+        if minimum_deployment_target and minimum_deployment_target < min_target:
+            raise ValueError(
+                f"minimum_deployment_target must be {str(min_target)} or higher for {quantization_type} quantization"
+            )
+        else:
+            # Default to the minimum target for this quantization type
+            kwargs["minimum_deployment_target"] = min_target
+
     def _build_fp_recipe(
         self,
         recipe_type: RecipeType,
@@ -227,13 +240,7 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
         """Build PT2E-based quantization recipe"""
         from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
 
-        minimum_deployment_target = kwargs.get("minimum_deployment_target", None)
-        if minimum_deployment_target and minimum_deployment_target < ct.target.iOS17:
-            raise ValueError(
-                "minimum_deployment_target must be iOS17 or higher for codebook quantization"
-            )
-        # Default to iOS17 for  quantization
-        kwargs["minimum_deployment_target"] = ct.target.iOS17
+        self._validate_and_set_deployment_target(kwargs, ct.target.iOS17, "pt2e")
 
         # Validate activation_dtype
         assert activation_dtype in [
@@ -292,7 +299,7 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
         )
 
         # override minimum_deployment_target to ios18 for torchao (GH issue #13122)
-        kwargs["minimum_deployment_target"] = ct.target.iOS18
+        self._validate_and_set_deployment_target(kwargs, ct.target.iOS18, "torchao")
         lowering_recipe = self._get_coreml_lowering_recipe(**kwargs)
 
         return ExportRecipe(
@@ -313,13 +320,7 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
             CodebookWeightOnlyConfig,
         )
 
-        minimum_deployment_target = kwargs.get("minimum_deployment_target", None)
-        if minimum_deployment_target and minimum_deployment_target < ct.target.iOS18:
-            raise ValueError(
-                "minimum_deployment_target must be iOS18 or higher for codebook quantization"
-            )
-        # Default to iOS18 for codebook quantization
-        kwargs["minimum_deployment_target"] = ct.target.iOS18
+        self._validate_and_set_deployment_target(kwargs, ct.target.iOS18, "codebook")
 
         # Get the appropriate dtype (torch.uint1 through torch.uint8)
         dtype = getattr(torch, f"uint{bits}")

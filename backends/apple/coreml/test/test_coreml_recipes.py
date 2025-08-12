@@ -18,8 +18,11 @@ from executorch.backends.apple.coreml.test.test_coreml_utils import (
 )
 from executorch.exir.schema import DelegateCall
 from executorch.export import export, ExportRecipe, recipe_registry
+
+from export.types import StageType
 from torch import nn
 from torch.testing._internal.common_quantization import TestHelperModules
+from torchao.quantization.utils import compute_error
 
 
 class TestCoreMLRecipes(unittest.TestCase):
@@ -44,6 +47,28 @@ class TestCoreMLRecipes(unittest.TestCase):
         self.assertEqual(len(instructions), 1)
         self.assertIsInstance(instructions[0].instr_args, DelegateCall)
 
+    def _compare_eager_quantized_model_outputs(self, session, example_inputs, atol):
+        """Utility to compare eager quantized model output with session output after coreml lowering"""
+        if IS_VALID_TEST_RUNTIME:
+            source_transform_output = session.get_stage_artifacts()[
+                StageType.SOURCE_TRANSFORM
+            ]
+            eager_quantized_model = source_transform_output.data["forward"]
+            output = session.run_method("forward", example_inputs[0])[0]
+            expected = eager_quantized_model(*example_inputs[0])
+            self.assertTrue(torch.allclose(output, expected, atol=atol))
+
+    def _compare_eager_unquantized_model_outputs(
+        self, session, eager_unquantized_model, example_inputs, sqnr_threshold=20
+    ):
+        """tility to compare eager unquantized model output with session output using SQNR"""
+        if IS_VALID_TEST_RUNTIME:
+            quantized_output = session.run_method("forward", example_inputs[0])[0]
+            original_output = eager_unquantized_model(*example_inputs[0])
+            error = compute_error(original_output, quantized_output)
+            print(f"SQNR: {error} dB")
+            self.assertTrue(error > sqnr_threshold)
+
     def test_fp32_recipe(self):
         """Test FP32 recipe functionality"""
         model = TestHelperModules.TwoLinearModule().eval()
@@ -56,10 +81,8 @@ class TestCoreMLRecipes(unittest.TestCase):
         )
         self.check_fully_delegated(session)
 
-        if IS_VALID_TEST_RUNTIME:
-            output = session.run_method("forward", example_inputs[0])[0]
-            expected = model(*example_inputs[0])
-            self.assertTrue(torch.allclose(output, expected, atol=1e-3))
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-3)
+        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_fp16_recipe(self):
         """Test FP16 recipe functionality"""
@@ -73,10 +96,8 @@ class TestCoreMLRecipes(unittest.TestCase):
         )
         self.check_fully_delegated(session)
 
-        if IS_VALID_TEST_RUNTIME:
-            output = session.run_method("forward", example_inputs[0])[0]
-            expected = model(*example_inputs[0])
-            self.assertTrue(torch.allclose(output, expected, atol=1e-3))
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-3)
+        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_fp_recipes_with_custom_parameters(self):
         """Test FP recipes with custom deployment target and compute unit"""
@@ -110,17 +131,25 @@ class TestCoreMLRecipes(unittest.TestCase):
             ),
         )
         self.check_fully_delegated(session)
-
-        if IS_VALID_TEST_RUNTIME:
-            output = session.run_method("forward", example_inputs[0])[0]
-            expected = model(*example_inputs[0])
-            self.assertTrue(torch.allclose(output, expected, atol=1e-2))
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-02)
+        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_int4_weight_only_per_group(self):
         """Test INT4 weight-only per-group quantization with different group sizes"""
-        model = TestHelperModules.TwoLinearModule().eval()
-        example_inputs = [(torch.randn(9, 8),)]
 
+        class CustomTwoLinearModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.layer1 = nn.Linear(32, 32)
+                self.layer2 = nn.Linear(32, 8)
+
+            def forward(self, x):
+                x = torch.relu(self.layer1(x))
+                x = self.layer2(x)
+                return x
+
+        model = CustomTwoLinearModel().eval()
+        example_inputs = [(torch.randn(1, 32),)]
         # Test with different group sizes
         for group_size in [8, 16, 32]:
             with self.subTest(group_size=group_size):
@@ -134,10 +163,12 @@ class TestCoreMLRecipes(unittest.TestCase):
                 )
                 self.check_fully_delegated(session)
 
-                if IS_VALID_TEST_RUNTIME:
-                    output = session.run_method("forward", example_inputs[0])[0]
-                    expected = model(*example_inputs[0])
-                    self.assertTrue(torch.allclose(output, expected, atol=1e-3))
+                self._compare_eager_quantized_model_outputs(
+                    session, example_inputs, atol=1e-3
+                )
+                self._compare_eager_unquantized_model_outputs(
+                    session, model, example_inputs
+                )
 
     def test_int4_weight_only_per_group_validation(self):
         """Test INT4 per-group parameter validation"""
@@ -177,10 +208,8 @@ class TestCoreMLRecipes(unittest.TestCase):
         )
         self.check_fully_delegated(session)
 
-        if IS_VALID_TEST_RUNTIME:
-            output = session.run_method("forward", example_inputs[0])[0]
-            expected = model(*example_inputs[0])
-            self.assertTrue(torch.allclose(output, expected, atol=1e-2))
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-2)
+        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_int8_weight_only_per_group(self):
         """Test INT8 weight-only per-group quantization with different group sizes"""
@@ -209,10 +238,12 @@ class TestCoreMLRecipes(unittest.TestCase):
                 )
                 self.check_fully_delegated(session)
 
-                if IS_VALID_TEST_RUNTIME:
-                    output = session.run_method("forward", example_inputs[0])[0]
-                    expected = model(*example_inputs[0])
-                    self.assertTrue(torch.allclose(output, expected, atol=1e-2))
+                self._compare_eager_quantized_model_outputs(
+                    session, example_inputs, atol=1e-2
+                )
+                self._compare_eager_unquantized_model_outputs(
+                    session, model, example_inputs
+                )
 
     def test_codebook_weight_only_default(self):
         """Test codebook quantization with default parameters (3 bits)"""
@@ -232,15 +263,14 @@ class TestCoreMLRecipes(unittest.TestCase):
             model=model,
             example_inputs=example_inputs,
             export_recipe=ExportRecipe.get_recipe(
-                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY
+                CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY,
+                block_size=[-1, 8],
             ),
         )
         self.check_fully_delegated(session)
 
-        if IS_VALID_TEST_RUNTIME:
-            output = session.run_method("forward", example_inputs[0])[0]
-            expected = model(*example_inputs[0])
-            self.assertTrue(torch.allclose(output, expected, atol=1e-3))
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-3)
+        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_codebook_weight_only_custom_bits(self):
         """Test codebook quantization with different bit configurations"""
@@ -264,10 +294,8 @@ class TestCoreMLRecipes(unittest.TestCase):
         )
         self.check_fully_delegated(session)
 
-        if IS_VALID_TEST_RUNTIME:
-            output = session.run_method("forward", example_inputs[0])[0]
-            expected = model(*example_inputs[0])
-            self.assertTrue(torch.allclose(output, expected, atol=2e-3))
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-3)
+        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_codebook_weight_only_custom_block_size(self):
         """Test codebook quantization with custom block sizes"""
@@ -340,7 +368,7 @@ class TestCoreMLRecipes(unittest.TestCase):
         example_inputs = [(torch.randn(1, 32),)]
 
         recipe = ExportRecipe.get_recipe(
-            CoreMLRecipeType.INT8_STATIC, minimum_deployment_target=ct.target.iOS17
+            CoreMLRecipeType.PT2E_INT8_STATIC, minimum_deployment_target=ct.target.iOS17
         )
 
         session = export(
@@ -350,11 +378,8 @@ class TestCoreMLRecipes(unittest.TestCase):
         )
         self.check_fully_delegated(session)
 
-        if IS_VALID_TEST_RUNTIME:
-            output = session.run_method("forward", example_inputs[0])[0]
-            expected = model(*example_inputs[0])
-            # Higher tolerance for static quantization due to activation quantization
-            self.assertTrue(torch.allclose(output, expected, atol=1e-2))
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-3)
+        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_int8_weight_only_pt2e(self):
         """Test PT2E-based INT8 weight-only quantization"""
@@ -364,15 +389,14 @@ class TestCoreMLRecipes(unittest.TestCase):
         session = export(
             model=model,
             example_inputs=example_inputs,
-            export_recipe=ExportRecipe.get_recipe(CoreMLRecipeType.INT8_WEIGHT_ONLY),
+            export_recipe=ExportRecipe.get_recipe(
+                CoreMLRecipeType.PT2E_INT8_WEIGHT_ONLY
+            ),
         )
         self.check_fully_delegated(session)
 
-        if IS_VALID_TEST_RUNTIME:
-            output = session.run_method("forward", example_inputs[0])[0]
-            expected = model(*example_inputs[0])
-            # More lenient tolerance for weight-only quantization
-            self.assertTrue(torch.allclose(output, expected, atol=1e-2))
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-2)
+        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_int8_weight_only_pt2e_with_conv(self):
         """Test PT2E-based INT8 weight-only quantization with convolution layers"""
@@ -399,19 +423,22 @@ class TestCoreMLRecipes(unittest.TestCase):
         session = export(
             model=model,
             example_inputs=example_inputs,
-            export_recipe=ExportRecipe.get_recipe(CoreMLRecipeType.INT8_WEIGHT_ONLY),
+            export_recipe=ExportRecipe.get_recipe(
+                CoreMLRecipeType.PT2E_INT8_WEIGHT_ONLY
+            ),
         )
         self.check_fully_delegated(session)
 
-        if IS_VALID_TEST_RUNTIME:
-            output = session.run_method("forward", example_inputs[0])[0]
-            expected = model(*example_inputs[0])
-            self.assertTrue(torch.allclose(output, expected, atol=1e-3))
+        self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-2)
+        self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
 
     def test_pt2e_recipes_parameter_rejection(self):
         """Test that PT2E recipes reject TorchAO-specific parameters"""
         # PT2E recipes should reject TorchAO-specific parameters
-        pt2e_recipes = [CoreMLRecipeType.INT8_STATIC, CoreMLRecipeType.INT8_WEIGHT_ONLY]
+        pt2e_recipes = [
+            CoreMLRecipeType.PT2E_INT8_STATIC,
+            CoreMLRecipeType.PT2E_INT8_WEIGHT_ONLY,
+        ]
         torchao_params = ["filter_fn", "group_size", "bits", "block_size"]
 
         for recipe_type in pt2e_recipes:
@@ -517,3 +544,51 @@ class TestCoreMLRecipes(unittest.TestCase):
                 recipe = self.provider.create_recipe(recipe_type)
                 self.assertIsNotNone(recipe)
                 self.assertEqual(recipe.name, recipe_type.value)
+
+    def test_minimum_deployment_target_validation(self):
+        """Test that minimum_deployment_target validation works correctly for quantization recipes"""
+        test_cases = [
+            (CoreMLRecipeType.PT2E_INT8_STATIC, ct.target.iOS17),
+            (CoreMLRecipeType.PT2E_INT8_WEIGHT_ONLY, ct.target.iOS17),
+            (CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_CHANNEL, ct.target.iOS18),
+            (CoreMLRecipeType.INT4_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18),
+            (CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_CHANNEL, ct.target.iOS18),
+            (CoreMLRecipeType.INT8_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18),
+            (CoreMLRecipeType.CODEBOOK_WEIGHT_ONLY, ct.target.iOS18),
+        ]
+
+        for recipe_type, min_target in test_cases:
+            with self.subTest(recipe=recipe_type.value):
+
+                # Test 1: Providing deployment target below minimum should raise ValueError
+                too_low_target = ct.target.iOS15
+                with self.assertRaises(ValueError) as cm:
+                    self.provider.create_recipe(
+                        recipe_type, minimum_deployment_target=too_low_target
+                    )
+                error_msg = str(cm.exception)
+                self.assertIn(
+                    f"minimum_deployment_target must be {str(min_target)} or higher",
+                    error_msg,
+                )
+
+                # Test 2: Providing valid deployment target should work
+                valid_recipe = self.provider.create_recipe(
+                    recipe_type, minimum_deployment_target=min_target
+                )
+                self.assertIsNotNone(valid_recipe)
+
+                # Test 3: Not providing deployment target should default to minimum
+                default_recipe = self.provider.create_recipe(recipe_type)
+                self.assertIsNotNone(default_recipe)
+
+                # Test 4: Providing deployment target higher than minimum should work
+                higher_target = (
+                    ct.target.iOS18
+                    if min_target == ct.target.iOS17
+                    else ct.target.iOS18
+                )
+                higher_recipe = self.provider.create_recipe(
+                    recipe_type, minimum_deployment_target=higher_target
+                )
+                self.assertIsNotNone(higher_recipe)

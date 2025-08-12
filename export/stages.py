@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Sequence
@@ -297,16 +298,14 @@ class SourceTransformStage(Stage):
         assert isinstance(artifact.data, dict)
 
         # Store the original models
-        self._transformed_models = artifact.data
+        self._transformed_models = copy.deepcopy(artifact.data)
 
         # Apply torchao quantize_ to each model
-        for method_name, model in artifact.data.items():
+        for _, model in artifact.data.items():
             # pyre-ignore
             for ao_config in self._quantization_recipe.ao_quantization_configs:
                 quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
                 unwrap_tensor_subclass(model)
-
-            self._transformed_models[method_name] = model
 
         self._artifact = artifact.copy_with_new_data(self._transformed_models)
 
