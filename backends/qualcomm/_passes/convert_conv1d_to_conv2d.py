@@ -99,12 +99,13 @@ class ConvertConv1dToConv2d(ExportPass):
                         )
 
                         num_args = len(node.args)
-                        bias_node = node.args[2]
+
+                        bias_node = node.args[2] if num_args > 2 else None
                         stride = [1] + node.args[3] if num_args > 3 else [1, 1]
                         padding = [0] + node.args[4] if num_args > 4 else [0, 0]
                         if node.target == torch.ops.aten.conv1d.default:
                             dilation = [1] + node.args[5] if num_args > 5 else [1, 1]
-                            groups = node.args[6] if num_args > 5 else 1
+                            groups = node.args[6] if num_args > 6 else 1
                             conv_args = (
                                 qdq_node_after_unsqueeze,
                                 node.args[1],

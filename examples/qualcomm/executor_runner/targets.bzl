@@ -1,9 +1,6 @@
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
-    "APPLE",
-    "CXX",
-    "is_apple_platform",
 )
 load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
@@ -32,6 +29,7 @@ def define_common_targets():
             "//executorch/extension/runner_util:inputs",
             "//executorch/backends/qualcomm/runtime:runtime",
         ],
+        platforms = [ANDROID],
         external_deps = [
             "gflags",
         ],

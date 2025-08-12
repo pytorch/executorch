@@ -12,6 +12,7 @@ def define_common_targets():
             "//executorch/backends/cadence/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        compatible_with = ["ovr_config//cpu:xtensa"],
         deps = [
             "fbsource//third-party/nnlib-hifi4/xa_nnlib:libxa_nnlib",
         ],

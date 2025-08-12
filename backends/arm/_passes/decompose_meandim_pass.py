@@ -3,11 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from copy import copy
 from math import prod
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm.operator_support.pool_2d_support import AvgPool2dSupported
+from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -60,42 +63,60 @@ class DecomposeMeanDimPass(ArmPass):
         x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
     """
 
+    def __init__(self, graph_module, tosa_spec):
+        super().__init__()
+        self._graph_module = graph_module
+        self._tosa_spec = tosa_spec
+        self._avg_pool_checker = AvgPool2dSupported(
+            self._tosa_spec, WhyNoPartitionReporter()
+        )
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in (exir_ops.edge.aten.mean.dim, torch.ops.aten.mean.dim):
             return super().call_operator(op, args, kwargs, meta)
 
         x = get_node_arg(args, 0)
-        input_shape = x.data.size()
-        output_shape = meta["val"].size()
+        input_shape = list(x.data.shape)
+        output_shape = list(meta["val"].shape)
         dims_to_reduce = get_node_arg(args, 1)
         dims_to_reduce = [dim % len(input_shape) for dim in dims_to_reduce]
+        dims_to_reduce = [dim for dim in dims_to_reduce if input_shape[dim] != 1]
 
         dtype = meta["val"].dtype
         view_op = get_view(op)
 
-        if len(input_shape) > 4:
-            raise NotImplementedError(
-                f"{op} with rank > 4 is currently not supported for the TOSA backend."
-            )
+        # Reshape to 4D
+        if len(input_shape) != 4:
+            new_shape = copy(input_shape)
 
-        # Unsqueeze to 4D
-        if len(input_shape) < 4:
-            pad_n = 4 - len(input_shape)
-            new_shape = [1] * pad_n + list(input_shape)
-            dims_to_reduce = [dim + pad_n for dim in dims_to_reduce]
+            while len(new_shape) < 4:
+                new_shape.insert(0, 1)
+                dims_to_reduce = [dim + 1 for dim in dims_to_reduce]
+
+            while len(new_shape) > 4:
+                i = new_shape.pop(0)
+                new_shape[0] = new_shape[0] * i
+                dims_to_reduce = [dim - 1 for dim in dims_to_reduce]
 
             x = super().call_operator(view_op, (x, new_shape), {}, meta, True)
 
-        # Reduce (h,w) by avg pool
-        dims_to_reduce_by_avgpool = [dim for dim in dims_to_reduce if dim >= 2]
-        x = self._reduce_by_average_pool(op, x, dims_to_reduce_by_avgpool, meta)
+        # Reduce (h,w) dims by avg pool if possible
+        x, dims_to_reduce = self._reduce_by_average_pool(op, x, dims_to_reduce, meta)
 
-        # Reduce (n, c) by reduce sum
-        dims_to_reduce_by_sum = [dim for dim in dims_to_reduce if dim < 2]
-        x = self._reduce_by_sum(op, x, dims_to_reduce_by_sum, meta, dtype)
+        # Reshape back to 5D if necessary
+        if len(input_shape) > 4:
+            original_dims = input_shape[0:-3]
+            temp_shape = list(x.data.shape)[1:]
+            temp_shape = original_dims + temp_shape
+            dims_to_reduce = [dim + len(original_dims) - 1 for dim in dims_to_reduce]
+
+            x = super().call_operator(view_op, (x, temp_shape), {}, meta, True)
+
+        # Reduce remaining dims by sum
+        x = self._reduce_by_sum(op, x, dims_to_reduce, meta, dtype)
 
         # Reshape to correct output shape if necessary
-        if x.data.size() != output_shape:
+        if list(x.data.shape) != output_shape:
             x = super().call_operator(view_op, (x, output_shape), {}, meta, True)
 
         return x
@@ -116,22 +137,41 @@ class DecomposeMeanDimPass(ArmPass):
         return super().call_operator(mul_op, (sum, full), {}, meta, True)
 
     def _reduce_by_average_pool(self, op, input_node, dims, meta):
-        if len(dims) == 0:
-            return input_node
+        dims_to_reduce_by_avgpool = [dim for dim in dims if dim >= 2]
+        if len(dims_to_reduce_by_avgpool) == 0:
+            return input_node, dims
+
+        dims_to_reduce_by_sum = [dim for dim in dims if dim < 2]
 
         avgpool_op = get_avgpool(op)
         input_shape = input_node.data.size()
 
         stride = [1, 1]
-        if dims in ([2, 3], [3, 2]):
+        if dims_to_reduce_by_avgpool in ([2, 3], [3, 2]):
             kernel_size = [input_shape[2], input_shape[3]]
-        elif dims == [3]:
+        elif dims_to_reduce_by_avgpool == [3]:
             kernel_size = [1, input_shape[3]]
-        elif dims == [2]:
+        elif dims_to_reduce_by_avgpool == [2]:
             kernel_size = [input_shape[2], 1]
         else:
-            raise RuntimeError(f"Bad dims {dims} for {op} decomposition of mean_dim.")
+            raise RuntimeError(
+                f"Bad dims {dims_to_reduce_by_avgpool} for {op} decomposition of mean_dim."
+            )
 
-        return super().call_operator(
-            avgpool_op, (input_node, kernel_size, stride), {}, meta, True
+        args = (input_node, kernel_size, stride)
+
+        avg_pool_node = self._graph_module.graph.create_node(
+            "call_function", avgpool_op, args
         )
+        is_supported = self._avg_pool_checker.is_node_tosa_supported(
+            avg_pool_node, self._tosa_spec
+        )
+
+        if is_supported:
+            return (
+                super().call_operator(avgpool_op, args, {}, meta, True),
+                dims_to_reduce_by_sum,
+            )
+
+        else:
+            return input_node, dims

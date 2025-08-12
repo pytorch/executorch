@@ -7,7 +7,7 @@
 
 set -x
 
-pip install -U moshi
+pip install moshi==0.2.4
 pip install bitsandbytes soundfile
 # Run llama2/install requirements for torchao deps
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )

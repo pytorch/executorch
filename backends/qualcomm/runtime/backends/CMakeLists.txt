@@ -68,11 +68,12 @@ target_sources(
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.h
          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.h
          ${CMAKE_CURRENT_LIST_DIR}/irbackend/IrContext.h
-  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
-          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.cpp
-          ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContextCustomConfig.h
-          ${HOST_ARCHITECTURE}/HtpContextCustomConfig.cpp
-          ${CMAKE_CURRENT_LIST_DIR}/irbackend/${CMAKE_SYSTEM_PROCESSOR}/IrContext.cpp
+  PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContextCustomConfig.h
+    ${HOST_ARCHITECTURE}/HtpContextCustomConfig.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/irbackend/${CMAKE_SYSTEM_PROCESSOR}/IrContext.cpp
 )
 
 # qnn_backend_cache
@@ -94,6 +95,13 @@ target_sources(
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.h
           ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.cpp
           ${HOST_ARCHITECTURE}/HtpGraphCustomConfig.cpp
+)
+
+# qnn_op_package_manager
+target_sources(
+  qnn_op_package_manager
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnOpPackageManager.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnOpPackageManager.cpp
 )
 
 # qnn_backend
@@ -130,5 +138,6 @@ target_sources(
 target_sources(
   qnn_dlc_manager
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/QnnDlcManager.h
-  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/irbackend/${CMAKE_SYSTEM_PROCESSOR}/QnnDlcManager.cpp
+  PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/irbackend/${CMAKE_SYSTEM_PROCESSOR}/QnnDlcManager.cpp
 )

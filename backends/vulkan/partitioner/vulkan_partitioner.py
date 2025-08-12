@@ -7,7 +7,7 @@
 # pyre-strict
 
 import logging
-from typing import Any, Callable, Dict, final, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, final, List, Mapping, Optional, Set, Tuple
 
 import executorch.backends.vulkan.utils as utils
 
@@ -17,6 +17,7 @@ from executorch.backends.vulkan.op_registry import (
     get_op_features,
     has_impl,
     OpFeatures,
+    OpKey,
     vulkan_supported_ops,
 )
 
@@ -55,11 +56,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
         texture_limits: utils.ImageExtents,
         buffer_limit: int,
         require_dynamic_shape: bool = False,
+        operator_blocklist: Optional[Set[OpKey]] = None,
+        operator_allowlist: Optional[Set[OpKey]] = None,
     ) -> None:
         super().__init__()
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
+        self.operator_blocklist: Set[OpKey] = (
+            operator_blocklist if operator_blocklist is not None else set()
+        )
+        self.operator_allowlist = operator_allowlist
 
     def op_node_is_compatible(  # noqa: C901: Function is too complex
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -77,79 +84,46 @@ class VulkanSupportedOperators(OperatorSupportBase):
             assert isinstance(first_arg, torch._ops.OpOverload)
             target = first_arg.name()
 
+        # Operator allow list is only used for torch ops
+        if (
+            utils.is_torch_op_node(node)
+            and (self.operator_allowlist is not None)
+            and (target not in self.operator_allowlist)
+        ):
+            return False, "op is not in allowlist"
+
+        if target in self.operator_blocklist:
+            return False, "op is in blocklist"
+
         # Extract the features for the node's operator, if no override was provided
         if features is None:
             if not has_impl(target):
                 return False, "no operator implementation"
             features = get_op_features(target)
 
-        # Check for high dimensional tensors
-        if utils.is_tensor_node(node) and utils.tensor_node_is_high_dim(node):
-            return False, "contains high dim tensor"
-
-        valid_texture_layouts = utils.possible_node_memory_layouts(
+        # Get the possible tensor representations for each tensor participating in the
+        # this operator. Then check that all tensors are representable as either a
+        # buffer or texture.
+        op_repsets: utils.OpRepSets = features.make_op_repsets(
             node, self.texture_limits
         )
 
-        can_use_buffers = utils.within_buffer_limit(node, self.buffer_limit)
-        for i, arg in enumerate(node.args):
-            if (
-                isinstance(arg, torch.fx.Node)
-                and utils.is_tensor_node(arg)
-                and i not in features.skip_limits_check
-            ):
-                # Check for bool inputs
-                if utils.tensor_node_is_bool(arg):
-                    return False, "contains bool tensor"
+        if op_repsets.any_is_empty():
+            return (
+                False,
+                f"no valid representations for op {utils.node_io_str(node)}",
+            )
 
-                # Check for high dimensional tensors
-                if utils.tensor_node_is_high_dim(arg):
-                    return False, "contains high dim tensor"
-
-                arg_texture_layouts = utils.possible_node_memory_layouts(
-                    arg, self.texture_limits
-                )
-                valid_texture_layouts = valid_texture_layouts.intersection(
-                    arg_texture_layouts
-                )
-                can_use_buffers = can_use_buffers and utils.within_buffer_limit(
-                    arg, self.buffer_limit
-                )
-
-        # If there are no valid texture memory layouts, then buffer storage must be
-        # supported by the operator implementation.
-        if len(valid_texture_layouts) == 0:
-            if not can_use_buffers:
-                return (
-                    False,
-                    f"op requires buffers that exceed the buffer limit ({self.buffer_limit})",
-                )
-
-            compatible = VkStorageType.BUFFER in features.supported_storage_types()
-            reason = "op is compatible"
-            if not compatible:
-                reason = "op requires buffers which is not supported by op impl"
-            return compatible, reason
-
-        op_available_layouts = features.supported_memory_layouts(
-            VkStorageType.TEXTURE_3D
-        )
-
-        is_compatible = any(
-            layout in op_available_layouts for layout in valid_texture_layouts
-        )
-        if not is_compatible:
-            return False, "Required texutre memory layout not supported"
-
-        return is_compatible, "Op is compatible"
+        return True, "Op is compatible"
 
     def node_is_compatible(
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
     ) -> Tuple[bool, str]:
-        if utils.is_symint_node(node):
-            return node.target in vulkan_supported_ops, "Op is compatible"
-        elif utils.is_tensor_node(node):
+        if utils.is_tensor_node(node):
             return self.op_node_is_compatible(node, features=features)
+        # For non-tensor nodes, just check if the op is registered
+        elif hasattr(node, "target"):
+            return node.target in vulkan_supported_ops, "Op is compatible"
 
         return False, f"Unsupported node type: {node.format_node()}"
 
@@ -267,11 +241,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         assert features is not None
 
-        if not features.check_node_fn(node):
+        if not features.are_node_inputs_supported_fn(node):
             self.log_skip(node, "op args not supported")
             return False
 
-        if self.require_dynamic_shapes and not features.resize_fn:
+        if self.require_dynamic_shapes and not features.supports_resize:
             self.log_skip(node, "no dynamic shape support")
             return False
 
@@ -321,6 +295,8 @@ class VulkanPartitioner(Partitioner):
     def __init__(
         self,
         compile_options: Optional[Dict[str, Any]] = None,
+        operator_blocklist: Optional[List[OpKey]] = None,
+        operator_allowlist: Optional[List[OpKey]] = None,
     ) -> None:
         self.options: Dict[str, Any] = {}
         if compile_options is not None:
@@ -329,10 +305,25 @@ class VulkanPartitioner(Partitioner):
         compile_spec = parse_compile_options(self.options)
         self.delegation_spec = DelegationSpec(VulkanBackend.__name__, compile_spec)
 
+        self.operator_blocklist: Set[OpKey] = set()
+        if operator_blocklist is not None:
+            for entry in operator_blocklist or []:
+                self.operator_blocklist.add(entry)
+
+        self.operator_allowlist: Optional[Set[OpKey]] = None
+        if operator_allowlist is not None:
+            self.operator_allowlist = set()
+            for entry in operator_allowlist:
+                assert self.operator_allowlist is not None
+                self.operator_allowlist.add(entry)
+
     def ops_to_not_decompose(
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
-        return (ops_not_to_decompose, None)
+        def filter_fn(node: torch.fx.Node) -> bool:
+            return True
+
+        return (ops_not_to_decompose, filter_fn)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
@@ -349,6 +340,8 @@ class VulkanPartitioner(Partitioner):
                 texture_limits,
                 buffer_limit,
                 require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
+                operator_blocklist=self.operator_blocklist,
+                operator_allowlist=self.operator_allowlist,
             ),
             allows_single_node_partition=True,
         )

@@ -49,14 +49,6 @@ mkdir "$COREMLTOOLS_DIR_PATH/build"
 cmake -S "$COREMLTOOLS_DIR_PATH" -B "$COREMLTOOLS_DIR_PATH/build"
 cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel --target mlmodel
 
-echo "${green}ExecuTorch: Cloning nlohmann."
-git clone https://github.com/nlohmann/json.git "$COREML_DIR_PATH/third-party/nlohmann_json"
-STATUS=$?
-if [ $STATUS -ne 0 ]; then
-    echo "${red}ExecuTorch: Failed to clone nlohmann."
-    exit 1
-fi
-
 echo "${green}ExecuTorch: Copying protobuf files."
 mkdir -p "$COREML_DIR_PATH/runtime/sdk/format/"
 cp -rf "$PROTOBUF_FILES_DIR_PATH" "$COREML_DIR_PATH/runtime/sdk/format/"

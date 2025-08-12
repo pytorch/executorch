@@ -9,10 +9,10 @@ from typing import Tuple, Union
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
-from executorch.backends.xnnpack.test.tester import ToEdge
+from executorch.backends.test.harness.stages import StageType
 
 
 input_t1 = Tuple[torch.Tensor]
@@ -60,11 +60,11 @@ class LiftedScalarTensor(torch.nn.Module):
 
 
 @common.parametrize("test_data", LiftedTensor.test_data)
-def test_partition_lifted_tensor_tosa_MI(test_data: input_t1):
+def test_partition_lifted_tensor_tosa_FP(test_data: input_t1):
     op = test_data[0]
     data = test_data[1:]
     module = LiftedTensor(op)
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         module,
         *data,
         [],
@@ -72,9 +72,8 @@ def test_partition_lifted_tensor_tosa_MI(test_data: input_t1):
         use_to_edge_transform_and_lower=False,
     )
     pipeline.run()
-    to_edge_stage_name = pipeline.tester.stage_name(ToEdge)
     signature = (
-        pipeline.tester.stages[to_edge_stage_name]
+        pipeline.tester.stages[StageType.TO_EDGE]
         .artifact.exported_program()
         .graph_signature
     )
@@ -82,11 +81,11 @@ def test_partition_lifted_tensor_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", LiftedTensor.test_data)
-def test_partition_lifted_tensor_tosa_BI(test_data: input_t1):
+def test_partition_lifted_tensor_tosa_INT(test_data: input_t1):
     op = test_data[0]
     data = test_data[1:]
     module = LiftedTensor(op)
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         module,
         *data,
         [],
@@ -94,9 +93,8 @@ def test_partition_lifted_tensor_tosa_BI(test_data: input_t1):
         use_to_edge_transform_and_lower=False,
     )
     pipeline.run()
-    to_edge_stage_name = pipeline.tester.stage_name(ToEdge)
     signature = (
-        pipeline.tester.stages[to_edge_stage_name]
+        pipeline.tester.stages[StageType.TO_EDGE]
         .artifact.exported_program()
         .graph_signature
     )
@@ -104,11 +102,11 @@ def test_partition_lifted_tensor_tosa_BI(test_data: input_t1):
 
 
 @common.parametrize("test_data", LiftedScalarTensor.test_data)
-def test_partition_lifted_scalar_tensor_tosa_MI(test_data: input_t1):
+def test_partition_lifted_scalar_tensor_tosa_FP(test_data: input_t1):
     op = test_data[0]
     data = test_data[1:]
     module = LiftedScalarTensor(op, data[-1])
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         module,
         data[0],
         [],
@@ -119,11 +117,11 @@ def test_partition_lifted_scalar_tensor_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", LiftedScalarTensor.test_data)
-def test_partition_lifted_scalar_tensor_tosa_BI(test_data: input_t1):
+def test_partition_lifted_scalar_tensor_tosa_INT(test_data: input_t1):
     op = test_data[0]
     data = test_data[1:]
     module = LiftedScalarTensor(op, data[-1])
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         module,
         data[0],
         [],

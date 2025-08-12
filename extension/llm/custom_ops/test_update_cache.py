@@ -11,6 +11,8 @@ import unittest
 
 import torch
 
+from executorch.extension.llm.custom_ops import custom_ops  # noqa
+
 
 def run_in_subprocess(target):
     """

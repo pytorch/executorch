@@ -61,7 +61,7 @@ Tensor& fmod_Tensor_out(
         utils::SupportedTensorDtypes::REALHBF16>(
         [&div_by_zero_error](
             const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          // TODO: rewrite this to be vectorization-capable.
+          // TODO: rewrite this to be vectorization-capable?
           CTYPE_COMPUTE value = 0;
           if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
             if (val_b == 0) {
@@ -138,10 +138,8 @@ Tensor& fmod_Scalar_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::REALHBF16>(
-        [val_b](const CTYPE_COMPUTE val_a) {
-          // TODO: rewrite this to be vectorization-capable.
-          CTYPE_COMPUTE value = std::fmod(val_a, val_b);
-          return value;
+        [val_b](const auto val_a) {
+          return executorch::math::fmod(val_a, (decltype(val_a))val_b);
         },
         ctx,
         a,

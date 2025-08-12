@@ -18,6 +18,7 @@ from executorch.backends.arm.test.runner_utils import (
     arm_executor_runner_exists,
     corstone300_installed,
     corstone320_installed,
+    model_converter_installed,
 )
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -32,7 +33,7 @@ def get_time_formatted_path(path: str, log_prefix: str) -> str:
         log_prefix: The name of the test.
 
     Example output:
-        './my_log_folder/test_BI_artifact_28-Nov-14:14:38.log'
+        './my_log_folder/test_INT_artifact_28-Nov-14:14:38.log'
     """
     return str(
         Path(path) / f"{log_prefix}_{datetime.now().strftime('%d-%b-%H:%M:%S')}.log"
@@ -47,12 +48,12 @@ def maybe_get_tosa_collate_path() -> str | None:
     tosa_test_base = os.environ.get("TOSA_TESTCASES_BASE_PATH")
     if tosa_test_base:
         current_test = os.environ.get("PYTEST_CURRENT_TEST")
-        # '::test_collate_tosa_BI_tests[randn] (call)'
+        # '::test_collate_tosa_INT_tests[randn] (call)'
         test_name = current_test.split("::")[1].split(" ")[0]  # type: ignore[union-attr]
-        if "BI" in test_name:
-            tosa_test_base = os.path.join(tosa_test_base, "tosa-bi")
-        elif "MI" in test_name:
-            tosa_test_base = os.path.join(tosa_test_base, "tosa-mi")
+        if "INT" in test_name:
+            tosa_test_base = os.path.join(tosa_test_base, "tosa-int")
+        elif "FP" in test_name:
+            tosa_test_base = os.path.join(tosa_test_base, "tosa-fp")
         else:
             tosa_test_base = os.path.join(tosa_test_base, "other")
         return os.path.join(tosa_test_base, test_name)
@@ -89,12 +90,46 @@ def get_tosa_compile_spec_unbuilt(
     return compile_spec_builder
 
 
+def get_vgf_compile_spec(
+    tosa_spec: str | TosaSpecification,
+    compiler_flags: Optional[str] = "",
+    custom_path=None,
+) -> list[CompileSpec]:
+    """
+    Default compile spec for VGF tests.
+    """
+    return get_vgf_compile_spec_unbuilt(tosa_spec, compiler_flags, custom_path).build()
+
+
+def get_vgf_compile_spec_unbuilt(
+    tosa_spec: str | TosaSpecification,
+    compiler_flags: Optional[str] = "",
+    custom_path=None,
+) -> ArmCompileSpecBuilder:
+    """Get the ArmCompileSpecBuilder for the default VGF tests, to modify
+    the compile spec before calling .build() to finalize it.
+    """
+    if not custom_path:
+        custom_path = maybe_get_tosa_collate_path()
+
+    if custom_path is not None:
+        os.makedirs(custom_path, exist_ok=True)
+    compile_spec_builder = (
+        ArmCompileSpecBuilder()
+        .vgf_compile_spec(tosa_spec, compiler_flags)
+        .dump_intermediate_artifacts_to(custom_path)
+    )
+
+    return compile_spec_builder
+
+
 def get_u55_compile_spec(
     macs: int = 128,
     system_config: str = "Ethos_U55_High_End_Embedded",
     memory_mode: str = "Shared_Sram",
     extra_flags: str = "--debug-force-regor --output-format=raw",
     custom_path: Optional[str] = None,
+    config: Optional[str] = "Arm/vela.ini",
 ) -> list[CompileSpec]:
     """
     Compile spec for Ethos-U55.
@@ -105,6 +140,7 @@ def get_u55_compile_spec(
         memory_mode=memory_mode,
         extra_flags=extra_flags,
         custom_path=custom_path,
+        config=config,
     ).build()
 
 
@@ -114,6 +150,7 @@ def get_u85_compile_spec(
     memory_mode="Shared_Sram",
     extra_flags="--output-format=raw",
     custom_path=None,
+    config: Optional[str] = "Arm/vela.ini",
 ) -> list[CompileSpec]:
     """
     Compile spec for Ethos-U85.
@@ -124,6 +161,7 @@ def get_u85_compile_spec(
         memory_mode=memory_mode,
         extra_flags=extra_flags,
         custom_path=custom_path,
+        config=config,
     ).build()
 
 
@@ -133,6 +171,7 @@ def get_u55_compile_spec_unbuilt(
     memory_mode: str,
     extra_flags: str,
     custom_path: Optional[str],
+    config: Optional[str],
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -151,6 +190,7 @@ def get_u55_compile_spec_unbuilt(
             system_config=system_config,
             memory_mode=memory_mode,
             extra_flags=extra_flags,
+            config_ini=config,
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
@@ -163,6 +203,7 @@ def get_u85_compile_spec_unbuilt(
     memory_mode: str,
     extra_flags: str,
     custom_path: Optional[str],
+    config: Optional[str],
 ) -> list[CompileSpec]:
     """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -180,29 +221,11 @@ def get_u85_compile_spec_unbuilt(
             system_config=system_config,
             memory_mode=memory_mode,
             extra_flags=extra_flags,
+            config_ini=config,
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
     return compile_spec  # type: ignore[return-value]
-
-
-SkipIfNoCorstone300 = pytest.mark.skipif(
-    not corstone300_installed() or not arm_executor_runner_exists("corstone-300"),
-    reason="Did not find Corstone-300 FVP or executor_runner on path",
-)
-"""
-TO BE DEPRECATED - Use XfailIfNoCorstone300 instead
-Skips a test if Corsone300 FVP is not installed, or if the executor runner is not built
-"""
-
-SkipIfNoCorstone320 = pytest.mark.skipif(
-    not corstone320_installed() or not arm_executor_runner_exists("corstone-320"),
-    reason="Did not find Corstone-320 FVP or executor_runner on path",
-)
-"""
-TO BE DEPRECATED - Use XfailIfNoCorstone320 instead
-Skips a test if Corsone320 FVP is not installed, or if the executor runner is not built
-"""
 
 
 XfailIfNoCorstone300 = pytest.mark.xfail(
@@ -222,6 +245,13 @@ XfailIfNoCorstone320 = pytest.mark.xfail(
     reason="Did not find Corstone-320 FVP or executor_runner on path",
 )
 """Xfails a test if Corsone320 FVP is not installed, or if the executor runner is not built"""
+
+SkipIfNoModelConverter = pytest.mark.skipif(
+    condition=not (model_converter_installed()),
+    raises=FileNotFoundError,
+    reason="Did not find model-converter on path",
+)
+"""Xfails a test if model-converter is not installed"""
 
 xfail_type = str | tuple[str, type[Exception]]
 

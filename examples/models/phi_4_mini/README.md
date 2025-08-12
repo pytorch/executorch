@@ -7,9 +7,9 @@ Phi-4-mini uses the same example code as Llama, while the checkpoint, model para
 
 All commands for exporting and running Llama on various backends should also be applicable to Phi-4-mini, by swapping the following args:
 ```
---model phi_4_mini
---params examples/models/phi-4-mini/config.json
---checkpoint <path-to-meta-checkpoint>
+base.model_class="phi_4_mini"
+base.params="examples/models/phi-4-mini/config/config.json"
+base.checkpoint=<path-to-meta-checkpoint>
 ```
 
 ### Generate the Checkpoint
@@ -32,17 +32,11 @@ Export to XNNPack, no quantization:
 # Set these paths to point to the downloaded files
 PHI_CHECKPOINT=path/to/checkpoint.pth
 
-python -m examples.models.llama.export_llama \
-  --model phi_4_mini \
-  --checkpoint "${PHI_CHECKPOINT=path/to/checkpoint.pth:?}" \
-  --params examples/models/phi-4-mini/config.json \
-  -kv \
-  --use_sdpa_with_kv_cache \
-  -d fp32 \
-  -X \
-  --metadata '{"get_bos_id":151643, "get_eos_ids":[151643]}' \
-  --output_name="phi-4-mini.pte"
-  --verbose
+python -m extension.llm.export.export_llm \
+  --config config/phi_4_mini_xnnpack.yaml
+  +base.checkpoint="${PHI_CHECKPOINT=path/to/checkpoint.pth:?}" \
+  +base.params="examples/models/phi-4-mini/config/config.json" \
+  +export.output_name="phi-4-mini.pte" \
 ```
 
 Run using the executor runner:

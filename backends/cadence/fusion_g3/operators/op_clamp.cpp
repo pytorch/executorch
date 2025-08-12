@@ -21,13 +21,13 @@
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-using ::executorch::aten::optional;
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::canCast;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 namespace cadence {
 namespace impl {

@@ -7,9 +7,6 @@
 from typing import Dict
 
 import torch
-from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
-    TagImplicitQDqPass,
-)
 from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -22,6 +19,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
 )
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_per_channel_group,
+    is_tagged_as_implicit_q_dq,
     validate_quant_scales,
     validate_quant_zeropoints,
 )
@@ -86,7 +84,7 @@ class OpDeQuantizePerTensor(OpStaticQDQNode):
         # check scales and zp are valid
         super().define_node(node, xnn_graph, vals_to_ids, debug_handle)
 
-        if not TagImplicitQDqPass.is_tagged_as_implicit_q_dq(node):
+        if not is_tagged_as_implicit_q_dq(node):
             dq_input = get_input_node(node, 0)
             input_quant_params = QuantParams.from_q_dq_node(node)
             # fp32 output
@@ -137,7 +135,7 @@ class OpQuantizePerTensor(OpStaticQDQNode):
         super().define_node(node, xnn_graph, vals_to_ids, debug_handle)
 
         q_input = get_input_node(node, 0)
-        if not TagImplicitQDqPass.is_tagged_as_implicit_q_dq(node):
+        if not is_tagged_as_implicit_q_dq(node):
             input_quant_params = QuantParams.from_q_dq_node(node)
             # fp32 input
             self.define_tensor(q_input, xnn_graph, vals_to_ids)

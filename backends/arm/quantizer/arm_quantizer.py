@@ -14,41 +14,40 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
 from executorch.backends.arm._passes import ArmPassManager
 
 from executorch.backends.arm.quantizer import QuantizationConfig
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
 
 from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
 from .quantization_annotator import annotate_graph
 from executorch.backends.arm.arm_backend import (
-    get_tosa_spec,
     is_ethosu,
     is_vgf,
 )  # usort: skip
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from torch.ao.quantization.fake_quantize import (
+
+from torch.fx import GraphModule, Node
+from torchao.quantization.pt2e import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
-)
-from torch.ao.quantization.observer import (
     HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
-    MovingAveragePerChannelMinMaxObserver,
+    ObserverOrFakeQuantizeConstructor,
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
+
+from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
+    QuantizationSpec,
+    Quantizer,
 )
-from torch.fx import GraphModule, Node
 
 __all__ = [
     "TOSAQuantizer",
@@ -60,7 +59,7 @@ __all__ = [
 
 @functools.lru_cache
 def get_symmetric_quantization_config(
-    is_per_channel: bool = False,
+    is_per_channel: bool = True,
     is_qat: bool = False,
     is_dynamic: bool = False,
     act_qmin: int = -128,
@@ -94,24 +93,26 @@ def get_symmetric_quantization_config(
             **extra_args,
         ),
     )
+
+    # Setup quantization config for weights
     weight_qscheme = (
         torch.per_channel_symmetric if is_per_channel else torch.per_tensor_symmetric
     )
-    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+    weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
         MinMaxObserver
     )
+    # Determine the right observer/fake-quant constructor
     if is_qat:
-        # TODO: qat + per channel?
-        weight_observer_or_fake_quant_ctr = FusedMovingAvgObsFakeQuantize
-    elif is_per_channel:
-        weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+        # Set plain fake-quant with true min/max
+        weight_observer_or_fake_quant_ctr = FakeQuantize
+    else:
+        # PTQ: set min/max observer
+        weight_observer_or_fake_quant_ctr = (
+            PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
+        )
 
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
-    if is_qat:
-        if weight_qscheme == torch.per_tensor_symmetric:
-            extra_args["observer"] = MovingAverageMinMaxObserver
-        else:
-            extra_args["observer"] = MovingAveragePerChannelMinMaxObserver  # type: ignore[dict-item]
+    extra_args = {"eps": 2**-12}
+
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
         quant_min=weight_qmin,
@@ -216,9 +217,35 @@ def _get_not_module_type_or_name_filter(
 
 class TOSAQuantizer(Quantizer):
 
-    def __init__(self, tosa_spec: TosaSpecification) -> None:
+    def __init__(
+        self, compile_spec_or_tosa_spec: Union[TosaSpecification, List[CompileSpec]]
+    ) -> None:
+
         super().__init__()
-        self.tosa_spec = tosa_spec
+        if isinstance(compile_spec_or_tosa_spec, TosaSpecification):
+            self.tosa_spec = compile_spec_or_tosa_spec
+            self.compile_spec = None
+        elif isinstance(compile_spec_or_tosa_spec, list):
+            self.compile_spec = compile_spec_or_tosa_spec
+            # find entry that is 'tosa_spec'
+            for cs in compile_spec_or_tosa_spec:
+                if cs.key == "tosa_spec":
+                    spec_val = (
+                        cs.value.decode() if isinstance(cs.value, bytes) else cs.value
+                    )
+                    self.tosa_spec = TosaSpecification.create_from_string(spec_val)
+                    break
+            else:
+                raise ValueError(
+                    "compile_spec list did not contain a 'tosa_spec' entry"
+                )
+        else:
+            raise TypeError(
+                f"TOSAQuantizer constructor expects "
+                f"a TosaSpecification or compile_spec list, "
+                f"got {type(compile_spec_or_tosa_spec)}"
+            )
+
         self.global_config: Optional[QuantizationConfig] = None
         self.io_config: Optional[QuantizationConfig] = None
         self.module_type_config: Dict[Callable, Optional[QuantizationConfig]] = {}
@@ -246,9 +273,9 @@ class TOSAQuantizer(Quantizer):
         quantizer.set_module_name("blocks.sub"), it will quantize all supported operator/operator
         patterns in the submodule with this module name with the given `quantization_config`
         """
-        assert (
-            quantization_config is not None
-        ), " quantization_config == None is not supported yet"
+        # Validate that quantization_config is provided
+        if quantization_config is None:
+            raise ValueError("quantization_config == None is not supported yet")
         self.module_name_config[module_name] = quantization_config
         return self
 
@@ -337,14 +364,14 @@ class TOSAQuantizer(Quantizer):
             if is_annotated(node):
                 continue
             if node.op == "placeholder" and len(node.users) > 0:
-                _annotate_output_qspec(
+                annotate_output_qspec(
                     node,
                     quantization_config.get_output_act_qspec(),
                 )
                 mark_node_as_annotated(node)
             if node.op == "output":
                 parent = node.all_input_nodes[0]
-                _annotate_input_qspec_map(
+                annotate_input_qspec_map(
                     node, parent, quantization_config.get_input_act_qspec()
                 )
                 mark_node_as_annotated(node)

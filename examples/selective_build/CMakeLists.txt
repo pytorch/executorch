@@ -33,7 +33,9 @@ if(NOT CMAKE_CXX_STANDARD)
   # Can't set to 11 due to executor_runner.cpp make_unique
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options -Wno-deprecated-declarations -fPIC
+                            -ffunction-sections -fdata-sections
+)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -43,7 +45,9 @@ find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
 )
 
-target_include_directories(executorch_core INTERFACE ${_common_include_directories})
+target_include_directories(
+  executorch_core INTERFACE ${_common_include_directories}
+)
 
 # ------------------------------ OPTIONS BEGIN -------------------------------
 
@@ -61,6 +65,15 @@ option(EXECUTORCH_SELECT_OPS_LIST "Register a list of ops, separated by comma"
 option(EXECUTORCH_SELECT_ALL_OPS
        "Whether to register all ops defined in portable kernel library." OFF
 )
+
+# Option to enable parsing ops and dtypes directly from model pte file
+option(EXECUTORCH_SELECT_OPS_FROM_MODEL
+       "Enable op selection from pte during build." OFF
+)
+
+# Option to enable dtype selective build. Note: must be using selective build
+# model API.
+option(EXECUTORCH_DTYPE_SELECTIVE_BUILD "Enable dtype selective build." OFF)
 # ------------------------------- OPTIONS END --------------------------------
 
 #
@@ -108,16 +121,32 @@ gen_selected_ops(
   "${EXECUTORCH_SELECT_OPS_LIST}"
   INCLUDE_ALL_OPS
   "${EXECUTORCH_SELECT_ALL_OPS}"
+  OPS_FROM_MODEL
+  "${EXECUTORCH_SELECT_OPS_FROM_MODEL}"
+  DTYPE_SELECTIVE_BUILD
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 generate_bindings_for_kernels(
-  LIB_NAME "select_build_lib" FUNCTIONS_YAML
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml CUSTOM_OPS_YAML
+  LIB_NAME
+  "select_build_lib"
+  FUNCTIONS_YAML
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+  CUSTOM_OPS_YAML
   "${_custom_ops_yaml}"
+  DTYPE_SELECTIVE_BUILD
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 gen_operators_lib(
-  LIB_NAME "select_build_lib" KERNEL_LIBS ${_kernel_lib} DEPS executorch_core
+  LIB_NAME
+  "select_build_lib"
+  KERNEL_LIBS
+  ${_kernel_lib}
+  DEPS
+  executorch_core
+  DTYPE_SELECTIVE_BUILD
+  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
 )
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
@@ -127,11 +156,12 @@ list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 # link to
 #
 add_executable(selective_build_test ${_executor_runner__srcs})
-if(CMAKE_BUILD_TYPE EQUAL "Release")
-  target_link_options(selective_build_test PRIVATE "LINKER:--gc-sections")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(selective_build_test)
 endif()
 target_link_libraries(
-  selective_build_test PRIVATE executorch_core gflags select_build_lib
+  selective_build_test PRIVATE executorch_core extension_evalue_util
+                               extension_runner_util gflags select_build_lib
 )
-target_link_options_shared_lib(select_build_lib)
+executorch_target_link_options_shared_lib(select_build_lib)
 target_compile_options(selective_build_test PUBLIC ${_common_compile_options})

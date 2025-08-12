@@ -14,11 +14,12 @@ import torch
 from executorch.backends.nxp.quantizer.utils import get_bias_qparams
 from torch import fx
 from torch._ops import OpOverload
-from torch.ao.quantization.quantizer import (
+from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
     SharedQuantizationSpec,
 )
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 @dataclass
@@ -90,7 +91,7 @@ class SharedSpecPattern(QuantizationPattern):
         prev_node = fused_partition[0].input_nodes[0]
 
         # Previous node was not quantized => we are not able to share q-params
-        if "quantization_annotation" not in prev_node.meta:
+        if Q_ANNOTATION_KEY not in prev_node.meta:
             return None
 
         qspec = SharedQuantizationSpec(prev_node)
@@ -103,6 +104,24 @@ class SharedSpecPattern(QuantizationPattern):
                 (node, qspec),
             ],
         )
+
+
+class AbsPattern(SharedSpecPattern):
+    """
+    Quantizer for Abs operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.abs.default]
+
+
+class AdaptiveAvgPoolPattern(SharedSpecPattern):
+    """
+    Quantizer for AdaptiveAvgPool2D operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.adaptive_avg_pool2d.default]
 
 
 class AddmmPattern(QuantizationPattern):
@@ -132,6 +151,32 @@ class AddmmPattern(QuantizationPattern):
             weights=[(addmm_node, 2)],
             biases=[(addmm_node, 0, bias_qspec)],
             output=[(addmm_node,)],
+        )
+
+
+class AddTensorPattern(QuantizationPattern):
+    """
+    Quantization pattern for Add Tensor quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> List[Type[torch.nn.Module]]:
+        return [torch.ops.aten.add.Tensor]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+        inputs = [(node, 0)]
+        if len(fused_partition[0].input_nodes) == 2:
+            inputs = [(node, 0), (node, 1)]
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=[],
+            biases=[],
+            output=[(node,)],
         )
 
 
@@ -216,6 +261,74 @@ class Conv2dPattern(QuantizationPattern):
         )
 
 
+class DropoutPattern(SharedSpecPattern):
+    """
+    Quantizer for Dropout operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.dropout.default]
+
+
+class FlattenPattern(SharedSpecPattern):
+    """
+    Quantizer for Flatten operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.flatten.using_ints]
+
+
+class HardTanhPattern(QuantizationPattern):
+    """
+    Quantizer for HardTanh operator. Shared quantization spec is selected, as activation functions usually follows
+    computation layer.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.hardtanh.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[(node, 0)],
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+    def replacement_op(self):
+        raise AssertionError()
+
+
+class HardTanhInPlacePattern(QuantizationPattern):
+    """
+    Quantizer for HardTanh operator with param inplace=True. Shared quantization spec is selected, as activation
+    functions usually follows computation layer.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.hardtanh_.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[(node, 0)],
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+    def replacement_op(self):
+        raise AssertionError()
+
+
 class LinearPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.linear.default]
@@ -259,6 +372,15 @@ class MaxPoolPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.max_pool2d.default]
+
+
+class MeanDimPattern(SharedSpecPattern):
+    """
+    Quantizer for Mean Dim operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.mean.dim]
 
 
 class PadPattern(SharedSpecPattern):
@@ -307,6 +429,40 @@ class ReshapePattern(SharedSpecPattern):
         return [torch.ops.aten.reshape.default]
 
 
+class ViewPattern(SharedSpecPattern):
+    """
+    Quantizer for View operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.view.default]
+
+
+def get_anchors_for_softmax_like_operators(
+    fused_partition: List[fx.GraphModule],
+) -> PartitionAnchors:
+    node = fused_partition[0].nodes[-1]
+    assert len(fused_partition[0].input_nodes) == 1
+
+    qspec = FixedQParamsQuantizationSpec(
+        dtype=torch.int8,
+        scale=1.0 / 256.0,
+        zero_point=-128,
+        quant_min=-128,
+        quant_max=127,
+        qscheme=torch.per_tensor_affine,
+    )
+
+    return PartitionAnchors(
+        inputs=[(node, 0)],
+        weights=[],
+        biases=[],
+        output=[
+            (node, qspec),
+        ],
+    )
+
+
 class SoftMaxPattern(QuantizationPattern):
     """
     Quantizer for Softmax operator.
@@ -320,23 +476,20 @@ class SoftMaxPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
-        node = fused_partition[0].nodes[-1]
-        assert len(fused_partition[0].input_nodes) == 1
+        return get_anchors_for_softmax_like_operators(fused_partition)
 
-        qspec = FixedQParamsQuantizationSpec(
-            dtype=torch.int8,
-            scale=1.0 / 256.0,
-            zero_point=-128,
-            quant_min=-128,
-            quant_max=127,
-            qscheme=torch.per_tensor_affine,
-        )
 
-        return PartitionAnchors(
-            inputs=[(node, 0)],
-            weights=[],
-            biases=[],
-            output=[
-                (node, qspec),
-            ],
-        )
+class SigmoidPattern(QuantizationPattern):
+    """
+    Quantizer for Sigmoid operator.
+
+    The quantization of Sigmoid output is fixed to scale 1/256, zero point -128, dtype int8.
+    """
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.sigmoid.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        return get_anchors_for_softmax_like_operators(fused_partition)

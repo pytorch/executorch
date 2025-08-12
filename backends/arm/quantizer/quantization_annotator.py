@@ -6,23 +6,25 @@
 import logging
 import operator
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Sequence
 
 import torch
 import torch.fx
 import torch.nn.functional as F
+from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.quantizer import QuantizationConfig
-from executorch.backends.arm.tosa_utils import get_node_debug_info
-from torch.ao.quantization.quantizer import QuantizationSpecBase, SharedQuantizationSpec
-from torch.ao.quantization.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
-)
+from torch._subclasses import FakeTensor
+
 from torch.fx import Node
+from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec,
+    QuantizationSpecBase,
+    SharedQuantizationSpec,
+)
 
 from .arm_quantizer_utils import (
     is_annotated,
-    is_ok_for_quantization,
     is_output_annotated,
     mark_node_as_annotated,
 )
@@ -76,9 +78,16 @@ def _is_ok_for_quantization(
     """
     # Check output
     if quant_properties.quant_output is not None:
-        if not is_ok_for_quantization(node, gm):  # type: ignore[attr-defined]
+        if _is_non_float_tensor(node):
             logger.debug(
-                f"Could not quantize node due to output: "
+                "Could not quantize non float tensor for the following output node: "
+                f"{get_node_debug_info(node, gm)}"
+            )
+
+            return False
+        elif _is_large_scalar(node, gm):
+            logger.debug(
+                "Could not quantize large scalar node for the following output node: "
                 f"{get_node_debug_info(node, gm)}"
             )
 
@@ -93,11 +102,22 @@ def _is_ok_for_quantization(
             continue
 
         for n_arg in _as_list(node.args[quant_property.index]):
-            assert isinstance(n_arg, Node)
-            if not is_ok_for_quantization(n_arg, gm):  # type: ignore[attr-defined]
+            if not isinstance(n_arg, Node):
+                raise TypeError(
+                    f"n_arg must be a Node instance, got {type(n_arg).__name__!r}"
+                )
+
+            if _is_non_float_tensor(n_arg):
                 logger.debug(
-                    f'could not quantize node due to input "{node}": '
-                    f"{get_node_debug_info(node, gm)}"
+                    "Could not quantize non float tensor for the following input "
+                    f"node: {get_node_debug_info(node, gm)}"
+                )
+
+                return False
+            elif _is_large_scalar(n_arg, gm):
+                logger.debug(
+                    "Could not quantize large scalar node for the following input "
+                    f"node: {get_node_debug_info(node, gm)}"
                 )
 
                 return False
@@ -105,8 +125,63 @@ def _is_ok_for_quantization(
     return True
 
 
+def _get_node_target(module: torch.nn.Module | torch.fx.GraphModule, target_str: str):
+    targets = target_str.split(".")
+    for target in targets[:-1]:
+        module = module.get_submodule(target)
+    return getattr(module, targets[-1])
+
+
+def _is_large_scalar(node: Node, gm: torch.fx.GraphModule):
+    """Check if input is a large scalar value. So that we can skip quantization for the
+    node since histc op (in HistogramObserver) only works for values up to certain upper
+    bound.
+    """
+    if node.op == "get_attr" and isinstance(node.target, str):
+        tensor = _get_node_target(gm, node.target)
+        # torch.histc works until this upper bound
+        HISTC_UPPER_BOUND = 3.4028235e15
+        return tensor.numel() == 1 and abs(tensor.item()) > HISTC_UPPER_BOUND
+    return False
+
+
+def _is_non_float_tensor(node: Node) -> bool:
+    """Check if the output of a node has a data type other than `torch.float32`.
+
+    If the output is not `torch.float32`, quantization cannot be performed, as
+    observers only work with floating-point tensors.
+
+    Args:
+        node (Node): The node to check the output(s) for.
+
+    Returns:
+        bool: `True` if the data type is not float32, otherwise `False`.
+
+    Note:
+        - If `node.meta["val"]` is a `list`, the function returns `True` if **any**
+          element is **not** an instance of `FakeTensor` or does **not** have
+          `torch.float32` as its data type.
+        - If node.meta["val"] is missing or is not an instance of `FakeTensor`, the
+          function returns True.
+    """
+    if "val" in node.meta and isinstance(node.meta["val"], Sequence):
+        return any(
+            not isinstance(fake_tensor, FakeTensor)
+            or fake_tensor.dtype != torch.float32
+            for fake_tensor in node.meta["val"]
+        )
+
+    if "val" not in node.meta or not isinstance(node.meta["val"], FakeTensor):
+        return True
+
+    return node.meta["val"].dtype != torch.float32
+
+
 def _annotate_input(node: Node, quant_property: _QuantProperty):
-    assert not is_annotated(node)
+    if is_annotated(node):
+        raise RuntimeError(
+            f"Cannot annotate input: node '{node.name}' is already annotated"
+        )
     if quant_property.optional and (
         quant_property.index >= len(node.args)
         or node.args[quant_property.index] is None
@@ -118,19 +193,30 @@ def _annotate_input(node: Node, quant_property: _QuantProperty):
         _as_list(quant_property.qspec),
         strict=True,
     ):
-        assert isinstance(n_arg, Node)
-        _annotate_input_qspec_map(node, n_arg, qspec)
+        if not isinstance(n_arg, Node):
+            raise TypeError(
+                f"n_arg must be a Node instance, got {type(n_arg).__name__!r}"
+            )
+        annotate_input_qspec_map(node, n_arg, qspec)
         if quant_property.mark_annotated:
             mark_node_as_annotated(n_arg)  # type: ignore[attr-defined]
 
 
 def _annotate_output(node: Node, quant_property: _QuantProperty):
-    assert not is_annotated(node)
-    assert not quant_property.mark_annotated
-    assert not quant_property.optional
-    assert quant_property.index == 0, "Only one output annotation supported currently"
+    if is_annotated(node):
+        raise RuntimeError(
+            f"Cannot annotate output: node '{node.name}' is already annotated"
+        )
+    if quant_property.mark_annotated:
+        raise ValueError(
+            "quant_property.mark_annotated must be False for output annotation"
+        )
+    if quant_property.optional:
+        raise ValueError("quant_property.optional must be False for output annotation")
+    if quant_property.index != 0:
+        raise ValueError("Only one output annotation supported currently")
 
-    _annotate_output_qspec(node, quant_property.qspec)
+    annotate_output_qspec(node, quant_property.qspec)
 
 
 def _match_pattern(
@@ -143,7 +229,9 @@ def _match_pattern(
 
     Each 'pattern' element is composed of a list of disjunctive nodes types.
     """
-    assert len(pattern) > 0, "No pattern provided"
+    if len(pattern) < 1:
+        raise ValueError("No pattern provided")
+
     if filter_fn is not None:
         if not filter_fn(node):
             return False
@@ -177,6 +265,7 @@ _one_to_one = [
     torch.ops.aten.ceil.default,
     torch.ops.aten.erf.default,
     torch.ops.aten.exp.default,
+    torch.ops.aten.expm1.default,
     torch.ops.aten.floor.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
@@ -192,6 +281,14 @@ _one_to_one = [
     torch.ops.aten.full_like.default,
     torch.ops.aten.pow.Tensor_Scalar,
     torch.ops.aten.gelu.default,
+    torch.ops.aten.sinh.default,
+    torch.ops.aten.atan.default,
+    torch.ops.aten.acosh.default,
+    torch.ops.aten.sign.default,
+    torch.ops.aten.asin.default,
+    torch.ops.aten.atanh.default,
+    torch.ops.aten.asinh.default,
+    torch.ops.aten.cosh.default,
 ]
 
 _one_to_one_shared_input_qspec = [
@@ -200,10 +297,12 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.squeeze_copy.dim,
     torch.ops.aten.squeeze.dim,
     torch.ops.aten.squeeze.dims,
+    torch.ops.aten.unbind.int,
     torch.ops.aten.unsqueeze.default,
     torch.ops.aten.unsqueeze_copy.default,
     torch.ops.aten.reshape.default,
     torch.ops.aten.repeat.default,
+    torch.ops.aten.repeat_interleave.self_int,
     torch.ops.aten.expand_copy.default,
     torch.ops.aten.expand.default,
     # Disabling these as there seems to be an issue with support for complex
@@ -235,11 +334,13 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.amin.default,
     torch.ops.aten.clamp.default,
     torch.ops.aten.clamp.Tensor,
+    torch.ops.aten.unflatten.int,
+    torch.ops.aten.index_select.default,
+    torch.ops.aten.index.Tensor,
 ]
 
-# Operators that can inherit the quantization specs from its parent node
-# as SharedQuantizationSpec.
-_parent_shared_qspec = [
+_one_to_one_shared_input_or_input_act_qspec = [
+    torch.ops.aten.clone.default,
     torch.ops.aten.hardtanh.default,
     torch.ops.aten.hardtanh_.default,
     torch.ops.aten.relu.default,
@@ -251,14 +352,10 @@ _parent_shared_qspec = [
     torch.ops.aten.avg_pool2d.default,
     torch.ops.aten.max_pool2d.default,
     torch.ops.aten.full.default,
+    torch.ops.aten.full,
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
     torch.ops.aten.dropout_.default,
-    torch.ops.aten.where,
-    operator.getitem,
-]
-
-_one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.adaptive_avg_pool2d.default,
     torch.ops.aten.alias_copy.default,
 ]
@@ -404,6 +501,9 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     elif node.target in _one_to_one_shared_input_or_input_act_qspec:
+        if not isinstance(node.args[0], Node):
+            return None
+
         input_qspec = (
             SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
             if is_output_annotated(node.args[0])  # type: ignore
@@ -418,8 +518,14 @@ def get_quant_properties(  # noqa: C901
         torch.ops.aten.concatenate.default,
         torch.ops.aten.stack.default,
     ):
-        assert isinstance(node.args[0], list)
-        assert len(node.args[0]) != 0
+        # first argument should be a non-empty list of nodes
+        if not isinstance(node.args[0], list):
+            raise TypeError(
+                "Expected node.args[0] to be a list, got "
+                f"{type(node.args[0]).__name__!r}"
+            )
+        if len(node.args[0]) == 0:
+            raise ValueError("Expected non-empty list for node.args[0]")
 
         shared_qspec = SharedQuantizationSpec((node.args[0][0], node))
         quant_properties.quant_inputs = [
@@ -458,19 +564,15 @@ def get_quant_properties(  # noqa: C901
             ),
         ]
         quant_properties.quant_output = None
-    elif node.target in _parent_shared_qspec:
-        if not isinstance(node.args[0], Node):
-            return None
-
-        if not is_output_annotated(node.args[0]):  # type: ignore[attr-defined]
-            return None
-
-        shared_qspec = SharedQuantizationSpec(node.args[0])
-        quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     elif node.target in [torch.ops.aten.scalar_tensor.default]:
         quant_properties.quant_inputs = []
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+    elif node.target in [operator.getitem]:
+        if not is_output_annotated(node.args[0]):  # type: ignore[attr-defined, arg-type]
+            return None
+        shared_qspec = SharedQuantizationSpec(node.args[0])  # type: ignore[arg-type]
+        quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]  # type: ignore[arg-type]
+        quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
     else:
         return None
 
@@ -518,6 +620,7 @@ def annotate_graph(  # type: ignore[return]
         if node.target in [
             torch.ops.aten.full_like.default,
             torch.ops.aten.full.default,
+            torch.ops.aten.full,
             torch.ops.aten.scalar_tensor.default,
         ]:
             node.kwargs = {}

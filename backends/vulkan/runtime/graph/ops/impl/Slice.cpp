@@ -8,12 +8,10 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
-#include <executorch/backends/vulkan/runtime/graph/Logging.h>
-
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Slice.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Transfer.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -33,7 +31,55 @@ inline int64_t normalize_idx(
   return normalize(index, max);
 }
 
-void add_slice_tensor_copy_node(
+void resize_slice_copy_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  ValueRef out_ref = args.at(0).refs.at(0);
+  ValueRef in_ref = args.at(1).refs.at(0);
+
+  int64_t dim = graph->extract_scalar<int64_t>(extra_args.at(0));
+  std::optional<int64_t> opt_start =
+      graph->extract_optional_scalar<int64_t>(extra_args.at(1));
+  std::optional<int64_t> opt_end =
+      graph->extract_optional_scalar<int64_t>(extra_args.at(2));
+  int64_t step = graph->extract_scalar<int64_t>(extra_args.at(3));
+
+  // Normalize dim
+  if (dim < 0) {
+    dim += graph->dim_of(in_ref);
+  }
+
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in_ref);
+  int64_t dim_size = in_sizes.at(dim);
+
+  int64_t start = opt_start.value_or(0);
+  int64_t end = opt_end.value_or(dim_size);
+
+  // Normalize start and end indices
+  start = normalize_idx(start, dim_size, 0);
+  end = normalize_idx(end, dim_size, dim_size);
+
+  // Calculate output size
+  std::vector<int64_t> new_out_sizes = in_sizes;
+  new_out_sizes.at(dim) = (end - start + step - 1) / step; // Ceiling division
+
+  graph->virtual_resize(out_ref, new_out_sizes);
+}
+
+/**
+ * Adds a slice_copy operation node to the compute graph.
+ *
+ * The slice operator extracts a portion of a tensor along a specified
+ * dimension. It creates a new tensor that contains a subset of the input
+ * tensor's data, defined by start, end, and step parameters along the given
+ * dimension.
+ *
+ * For example, if input is a tensor with shape [4,5,6] and we slice along
+ * dimension 1 with start=1, end=4, step=2, the output will have shape [4,2,6],
+ * containing elements from the input at positions 1 and 3 along dimension 1.
+ */
+void add_slice_copy_node(
     ComputeGraph& graph,
     ValueRef in,
     ValueRef dim_ref,
@@ -41,119 +87,17 @@ void add_slice_tensor_copy_node(
     ValueRef opt_end_ref,
     ValueRef step_ref,
     ValueRef out) {
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_out = graph.get_tensor(out);
-
-  VK_CHECK_COND(check_same_packed_dim(*t_in, *t_out));
-
-  // Need normalize the dim
-  int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
-
-  VK_CHECK_COND(
-      -t_in->dim() <= dim && dim < t_in->dim(),
-      "dim must be in range of [-self.dim(), self.dim()), but current dim's value is ",
-      dim,
-      " and self.dim() = ",
-      t_in->dim());
-
-  dim = normalize(dim, t_in->dim());
-
-  DimIndex dim_index = normalize_to_dim_index(*t_in, dim);
-
-  std::optional<int64_t> opt_start =
-      graph.extract_optional_scalar<int64_t>(opt_start_ref);
-  std::optional<int64_t> opt_end =
-      graph.extract_optional_scalar<int64_t>(opt_end_ref);
-  int64_t step = graph.extract_scalar<int64_t>(step_ref);
-
-  const auto in_sizes = t_in->sizes();
-  const auto out_sizes = t_out->sizes();
-
-  int64_t start = opt_start.value_or(0);
-  int64_t end = opt_end.value_or(in_sizes[dim]);
-
-  start = normalize_idx(start, in_sizes[dim], 0);
-  end = normalize_idx(end, in_sizes[dim], in_sizes[dim]);
-
-  const vkapi::SpecVarList spec_vars = {t_in->packed_dim()};
-
-  const auto packed_dim_idx =
-      static_cast<DimIndex>(DimIndex::DIM_LAST - t_in->packed_dim());
-
-  // if slice dim is the same as the packed dim, we can use the channel slice
-  if (dim_index == packed_dim_idx) {
-    // slice by channel
-    std::string kernel_name = "slice_packed_dim";
-    kernel_name.reserve(kShaderNameReserve);
-    add_dtype_suffix(kernel_name, *t_out);
-
-    const struct Block final {
-      int offset;
-      int step;
-    } params{
-        static_cast<int32_t>(start),
-        static_cast<int32_t>(step),
-    };
-
-    graph.execute_nodes().emplace_back(new DispatchNode(
-        graph,
-        VK_KERNEL_FROM_STR(kernel_name),
-        graph.create_global_wg_size(out),
-        graph.create_local_wg_size(out),
-        {{out, vkapi::MemoryAccessType::WRITE},
-         {in, vkapi::MemoryAccessType::READ}},
-        {t_out->sizes_ubo(),
-         t_in->sizes_ubo(),
-         graph.create_params_buffer(params)},
-        {},
-        spec_vars,
-        {},
-        nullptr));
-
-  } else {
-    // GPU's coordinate is in x = 0, y = 1, z = 2, w = 3
-    const int64_t gpu_dim = -(dim_index + 1);
-    // stride of input tensor's channel dimension
-    int64_t in_channel_stride = dim_at(in_sizes, kChannel4D);
-    VK_CHECK_COND(out_sizes[dim] == (1 + (end - start - 1) / step));
-
-    // Due to channel packing, each batch value is span over stride planes
-    if (dim_index == kBatch4D && packed_dim_idx == kChannel4D) {
-      in_channel_stride = utils::div_up_4(in_channel_stride);
-    }
-
-    std::string kernel_name = "slice_unpacked_dim";
-    kernel_name.reserve(kShaderNameReserve);
-    add_dtype_suffix(kernel_name, *t_out);
-
-    utils::uvec3 global_size = t_out->logical_limits();
-    utils::uvec3 local_size = graph.create_local_wg_size(global_size);
-
-    const struct Block final {
-      int dim;
-      int offset;
-      int step;
-      int stride;
-    } params{
-        static_cast<int32_t>(gpu_dim),
-        static_cast<int32_t>(start),
-        static_cast<int32_t>(step),
-        static_cast<int32_t>(in_channel_stride),
-    };
-
-    graph.execute_nodes().emplace_back(new DispatchNode(
-        graph,
-        VK_KERNEL_FROM_STR(kernel_name),
-        global_size,
-        local_size,
-        {{out, vkapi::MemoryAccessType::WRITE},
-         {in, vkapi::MemoryAccessType::READ}},
-        {t_out->sizes_ubo(), graph.create_params_buffer(params)},
-        {},
-        spec_vars,
-        {},
-        nullptr));
-  }
+  add_transfer_copy_node(
+      graph,
+      TransferType::SLICE,
+      in,
+      dim_ref,
+      opt_start_ref,
+      opt_end_ref,
+      step_ref,
+      out,
+      {dim_ref, opt_start_ref, opt_end_ref, step_ref},
+      resize_slice_copy_node);
 }
 
 std::vector<int64_t> get_slice_sizes(
@@ -186,16 +130,16 @@ void resize_slice_view_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)args;
-  vTensorPtr out = graph->get_tensor(extra_args[0]);
+  ValueRef out_ref = extra_args.at(0);
 
   std::vector<int64_t> new_out_sizes = get_slice_sizes(
       *graph,
-      extra_args[1], // input
-      extra_args[2], // dim
-      extra_args[3], // optional start
-      extra_args[4]); // optional end
+      extra_args.at(1), // input
+      extra_args.at(2), // dim
+      extra_args.at(3), // optional start
+      extra_args.at(4)); // optional end
 
-  out->virtual_resize(new_out_sizes);
+  graph->virtual_resize(out_ref, new_out_sizes);
 }
 
 void check_slice_view_args(
@@ -267,54 +211,54 @@ void add_slice_view_node(
   std::vector<int64_t> new_out_sizes =
       get_slice_sizes(graph, in_ref, dim_ref, opt_start_ref, opt_end_ref);
 
-  graph.get_tensor(out_ref)->virtual_resize(new_out_sizes);
+  graph.virtual_resize(out_ref, new_out_sizes);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       resize_slice_view_node,
       {out_ref, in_ref, dim_ref, opt_start_ref, opt_end_ref, opt_step_ref}));
 }
 
-void slice_tensor_copy(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  return add_slice_tensor_copy_node(
+void slice_copy(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_slice_copy_node(
       graph,
-      args[0],
-      args[1], // dim
-      args[2], // optional start
-      args[3], // optional end
-      args[4], // step
-      args[5]);
+      args.at(0),
+      args.at(1), // dim
+      args.at(2), // optional start
+      args.at(3), // optional end
+      args.at(4), // step
+      args.at(5));
 }
 
-void slice_tensor(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  ValueRef in = args[0];
-  ValueRef out = args[5];
+void slice(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  ValueRef in = args.at(0);
+  ValueRef out = args.at(5);
 
   // Special case if out is a view of in
   if (graph.val_is_view_of(out, in)) {
     add_slice_view_node(
         graph,
         in,
-        args[1], // dim
-        args[2], // optional start
-        args[3], // optional end
-        args[4], // step
+        args.at(1), // dim
+        args.at(2), // optional start
+        args.at(3), // optional end
+        args.at(4), // step
         out);
     return;
   }
 
-  add_slice_tensor_copy_node(
+  add_slice_copy_node(
       graph,
       in,
-      args[1], // dim
-      args[2], // optional start
-      args[3], // optional end
-      args[4], // step
+      args.at(1), // dim
+      args.at(2), // optional start
+      args.at(3), // optional end
+      args.at(4), // step
       out);
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(aten.slice_copy.Tensor, slice_tensor_copy);
-  VK_REGISTER_OP(aten.slice.Tensor, slice_tensor);
+  VK_REGISTER_OP(aten.slice_copy.Tensor, slice_copy);
+  VK_REGISTER_OP(aten.slice.Tensor, slice);
 }
 
 } // namespace vkcompute

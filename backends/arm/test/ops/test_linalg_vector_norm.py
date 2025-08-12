@@ -9,10 +9,11 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = Tuple[torch.Tensor]
@@ -60,46 +61,44 @@ test_modules = {
 
 
 @common.parametrize("test_module", test_modules)
-def test_vector_norm_tosa_MI(test_module):
+def test_vector_norm_tosa_FP(test_module):
     model, input_tensor = test_module
 
     # We decompose LinalgVectorNorm before quantize stage to have annotations
-    # with q/dq nodes. In case of MI, this operator will be decomposed
+    # with q/dq nodes. In case of FP, this operator will be decomposed
     # by global decompositions.
     aten_op = "torch.ops.aten.linalg_vector_norm.default"
     # Should not found this op
     exir_op = "executorch_exir_dialects_edge__ops_aten_linalg_vector_norm_default"
 
-    pipeline = TosaPipelineMI[input_t](model, input_tensor, aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t](model, input_tensor, aten_op, exir_op)
 
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1e-4, rtol=1e-4)
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
-def test_vector_norm_tosa_BI(test_module):
+def test_vector_norm_tosa_INT(test_module):
     model, input_tensor = test_module
 
     # Should not found this op
     exir_op = "executorch_exir_dialects_edge__ops_aten_linalg_vector_norm_default"
 
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         model,
         input_tensor,
         aten_op_q_decomposed_q,
         exir_op,
         symmetric_io_quantization=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone300
-def test_vector_norm_u55_BI_fvp(test_module):
+def test_vector_norm_u55_INT_fvp(test_module):
     model, input_tensor = test_module
 
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         model,
         input_tensor,
         aten_op_q_decomposed_q,
@@ -107,18 +106,17 @@ def test_vector_norm_u55_BI_fvp(test_module):
         run_on_fvp=True,
         symmetric_io_quantization=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
     pipeline.pop_stage("check_not.exir")
     pipeline.run()
 
 
 @common.parametrize("test_module", test_modules)
-@common.XfailIfNoCorstone300
-def test_vector_norm_u85_BI_fvp(test_module):
+@common.XfailIfNoCorstone320
+def test_vector_norm_u85_INT_fvp(test_module):
     model, input_tensor = test_module
 
     # The should be decomposed and annotated in DecomposeLinalgVectorNorm pass.
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         model,
         input_tensor,
         aten_op_q_decomposed_q,
@@ -126,6 +124,39 @@ def test_vector_norm_u85_BI_fvp(test_module):
         run_on_fvp=True,
         symmetric_io_quantization=True,
     )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1, atol=1, rtol=1)
     pipeline.pop_stage("check_not.exir")
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_vector_norm_vgf_FP(test_module):
+    model, input_tensor = test_module
+    # FP VGF
+    aten_op = "torch.ops.aten.linalg_vector_norm.default"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_linalg_vector_norm_default"
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_vector_norm_vgf_INT(test_module):
+    model, input_tensor = test_module
+    # Should not found this op
+    exir_op = "executorch_exir_dialects_edge__ops_aten_linalg_vector_norm_default"
+
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        aten_op_q_decomposed_q,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.run()

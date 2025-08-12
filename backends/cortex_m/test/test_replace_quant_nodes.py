@@ -16,15 +16,16 @@ from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.ao.quantization.observer import HistogramObserver
-from torch.ao.quantization.quantizer.quantizer import (
+from torch.export import export, export_for_training
+from torch.fx import GraphModule
+from torchao.quantization.pt2e.observer import HistogramObserver
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer import (
     QuantizationAnnotation,
     QuantizationSpec,
     Quantizer,
 )
-from torch.export import export, export_for_training
-from torch.fx import GraphModule
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 @dataclass(eq=True, frozen=True)
@@ -67,10 +68,7 @@ class AddQuantizer(Quantizer):
             ]:
                 continue
 
-            if (
-                "quantization_annotation" in node.meta
-                and node.meta["quantization_annotation"]._annotated
-            ):
+            if Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated:
                 continue
 
             input_qspec_map = {
@@ -78,7 +76,7 @@ class AddQuantizer(Quantizer):
                 node.args[1]: config.input_activation,
             }
 
-            node.meta["quantization_annotation"] = QuantizationAnnotation(
+            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
                 input_qspec_map=input_qspec_map,
                 output_qspec=config.output_activation,
                 _annotated=True,

@@ -176,7 +176,8 @@ import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 # op builder will inherit NodeVisitor and have its own implementation
 # register_node_visitor for book-keeping the dictionary of target name v.s. callback
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 # the definitions required to build operator in QNN
 from .qnn_constants import OpLayerNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 # utility to get parameter value when creating tensor in QNN
@@ -359,9 +360,9 @@ The operator now should be functional for Qualcomm backends. For operator to wor
 ## Operator Support Status
 Please help update following table if you are contributing new operators:
 
-| Operators | HTP - 77/116 Enabled |
+| Operators | HTP - 82/116 Enabled |
 |-----------|---------|
-| Argmax | &cross; |
+| Argmax | &check; |
 | Argmin | &check; |
 | BatchNorm | &check; |
 | BatchToSpace | &cross; |
@@ -381,14 +382,14 @@ Please help update following table if you are contributing new operators:
 | ElementWiseAdd | &check; |
 | ElementWiseAnd | &check; |
 | ElementWiseAsin | &cross; |
-| ElementWiseAtan | &cross; |
+| ElementWiseAtan | &check; |
 | ElementWiseBinary | &cross; |
 | ElementWiseCeil | &check; |
 | ElementWiseCos | &check; |
 | ElementWiseDivide | &check; |
 | ElementWiseEqual | &check; |
 | ElementWiseExp | &check; |
-| ElementWiseFloor | &cross; |
+| ElementWiseFloor | &check; |
 | ElementWiseFloorDiv | &cross; |
 | ElementWiseGreater | &check; |
 | ElementWiseGreaterEqual | &check; |
@@ -404,7 +405,7 @@ Please help update following table if you are contributing new operators:
 | ElementWiseNotEqual | &check; |
 | ElementWiseOr | &check; |
 | ElementWisePower | &check; |
-| ElementWiseRound | &cross; |
+| ElementWiseRound | &check; |
 | ElementWiseRsqrt | &check; |
 | ElementWiseSelect | &check; |
 | ElementWiseSign | &cross; |
@@ -448,7 +449,7 @@ Please help update following table if you are contributing new operators:
 | Quantize | &check; |
 | ReduceMax | &check; |
 | ReduceMean | &check; |
-| ReduceMin | &cross; |
+| ReduceMin | &check; |
 | ReduceSum | &check; |
 | Relu | &check; |
 | Relu1 | &cross; |

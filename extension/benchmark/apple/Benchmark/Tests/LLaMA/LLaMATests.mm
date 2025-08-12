@@ -8,10 +8,7 @@
 
 #import "ResourceTestCase.h"
 
-#import <executorch/examples/models/llama/runner/runner.h>
-
-using namespace ::executorch::extension;
-using namespace ::executorch::runtime;
+#import <ExecuTorchLLM/ExecuTorchLLM.h>
 
 @interface TokensPerSecondMetric : NSObject<XCTMetric>
 
@@ -60,7 +57,7 @@ using namespace ::executorch::runtime;
 + (NSDictionary<NSString *, BOOL (^)(NSString *)> *)predicates {
   return @{
     @"model" : ^BOOL(NSString *filename){
-      return [filename hasSuffix:@".pte"] && [filename.lowercaseString containsString:@"llama"];
+      return [filename hasSuffix:@".pte"] && [filename.lowercaseString containsString:@"llm"];
     },
     @"tokenizer" : ^BOOL(NSString *filename) {
       return [filename isEqual:@"tokenizer.bin"] || [filename isEqual:@"tokenizer.model"] || [filename isEqual:@"tokenizer.json"];
@@ -74,30 +71,42 @@ using namespace ::executorch::runtime;
   NSString *tokenizerPath = resources[@"tokenizer"];
   return @{
     @"generate" : ^(XCTestCase *testCase){
-      auto __block runner = std::make_unique<example::Runner>(
-          modelPath.UTF8String, tokenizerPath.UTF8String);
-      const auto status = runner->load();
-      if (status != Error::Ok) {
-        XCTFail("Load failed with error %i", status);
+      NSMutableArray<NSString *> *specialTokens = [@[
+        @"<|begin_of_text|>",
+        @"<|end_of_text|>",
+        @"<|reserved_special_token_0|>",
+        @"<|reserved_special_token_1|>",
+        @"<|finetune_right_pad_id|>",
+        @"<|step_id|>",
+        @"<|start_header_id|>",
+        @"<|end_header_id|>",
+        @"<|eom_id|>",
+        @"<|eot_id|>",
+        @"<|python_tag|>"
+      ] mutableCopy];
+      for (NSUInteger index = 2; specialTokens.count < 256; ++index) {
+        [specialTokens addObject:[NSString stringWithFormat:@"<|reserved_special_token_%zu|>", index]];
+      }
+      auto __block runner = [[ExecuTorchTextLLMRunner alloc] initWithModelPath:modelPath
+                                                                 tokenizerPath:tokenizerPath
+                                                                 specialTokens:specialTokens];
+      NSError *error;
+      BOOL status = [runner loadWithError:&error];
+      if (!status) {
+        XCTFail("Load failed with error %zi", error.code);
         return;
       }
       TokensPerSecondMetric *tokensPerSecondMetric = [TokensPerSecondMetric new];
       [testCase measureWithMetrics:@[ tokensPerSecondMetric, [XCTClockMetric new], [XCTMemoryMetric new] ]
                             block:^{
                               tokensPerSecondMetric.tokenCount = 0;
-                              // Create a GenerationConfig object
-                              ::executorch::extension::llm::GenerationConfig config{
-                                .max_new_tokens = 50,
-                                .warming = false,
-                              };
-
-                              const auto status = runner->generate(
-                                  "Once upon a time",
-                                  config,
-                                  [=](const std::string &token) {
-                                    tokensPerSecondMetric.tokenCount++;
-                                  });
-                              XCTAssertEqual(status, Error::Ok);
+                              BOOL status = [runner generate:@"Once upon a time"
+                                              sequenceLength:50
+                                           withTokenCallback:^(NSString *token) {
+                                tokensPerSecondMetric.tokenCount++;
+                              }
+                                                       error:NULL];
+                              XCTAssertTrue(status);
                             }];
     },
   };

@@ -11,7 +11,8 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
-from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP, register_node_visitor
+from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpPad, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 

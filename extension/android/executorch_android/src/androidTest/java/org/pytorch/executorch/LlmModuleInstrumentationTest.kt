@@ -11,26 +11,30 @@ import android.Manifest
 import androidx.test.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
+import java.io.File
+import java.io.IOException
+import java.net.URISyntaxException
 import org.apache.commons.io.FileUtils
 import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThat
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.pytorch.executorch.TestFileUtils.getTestFilePath
 import org.pytorch.executorch.extension.llm.LlmCallback
 import org.pytorch.executorch.extension.llm.LlmModule
-import java.io.File
-import java.io.IOException
-import java.net.URISyntaxException
 
-/** Unit tests for [org.pytorch.executorch.extension.llm.LlmModule].  */
+/** Unit tests for [org.pytorch.executorch.extension.llm.LlmModule]. */
 @RunWith(AndroidJUnit4::class)
 class LlmModuleInstrumentationTest : LlmCallback {
     private val results: MutableList<String> = ArrayList()
     private val tokensPerSecond: MutableList<Float> = ArrayList()
-    private var llmModule: LlmModule? = null
+    private lateinit var llmModule: LlmModule
 
     @Before
     @Throws(IOException::class)
@@ -57,31 +61,35 @@ class LlmModuleInstrumentationTest : LlmCallback {
     @Test
     @Throws(IOException::class, URISyntaxException::class)
     fun testGenerate() {
-        val loadResult = llmModule!!.load()
+        val loadResult = llmModule.load()
         // Check that the model can be load successfully
-        Assert.assertEquals(OK.toLong(), loadResult.toLong())
+        assertEquals(OK.toLong(), loadResult.toLong())
 
-        llmModule!!.generate(TEST_PROMPT, SEQ_LEN, this@LlmModuleInstrumentationTest)
-        Assert.assertEquals(results.size.toLong(), SEQ_LEN.toLong())
-        Assert.assertTrue(tokensPerSecond[tokensPerSecond.size - 1] > 0)
+        llmModule.generate(TEST_PROMPT, SEQ_LEN, this@LlmModuleInstrumentationTest)
+        assertEquals(results.size.toLong(), SEQ_LEN.toLong())
+        assertTrue(tokensPerSecond[tokensPerSecond.size - 1] > 0)
     }
 
     @Test
     @Throws(IOException::class, URISyntaxException::class)
     fun testGenerateAndStop() {
-        llmModule!!.generate(TEST_PROMPT, SEQ_LEN, object : LlmCallback {
-            override fun onResult(result: String) {
-                this@LlmModuleInstrumentationTest.onResult(result)
-                llmModule!!.stop()
-            }
+        llmModule.generate(
+            TEST_PROMPT,
+            SEQ_LEN,
+            object : LlmCallback {
+                override fun onResult(result: String) {
+                    this@LlmModuleInstrumentationTest.onResult(result)
+                    llmModule.stop()
+                }
 
-            override fun onStats(stats: String) {
-                this@LlmModuleInstrumentationTest.onStats(stats)
-            }
-        })
+                override fun onStats(stats: String) {
+                    this@LlmModuleInstrumentationTest.onStats(stats)
+                }
+            },
+        )
 
         val stoppedResultSize = results.size
-        Assert.assertTrue(stoppedResultSize < SEQ_LEN)
+        assertTrue(stoppedResultSize < SEQ_LEN)
     }
 
     override fun onResult(result: String) {
@@ -107,9 +115,5 @@ class LlmModuleInstrumentationTest : LlmCallback {
         private const val TEST_PROMPT = "Hello"
         private const val OK = 0x00
         private const val SEQ_LEN = 32
-
-        private fun getTestFilePath(fileName: String): String {
-            return InstrumentationRegistry.getInstrumentation().targetContext.externalCacheDir.toString() + fileName
-        }
     }
 }

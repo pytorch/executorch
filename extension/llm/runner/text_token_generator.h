@@ -78,16 +78,13 @@ class ET_EXPERIMENTAL TextTokenGenerator {
     // initialize tensor wrappers
     auto tokens_managed = from_blob(
         token_data.data(), token_shape, executorch::aten::ScalarType::Long);
-    auto start_pos_managed =
-        from_blob(&pos, {1}, executorch::aten::ScalarType::Long);
 
     should_stop_ = false;
 
     // Generate our tokens
     while (pos < start_pos + max_new_tokens) {
       // Run the model
-      auto logits_res =
-          text_decoder_runner_->step(tokens_managed, start_pos_managed);
+      auto logits_res = text_decoder_runner_->step(tokens_managed, pos);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
       executorch::aten::Tensor& logits_tensor = logits_res.get();
@@ -135,6 +132,23 @@ class ET_EXPERIMENTAL TextTokenGenerator {
    */
   inline void stop() {
     should_stop_ = true;
+  }
+
+  /**
+   * Load the necessary resources for TextTokenGenerator.
+   * This method should be called before using the generate() method.
+   */
+  ::executorch::runtime::Error load() {
+    return text_decoder_runner_->load();
+  }
+
+  /**
+   * Check if the TextTokenGenerator has been successfully loaded.
+   * @return True if the resources are loaded, false otherwise.
+   */
+  bool inline is_loaded() const {
+    // Implementation to check if resources are loaded
+    return tokenizer_->is_loaded() && text_decoder_runner_->is_method_loaded();
   }
 
  private:

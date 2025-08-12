@@ -52,30 +52,37 @@ gen_selected_ops(LIB_NAME "optimized_ops_lib" OPS_SCHEMA_YAML "${_yaml}")
 
 generate_bindings_for_kernels(
   LIB_NAME "optimized_ops_lib" FUNCTIONS_YAML
-  ${CMAKE_CURRENT_SOURCE_DIR}/optimized.yaml
-  ADD_EXCEPTION_BOUNDARY
+  ${CMAKE_CURRENT_SOURCE_DIR}/optimized.yaml ADD_EXCEPTION_BOUNDARY
 )
 message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
-target_include_directories(optimized_kernels PRIVATE ${TORCH_INCLUDE_DIRS} "${EXECUTORCH_ROOT}/third-party/pocketfft")
-target_compile_definitions(optimized_kernels PRIVATE ET_USE_PYTORCH_HEADERS)
+target_include_directories(
+  optimized_kernels PRIVATE ${TORCH_INCLUDE_DIRS}
+                            "${EXECUTORCH_ROOT}/third-party/pocketfft"
+)
+target_compile_definitions(
+  optimized_kernels PRIVATE "ET_USE_PYTORCH_HEADERS=ET_HAS_EXCEPTIONS"
+)
 target_link_libraries(
-  optimized_kernels PUBLIC executorch_core cpublas extension_threadpool kernels_util_all_deps
+  optimized_kernels PUBLIC executorch_core cpublas extension_threadpool
+                           kernels_util_all_deps
 )
 target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _optimized_kernels_srcs
 #
 # optimized_ops_lib: Register optimized ops kernels into Executorch runtime
 gen_operators_lib(
-  LIB_NAME "optimized_ops_lib" KERNEL_LIBS optimized_kernels DEPS executorch_core
+  LIB_NAME "optimized_ops_lib" KERNEL_LIBS optimized_kernels DEPS
+  executorch_core
 )
 
 install(
-  TARGETS cpublas optimized_kernels optimized_ops_lib
+  # eigen_blas doesn't export itself, so we have to do our own install to export
+  # it.
+  TARGETS cpublas optimized_kernels optimized_ops_lib eigen_blas
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   PUBLIC_HEADER DESTINATION include/executorch/kernels/optimized/
 )
-
-install(TARGETS cpublas DESTINATION lib)

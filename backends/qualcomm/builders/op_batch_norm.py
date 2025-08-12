@@ -18,7 +18,8 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpBatchnorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 from .utils import get_parameter
 
@@ -127,7 +128,7 @@ class BatchNorm(NodeVisitor):
             bias_tensor = self.try_dequantize(
                 bias_node, get_parameter(bias_node, self.edge_program)
             )
-            amount = (filter_tensor * mean_tensor) / torch.sqrt(var_tensor + eps)
+            amount = filter_tensor * mean_tensor
             bias_tensor = bias_tensor - amount
             self.update_encoding(bias_node, bias_tensor, eps)
             bias_tensor_wrapper = self.define_tensor(

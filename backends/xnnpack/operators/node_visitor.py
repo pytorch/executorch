@@ -274,19 +274,46 @@ class NodeVisitor:
 
         return dtype
 
-    def get_quant_params(self, quant_params: QuantParams) -> XNNQuantParams:
+    def get_quant_params(
+        self, quant_params: QuantParams, xnn_graph: XNNGraph
+    ) -> XNNQuantParams:
         if quant_params.per_channel:
             scale = cast(torch.Tensor, quant_params.scale)
+            buffer_idx = len(xnn_graph.constant_data)
+            num_scales = scale.numel()
+
+            if quant_params.is_per_channel_group:
+                scale = scale.to(torch.bfloat16)
+
+            num_bytes = scale.untyped_storage().nbytes()
+            scale_array = ctypes.cast(
+                scale.untyped_storage().data_ptr(),
+                ctypes.POINTER(ctypes.c_char * num_bytes),
+            ).contents
+            scale_name = hashlib.sha256(bytes(scale_array)).hexdigest()
+            xnn_graph.constant_data.append(
+                ConstantDataOffset(
+                    offset=UINT64_MAX, size=num_bytes, named_key=scale_name
+                )
+            )
+            self._named_data_store.add_named_data(
+                scale_name, bytes(scale_array), CONSTANT_TENSOR_ALIGNMENT
+            )
+
             if quant_params.is_per_channel_group:
                 return PerChannelGroupQuant(
-                    scale=scale.flatten().tolist(),
+                    scale=[],
                     channel_dim=quant_params.axis,
                     group_size=quant_params.group_size,
+                    scale_buffer_idx=buffer_idx,
+                    num_scales=num_scales,
                 )
-            else:  # per_channel quant
+            else:
                 return PerChannelQuant(
-                    scale=scale.tolist(),
+                    scale=[],
                     channel_dim=quant_params.axis,
+                    scale_buffer_idx=buffer_idx,
+                    num_scales=num_scales,
                 )
         elif quant_params.is_dynamic:
             # NB:
@@ -449,7 +476,7 @@ class NodeVisitor:
             else XValue(
                 xvalue_union=XNNQuantizedTensorValue(
                     tensor_value=tvalue,
-                    quant_params=self.get_quant_params(quant_params),
+                    quant_params=self.get_quant_params(quant_params, xnn_graph),
                 )
             )
         )
@@ -594,10 +621,15 @@ class NodeVisitor:
             ConstantDataOffset(offset=UINT64_MAX, size=size, named_key=named_key)
         )
 
-        external_tag = tensor.meta.get("delegate_constant_tag", None)
-        logging.info(
-            f"Adding constant data with name {tensor.name}, key {named_key} and external_tag {external_tag} to named_data_store"
+        custom_meta = tensor.meta.get("custom", None)
+        external_tag = (
+            custom_meta.get("delegate_constant_tag", None) if custom_meta else None
         )
+        if external_tag is not None:
+            external_tag = custom_meta.get("delegate_constant_tag", None)
+            logging.info(
+                f"Adding constant data with name {tensor.name}, key {named_key} and external_tag {external_tag} to named_data_store"
+            )
         self._named_data_store.add_named_data(
             named_key,
             bytes(array),

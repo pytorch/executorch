@@ -8,15 +8,32 @@ from pathlib import Path
 from typing import Any, Callable, TextIO, TYPE_CHECKING
 
 import yaml
-from executorch.codegen.api import et_cpp
-from executorch.codegen.api.custom_ops import (
-    ComputeNativeFunctionStub,
-    gen_custom_ops_registration,
-)
-from executorch.codegen.api.types import contextArg, ExecutorchCppSignature
-from executorch.codegen.api.unboxing import Unboxing
-from executorch.codegen.model import ETKernelIndex, ETKernelKey, ETParsedYaml
-from executorch.codegen.parse import ET_FIELDS, parse_et_yaml, parse_et_yaml_struct
+
+try:
+    from executorch.codegen.api import et_cpp
+    from executorch.codegen.api.custom_ops import (
+        ComputeNativeFunctionStub,
+        gen_custom_ops_registration,
+    )
+    from executorch.codegen.api.types import contextArg, ExecutorchCppSignature
+    from executorch.codegen.api.unboxing import Unboxing
+    from executorch.codegen.model import ETKernelIndex, ETKernelKey, ETParsedYaml
+    from executorch.codegen.parse import ET_FIELDS, parse_et_yaml, parse_et_yaml_struct
+except ImportError:
+    # If we build from source, executorch.codegen is not available.
+    from .api import et_cpp  # type: ignore[no-redef]
+    from .api.custom_ops import (  # type: ignore
+        ComputeNativeFunctionStub,
+        gen_custom_ops_registration,
+    )
+    from .api.types import contextArg, ExecutorchCppSignature  # type: ignore
+    from .api.unboxing import Unboxing  # type: ignore
+    from .model import ETKernelIndex, ETKernelKey, ETParsedYaml  # type: ignore
+    from .parse import (  # type: ignore[no-redef]
+        ET_FIELDS,
+        parse_et_yaml,
+        parse_et_yaml_struct,
+    )
 
 # Parse native_functions.yaml into a sequence of NativeFunctions and Backend Indices.
 from torchgen import dest
@@ -226,6 +243,10 @@ class ComputeCodegenUnboxedKernels:
             argument_type_gen=argument_type_gen
         ).convert_arguments(arguments)
 
+        # +1 for the return value
+        num_boxed_args = len(binding_list) + 1
+        # This safety check does not account for optional args with default values. ET itself doesnt support default args, but when supported is added this check can be relaxed to >= # of non default arg.
+        safety_check = f"""ET_KERNEL_CHECK_MSG(context, stack.size() == {num_boxed_args}, InvalidProgram, /*void*/, \"Expected %\" ET_PRIsize_t \"args received %\" ET_PRIsize_t, (size_t){num_boxed_args}, stack.size());"""
         # for each C++ argument, generate the conversion code
         code_connector = "\n\t"
         arg_connector = ", "
@@ -275,12 +296,13 @@ class ComputeCodegenUnboxedKernels:
 {indent}  context.fail(torch::executor::Error::Internal);
 {indent}}}"""
         newline = "\n    "
-        return "\n".join(
+        temp = "\n".join(
             [
                 f"""
 Kernel(
     "{f.namespace}::{f.func.name}",{newline + '"' + (k + '",') if k != "default" else ""}
-    []({contextArg.defn()}, EValue** stack) {{
+    []({contextArg.defn()}, Span<EValue*> stack) {{
+        {safety_check}
         {code_connector.join(code_list)}
 
 {exception_boundary_begin}
@@ -296,6 +318,7 @@ Kernel(
                 for k in used_kernel_keys
             ]
         )
+        return temp
 
 
 def gen_unboxing(
@@ -517,6 +540,7 @@ def gen_headers(
         "headers": [
             "#include <executorch/runtime/core/exec_aten/exec_aten.h> // at::Tensor etc.",
             "#include <executorch/runtime/kernel/kernel_runtime_context.h>",
+            "#include <executorch/runtime/core/error.h>",
         ],
     }
     if use_aten_lib:

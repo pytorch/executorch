@@ -6,7 +6,8 @@
 # pyre-unsafe
 
 import torch
-from executorch.backends.arm.tosa_quant_utils import q_op
+from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm.constants import Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node
@@ -21,11 +22,12 @@ class FuseQuantizedActivationPass(ExportPass):
             min_val = node.args[1]
             is_fuseable = min_val == 0
 
-        is_quantized = len(node.users) == 1 and next(iter(node.users)).target == q_op
+        is_quantized = len(node.users) == 1 and next(iter(node.users)).target in Q_OPS
         if is_fuseable and is_quantized:
             quant_node = next(iter(node.users))
-            zp = quant_node.args[2]
-            qmin = quant_node.args[3]
+            quant_args = QuantArgs.from_operator(quant_node.target, quant_node.args)
+            zp = quant_args.zp
+            qmin = quant_args.qmin
             return zp == qmin
         else:
             return False

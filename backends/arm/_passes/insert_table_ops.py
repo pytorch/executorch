@@ -10,7 +10,7 @@ from typing import Callable, cast, Dict, Iterator, Set
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
-from executorch.backends.arm.tosa_quant_utils import QuantArgs
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -43,6 +43,7 @@ class TableOps:
         exir_ops.edge.aten.ceil.default: torch.ceil,
         exir_ops.edge.aten.erf.default: torch.erf,
         exir_ops.edge.aten.exp.default: torch.exp,
+        exir_ops.edge.aten.expm1.default: torch.expm1,
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
@@ -51,8 +52,15 @@ class TableOps:
         exir_ops.edge.aten.cos.default: torch.cos,
         exir_ops.edge.aten.sin.default: torch.sin,
         exir_ops.edge.aten.tanh.default: torch.tanh,
+        exir_ops.edge.aten.atan.default: torch.atan,
+        exir_ops.edge.aten.atanh.default: torch.atanh,
         exir_ops.edge.aten.hardsigmoid.default: torch.nn.functional.hardsigmoid,
         exir_ops.edge.aten.hardswish.default: torch.nn.functional.hardswish,
+        exir_ops.edge.aten.sinh.default: torch.sinh,
+        exir_ops.edge.aten.acosh.default: torch.acosh,
+        exir_ops.edge.aten.asin.default: torch.asin,
+        exir_ops.edge.aten.asinh.default: torch.asinh,
+        exir_ops.edge.aten.cosh.default: torch.cosh,
     }
 
     # Targets that must be treated explicitly
@@ -143,9 +151,7 @@ class InsertTableOpsPass(ExportPass):
                     start=in_quantargs.qmin,
                     end=in_quantargs.qmax,
                     steps=256,
-                    # use torch.int64 to avoid overflow when dequantizing (subtracting zp).
-                    # e.g. torch.tensor(-50, dtype=torch.int8) - 100 == torch.tensor(106, dtype=torch.int8)
-                    dtype=torch.int64,
+                    dtype=torch.int8,
                 )
             ).to(dtype=torch.int8),
             0,
@@ -173,6 +179,9 @@ class InsertTableOpsPass(ExportPass):
         """
 
         def f(x: torch.Tensor) -> torch.Tensor:
+            x = x.clamp(in_quantargs.qmin, in_quantargs.qmax).to(
+                dtype=in_quantargs.dtype
+            )
             # Dont use the 7 LSBs.
             x = in_quantargs.dequantize_value((x & ~0x7F))
             x = torch_op(x)
@@ -183,9 +192,8 @@ class InsertTableOpsPass(ExportPass):
                 start=in_quantargs.qmin,
                 end=in_quantargs.qmax + 1,
                 steps=513,
-                # use torch.int64 to avoid overflow when dequantizing (subtracting zp).
-                # e.g. torch.tensor(-50, dtype=torch.int8) - 100 == torch.tensor(106, dtype=torch.int8)
-                dtype=torch.int64,
+                # use torch.int32 to avoid overflow for end=in_quantargs.qmax + 1.
+                dtype=torch.int32,
             )
         )
         # Calculate how much we need to shift table values to fit in 16 signed bits
@@ -240,8 +248,17 @@ class InsertTableOpsPass(ExportPass):
                     args=(node.args[0],),
                 )
                 output_node = table_node
-                assert len(input_qparams) == 1
-                assert len(output_qparams) == 1
+                # Expect exactly one quantization parameter for input and output
+                if len(input_qparams) != 1:
+                    raise ValueError(
+                        f"InsertTableOpsPass expected exactly one input quantization parameter, "
+                        f"got {len(input_qparams)} for node {node.name}"
+                    )
+                if len(output_qparams) != 1:
+                    raise ValueError(
+                        f"InsertTableOpsPass expected exactly one output quantization parameter, "
+                        f"got {len(output_qparams)} for node {node.name}"
+                    )
 
                 # Generate table buffer and how much to lshift the table output.
                 buffer, lshift = self.generate_table_values(

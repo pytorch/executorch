@@ -68,10 +68,8 @@ TEST_F(SGDOptimizerTest, SGDOptionsDefaultValuesTest) {
 TEST_F(SGDOptimizerTest, SGDOptimizerSimple) {
   TensorFactory<ScalarType::Float> tf;
 
-  std::map<executorch::aten::string_view, executorch::aten::Tensor>
-      named_parameters;
-  std::map<executorch::aten::string_view, executorch::aten::Tensor>
-      named_gradients;
+  std::map<std::string_view, executorch::aten::Tensor> named_parameters;
+  std::map<std::string_view, executorch::aten::Tensor> named_gradients;
 
   named_parameters.insert({"param1", tf.make({1, 1}, {1})});
 
@@ -92,8 +90,7 @@ TEST_F(SGDOptimizerTest, SGDOptimizerSimple) {
 TEST_F(SGDOptimizerTest, SGDOptimizerComplex) {
   TensorFactory<ScalarType::Float> tf;
 
-  std::map<executorch::aten::string_view, executorch::aten::Tensor>
-      named_parameters;
+  std::map<std::string_view, executorch::aten::Tensor> named_parameters;
 
   named_parameters.insert({"param1", tf.make({1, 1}, {1.0})});
   named_parameters.insert({"param2", tf.make({1, 1}, {2.0})});
@@ -101,8 +98,7 @@ TEST_F(SGDOptimizerTest, SGDOptimizerComplex) {
   SGD optimizer(named_parameters, SGDOptions{0.1, 0.1, 0, 2, true});
 
   for (int i = 0; i < 10; ++i) {
-    std::map<executorch::aten::string_view, executorch::aten::Tensor>
-        named_gradients;
+    std::map<std::string_view, executorch::aten::Tensor> named_gradients;
     // dummy gradient of -1 for all epochs
     named_gradients.insert({"param1", tf.make({1, 1}, {-1})});
     named_gradients.insert({"param2", tf.make({1, 1}, {-1})});

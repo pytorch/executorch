@@ -47,6 +47,41 @@ runtime.python_library(
     ],
 )
 
+runtime.python_binary(
+    name = "export_llm",
+    srcs = [
+        "export_llm.py",
+    ],
+    main_function = "executorch.extension.llm.export.export_llm.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/kernels/quantized:aot_lib",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/hydra-core:hydra-core",
+        "fbsource//third-party/pypi/omegaconf:omegaconf",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/extension/pybindings:aten_lib",
+    ],
+)
+
+runtime.python_library(
+    name = "export_llm_lib",
+    srcs = [
+        "export_llm.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/hydra-core:hydra-core",
+        "fbsource//third-party/pypi/omegaconf:omegaconf",
+        "//executorch/examples/models/llama:export_library",
+    ],
+    visibility = [
+        "//executorch/examples/...",
+        "//executorch/extension/llm/...",
+    ],
+)
+
 runtime.python_test(
     name = "export_passes_test",
     srcs = [

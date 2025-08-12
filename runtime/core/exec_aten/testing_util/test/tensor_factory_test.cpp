@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -86,7 +87,7 @@ using torch::executor::TensorImpl;
       "Arrays are not equal size." #a1 " size:%zu," #a2 " size:%zu", \
       a1.size(),                                                     \
       a2.size());                                                    \
-  for (size_t i = 0; i < a1.size(); ++i) {                           \
+  for (const auto i : c10::irange(a1.size())) {                      \
     ET_CHECK_MSG(                                                    \
         a1[i] == a2[i],                                              \
         "Value mismatch at index %zu, " #a1                          \
@@ -784,7 +785,7 @@ void run_zeros_like_test(Tensor input) {
 
   // A Tensor created manually, that should be identical to `actual`.
   std::vector<int32_t> expected_data;
-  for (int i = 0; i < input.numel(); i++) {
+  for (const auto i : c10::irange(input.numel())) {
     expected_data.push_back(0);
   }
 #ifdef USE_ATEN_LIB
@@ -842,7 +843,7 @@ void run_ones_like_test(Tensor input) {
 
   // A Tensor created manually, that should be identical to `actual`.
   std::vector<int32_t> expected_data;
-  for (int i = 0; i < input.numel(); i++) {
+  for (const auto i : c10::irange(input.numel())) {
     expected_data.push_back(1);
   }
 #ifdef USE_ATEN_LIB

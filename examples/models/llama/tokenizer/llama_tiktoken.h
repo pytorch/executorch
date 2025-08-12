@@ -20,6 +20,8 @@ enum class Version {
 std::unique_ptr<::tokenizers::Tiktoken> get_tiktoken_for_llama(
     Version version = Version::Default);
 
+std::unique_ptr<std::vector<std::string>> get_special_tokens(Version version);
+
 std::unique_ptr<std::vector<std::string>> get_multimodal_special_tokens();
 
 } // namespace example

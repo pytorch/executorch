@@ -5,7 +5,7 @@ from typing import Dict, Optional
 @dataclass
 class ModelArgs:
     dim: int = 4096
-    n_layers: int = 8
+    n_layers: int = 1
     n_heads: int = 32
     n_kv_heads: Optional[int] = None
     vocab_size: int = 512  # Arbitrary value, should be defined later by tokenizer.
@@ -55,7 +55,17 @@ class ModelArgs:
     eos_count: int = 2
 
     quantization_args: Optional[dict] = None
+    # LoRA for QAT.
     lora_args: Optional[dict] = None
+
+    # LoRA arguments to set up a LoRA inference model.
+    # These arguments come directly from a torchtune adapter_config.json file.
+    r: Optional[int] = None  # Rank.
+    lora_alpha: Optional[int] = None  # Alpha.
+    # Eg. q_proj, k_proj, v_proj, output_proj
+    target_modules: Optional[list] = None
+    peft_type: Optional[str] = None  # PEFT type.
+    base_model_name_or_path: Optional[str] = None  # Base model name or path.
 
     def __post_init__(self):
         if self.n_kv_heads is None:

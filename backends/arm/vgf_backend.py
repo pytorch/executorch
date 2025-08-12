@@ -103,7 +103,7 @@ def vgf_compile(
         additional_flags = " ".join(compile_flags)
         vgf_path = tosa_path + ".vgf"
         conversion_command = (
-            f"converter-backend {additional_flags} -i {tosa_path} -o {vgf_path}"
+            f"model-converter {additional_flags} -i {tosa_path} -o {vgf_path}"
         )
         try:
             subprocess.run(

@@ -11,20 +11,21 @@ import android.Manifest
 import androidx.test.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
-import org.apache.commons.io.FileUtils
-import org.junit.Assert
-import org.junit.Before
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
 import java.io.File
 import java.io.IOException
 import java.net.URISyntaxException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import org.apache.commons.io.FileUtils
+import org.junit.Assert
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.pytorch.executorch.TestFileUtils.getTestFilePath
 
-/** Unit tests for [Module].  */
+/** Unit tests for [Module]. */
 @RunWith(AndroidJUnit4::class)
 class ModuleInstrumentationTest {
     @Before
@@ -53,6 +54,12 @@ class ModuleInstrumentationTest {
 
         val results = module.forward()
         Assert.assertTrue(results[0].isTensor)
+    }
+
+    @Test
+    @Throws(IOException::class, URISyntaxException::class)
+    fun testMethodMetadata() {
+        val module = Module.load(getTestFilePath(TEST_FILE_NAME))
     }
 
     @Test
@@ -91,7 +98,7 @@ class ModuleInstrumentationTest {
         Assert.assertEquals(loadMethod.toLong(), INVALID_ARGUMENT.toLong())
     }
 
-    @Test
+    @Test(expected = RuntimeException::class)
     @Throws(IOException::class)
     fun testNonPteFile() {
         val module = Module.load(getTestFilePath(NON_PTE_FILE_NAME))
@@ -141,8 +148,7 @@ class ModuleInstrumentationTest {
                 val results = module.forward()
                 Assert.assertTrue(results[0].isTensor)
                 completed.incrementAndGet()
-            } catch (_: InterruptedException) {
-            }
+            } catch (_: InterruptedException) {}
         }
 
         val threads = arrayOfNulls<Thread>(numThreads)
@@ -168,9 +174,5 @@ class ModuleInstrumentationTest {
         private const val INVALID_STATE = 0x2
         private const val INVALID_ARGUMENT = 0x12
         private const val ACCESS_FAILED = 0x22
-
-        private fun getTestFilePath(fileName: String): String {
-            return InstrumentationRegistry.getInstrumentation().targetContext.externalCacheDir.toString() + fileName
-        }
     }
 }

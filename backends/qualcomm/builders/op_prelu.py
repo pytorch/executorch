@@ -10,7 +10,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 
-from .node_visitor import get_parameter, NodeVisitor, register_node_visitor
+from .node_visitor import get_parameter, NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpPRelu, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -40,11 +41,12 @@ class PReLU(NodeVisitor):
         coeff = get_parameter(coeff_node, self.edge_program)
         coeff_tensor = torch.zeros(input_node.meta["val"].shape, dtype=coeff.dtype)
         # per-channel activation
-        if coeff_node.meta["val"].shape[0] > 1:
+        coeff_node_shape = coeff_node.meta["val"].shape
+        if len(coeff_node_shape) and coeff_node_shape[0] > 1:
             for i in range(input_node.meta["val"].shape[1]):
                 coeff_tensor = coeff_tensor.index_fill(1, torch.tensor([i]), coeff[i])
         else:
-            coeff_tensor.fill_(coeff[0])
+            coeff_tensor.fill_(coeff[0] if coeff.dim() else coeff)
 
         if axis_order := input_node.meta.get(QCOM_AXIS_ORDER, None):
             coeff_tensor = coeff_tensor.permute(dims=axis_order).contiguous()

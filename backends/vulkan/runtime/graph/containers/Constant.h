@@ -28,6 +28,10 @@ struct TensorRef final {
       const std::vector<int64_t>& t_sizes,
       vkapi::ScalarType t_dtype,
       const void* const t_data);
+
+  inline size_t nbytes() const {
+    return utils::multiply_integers(sizes) * vkapi::element_size(dtype);
+  }
 };
 
 } // namespace vkcompute

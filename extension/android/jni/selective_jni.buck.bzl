@@ -4,10 +4,12 @@ load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.
 load("@fbsource//xplat/executorch/extension/android/jni:build_defs.bzl", "ET_JNI_COMPILER_FLAGS")
 
 def selective_jni_target(name, deps, srcs = [], soname = "libexecutorch.$(ext)"):
-    non_fbcode_target(_kind = fb_android_cxx_library,
+    non_fbcode_target(
+        _kind = fb_android_cxx_library,
         name = name,
         srcs = [
             "//xplat/executorch/extension/android/jni:jni_layer.cpp",
+            "//xplat/executorch/extension/android/jni:jni_layer_runtime.cpp",
         ] + srcs,
         allow_jni_merging = False,
         compiler_flags = ET_JNI_COMPILER_FLAGS,
