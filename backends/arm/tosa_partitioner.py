@@ -11,7 +11,6 @@ from typing import Callable, List, Optional, Sequence, Tuple
 import torch
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.arm_backend import (
-    get_tosa_spec,
     is_tosa,
 )  # usort: skip
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
@@ -19,6 +18,7 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa_backend import TOSABackend
+from executorch.backends.arm.tosa_specification import get_tosa_spec
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,

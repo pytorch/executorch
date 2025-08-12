@@ -47,11 +47,11 @@ help() {
     echo "  --output=<FOLDER>               Output folder Default: <MODEL>/<MODEL>_<TARGET INFO>.pte"
     echo "  --et_build_root=<FOLDER>        Build output root folder to use, defaults to ${et_build_root}"
     echo "  --ethosu_tools_dir=<FOLDER>     Path to your Ethos-U tools dir if you not using default: ${ethosu_tools_dir}"
-    echo "  --toolchain=<TOOLCHAIN>         Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc"
+    echo "  --toolchain=<TOOLCHAIN>         Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
     echo "  --select_ops_list=<OPS>         Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
     echo "                                     NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
     echo "                                     See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
-   exit 0
+    exit 0
 }
 
 for arg in "$@"; do
@@ -80,7 +80,7 @@ if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
 elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
 else
-    echo "Error: Invalid toolchain selection, provided: ${tolchain}"
+    echo "Error: Invalid toolchain selection, provided: ${toolchain}"
     echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
     exit 1;
 fi
