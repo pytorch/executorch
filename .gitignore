@@ -24,6 +24,7 @@ pip-out/
 # Any exported models and profiling outputs
 *.bin
 *.model
+*.etdump
 tokenizer.json
 *.pte
 *.ptd
@@ -58,6 +59,7 @@ xcuserdata/
 /include/
 /share/
 /version.py
+*.csv
 
 # Android
 *.aar
