@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import importlib
 import re
 import time
@@ -40,6 +41,15 @@ NAMED_SUITES = {
 }
 
 
+def _get_test_seed(test_base_name: str) -> int:
+    # Set the seed based on the test base name to give consistent inputs between runs and backends.
+    # Having a stable hash between runs and across machines is a plus (builtin python hash is not). 
+    # Using MD5 here because it's fast and we don't actually care about cryptographic properties.
+    hasher = hashlib.md5()
+    data = test_base_name.encode("utf-8")
+    hasher.update(data)
+    return int.from_bytes(hasher.hexdigest(), "little")
+
 def run_test(  # noqa: C901
     model: torch.nn.Module,
     inputs: Any,
@@ -58,6 +68,8 @@ def run_test(  # noqa: C901
 
     error_statistics: list[ErrorStatistics] = []
     extra_stats = {}
+
+    torch.manual_seed(_get_test_seed(test_base_name))
 
     # Helper method to construct the summary.
     def build_result(
