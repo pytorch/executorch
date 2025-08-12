@@ -19,7 +19,6 @@ import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
 from executorch.backends.arm.arm_backend import (
     ArmCompileSpecBuilder,
-    get_tosa_spec,
     is_ethosu,
     is_tosa,
     is_vgf,
@@ -32,7 +31,7 @@ from executorch.backends.arm.quantizer import (
     VgfQuantizer,
 )
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
 
 from executorch.backends.arm.util.arm_model_evaluator import (
     GenericModelEvaluator,
