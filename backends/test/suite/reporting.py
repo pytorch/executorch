@@ -57,15 +57,15 @@ class TestResult(IntEnum):
 
     def is_backend_failure(self):
         return not self.is_success() and not self.is_non_backend_failure()
-    
+
     def to_short_str(self):
-        if self in { TestResult.SUCCESS, TestResult.SUCCESS_UNDELEGATED }:
+        if self in {TestResult.SUCCESS, TestResult.SUCCESS_UNDELEGATED}:
             return "Pass"
         elif self == TestResult.SKIPPED:
             return "Skip"
         else:
             return "Fail"
-    
+
     def to_detail_str(self):
         if self == TestResult.SUCCESS:
             return ""
@@ -160,7 +160,11 @@ class TestCaseSummary:
     """ The size of the PTE file in bytes. """
 
     def is_delegated(self):
-        return any(v > 0 for v in self.delegated_op_counts.values()) if self.delegated_op_counts else False
+        return (
+            any(v > 0 for v in self.delegated_op_counts.values())
+            if self.delegated_op_counts
+            else False
+        )
 
 
 class TestSessionState:
@@ -348,10 +352,14 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
             "Result Detail": record.result.to_detail_str(),
             "Delegated": "True" if record.is_delegated() else "False",
             "Quantize Time (s)": (
-                f"{record.quantize_time.total_seconds():.3f}" if record.quantize_time else None
+                f"{record.quantize_time.total_seconds():.3f}"
+                if record.quantize_time
+                else None
             ),
             "Lower Time (s)": (
-                f"{record.lower_time.total_seconds():.3f}" if record.lower_time else None
+                f"{record.lower_time.total_seconds():.3f}"
+                if record.lower_time
+                else None
             ),
         }
         if record.params is not None:

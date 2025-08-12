@@ -1,6 +1,6 @@
 import logging
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 from executorch.backends.test.harness import Tester
