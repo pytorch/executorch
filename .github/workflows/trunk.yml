@@ -160,7 +160,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
+        model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe, efficientnet_b4, detr_resnet50, segformer_ade, albert, wav2vec2]
         backend: [portable, xnnpack-quantization-delegation]
         runner: [linux.arm64.2xlarge]
         include:
