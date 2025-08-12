@@ -48,7 +48,8 @@ def _get_test_seed(test_base_name: str) -> int:
     hasher = hashlib.md5()
     data = test_base_name.encode("utf-8")
     hasher.update(data)
-    return int.from_bytes(hasher.hexdigest(), "little")
+    # Torch doesn't like very long seeds.
+    return int.from_bytes(hasher.digest(), "little") % 100_000_000
 
 def run_test(  # noqa: C901
     model: torch.nn.Module,
