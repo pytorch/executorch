@@ -5,6 +5,8 @@ from enum import IntEnum
 from functools import reduce
 from typing import TextIO
 
+from executorch.backends.test.harness.error_statistics import ErrorStatistics
+
 
 class TestResult(IntEnum):
     """Represents the result of a test case run, indicating success or a specific failure reason."""
@@ -99,6 +101,12 @@ class TestCaseSummary:
 
     error: Exception | None
     """ The Python exception object, if any. """
+
+    tensor_error_statistics: list[ErrorStatistics]
+    """ 
+    Statistics about the error between the backend and reference outputs. Each element of this list corresponds to
+    a single output tensor.
+    """
 
 
 class TestSessionState:
@@ -197,6 +205,21 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
     )
     field_names += (s.capitalize() for s in param_names)
 
+    # Add tensor error statistic field names for each output index.
+    max_outputs = max(
+        len(s.tensor_error_statistics) for s in summary.test_case_summaries
+    )
+    for i in range(max_outputs):
+        field_names.extend(
+            [
+                f"Output {i} Error Max",
+                f"Output {i} Error MAE",
+                f"Output {i} Error MSD",
+                f"Output {i} Error L2",
+                f"Output {i} SQNR",
+            ]
+        )
+
     writer = csv.DictWriter(output, field_names)
     writer.writeheader()
 
@@ -210,4 +233,12 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
         }
         if record.params is not None:
             row.update({k.capitalize(): v for k, v in record.params.items()})
+
+        for output_idx, error_stats in enumerate(record.tensor_error_statistics):
+            row[f"Output {output_idx} Error Max"] = error_stats.error_max
+            row[f"Output {output_idx} Error MAE"] = error_stats.error_mae
+            row[f"Output {output_idx} Error MSD"] = error_stats.error_msd
+            row[f"Output {output_idx} Error L2"] = error_stats.error_l2_norm
+            row[f"Output {output_idx} SQNR"] = error_stats.sqnr
+
         writer.writerow(row)
