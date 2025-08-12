@@ -1083,7 +1083,6 @@ class SPVGenerator:
             for spv_out_path, glsl_out_path in pool.map(
                 compile_spirv, self.output_file_map.items()
             ):
-                print(spv_to_glsl_map)
                 spv_to_glsl_map[spv_out_path] = glsl_out_path
 
         return spv_to_glsl_map
