@@ -759,7 +759,7 @@ void write_etdump(RunnerContext& ctx) {
   if (result.buf != nullptr && result.size > 0) {
     // On a device with no file system we can't just write it out
     // to the file-system so we base64 encode it and dump it on the log.
-    int mode = 0;
+    int mode = base64_enc_modifier_padding | base64_dec_modifier_skipspace;
     size_t len = result.size;
     size_t encoded_len = base64_encoded_size(result.size, mode);
     uint8_t* encoded_buf = reinterpret_cast<uint8_t*>(

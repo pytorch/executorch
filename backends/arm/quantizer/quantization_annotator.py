@@ -265,6 +265,7 @@ _one_to_one = [
     torch.ops.aten.ceil.default,
     torch.ops.aten.erf.default,
     torch.ops.aten.exp.default,
+    torch.ops.aten.expm1.default,
     torch.ops.aten.floor.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
