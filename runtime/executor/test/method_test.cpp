@@ -114,6 +114,12 @@ TEST_F(MethodTest, MoveTest) {
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
 
+  // Set dummy inputs again.
+  auto input_cleanup2 = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup2.error(), Error::Ok);
+  input_err = method->set_input(executorch::runtime::EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
   // Move into a new Method.
   Method new_method(std::move(method.get()));
 

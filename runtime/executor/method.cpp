@@ -1451,6 +1451,10 @@ Error Method::reset_execution() {
       InvalidState,
       "Cannot reset until EndOfMethod has been reached.");
   step_state_ = StepState{0, 0};
+  const auto n_input = inputs_size();
+  for (size_t i = 0; i < n_input; ++i) {
+    input_set_[i] = false;
+  }
   return Error::Ok;
 }
 
