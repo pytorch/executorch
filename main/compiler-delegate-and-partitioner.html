@@ -609,7 +609,7 @@ function which will be called when the program is out of its lifespan.</p>
 <span class="n">ET_NODISCARD</span><span class="w"> </span><span class="k">virtual</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">execute</span><span class="p">(</span>
 <span class="w">    </span><span class="n">BackendExecutionContext</span><span class="o">&amp;</span><span class="w"> </span><span class="n">context</span><span class="p">,</span>
 <span class="w">    </span><span class="n">DelegateHandle</span><span class="o">*</span><span class="w"> </span><span class="n">handle</span><span class="p">,</span>
-<span class="w">    </span><span class="n">EValue</span><span class="o">**</span><span class="w"> </span><span class="n">args</span><span class="p">);</span>
+<span class="w">    </span><span class="n">Span</span><span class="o">&lt;</span><span class="n">EValue</span><span class="o">*&gt;</span><span class="w"> </span><span class="n">args</span><span class="p">);</span>
 
 <span class="c1">// [optional] Runtime destroy. Destroy the resource held by the backend</span>
 <span class="k">virtual</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">destroy</span><span class="p">(</span><span class="n">ET_UNUSED</span><span class="w"> </span><span class="n">DelegateHandle</span><span class="o">*</span><span class="w"> </span><span class="n">handle</span><span class="p">);</span>
