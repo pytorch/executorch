@@ -1,4 +1,4 @@
-# ExecuTorch Arm/TOSA Delegate
+# ExecuTorch Arm&reg; Delegate for TOSA devices
 
 This subtree contains the Arm(R) Delegate implementation for ExecuTorch.
 
@@ -7,26 +7,26 @@ through an AoT flow which targets multiple Arm IP using the TOSA standard.
 
 For more information on TOSA see https://www.mlplatform.org/tosa/tosa_spec.html
 
-The expected flows are:
+**The expected flows are:**
 * torch.nn.module -> TOSA for development and validation of model export
 * torch.nn.module -> TOSA/VGF for flows supporting a JiT compilation step.
 * torch.nn.module -> TOSA -> command_stream for fully AoT flows e.g. embedded.
 
-Currently device support is for:
-* TOSA to Ethos(TM)-U55/65/85 via the ethos-u-vela compilation stack.
+**Currently device support is for:**
+* TOSA to Ethos&trade;-U55/65/85 via the ethos-u-vela compilation stack.
   * This is cross-compiled to the appropriate target CPU
   * There is a seperate arm_executor_runner for bare-metal platforms
-* TOSA to VGF via the model-converter for devices supporting the ML SDK for Vulkan(R)
-  * The VGF graph represents TOSA directly in a SPIR-V(TM) standardized form.
+* TOSA to VGF via the model-converter for devices supporting the ML SDK for Vulkan&reg;
+  * The VGF graph represents TOSA directly in a SPIR-V&trade; standardized form.
   * As the VGF delegate runs on Vulkan, it's required to be built with the Vulkan delegate also present.
 
-Currently supported development platforms are:
+**Currently supported development platforms are:**
 * For ahead of time tooling
   * Linux aarch64
   * Linux x86_64
   * macOS with Apple silicon
 * Bare metal builds For the Ethos-U target and Cortex-M targets
-  * Full testing is available in tree for the Corstone(TM) FVPs
+  * Full testing is available in tree for the Corstone&trade; FVPs
   * This is a reference implementation for porting to silicon targets
 * Linux target support For VGF capable targets
   * This flow re-uses the common executor_runner
@@ -66,7 +66,7 @@ Other:
 
 ## Testing
 
-The unit tests and related support scripts will test TOSA, Ethos-U and VGF behaviour based on the installed tools. It is expected that the relevant environment preperation has been performed as outlined in the guide available here https://docs.pytorch.org/executorch/main/tutorial-arm.html
+The tests and related support scripts will test TOSA, Ethos-U and VGF behaviour based on the installed tools. It is expected that the relevant environment preperation has been performed as outlined in the guide available here https://docs.pytorch.org/executorch/main/tutorial-arm.html
 
 After setup you can run unit tests with the test_arm_baremetal.sh script.
 

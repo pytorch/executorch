@@ -1,4 +1,4 @@
-# Arm(R) Backend Tutorial
+# Arm&reg; Backend Tutorial
 
 <!----This will show a grid card on the page----->
 ::::{grid} 2
@@ -26,10 +26,10 @@ You may encounter some rough edges and features which may be documented or plann
 
 ```{tip}
 If you are already familiar with this delegate, you may want to jump directly to the examples:
-* [https://github.com/pytorch/executorch/tree/main/examples/arm](https://github.com/pytorch/executorch/tree/main/examples/arm)
-* [https://github.com/pytorch/executorch/blob/main/examples/arm/ethos_u_minimal_example.ipynb](Compilation for Ethos-U)
-* [https://github.com/pytorch/executorch/blob/main/examples/arm/vgf_minimal_example.ipynb](Compilation for VGF/ML-SDK)
-* [https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py](A commandline compiler for example models)
+* [Examples in the ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm)
+* [Compilation for Ethos-U](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos_u_minimal_example.ipynb)
+* [Compilation for VGF/ML-SDK](https://github.com/pytorch/executorch/blob/main/examples/arm/vgf_minimal_example.ipynb)
+* [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py)
 ```
 
 ## Prerequisites
@@ -69,7 +69,6 @@ For VGF run:
 ```
 It is possible to install both sets of dependencies if you omit the disable options.
 
-Upon successful execution, you can directly go to [the next step](#convert-the-pytorch-model-to-the-pte-file).
 
 ### Notes:
 
@@ -203,27 +202,50 @@ graph_module_edge.exported_program = to_backend(
 
 Similar to the non-delegate flow, the same script will server as a helper utility to help generate the `.pte` file. Notice the `--delegate` option to enable the `to_backend` call.
 
+For Ethos targets:
 ```bash
 python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate
+# This targets the default of ethos-u55-128, see --help for further targets
 # should produce ./add_arm_delegate_ethos-u55-128.pte
 ```
 
-### Delegated Quantized Workflow
-Generating the `.pte` file can be done using the aot_arm_compiler:
+For basic post-training quantization:
 ```bash
 python3 -m examples.arm.aot_arm_compiler --model_name="mv2" --delegate --quantize
+# This targets the default of ethos-u55-128, see --help for further targets
 # should produce ./mv2_arm_delegate_ethos-u55-128.pte
+```
+
+
+For VGF targets:
+```bash
+python3 -m examples.arm.aot_arm_compiler --model_name="add" --target=vgf --delegate
+# should produce ./add_arm_delegate_vgf.pte
+```
+
+For basic post-training quantization:
+```bash
+python3 -m examples.arm.aot_arm_compiler --model_name="mv2" --target=vgf --delegate --quantize
+# should produce ./mv2_arm_delegate_vgf.pte
+```
+
+To capture intermediates such as VGF for lower level integration, invoke with the "-i" option:
+```bash
+python3 -m examples.arm.aot_arm_compiler --model_name="mv2" --target=vgf --delegate --quantize -i ./mv2_output
+# should produce ./mv2_arm_delegate_vgf.pte and intermediates in ./mv2_out/
 ```
 
 <br />
 
-At the end of this, you should have three different `.pte` files.
+At the end of this, you should have a number of different `.pte` files.
 
-- The first one contains the [SoftmaxModule](#softmaxmodule), without any backend delegates.
-- The second one contains the [AddModule](#addmodule), with Arm Ethos-U backend delegate enabled.
-- The third one contains the [quantized MV2Model](#mv2module), with the Arm Ethos-U backend delegate enabled as well.
+- the SoftmaxModule, without any backend delegates.
+- the AddModule, targeting the Arm Ethos-U backend.
+- the Quantized MV2Model, targeting the Arm Ethos-U backend.
+- the AddModule, targeting the VGF backend.
+- the Quantized MV2Model, targeting the VGF backend.
 
-Now let's try to run these `.pte` files on a Corstone-300 and Corstone-320 platforms in a bare-metal environment.
+Now let's try to run these `.pte` files on a target.
 
 ## Getting a Bare-Metal Executable
 
@@ -390,6 +412,40 @@ I [executorch:arm_executor_runner.cpp:179]
 ```{note}
 The `run.sh` script provides various options to select a particular FVP target, use desired models, select portable kernels and can be explored using the `--help` argument
 ```
+
+## Running on the VGF backend with the standard executor_runner for Linux
+
+Follow typical [Building ExecuTorch with CMake](using-executorch-building-from-source.md) flow to build the linux target, ensuring that the VGF delegate is enabled.
+
+```bash
+-DEXECUTORCH_BUILD_VGF=ON
+```
+
+A full example buld line is:
+```
+cmake bash \
+    -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=OFF \
+    -DEXECUTORCH_BUILD_VULKAN=ON \
+    -DEXECUTORCH_BUILD_VGF=ON \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
+    -DPYTHON_EXECUTABLE=python \
+    -Bcmake-out .
+cmake --build cmake-out -j25 --target install --config Release
+```
+
+You can then invoke the executor runner on the host machine, which will use the VGF delegate, and requires the vulkan layer drivers we installed with setup.sh.
+
+```bash
+./cmake-out/executor_runner -model_path add_arm_delegate_vgf.pte
+```
+
 
 ## Takeaways
 In this tutorial you have learnt how to use the ExecuTorch software to both export a standard model from PyTorch and to run it on the compact and fully functioned ExecuTorch runtime, enabling a smooth path for offloading models from PyTorch to Arm based platforms.
