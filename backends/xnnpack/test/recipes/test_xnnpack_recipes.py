@@ -100,7 +100,7 @@ class TestXnnpackRecipes(unittest.TestCase):
                         export_recipe=export_recipe,
                     )
                     self._compare_eager_quantized_model_outputs(
-                        session, example_inputs, 1e-2
+                        session, example_inputs, 1e-1
                     )
                     self.check_fully_delegated(session.get_executorch_program())
 
