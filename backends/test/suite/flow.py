@@ -71,4 +71,13 @@ def all_flows() -> dict[str, TestFlow]:
     except Exception as e:
         logger.info(f"Skipping Vulkan flow registration: {e}")
 
+    try:
+        from executorch.backends.test.suite.flows.qualcomm import QUALCOMM_TEST_FLOW
+
+        flows += [
+            QUALCOMM_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping Qualcomm flow registration: {e}")
+
     return {f.name: f for f in flows if f is not None}
