@@ -192,7 +192,7 @@ method = program.load_method("forward")
 outputs = method.execute([input_tensor])
 ```
 
-Pybindings currently does not support loading program and data. To run a model with PTE and PTD components, please use the [Extension Module](extension-module.md). There is also an E2E demo in [executorch-examples](https://github.com/pytorch-labs/executorch-examples/tree/main/program-data-separation).
+Pybindings currently does not support loading program and data. To run a model with PTE and PTD components, please use the [Extension Module](extension-module.md). There is also an E2E demo in [executorch-examples](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation).
 
 For more information, see [Runtime API Reference](executorch-runtime-api-reference.md).
 
