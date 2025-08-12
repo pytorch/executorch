@@ -28,6 +28,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 // ========== Public method implementations =========================
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
@@ -116,7 +117,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 Error QnnExecuTorchBackend::execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
-    EValue** args) const {
+    Span<EValue*> args) const {
   ET_CHECK_OR_RETURN_ERROR(
       delegate_map_rev_.count(handle) != 0,
       Internal,

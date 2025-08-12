@@ -208,6 +208,24 @@ class TestQuantizeStage(unittest.TestCase):
         self.example_inputs = [(torch.randn(2, 10),)]
         self.context = {"example_inputs": {"forward": self.example_inputs}}
 
+    @staticmethod
+    def create_dummy_quantizer():
+        from torchao.quantization.pt2e.quantizer import (
+            Quantizer as TorchAOPT2EQuantizer,
+        )
+
+        class DummyQuantizer(TorchAOPT2EQuantizer):
+            def __init__(self):
+                pass
+
+            def annotate(self, model):
+                return model
+
+            def validate(self, model):
+                pass
+
+        return DummyQuantizer()
+
     def test_run_no_quantizers(self) -> None:
         """Test execution with no quantizers."""
         mock_recipe = Mock(spec=QuantizationRecipe)
@@ -231,7 +249,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_convert_pt2e: Mock,
     ) -> None:
         """Test execution with quantizers"""
-        mock_quantizer = Mock()
+        mock_quantizer = self.create_dummy_quantizer()
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         stage = QuantizeStage(mock_recipe)
@@ -292,6 +310,35 @@ class TestQuantizeStage(unittest.TestCase):
             "Example inputs for method forward not found or empty", str(cm.exception)
         )
 
+    @patch("executorch.export.stages.ComposableQuantizer")
+    def test_get_quantizer_for_prepare_pt2e(
+        self, mock_composable_quantizer: Mock
+    ) -> None:
+        """Test _get_quantizer_for_prepare_pt2e method with different quantizer scenarios."""
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        stage = QuantizeStage(mock_recipe)
+
+        # Test empty quantizers list - should raise ValueError
+        with self.assertRaises(ValueError) as cm:
+            stage._get_quantizer_for_prepare_pt2e([])
+        self.assertIn("No quantizers detected", str(cm.exception))
+
+        # Test ComposableQuantizer path with multiple torchao quantizers
+        # Create instances of dummy quantizers using the reusable method
+        quantizer1 = self.create_dummy_quantizer()
+        quantizer2 = self.create_dummy_quantizer()
+
+        # Set up ComposableQuantizer mock
+        mock_composed_quantizer = Mock()
+        mock_composable_quantizer.return_value = mock_composed_quantizer
+
+        # Call the method with multiple torchao quantizers
+        result = stage._get_quantizer_for_prepare_pt2e([quantizer1, quantizer2])
+
+        # Verify ComposableQuantizer was called with the quantizers
+        mock_composable_quantizer.assert_called_once_with([quantizer1, quantizer2])
+        self.assertEqual(result, mock_composed_quantizer)
+
 
 class TestToEdgeStage(unittest.TestCase):
     def setUp(self) -> None:
@@ -314,6 +361,7 @@ class TestToEdgeStage(unittest.TestCase):
             self.exported_programs,
             constant_methods=None,
             compile_config=mock_config,
+            generate_etrecord=False,
         )
 
         # Verify artifacts are set correctly
