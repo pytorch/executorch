@@ -50,11 +50,12 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
   set(VULKAN_SHADERGEN_OUT_PATH ${CMAKE_BINARY_DIR}/vulkan_compute_shaders)
 
   set(GEN_SPV_ARGS "--optimize")
-  if(DEFINED ENV{ETVK_USING_SWIFTSHADER}
-     and (("$ENV{ETVK_USING_SWIFTSHADER}" strequal "1")
-          or ("$ENV{ETVK_USING_SWIFTSHADER}" strequal "True"))
-  )
-    list(APPEND GEN_SPV_ARGS "--replace-u16vecn")
+  if(DEFINED ENV{ETVK_USING_SWIFTSHADER})
+    if("$ENV{ETVK_USING_SWIFTSHADER}" STREQUAL "1"
+       OR "$ENV{ETVK_USING_SWIFTSHADER}" STREQUAL "True"
+    )
+      list(APPEND GEN_SPV_ARGS "--replace-u16vecn")
+    endif()
   endif()
 
   add_custom_command(
