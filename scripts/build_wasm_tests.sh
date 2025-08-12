@@ -10,6 +10,8 @@ for arg in "$@"; do
     ETDUMP_OPTS="-DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
                  -DEXECUTORCH_BUILD_DEVTOOLS=ON \
                  -DFLATCC_ALLOW_WERROR=OFF"
+                 # FlatCC generates warnings depending on the compiler version.
+                 # This may be removed once the warnings are fixed.
   fi
 done
 
