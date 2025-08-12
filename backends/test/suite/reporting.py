@@ -1,6 +1,7 @@
 import csv
 from collections import Counter
 from dataclasses import dataclass
+from datetime import timedelta
 from enum import IntEnum
 from functools import reduce
 from typing import TextIO
@@ -108,6 +109,12 @@ class TestCaseSummary:
     a single output tensor.
     """
 
+    quantize_time: timedelta | None = None
+    """ The total runtime of the quantization stage, or none, if the test did not run the quantize stage. """
+
+    lower_time: timedelta | None = None
+    """ The total runtime of the to_edge_transform_and_lower stage, or none, if the test did not run the quantize stage. """
+
 
 class TestSessionState:
     test_case_summaries: list[TestCaseSummary]
@@ -190,6 +197,8 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
         "Backend",
         "Flow",
         "Result",
+        "Quantize Time (s)",
+        "Lowering Time (s)",
     ]
 
     # Tests can have custom parameters. We'll want to report them here, so we need
@@ -230,6 +239,12 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
             "Backend": record.backend,
             "Flow": record.flow,
             "Result": record.result.display_name(),
+            "Quantize Time (s)": (
+                record.quantize_time.total_seconds() if record.quantize_time else None
+            ),
+            "Lowering Time (s)": (
+                record.lower_time.total_seconds() if record.lower_time else None
+            ),
         }
         if record.params is not None:
             row.update({k.capitalize(): v for k, v in record.params.items()})
