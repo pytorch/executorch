@@ -29,7 +29,7 @@ help() {
     echo "  --build_type=<TYPE>       Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --devtools                Build Devtools libs"
     echo "  --etdump                  Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
-    echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc"
+    echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
     exit 0
 }
 
@@ -51,7 +51,7 @@ if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
 elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
 else
-    echo "Error: Invalid toolchain selection, provided: ${tolchain}"
+    echo "Error: Invalid toolchain selection, provided: ${toolchain}"
     echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
     exit 1;
 fi
