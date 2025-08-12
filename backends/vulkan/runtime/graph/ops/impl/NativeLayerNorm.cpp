@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
@@ -18,10 +19,10 @@
 namespace vkcompute {
 
 std::vector<int64_t> calc_out_mean_sizes(
-    api::vTensor& self,
+    const std::vector<int64_t>& self_sizes,
     int64_t normalized_shape_dim) {
-  std::vector<int64_t> output_size = self.sizes();
-  int64_t self_dim = self.sizes().size();
+  std::vector<int64_t> output_size = self_sizes;
+  int64_t self_dim = self_sizes.size();
   for (int64_t i = 0; i < normalized_shape_dim; ++i) {
     output_size.at(self_dim - i - 1) = 1;
   }
@@ -32,20 +33,21 @@ void resize_native_layer_norm_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr mean = graph->get_tensor(args[0].refs[1]);
-  vTensorPtr rstd = graph->get_tensor(args[0].refs[2]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
-  std::vector<int64_t> in_sizes = in->sizes();
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mean = args.at(0).refs.at(1);
+  const ValueRef rstd = args.at(0).refs.at(2);
+  const ValueRef in = args.at(1).refs.at(0);
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
 
-  const auto normalized_shape_dim = graph->get_int_list(extra_args[0])->size();
+  const auto normalized_shape_dim =
+      graph->get_int_list(extra_args.at(0))->size();
 
-  std::vector<int64_t> mean_size =
-      calc_out_mean_sizes(*in, normalized_shape_dim);
+  const std::vector<int64_t> mean_size =
+      calc_out_mean_sizes(in_sizes, normalized_shape_dim);
 
-  out->virtual_resize(in_sizes);
-  mean->virtual_resize(mean_size);
-  rstd->virtual_resize(mean_size);
+  graph->virtual_resize(out, in_sizes);
+  graph->virtual_resize(mean, mean_size);
+  graph->virtual_resize(rstd, mean_size);
 }
 
 void add_native_layer_norm_node(
@@ -74,16 +76,17 @@ void add_native_layer_norm_node(
   ValueRef arg_bias = prepack_standard_like(graph, bias_data, in);
 
   const auto out_val = graph.get_value_list(out);
-  vTensorPtr t_out = graph.get_tensor(out_val->at(0));
-  vTensorPtr t_mean = graph.get_tensor(out_val->at(1));
-  vTensorPtr t_input = graph.get_tensor(in);
+  const ValueRef out_tensor = out_val->at(0);
+  const ValueRef mean_tensor = out_val->at(1);
+  const ValueRef rstd_tensor = out_val->at(2);
+
   float epsilon = graph.extract_scalar<float>(eps);
 
-  VK_CHECK_COND(check_same_packed_dim(*t_input, *t_out));
+  VK_CHECK_COND(check_same_packed_dim(graph, in, out_tensor));
 
-  std::vector<int64_t> in_sizes = t_input->sizes();
+  const std::vector<int64_t> in_sizes = graph.sizes_of(in);
 
-  utils::uvec3 global_size = t_out->logical_limits();
+  utils::uvec3 global_size = graph.logical_limits_of(out_tensor);
   utils::uvec3 local_size;
 
   // Since the shader sets shared memory scale factor > 1, if dispatch is
@@ -100,28 +103,28 @@ void add_native_layer_norm_node(
   std::string kernel_name("native_layer_norm");
   kernel_name.reserve(kShaderNameReserve);
 
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out_tensor));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
-      {{{out_val->at(0), out_val->at(1), out_val->at(2)}, vkapi::kWrite},
+      {{{out_tensor, mean_tensor, rstd_tensor}, vkapi::kWrite},
        {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
       {},
       // Push Constants
       {
-          graph.logical_limits_pc_of(out_val->at(0)),
-          graph.sizes_pc_of(out_val->at(0)),
+          graph.logical_limits_pc_of(out_tensor),
+          graph.sizes_pc_of(out_tensor),
           PushConstantDataInfo(&epsilon, sizeof(epsilon)),
       },
       // Specialization Constants
       {
-          t_input->hashed_layout(),
-          t_out->hashed_layout(),
+          graph.hashed_layout_of(in),
+          graph.hashed_layout_of(out_tensor),
       },
       // Resize Args
       {normalized_shape},

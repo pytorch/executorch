@@ -267,7 +267,7 @@ TEST_F(ModuleTest, TestForward) {
   EXPECT_TENSOR_CLOSE(result->at(0).toTensor(), *expected.get());
 
   auto tensor2 = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 5.f});
-  const auto result2 = module->forward({tensor2, tensor2});
+  const auto result2 = module->forward({tensor2, tensor2, 1.0});
   EXPECT_EQ(result2.error(), Error::Ok);
 
   const auto expected2 = make_tensor_ptr({2, 2}, {4.f, 6.f, 8.f, 10.f});

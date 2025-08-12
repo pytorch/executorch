@@ -146,6 +146,7 @@ void main() {
                 }
                 score *= scale;
 
+
                 // Apply causal masking: mask if global_col > global_row + input_pos
                 if (global_col > global_row + input_pos) {
                     score = T(-1.0 / 0.0); // Set to negative infinity

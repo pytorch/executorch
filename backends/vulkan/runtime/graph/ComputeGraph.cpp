@@ -704,6 +704,38 @@ utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
   return create_local_wg_size(create_global_wg_size(idx));
 }
 
+void ComputeGraph::bind_tensor_to_descriptor_set(
+    const ValueRef ref,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::MemoryAccessFlags access_type,
+    vkapi::DescriptorSet& descriptor_set,
+    const uint32_t idx) {
+  vTensorPtr tensor = get_tensor(ref);
+  if (tensor->buffer()) {
+    vkapi::VulkanBuffer& buffer = tensor->buffer(
+        pipeline_barrier, vkapi::PipelineStage::COMPUTE, access_type);
+    descriptor_set.bind(idx, buffer);
+  } else {
+    vkapi::VulkanImage& image = tensor->image(
+        pipeline_barrier, vkapi::PipelineStage::COMPUTE, access_type);
+    descriptor_set.bind(idx, image);
+  }
+}
+
+void ComputeGraph::bind_value_to_descriptor_set(
+    const ValueRef ref,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::MemoryAccessFlags access_type,
+    vkapi::DescriptorSet& descriptor_set,
+    const uint32_t idx) {
+  if (val_is_tensor(ref)) {
+    bind_tensor_to_descriptor_set(
+        ref, pipeline_barrier, access_type, descriptor_set, idx);
+  } else if (val_is_staging(ref)) {
+    descriptor_set.bind(idx, get_staging(ref)->buffer());
+  }
+}
+
 void ComputeGraph::copy_into_staging(
     const ValueRef idx,
     const void* data,
@@ -767,6 +799,33 @@ void ComputeGraph::prepare_pipelines() {
   pipeline_descriptors_ = std::unordered_set<
       vkapi::ComputePipelineCache::Key,
       vkapi::ComputePipelineCache::Hasher>();
+
+  const size_t total_node_count = execute_nodes_.size();
+  size_t init_threshold = config_.execute_initial_threshold_node_count;
+  size_t count_threshold = config_.execute_threshold_node_count;
+
+  // If max command buffer count is set, we need to adjust the thresholds to
+  // accommodate execution within the limit, if total command buffers with
+  // current thresholds would exceed execute_max_cmds
+  if (config_.execute_max_cmds > 0) {
+    // Worse case scenario we have one command buffer for nodes before init
+    // threshold and config_.execute_max_cmds - 1 command buffers for the rest
+    // of dispatches
+
+    // If command buffers created after offsetting init_threshold would exceed
+    // max command buffer count, we need to adjust init and count thresholds
+    const bool slicing_exceeds_max_cmds = (total_node_count - init_threshold) >
+        count_threshold * (config_.execute_max_cmds - 1);
+    if (total_node_count > init_threshold && slicing_exceeds_max_cmds) {
+      // Increase count threshold so remaining nodes after offsetting init fits
+      // in config_.execute_max_cmds - 1
+      count_threshold = static_cast<size_t>(ceil(
+          (total_node_count - init_threshold) /
+          double(config_.execute_max_cmds - 1)));
+    }
+  }
+
+  execute_threshold_node_count_ = count_threshold;
 }
 
 void ComputeGraph::submit_current_cmd(const bool final_use) {
@@ -856,6 +915,7 @@ void ComputeGraph::execute() {
     context_->set_cmd(/*reusable = */ true);
 
     context_->cmd_reset_querypool();
+    const size_t total_node_count = execute_nodes_.size();
     uint32_t encoded_node_count = 0;
 
     for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
@@ -868,11 +928,13 @@ void ComputeGraph::execute() {
       const bool reached_threshold =
           encoded_node_count >= config_.execute_initial_threshold_node_count &&
           ((encoded_node_count - config_.execute_initial_threshold_node_count) %
-               config_.execute_threshold_node_count ==
+               execute_threshold_node_count_ ==
            0);
 
       // Create a new command buffer when threashold is reached
-      if (reached_threshold) {
+      // But avoid it if this is the last node, since last cmd buf is submitted
+      // after the loop
+      if (reached_threshold && encoded_node_count != total_node_count) {
         context_->submit_cmd_to_gpu(VK_NULL_HANDLE, false);
         deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
         context_->set_cmd(true);
@@ -889,6 +951,17 @@ void ComputeGraph::execute() {
   }
 
   execute_count_++;
+}
+
+void ComputeGraph::virtual_clone(const ValueRef dst, const ValueRef src) {
+  get_tensor(dst)->virtual_clone(*get_tensor(src));
+}
+
+void ComputeGraph::virtual_transpose(
+    const ValueRef tensor,
+    const int64_t dim0,
+    const int64_t dim1) {
+  get_tensor(tensor)->virtual_transpose(dim0, dim1);
 }
 
 void ComputeGraph::resize_input(

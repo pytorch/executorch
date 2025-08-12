@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
@@ -20,22 +21,22 @@ void resize_arange_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
 
   int start_val = 0;
   int step_val = 1;
-  if (!graph->val_is_none(extra_args[0])) {
-    start_val = graph->extract_scalar<int64_t>(extra_args[0]);
+  if (!graph->val_is_none(extra_args.at(0))) {
+    start_val = graph->extract_scalar<int64_t>(extra_args.at(0));
   }
-  int end_val = graph->extract_scalar<int64_t>(extra_args[1]);
-  if (!graph->val_is_none(extra_args[2])) {
-    step_val = graph->extract_scalar<int64_t>(extra_args[2]);
+  const int end_val = graph->extract_scalar<int64_t>(extra_args.at(1));
+  if (!graph->val_is_none(extra_args.at(2))) {
+    step_val = graph->extract_scalar<int64_t>(extra_args.at(2));
   }
 
-  std::vector<int64_t> out_sizes = {
+  const std::vector<int64_t> out_sizes = {
       utils::div_up(end_val - start_val, step_val)};
 
-  out->virtual_resize(out_sizes);
+  graph->virtual_resize(out, out_sizes);
 }
 
 void check_arange_input(
@@ -82,21 +83,19 @@ void add_arange_node(
     }
   }
 
-  vTensorPtr t_out = graph.get_tensor(out);
-
   std::string kernel_name("arange");
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}},
       // Shader params buffers
-      {t_out->sizes_ubo(),
+      {graph.sizes_ubo(out),
        graph.create_params_buffer(start_val),
        graph.create_params_buffer(step_val)},
       // Push Constants
