@@ -50,6 +50,7 @@ using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 using executorch::runtime::etensor::Tensor;
+using executorch::runtime::Span;
 
 extern "C" {
 using AOTITensorHandle = Tensor*;
@@ -494,7 +495,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle_,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
     size_t num_inputs;

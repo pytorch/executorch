@@ -23,13 +23,15 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
 from torch.fx.passes.operator_support import OperatorSupportBase
 
+supported_fallback_operators = []
+
 
 class AOTISupportedOperators(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        supported = node.op == "call_function" and node.target in [
-            exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-        ]
+        supported = (
+            node.op == "call_function"
+            and node.target not in supported_fallback_operators
+        )
 
         return supported
 

@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+import os
+import shutil
 
 from subprocess import check_call
 from typing import final, List
@@ -16,8 +18,7 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-import os
-import shutil
+
 
 @final
 class AotiBackend(BackendDetails):
@@ -33,7 +34,7 @@ class AotiBackend(BackendDetails):
         graph_module = copy_edge_program.graph_module
         args, kwargs = copy_edge_program.example_inputs
         temp_so_path = torch._inductor.aot_compile(graph_module, args, kwargs, options={})  # type: ignore[arg-type]
-        so_path = os.path.join(os.getcwd(), 'aoti.so')
+        so_path = os.path.join(os.getcwd(), "aoti.so")
         print("so_path after aot_compile: ", temp_so_path)
         print("so path we will using ", so_path)
         shutil.copyfile(temp_so_path, so_path)
