@@ -199,6 +199,8 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=albert
   elif [[ "${MODEL_NAME}" == "bert" ]]; then
     EXPORT_SCRIPT=bert
+  elif [[ "${MODEL_NAME}" == "conv_former" ]]; then
+    EXPORT_SCRIPT=conv_former
   elif [[ "${MODEL_NAME}" == "cvt" ]]; then
     EXPORT_SCRIPT=cvt
   elif [[ "${MODEL_NAME}" == "distilbert" ]]; then
@@ -238,7 +240,7 @@ test_model_with_qnn() {
     "cvt"|"dit"|"focalnet"|"mobilevit_v2"|"pvt"|"swin")
         SCRIPT_FOLDER=oss_scripts
         ;;
-    "albert"|"bert"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")
+    "albert"|"bert"|"conv_former"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")
         pip install evaluate
         SCRIPT_FOLDER=oss_scripts
         # 16bit models will encounter op validation fail on some operations,

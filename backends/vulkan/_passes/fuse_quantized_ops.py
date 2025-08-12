@@ -499,7 +499,7 @@ class FuseQuantizedOpsTransform(ExportPass):
                 continue
 
             # Check for linear_qta8a_qga4w pattern (dynamic activation + grouped weight quantization)
-            qta8a_qga4w_details = matches_linear_qta8a_qga4w_pattern(self.program, node)
+            qta8a_qga4w_details = None
             if qta8a_qga4w_details is not None:
                 group_size, weight_bits = qta8a_qga4w_details
                 fuse_into_linear_qta8a_qga4w_node(
