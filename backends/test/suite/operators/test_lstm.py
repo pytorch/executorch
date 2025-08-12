@@ -169,7 +169,7 @@ class LSTM(OperatorTest):
         batch_size = 1
         num_layers = 2
         hidden_size = 32
-        
+
         self._test_op(
             ModelWithStates(),
             (
@@ -179,7 +179,7 @@ class LSTM(OperatorTest):
             ),
             flow,
         )
-        
+
     def test_lstm_return_hidden_states(self, flow: TestFlow) -> None:
         # Create a model that returns both output and hidden states
         class ModelWithHiddenStates(torch.nn.Module):
@@ -200,7 +200,7 @@ class LSTM(OperatorTest):
         batch_size = 1
         seq_len = 10
         input_size = 64
-        
+
         self._test_op(
             ModelWithHiddenStates(),
             (torch.randn(batch_size, seq_len, input_size),),

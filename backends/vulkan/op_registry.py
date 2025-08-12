@@ -435,7 +435,19 @@ def register_2d_pool_op():
 )
 def register_convolution_op():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # transposed (non tensor)
+            utils.NO_STORAGE,  # output_padding (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # output_min (non tensor)
+            utils.NO_STORAGE,  # output_max (non tensor)
+        ],
         supports_resize=True,
         supports_prepacking=True,
     )
@@ -491,17 +503,9 @@ def register_view_ops():
 # for both texture and buffer storage types.
 @update_features(exir_ops.edge.aten.cat.default)
 def register_cat_op():
-    def check_cat_node(node: torch.fx.Node) -> bool:
-        inputs = node.args[0]
-        if isinstance(inputs, (list, tuple)) and len(inputs) <= 3:
-            return True
-
-        return False
-
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_cat_node,
     )
 
 

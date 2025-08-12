@@ -16,6 +16,7 @@ from executorch.backends.test.suite.operators import (
     OperatorTest,
 )
 
+
 class Model(torch.nn.Module):
     def __init__(
         self,
@@ -33,9 +34,10 @@ class Model(torch.nn.Module):
             ceil_mode=ceil_mode,
             count_include_pad=count_include_pad,
         )
-        
+
     def forward(self, x):
         return self.avgpool(x)
+
 
 @operator_test
 class AvgPool1d(OperatorTest):
@@ -47,7 +49,7 @@ class AvgPool1d(OperatorTest):
             ((torch.rand(1, 8, 100) * 10).to(dtype),),
             flow,
         )
-        
+
     def test_avgpool1d_kernel_size(self, flow: TestFlow) -> None:
         # Test with different kernel sizes
         self._test_op(
@@ -60,7 +62,7 @@ class AvgPool1d(OperatorTest):
             (torch.randn(1, 8, 100),),
             flow,
         )
-        
+
     def test_avgpool1d_stride(self, flow: TestFlow) -> None:
         # Test with different stride values
         self._test_op(
@@ -73,7 +75,7 @@ class AvgPool1d(OperatorTest):
             (torch.randn(1, 8, 100),),
             flow,
         )
-        
+
     def test_avgpool1d_padding(self, flow: TestFlow) -> None:
         # Test with different padding values
         self._test_op(
@@ -86,7 +88,7 @@ class AvgPool1d(OperatorTest):
             (torch.randn(1, 8, 100),),
             flow,
         )
-        
+
     def test_avgpool1d_ceil_mode(self, flow: TestFlow) -> None:
         # Test with ceil_mode=True
         self._test_op(
@@ -94,7 +96,7 @@ class AvgPool1d(OperatorTest):
             (torch.randn(1, 8, 100),),
             flow,
         )
-        
+
     def test_avgpool1d_count_include_pad(self, flow: TestFlow) -> None:
         # Test with count_include_pad=False
         self._test_op(
@@ -102,7 +104,7 @@ class AvgPool1d(OperatorTest):
             (torch.randn(1, 8, 100),),
             flow,
         )
-        
+
     def test_avgpool1d_batch_sizes(self, flow: TestFlow) -> None:
         # Test with batch inputs
         self._test_op(
@@ -120,7 +122,7 @@ class AvgPool1d(OperatorTest):
             (torch.randn(16, 8, 100),),
             flow,
         )
-        
+
     def test_avgpool1d_input_sizes(self, flow: TestFlow) -> None:
         # Test with different input sizes
         self._test_op(
@@ -133,7 +135,7 @@ class AvgPool1d(OperatorTest):
             (torch.randn(1, 16, 100),),
             flow,
         )
-        
+
     def test_avgpool1d_combinations(self, flow: TestFlow) -> None:
         # Test with combinations of parameters
         self._test_op(
