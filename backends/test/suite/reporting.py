@@ -1,7 +1,7 @@
 import csv
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import timedelta
 from enum import IntEnum
 from functools import reduce
@@ -205,15 +205,11 @@ class TestCaseSummary:
         )
 
 
-@dataclass
 class TestSessionState:
-    # True if the CSV header has been written to report__path.
-    has_written_report_header: bool = False
+    test_case_summaries: list[TestCaseSummary]
 
-    # The file path to write the detail report to, if enabled.
-    report_path: str | None = None
-
-    test_case_summaries: list[TestCaseSummary] = field(default_factory=list)
+    def __init__(self):
+        self.test_case_summaries = []
 
 
 @dataclass
@@ -291,11 +287,11 @@ def count_ops(program: dict[str, ExportedProgram] | ExportedProgram) -> Counter:
         )
 
 
-def begin_test_session(report_path: str | None):
+def begin_test_session():
     global _active_session
 
     assert _active_session is None, "A test session is already active."
-    _active_session = TestSessionState(report_path=report_path)
+    _active_session = TestSessionState()
 
 
 def log_test_summary(summary: TestCaseSummary):
@@ -303,15 +299,6 @@ def log_test_summary(summary: TestCaseSummary):
 
     if _active_session is not None:
         _active_session.test_case_summaries.append(summary)
-
-        if _active_session.report_path is not None:
-            file_mode = "a" if _active_session.has_written_report_header else "w"
-            with open(_active_session.report_path, file_mode) as f:
-                if not _active_session.has_written_report_header:
-                    write_csv_header(f)
-                    _active_session.has_written_report_header = True
-
-                write_csv_row(summary, f)
 
 
 def complete_test_session() -> RunSummary:
@@ -331,13 +318,6 @@ def _sum_op_counts(counter: Counter | None) -> int | None:
     return sum(counter.values()) if counter is not None else None
 
 
-def _serialize_params(params: dict[str, Any] | None) -> str:
-    if params is not None:
-        return str(dict(sorted(params.items())))
-    else:
-        return ""
-
-
 def _serialize_op_counts(counter: Counter | None) -> str:
     """
     A utility function to serialize op counts to a string, for the purpose of including
@@ -349,10 +329,19 @@ def _serialize_op_counts(counter: Counter | None) -> str:
         return ""
 
 
-def write_csv_header(output: TextIO):
-    writer = csv.DictWriter(output, CSV_FIELD_NAMES)
-    writer.writeheader()
+def generate_csv_report(summary: RunSummary, output: TextIO):
+    """Write a run summary report to a file in CSV format."""
 
+    field_names = [
+        "Test ID",
+        "Test Case",
+        "Flow",
+        "Result",
+        "Result Detail",
+        "Delegated",
+        "Quantize Time (s)",
+        "Lower Time (s)",
+    ]
 
 def write_csv_row(record: TestCaseSummary, output: TextIO):
     writer = csv.DictWriter(output, CSV_FIELD_NAMES)
@@ -371,28 +360,68 @@ def write_csv_row(record: TestCaseSummary, output: TextIO):
             if record.quantize_time
             else None
         ),
-        "Lower Time (s)": (
-            f"{record.lower_time.total_seconds():.3f}" if record.lower_time else None
-        ),
-    }
+        set(),
+    )
+    field_names += (s.capitalize() for s in param_names)
 
-    for output_idx, error_stats in enumerate(record.tensor_error_statistics):
-        if output_idx >= MAX_LOGGED_MODEL_OUTPUTS:
-            print(
-                f"Model output stats are truncated as model has more than {MAX_LOGGED_MODEL_OUTPUTS} outputs. Consider increasing MAX_LOGGED_MODEL_OUTPUTS."
-            )
-            break
-
-        row[f"Output {output_idx} Error Max"] = f"{error_stats.error_max:.3f}"
-        row[f"Output {output_idx} Error MAE"] = f"{error_stats.error_mae:.3f}"
-        row[f"Output {output_idx} SNR"] = f"{error_stats.sqnr:.3f}"
-
-    row["Delegated Nodes"] = _sum_op_counts(record.delegated_op_counts)
-    row["Undelegated Nodes"] = _sum_op_counts(record.undelegated_op_counts)
-    row["Delegated Ops"] = _serialize_op_counts(record.delegated_op_counts)
-    row["Undelegated Ops"] = _serialize_op_counts(record.undelegated_op_counts)
-    row["PTE Size (Kb)"] = (
-        f"{record.pte_size_bytes / 1000.0:.3f}" if record.pte_size_bytes else ""
+    # Add tensor error statistic field names for each output index.
+    max_outputs = max(
+        len(s.tensor_error_statistics) for s in summary.test_case_summaries
+    )
+    for i in range(max_outputs):
+        field_names.extend(
+            [
+                f"Output {i} Error Max",
+                f"Output {i} Error MAE",
+                f"Output {i} SNR",
+            ]
+        )
+    field_names.extend(
+        [
+            "Delegated Nodes",
+            "Undelegated Nodes",
+            "Delegated Ops",
+            "Undelegated Ops",
+            "PTE Size (Kb)",
+        ]
     )
 
-    writer.writerow(row)
+    writer = csv.DictWriter(output, field_names)
+    writer.writeheader()
+
+    for record in summary.test_case_summaries:
+        row = {
+            "Test ID": record.name,
+            "Test Case": record.base_name,
+            "Flow": record.flow,
+            "Result": record.result.to_short_str(),
+            "Result Detail": record.result.to_detail_str(),
+            "Delegated": "True" if record.is_delegated() else "False",
+            "Quantize Time (s)": (
+                f"{record.quantize_time.total_seconds():.3f}"
+                if record.quantize_time
+                else None
+            ),
+            "Lower Time (s)": (
+                f"{record.lower_time.total_seconds():.3f}"
+                if record.lower_time
+                else None
+            ),
+        }
+        if record.params is not None:
+            row.update({k.capitalize(): v for k, v in record.params.items()})
+
+        for output_idx, error_stats in enumerate(record.tensor_error_statistics):
+            row[f"Output {output_idx} Error Max"] = f"{error_stats.error_max:.3f}"
+            row[f"Output {output_idx} Error MAE"] = f"{error_stats.error_mae:.3f}"
+            row[f"Output {output_idx} SNR"] = f"{error_stats.sqnr:.3f}"
+
+        row["Delegated Nodes"] = _sum_op_counts(record.delegated_op_counts)
+        row["Undelegated Nodes"] = _sum_op_counts(record.undelegated_op_counts)
+        row["Delegated Ops"] = _serialize_op_counts(record.delegated_op_counts)
+        row["Undelegated Ops"] = _serialize_op_counts(record.undelegated_op_counts)
+        row["PTE Size (Kb)"] = (
+            f"{record.pte_size_bytes / 1000.0:.3f}" if record.pte_size_bytes else ""
+        )
+
+        writer.writerow(row)

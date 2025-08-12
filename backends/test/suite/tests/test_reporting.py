@@ -9,12 +9,11 @@ from executorch.exir import to_edge
 
 from ..reporting import (
     count_ops,
+    generate_csv_report,
     RunSummary,
     TestCaseSummary,
     TestResult,
     TestSessionState,
-    write_csv_header,
-    write_csv_row,
 )
 
 # Test data for simulated test results.
@@ -70,9 +69,7 @@ class Reporting(unittest.TestCase):
         run_summary = RunSummary.from_session(session_state)
 
         strio = StringIO()
-        write_csv_header(strio)
-        for case_summary in run_summary.test_case_summaries:
-            write_csv_row(case_summary, strio)
+        generate_csv_report(run_summary, strio)
 
         # Attempt to deserialize and validate the CSV report.
         report = DictReader(StringIO(strio.getvalue()))
@@ -84,28 +81,32 @@ class Reporting(unittest.TestCase):
         self.assertEqual(records[0]["Test Case"], "test1")
         self.assertEqual(records[0]["Flow"], "flow1")
         self.assertEqual(records[0]["Result"], "Pass")
-        self.assertEqual(records[0]["Params"], "")
+        self.assertEqual(records[0]["Dtype"], "")
+        self.assertEqual(records[0]["Use_dynamic_shapes"], "")
 
         # Validate second record: test1, backend2, LOWER_FAIL
         self.assertEqual(records[1]["Test ID"], "test1_backend2_flow1")
         self.assertEqual(records[1]["Test Case"], "test1")
         self.assertEqual(records[1]["Flow"], "flow1")
         self.assertEqual(records[1]["Result"], "Fail")
-        self.assertEqual(records[1]["Params"], "")
+        self.assertEqual(records[1]["Dtype"], "")
+        self.assertEqual(records[1]["Use_dynamic_shapes"], "")
 
         # Validate third record: test2, backend1, SUCCESS_UNDELEGATED with dtype param
         self.assertEqual(records[2]["Test ID"], "test2_backend1_flow1")
         self.assertEqual(records[2]["Test Case"], "test2")
         self.assertEqual(records[2]["Flow"], "flow1")
         self.assertEqual(records[2]["Result"], "Pass")
-        self.assertEqual(records[2]["Params"], str({"dtype": torch.float32}))
+        self.assertEqual(records[2]["Dtype"], str(torch.float32))
+        self.assertEqual(records[2]["Use_dynamic_shapes"], "")
 
         # Validate fourth record: test2, backend2, EXPORT_FAIL with use_dynamic_shapes param
         self.assertEqual(records[3]["Test ID"], "test2_backend2_flow1")
         self.assertEqual(records[3]["Test Case"], "test2")
         self.assertEqual(records[3]["Flow"], "flow1")
         self.assertEqual(records[3]["Result"], "Skip")
-        self.assertEqual(records[3]["Params"], str({"use_dynamic_shapes": True}))
+        self.assertEqual(records[3]["Dtype"], "")
+        self.assertEqual(records[3]["Use_dynamic_shapes"], "True")
 
     def test_count_ops(self):
         """
