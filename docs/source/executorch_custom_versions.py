@@ -7,11 +7,12 @@
 """
 Sphinx extension to replace ${executorch_version:TAG} with version numbers.
 
+It also defines a special variable ${executorch_version} that is set to the value
+of `EXECUTORCH_VERSION` defined in this file.
+
 This custom extension pulls third-party version strings from files in the
 .ci/docker/ci_commit_pins directory, and uses them to expand specific strings in
 markdown files.
-
-Users can also specify their custom version strings in the global variable `variables`
 
 For example, `${executorch_version:pytorch}` will be replaced with the
 appropriate pytorch version string used by CI.
@@ -26,13 +27,11 @@ version_file_names = [
     "pytorch.txt",
 ]
 
-
-variables: dict[str, str] = {
-    "aar_version": "0.7.0",
-}
+EXECUTORCH_VERSION = "0.7.0"
 
 
-def read_version_files():
+def populate_version_variable():
+    variables["${executorch_version}"] = EXECUTORCH_VERSION
     cwd = os.getcwd()
     version_file_path = os.path.join(cwd, "..", ".ci", "docker", "ci_commit_pins")
 
@@ -43,7 +42,7 @@ def read_version_files():
             variables[var_name] = f.read().strip()
 
 
-read_version_files()
+populate_version_variable()
 
 
 def replace_variables(app, doctree, docname):
