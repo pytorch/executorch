@@ -328,7 +328,7 @@ class StaticAttentionMask {
   }
 
   void set_causal_mask() {
-    for (size_t i = 0; i < input_len_ - 1; i++) {
+    for (size_t i = 0; i < input_len_; i++) {
       auto* p = data_ + (cache_len_ + input_len_) * i;
       std::fill(p + cache_len_, p + cache_len_ + 1 + i, zero_val_);
       std::fill(p + cache_len_ + 1 + i, p + cache_len_ + input_len_, mask_val_);
