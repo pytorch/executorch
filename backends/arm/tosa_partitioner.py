@@ -9,11 +9,13 @@ import logging
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
-from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.arm_backend import (
     is_tosa,
 )  # usort: skip
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
+    calculate_multiples,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
@@ -26,12 +28,53 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
-
 logger = logging.getLogger(__name__)
+
+
+def is_quant_node(node: torch.fx.node.Node) -> bool:
+    return node.target in {
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    }
+
+
+def is_dequant_node(node: torch.fx.node.Node) -> bool:
+    return node.target in {
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    }
+
+
+def is_noop_clone(node: torch.fx.node.Node) -> bool:
+    return node.target == exir_ops.edge.aten.clone.default
+
+
+def is_noop_alias_copy(node: torch.fx.node.Node) -> bool:
+    return node.target == exir_ops.edge.aten.alias_copy.default
+
+
+def is_noop_expand(node: torch.fx.node.Node) -> bool:
+    if node.target != exir_ops.edge.aten.expand_copy.default:
+        return False
+    else:
+        multiples = calculate_multiples(node.args)
+    return all(m == 1 for m in multiples)
+
+
+def is_contiguous(node: torch.fx.node.Node) -> bool:
+    """Check if the node data is contiguous."""
+    if not hasattr(node, "meta"):
+        return False
+    tensor = get_first_fake_tensor(node)
+    rank = len(tensor.shape)
+    return tensor.dim_order() == tuple(range(rank))
 
 
 class TOSAPartitioner(Partitioner):
@@ -50,7 +93,7 @@ class TOSAPartitioner(Partitioner):
         # subgraphs containing the nodes with the tags
 
         logger.info("TOSAPartitioner::partition")
-        partition_tags = {}
+        partition_tags: dict[str, DelegationSpec] = {}
 
         tosa_spec = get_tosa_spec(self.delegation_spec.compile_specs)
 
@@ -66,6 +109,17 @@ class TOSAPartitioner(Partitioner):
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
+
+        def reject_partition(reason: str, partition, tag) -> None:
+            for node in partition.nodes:
+                if "delegation_tag" in node.meta:
+                    del node.meta["delegation_tag"]
+                    reporter.report_reject(
+                        node,
+                        reason,
+                    )
+            partition_tags.pop(tag, None)
+
         for partition in partition_list:
             tag = f"tag{partition.id}"
 
@@ -111,6 +165,43 @@ class TOSAPartitioner(Partitioner):
                             )
                             del node.meta["delegation_tag"]
                             break
+
+            is_noop_partition = all(
+                is_noop_clone(node)
+                or is_noop_alias_copy(node)
+                or is_noop_expand(node)
+                or is_quant_node(node)
+                or is_dequant_node(node)
+                for node in partition.nodes
+            )
+            if is_noop_partition:
+                reject_partition(
+                    "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
+                    partition,
+                    tag,
+                )
+
+            for node in partition.nodes:
+                is_input_node = any(
+                    not is_partitioned(n, tag) for n in node.all_input_nodes
+                )
+                if is_input_node and not is_contiguous(node):
+                    reject_partition(
+                        "Partition had input node with non-contiguous memory format, which is not supported by the TOSA backend. All nodes of the partition rejected.",
+                        partition,
+                        tag,
+                    )
+                    break
+
+            for node in partition.nodes:
+                is_output_node = any(not is_partitioned(n, tag) for n in node.users)
+                if is_output_node and not is_contiguous(node):
+                    reject_partition(
+                        "Partition had output node with non-contiguous memory format, which is not supported by the TOSA backend. All nodes of the partition rejected.",
+                        partition,
+                        tag,
+                    )
+                    break
 
         tag_constant_data(exported_program)
         logger.info(f"The following nodes were rejected for {tosa_spec}:")
