@@ -684,10 +684,16 @@ endif()
 
 if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   if(NOT TARGET cpuinfo)
-     message(FATAL_ERROR "EXECUTORCH_BUILD_KERNELS_TORCHAO requires EXECUTORCH_BUILD_CPUINFO be set ON")
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_KERNELS_TORCHAO requires EXECUTORCH_BUILD_CPUINFO be set ON"
+    )
   endif()
   if(NOT TARGET pthreadpool)
-     message(FATAL_ERROR "EXECUTORCH_BUILD_KERNELS_TORCHAO requires EXECUTORCH_BUILD_PTHREADPOOL be set ON")
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_KERNELS_TORCHAO requires EXECUTORCH_BUILD_PTHREADPOOL be set ON"
+    )
   endif()
 
   # Configure TorchAO kernels
@@ -702,10 +708,12 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
     message(FATAL_ERROR "EXECUTORCH_INCLUDE_DIRS is already defined")
   endif()
   set(EXECUTORCH_INCLUDE_DIRS
-    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
-    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
+      ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
+      ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
   )
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental
+  )
   unset(EXECUTORCH_INCLUDE_DIRS)
 
   executorch_target_link_options_shared_lib(torchao_ops_executorch)
@@ -719,7 +727,9 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
     DESTINATION ${_common_include_directories}
   )
   # If using KleidiAI and XNNPACK has not installed it already, install it
-  if(TORCHAO_BUILD_KLEIDIAI AND NOT (EXECUTORCH_BUILD_XNNPACK AND EXECUTORCH_XNNPACK_ENABLE_KLEIDI))
+  if(TORCHAO_BUILD_KLEIDIAI AND NOT (EXECUTORCH_BUILD_XNNPACK
+                                     AND EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
+  )
     install(
       TARGETS kleidiai
       EXPORT ExecuTorchTargets

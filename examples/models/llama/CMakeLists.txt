@@ -120,7 +120,6 @@ if(TARGET torchao_ops_executorch)
   list(APPEND link_libraries torchao_ops_executorch)
 endif()
 
-
 if(EXECUTORCH_BUILD_KERNELS_TORCHAO_MPS)
   # Currently only enable this on Arm-based Macs
   if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_SYSTEM_PROCESSOR STREQUAL
