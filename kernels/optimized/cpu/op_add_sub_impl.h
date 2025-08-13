@@ -144,13 +144,13 @@ Tensor& opt_add_sub_out_impl(
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
     // Cannot apply the trick of -alpha here because alpha is Scalar without
     // support for - operator. At least not right now.
-    ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
+    ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() -> void {
       CTYPE alpha_val;
       ET_KERNEL_CHECK_MSG(
           ctx,
           torch::executor::native::utils::extract_scalar(alpha, &alpha_val),
           InvalidArgument,
-          out,
+          ,
           "Failed to extract scalar alpha.");
       using Vec = at::vec::Vectorized<CTYPE>;
       Vec alpha_val_vec(alpha_val);
@@ -164,13 +164,13 @@ Tensor& opt_add_sub_out_impl(
           auto add_lambda = [&alpha_val_vec](auto x, auto y) {
             return y - alpha_val_vec * x;
           };
-          return torch::executor::handle_broadcast_elementwise<CTYPE>(
+          torch::executor::handle_broadcast_elementwise<CTYPE>(
               ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
         } else {
           auto add_lambda = [&alpha_val_vec](auto x, auto y) {
             return x - alpha_val_vec * y;
           };
-          return torch::executor::handle_broadcast_elementwise<CTYPE>(
+          torch::executor::handle_broadcast_elementwise<CTYPE>(
               ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
         }
       } else {
@@ -191,13 +191,13 @@ Tensor& opt_add_sub_out_impl(
           auto add_lambda = [&alpha_val_vec](auto x, auto y) {
             return y + alpha_val_vec * x;
           };
-          return torch::executor::handle_broadcast_elementwise<CTYPE>(
+          torch::executor::handle_broadcast_elementwise<CTYPE>(
               ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
         } else {
           auto add_lambda = [&alpha_val_vec](auto x, auto y) {
             return x + alpha_val_vec * y;
           };
-          return torch::executor::handle_broadcast_elementwise<CTYPE>(
+          torch::executor::handle_broadcast_elementwise<CTYPE>(
               ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
         }
       }

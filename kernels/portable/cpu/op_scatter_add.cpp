@@ -52,35 +52,33 @@ void scatter_add_helper(
 } // namespace
 
 Tensor& scatter_add_out(
-    KernelRuntimeContext& context,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
     const Tensor& index,
     const Tensor& src,
     Tensor& out) {
-  (void)context;
-
   ET_KERNEL_CHECK(
-      context,
+      ctx,
       check_scatter_add_args(self, dim, index, src, out),
       InvalidArgument,
       out);
 
   ET_KERNEL_CHECK(
-      context,
+      ctx,
       tensors_have_same_dim_order(self, src, out),
       InvalidArgument,
       out);
 
   ET_KERNEL_CHECK(
-      context, tensor_is_default_dim_order(index), InvalidArgument, out);
+      ctx, tensor_is_default_dim_order(index), InvalidArgument, out);
 
   if (dim < 0) {
     dim += nonzero_dim(self);
   }
 
   ET_KERNEL_CHECK(
-      context,
+      ctx,
       resize_tensor(out, self.sizes()) == Error::Ok,
       InvalidArgument,
       out);

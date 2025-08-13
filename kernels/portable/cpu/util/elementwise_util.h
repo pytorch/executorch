@@ -238,14 +238,14 @@ inline void apply_elementwise_fn_generic_impl(
   };
   std::array<InputInfo, kNumInputs> inputs_info = {(InputInfo{
       internal::get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
-          *inputs.first, inputs.second),
+          ctx, *inputs.first, inputs.second),
       reinterpret_cast<const char*>(inputs.first->const_data_ptr()),
       inputs.first->element_size(),
   })...};
 
   const auto store_compute_to_out =
       internal::get_store_compute_to_tensor_fn<CTYPE_COMPUTE, op_name>(
-          out, out_dtypes);
+          ctx, out, out_dtypes);
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
   const auto out_element_size = out.element_size();
 
