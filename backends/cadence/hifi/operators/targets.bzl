@@ -69,6 +69,8 @@ OPERATORS = [
     "quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out",
     "quantized_layer_norm",
     "quantized_linear_out",
+    "quantized_linear_asym8sxasym8s_asym8s_per_tensor_out",
+    "quantized_linear_asym8uxasym8u_asym8u_per_tensor_out",
     "quantized_matmul_out",
     "quantized_relu_out",
     "quantize_per_tensor",
