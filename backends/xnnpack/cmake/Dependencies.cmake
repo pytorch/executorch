@@ -35,24 +35,25 @@ set(XNNPACK_BUILD_TESTS
 set(XNNPACK_ENABLE_AVXVNNI
     OFF
     CACHE BOOL ""
-  )
-# Work around observed failure: https://github.com/pytorch/executorch/pull/10362#issuecomment-2906391232
+)
+# Work around observed failure:
+# https://github.com/pytorch/executorch/pull/10362#issuecomment-2906391232
 set(XNNPACK_ENABLE_AVX512VNNIGFNI
-  OFF
-  CACHE BOOL "")
+    OFF
+    CACHE BOOL ""
+)
 
 if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
-    set(XNNPACK_ENABLE_KLEIDIAI
-        ON
-        CACHE BOOL ""
-    )
+  set(XNNPACK_ENABLE_KLEIDIAI
+      ON
+      CACHE BOOL ""
+  )
 else()
-    set(XNNPACK_ENABLE_KLEIDIAI
-        OFF
-        CACHE BOOL ""
-    )
+  set(XNNPACK_ENABLE_KLEIDIAI
+      OFF
+      CACHE BOOL ""
+  )
 endif()
-
 
 set(XNNPACK_BUILD_ALL_MICROKERNELS
     OFF
