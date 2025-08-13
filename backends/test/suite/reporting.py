@@ -207,6 +207,8 @@ class TestCaseSummary:
 
 @dataclass
 class TestSessionState:
+    seed: int
+
     # True if the CSV header has been written to report__path.
     has_written_report_header: bool = False
 
@@ -291,11 +293,17 @@ def count_ops(program: dict[str, ExportedProgram] | ExportedProgram) -> Counter:
         )
 
 
-def begin_test_session(report_path: str | None):
+def begin_test_session(report_path: str | None, seed: int):
     global _active_session
 
     assert _active_session is None, "A test session is already active."
-    _active_session = TestSessionState(report_path=report_path)
+    _active_session = TestSessionState(report_path=report_path, seed=seed)
+
+
+def get_active_test_session() -> TestSessionState | None:
+    global _active_session
+
+    return _active_session
 
 
 def log_test_summary(summary: TestCaseSummary):
