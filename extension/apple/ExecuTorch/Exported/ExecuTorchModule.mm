@@ -304,6 +304,13 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   return _module->is_method_loaded(methodName.UTF8String);
 }
 
+- (BOOL)unloadMethod:(NSString *)methodName {
+  const auto didUnload = _module->unload_method(methodName.UTF8String);
+  [_inputs removeObjectForKey:methodName];
+  [_outputs removeObjectForKey:methodName];
+  return didUnload;
+}
+
 - (nullable NSSet<NSString *> *)methodNames:(NSError **)error {
   const auto result = _module->method_names();
   if (!result.ok()) {
