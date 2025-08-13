@@ -54,7 +54,7 @@ TEST_CASE_SUMMARIES = [
         flow="flow1",
         name="test2_backend2_flow1",
         params={"use_dynamic_shapes": True},
-        result=TestResult.EXPORT_FAIL,
+        result=TestResult.SKIPPED,
         error=None,
         tensor_error_statistics=[],
     ),
@@ -108,7 +108,7 @@ class Reporting(unittest.TestCase):
         self.assertEqual(records[3]["Test Case"], "test2")
         self.assertEqual(records[3]["Backend"], "backend2")
         self.assertEqual(records[3]["Flow"], "flow1")
-        self.assertEqual(records[3]["Result"], "Fail (Export)")
+        self.assertEqual(records[3]["Result"], "Skipped")
         self.assertEqual(records[3]["Dtype"], "")
         self.assertEqual(records[3]["Use_dynamic_shapes"], "True")
 
