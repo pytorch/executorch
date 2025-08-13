@@ -1,6 +1,6 @@
 import logging
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 from executorch.backends.test.harness import Tester
@@ -26,15 +26,24 @@ class TestFlow:
     tester_factory: Callable[..., Tester]
     """ A factory function that returns a Tester instance for this lowering flow. """
 
-    quantize: bool = field(default=False)
+    quantize: bool = False
     """ Whether to tester should run the quantize stage on the model. """
 
     quantize_stage_factory: Callable[..., Quantize] | None = None
     """ A factory function which instantiates a Quantize stage. Can be None to use the tester's default. """
 
+    is_delegated: bool = True
+    """ Indicates whether the flow is expected to generate CALL_DELEGATE nodes. """
+
 
 def all_flows() -> dict[str, TestFlow]:
     flows = []
+
+    from executorch.backends.test.suite.flows.portable import PORTABLE_TEST_FLOW
+
+    flows += [
+        PORTABLE_TEST_FLOW,
+    ]
 
     try:
         from executorch.backends.test.suite.flows.xnnpack import (
