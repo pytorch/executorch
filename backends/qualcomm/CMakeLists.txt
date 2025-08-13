@@ -39,17 +39,6 @@ if(${ANDROID})
   find_library(android_log log)
 endif()
 
-set(qcir_schema_include_dir ${CMAKE_CURRENT_LIST_DIR}/aot/ir)
-set(qcir_schema_output ${qcir_schema_include_dir}/qcir_generated.h)
-add_custom_command(
-  OUTPUT qcir_schema_output
-  COMMAND flatc --cpp --cpp-std c++11 --scoped-enums -o
-          ${qcir_schema_include_dir} ${qcir_schema_include_dir}/qcir.fbs
-  DEPENDS flatc
-  COMMENT "Generating qualcomm ir schema headers"
-  VERBATIM
-)
-
 add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
@@ -73,7 +62,6 @@ include_directories(
   ${_common_include_directories}
   ${QNN_SDK_ROOT}/include/QNN
   ${QNN_SDK_ROOT}/share/QNN/converter/jni
-  ${EXECUTORCH_SOURCE_DIR}/third-party/flatbuffers/include
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
 )
 
@@ -112,8 +100,6 @@ include_directories(
 # declare targets
 #
 add_library(executorch_backend INTERFACE)
-add_library(qcir INTERFACE qcir_schema_output)
-add_library(qcir_utils STATIC)
 add_library(qnn_backend STATIC)
 add_library(qnn_backend_cache STATIC)
 add_library(qnn_backend_options STATIC)
@@ -143,7 +129,6 @@ add_library(utils STATIC)
 #
 # declare dependency
 #
-target_link_libraries(qcir_utils PRIVATE qcir)
 target_link_libraries(wrappers PRIVATE qnn_executorch_logging)
 target_link_libraries(
   qnn_implementation PRIVATE qnn_function_interface qnn_executorch_logging
@@ -227,10 +212,6 @@ add_subdirectory(
 add_subdirectory(
   ${QNN_EXECUTORCH_ROOT_DIR}/aot/wrappers
   ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/wrappers
-)
-add_subdirectory(
-  ${QNN_EXECUTORCH_ROOT_DIR}/aot/ir
-  ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/ir
 )
 install(
   TARGETS qnn_executorch_backend
