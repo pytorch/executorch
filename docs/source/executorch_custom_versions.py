@@ -29,6 +29,8 @@ version_file_names = [
 
 EXECUTORCH_VERSION = "0.7.0"
 
+variables: dict[str, str] = {}
+
 
 def populate_version_variable():
     variables["${executorch_version}"] = EXECUTORCH_VERSION
