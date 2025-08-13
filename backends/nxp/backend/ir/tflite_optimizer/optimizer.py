@@ -26,9 +26,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_full
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_quanitze_into_preceding_ops import (
     FuseQuantizeIntoPrecedingOps,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.keep_one_empty_buffer import (
-    KeepOneEmptyBuffer,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu_before_concat import (
     MoveActivationBeforeConcatenation,
 )
@@ -57,7 +54,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.remove_un
 
 
 class Optimization(Enum):
-    KEEP_ONE_EMPTY_BUFFER = 0
     FUSE_ACTIVATION_FUNCTIONS = 1
     FUSE_FULLY_CONNECTED_AND_ADD = 2
 
@@ -109,9 +105,6 @@ class Optimizer:
         self._builder = builder
 
         self.optimization_map = {
-            Optimization.KEEP_ONE_EMPTY_BUFFER: KeepOneEmptyBuffer(
-                builder, conversion_config
-            ),
             Optimization.FUSE_ACTIVATION_FUNCTIONS: FuseActivationFunctions(
                 builder, conversion_config
             ),
