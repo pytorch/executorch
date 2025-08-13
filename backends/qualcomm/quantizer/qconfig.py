@@ -396,7 +396,6 @@ def get_8a8w_qnn_qat_config(
         qscheme=(
             torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
         ),
-        reduce_range=True,
         observer=act_observer,
     )
     act_quantization_spec = QuantizationSpec(
