@@ -156,13 +156,14 @@ build_executorch_runner() {
 }
 
 cmake_install_executorch_lib() {
+  build_type="${1:-Release}"
   echo "Installing libexecutorch.a and libportable_kernels.a"
   clean_executorch_install_folders
   retry cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
-          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_BUILD_TYPE=${build_type} \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config Release
+  cmake --build cmake-out -j9 --target install --config ${build_type}
 }
 
 download_stories_model_artifacts() {

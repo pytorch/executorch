@@ -26,10 +26,13 @@ class I64toI32(ExportPass):
     """
 
     I64_OPS = {
+        exir_ops.edge.aten.argmax.default,
         exir_ops.edge.aten.argmin.default,
         exir_ops.edge.aten.arange.start_step,
+        exir_ops.edge.aten.cumsum.default,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.scalar_tensor.default,
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     }
     # This dict is to ensure that the input of the OPs are int64 due to Pytorch restrictions.
     # For example, scatter op can only accept args[2], the index, as int64.

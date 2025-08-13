@@ -39,19 +39,16 @@ Tensor& leaky_relu_out(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
-  ScalarType sc_type = utils::get_scalar_dtype(negative_slope);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, in_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_FLOATHBF16_TYPES(in_type, ctx, "leaky_relu.out", CTYPE, [&]() {
-    CTYPE negative_slope_casted = 0;
-    ET_SWITCH_SCALAR_OBJ_TYPES(
-        sc_type, ctx, "leaky_relu.out", CTYPE_MIN, [&]() {
-          CTYPE_MIN negative_slope_val = 0;
-          utils::extract_scalar(negative_slope, &negative_slope_val);
-          negative_slope_casted = static_cast<CTYPE>(negative_slope_val);
-        });
+    auto opt_negative_slope_casted =
+        utils::internal::check_overflow_scalar_cast<CTYPE>(negative_slope);
+    ET_KERNEL_CHECK(
+        ctx, opt_negative_slope_casted.has_value(), InvalidArgument, );
+    auto negative_slope_casted = opt_negative_slope_casted.value();
 
     apply_unary_map_fn(
         [negative_slope_casted](const CTYPE val_in) {

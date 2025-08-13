@@ -20,10 +20,12 @@ __attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchTensorMetadata : NSObject
 
 /** The size of each dimension. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *shape;
+@property (nonatomic, readonly) NSArray<NSNumber *> *shape
+    NS_REFINED_FOR_SWIFT;
 
 /** The order in which dimensions are laid out. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *dimensionOrder;
+@property (nonatomic, readonly) NSArray<NSNumber *> *dimensionOrder
+    NS_REFINED_FOR_SWIFT;
 
 /** The scalar type of each element in the tensor. */
 @property (nonatomic, readonly) ExecuTorchDataType dataType;
@@ -52,28 +54,33 @@ __attribute__((deprecated("This API is experimental.")))
 @property (nonatomic, readonly) NSString *name;
 
 /** An array of ExecuTorchValueTag raw values, one per declared input. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *inputValueTags;
+@property (nonatomic, readonly) NSArray<NSNumber *> *inputValueTags
+    NS_REFINED_FOR_SWIFT;
 
 /** An array of ExecuTorchValueTag raw values, one per declared output. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *outputValueTags;
+@property (nonatomic, readonly) NSArray<NSNumber *> *outputValueTags
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Mapping from input-index to TensorMetadata.
  * Only present for those indices whose tag == .tensor
  */
-@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *inputTensorMetadatas;
+@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *inputTensorMetadata
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Mapping from output-index to TensorMetadata.
  * Only present for those indices whose tag == .tensor
  */
-@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *outputTensorMetadatas;
+@property (nonatomic, readonly) NSDictionary<NSNumber *, ExecuTorchTensorMetadata *> *outputTensorMetadata
+    NS_REFINED_FOR_SWIFT;
 
 /** A list of attribute TensorsMetadata. */
-@property (nonatomic, readonly) NSArray<ExecuTorchTensorMetadata *> *attributeTensorMetadatas;
+@property (nonatomic, readonly) NSArray<ExecuTorchTensorMetadata *> *attributeTensorMetadata;
 
 /** A list of memory-planned buffer sizes. */
-@property (nonatomic, readonly) NSArray<NSNumber *> *memoryPlannedBufferSizes;
+@property (nonatomic, readonly) NSArray<NSNumber *> *memoryPlannedBufferSizes
+    NS_REFINED_FOR_SWIFT;
 
 /** Names of all backends this method can run on. */
 @property (nonatomic, readonly) NSArray<NSString *> *backendNames;
@@ -189,7 +196,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param error A pointer to an NSError pointer that is set if an error occurs.
  * @return An unordered set of method names, or nil in case of an error.
  */
-- (nullable NSSet<NSString *> *)methodNames:(NSError **)error;
+- (nullable NSSet<NSString *> *)methodNames:(NSError **)error
+    NS_RETURNS_RETAINED;
 
 /**
  * Retrieves full metadata for a particular method in the loaded module.
@@ -202,7 +210,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @return An ExecuTorchMethodMetadata object on success, or nil if the method isn’t found or a load error occurred.
  */
  - (nullable ExecuTorchMethodMetadata *)methodMetadata:(NSString *)methodName
-                                                 error:(NSError **)error;
+                                                 error:(NSError **)error
+    NS_RETURNS_RETAINED;
 
 /**
  * Executes a specific method with the provided input values.
@@ -217,7 +226,8 @@ __attribute__((deprecated("This API is experimental.")))
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                             withInputs:(NSArray<ExecuTorchValue *> *)values
                                                  error:(NSError **)error
-    NS_SWIFT_NAME(execute(_:_:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Executes a specific method with the provided single input value.
@@ -232,7 +242,8 @@ __attribute__((deprecated("This API is experimental.")))
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                              withInput:(ExecuTorchValue *)value
                                                  error:(NSError **)error
-    NS_SWIFT_NAME(execute(_:_:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Executes a specific method with no input values.
@@ -245,7 +256,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                                  error:(NSError **)error
-    NS_SWIFT_NAME(execute(_:));
+    NS_SWIFT_NAME(execute(_:))
+    NS_RETURNS_RETAINED;
 
 /**
  * Executes a specific method with the provided input tensors.
@@ -260,7 +272,8 @@ __attribute__((deprecated("This API is experimental.")))
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                            withTensors:(NSArray<ExecuTorchTensor *> *)tensors
                                                  error:(NSError **)error
-    NS_SWIFT_NAME(execute(_:_:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Executes a specific method with the provided single input tensor.
@@ -275,7 +288,8 @@ __attribute__((deprecated("This API is experimental.")))
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                             withTensor:(ExecuTorchTensor *)tensor
                                                  error:(NSError **)error
-    NS_SWIFT_NAME(execute(_:_:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Executes the "forward" method with the provided input values.
@@ -288,7 +302,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithInputs:(NSArray<ExecuTorchValue *> *)values
                                                      error:(NSError **)error
-    NS_SWIFT_NAME(forward(_:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Executes the "forward" method with the provided single input value.
@@ -301,7 +316,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithInput:(ExecuTorchValue *)value
                                                     error:(NSError **)error
-    NS_SWIFT_NAME(forward(_:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Executes the "forward" method with no inputs.
@@ -311,7 +327,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param error A pointer to an NSError pointer that is set if an error occurs.
  * @return An NSArray of ExecuTorchValue objects representing the outputs, or nil in case of an error.
  */
-- (nullable NSArray<ExecuTorchValue *> *)forward:(NSError **)error;
+- (nullable NSArray<ExecuTorchValue *> *)forward:(NSError **)error
+    NS_RETURNS_RETAINED;
 
 /**
  * Executes the "forward" method with the provided input tensors.
@@ -324,7 +341,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithTensors:(NSArray<ExecuTorchTensor *> *)tensors
                                                       error:(NSError **)error
-    NS_SWIFT_NAME(forward(_:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Executes the "forward" method with the provided single input tensor.
@@ -337,7 +355,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithTensor:(ExecuTorchTensor *)tensor
                                                      error:(NSError **)error
-    NS_SWIFT_NAME(forward(_:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;

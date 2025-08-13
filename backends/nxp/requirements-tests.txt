@@ -3,4 +3,4 @@ tensorflow==2.18.0
 pytest-mock
 tflite
 GvGen
-neutron-converter_SDK_25_03
+neutron_converter_SDK_25_03

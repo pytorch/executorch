@@ -109,7 +109,7 @@ class AddmmPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_linear
+        return torch.ops.cadence.quantized_linear.default
 
 
 class AddPattern(QuantizationPattern):

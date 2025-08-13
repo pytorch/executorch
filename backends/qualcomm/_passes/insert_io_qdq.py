@@ -9,7 +9,10 @@ import torch
 
 from executorch.backends.qualcomm.builders.node_visitor import q_ops
 
-from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.builders.utils import (
+    is_mutable_buffer_input,
+    is_parameter,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_ENCODING,
     QCOM_QUANT_ATTRS,
@@ -124,7 +127,10 @@ class InsertIOQDQ(ExportPass):
             if (
                 n.op == "placeholder"
                 and n.meta.get(QCOM_QUANT_ATTRS)
-                and not is_parameter(n, self.edge_program)
+                and (
+                    not is_parameter(n, self.edge_program)
+                    or is_mutable_buffer_input(n, self.edge_program)
+                )
             ):
                 self._insert_quant_node(
                     graph_module, n, n.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]

@@ -13,10 +13,12 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    OpNotSupportedPipeline,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.view.default"
@@ -44,6 +46,10 @@ class View(torch.nn.Module):
         "rand_4d_2_4_same": lambda: (torch.rand(2, 3, 2, 3), (2, 3, 3, 2)),
     }
 
+    rank_product_too_large = {
+        "rand_4d_large": lambda: (torch.rand(1, 49, 16, 128), (1, 16, 49, 128)),
+    }
+
     def __init__(self, new_shape):
         super().__init__()
         self.new_shape = new_shape
@@ -53,9 +59,9 @@ class View(torch.nn.Module):
 
 
 @common.parametrize("test_data", View.needs_transpose_tests)
-def test_view_tosa_MI(test_data: Tuple):
+def test_view_tosa_FP(test_data: Tuple):
     test_tensor, new_shape = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         View(new_shape),
         (test_tensor,),
         aten_op,
@@ -65,9 +71,9 @@ def test_view_tosa_MI(test_data: Tuple):
 
 
 @common.parametrize("test_data", View.needs_transpose_tests)
-def test_view_tosa_BI(test_data: Tuple):
+def test_view_tosa_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         View(new_shape),
         (test_tensor,),
         aten_op,
@@ -93,9 +99,9 @@ xfails = {
 
 @common.parametrize("test_data", View.needs_transpose_tests, xfails=xfails)
 @common.XfailIfNoCorstone300
-def test_view_u55_BI(test_data: Tuple):
+def test_view_u55_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         View(new_shape),
         (test_tensor,),
         aten_op,
@@ -104,11 +110,52 @@ def test_view_u55_BI(test_data: Tuple):
     pipeline.run()
 
 
+@common.parametrize("test_data", View.needs_transpose_tests)
+@common.SkipIfNoModelConverter
+def test_view_vgf_FP(test_data: Tuple):
+    test_tensor, new_shape = test_data()
+    pipeline = VgfPipeline[input_t1](
+        View(new_shape),
+        (test_tensor,),
+        aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", View.needs_transpose_tests)
+@common.SkipIfNoModelConverter
+def test_view_vgf_INT(test_data: Tuple):
+    test_tensor, new_shape = test_data()
+    pipeline = VgfPipeline[input_t1](
+        View(new_shape),
+        (test_tensor,),
+        aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", View.rank_product_too_large, xfails=xfails)
+@common.XfailIfNoCorstone300
+def test_view_u55_INT_not_delegated(test_data: Tuple):
+    test_tensor, new_shape = test_data()
+    pipeline = OpNotSupportedPipeline[input_t1](
+        View(new_shape),
+        (test_tensor,),
+        {"executorch_exir_dialects_edge__ops_aten_view_copy": 1},
+        n_expected_delegates=0,
+        quantize=True,
+        u55_subset=True,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", View.needs_transpose_tests, xfails=xfails)
 @common.XfailIfNoCorstone320
-def test_view_u85_BI(test_data: Tuple):
+def test_view_u85_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         View(new_shape),
         (test_tensor,),
         aten_op,

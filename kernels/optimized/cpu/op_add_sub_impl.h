@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/binary_ops.h>
-#include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -85,6 +85,35 @@ Tensor& opt_add_sub_out_impl(
   ScalarType out_type = out.scalar_type();
 
   auto selected_optimized_path = select_optimized_path(a, b, out);
+
+  if (executorch::runtime::isComplexType(a_type) ||
+      executorch::runtime::isComplexType(b_type) ||
+      executorch::runtime::isComplexType(out_type)) {
+    // TODO: The current implementation for complex dtypes enforces that the
+    // inputs and output tensors have same dtype and shape. Handle mixed dtypes
+    // and broadcasting in the future.
+    ET_KERNEL_CHECK(
+        ctx,
+        a_type == b_type && a_type == out_type &&
+            selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d,
+        InvalidArgument,
+        out);
+    ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
+      CTYPE alpha_val = torch::executor::native::utils::scalar_to<CTYPE>(alpha);
+      if constexpr (is_sub) {
+        alpha_val = -alpha_val;
+      }
+      using Vec = at::vec::Vectorized<CTYPE>;
+      at::vec::map2<CTYPE>(
+          [alpha_val](Vec x, Vec y) { return x + Vec(alpha_val) * y; },
+          out.mutable_data_ptr<CTYPE>(),
+          a.const_data_ptr<CTYPE>(),
+          b.const_data_ptr<CTYPE>(),
+          out.numel());
+    });
+    return out;
+  }
+
   if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
@@ -104,8 +133,8 @@ Tensor& opt_add_sub_out_impl(
       if constexpr (is_sub) {
         alpha_val = -alpha_val;
       }
-      using Vec = executorch::vec::Vectorized<CTYPE>;
-      executorch::vec::map2<CTYPE>(
+      using Vec = at::vec::Vectorized<CTYPE>;
+      at::vec::map2<CTYPE>(
           [alpha_val](Vec x, Vec y) { return x + Vec(alpha_val) * y; },
           out.mutable_data_ptr<CTYPE>(),
           a.const_data_ptr<CTYPE>(),
@@ -123,7 +152,7 @@ Tensor& opt_add_sub_out_impl(
           InvalidArgument,
           out,
           "Failed to extract scalar alpha.");
-      using Vec = executorch::vec::Vectorized<CTYPE>;
+      using Vec = at::vec::Vectorized<CTYPE>;
       Vec alpha_val_vec(alpha_val);
       if constexpr (is_sub) {
         if (selected_optimized_path ==

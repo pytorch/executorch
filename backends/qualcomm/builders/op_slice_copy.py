@@ -10,7 +10,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import numpy as np
 import torch
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpStridedSlice, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -55,7 +56,7 @@ class StrideSlice(NodeVisitor):
         if start < 0:
             start = start % input_tensor.shape[dim]
 
-        if len(node.args) > 3:
+        if len(node.args) > 3 and node.args[3] is not None:
             end = min(cast(int, node.args[3]), input_tensor.shape[dim])
             if end < 0:
                 end = end % input_tensor.shape[dim]

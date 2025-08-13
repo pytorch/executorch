@@ -43,7 +43,7 @@ namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 
 class KernelRuntimeContext; // Forward declaration
-using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
+using OpFunction = void (*)(KernelRuntimeContext&, Span<EValue*>);
 
 /**
  * Dtype and dim order metadata for a Tensor argument to an operator.
@@ -123,7 +123,7 @@ struct KernelKey {
    * for all input tensor dtypes and dim orders if the specialized kernel is not
    * registered.
    */
-  KernelKey() : is_fallback_(true) {}
+  KernelKey() = default;
 
   /**
    * Creates a specialized (non-fallback) kernel key that matches a specific
@@ -131,7 +131,7 @@ struct KernelKey {
    * expected format of `kernel_key_data`.
    */
   /* implicit */ KernelKey(const char* kernel_key_data)
-      : kernel_key_data_(kernel_key_data), is_fallback_(false) {}
+      : kernel_key_data_(kernel_key_data) {}
 
   bool operator==(const KernelKey& other) const {
     return this->equals(other);
@@ -142,17 +142,17 @@ struct KernelKey {
   }
 
   bool equals(const KernelKey& other) const {
-    if (is_fallback_ != other.is_fallback_) {
+    if (is_fallback() != other.is_fallback()) {
       return false;
     }
-    if (is_fallback_) {
+    if (is_fallback()) {
       return true;
     }
     return strcmp(kernel_key_data_, other.kernel_key_data_) == 0;
   }
 
   bool is_fallback() const {
-    return is_fallback_;
+    return kernel_key_data_ == nullptr;
   }
 
   const char* data() const {
@@ -168,7 +168,6 @@ struct KernelKey {
 
  private:
   const char* kernel_key_data_ = nullptr;
-  bool is_fallback_;
 };
 
 /**

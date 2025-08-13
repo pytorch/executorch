@@ -16,6 +16,7 @@
 
 # pyre-unsafe
 
+import logging
 import math
 import operator
 from operator import neg
@@ -38,6 +39,7 @@ from executorch.backends.cadence.aot.fuse_ops import (
 )
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    none_throws,
     register_cadence_pass,
 )
 from executorch.backends.cadence.aot.remove_ops import RemoveNopSelectOpPass
@@ -1660,8 +1662,8 @@ class ReplaceNopTransposeOrPermuteWithViewPass(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
-        result = FuseCascadedViewOps()(result.graph_module)
-        assert result is not None
+        fuse_cascaded_result = none_throws(FuseCascadedViewOps()(result.graph_module))
+        result = none_throws(ExportPass()(fuse_cascaded_result.graph_module))
         return result
 
 
@@ -2300,6 +2302,115 @@ class ReplaceMatmulWithTransposedMatmulPass(ExportPass):
         return result
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class ReplaceMulTensorWithMulAndFullOpsPass(ExportPass):
+    """
+    Extracts a single value argument of mul op to a separate full op.
+    """
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        for mul_node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.mul.Tensor
+        ):
+            x_arg, const_arg = mul_node.args
+
+            # Swap arguments if the order is wrong
+            if isinstance(const_arg, torch.fx.Node):
+                x_arg, const_arg = const_arg, x_arg
+
+            # Skip if the const_arg is not a scalar
+            if not isinstance(const_arg, (float, int)) or not isinstance(
+                x_arg, torch.fx.Node
+            ):
+                continue
+
+            # Cast the const_arg to the dtype of the x_arg
+            full_arg = self.resolve_full_arg(x_arg, const_arg)
+
+            # Extract an argument to a separate full op.
+            with graph_module.graph.inserting_before(mul_node):
+                full_node = graph_module.graph.call_function(
+                    torch.ops.aten.full.default, args=([1], full_arg)
+                )
+                full_node.meta = mul_node.meta
+                full_node.meta["val"] = [1]
+                new_mul_node = graph_module.graph.call_function(
+                    torch.ops.aten.mul.Tensor, args=(x_arg, full_node)
+                )
+                new_mul_node.meta = mul_node.meta
+            # Replace the old mul with a newly created mul.
+            mul_node.replace_all_uses_with(new_mul_node)
+            graph_module.graph.erase_node(mul_node)
+        return super().call(graph_module)
+
+    def resolve_full_arg(self, x_arg, const_arg):
+        if x_arg.meta["val"].dtype == torch.float32 and isinstance(const_arg, int):
+            const_arg = float(const_arg)
+        if x_arg.meta["val"].dtype == torch.int32 and isinstance(const_arg, float):
+            const_arg = int(const_arg)
+        return const_arg
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(ExportPass):
+    """
+    Replace the aten adaptive avg_pool op with the aten avg_pool2d op.
+    """
+
+    def call_operator(self, op, args, kwargs, meta):
+        # Only continue for avg_pool op
+        if op not in {exir_ops.edge.aten._adaptive_avg_pool2d.default}:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # Get the input tensor
+        in_tensor = args[0].to_tensor() if isinstance(args[0], ProxyValue) else args[0]
+        # Permute NCHW to NHWC for computation
+        in_tensor_permuted = in_tensor.permute(0, 2, 3, 1)
+        in_tensor_shape = in_tensor_permuted.shape
+
+        output_size = args[1]
+        num_dims = len(output_size)
+
+        # TODO: If in_tensor_shape is not a multiple of output size,
+        # this pass will not work. T224984800
+        dim_multiples = [
+            (in_tensor_shape[i + 1] % output_size[i]) == 0 for i in range(num_dims)
+        ]
+        if not all(dim_multiples):
+            logging.info(
+                f"Unable to replace adaptive average pool with average pool. Input tensor shape of {in_tensor_shape} is not a multiple of output size: {output_size}"
+            )
+            return super().call_operator(op, args, kwargs, meta)
+
+        # Compute stride and kernel_size, then set default values for other arguments
+        stride = [(in_tensor_shape[i + 1] // output_size[i]) for i in range(num_dims)]
+        kernel_size = [
+            in_tensor_shape[i + 1] - (output_size[i] - 1) * stride[i]
+            for i in range(num_dims)
+        ]
+        padding = [0] * num_dims
+        ceil_mode = False
+        count_include_pad = True
+        divisor_override = None
+
+        # Create a new avg_pool node with the updated args
+        new_args = (
+            args[0],
+            kernel_size,
+            stride,
+            padding,
+            ceil_mode,
+            count_include_pad,
+            divisor_override,
+        )
+        return super().call_operator(
+            exir_ops.edge.aten.avg_pool2d.default,
+            new_args,
+            kwargs,
+            meta,
+        )
+
+
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
@@ -2336,9 +2447,11 @@ class CadenceReplaceOpsInGraph:
         ReplacePT2QuantWithCadenceQuantPass,
         ReplacePT2DequantWithCadenceDequantPass,
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
+        ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
         ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
         ReplaceAtenApproxGeluWithApproxGeluPass,
         ReplaceSplitWithSlicePass,
         ReplacePowWithMulPass,
+        ReplaceMulTensorWithMulAndFullOpsPass,
     ]

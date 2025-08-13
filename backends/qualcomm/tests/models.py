@@ -102,6 +102,16 @@ class AMax(torch.nn.Module):
         return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
 
 
+class AMin(torch.nn.Module):
+    def __init__(self, dim=None, keepdim=False):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.amin(x, dim=self.dim, keepdim=self.keepdim)
+
+
 class Arange(torch.nn.Module):
     def __init__(self, start, end, step, dtype):
         super().__init__()
@@ -117,6 +127,15 @@ class Arange(torch.nn.Module):
             )
             + y
         )
+
+
+class Argmax(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = torch.argmax(x, dim=0, keepdim=True)
+        return x
 
 
 class Argmin(torch.nn.Module):
@@ -144,6 +163,14 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         view_out = argmin_out.view(-1)
         squeeze_out = view_out.squeeze(-1)
         return squeeze_out, conv_out
+
+
+class Atan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.atan(x)
 
 
 class AvgPoolModule(torch.nn.Module):
@@ -741,6 +768,14 @@ class ExpM1(torch.nn.Module):
         return torch.special.expm1(x)
 
 
+class Floor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.floor(x)
+
+
 class Fold(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -909,17 +944,36 @@ class Index(torch.nn.Module):
         return self.dispatcher[self.axis](x)
 
 
-class IndexPut(torch.nn.Module):
-    def __init__(self):
+class IndexCopy(torch.nn.Module):
+    def __init__(self, copy_dim=1, skip_mutable_buffer=False):
         super().__init__()
+        self.skip_mutable_buffer = skip_mutable_buffer
+        self.copy_dim = copy_dim
         self.register_buffer(
             "k_cache",
             torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+            persistent=True,
+        )
+
+    def forward(self, input_pos, k_val):
+        k_out = self.k_cache
+        k_out.index_copy_(self.copy_dim, input_pos, k_val)
+        return k_out + 0
+
+
+class IndexPut(torch.nn.Module):
+    def __init__(self, skip_mutable_buffer=False):
+        super().__init__()
+        self.skip_mutable_buffer = skip_mutable_buffer
+        self.register_buffer(
+            "k_cache",
+            torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+            persistent=True,
         )
 
     def forward(self, input_pos, k_val):
         k_out = torch.ops.aten.index_put_(self.k_cache, [None, input_pos], k_val)
-        return k_out
+        return k_out + 0
 
 
 class InstanceNorm2d(torch.nn.Module):
@@ -1101,12 +1155,51 @@ class MeanWOKeppDim(torch.nn.Module):
         return torch.mean(x, (-1, -2))
 
 
+class MaskedFill(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, attn_mask):
+        return attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(
+            attn_mask == 0, float(0.0)
+        )
+
+
+class MaskedSoftmax(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, attention_mask, input):
+        attn_weights = torch.where(
+            attention_mask == 0, input, torch.amin(input, dim=3, keepdim=True) + (-20)
+        )
+        return torch.nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
+
+
+class MaxDim(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logits):
+        max_logits, max_indices = torch.max(logits, dim=1)
+        return max_logits, max_indices
+
+
 class Maximum(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x, y):
         return torch.maximum(x, y)
+
+
+class MinDim(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, logits):
+        min_logits, min_indices = torch.min(logits, dim=1)
+        return min_logits, min_indices
 
 
 class Minimum(torch.nn.Module):
@@ -1420,6 +1513,14 @@ class Roll(torch.nn.Module):
         return torch.roll(x, shifts=self.shifts, dims=self.dims)
 
 
+class Round(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.round(x)
+
+
 class Rsqrt(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1429,12 +1530,13 @@ class Rsqrt(torch.nn.Module):
 
 
 class ScaledDotProductAttention(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, scale=None):
         super().__init__()
+        self.scale = scale
 
     def forward(self, query_layer, key_layer, value_layer, attn_mask):
         attn_output = torch.nn.functional.scaled_dot_product_attention(
-            query_layer, key_layer, value_layer, attn_mask
+            query_layer, key_layer, value_layer, attn_mask, scale=self.scale
         )
         return attn_output
 
@@ -1748,16 +1850,6 @@ class WhereConstantInf(torch.nn.Module):
     def forward(self, x):
         return torch.nn.functional.softmax(
             torch.where(x >= 0, 0.1, float("-inf")), dim=-1
-        )
-
-
-class MaskedFill(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, attn_mask):
-        return attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(
-            attn_mask == 0, float(0.0)
         )
 
 

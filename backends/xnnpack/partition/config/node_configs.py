@@ -9,9 +9,7 @@ import operator
 from typing import List, Optional
 
 import torch
-from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
-)
+from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
@@ -35,20 +33,20 @@ class BatchNormConfig(XNNPartitionerConfig):
             return False
 
         bn = node
-        conv = node.all_input_nodes[0]
+        input_node = node.all_input_nodes[0]
 
-        if conv.op != "call_function":
+        if input_node.op != "call_function":
             return False
 
-        conv_name = format_target_name(conv.target.__name__)  # pyre-ignore
+        input_name = format_target_name(input_node.target.__name__)  # pyre-ignore
 
-        if conv_name not in ["convolution.default"]:
-            why(node, f"Invalid conv target {conv_name}")
+        if input_name not in ["convolution.default", "linear.default"]:
+            why(node, f"Invalid input target {input_name.split('.')[0]}")
             return False
 
-        can_fuse = FuseBatchNormWithConvPass.can_fuse(conv, bn, ep)
+        can_fuse = FuseBatchNormPass.can_fuse(input_node, bn, ep)
         if not can_fuse:
-            why(node, "BatchNorm cannot be fused with Convolution")
+            why(node, f"BatchNorm cannot be fused with {input_name.split('.')[0]}")
             return False
 
         return True

@@ -69,7 +69,12 @@ let products = deliverables([
       "c++",
     ],
   ],
-  "kernels_custom": [:],
+  "executorch_llm": [
+    "targets": [
+      "executorch",
+    ],
+  ],
+  "kernels_llm": [:],
   "kernels_optimized": [
     "frameworks": [
       "Accelerate",

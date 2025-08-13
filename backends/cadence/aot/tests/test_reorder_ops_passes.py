@@ -4,10 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+# pyre-strict
 
 
 import unittest
+from typing import cast
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
@@ -29,10 +30,11 @@ from executorch.backends.cadence.aot.reorder_ops import (
     SinkOpsCloserToUsePass,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import PassResult
 
 
 class TestReorderPasses(unittest.TestCase):
-    def test_sink_dequantize(self):
+    def test_sink_dequantize(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(32, 6, dtype=torch.float32))
         y = builder.placeholder("y", torch.randn(32, 6, dtype=torch.float32))
@@ -103,9 +105,10 @@ class TestReorderPasses(unittest.TestCase):
             op=exir_ops.edge.aten.cat.default,
             args=([abs_1, dequantize_per_tensor_1],),
         )
-        builder.output(cat)
+        builder.output([cat])
         original_graph = builder.get_graph_module()
-        converted_graph = SinkOpsCloserToUsePass()(original_graph).graph_module
+        p = SinkOpsCloserToUsePass()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
 
         # Expect the SinkDequant pass to move dequant(y) from above the relu to just below it
         self.assertTrue(
@@ -123,7 +126,7 @@ class TestReorderPasses(unittest.TestCase):
             ),
         )
 
-    def test_advance_branched_quantize(self):
+    def test_advance_branched_quantize(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(64, 3, dtype=torch.float32))
         view = builder.call_operator(
@@ -174,9 +177,8 @@ class TestReorderPasses(unittest.TestCase):
             ]
         )
         original_graph = builder.get_graph_module()
-        graph_module = AdvanceQuantizeOpAboveDefInBranchPass()(
-            original_graph
-        ).graph_module
+        p = AdvanceQuantizeOpAboveDefInBranchPass()
+        graph_module = cast(PassResult, p(original_graph)).graph_module
         graph_module.graph.eliminate_dead_code()
         nodes = get_compute_nodes_in_gm(graph_module)
         # The quantize op should be hoisted to dominate the branch
@@ -208,19 +210,20 @@ class TestReorderPasses(unittest.TestCase):
             ),
             4,
         )
-        graph_module = FuseQuantDequantToRequantizePass()(graph_module).graph_module
+        p = FuseQuantDequantToRequantizePass()
+        graph_module = cast(PassResult, p(graph_module)).graph_module
         # We expect 3 dequant/quant pairs to be removed because they have matching params,
         # leaving a single dequant/quant pair that is then merged into a requantize op
         self.assertEqual(
             count_node(
                 graph_module,
-                exir_ops.edge.cadence.requantize.default,
+                exir_ops.edge.cadence.requantize.per_tensor,
             ),
             1,
         )
 
     @torch.no_grad()
-    def test_advance_quantize(self):
+    def test_advance_quantize(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(16, 1, 6, 32, dtype=torch.float32))
         weights = builder.placeholder(
@@ -268,14 +271,13 @@ class TestReorderPasses(unittest.TestCase):
             op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
             args=(quantized_linear, 0.01627226173877716, -7, -128, 127, torch.int8),
         )
-        builder.output(dequantize_per_tensor)
+        builder.output([dequantize_per_tensor])
         original_graph = builder.get_graph_module()
-        converted_graph = AdvanceQuantizeOpAboveDefInBranchPass()(
-            original_graph
-        ).graph_module
-        converted_graph = AdvanceQuantizeOpAboveDefChainPass()(
-            original_graph
-        ).graph_module
+
+        p1 = AdvanceQuantizeOpAboveDefInBranchPass()
+        tmp_graph = cast(PassResult, p1(original_graph)).graph_module
+        p2 = AdvanceQuantizeOpAboveDefChainPass()
+        converted_graph = cast(PassResult, p2(tmp_graph)).graph_module
         # Assert that permute node is now the successor of the quant node.
         self.assertTrue(
             get_node_pos(
@@ -284,7 +286,7 @@ class TestReorderPasses(unittest.TestCase):
             < get_node_pos(converted_graph, exir_ops.edge.aten.permute_copy.default)
         )
 
-    def test_postpone_dequantize1(self):
+    def test_postpone_dequantize1(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 16, 32, 6, dtype=torch.float32))
         weights = builder.placeholder(
@@ -332,11 +334,10 @@ class TestReorderPasses(unittest.TestCase):
             op=exir_ops.edge.aten.permute_copy.default,
             args=(dequantize_per_tensor, [1, 0, 3, 2]),
         )
-        builder.output(permute)
+        builder.output([permute])
         original_graph = builder.get_graph_module()
-        converted_graph = PostponeDequantizeOpBelowUseChainPass()(
-            original_graph
-        ).graph_module
+        p = PostponeDequantizeOpBelowUseChainPass()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
         # Assert that dequant node is now the successor of the permute node.
         self.assertTrue(
             get_node_pos(converted_graph, exir_ops.edge.aten.permute_copy.default)
@@ -346,7 +347,7 @@ class TestReorderPasses(unittest.TestCase):
             )
         )
 
-    def test_postpone_dequantize_branched(self):
+    def test_postpone_dequantize_branched(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder(
             "x", torch.randint(0, 255, [1, 18, 3], dtype=torch.uint8)
@@ -403,14 +404,13 @@ class TestReorderPasses(unittest.TestCase):
         )
         builder.output([aten_mm_default, aten_mm_default_1, aten_mm_default_2])
         original_graph = builder.get_graph_module()
-        graph_module = PostponeDequantizeOpBelowUseChainPass()(
-            original_graph
-        ).graph_module
-        graph_module.graph.eliminate_dead_code()
+        p = PostponeDequantizeOpBelowUseChainPass()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
+        converted_graph.graph.eliminate_dead_code()
         # Asset that the dequant node was split into 4, one per branch
         self.assertEqual(
             count_node(
-                graph_module,
+                converted_graph,
                 exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
             ),
             3,
@@ -419,7 +419,7 @@ class TestReorderPasses(unittest.TestCase):
         # Assert that the dequant node is no longer the predecessor of the squeeze node
         self.assertTrue(
             nodes_not_connected_in_gm(
-                graph_module,
+                converted_graph,
                 exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
                 exir_ops.edge.aten.squeeze_copy.dims,
             ),
@@ -427,14 +427,14 @@ class TestReorderPasses(unittest.TestCase):
         # Assert that dequant node is not predecessor of slice (it should've been moved below slice)
         self.assertTrue(
             nodes_not_connected_in_gm(
-                graph_module,
+                converted_graph,
                 exir_ops.edge.cadence.dequantize_per_tensor.default,
                 exir_ops.edge.aten.slice_copy.Tensor,
             ),
         )
 
     # 4d -> permute -> 4d -> view -> 3d
-    def test_permute3_view4_chains(self):
+    def test_permute3_view4_chains(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(3, 1, 768))
         aten_view_copy_default = builder.call_operator(
@@ -453,14 +453,10 @@ class TestReorderPasses(unittest.TestCase):
             op=exir_ops.edge.aten.permute_copy.default,
             args=(aten_view_copy_default_1, [0, 1, 3, 2]),
         )
-        builder.output(
-            aten_permute_copy_default_1,
-        )
+        builder.output([aten_permute_copy_default_1])
         original_graph = builder.get_graph_module()
-        # Performing transform
-        converted_graph = PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView()(
-            original_graph
-        ).graph_module
+        p = PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
         converted_graph.graph.eliminate_dead_code()
         # Assert the order becomes view, view, permute, permute
         nodes = get_compute_nodes_in_gm(converted_graph)
@@ -471,7 +467,7 @@ class TestReorderPasses(unittest.TestCase):
         self.assertTrue(nodes[3] == exir_ops.edge.aten.permute_copy)
 
     # 3d -> permute -> 3d -> view -> 4d
-    def test_permute4_view3_chains(self):
+    def test_permute4_view3_chains(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(3, 1, 768))
         aten_view_copy_default = builder.call_operator(
@@ -490,14 +486,11 @@ class TestReorderPasses(unittest.TestCase):
             op=exir_ops.edge.aten.permute_copy.default,
             args=(aten_view_copy_default_1, [2, 1, 0]),
         )
-        builder.output(
-            aten_permute_copy_default_1,
-        )
+        builder.output([aten_permute_copy_default_1])
         original_graph = builder.get_graph_module()
-        # Performing transform
-        converted_graph = PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView()(
-            original_graph
-        ).graph_module
+
+        p = PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
         converted_graph.graph.eliminate_dead_code()
 
         # Assert the order becomes view, view, permute, permute
@@ -511,7 +504,7 @@ class TestReorderPasses(unittest.TestCase):
     # Negative test case where the transform should not happen.
     # permute->4d->view->3d where the view not only removes the dimension whose
     # size is 1 (this is ok), but also changes the size of the dimensions (not ok).
-    def test_permute_view_chains_neg(self):
+    def test_permute_view_chains_neg(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(3, 1, 768))
         aten_view_copy_default = builder.call_operator(
@@ -530,14 +523,12 @@ class TestReorderPasses(unittest.TestCase):
             op=exir_ops.edge.aten.permute_copy.default,
             args=(aten_view_copy_default_1, [2, 1, 0]),
         )
-        builder.output(
-            aten_permute_copy_default_1,
-        )
+        builder.output([aten_permute_copy_default_1])
         original_graph = builder.get_graph_module()
+
         # Performing transform (nothing should happen)
-        converted_graph = PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView()(
-            original_graph
-        ).graph_module
+        p = PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
         converted_graph.graph.eliminate_dead_code()
 
         # Assert the order is still view, permute, view, permute

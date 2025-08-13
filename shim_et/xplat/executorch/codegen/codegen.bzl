@@ -752,7 +752,7 @@ def executorch_generated_lib(
             See: https://www.internalfb.com/wiki/PyTorch/Teams/Edge/PyTorch_Edge_Core_Team/Dtype_Selective_Build/""")
 
     if dtype_selective_build:
-        if not expose_operator_symbols and not is_xplat():
+        if not expose_operator_symbols and not (is_xplat() or runtime.is_oss):
             fail("""
                 Dtype selective build with expose_operator_symbols=False works only in xplat -
                 there are undefined symbols otherwise. Please try to use xplat, or talk to the
@@ -896,6 +896,7 @@ def executorch_generated_lib(
             exported_deps = [
                 "//executorch/codegen:macros",
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
             feature = feature,
         )
@@ -933,6 +934,7 @@ def executorch_generated_lib(
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
             xplat_deps = xplat_deps,
             fbcode_deps = fbcode_deps,

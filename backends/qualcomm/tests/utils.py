@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import collections
-import copy
 import os
 import subprocess
 import tempfile
@@ -30,7 +29,7 @@ from executorch.backends.qualcomm.utils.utils import (
     get_soc_to_chipset_map,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.devtools import generate_etrecord, Inspector
+from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
@@ -183,8 +182,11 @@ class TestQNN(unittest.TestCase):
     executorch_root: str = ""
     artifact_dir: str = ""
     image_dataset: str = ""
+    qa_dataset: str = ""
+    sentence_dataset: str = ""
     pretrained_weight: str = ""
     enable_profile: bool = False
+    op_package_dir: str = ""
     online_prepare: bool = False
     use_8a8w: str = "8a8w"
     use_16a16w: str = "16a16w"
@@ -195,6 +197,8 @@ class TestQNN(unittest.TestCase):
     pre_gen_pte: str = ""
     llama_artifacts: str = ""
     dump_intermediate_outputs: bool = False
+    inference_speed: float = 0.0
+    inference_speed_output_path = "outputs/inference_speed.txt"
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -238,6 +242,16 @@ class TestQNN(unittest.TestCase):
 
         return input_list, ref_outputs, pte_fname
 
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
+        )
+
     def verify_output(  # noqa: C901
         self,
         module: torch.nn.Module,
@@ -250,6 +264,10 @@ class TestQNN(unittest.TestCase):
         input_encodings: Tuple = (),
         output_encodings: Tuple = (),
         check_io_shape: bool = False,
+        op_package_paths: List[str] = None,
+        extra_cmds: str = "",
+        output_callback: Optional[Callable[[str], None]] = None,
+        save_inference_speed: bool = False,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
@@ -273,7 +291,9 @@ class TestQNN(unittest.TestCase):
                     torch_to_numpy_dtype_dict,
                 )
 
-                for i, f in enumerate(sorted(os.listdir(output_dir))):
+                for i, f in enumerate(
+                    sorted(f for f in os.listdir(output_dir) if f.endswith(".raw"))
+                ):
                     enc = output_encodings[i] if len(output_encodings) != 0 else None
                     dtype = (
                         ref_outputs[i].numpy().dtype
@@ -354,6 +374,13 @@ class TestQNN(unittest.TestCase):
                 ]
                 if expected_intermediate_events != -1:
                     cmd.append("--dump_intermediate_outputs")
+                cmd += extra_cmds.split()
+
+                if save_inference_speed:
+                    cmd += [
+                        "--performance_output_path",
+                        self.inference_speed_output_path,
+                    ]
 
                 if check_io_shape:
                     shape_info = {
@@ -373,16 +400,19 @@ class TestQNN(unittest.TestCase):
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
+                    text=True,
                     env=env,
                     cwd=tmp_dir,
                 )
 
+                if output_callback:
+                    output_callback(proc)
                 self.assertEqual(
                     proc.returncode,
                     0,
                     f"The process running qnn_executorch_runner return {proc.returncode}, "
                     "STDOUT=\n"
-                    f"{proc.stdout.decode('utf-8')}",
+                    f"{proc.stdout}",
                 )
 
                 # Verify the outputs
@@ -395,6 +425,13 @@ class TestQNN(unittest.TestCase):
 
                 if expected_intermediate_events != -1:
                     validate_intermediate_tensor()
+
+                if save_inference_speed:
+                    with open(
+                        f"{tmp_dir}/{self.inference_speed_output_path}", "r"
+                    ) as f:
+                        self.inference_speed = float(f.read())
+
             else:
                 adb = SimpleADB(
                     qnn_sdk=os.getenv("QNN_SDK_ROOT"),
@@ -419,8 +456,17 @@ class TestQNN(unittest.TestCase):
                         else None
                     ),
                 )
-                adb.push(inputs=[processed_inputs], input_list=input_list)
-                adb.execute(method_index=method_index)
+                adb.push(
+                    inputs=[processed_inputs],
+                    input_list=input_list,
+                    files=op_package_paths,
+                )
+                adb.extra_cmds += extra_cmds
+                if save_inference_speed:
+                    adb.extra_cmds += (
+                        f" --performance_output_path {self.inference_speed_output_path}"
+                    )
+                adb.execute(method_index=method_index, output_callback=output_callback)
                 adb.pull(output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
 
@@ -433,6 +479,11 @@ class TestQNN(unittest.TestCase):
                         debug_output_path,
                         callback=validate_intermediate_tensor,
                     )
+                if save_inference_speed:
+                    with open(
+                        f"{tmp_dir}/{self.inference_speed_output_path}", "r"
+                    ) as f:
+                        self.inference_speed = float(f.read())
 
     def lower_module_and_test_output(
         self,
@@ -445,7 +496,11 @@ class TestQNN(unittest.TestCase):
         passes_job: Optional[OrderedDict] = None,
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
+        skip_mutable_buffer: bool = False,
         dynamic_shapes: Dict = None,
+        extra_cmds: str = "",
+        output_callback: Optional[Callable[[str], None]] = None,
+        save_inference_speed: bool = False,
     ):
         delegated_program = to_edge_transform_and_lower_to_qnn(
             module,
@@ -455,10 +510,9 @@ class TestQNN(unittest.TestCase):
             passes_job=passes_job,
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
+            skip_mutable_buffer=skip_mutable_buffer,
+            generate_etrecord=self.enable_profile,
         )
-
-        # this is needed for the ETRecord as lowering modifies the graph in-place
-        edge_copy = copy.deepcopy(delegated_program)
 
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
@@ -486,7 +540,7 @@ class TestQNN(unittest.TestCase):
 
         etrecord_path = "etrecord.bin"
         if self.enable_profile:
-            generate_etrecord(etrecord_path, edge_copy, exec_prog)
+            exec_prog.get_etrecord().save(etrecord_path)
         # Check numerics
         if (
             assert_output_equal
@@ -500,6 +554,9 @@ class TestQNN(unittest.TestCase):
                 etrecord_path,
                 expected_profile_events,
                 expected_intermediate_events,
+                extra_cmds=extra_cmds,
+                output_callback=output_callback,
+                save_inference_speed=save_inference_speed,
             )
 
     def get_qdq_module(

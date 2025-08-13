@@ -20,6 +20,7 @@ phases:
       - adb -s $DEVICEFARM_DEVICE_UDID push *.bin /sdcard > /dev/null && echo OK
       - adb -s $DEVICEFARM_DEVICE_UDID push *.model /sdcard > /dev/null && echo OK
       - adb -s $DEVICEFARM_DEVICE_UDID push *.pte /sdcard > /dev/null && echo OK
+      - adb -s $DEVICEFARM_DEVICE_UDID push *.json /sdcard > /dev/null && echo OK
 
       # Prepare the model and the tokenizer
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /sdcard/"
@@ -27,9 +28,11 @@ phases:
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.bin /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.model /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.pte /data/local/tmp/minibench/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.json /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.bin"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.model"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.pte"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/minibench/*.json"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /data/local/tmp/minibench/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "run-as org.pytorch.minibench rm -rf files"
 
@@ -105,6 +108,13 @@ phases:
           echo "*.model tokenizer files found in /data/local/tmp/minibench/"
         fi
 
+        JSON_FOUND="$(adb -s $DEVICEFARM_DEVICE_UDID shell find /data/local/tmp/minibench/ -name '*.json')"
+        if [ -z "$JSON_FOUND" ]; then
+          echo "No *.json tokenizer files found in /data/local/tmp/minibench/"
+        else
+          echo "*.json tokenizer files found in /data/local/tmp/minibench/"
+        fi
+
       - echo "Collect device state before running"
       - |
         adb -s $DEVICEFARM_DEVICE_UDID shell 'cat /sys/devices/system/cpu/cpu*/cpufreq/stats/time_in_state /sys/devices/system/cpu/cpu*/cpufreq/stats/trans_table' > $DEVICEFARM_LOG_DIR/state_before.txt
@@ -128,11 +138,16 @@ phases:
             --es "model_dir" "/data/local/tmp/minibench" \
             --es "tokenizer_path" "/data/local/tmp/minibench/tokenizer.model" \
             --ei "num_iter" 5 --ei "num_warm_up_iter" 2
+        elif [ -n "$JSON_FOUND" ]; then
+          adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
+            --es "model_dir" "/data/local/tmp/minibench" \
+            --es "tokenizer_path" "/data/local/tmp/minibench/tokenizer.json" \
+            --ei "num_iter" 5 --ei "num_warm_up_iter" 2
         else
           adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.BenchmarkActivity \
             --es "model_dir" "/data/local/tmp/minibench"
         fi
-        
+
       - echo "Collect device state after running"
       - |
         adb -s $DEVICEFARM_DEVICE_UDID shell 'cat /sys/devices/system/cpu/cpu*/cpufreq/stats/time_in_state /sys/devices/system/cpu/cpu*/cpufreq/stats/trans_table' > $DEVICEFARM_LOG_DIR/state_after.txt

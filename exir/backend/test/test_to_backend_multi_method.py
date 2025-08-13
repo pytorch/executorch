@@ -555,13 +555,13 @@ class TestToBackendMultiMethod(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
         )
         self.check_backend_delegate(
             program=program,
             delegate=program.execution_plan[1].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
         )
 
         # Check that there are two methods

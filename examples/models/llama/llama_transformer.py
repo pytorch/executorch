@@ -204,7 +204,8 @@ class Transformer(nn.Module):
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
-            h = h[:, -1, :]
+            pos = attn_options.get("last_valid_token_pos", -1)
+            h = h[:, pos, :]
 
         h = self.norm(h)
 

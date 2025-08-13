@@ -20,7 +20,6 @@ except ImportError:
     # We can use relative import instead.
     from ..parse import strip_et_fields
 
-
 from torchgen.gen import LineLoader, parse_native_yaml_struct
 from torchgen.selective_build.operator import SelectiveBuildOperator
 from torchgen.selective_build.selector import merge_et_kernel_metadata
@@ -102,7 +101,6 @@ def _get_operators(model_file: str) -> List[str]:
 
 
 def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
-
     from executorch.codegen.tools.selective_build import (  # type: ignore[import-not-found]
         _get_io_metadata_for_program_operators,
         _get_program_from_buffer,

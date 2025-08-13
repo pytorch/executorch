@@ -39,7 +39,7 @@ jobs:
         id: set_version
         shell: bash
         run: |
-          VERSION="0.7.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          VERSION="0.8.0.$(TZ='PST8PDT' date +%Y%m%d)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-demo-ios:
@@ -149,10 +149,11 @@ jobs:
         VERSION="${{ needs.set-version.outputs.version }}"
         FRAMEWORKS=(
           "executorch"
+          "executorch_llm"
           "backend_coreml"
           "backend_mps"
           "backend_xnnpack"
-          "kernels_custom"
+          "kernels_llm"
           "kernels_optimized"
           "kernels_quantized"
           "threadpool"

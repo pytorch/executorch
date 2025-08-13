@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+# pyre-strict
 
 
 import unittest
@@ -18,13 +18,13 @@ from executorch.backends.cadence.aot.simplify_ops import (
     BindOptionalArgsPass,
     SimplifySliceOpPass,
 )
+from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.exir.dialects._ops import ops as exir_ops
-from parameterized.parameterized import parameterized
 from torch.fx.passes.infra.pass_base import PassResult
 
 
 class TestSimplifyOpsPasses(unittest.TestCase):
-    @parameterized.expand(
+    @expand(
         [
             [(3, 16, 5), (3, 0, 5), 1, 15, 3, 3],
         ]
@@ -38,7 +38,7 @@ class TestSimplifyOpsPasses(unittest.TestCase):
         start: Optional[int] = None,
         end: Optional[int] = None,
         step: int = 1,
-    ):
+    ) -> None:
         x = torch.randn(*in_shape)
         y = torch.randn(*src_shape)
         gm = single_op_builder(
@@ -50,7 +50,7 @@ class TestSimplifyOpsPasses(unittest.TestCase):
         gm = cast(PassResult, p(gm)).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_scatter.default), 0)
 
-    @parameterized.expand(
+    @expand(
         [
             [(3, 16, 5), 1, 15, 3, 3],
         ]
@@ -63,7 +63,7 @@ class TestSimplifyOpsPasses(unittest.TestCase):
         start: Optional[int] = None,
         end: Optional[int] = None,
         step: int = 1,
-    ):
+    ) -> None:
         x = torch.randn(*in_shape)
         gm = single_op_builder(
             placeholders=(x,),

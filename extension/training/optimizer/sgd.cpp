@@ -66,7 +66,7 @@ void SGDParamGroup::set_options(std::unique_ptr<SGDOptions> options) {
   options_ = std::move(options);
 }
 
-const std::map<executorch::aten::string_view, executorch::aten::Tensor>&
+const std::map<std::string_view, executorch::aten::Tensor>&
 SGDParamGroup::named_parameters() const {
   return named_parameters_;
 }
@@ -81,9 +81,8 @@ void SGD::add_param_group(const SGDParamGroup& param_group) {
   param_groups_.emplace_back(std::move(param_group_));
 }
 
-Error SGD::step(
-    const std::map<executorch::aten::string_view, executorch::aten::Tensor>&
-        named_gradients) {
+Error SGD::step(const std::map<std::string_view, executorch::aten::Tensor>&
+                    named_gradients) {
   for (auto& group : param_groups_) {
     auto& options = static_cast<SGDOptions&>(group.options());
     auto weight_decay = options.weight_decay();

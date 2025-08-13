@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
@@ -51,6 +52,21 @@ class OpHardTanhTest : public OperatorTest {
     EXPECT_TENSOR_EQ(out, ret);
     EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {lower_bound, 0, 1, 2}));
   }
+
+  template <ScalarType DTYPE>
+  void expect_bad_scalar_value_dies(const Scalar& bad_value) {
+    TensorFactory<DTYPE> tf;
+    Tensor in = tf.ones({2, 2});
+    Tensor out = tf.zeros({2, 2});
+
+    // Test overflow for min parameter (using valid max)
+    ET_EXPECT_KERNEL_FAILURE(
+        context_, op_hardtanh_out(in, bad_value, 1.0, out));
+
+    // Test overflow for max parameter (using valid min)
+    ET_EXPECT_KERNEL_FAILURE(
+        context_, op_hardtanh_out(in, -1.0, bad_value, out));
+  }
 };
 
 TEST_F(OpHardTanhTest, SanityCheck) {
@@ -58,3 +74,5 @@ TEST_F(OpHardTanhTest, SanityCheck) {
   ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
+
+GENERATE_SCALAR_OVERFLOW_TESTS(OpHardTanhTest)

@@ -14,8 +14,8 @@ from executorch.backends.qualcomm._passes.utils import is_float_tensor
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 from torch import fx
-from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
 from torch.ops import aten as aten
+from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 
 @dataclass(frozen=True)
@@ -59,6 +59,7 @@ SCALAR_OPS = {
 
 SKIP_LIFT_OPS = {
     aten.full_like.default,
+    aten.full.default,
     aten.arange.start_step,
     aten.arange.default,
     aten.scalar_tensor.default,
@@ -86,7 +87,8 @@ class LiftConstantScalarOperands(ExportPass):
             dtype=(
                 node.args[0].meta["val"].dtype
                 if not is_float_tensor(node)
-                and not SCALAR_OPS.get(node.target).use_self_dtype
+                and (info := SCALAR_OPS.get(node.target))
+                and not info.use_self_dtype
                 else node.meta["val"].dtype
             ),
             device=node.meta["val"].device,

@@ -19,7 +19,7 @@ class ValueTest: XCTestCase {
     let tensor = Tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     let value = Value(tensor)
     XCTAssertTrue(value.isTensor)
-    XCTAssertEqual(value.tensor, tensor)
+    XCTAssertEqual(value.tensor(), tensor)
   }
 
   func testString() {
@@ -121,5 +121,171 @@ class ValueTest: XCTestCase {
     let tensorValueDifferent = Value(tensorDifferent)
     XCTAssertTrue(tensorValue1.isEqual(tensorValue2))
     XCTAssertFalse(tensorValue1.isEqual(tensorValueDifferent))
+  }
+}
+
+class ValueProtocolTest: XCTestCase {
+  private func encoded(_ inputs: ValueConvertible...) -> [Value] {
+    inputs.map { $0.asValue() }
+  }
+
+  func testEncodeDecodeBool() throws {
+    let original: Bool = true
+    let value = original.asValue()
+    XCTAssertTrue(value.isBoolean)
+    let decoded: Bool = try Bool.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeInt() throws {
+    let original: Int = 123
+    let value = original.asValue()
+    XCTAssertTrue(value.isInteger)
+    let decoded: Int = try Int.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeInt8() throws {
+    let original: Int8 = -42
+    let value = original.asValue()
+    XCTAssertTrue(value.isInteger)
+    let decoded: Int8 = try Int8.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeInt16() throws {
+    let original: Int16 = 1024
+    let value = original.asValue()
+    XCTAssertTrue(value.isInteger)
+    let decoded: Int16 = try Int16.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeInt32() throws {
+    let original: Int32 = -2048
+    let value = original.asValue()
+    XCTAssertTrue(value.isInteger)
+    let decoded: Int32 = try Int32.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeInt64() throws {
+    let original: Int64 = 1_000_000_000
+    let value = original.asValue()
+    XCTAssertTrue(value.isInteger)
+    let decoded: Int64 = try Int64.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeUInt8() throws {
+    let original: UInt8 = 255
+    let value = original.asValue()
+    XCTAssertTrue(value.isInteger)
+    let decoded: UInt8 = try UInt8.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeUInt16() throws {
+    let original: UInt16 = 65_535
+    let value = original.asValue()
+    XCTAssertTrue(value.isInteger)
+    let decoded: UInt16 = try UInt16.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeUInt32() throws {
+    let original: UInt32 = 4_294_967_295
+    let value = original.asValue()
+    XCTAssertTrue(value.isInteger)
+    let decoded: UInt32 = try UInt32.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeUInt64() throws {
+    let original: UInt64 = 18_446_744_073_709_551_615
+    let value = original.asValue()
+    XCTAssertTrue(value.isInteger)
+    let decoded: UInt64 = try UInt64.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeUInt() throws {
+    let original: UInt = 42
+    let value = original.asValue()
+    XCTAssertTrue(value.isInteger)
+    let decoded: UInt = try UInt.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeFloat() throws {
+    let original: Float = 3.1415
+    let value = original.asValue()
+    XCTAssertTrue(value.isFloat)
+    let decoded: Float = try Float.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeDouble() throws {
+    let original: Double = 2.71828
+    let value = original.asValue()
+    XCTAssertTrue(value.isDouble)
+    let decoded: Double = try Double.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeString() throws {
+    let original = "swift"
+    let value = original.asValue()
+    XCTAssertTrue(value.isString)
+    let decoded: String = try String.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testEncodeDecodeNSNumber() throws {
+    let original = NSNumber(value: 7.0)
+    let value = original.asValue()
+    XCTAssertTrue(value.isDouble)
+    let decoded: NSNumber = try NSNumber.from(value)
+    XCTAssertEqual(decoded, original)
+  }
+
+  func testSequenceDecodeSingleInt() throws {
+    let values = encoded(99)
+    let decoded = try Int.from(values)
+    XCTAssertEqual(decoded, 99)
+  }
+
+  func testSequenceDecodeSingleBool() throws {
+    let values = encoded(false)
+    let decoded = try Bool.from(values)
+    XCTAssertEqual(decoded, false)
+  }
+
+  func testSequenceDecodeMultipleFailure() {
+    let values = encoded(1, 2)
+    XCTAssertThrowsError(try Int.from(values))
+  }
+
+  func testArrayDecodeInts() throws {
+    let values = encoded(1, 2, 3, 4)
+    let decoded: [Int] = try [Int].from(values)
+    XCTAssertEqual(decoded, [1, 2, 3, 4])
+  }
+
+  func testArrayDecodeFloats() throws {
+    let values = encoded(1.5, 2.5, 3.5)
+    let decoded: [Float] = try [Float].from(values)
+    XCTAssertEqual(decoded, [1.5, 2.5, 3.5])
+  }
+
+  func testArrayDecodeMismatchFailure() {
+    let values = encoded(1, "two", 3)
+    XCTAssertThrowsError(try [Int].from(values))
+  }
+
+  func testArrayDecodeEmpty() throws {
+    let values: [Value] = encoded()
+    let decoded: [Int] = try [Int].from(values)
+    XCTAssertEqual(decoded, [])
   }
 }

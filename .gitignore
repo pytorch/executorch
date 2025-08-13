@@ -24,7 +24,10 @@ pip-out/
 # Any exported models and profiling outputs
 *.bin
 *.model
+*.etdump
+tokenizer.json
 *.pte
+*.ptd
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
 
@@ -41,6 +44,9 @@ xcuserdata/
 *.xcworkspace/
 *.xcframework/
 
+# clangd
+.cache/
+
 # misc
 /.vscode/
 *.so
@@ -53,6 +59,7 @@ xcuserdata/
 /include/
 /share/
 /version.py
+*.csv
 
 # Android
 *.aar

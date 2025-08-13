@@ -120,8 +120,13 @@ class KVManager {
    * @param ar_len Length of input tokens.
    * @param n_past Number of past elements in the cache.
    * @param n_update Number of elements to be updated.
+   * @param selected Indicate which position to be updated
    */
-  void update_cache(int32_t ar_len, int32_t n_past, int32_t n_update);
+  void update_cache(
+      int32_t ar_len,
+      int32_t n_past,
+      int32_t n_update,
+      const std::vector<bool>& selected);
 
   const std::vector<std::vector<KVCache>>& get_k_cache_() const {
     return k_cache_;
@@ -138,8 +143,16 @@ class KVManager {
   // Helper functions to rearrange and update key and value caches
   void rearrange_key(KVCache& k_cache, int32_t ar_len_dst);
   void rearrange_value(KVCache& v_cache, int32_t ar_len_dst);
-  void update_key(KVCache& k_cache, int32_t n_past, int32_t n_update);
-  void update_value(KVCache& v_cache, int32_t n_past, int32_t n_update);
+  void update_key(
+      KVCache& k_cache,
+      int32_t n_past,
+      int32_t n_update,
+      const std::vector<bool>& selected);
+  void update_value(
+      KVCache& v_cache,
+      int32_t n_past,
+      int32_t n_update,
+      const std::vector<bool>& selected);
   KVManagerMode kv_updater_;
 
   // metadata

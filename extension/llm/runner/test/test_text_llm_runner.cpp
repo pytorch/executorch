@@ -7,6 +7,7 @@
  * @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
  */
 
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
@@ -63,11 +64,11 @@ class MockModule : public ::executorch::extension::Module {
 
 class MockTextDecoderRunner : public TextDecoderRunner {
  public:
-  MockTextDecoderRunner() : TextDecoderRunner(nullptr, false) {}
+  MockTextDecoderRunner() : TextDecoderRunner(nullptr, nullptr) {}
   MOCK_METHOD(
       Result<executorch::aten::Tensor>,
       step,
-      (executorch::extension::TensorPtr&, executorch::extension::TensorPtr&),
+      (executorch::extension::TensorPtr&, int64_t),
       ());
   MOCK_METHOD(bool, is_method_loaded, (), ());
   MOCK_METHOD(Result<uint64_t>, prefill, (std::vector<uint64_t>&, int64_t), ());
@@ -134,8 +135,7 @@ class RunnerTest : public Test {
   std::unique_ptr<MockTextDecoderRunner> createMockTextDecoderRunner() {
     auto text_decoder_runner = std::make_unique<MockTextDecoderRunner>();
     ON_CALL(*text_decoder_runner, step)
-        .WillByDefault([&](executorch::extension::TensorPtr&,
-                           executorch::extension::TensorPtr&) {
+        .WillByDefault([&](executorch::extension::TensorPtr&, int64_t) {
           return Result<executorch::aten::Tensor>(tensor);
         });
     ON_CALL(*text_decoder_runner, is_method_loaded())
@@ -220,6 +220,7 @@ TEST_F(RunnerTest, GenerateCallsCallbackExactlyMaxNewTokensTimes) {
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
+      std::make_unique<executorch::extension::llm::IOManager>(),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -279,6 +280,7 @@ TEST_F(RunnerTest, WarmupCallsGenerateWithWarmingFlag) {
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
+      std::make_unique<executorch::extension::llm::IOManager>(),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -313,6 +315,7 @@ TEST_F(RunnerTest, IsLoadedReturnsTrueWhenComponentsInitialized) {
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
+      std::make_unique<executorch::extension::llm::IOManager>(),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -321,4 +324,60 @@ TEST_F(RunnerTest, IsLoadedReturnsTrueWhenComponentsInitialized) {
 
   // Verify is_loaded returns true
   EXPECT_TRUE(runner.is_loaded());
+}
+
+// Test that generate_from_pos() errors out when max_new_tokens is negative
+TEST_F(RunnerTest, GenerateFromPosErrorsWithNegativeMaxNewTokens) {
+  // Create mock instances using helper functions
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
+
+  // Set up expectations for the tokenizer encode method
+  EXPECT_CALL(*tokenizer, encode(_, _, _))
+      .WillOnce(Return(::tokenizers::Result<std::vector<uint64_t>>(
+          std::vector<uint64_t>{1, 2, 3})));
+
+  // Set up expectations for load methods
+  EXPECT_CALL(*text_prefiller, is_loaded()).WillRepeatedly(Return(true));
+
+  std::unique_ptr<executorch::llm::Stats> stats =
+      std::make_unique<executorch::llm::Stats>();
+  // Create a real TextTokenGenerator
+  auto text_token_generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), stats.get());
+
+  // Create a Runner with our mocked components
+  TextLLMRunner runner(
+      {
+          {"enable_dynamic_shape", false},
+          {"get_max_seq_len", 10},
+          {"get_max_context_len", 10},
+          {"use_kv_cache", true},
+      },
+      std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
+      std::make_unique<MockModule>(),
+      std::move(text_decoder_runner),
+      std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
+          text_prefiller.release()),
+      std::make_unique<executorch::extension::llm::IOManager>(),
+      std::move(text_token_generator),
+      std::move(stats));
+
+  // Load
+  runner.load();
+
+  // Set up the generation config with a negative max_new_tokens value
+  GenerationConfig config;
+  config.max_new_tokens = 5;
+  config.echo = false;
+
+  // num_prompt_tokens = 3
+  // max_context_len = 10
+  // start_pos = 8, this should fail because 10 - 8 > 3, even though
+  // config.max_new_tokens = 5 > 3, it's still a failure.
+  Error err = runner.generate_from_pos("test prompt", 8, config);
+
+  // Verify that an InvalidArgument error is returned
+  EXPECT_EQ(err, Error::InvalidArgument);
 }

@@ -9,7 +9,6 @@ from typing import Collection
 import numpy as np
 
 from executorch.backends.nxp.backend.edge_helper import input_rank
-from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     apply_permutation_to,
     create_channels_first_to_channels_last_permutation,
@@ -24,6 +23,7 @@ from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
 )
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
+    pad_options,
     pad_v2_options,
 )
 from torch.fx import Node
@@ -48,6 +48,10 @@ class ConstantPadNDConverter(NodeConverter):
             return False
 
         if not NodeConverter._has_shared_q_params_if_quantized(node):
+            return False
+
+        if len(paddings) > 4 and paddings[4:6] != [0, 0]:
+            # Attempt to Pad channels dimension -> currently not supported
             return False
 
         return True
@@ -101,6 +105,15 @@ class ConstantPadNDConverter(NodeConverter):
             np.asarray(paddings, "int32"), "paddings"
         )
 
+        if constant == 0.0:
+            # We're padding with zeros, we can use traditional Pad op
+            t_op.tmp_inputs = [x, paddings_tensor]
+            t_op.tmp_outputs = [y]
+            t_op.builtin_options = pad_options.Pad()
+
+            self.builder.append_operators([t_op])
+            return
+
         if x.quantization is None:
             constant_tensor = self.builder.create_tensor_for_data(
                 np.array([constant], tf_lite_type_to_numpy(x.type)), "constant"
@@ -124,6 +137,4 @@ class ConstantPadNDConverter(NodeConverter):
         t_op.tmp_outputs = [y]
         t_op.builtin_options = pad_v2_options.PadV2()
 
-        ops_to_add = OpsList(middle_op=t_op)
-
-        self.builder.append_operators(ops_to_add.flatten())
+        self.builder.append_operators([t_op])

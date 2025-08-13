@@ -8,14 +8,12 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.xnnpack._passes.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
-)
+from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
 
 
 class TestBatchNormFusion(unittest.TestCase):
-    PassStage = RunPasses([FuseBatchNormWithConvPass])
+    PassStage = RunPasses([FuseBatchNormPass])
     bn_name = "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default"
 
     def setUp(self):
@@ -42,7 +40,22 @@ class TestBatchNormFusion(unittest.TestCase):
             y = y + y
             return self.bn(y)
 
-    def test_fp32_batch_norm_fusion(self):
+    class ModelLinearBN(torch.nn.Module):
+        def __init__(self, in_features, out_features, bias=True):
+            super().__init__()
+            op = torch.nn.Linear
+            self.linear = op(in_features, out_features, bias=bias)
+            self.bn = torch.nn.BatchNorm1d(out_features)
+            self.forward(torch.randn(2, 2) * 2 + 2)  # update the BN stats
+
+        def forward(self, x):
+            y = self.linear(x)
+            y = self.bn(y)
+            y = self.linear(y)
+            y = y + y
+            return self.bn(y)
+
+    def test_fp32_conv_batch_norm_fusion(self):
         for transpose in [False, True]:
             (
                 Tester(
@@ -56,7 +69,7 @@ class TestBatchNormFusion(unittest.TestCase):
                 .run_method_and_compare_outputs()
             )
 
-    def test_q8_batch_norm_fusion(self):
+    def test_q8_conv_batch_norm_fusion(self):
         for transpose in [False, True]:
             (
                 Tester(
@@ -71,7 +84,7 @@ class TestBatchNormFusion(unittest.TestCase):
                 .run_method_and_compare_outputs()
             )
 
-    def test_fp32_batch_norm_no_fusion_doesnt_partition(self):
+    def test_fp32_conv_batch_norm_no_fusion_doesnt_partition(self):
         """
         We do not currently support standalone batch norms (i.e. batch norms that are
         not fused with a conv). This is planned, but until implemented, this test ensures
@@ -92,5 +105,40 @@ class TestBatchNormFusion(unittest.TestCase):
             .to_edge()
             .check_count({self.bn_name: 1})
             .partition()
+            .check_count({self.bn_name: 1})
+        )
+
+    def test_fp32_linear_batch_norm_fusion(self):
+        for bias in [True, False]:
+            (
+                Tester(
+                    self.ModelLinearBN(2, 2, bias).eval(),
+                    (torch.randn(2, 2),),
+                )
+                .export()
+                .to_edge_transform_and_lower()
+                .check_count({self.bn_name: 1})
+                .run_method_and_compare_outputs()
+            )
+
+    def test_fp32_linear_batch_norm_no_fusion_doesnt_partition(self):
+        """
+        We do not currently support standalone batch norms (i.e. batch norms that are
+        not fused with a linear). This is planned, but until implemented, this test ensures
+        that we do not partition the standalone batch norm and then fail to lower.
+        """
+
+        class BN(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.bn = torch.nn.BatchNorm1d(2)
+
+            def forward(self, x):
+                return self.bn(x)
+
+        (
+            Tester(BN(), (torch.randn(2, 2),))
+            .export()
+            .to_edge_transform_and_lower()
             .check_count({self.bn_name: 1})
         )

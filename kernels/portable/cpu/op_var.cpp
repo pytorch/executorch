@@ -127,12 +127,7 @@ Tensor& var_correction_out(
 
   double correction_val = 1;
   if (correction.has_value()) {
-    ScalarType corr_type = utils::get_scalar_dtype(correction.value());
-    ET_SWITCH_SCALAR_OBJ_TYPES(corr_type, ctx, name, CTYPE_CORR, [&]() {
-      CTYPE_CORR corr_val = 0;
-      utils::extract_scalar(correction.value(), &corr_val);
-      correction_val = static_cast<double>(corr_val);
-    });
+    correction_val = utils::scalar_to<double>(correction.value());
   }
 
   const size_t num = get_reduced_dim_product(in, dim_list);

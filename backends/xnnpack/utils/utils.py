@@ -25,6 +25,7 @@ from torch._export.utils import (
     is_lifted_tensor_constant,
     is_param,
 )
+from torchao.quantization.pt2e.utils import _is_conv_node, _is_conv_transpose_node
 
 
 ### XNNPACK Capture ###
@@ -158,6 +159,36 @@ def get_source_fn(node: torch.fx.Node) -> Optional[torch.fx.Node]:
         return None
     source_fn = source_fn_st[-1]
     return source_fn[1]
+
+
+def get_groups_from_conv(conv_node: torch.fx.Node) -> int:
+    if _is_conv_node(conv_node):
+        in_node = cast(torch.fx.Node, conv_node.args[0])
+        weight_node = cast(torch.fx.Node, conv_node.args[1])
+        # groups isn't given to us in the training graph so we deduce it from the weight shape
+        # and the input shape
+
+        # input shape is (N, C_in, H_in, W_in)
+        in_channels = in_node.meta["val"].shape[1]
+
+        # weight shape is (C_out, C_in/groups, kernel_size[0], kernel_size[1])
+        in_groups = weight_node.meta["val"].shape[1]
+
+        return in_channels // in_groups
+    elif _is_conv_transpose_node(conv_node):
+        weight_node = cast(torch.fx.Node, conv_node.args[1])
+        # groups isn't given to us in the training graph so we deduce it from the weight shape
+        # and the output shape
+
+        # weight shape is (C_in, C_out/groups, kernel_size[0], kernel_size[1])
+        out_groups = weight_node.meta["val"].shape[1]
+
+        # output shape is (N, C_out, H_out, W_out)
+        out_channels = conv_node.meta["val"].shape[1]
+
+        return out_channels // out_groups
+
+    raise RuntimeError(f"expected {conv_node} to be a conv or conv_transpose node")
 
 
 def is_depthwise_conv(

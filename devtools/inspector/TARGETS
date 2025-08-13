@@ -19,6 +19,7 @@ python_library(
         "//executorch/devtools/etrecord:etrecord",
         "//executorch/exir:lib",
         "//executorch/devtools/inspector:intermediate_output_capturer",
+        "//executorch/devtools/inspector/numerical_comparator:lib",
     ],
 )
 
@@ -55,6 +56,7 @@ python_library(
         "_intermediate_output_capturer.py",
     ],
     deps = [
+        "//executorch/devtools/inspector:inspector_utils",
     ],
 )
 

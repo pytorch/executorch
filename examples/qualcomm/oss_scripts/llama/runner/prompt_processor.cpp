@@ -160,6 +160,10 @@ void PromptProcessor::init_io(
   }
 }
 
+const std::vector<uint16_t>& PromptProcessor::get_all_logits() {
+  return prompt_all_logits_;
+}
+
 void PromptProcessor::prepare_io(
     const std::vector<uint64_t>& prompt_tokens,
     int64_t prompt_pos,
@@ -187,7 +191,8 @@ void PromptProcessor::prepare_io(
 
 Result<uint64_t> PromptProcessor::prefill(
     std::vector<uint64_t> prompt_tokens,
-    int64_t start_pos) {
+    int64_t start_pos,
+    bool dump_logits) {
   ET_CHECK_MSG(!prompt_tokens.empty(), "Prompt cannot be null");
 
   // Calculate number of blocks
@@ -251,12 +256,18 @@ Result<uint64_t> PromptProcessor::prefill(
     }
     // Run inference
     decoder_runner_->step(method_name_, inputs_);
+    if (dump_logits) {
+      prompt_all_logits_.insert(
+          prompt_all_logits_.end(),
+          logits_.data,
+          logits_.data + metadata_.ar_len * metadata_.vocab_size);
+    }
     // In the last run, offset to the meaningful logits.
     if (i == num_iters - 1) {
       n_update = 1 + ((num_prompt_tokens - 1) % metadata_.ar_len);
     }
     // Update KV Cache with the output results
-    kv_manager_->update_cache(metadata_.ar_len, pos, n_update);
+    kv_manager_->update_cache(metadata_.ar_len, pos, n_update, {});
     // Update attention mask with current position
     kv_manager_->update_attention_mask(
         attention_mask_.data, metadata_.ar_len, pos, n_update);

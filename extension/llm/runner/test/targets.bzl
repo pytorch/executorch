@@ -27,3 +27,12 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )
+
+    runtime.cxx_test(
+        name = "test_text_prefiller",
+        srcs = ["test_text_prefiller.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:runner_lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+        ],
+    )
