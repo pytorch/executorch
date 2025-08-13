@@ -21,6 +21,7 @@ MAX_LOGGED_MODEL_OUTPUTS = 2
 CSV_FIELD_NAMES = [
     "Test ID",
     "Test Case",
+    "Subtest",
     "Flow",
     "Params",
     "Result",
@@ -162,6 +163,9 @@ class TestCaseSummary:
 
     name: str
     """ The full name of test, including flow and parameter suffixes. """
+
+    subtest_index: int
+    """ The subtest number. If a test case runs multiple tests, this field can be used to disambiguate. """
 
     params: dict | None
     """ Test-specific parameters, such as dtype. """
@@ -356,6 +360,7 @@ def write_csv_row(record: TestCaseSummary, output: TextIO):
     row = {
         "Test ID": record.name,
         "Test Case": record.base_name,
+        "Subtest": record.subtest_index,
         "Flow": record.flow,
         "Params": _serialize_params(record.params),
         "Result": record.result.to_short_str(),
