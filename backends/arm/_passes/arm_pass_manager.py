@@ -51,6 +51,7 @@ from executorch.backends.arm._passes import (
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeLinearVectorNormPass,
+    DecomposeLogitPass,
     DecomposeMaskedFill,
     DecomposeMaxPool2DPass,
     DecomposeMeanDimPass,
@@ -169,6 +170,7 @@ class ArmPassManager(PassManager):
 
     def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
         self.add_pass(DecomposeExpm1Pass())
+        self.add_pass(DecomposeLogitPass())
         self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeAcoshPass())
@@ -261,6 +263,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoundPass())
+        self.add_pass(DecomposeLogitPass())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeAddmmPass())
