@@ -23,6 +23,16 @@ class CompileTimeTypeDispatchPass(ExportPass):
     Replaces generic ops with ops that have explicit types.
     """
 
+    _TYPE_DISPATCH_MAP: dict[tuple[torch.dtype, torch.dtype], str] = {
+        (torch.int8, torch.int8): "asym8sxasym8s_asym8s",
+        (torch.uint8, torch.uint8): "asym8uxasym8u_asym8u",
+    }
+
+    _SUPPORTED_OPS: dict[OpOverload, str] = {
+        exir_ops.edge.cadence.quantized_fully_connected.per_tensor: "quantized_fully_connected",
+        exir_ops.edge.cadence.quantized_linear.per_tensor: "quantized_linear",
+    }
+
     def call_operator(
         self,
         op: OpOverload,
@@ -30,33 +40,23 @@ class CompileTimeTypeDispatchPass(ExportPass):
         kwargs: dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op not in {
-            exir_ops.edge.cadence.quantized_fully_connected.per_tensor,
-        }:
+        if op not in self._SUPPORTED_OPS:
             return super().call_operator(op, args, kwargs, meta)
 
-        if (
-            # pyre-ignore[16]: None has no attribute `to_tensor`.
-            args[0].to_tensor().dtype == torch.int8
-            and args[1].to_tensor().dtype == torch.int8
-        ):
-            return super().call_operator(
-                exir_ops.edge.cadence.quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor,
-                args,
-                kwargs,
-                meta,
-            )
-        elif (
-            args[0].to_tensor().dtype == torch.uint8
-            and args[1].to_tensor().dtype == torch.uint8
-        ):
-            return super().call_operator(
-                exir_ops.edge.cadence.quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor,
-                args,
-                kwargs,
-                meta,
-            )
-        else:
+        # pyre-ignore[16]: None has no attribute `to_tensor`.
+        input_dtype = args[0].to_tensor().dtype
+        weight_dtype = args[1].to_tensor().dtype
+        dtype_pair = (input_dtype, weight_dtype)
+
+        if dtype_pair not in self._TYPE_DISPATCH_MAP:
             raise RuntimeError(
-                f"Unsupported input types for {op}: {args[0].to_tensor().dtype} and {args[1].to_tensor().dtype}"
+                f"Unsupported input types for {op}: {input_dtype} and {weight_dtype}"
             )
+
+        base_op_name = self._SUPPORTED_OPS[op]
+        type_suffix = self._TYPE_DISPATCH_MAP[dtype_pair]
+
+        typed_op_name = f"{base_op_name}_{type_suffix}"
+        typed_op = getattr(exir_ops.edge.cadence, typed_op_name).per_tensor
+
+        return super().call_operator(typed_op, args, kwargs, meta)
