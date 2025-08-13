@@ -25,20 +25,20 @@ from typing import (
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
+import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
+
 import torch.fx
 import torch.utils._pytree as pytree
 
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore[import-untyped]
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.arm_backend import (
     get_intermediate_path,
-    get_tosa_spec,
     is_ethosu,
     is_tosa,
     is_vgf,
 )
-from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.ethosu import EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -61,7 +61,7 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
 )
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
 
 from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 

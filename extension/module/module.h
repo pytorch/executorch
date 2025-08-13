@@ -195,6 +195,17 @@ class Module {
   }
 
   /**
+   * Unload a specific method from the program.
+   *
+   * @param[in] method_name The name of the method to unload.
+   *
+   * @returns True if the method is unloaded, false if no-op.
+   */
+  inline bool unload_method(const std::string& method_name) {
+    return methods_.erase(method_name);
+  }
+
+  /**
    * Get a method by it's name. Not recommended to use this method directly as
    * an end user. It's exposed to allow for composability of module in apis that
    * operate on method.
@@ -226,6 +237,15 @@ class Module {
   ET_DEPRECATED ET_NODISCARD inline runtime::Error load_forward(
       torch::executor::EventTracer* event_tracer) {
     return load_forward(nullptr, event_tracer);
+  }
+
+  /**
+   * Unload the 'forward' method from the program.
+   *
+   * @returns True if the 'forward' method is unloaded, false if no-op.
+   */
+  inline bool unload_forward() {
+    return unload_method("forward");
   }
 
   /**
@@ -502,7 +522,6 @@ class Module {
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
-    std::vector<runtime::EValue> inputs;
   };
 
   std::string file_path_;

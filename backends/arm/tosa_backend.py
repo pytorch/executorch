@@ -13,19 +13,18 @@
 import logging
 from typing import cast, final, List
 
-import executorch.backends.arm.tosa_specification as tosa_specification
-
-from executorch.backends.arm.arm_backend import get_tosa_spec
+import serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
+from executorch.backends.arm.tosa_specification import get_tosa_spec
 from executorch.backends.arm._passes import (
     ArmPassManager,
 )  # usort: skip
+from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.process_node import (
     process_call_function,
     process_output,
     process_placeholder,
 )
-from executorch.backends.arm.tosa_utils import dbg_fail, dbg_tosa_dump
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -85,15 +84,6 @@ class TOSABackend(BackendDetails):
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
-        if isinstance(tosa_spec, tosa_specification.Tosa_0_80):
-            import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-        elif isinstance(tosa_spec, tosa_specification.Tosa_1_00):
-            import serializer.tosa_serializer as ts  # type: ignore
-        else:
-            raise RuntimeError(
-                f"Unknown TOSA version {tosa_spec}, no pip package installed to handle serialization to that version."
-            )
-
         tosa_graph = ts.TosaSerializer(artifact_path)
 
         assert (
@@ -125,12 +115,12 @@ class TOSABackend(BackendDetails):
                     # any checking of compatibility.
                     raise RuntimeError(f"{node.name} is unsupported op {node.op}")
             except Exception:
-                dbg_fail(node, graph_module, tosa_graph, artifact_path)
+                debug_fail(node, graph_module, tosa_graph, artifact_path)
                 raise
 
         if artifact_path:
             tag = arm_get_first_delegation_tag(graph_module)
-            dbg_tosa_dump(
+            debug_tosa_dump(
                 tosa_graph,
                 artifact_path,
                 suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),

@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import copy
 import os
 import unittest
 
@@ -90,12 +91,13 @@ def _expand_test(cls, test_name: str):
 def _make_wrapped_test(
     test_func: Callable,
     test_name: str,
+    test_base_name: str,
     flow: TestFlow,
     params: dict | None = None,
 ):
     def wrapped_test(self):
-        with TestContext(test_name, flow.name, params):
-            test_kwargs = params or {}
+        with TestContext(test_name, test_base_name, flow.name, params):
+            test_kwargs = copy.copy(params) or {}
             test_kwargs["flow"] = flow
 
             test_func(self, **test_kwargs)
@@ -114,26 +116,31 @@ def _create_test_for_backend(
     test_type = getattr(test_func, "test_type", TestType.STANDARD)
 
     if test_type == TestType.STANDARD:
-        wrapped_test = _make_wrapped_test(test_func, test_func.__name__, flow)
         test_name = f"{test_func.__name__}_{flow.name}"
+        wrapped_test = _make_wrapped_test(
+            test_func, test_name, test_func.__name__, flow
+        )
         setattr(cls, test_name, wrapped_test)
     elif test_type == TestType.DTYPE:
         for dtype in DTYPES:
+            dtype_name = str(dtype)[6:]  # strip "torch."
+            test_name = f"{test_func.__name__}_{dtype_name}_{flow.name}"
             wrapped_test = _make_wrapped_test(
                 test_func,
+                test_name,
                 test_func.__name__,
                 flow,
                 {"dtype": dtype},
             )
-            dtype_name = str(dtype)[6:]  # strip "torch."
-            test_name = f"{test_func.__name__}_{dtype_name}_{flow.name}"
             setattr(cls, test_name, wrapped_test)
     else:
         raise NotImplementedError(f"Unknown test type {test_type}.")
 
 
 class OperatorTest(unittest.TestCase):
-    def _test_op(self, model, inputs, flow: TestFlow):
+    def _test_op(
+        self, model, inputs, flow: TestFlow, generate_random_test_inputs: bool = True
+    ):
         context = get_active_test_context()
 
         # This should be set in the wrapped test. See _make_wrapped_test above.
@@ -144,7 +151,9 @@ class OperatorTest(unittest.TestCase):
             inputs,
             flow,
             context.test_name,
+            context.test_base_name,
             context.params,
+            generate_random_test_inputs=generate_random_test_inputs,
         )
 
         log_test_summary(run_summary)

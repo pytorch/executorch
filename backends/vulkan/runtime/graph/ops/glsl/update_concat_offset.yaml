@@ -1,0 +1,13 @@
+update_concat_offset:
+  parameter_names_with_default_values:
+    DTYPE: float
+    NUM_INPUTS: 2
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: int32
+  shader_variants:
+    - NAME: update_concat_offset_1
+      NUM_INPUTS: 1
+    - NAME: update_concat_offset_2
+    - NAME: update_concat_offset_3
+      NUM_INPUTS: 3

@@ -142,19 +142,6 @@ def install_requirements(use_pytorch_nightly):
 
 
 def install_optional_example_requirements(use_pytorch_nightly):
-    print("Installing packages in requirements-examples.txt")
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "-r",
-            "requirements-examples.txt",
-        ],
-        check=True,
-    )
-
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
         (
@@ -174,6 +161,23 @@ def install_optional_example_requirements(use_pytorch_nightly):
             *DOMAIN_LIBRARIES,
             "--extra-index-url",
             TORCH_NIGHTLY_URL,
+        ],
+        check=True,
+    )
+
+    print("Installing packages in requirements-examples.txt")
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "requirements-examples.txt",
+            "--extra-index-url",
+            TORCH_NIGHTLY_URL,
+            "--upgrade-strategy",
+            "only-if-needed",
         ],
         check=True,
     )

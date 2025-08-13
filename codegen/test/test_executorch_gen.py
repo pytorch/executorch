@@ -508,6 +508,7 @@ Kernel(
     "custom_1::op_1",
     "v1/7;0,1,2,3|7;0,1,2,3|7;0,1,2,3",
     [](torch::executor::KernelRuntimeContext & context, Span<EValue*> stack) {
+        ET_KERNEL_CHECK_MSG(context, stack.size() == 1, InvalidProgram, /*void*/, \"Expected %\" ET_PRIsize_t \"args received %\" ET_PRIsize_t, (size_t)1, stack.size());
         """
             + """
 
@@ -606,6 +607,7 @@ Kernel(
 Kernel(
     "custom_1::op_1",
     [](torch::executor::KernelRuntimeContext & context, Span<EValue*> stack) {
+        ET_KERNEL_CHECK_MSG(context, stack.size() == 1, InvalidProgram, /*void*/, \"Expected %\" ET_PRIsize_t \"args received %\" ET_PRIsize_t, (size_t)1, stack.size());
         """
             + """
 
@@ -621,7 +623,6 @@ Kernel(
 ),
 """
         )
-
         self.assertEqual(expected_str, result)
 
         result = ComputeCodegenUnboxedKernels(
@@ -633,6 +634,7 @@ Kernel(
 Kernel(
     "custom_1::op_1",
     [](torch::executor::KernelRuntimeContext & context, Span<EValue*> stack) {
+        ET_KERNEL_CHECK_MSG(context, stack.size() == 1, InvalidProgram, /*void*/, "Expected %" ET_PRIsize_t "args received %" ET_PRIsize_t, (size_t)1, stack.size());
         """
             + """
 
@@ -676,6 +678,7 @@ Kernel(
 Kernel(
     "custom_1::op_1",
     [](torch::executor::KernelRuntimeContext & context, Span<EValue*> stack) {
+        ET_KERNEL_CHECK_MSG(context, stack.size() == 1, InvalidProgram, /*void*/, "Expected %" ET_PRIsize_t "args received %" ET_PRIsize_t, (size_t)1, stack.size());
         """
             + """
 

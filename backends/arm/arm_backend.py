@@ -57,7 +57,7 @@ class ArmCompileSpecBuilder:
                 f"Invalid TOSA version: {tosa_version}"
             )
 
-        if not ("FP" or "INT" in tosa_profiles):
+        if "FP" not in tosa_profiles and "INT" not in tosa_profiles:
             raise ValueError(
                 "Arm backend only supports converter-backend for FP or INT. "
                 f"Invalid TOSA profile: {tosa_profiles}"
@@ -215,13 +215,6 @@ def is_vgf(compile_spec: List[CompileSpec]) -> bool:
         if spec.key == "output_format":
             return spec.value.decode() == "vgf"
     return False
-
-
-def get_tosa_spec(compile_spec: List[CompileSpec]) -> TosaSpecification:
-    for spec in compile_spec:
-        if spec.key == "tosa_spec":
-            return TosaSpecification.create_from_string(spec.value.decode())
-    raise ValueError("Could not find TOSA version in CompileSpec")
 
 
 def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:
