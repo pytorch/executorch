@@ -9,7 +9,7 @@
 
 # Selective build. See codegen/tools/gen_oplist.py for how to use these
 # arguments.
-include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 function(gen_selected_ops)
   set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS
@@ -460,18 +460,48 @@ function(executorch_validate_build_variables)
       ${filelist_and_varname_0}
       "${filelist_and_varname_1}_from_build_variables"
     )
+    # The Buck and CMake mechanisms for getting the default PAL set up
+    # are different. Prevent the Buck choice from flowing into CMake
+    # and causing validation to fail, just like we do in our
+    # CMakeLists.txt.
+    if("${filelist_and_varname_1}" STREQUAL "_executorch_core__srcs")
+      list(FILTER ${filelist_and_varname_1} EXCLUDE REGEX
+           "runtime/platform/default/[^/]*.cpp$"
+      )
+    endif()
     if(NOT ${filelist_and_varname_1} STREQUAL
        ${filelist_and_varname_1}_from_build_variables
     )
-      list(JOIN ${filelist_and_varname_1} "\n" pretty_buck_generated_list)
-      list(JOIN ${filelist_and_varname_1}_from_build_variables "\n"
-           pretty_hardcoded_list
+      set(generated_items_not_in_build_variables ${${filelist_and_varname_1}})
+      list(REMOVE_ITEM generated_items_not_in_build_variables
+           ${${filelist_and_varname_1}_from_build_variables}
       )
+
+      set(build_variables_items_not_in_generated
+          ${${filelist_and_varname_1}_from_build_variables}
+      )
+      list(REMOVE_ITEM build_variables_items_not_in_generated
+           ${${filelist_and_varname_1}}
+      )
+
+      list(JOIN generated_items_not_in_build_variables "\n"
+           pretty_generated_items_not_in_build_variables
+      )
+      list(JOIN build_variables_items_not_in_generated "\n"
+           pretty_build_variables_items_not_in_generated
+      )
+      if(NOT pretty_generated_items_not_in_build_variables)
+        set(pretty_generated_items_not_in_build_variables "<none>")
+      endif()
+      if(NOT pretty_build_variables_items_not_in_generated)
+        set(pretty_build_variables_items_not_in_generated "<none>")
+      endif()
       message(
         FATAL_ERROR
           "Buck-generated ${filelist_and_varname_1} does not match hardcoded "
-          "${filelist_and_varname_0} in build_variables.bzl. Left: "
-          "${pretty_buck_generated_list}\n " "Right: ${pretty_hardcoded_list}"
+          "${filelist_and_varname_0} in build_variables.bzl. Buck-generated items not in build_variables.bzl: "
+          "${pretty_generated_items_not_in_build_variables}\n "
+          "build_variables.bzl items not in buck-generated list: ${pretty_build_variables_items_not_in_generated}"
       )
     endif()
   endforeach()
