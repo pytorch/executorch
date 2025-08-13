@@ -1,5 +1,4 @@
-# Copyright (c) 2025 NXP
-# All rights reserved.
+# Copyright 2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,7 +19,16 @@ from torch.nn import Parameter
 
 
 class AdaptiveAvgPool2dConverter(NodeConverter):
-    supported_targets = [Target.RT700]
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node, target: Target, parameters_mapping: dict[str, Parameter]
+    ) -> bool:
+        match target:
+            case Target.RT700:
+                return True
+
+            case _:
+                return False
 
     @staticmethod
     def _is_supported_in_IR(
