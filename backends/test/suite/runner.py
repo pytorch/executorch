@@ -125,8 +125,8 @@ def run_test(  # noqa: C901
         if n.op == "call_function"
     )
 
-    # Only run the runtime portion if something was delegated.
-    if is_delegated:
+    # Only run the runtime portion if something was delegated (or the flow doesn't delegate).
+    if is_delegated or not flow.is_delegated:
         try:
             tester.to_executorch().serialize()
             extra_stats["pte_size_bytes"] = len(tester.get_artifact())
