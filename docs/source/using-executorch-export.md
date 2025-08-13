@@ -134,7 +134,7 @@ from executorch.exir.passes.external_constants_pass import (
 # Tag the unlifted ep.module().
 tagged_module = exported_program.module()
 delegate_external_constants_pass_unlifted(
-    tagged_module,
+    module=tagged_module,
     gen_tag_fn=lambda x: "model", # This is the filename the weights will be saved to. In this case, weights will be saved as "model.ptd"
 )
 # Re-export to get the EP.

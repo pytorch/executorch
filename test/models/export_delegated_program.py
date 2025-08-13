@@ -175,7 +175,7 @@ def export_module_to_program(
         if external_constants:
             tagged_module = exported_program.module()
             delegate_external_constants_pass_unlifted(
-                gm=tagged_module,
+                module=tagged_module,
                 gen_tag_fn=lambda x: module_class.__name__,
             )
             exported_program = export(tagged_module, args=inputs, strict=True)

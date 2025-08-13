@@ -93,17 +93,17 @@ def external_mutable_weights_pass(
 # This is using 'get_attr' to tag constants, which only appears in
 # unlifted graphs.
 def delegate_external_constants_pass_unlifted(
-    gm: GraphModule,
-    gen_tag_fn: Optional[Callable[[torch.fx.Node], str]] = None,
+    module: torch.nn.Module,
+    gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
 ) -> PassResult:
     mutated = False
-    for module in gm.modules():
-        if not isinstance(module, torch.fx.GraphModule):
+    for m in module.modules():
+        if not isinstance(m, torch.fx.GraphModule):
             continue
-        for node in module.graph.nodes:
+        for node in m.graph.nodes:
             if node.op == "get_attr":
                 if gen_tag_fn is not None:
                     node.meta.setdefault("custom", {})
                     node.meta["custom"]["delegate_constant_tag"] = gen_tag_fn(node)
                     mutated = True
-    return PassResult(gm, mutated)
+    return PassResult(module, mutated)
