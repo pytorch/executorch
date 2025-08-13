@@ -561,6 +561,12 @@ install(FILES tools/cmake/executorch-config.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
 
+# Build devtools first if needed - some backends depend on protobuf from
+# devtools
+if(EXECUTORCH_BUILD_DEVTOOLS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
+endif()
+
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
   list(APPEND _executorch_backends executorch_delegate_ethos_u)
@@ -607,10 +613,6 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
-endif()
-
-if(EXECUTORCH_BUILD_DEVTOOLS)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
@@ -718,6 +720,30 @@ if(EXECUTORCH_BUILD_PYBIND)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
 
+  # Create bundled_module target only for pybindings when bundled_program exists
+  # This target has hard dependencies on devtools generated headers
+  if(TARGET bundled_program)
+    add_library(
+      bundled_module STATIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/extension/module/bundled_module.cpp
+    )
+
+    # Ensure bundled_module waits for bundled_program's generated headers
+    add_dependencies(bundled_module bundled_program)
+
+    target_link_libraries(bundled_module PRIVATE extension_data_loader)
+    target_link_libraries(
+      bundled_module PUBLIC extension_module_static bundled_program
+    )
+
+    target_include_directories(
+      bundled_module PUBLIC ${_common_include_directories}
+    )
+    target_compile_options(
+      bundled_module PUBLIC -Wno-deprecated-declarations -fPIC
+    )
+  endif()
+
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
   find_package_torch()
   find_library(
@@ -734,6 +760,16 @@ if(EXECUTORCH_BUILD_PYBIND)
       util
       torch
   )
+
+  if(EXECUTORCH_BUILD_EXTENSION_MODULE)
+    # Always use static linking for pybindings to avoid runtime symbol
+    # resolution issues
+    list(APPEND _dep_libs extension_module_static)
+    # Add bundled_module if available
+    if(TARGET bundled_module)
+      list(APPEND _dep_libs bundled_module)
+    endif()
+  endif()
 
   if(EXECUTORCH_BUILD_TESTS)
     list(APPEND _dep_libs test_backend_compiler_lib)
@@ -792,8 +828,17 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_definitions(
     portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib
   )
+  # For portable_lib, do not define USE_ATEN_LIB (portable mode)
+  # This ensures it uses the correct bundled_module namespace
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
+
+  # Ensure bundled_module is linked to portable_lib since it uses bundled_module functionality
+  # when USE_ATEN_LIB is not defined (which is the case for portable_lib)
+  if(TARGET bundled_module)
+    list(APPEND _dep_libs bundled_module)
+  endif()
+
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
   install(
