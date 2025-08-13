@@ -51,7 +51,7 @@ def get_random_float_data(input_shapes: tuple[int] | list[tuple[int]]):
 
 def to_quantized_edge_program(
     model: torch.nn.Module,
-    input_shapes: tuple[int] | list[tuple[int]],
+    input_shapes: tuple[int, ...] | list[tuple[int, ...]],
     operators_not_to_delegate: list[str] = None,
     target="imxrt700",
     neutron_converter_flavor="SDK_25_03",

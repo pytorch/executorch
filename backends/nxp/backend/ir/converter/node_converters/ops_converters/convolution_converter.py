@@ -5,8 +5,6 @@
 
 import numpy as np
 import torch
-from torch.fx import Node
-from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.edge_helper import (
     input_tensor,
@@ -43,6 +41,8 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     conv_2d_options,
     depthwise_conv_2d_options,
 )
+from torch.fx import Node
+from torch.nn import Parameter
 
 
 class ConvolutionConverter(NodeConverter):
