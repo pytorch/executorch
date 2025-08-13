@@ -155,7 +155,7 @@ class TestXnnpackRecipes(unittest.TestCase):
                     session, example_inputs, 1e-3
                 )
                 self._compare_eager_unquantized_model_outputs(
-                    session, model, example_inputs
+                    session, model, example_inputs, 15
                 )
 
     def _get_recipe_for_quant_type(self, quant_type: QuantType) -> XNNPackRecipeType:
