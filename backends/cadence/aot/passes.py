@@ -33,6 +33,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceMulTensorWithMulAndFullOpsPass,
 )
 from executorch.backends.cadence.aot.simplify_ops import CadenceSimplifyOpsInGraph
+from executorch.backends.cadence.aot.type_dispatch import CompileTimeTypeDispatchPass
 from executorch.exir import EdgeProgramManager
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager, PassType
@@ -90,6 +91,7 @@ def get_passes_in_default_order() -> list[Type[ExportPass]]:
         FuseFullThenReshapePass,
         FuseTransposeOrPermuteOpPairsPass,
         RemoveNopSliceOrViewOpPass,
+        CompileTimeTypeDispatchPass,
     ]
     return pytree.tree_flatten(passes)[0]
 
