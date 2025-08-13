@@ -47,7 +47,7 @@ jobs:
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
       timeout: 90
       script: |
