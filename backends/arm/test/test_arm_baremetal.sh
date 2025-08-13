@@ -101,7 +101,7 @@ test_pytest_models() { # Test ops and other things
     source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest  --verbose --color=yes --durations=0 backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -141,7 +141,7 @@ test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify
     source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests with FVP
-    pytest  --verbose --color=yes --durations=0 backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
