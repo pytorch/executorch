@@ -334,7 +334,10 @@ set(_common_include_directories
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
-
+if(EXECUTORCH_SRCS_FILE)
+  message(WARNING "EXECUTORCH_SRCS_FILE is no longer necessary and will not affect the build.")
+endif()
+executorch_load_build_variables()
 if(NOT EXECUTORCH_SRCS_FILE)
   # A file wasn't provided. Run a script to extract the source lists from the
   # buck2 build system and write them to a file we can include.
@@ -346,10 +349,6 @@ if(NOT EXECUTORCH_SRCS_FILE)
   extract_sources(${EXECUTORCH_SRCS_FILE})
   executorch_validate_build_variables()
 endif()
-
-# This file defines the `_<target>__srcs` variables used below.
-message(STATUS "executorch: Using sources file ${EXECUTORCH_SRCS_FILE}")
-include(${EXECUTORCH_SRCS_FILE})
 
 # Detect if an iOS toolchain is set.
 if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
