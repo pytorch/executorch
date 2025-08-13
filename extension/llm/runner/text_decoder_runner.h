@@ -10,11 +10,11 @@
 
 #pragma once
 
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/compiler.h>
-#include <functional>
 
 namespace executorch {
 namespace extension {
@@ -22,7 +22,7 @@ namespace llm {
 
 class ET_EXPERIMENTAL TextDecoderRunner {
  public:
-  TextDecoderRunner(Module* module, bool use_kv_cache);
+  explicit TextDecoderRunner(Module* module, IOManager* io_manager);
 
   virtual ~TextDecoderRunner() = default;
 
@@ -35,7 +35,7 @@ class ET_EXPERIMENTAL TextDecoderRunner {
    */
   virtual ::executorch::runtime::Result<executorch::aten::Tensor> step(
       TensorPtr& input,
-      TensorPtr& start_pos);
+      int64_t start_pos);
 
   /**
    * Load the Module for text decode purpose.
@@ -94,9 +94,15 @@ class ET_EXPERIMENTAL TextDecoderRunner {
   }
 
  protected:
-  // TODO: use shared_ptr for module
+  /**
+   * Note: TextDecoderRunner does not own the Module or IOManager instance. It
+   * is expected that the outer class (likely Runner) manages the lifecycle of
+   * them. This means that the responsibility for creating, maintaining, and
+   * destroying the Module lies outside of TextDecoderRunner. Ensure that the
+   * Module remains valid for the duration of TextDecoderRunner's usage.
+   */
   Module* module_;
-  bool use_kv_cache_;
+  IOManager* io_manager_;
   bool should_stop_{false};
 };
 

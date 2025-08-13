@@ -10,17 +10,18 @@ import torch
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 
-from torch.ao.quantization.quantizer import QuantizationAnnotation
-from torch.ao.quantization.quantizer.utils import (
-    _annotate_input_qspec_map,
-    _annotate_output_qspec,
-)
-
 from torch.export import export_for_training
 from torch.fx import Graph, Node
 from torch.fx.passes.utils.matcher_with_name_node_map_utils import (
     SubgraphMatcherWithNameNodeMap,
 )
+
+from torchao.quantization.pt2e.quantizer import (
+    annotate_input_qspec_map,
+    annotate_output_qspec as _annotate_output_qspec,
+    QuantizationAnnotation,
+)
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 from .qconfig import QuantizationConfig
 
@@ -57,12 +58,12 @@ def _is_annotated(node: Node):
     return True if any of the node
     is annotated, otherwise return False
     """
-    KEY = "quantization_annotation"
+    KEY = Q_ANNOTATION_KEY
     return KEY in node.meta and node.meta[KEY]._annotated
 
 
 def _mark_as_annotated(nodes: List[Node]):
-    KEY = "quantization_annotation"
+    KEY = Q_ANNOTATION_KEY
     for node in nodes:
         if KEY not in node.meta:
             node.meta[KEY] = QuantizationAnnotation()
@@ -108,7 +109,7 @@ def _annotate_fused_activation_pattern(
             torch.ops.aten.linear.default,
         ]:
             weight_node = producer_node.args[1]
-            _annotate_input_qspec_map(
+            annotate_input_qspec_map(
                 producer_node,
                 weight_node,
                 quant_config.weight,
@@ -201,7 +202,7 @@ def annotate_affine_ops(node: Node, quant_config: QuantizationConfig) -> None:
         return
 
     weight_node = node.args[1]
-    _annotate_input_qspec_map(
+    annotate_input_qspec_map(
         node,
         weight_node,
         quant_config.weight,
@@ -260,5 +261,5 @@ def annotate_embedding_op(node: Node, quant_config: QuantizationConfig) -> None:
         return
 
     wgt_node = node.args[0]
-    _annotate_input_qspec_map(node, wgt_node, quant_config.activation)
+    annotate_input_qspec_map(node, wgt_node, quant_config.activation)
     _mark_as_annotated([node])

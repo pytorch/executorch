@@ -9,8 +9,8 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
 )
 from executorch.backends.xnnpack.utils.utils import get_param_tensor
 from executorch.exir import to_edge_transform_and_lower
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export_for_training
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestCheckQuantParams(unittest.TestCase):

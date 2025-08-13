@@ -31,7 +31,7 @@ class MockAttention(Attention):
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
-        self.SDPA = SDPA(dim, head_dim, n_rep, max_context_len, enable_dynamic_shape)
+        self.SDPA = SDPA(dim, head_dim, n_rep, max_context_len)
         self.kv_cache = None
 
     def forward(self, x, freqs_cos, freqs_sin, **kwargs):
@@ -159,15 +159,9 @@ class QuantizedSDPATest(unittest.TestCase):
         k_quantized, v_quantized = model.attention.kv_cache.update(input_pos, k, v)
 
         # Run the forward pass with the quantized SDPA
-        try:
-            output = model.attention.SDPA(
-                input_pos, q, k_quantized, v_quantized, bsz, seqlen, None
-            )
+        output = model.attention.SDPA(
+            input_pos, q, k_quantized, v_quantized, bsz, seqlen, None
+        )
 
-            # Verify the output shape
-            self.assertEqual(output.shape, (bsz, seqlen, self.dim))
-        except Exception:
-            # If the forward pass fails, it might be due to missing custom ops
-            self.skipTest(
-                "Custom ops not available, skipping forward functionality test"
-            )
+        # Verify the output shape
+        self.assertEqual(output.shape, (bsz, seqlen, self.dim))

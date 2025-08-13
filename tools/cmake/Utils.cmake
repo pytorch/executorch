@@ -18,141 +18,10 @@
 # It should also be cmake-lint clean.
 #
 
-# Public function to print summary for all configurations. For new variables,
-# it's recommended to add them here.
-function(executorch_print_configuration_summary)
-  message(STATUS "")
-  message(STATUS "******** Summary ********")
-  message(STATUS "  CMAKE_BUILD_TYPE              : ${CMAKE_BUILD_TYPE}")
-  message(STATUS "  CMAKE_CXX_STANDARD            : ${CMAKE_CXX_STANDARD}")
-  message(STATUS "  CMAKE_CXX_COMPILER_ID         : ${CMAKE_CXX_COMPILER_ID}")
-  message(STATUS "  CMAKE_TOOLCHAIN_FILE          : ${CMAKE_TOOLCHAIN_FILE}")
-  message(STATUS "  BUCK2                         : ${BUCK2}")
-  message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
-  message(STATUS "  FLATC_EXECUTABLE              : ${FLATC_EXECUTABLE}")
-  message(
-    STATUS
-      "  EXECUTORCH_ENABLE_LOGGING              : ${EXECUTORCH_ENABLE_LOGGING}"
-  )
-  message(STATUS "  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION : "
-                 "${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}"
-  )
-  message(
-    STATUS "  EXECUTORCH_LOG_LEVEL                   : ${EXECUTORCH_LOG_LEVEL}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_ANDROID_JNI           : "
-                 "${EXECUTORCH_BUILD_ANDROID_JNI}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_ARM_BAREMETAL         : "
-                 "${EXECUTORCH_BUILD_ARM_BAREMETAL}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_CADENCE               : "
-                 "${EXECUTORCH_BUILD_CADENCE}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_DEVTOOLS              : ${EXECUTORCH_BUILD_DEVTOOLS}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
-                 "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
-                 "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR : "
-                 "${EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_LLM         : "
-                 "${EXECUTORCH_BUILD_EXTENSION_LLM}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
-                 "${EXECUTORCH_BUILD_EXTENSION_MODULE}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL : "
-                 "${EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TENSOR      : "
-                 "${EXECUTORCH_BUILD_EXTENSION_TENSOR}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_TRAINING    : "
-                 "${EXECUTORCH_BUILD_EXTENSION_TRAINING}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_FLATC                 : ${EXECUTORCH_BUILD_FLATC}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_GFLAGS                : ${EXECUTORCH_BUILD_GFLAGS}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_HOST_TARGETS          : "
-                 "${EXECUTORCH_BUILD_HOST_TARGETS}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM        : "
-                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT    : "
-                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_OPTIMIZED     : "
-                 "${EXECUTORCH_BUILD_KERNELS_OPTIMIZED}"
-  )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_QUANTIZED     : "
-                 "${EXECUTORCH_BUILD_KERNELS_QUANTIZED}"
-  )
-  message(
-    STATUS "  EXECUTORCH_BUILD_MPS                   : ${EXECUTORCH_BUILD_MPS}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_NEURON                : ${EXECUTORCH_BUILD_NEURON}"
-  )
-  message(
-    STATUS
-    "  EXECUTORCH_BUILD_OPENVINO                : ${EXECUTORCH_BUILD_OPENVINO}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_PTHREADPOOL           : ${EXECUTORCH_BUILD_PTHREADPOOL}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_PYBIND                : ${EXECUTORCH_BUILD_PYBIND}"
-  )
-  message(
-    STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_SIZE_TEST             : ${EXECUTORCH_BUILD_SIZE_TEST}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_TESTS                 : ${EXECUTORCH_BUILD_TESTS}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_VULKAN                : ${EXECUTORCH_BUILD_VULKAN}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_XNNPACK               : ${EXECUTORCH_BUILD_XNNPACK}"
-  )
-
-endfunction()
-
 # This is the funtion to use -Wl, --whole-archive to link static library NB:
 # target_link_options is broken for this case, it only append the interface link
 # options of the first library.
-function(kernel_link_options target_name)
+function(executorch_kernel_link_options target_name)
   # target_link_options(${target_name} INTERFACE
   # "$<LINK_LIBRARY:WHOLE_ARCHIVE,target_name>")
   target_link_options(
@@ -162,16 +31,16 @@ function(kernel_link_options target_name)
   )
 endfunction()
 
-# Same as kernel_link_options but it's for MacOS linker
-function(macos_kernel_link_options target_name)
+# Same as executorch_kernel_link_options but it's for MacOS linker
+function(executorch_macos_kernel_link_options target_name)
   target_link_options(
     ${target_name} INTERFACE
     "SHELL:LINKER:-force_load,$<TARGET_FILE:${target_name}>"
   )
 endfunction()
 
-# Same as kernel_link_options but it's for MSVC linker
-function(msvc_kernel_link_options target_name)
+# Same as executorch_kernel_link_options but it's for MSVC linker
+function(executorch_msvc_kernel_link_options target_name)
   target_link_options(
     ${target_name} INTERFACE
     "SHELL:LINKER:/WHOLEARCHIVE:$<TARGET_FILE:${target_name}>"
@@ -180,13 +49,21 @@ endfunction()
 
 # Ensure that the load-time constructor functions run. By default, the linker
 # would remove them since there are no other references to them.
-function(target_link_options_shared_lib target_name)
+function(executorch_target_link_options_shared_lib target_name)
   if(APPLE)
-    macos_kernel_link_options(${target_name})
+    executorch_macos_kernel_link_options(${target_name})
   elseif(MSVC)
-    msvc_kernel_link_options(${target_name})
+    executorch_msvc_kernel_link_options(${target_name})
   else()
-    kernel_link_options(${target_name})
+    executorch_kernel_link_options(${target_name})
+  endif()
+endfunction()
+
+function(target_link_options_gc_sections target_name)
+  if(APPLE)
+    target_link_options(${target_name} PRIVATE "LINKER:-dead_strip")
+  else()
+    target_link_options(${target_name} PRIVATE "LINKER:--gc-sections")
   endif()
 endfunction()
 
@@ -223,8 +100,8 @@ function(extract_sources sources_file)
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE} ${executorch_root}/tools/cmake/extract_sources.py
-        --config=${executorch_root}/tools/cmake/cmake_deps.toml --out=${sources_file}
-        --buck2=${BUCK2} ${target_platforms_arg}
+        --config=${executorch_root}/tools/cmake/cmake_deps.toml
+        --out=${sources_file} --buck2=${BUCK2} ${target_platforms_arg}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
       RESULT_VARIABLE gen_srcs_exit_code
@@ -259,7 +136,7 @@ function(resolve_buck2)
 
   set(resolve_buck2_command
       ${PYTHON_EXECUTABLE} ${executorch_root}/tools/cmake/resolve_buck.py
-      --cache_dir=buck2-bin
+      --cache_dir=${executorch_root}/buck2-bin
   )
 
   if(NOT ${BUCK2} STREQUAL "")
@@ -324,6 +201,11 @@ function(resolve_python_executable)
         python
         PARENT_SCOPE
     )
+  elseif(DEFINED ENV{VIRTUAL_ENV})
+    set(PYTHON_EXECUTABLE
+        $ENV{VIRTUAL_ENV}/bin/python3
+        PARENT_SCOPE
+    )
   else()
     set(PYTHON_EXECUTABLE
         python3
@@ -335,29 +217,29 @@ endfunction()
 # find_package(Torch CONFIG REQUIRED) replacement for targets that have a
 # header-only Torch dependency.
 #
-# Unlike find_package(Torch ...), this will only set
-# TORCH_INCLUDE_DIRS in the parent scope. In particular, it will NOT
-# set any of the following:
-# - TORCH_FOUND
-# - TORCH_LIBRARY
-# - TORCH_CXX_FLAGS
+# Unlike find_package(Torch ...), this will only set TORCH_INCLUDE_DIRS in the
+# parent scope. In particular, it will NOT set any of the following: -
+# TORCH_FOUND - TORCH_LIBRARY - TORCH_CXX_FLAGS
 function(find_package_torch_headers)
   # We implement this way rather than using find_package so that
-  # cross-compilation can still use the host's installed copy of
-  # torch, since the headers should be fine.
+  # cross-compilation can still use the host's installed copy of torch, since
+  # the headers should be fine.
   get_torch_base_path(TORCH_BASE_PATH)
-  set(TORCH_INCLUDE_DIRS "${TORCH_BASE_PATH}/include;${TORCH_BASE_PATH}/include/torch/csrc/api/include" PARENT_SCOPE)
+  set(TORCH_INCLUDE_DIRS
+      "${TORCH_BASE_PATH}/include;${TORCH_BASE_PATH}/include/torch/csrc/api/include"
+      PARENT_SCOPE
+  )
 endfunction()
 
-# Return the base path to the installed Torch Python library in
-# outVar.
+# Return the base path to the installed Torch Python library in outVar.
 function(get_torch_base_path outVar)
   if(NOT PYTHON_EXECUTABLE)
     resolve_python_executable()
   endif()
   execute_process(
-    COMMAND "${PYTHON_EXECUTABLE}" -c
-            "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])"
+    COMMAND
+      "${PYTHON_EXECUTABLE}" -c
+      "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])"
     OUTPUT_VARIABLE _tmp_torch_path
     ERROR_VARIABLE _tmp_torch_path_error
     RESULT_VARIABLE _tmp_torch_path_result COMMAND_ECHO STDERR
@@ -370,7 +252,10 @@ function(get_torch_base_path outVar)
     message("Output:\n${_tmp_torch_path}")
     message(FATAL_ERROR "Error:\n${_tmp_torch_path_error}")
   endif()
-  set(${outVar} ${_tmp_torch_path} PARENT_SCOPE)
+  set(${outVar}
+      ${_tmp_torch_path}
+      PARENT_SCOPE
+  )
 endfunction()
 
 # Add the Torch CMake configuration to CMAKE_PREFIX_PATH so that find_package
@@ -393,3 +278,38 @@ macro(find_package_torch)
     find_package(Torch CONFIG REQUIRED)
   endif()
 endmacro()
+
+# Modify ${targetName}'s INTERFACE_INCLUDE_DIRECTORIES by wrapping each entry in
+# $<BUILD_INTERFACE:...> so that they work with CMake EXPORT.
+function(executorch_move_interface_include_directories_to_build_time_only
+         targetName
+)
+  get_property(
+    OLD_INTERFACE_INCLUDE_DIRECTORIES
+    TARGET "${targetName}"
+    PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+  )
+  set(FIXED_INTERFACE_INCLUDE_DIRECTORIES)
+  foreach(dir ${OLD_INTERFACE_INCLUDE_DIRECTORIES})
+    list(APPEND FIXED_INTERFACE_INCLUDE_DIRECTORIES $<BUILD_INTERFACE:${dir}>)
+  endforeach()
+  set_property(
+    TARGET "${targetName}" PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+                                    ${FIXED_INTERFACE_INCLUDE_DIRECTORIES}
+  )
+endfunction()
+
+function(executorch_add_prefix_to_public_headers targetName prefix)
+  get_property(
+    OLD_PUBLIC_HEADERS
+    TARGET "${targetName}"
+    PROPERTY PUBLIC_HEADER
+  )
+  set(FIXED_PUBLIC_HEADERS)
+  foreach(header ${OLD_PUBLIC_HEADERS})
+    list(APPEND FIXED_PUBLIC_HEADERS "${prefix}${header}")
+  endforeach()
+  set_property(
+    TARGET "${targetName}" PROPERTY PUBLIC_HEADER ${FIXED_PUBLIC_HEADERS}
+  )
+endfunction()

@@ -18,10 +18,10 @@ from typing import Any, cast, Dict, List, Literal, Optional, Tuple
 import numpy as np
 import torch
 
-from executorch.backends.arm.arm_backend import get_tosa_spec, is_tosa
+from executorch.backends.arm.arm_backend import is_tosa
 from executorch.backends.arm.test.conftest import is_option_enabled
 from executorch.backends.arm.tosa_specification import (
-    Tosa_0_80,
+    get_tosa_spec,
     Tosa_1_00,
     TosaSpecification,
 )
@@ -31,6 +31,7 @@ from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
 
 from torch.overrides import TorchFunctionMode
+from tosa.TosaGraph import TosaGraph
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ def get_input_quantization_params(
             ):  # break early if we have all the inputs quantized parameters
                 break
     if len(quant_params) == 0:
-        raise RuntimeError("No Quantization parameters found in exported model.")
+        logger.warning("No input quantization parameters found in exported model.")
     return quant_params
 
 
@@ -461,10 +462,19 @@ def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
     tosa_input_file = os.path.join(tmp, "output.tosa")
     with open(tosa_input_file, "wb") as f:
         f.write(tosa_fb)
+    tosa_graph = TosaGraph.GetRootAsTosaGraph(tosa_fb)
+    version = tosa_graph.Version()
+    major = version._Major()
+    minor = version._Minor()
+    patch = version._Patch()
+    if not ((major == 1 and minor == 0)):
+        raise RuntimeError(
+            f"Unsupported version in TOSA flatbuffer: version={major}.{minor}.{patch}"
+        )
 
     arm_backend_path = os.path.realpath(os.path.dirname(__file__) + "/..")
     tosa_schema_file = os.path.join(
-        arm_backend_path, "third-party/serialization_lib/schema/tosa.fbs"
+        arm_backend_path, f"tosa/schemas/tosa_{major}.{minor}.fbs"
     )
     assert os.path.exists(
         tosa_schema_file
@@ -539,6 +549,15 @@ def corstone320_installed() -> bool:
     return True
 
 
+def model_converter_installed() -> bool:
+    cmd = ["model-converter", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except:
+        return False
+    return True
+
+
 def get_elf_path(target_board):
     elf_path = os.path.join(
         "arm_test",
@@ -571,21 +590,7 @@ def run_tosa_graph(
     inputs_np = [input.numpy() for input in inputs]
     transpose_data_format(inputs_np, to="NHWC")
 
-    if isinstance(tosa_version, Tosa_0_80):
-        import tosa_tools.v0_80.tosa_reference_model as reference_model
-
-        # tosa_profile: 0 = Base Inference, 1 = Main Inference, 2 = Main Training.
-        tosa_profile = 1 if tosa_version.support_float() else 0
-        debug_mode = "ALL" if logger.level <= logging.DEBUG else None
-        outputs_np, status = reference_model.run(
-            graph,
-            inputs_np,
-            verbosity=_tosa_refmodel_loglevel(logger.level),
-            tosa_profile=tosa_profile,
-            initialize_variable_tensor_from_numpy=True,
-            debug_mode=debug_mode,
-        )
-    elif isinstance(tosa_version, Tosa_1_00):
+    if isinstance(tosa_version, Tosa_1_00):
         import tosa_reference_model as reference_model
 
         debug_mode = "ALL" if logger.level <= logging.DEBUG else None
@@ -610,15 +615,15 @@ def run_tosa_graph(
 
 
 def transpose_data_format(data: list[np.ndarray], to: Literal["NHWC", "NCHW"]):
-    match to:
-        case "NCHW":
-            dim_order = (0, 3, 1, 2)
-        case "NHWC":
-            dim_order = (0, 2, 3, 1)
-        case _:
-            raise NotImplementedError(f"Cant transpose to dim order {to}")
     for i in range(len(data)):
-        if hasattr(data[i], "shape") and len(data[i].shape) == 4:
+        if hasattr(data[i], "shape") and data[i].ndim in (4, 5):
+            match to:
+                case "NCHW":
+                    dim_order = (0, 3, 1, 2) if data[i].ndim == 4 else (0, 1, 4, 2, 3)
+                case "NHWC":
+                    dim_order = (0, 2, 3, 1) if data[i].ndim == 4 else (0, 1, 3, 4, 2)
+                case _:
+                    raise NotImplementedError(f"Cant transpose to dim order {to}")
             # Copy is needed to force actual data conversion, not setting stride.
             data[i] = np.transpose(data[i], dim_order).copy()
 

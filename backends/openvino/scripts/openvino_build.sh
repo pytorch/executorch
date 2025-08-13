@@ -48,16 +48,14 @@ main() {
         # Set parameters to configure the project with CMake
         # Note: Add any additional configuration options you need here
         export CMAKE_ARGS="-DEXECUTORCH_BUILD_OPENVINO=ON \
-                           -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-                           -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-                           -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
-                           -DEXECUTORCH_ENABLE_LOGGING=ON \
-                           -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-                           -DEXECUTORCH_BUILD_PYBIND=ON"
+                           -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON"
         export CMAKE_BUILD_ARGS="--target openvino_backend"
 
         # Build the package
-        pip install . --no-build-isolation
+        ./install_executorch.sh --minimal
+
+        # Install torchao
+        pip install third-party/ao
 
     else
         echo "Error: Argument is not valid: $build_type"

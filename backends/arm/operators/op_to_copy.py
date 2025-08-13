@@ -4,16 +4,16 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-from typing import List
+from typing import Any, List
 
 import torch
-
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-import tosa_tools.v0_80.tosa.Op as TosaOp  # type: ignore
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
+)
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 
@@ -31,11 +31,17 @@ class ToCopyVisitor(NodeVisitor):
 
     target = "aten._to_copy.default"
 
+    tosa_specs = NodeVisitor.tosa_specs
+
     def define_node(
         self,
         node: torch.fx.Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        tosa_graph.addOperator(TosaOp.Op().CAST, [inputs[0].name], [output.name])
+        import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 1)
+
+        tosa_graph.addOperator(ts.TosaOp.Op().CAST, [inputs[0].name], [output.name])

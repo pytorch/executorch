@@ -17,9 +17,9 @@ from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass 
     DuplicateDequantNodePass,
 )
 from executorch.exir.delegate import executorch_call_delegate
-
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export
+
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from torchvision.models.quantization import mobilenet_v2
 

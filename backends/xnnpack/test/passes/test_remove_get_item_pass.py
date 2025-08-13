@@ -7,7 +7,7 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack._passes.remove_getitem_op import RemoveGetItemPass
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester
 
 

@@ -18,10 +18,10 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 Tensor& op_cdist_forward_out(

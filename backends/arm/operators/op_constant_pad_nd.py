@@ -5,11 +5,9 @@
 
 # pyre-unsafe
 
-from typing import List
+from typing import Any, List
 
 import torch
-
-import tosa_tools.v0_80.serializer.tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -18,7 +16,13 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
+)
 from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa_specification import TosaSpecification
 
 
 @register_node_visitor
@@ -26,22 +30,42 @@ class ConstantPadNDVisitor(NodeVisitor):
 
     target = "aten.constant_pad_nd.default"
 
+    tosa_specs = [
+        TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        TosaSpecification.create_from_string("TOSA-1.0+FP"),
+    ]
+
     def define_node(
         self,
         node: torch.fx.Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        import serializer.tosa_serializer as ts  # type: ignore
+
+        validate_num_inputs(self.target, inputs, 3)
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [
+                ts.DType.INT8,
+                ts.DType.INT32,
+                ts.DType.FP32,
+                ts.DType.BOOL,
+            ],
+            output.tosa_spec,
+        )
 
         if inputs[0].dtype == ts.DType.INT8:
             input_qparams = get_input_qparams(node)
             qargs = input_qparams[0]
-            pad_const_qs = qargs.quantize_value(inputs[2].number).item()
-            pad_const_fp = 0.0
+            pad_const_val = qargs.quantize_value(inputs[2].number).item()
+            pad_const_dtype = ts.DType.INT8
         else:
-            pad_const_fp = inputs[2].number
-            pad_const_qs = 0
+            pad_const_val = inputs[2].number
+            pad_const_dtype = inputs[0].dtype
 
         rank = len(output.shape)
         # Each dim needs 2 padding values. For example, to pad the last dimension, the pad has the form
@@ -68,9 +92,16 @@ class ConstantPadNDVisitor(NodeVisitor):
                 input_dim_idx * 2 : (input_dim_idx + 1) * 2
             ]
 
-        attr = ts.TosaSerializerAttribute()
-        attr.PadAttribute(tosa_graph.builder, output_pad, pad_const_qs, pad_const_fp)
+        padding = tosa_graph.addConst(
+            shape=[len(output_pad)], dtype=ts.DType.SHAPE, vals=output_pad
+        )
+
+        pad_const = tosa_graph.addConst(
+            shape=[1], dtype=pad_const_dtype, vals=[pad_const_val]
+        )
 
         tosa_graph.addOperator(
-            ts.TosaOp.Op().PAD, [inputs[0].name], [output.name], attr
+            ts.TosaOp.Op().PAD,
+            [inputs[0].name, padding.name, pad_const.name],
+            [output.name],
         )

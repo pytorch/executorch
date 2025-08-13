@@ -1,6 +1,6 @@
 # XNNPACK Backend
 
-The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. [XNNPACK](https://github.com/google/XNNPACK/tree/master) is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs. 
+The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs. [XNNPACK](https://github.com/google/XNNPACK/tree/master) is a library that provides optimized kernels for machine learning operators on Arm and x86 CPUs.
 
 ## Features
 
@@ -14,11 +14,11 @@ The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs
 - ARM64 on Android, iOS, macOS, Linux, and Windows.
 - ARMv7 (with NEON) on Android.
 - ARMv6 (with VFPv2) on Linux.
-- x86 and x86-64 (up to AVX512) on Windows, Linux, macOS, Android, and iOS simulator.
+- x86 and x86-64 (up to AVX512) on Windows, Linux, Android.
 
 ## Development Requirements
 
-The XNNPACK delegate does not introduce any development system requirements beyond those required by 
+The XNNPACK delegate does not introduce any development system requirements beyond those required by
 the core ExecuTorch runtime.
 
 ----
@@ -63,7 +63,7 @@ After generating the XNNPACK-delegated .pte, the model can be tested from Python
 
 ## Quantization
 
-The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the `XNNPACKQuantizer`. `Quantizers` are backend specific, which means the `XNNPACKQuantizer` is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. 
+The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. To quantize a PyTorch model for the XNNPACK backend, use the `XNNPACKQuantizer`. `Quantizers` are backend specific, which means the `XNNPACKQuantizer` is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library.
 
 ### Supported Quantization Schemes
 The XNNPACK delegate supports the following quantization schemes:
@@ -91,11 +91,10 @@ The output of `convert_pt2e` is a PyTorch model which can be exported and lowere
 import torch
 import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import to_edge_transform_and_lower
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.xnnpack_quantizer import get_symmetric_quantization_config
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
 sample_inputs = (torch.randn(1, 3, 224, 224), )
@@ -118,7 +117,43 @@ et_program = to_edge_transform_and_lower( # (6)
 ).to_executorch()
 ```
 
-See [PyTorch 2 Export Post Training Quantization](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html) for more information.
+See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
+
+### LLM quantization with quantize_
+
+The XNNPACK backend also supports quantizing models with the [torchao](https://github.com/pytorch/ao) quantize_ API.  This is most commonly used for LLMs, requiring more advanced quantization.  Since quantize_ is not backend aware, it is important to use a config that is compatible with CPU/XNNPACK:
+
+* Quantize embeedings with IntxWeightOnlyConfig (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity)
+* Quantize linear layers with Int8DynamicActivationIntxWeightConfig (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity)
+
+Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the [torchao documentation](https://docs.pytorch.org/ao/main/serving.html#mobile-deployment-with-executorch).
+
+```python
+from torchao.quantization.granularity import PerGroup, PerAxis
+from torchao.quantization.quant_api import (
+    IntxWeightOnlyConfig,
+    Int8DynamicActivationIntxWeightConfig,
+    quantize_,
+)
+
+# Quantize embeddings with 8-bits, per channel
+embedding_config = IntxWeightOnlyConfig(
+    weight_dtype=torch.int8,
+    granularity=PerAxis(0),
+)
+qunatize_(
+    eager_model,
+    lambda m, fqn: isinstance(m, torch.nn.Embedding),
+)
+
+
+# Quatize linear layers with 8-bit dynamic activations and 4-bit weights
+linear_config = Int8DynamicActivationIntxWeightConfig(
+    weight_dtype=torch.int4,
+    weight_granularity=PerGroup(32),
+)
+quantize_(eager_model, linear_config)
+```
 
 ----
 

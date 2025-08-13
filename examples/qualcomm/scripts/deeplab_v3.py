@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import logging
 import os
 import random
 import re
@@ -74,8 +75,11 @@ def main(args):
         )
 
     data_num = 100
-    if args.compile_only:
+    if args.ci:
         inputs = [(torch.rand(1, 3, 224, 224),)]
+        logging.warning(
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
+        )
     else:
         inputs, targets, input_list = get_dataset(
             data_size=data_num, dataset_dir=args.artifact, download=args.download

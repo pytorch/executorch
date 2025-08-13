@@ -5,16 +5,19 @@
 
 # pyre-unsafe
 
-from typing import List
+from typing import Any, List
 
 import torch
 import torch.fx
 
-import tosa_tools.v0_80.serializer.tosa_serializer as ts
-
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
+)
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 
@@ -24,19 +27,42 @@ def binary_operator_factory(bw_target: str, tosa_op):
 
     class BinaryOperator(NodeVisitor):
         target = bw_target
+        tosa_specs = NodeVisitor.tosa_specs
 
         def define_node(
             self,
             node: torch.fx.Node,
-            tosa_graph: ts.TosaSerializer,
+            tosa_graph: Any,
             inputs: List[TosaArg],
             output: TosaArg,
         ) -> None:
+            import serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
 
-            if not (inputs[0].dtype == inputs[1].dtype == output.dtype):
-                raise ValueError(
-                    "All inputs and outputs need same dtype."
-                    f"Got {inputs[0].dtype=}, {inputs[1].dtype=}, {output.dtype=}."
+            validate_num_inputs(self.target, inputs, 2)
+            validate_same_dtype(self.target, [*inputs, output], ts)
+
+            if self.target in [
+                "aten.bitwise_and.Tensor",
+                "aten.bitwise_xor.Tensor",
+                "aten.bitwise_or.Tensor",
+                "aten.bitwise_left_shift.Tensor",
+            ]:
+                validate_valid_dtype(
+                    self.target,
+                    [*inputs, output],
+                    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+                    output.tosa_spec,
+                )
+            if self.target in [
+                "aten.logical_and.default",
+                "aten.logical_xor.defaul",
+                "aten.logical_or.default",
+            ]:
+                validate_valid_dtype(
+                    self.target,
+                    [*inputs, output],
+                    [ts.DType.BOOL],
+                    output.tosa_spec,
                 )
 
             tosa_graph.addOperator(
@@ -45,6 +71,8 @@ def binary_operator_factory(bw_target: str, tosa_op):
 
     register_node_visitor(BinaryOperator)
 
+
+import serializer.tosa_serializer as ts  # type: ignore
 
 binary_operator_factory("aten.bitwise_and.Tensor", ts.TosaOp.Op().BITWISE_AND)
 binary_operator_factory("aten.bitwise_xor.Tensor", ts.TosaOp.Op().BITWISE_XOR)

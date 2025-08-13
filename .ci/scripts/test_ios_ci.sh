@@ -7,7 +7,7 @@
 
 set -e
 
-APP_PATH="executorch-examples/apple/ExecuTorchDemo/ExecuTorchDemo"
+APP_PATH="executorch-examples/mv3/apple/ExecuTorchDemo/ExecuTorchDemo"
 MODEL_NAME="mv3"
 SIMULATOR_NAME="executorch"
 
@@ -41,10 +41,6 @@ git clone --depth 1 https://github.com/pytorch-labs/executorch-examples.git
 say "Installing CoreML Backend Requirements"
 
 ./backends/apple/coreml/scripts/install_requirements.sh
-
-say "Installing MPS Backend Requirements"
-
-./backends/apple/mps/install_requirements.sh
 
 say "Exporting Models"
 

@@ -131,7 +131,7 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
         return {"capture_config": CaptureConfig(pt2_mode=True, enable_aot=True)}
 
 
-class ModuleLinear(torch.nn.Module):
+class ModuleAddMul(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.a = 3 * torch.ones(2, 2, dtype=torch.float)
@@ -144,6 +144,19 @@ class ModuleLinear(torch.nn.Module):
 
     def get_random_inputs(self):
         return (torch.ones(2, 2, dtype=torch.float),)
+
+
+# Used for program-data-separation.
+class ModuleLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+    def get_random_inputs(self):
+        return (torch.randn(3),)
 
 
 class ModuleMultipleEntry(torch.nn.Module):
@@ -183,6 +196,72 @@ class ModuleSimpleTrain(torch.nn.Module):
         return True
 
 
+class ModuleStateful(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("state", torch.zeros(1, dtype=torch.int32))
+
+    def forward(self, x):
+        self.state.add_(1)
+        return x + self.state
+
+    def get_random_inputs(self):
+        return (torch.ones(1),)
+
+    @staticmethod
+    def export_state_names():
+        return True
+
+
+# Mimicking LLM with forward taking tokens and input_pos
+class ModuleKVCacheInputPos(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x, input_pos):
+        return (self.linear(x.to(torch.float)).to(torch.long) + input_pos).to(
+            torch.float
+        )
+
+    def get_random_inputs(self):
+        return (
+            torch.randint(100, [1, 3], dtype=torch.long),
+            torch.tensor([0], dtype=torch.long),
+        )
+
+
+# Mimicking LLM with forward taking tokens and cache_positions
+class ModuleKVCacheCachePos(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x, cache_positions):
+        return (self.linear(x.to(torch.float)).to(torch.long) + cache_positions).to(
+            torch.float
+        )
+
+    def get_random_inputs(self):
+        return (
+            torch.randint(100, [1, 3], dtype=torch.long),
+            torch.arange(3, dtype=torch.long),
+        )
+
+
+# Mimicking LLM with forward taking only tokens
+class ModuleNoKVCache(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+
+    def forward(self, x):
+        return self.linear(x.to(torch.float))
+
+    def get_random_inputs(self):
+        return (torch.randint(100, [1, 3], dtype=torch.long),)
+
+
 #
 # Main logic.
 #
@@ -190,7 +269,6 @@ class ModuleSimpleTrain(torch.nn.Module):
 
 def export_module_to_program(
     module_class: Type[nn.Module],
-    skip_type_promotion: bool,
     external_constants: bool = False,
 ) -> ExecutorchProgramManager:
     """Exports the module and returns the serialized program data."""
@@ -201,8 +279,11 @@ def export_module_to_program(
         # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
         export_kwargs = module_class.get_export_kwargs()
     export_joint = False
+    export_state_names = False
     if hasattr(module_class, "export_joint"):
         export_joint = module_class.export_joint()  # pyre-ignore
+    if hasattr(module_class, "export_state_names"):
+        export_state_names = module_class.export_state_names()
     if hasattr(module_class, "get_method_names_to_export"):
         # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
         methods = module_class.get_method_names_to_export()
@@ -211,9 +292,9 @@ def export_module_to_program(
     module = ExportedModule.export(
         module_class,
         methods,
-        skip_type_promotion=skip_type_promotion,
         export_joint_graph=export_joint,
         external_constants=external_constants,
+        export_state_names=export_state_names,
         **export_kwargs,
     )
     return module.executorch_program
@@ -259,17 +340,11 @@ def main() -> None:
     # Export and write to the output files.
     os.makedirs(args.outdir, exist_ok=True)
     for module_name, module_class in module_names_to_classes.items():
-        skip_type_promotion = False
-        if module_name == "ModuleAddHalf":
-            # Skip type promotion to keep the model in fp16.
-            # Type promotion will convert to fp32.
-            skip_type_promotion = True
         if args.external_constants:
             module_name = f"{module_name}Program"
         outfile = os.path.join(args.outdir, f"{module_name}.pte")
         prog = export_module_to_program(
             module_class,
-            skip_type_promotion=skip_type_promotion,
             external_constants=args.external_constants,
         )
         with open(outfile, "wb") as fp:

@@ -4,14 +4,18 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-from typing import List
+from typing import Any, List
 
 import torch.fx
 
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
+)
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
 )
 
 from executorch.backends.arm.tosa_mapping import TosaArg
@@ -25,6 +29,7 @@ def unary_operator_factory(unary_target: str, tosa_op):
 
     class UnaryOperator(NodeVisitor):
         target = unary_target
+        tosa_specs = NodeVisitor.tosa_specs
 
         def __init__(self, *args):
             super().__init__(*args)
@@ -32,26 +37,29 @@ def unary_operator_factory(unary_target: str, tosa_op):
         def define_node(
             self,
             node: torch.fx.Node,
-            tosa_graph: ts.TosaSerializer,
+            tosa_graph: Any,
             inputs: List[TosaArg],
             output: TosaArg,
         ) -> None:
+            import serializer.tosa_serializer as ts  # type: ignore  # noqa: F401
 
-            if not (inputs[0].dtype == output.dtype):
-                raise ValueError(
-                    "All inputs and output need same dtype."
-                    f"Got {inputs[0].dtype=}, {output.dtype=}"
-                )
+            validate_num_inputs(self.target, inputs, 1)
+            validate_same_dtype(self.target, [*inputs, output], ts)
 
-            if self.target in fp_only_ops and not (inputs[0].dtype == ts.DType.FP32):
-                raise ValueError(
-                    "All inputs need to be FP32." f"Got {inputs[0].dtype=}"
+            if self.target in fp_only_ops:
+                validate_valid_dtype(
+                    self.target,
+                    inputs[0],
+                    ts.DType.FP32,
+                    output.tosa_spec,
                 )
 
             tosa_graph.addOperator(tosa_op, [inputs[0].name], [output.name])
 
     register_node_visitor(UnaryOperator)
 
+
+import serializer.tosa_serializer as ts  # type: ignore
 
 unary_operator_factory("aten.ceil.default", ts.TosaOp.Op().CEIL)
 unary_operator_factory("aten.floor.default", ts.TosaOp.Op().FLOOR)

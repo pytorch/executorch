@@ -9,6 +9,7 @@ from itertools import chain
 from typing import cast, List, Optional, Tuple
 
 import torch
+from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
@@ -24,9 +25,11 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_per_tensor,
     is_qparam,
     is_quant,
+    tag_as_implicit_q_dq,
 )
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
+    is_depthwise_conv,
     is_getitem,
     is_node,
     is_param_node,
@@ -133,6 +136,11 @@ class GEMMConfig(XNNPartitionerConfig):
 
         valid_deps = valid_bias and valid_weight and valid_act and valid_output
         deps = list(chain(bias_deps, weight_deps, act_deps, output_deps))
+
+        # Tag q/dq nodes as implicit q/dq nodes
+        for dep in deps:
+            if is_dequant(dep) or is_quant(dep):
+                tag_as_implicit_q_dq(dep)
 
         return valid_deps, deps
 
@@ -266,7 +274,6 @@ class GEMMConfig(XNNPartitionerConfig):
             if not is_quant(q_input):
                 why(node, "Expected  dequant input to be quant node")
                 return (False, [])
-
             gemm_deps.append(q_input)
             q_input_args = q_input.args
             if is_affine_qdq(q_input):
@@ -359,12 +366,23 @@ class ConvolutionConfig(GEMMConfig):
             return False  # Only support 1D + 2D Conv
 
         kernel_node = get_input_node(node, 1)
+        kernel_shape = get_shape(kernel_node)
         weight_quant_params = QuantParams.from_weights(kernel_node, ep)
-
-        is_transpose = node.args[6]
         groups = cast(int, node.args[8])
+        is_transpose = node.args[6]
 
-        # XNNPack does not support non-zero output padding in transposed
+        # XNNPACK does not support dynamic quantization convs that are not 2D or are depthwise
+        if self._detect_precision(node) == ConfigPrecisionType.DYNAMIC_QUANT and (
+            len(conv_stride) != 2
+            or is_depthwise_conv(kernel_shape, groups, is_transpose)
+        ):
+            why(
+                node,
+                "XNNPACK only supports standard 2D convolutions for dynamic quantization",
+            )
+            return False
+
+        # XNNPACK does not support non-zero output padding in transposed
         # convolutions.
         if is_transpose and any(
             out_pad != 0 for out_pad in cast(List[int], node.args[7])
@@ -394,6 +412,7 @@ class ConvolutionConfig(GEMMConfig):
         return [
             ConfigPrecisionType.FP32,
             ConfigPrecisionType.STATIC_QUANT,
+            ConfigPrecisionType.DYNAMIC_QUANT,
         ]
 
 

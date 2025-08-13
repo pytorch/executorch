@@ -1,7 +1,7 @@
 # Kernel Registration
 ## Overview
 
-At the last stage of [ExecuTorch model exporting](./export-overview.md), we lower the operators in the dialect to the _out variants_ of the [core ATen operators](./ir-ops-set-definition.md). Then we serialize these operator names into the model artifact. During runtime execution, for each operator name we will need to find the actual _kernels_, i.e., the C++ functions that do the heavy-lifting calculations and return results.
+At the last stage of [ExecuTorch model exporting](export-overview.md), we lower the operators in the dialect to the _out variants_ of the [core ATen operators](ir-ops-set-definition.md). Then we serialize these operator names into the model artifact. During runtime execution, for each operator name we will need to find the actual _kernels_, i.e., the C++ functions that do the heavy-lifting calculations and return results.
 
 ## Kernel Libraries
 ### First-party kernel libraries:
@@ -47,7 +47,7 @@ If it's not clear which API to use, please see [Best Practices](#custom-ops-api-
 
 ### YAML Entry API High Level Architecture
 
-![](./_static/img/kernel-library-custom-aten-kernel.png)
+![](_static/img/kernel-library-custom-aten-kernel.png)
 
 ExecuTorch users are asked to provide:
 
@@ -266,7 +266,7 @@ Link it into ExecuTorch runtime: In our `CMakeLists.txt` that builds the binary/
 Here's an example to do it:
 
 ```cmake
-# For target_link_options_shared_lib
+# For executorch_target_link_options_shared_lib
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 # Add a custom op library
@@ -282,7 +282,7 @@ target_link_libraries(custom_op_lib PUBLIC executorch)
 add_executable(custom_op_runner PUBLIC main.cpp)
 
 # Link this library with --whole-archive !! IMPORTANT !! this is to avoid the operators being stripped by linker
-target_link_options_shared_lib(custom_op_lib)
+executorch_target_link_options_shared_lib(custom_op_lib)
 
 # Link custom op lib
 target_link_libraries(custom_op_runner PUBLIC custom_op_lib)

@@ -18,9 +18,35 @@ import torch
 from executorch.exir import ExecutorchProgramManager, memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
+from executorch.exir.pass_base import Argument
 from tabulate import tabulate
+from torch.fx.operator_schemas import get_signature_for_torch_op
 
 from torch.utils._pytree import tree_flatten
+
+
+class MemoryPlanningAlgoFailure(Exception):
+    pass
+
+
+class TypeMismatchError(Exception):
+    pass
+
+
+class NumericalMismatchError(Exception):
+    def __init__(self, msg: str, rms_value: Optional[float] = None) -> None:
+        self.rms_value = rms_value
+        super().__init__(msg)
+
+
+class NumericalMismatchExpectedError(Exception):
+    def __init__(self, rms_expected_value: float) -> None:
+        self.rms_expected_value = rms_expected_value
+        super().__init__()
+
+
+class ISSRuntimeFailure(Exception):
+    pass
 
 
 # Get the output size of a 1D convolution given the input size and parameters
@@ -308,3 +334,30 @@ class MemoryConfig:
 # Return default memory config for the backend
 def get_default_memory_config() -> MemoryConfig:
     return MemoryConfig(memory_sizes=[0x1000000000])
+
+
+def rebind(
+    op: EdgeOpOverload, args: tuple[Argument, ...], kwargs: dict[str, Argument]
+) -> Optional[tuple[tuple[Argument, ...], dict[str, Argument]]]:
+    """Populates optional args and binds args/kwargs based on schema."""
+    torch_op_schemas = get_signature_for_torch_op(op._op)
+
+    matched_schemas = []
+    # Iterate through all of the schema until we find one that matches
+    # If one matches, populate `new_args_and_kwargs` with the new args/kwargs
+    # values. If none matches, `new_args_and_kwargs` will be None
+    for candidate_signature in torch_op_schemas:
+        try:
+            candidate_signature.bind(*args, **kwargs)
+            matched_schemas.append(candidate_signature)
+        except TypeError:
+            continue
+
+    if len(matched_schemas) != 1:
+        # Did not match any schema. Cannot normalize
+        return None
+
+    bound_args = matched_schemas[0].bind(*args, **kwargs)
+    bound_args.apply_defaults()
+
+    return bound_args.args, bound_args.kwargs

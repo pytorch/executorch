@@ -22,19 +22,21 @@ namespace executorch {
 namespace backends {
 
 using executorch::backends::xnnpack::delegate::XNNWeightsCache;
+using executorch::ET_RUNTIME_NAMESPACE::Backend;
+using executorch::ET_RUNTIME_NAMESPACE::BackendExecutionContext;
+using executorch::ET_RUNTIME_NAMESPACE::BackendInitContext;
+using executorch::ET_RUNTIME_NAMESPACE::CompileSpec;
+using executorch::ET_RUNTIME_NAMESPACE::DelegateHandle;
+using executorch::ET_RUNTIME_NAMESPACE::NamedDataMap;
 using executorch::runtime::ArrayRef;
-using executorch::runtime::Backend;
-using executorch::runtime::BackendExecutionContext;
-using executorch::runtime::BackendInitContext;
-using executorch::runtime::CompileSpec;
-using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
-using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
-class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
+class XnnpackBackend final
+    : public ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface {
  public:
   ~XnnpackBackend() = default;
 
@@ -125,7 +127,7 @@ class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE

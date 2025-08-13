@@ -17,16 +17,13 @@ To compile for the NPUs, the Ethos-U Vela compiler is needed. A target-specific 
 
 These dependencies can easily be downloaded using the script `examples/arm/setup.sh`.
 
-To work with with quantized models, build the quantize_ops_aot library that contains kernels for quantization and dequantization. This can be done with the script
-`backends/arm/scripts/build_quantized_ops_aot_lib.sh`.
-
 ## Using the Arm Ethos-U backend
 The example below demonstrates the lowering processs of a MobileNet V2 model from torchvision for a Ethos-U55 target. Since the model is a floating point model, first quantize it using the `EthosUQuantizer`. Then, pass an instance of the `EthosUPartitioner` to `to_edge_transform_and_lower`. Both the quantizer and the partitioner need a compilation specification created using `ArmCompileSpecBuilder`.
 
 ```python
 import torch
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
-from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.ethosu import EthosUPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -36,17 +33,14 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchvision.models import mobilenetv2
+import executorch.kernels.quantized
 
 mobilenet_v2 = mobilenetv2.mobilenet_v2(
     weights=mobilenetv2.MobileNet_V2_Weights.DEFAULT
 ).eval()
 example_inputs = (torch.randn(1, 3, 224, 224),)
-# .so suffix is .dylib on MacOS.
-torch.ops.load_library(
-    "cmake-out-aot-lib/kernels/quantized/libquantized_ops_aot_lib.so"
-)
 
 compile_spec = ArmCompileSpecBuilder().ethosu_compile_spec(
         "ethos-u55-128",
@@ -95,7 +89,10 @@ A fully integer model is required for using the Arm Ethos-U backend. As discusse
 To run the model on-device, build the executorch library and EthosUDelegate using the script
 `executorch/backends/arm/scripts/build_executorch.sh`.
 Then build the arm executorch runtime using the script
-`executorch/backends/arm/scripts/build_executorch_runner.sh --pte=mv2_arm_ethos_u55.pte --target=ethos-u55-128`.
+`executorch/backends/arm/scripts/build_executor_runner.sh --pte=mv2_arm_ethos_u55.pte --target=ethos-u55-128`.
 
 Finally, run the elf file on FVP using the script
 `executorch/backends/arm/scripts/run_fvp.sh --elf=executorch/mv2_arm_ethos_u55/cmake-out/arm_executor_runner --target=ethos-u55-128`.
+
+## See Also
+- [Arm Ethos-U Backend Tutorial](tutorial-arm-ethos-u.md)

@@ -14,10 +14,6 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_add.cpp"
@@ -71,8 +67,9 @@ target_link_libraries(aten_ops_cadence PUBLIC executorch)
 target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..
-${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
 
 target_include_directories(
   aten_ops_cadence PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}

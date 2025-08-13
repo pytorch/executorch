@@ -17,16 +17,16 @@ from executorch.exir.backend.test.op_partitioner_demo import (
     NonDecompTestPartitioner,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.error import ExportError
+from executorch.exir.error import ExportError, InternalError
 from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import (
+    _transform,
     EdgeProgramManager,
     ExecutorchProgramManager,
     to_edge,
     to_edge_transform_and_lower,
-    to_edge_with_preserved_ops,
 )
 from executorch.exir.tracer import _default_decomposition_table
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
@@ -34,8 +34,10 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
+from torch._export.verifier import Verifier
 from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
+from torch.fx.passes.infra.pass_manager import PassManager
 
 from torch.library import impl, Library
 from torch.nn import functional as F
@@ -273,7 +275,6 @@ class TestProgramManagers(unittest.TestCase):
             for output_val in method.outputs:
                 evalue = method.values[output_val]
                 self.assertNotEqual(evalue.val.allocation_info, None)
-        else:
             for input_val in method.inputs:
                 evalue = method.values[input_val]
                 self.assertEqual(evalue.val.allocation_info, None)
@@ -292,6 +293,32 @@ class TestProgramManagers(unittest.TestCase):
         ).exported_program()
         for node in ep.graph.nodes:
             self.assertNotEqual(node.op, "get_attr")
+
+    def test_while(self):
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 2)
+                self.dec = torch.nn.Buffer(torch.tensor(1))
+
+            def forward(self, iter, x):
+                def cond_fn(it, x):
+                    return it - self.dec > 0
+
+                def body_fn(it, x):
+                    return it - 1, self.linear(x)
+
+                return torch._higher_order_ops.while_loop(cond_fn, body_fn, (iter, x))
+
+        # Instantiate and export
+        inp = (torch.tensor(3), torch.randn(2, 2))
+        exported = export(M(), inp)
+        ep = to_edge(exported)
+        # TODO(jakeszwe)
+        with self.assertRaisesRegex(
+            InternalError, "Unsupported control flow operator: while_loop"
+        ):
+            ep.to_executorch()
 
     def test_constraint_present_after_dce(self):
         import executorch.exir as exir
@@ -442,6 +469,30 @@ class TestProgramManagers(unittest.TestCase):
                 torch.ones(1),
             ),
             torch.ones(1) + 1,  # x + 1
+        )
+
+    def test_transform_pass_manager_api(self):
+        edge_manager = to_edge(get_exported_programs(), get_config_methods())
+
+        pm = PassManager()
+        pm.add_pass(AddToMulPassEdge())
+
+        transformed_edge = edge_manager.transform(pm)
+
+        x = torch.ones(1) * 2
+        y = torch.ones(1) * 3
+
+        # x * y + x -> x * y * x
+        self.assertEqual(
+            transformed_edge.exported_program("forward").module()(x, y), x * y * x
+        )
+
+        # x + 1 -> x * 1
+        self.assertEqual(
+            transformed_edge.exported_program("foo").module()(
+                x,
+            ),
+            x * 1,
         )
 
     def test_edge_to_backend_replaces_subgraph(self):
@@ -757,7 +808,9 @@ class TestProgramManagers(unittest.TestCase):
     def _test_to_edge_with_preserved_ops(
         self, program, preserved_ops, expected_preserved_ops
     ):
-        edge = to_edge_with_preserved_ops(program, preserve_ops=preserved_ops)
+        edge = to_edge(
+            program, compile_config=EdgeCompileConfig(preserve_ops=preserved_ops)
+        )
 
         def count_nodes(graph_module, target):
             count = 0
@@ -847,3 +900,23 @@ class TestProgramManagers(unittest.TestCase):
         et = edge.to_executorch()
         with self.assertRaises(ValueError):
             _ = et.save("/tmp/test_save.pt")
+
+    def test__transform_override_verifiers(self):
+        """Test that _transform can override verifiers in the exported program."""
+
+        class MyVerifier(Verifier):
+            dialect: str = "MY_DIALECT"
+
+            def __init__(self):
+                super().__init__()
+
+        model = TestLinear()
+        program = torch.export.export(model, model._get_random_inputs(), strict=True)
+        self.assertFalse(issubclass(program.verifiers[0], MyVerifier))
+
+        # Apply transformation with custom verifier
+        transformed = _transform(
+            program, AddToMulPassEdge(), override_verifiers=[MyVerifier]
+        )
+        self.assertTrue(issubclass(transformed.verifiers[0], MyVerifier))
+        self.assertFalse(issubclass(program.verifiers[0], MyVerifier))

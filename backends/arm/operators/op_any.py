@@ -4,12 +4,16 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-from typing import cast, List
+from typing import Any, cast, List
 
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (  # type: ignore
     NodeVisitor,
     register_node_visitor,
+)
+from executorch.backends.arm.operators.operator_validation_utils import (
+    validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
 )
 
 from executorch.backends.arm.tosa_mapping import TosaArg  # type: ignore
@@ -20,21 +24,22 @@ from torch.fx import Node
 class AnyVisitor(NodeVisitor):
     target = "aten.any.dim"
 
+    tosa_specs = NodeVisitor.tosa_specs
+
     def define_node(
         self,
         node: Node,
-        tosa_graph: ts.TosaSerializer,
+        tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        import serializer.tosa_serializer as ts
 
-        if not (inputs[0].dtype == output.dtype):
-            raise ValueError(
-                "All inputs and outputs need same dtype."
-                f"Got {ts.DTypeNames[inputs[0].dtype]=}, {ts.DTypeNames[output.dtype]=}."
-            )
-        if not (inputs[0].dtype == ts.DType.BOOL):
-            raise ValueError("All inputs need to be BOOL." f"Got {inputs[0].dtype=}")
+        validate_num_inputs(self.target, inputs, 3)
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target, [inputs[0], output], ts.DType.BOOL, output.tosa_spec
+        )
 
         input_shape = list(inputs[0].shape)
         dim = cast(int, inputs[1].number) % len(
@@ -45,7 +50,7 @@ class AnyVisitor(NodeVisitor):
             raise ValueError("This case should be handled by ConvertAnyDimDimsPass")
 
         attr = ts.TosaSerializerAttribute()
-        attr.AxisAttribute(inputs[0].dim_order.index(dim))
+        attr.ReduceAnyAttribute(inputs[0].dim_order.index(dim))
 
         tosa_graph.addOperator(
             ts.TosaOp.Op().REDUCE_ANY, [inputs[0].name], [output.name], attr

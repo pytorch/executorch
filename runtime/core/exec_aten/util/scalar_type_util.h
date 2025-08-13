@@ -199,6 +199,11 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(ANOTHER_INPUT, float, Float)                     \
   _(ANOTHER_INPUT, double, Double)
 
+#define ET_FORALL_FLOATH_TYPES_WITH(ANOTHER_INPUT, _) \
+  _(ANOTHER_INPUT, float, Float)                      \
+  _(ANOTHER_INPUT, double, Double)                    \
+  _(ANOTHER_INPUT, ::executorch::aten::Half, Half)
+
 #define ET_FORALL_FLOAT_TYPES_WITH2(ANOTHER_INPUT1, ANOTHER_INPUT2, _) \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, float, Float)                      \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, double, Double)

@@ -13,10 +13,7 @@ from typing import Callable, List
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes import (
-    ConvertUpsampleBicubicWithBilinear,
-    ExpandBroadcastTensorShape,
-)
+from executorch.backends.qualcomm._passes import ExpandBroadcastTensorShape
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
@@ -246,7 +243,6 @@ def main(args):
 
     # lower to QNN
     passes_job = get_capture_program_passes()
-    passes_job[ConvertUpsampleBicubicWithBilinear][QCOM_PASS_ACTIVATE_KEY] = True
     passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
     build_executorch_binary(
         model,

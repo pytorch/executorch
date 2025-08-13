@@ -10,7 +10,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpCast, OpConvert, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -80,7 +81,7 @@ class To(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
 
         input_tensor_wrapper = self.define_tensor(
@@ -90,9 +91,45 @@ class To(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
+        node_input_tensors = [input_tensor_wrapper]
+
+        # if the output / input dtype is int64, we should cast it to int32 first
+        # since int32 is the only source that can be cast into int64
+        # this is mainly for validation purpose, redundant cast ops will be fused
+        # in preprocess stage.
+        ops = []
+        if (
+            node.meta["val"].dtype == torch.int64
+            and input_node.meta["val"].dtype != torch.int32
+        ) or (
+            input_node.meta["val"].dtype == torch.int64
+            and node.meta["val"].dtype != torch.int32
+        ):
+            input_quant_encoding, input_quant_configs = self.get_quant_encoding_conf(
+                input_node, node
+            )
+            cast_intermediate_tensor_wrapper = self.define_custom_tensor_wrapper(
+                node_name=node.name + "_cast",
+                tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                dtype=QNN_TENSOR_TYPE_MAP[torch.int32],
+                quant_encoding=input_quant_encoding,
+                quant_configs=input_quant_configs,
+                dims=input_tensor.size(),
+                tensor=input_tensor,
+                is_fake_tensor=True,
+                nodes_to_wrappers=nodes_to_wrappers,
+            )
+            cast_op = PyQnnWrapper.PyQnnOpWrapper(
+                f"{node.name}_cast",
+                QNN_OP_PACKAGE_NAME_QTI_AISW,
+                OpCast.op_name,
+            )
+            node_input_tensors = [cast_intermediate_tensor_wrapper]
+            cast_op.AddInputTensors([input_tensor_wrapper])
+            cast_op.AddOutputTensors([cast_intermediate_tensor_wrapper])
+            ops.append(cast_op)
 
         output_tensor = self.get_tensor(node, node)
-
         output_tensor_wrapper = self.define_tensor(
             node,
             node,
@@ -105,7 +142,8 @@ class To(NodeVisitor):
         op = PyQnnWrapper.PyQnnOpWrapper(
             node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, qnn_op.op_name
         )
-        op.AddInputTensors([input_tensor_wrapper])
+        op.AddInputTensors(node_input_tensors)
         op.AddOutputTensors([output_tensor_wrapper])
+        ops.append(op)
 
-        return op
+        return ops

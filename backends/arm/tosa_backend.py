@@ -13,19 +13,18 @@
 import logging
 from typing import cast, final, List
 
-import executorch.backends.arm.tosa_specification as tosa_specification
-
-from executorch.backends.arm.arm_backend import get_tosa_spec
+import serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
+from executorch.backends.arm.tosa_specification import get_tosa_spec
 from executorch.backends.arm._passes import (
     ArmPassManager,
 )  # usort: skip
+from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.process_node import (
     process_call_function,
     process_output,
     process_placeholder,
 )
-from executorch.backends.arm.tosa_utils import dbg_fail, dbg_tosa_dump
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -35,15 +34,15 @@ from torch.fx import Node
 logger = logging.getLogger(__name__)
 
 
-def _get_first_delegation_tag(graph_module) -> str | None:
-    """Get the first delegation tag from the graph_module or return None."""
+def arm_get_first_delegation_tag(graph_module) -> str:
+    """Get the first delegation tag from the graph_module or return empty string."""
     for node in graph_module.graph.nodes:
         tag = node.meta.get("delegation_tag")
         if tag:
             return tag
 
     logger.debug("No delegation tag found in partition.")
-    return None
+    return ""
 
 
 @final
@@ -63,7 +62,6 @@ class TOSABackend(BackendDetails):
         artifact_path = None
         output_format = ""
         compile_flags = []
-        input_order = []
         for spec in compile_spec:
             if spec.key == "debug_artifact_path":
                 artifact_path = spec.value.decode()
@@ -71,8 +69,6 @@ class TOSABackend(BackendDetails):
                 output_format = spec.value.decode()
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
-            if spec.key == "input_order":
-                input_order = list(map(int, spec.value.decode().split(",")))
 
         # Check that the output format is set correctly in the compile spec
         if output_format != "tosa":
@@ -88,15 +84,6 @@ class TOSABackend(BackendDetails):
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
-        if isinstance(tosa_spec, tosa_specification.Tosa_0_80):
-            import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-        elif isinstance(tosa_spec, tosa_specification.Tosa_1_00):
-            import serializer.tosa_serializer as ts  # type: ignore
-        else:
-            raise RuntimeError(
-                f"Unknown TOSA version {tosa_spec}, no pip package installed to handle serialization to that version."
-            )
-
         tosa_graph = ts.TosaSerializer(artifact_path)
 
         assert (
@@ -116,6 +103,8 @@ class TOSABackend(BackendDetails):
                 if node.op == "call_function":
                     process_call_function(node, tosa_graph, node_visitors, tosa_spec)
                 elif node.op == "placeholder":
+                    if len(node.users) == 0:
+                        continue
                     process_placeholder(node, tosa_graph, edge_program, tosa_spec)
                     if node.name in edge_program.graph_signature.user_inputs:
                         input_count += 1
@@ -125,19 +114,13 @@ class TOSABackend(BackendDetails):
                     # This will only happen if an unpartitioned graph is passed without
                     # any checking of compatibility.
                     raise RuntimeError(f"{node.name} is unsupported op {node.op}")
-            except (AssertionError, RuntimeError, ValueError):
-                dbg_fail(node, graph_module, tosa_graph, artifact_path)
+            except Exception:
+                debug_fail(node, graph_module, tosa_graph, artifact_path)
                 raise
 
-        if len(input_order) > 0:
-            if input_count != len(input_order):
-                raise RuntimeError(
-                    "The rank of the input order is not equal to amount of input tensors"
-                )
-
         if artifact_path:
-            tag = _get_first_delegation_tag(graph_module)
-            dbg_tosa_dump(
+            tag = arm_get_first_delegation_tag(graph_module)
+            debug_tosa_dump(
                 tosa_graph,
                 artifact_path,
                 suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),

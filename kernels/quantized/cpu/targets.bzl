@@ -51,12 +51,6 @@ _QUANT_OPS = (
     ),
     op_target(
         name = "op_quantize",
-        deps = [
-            "//executorch/kernels/portable/cpu/util:reduce_util",
-        ],
-        _aten_mode_deps = [
-            "//executorch/kernels/portable/cpu/util:reduce_util_aten",
-        ],
     ),
 )
 

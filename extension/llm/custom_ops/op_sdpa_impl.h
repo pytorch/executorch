@@ -8,9 +8,10 @@
 
 #pragma once
 
+#include <ATen/cpu/vec/vec.h>
+#include <ATen/cpu/vec/vec_n.h>
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 #include <executorch/kernels/optimized/vec/functional.h>
-#include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -319,7 +320,7 @@ void _qk_at_v_gemm(
 constexpr size_t kKVDim = 4;
 
 template <typename T>
-inline void _store(T* dst, ::executorch::vec::Vectorized<T> src) {
+inline void _store(T* dst, ::at::vec::Vectorized<T> src) {
   src.store(dst);
 }
 
@@ -348,13 +349,15 @@ inline bool data_index_step(T& x, const T& X, Args&&... args) {
   return false;
 }
 
-inline double calculate_scale(const Tensor& query, optional<double> scale) {
+inline double calculate_scale(
+    const Tensor& query,
+    std::optional<double> scale) {
   const auto softmax_scale =
       scale.has_value() ? scale.value() : 1.0 / std::sqrt(query.size(3));
   return softmax_scale;
 }
 
-namespace vec = ::executorch::vec;
+namespace vec = ::at::vec;
 using Tensor = ::executorch::aten::Tensor;
 
 // 1) out = exp(a - val)
@@ -362,22 +365,37 @@ using Tensor = ::executorch::aten::Tensor;
 template <typename T1, typename T2>
 inline void
 _exp_reduce_sum_fusion_kernel(T1* a, const int& size, T2* out, T1& val) {
-  auto vec_size = vec::Vectorized<T1>::size();
-  auto vec_max = vec::Vectorized<T1>(val);
+  // NOTE: we observed numerics issues with this function when
+  // deleting the old executorch::vec and replacing with at::vec
+  // here. The major known difference is that executorch::vec was 256
+  // bits wide vs 128 bits for at::vec (and the hardware). Preserving
+  // this function's execution width at 256 bits and avoiding
+  // vec_reduce_all below removed the issues.
+  constexpr auto vec_size = vec::Vectorized<T1>::size() * 2;
+  auto vec_max = vec::VectorizedN<T1, 2>(val);
   T1 tmp_sum = 0;
-  auto vec_tmp_sum = vec::Vectorized<T1>(tmp_sum);
+  auto vec_tmp_sum = vec::VectorizedN<T1, 2>(tmp_sum);
   for (int i = 0; i < vec_size * (size / vec_size); i += vec_size) {
-    auto tmp0 = vec::Vectorized<T1>::loadu(a + i);
+    auto tmp0 = vec::VectorizedN<T1, 2>::loadu(a + i);
     auto tmp1 = tmp0 - vec_max;
     // Replace with exp_u20 later
     // auto tmp2 = tmp1.exp_u20();
     auto tmp2 = tmp1.exp();
-    vec_tmp_sum += tmp2;
-    _store(out + i, tmp2);
+    vec_tmp_sum = vec_tmp_sum + tmp2;
+    tmp2.store(out + i);
   }
-  tmp_sum = vec::vec_reduce_all<T1>(
-      [](vec::Vectorized<T1>& x, vec::Vectorized<T1>& y) { return x + y; },
-      vec_tmp_sum);
+
+  __at_align__ T1 vec_tmp_sum_array[vec_size];
+  vec_tmp_sum.store(vec_tmp_sum_array);
+  for (const auto i : c10::irange(vec_size)) {
+    tmp_sum += vec_tmp_sum_array[i];
+  }
+  // See NOTE above; we should replace the scalar reduction above with
+  // this reduction (which uses vaddvq_f32 internally), but it changes
+  // numerics.
+  // tmp_sum = vec::vec_reduce_all<T1>(
+  //     [](vec::Vectorized<T1>& x, vec::Vectorized<T1>& y) { return x + y; },
+  //     vec_tmp_sum);
   for (int i = vec_size * (size / vec_size); i < size; i++) {
     auto tmp0 = a[i];
     auto tmp1 = tmp0 - val;
@@ -605,7 +623,11 @@ void cpu_flash_attention(
     */
     ET_CHECK_MSG(attn_mask.value().dim() == 2, "attn_mask must be 2D");
     ET_CHECK_MSG(
-        attn_mask.value().size(0) == qSize, "attn_mask shape mismatch");
+        attn_mask.value().size(0) == qSize,
+        "attn_mask shape mismatch"
+        "attn_mask.size(0)=%zd qSize=%" PRId64,
+        attn_mask.value().size(0),
+        qSize);
     ET_CHECK_MSG(
         attn_mask.value().size(1) == kvSize,
         "attn_mask shape mismatch"
@@ -964,27 +986,36 @@ void cpu_flash_attention(
                 tmp_max);
           }
           tmp_max = qk_max_data[row] > tmp_max ? qk_max_data[row] : tmp_max;
-          // qk <- exp(qk - max) and sum per row
-          tmp_sum = tmp_max;
-          _exp_reduce_sum_fusion_kernel(
-              qk_data + row * kvBlockSize,
-              kvBlockSize,
-              conditional_data_ptr(qk_data, qk_reduced_data) +
-                  row * kvBlockSize,
-              tmp_sum);
-          // exp_tmp <- exp(max[row] - max)
-          exp_tmp = std::exp(qk_max_data[row] - tmp_max);
-          // sum[row] <- sum + exp_tmp * sum[row]
-          qk_sum_data[row] = tmp_sum + exp_tmp * qk_sum_data[row];
-          // max[row] <- max
-          qk_max_data[row] = tmp_max;
-          // dst <- dst * exp_tmp
-          if (n > 0) {
-            vec::map<accum_t>(
-                [exp_tmp](Vec x) { return x * Vec(exp_tmp); },
-                dst_data + row * headSize,
-                dst_data + row * headSize,
-                headSize);
+          if (tmp_max == -std::numeric_limits<accum_t>::infinity()) {
+            // to avoid `nan = exp2f(-inf - (-inf))`
+            fill_stub(
+                conditional_data_ptr(qk_data, qk_reduced_data) +
+                    row * kvBlockSize,
+                static_cast<scalar_t>(0),
+                kvBlockSize);
+          } else {
+            // qk <- exp(qk - max) and sum per row
+            tmp_sum = tmp_max;
+            _exp_reduce_sum_fusion_kernel(
+                qk_data + row * kvBlockSize,
+                kvBlockSize,
+                conditional_data_ptr(qk_data, qk_reduced_data) +
+                    row * kvBlockSize,
+                tmp_sum);
+            // exp_tmp <- exp(max[row] - max)
+            exp_tmp = std::exp(qk_max_data[row] - tmp_max);
+            // sum[row] <- sum + exp_tmp * sum[row]
+            qk_sum_data[row] = tmp_sum + exp_tmp * qk_sum_data[row];
+            // max[row] <- max
+            qk_max_data[row] = tmp_max;
+            // dst <- dst * exp_tmp
+            if (n > 0) {
+              vec::map<accum_t>(
+                  [exp_tmp](Vec x) { return x * Vec(exp_tmp); },
+                  dst_data + row * headSize,
+                  dst_data + row * headSize,
+                  headSize);
+            }
           }
         }
 

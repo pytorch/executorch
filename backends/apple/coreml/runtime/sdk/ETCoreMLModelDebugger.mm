@@ -661,9 +661,15 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> *get_operation_path_to_de
 
 - (nullable NSArray<DebuggableModel *> *)modelsWithOutputsOfOperationsAtPath:(NSArray<ETCoreMLModelStructurePath *> *)paths
                                                                        error:(NSError* __autoreleasing *)error {
+    NSError *localError = nil;
+    NSArray<DebuggableModel *> *result = nil;
     @autoreleasepool {
-        return [self _modelsWithOutputsOfOperationsAtPath:paths error:error];
+        result = [self _modelsWithOutputsOfOperationsAtPath:paths error:&localError];
     }
+    if (!result && error) {
+        *error = localError;
+    }
+    return result;
 }
 
 - (nullable ETCoreMLModelOutputs *)outputsOfOperationsAtPaths:(NSArray<ETCoreMLModelStructurePath *> *)paths
@@ -671,27 +677,30 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> *get_operation_path_to_de
                                                        inputs:(id<MLFeatureProvider>)inputs
                                                  modelOutputs:(NSArray<MLMultiArray *> *_Nullable __autoreleasing *_Nonnull)modelOutputs
                                                         error:(NSError* __autoreleasing *)error {
-    NSArray<MLMultiArray *> *lModelOutputs = nil;
-    NSMutableDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *result = [NSMutableDictionary dictionaryWithCapacity:paths.count];
+    NSError *localError = nil;
+    BOOL success = NO;
+    NSArray<MLMultiArray *> *localModelOutputs = nil;
+    ETCoreMLModelOutputs *result = [NSMutableDictionary dictionaryWithCapacity:paths.count];
     @autoreleasepool {
-        NSArray<DebuggableModel *> *models = [self modelsWithOutputsOfOperationsAtPath:paths error:error];
-        if (!models) {
-            return nil;
-        }
-        
-        for (DebuggableModel *pair in models) {
-            id<MLFeatureProvider> outputFeatures = [pair.first predictionFromFeatures:inputs options:options error:error];
-            set_intermediate_outputs(outputFeatures, paths, result);
-            if (modelOutputs) {
-                set_model_outputs(outputFeatures, self.outputNames, &lModelOutputs);
-            }
+        NSArray<DebuggableModel *> *models = [self modelsWithOutputsOfOperationsAtPath:paths error:&localError];
+        success = models != nil;
+        if (success) {
+          for (DebuggableModel *pair in models) {
+              id<MLFeatureProvider> outputFeatures = [pair.first predictionFromFeatures:inputs options:options error:&localError];
+              set_intermediate_outputs(outputFeatures, paths, result);
+              if (modelOutputs) {
+                  set_model_outputs(outputFeatures, self.outputNames, &localModelOutputs);
+              }
+          }
         }
     }
-    
+    if (!success && error) {
+        *error = localError;
+        return nil;
+    }
     if (modelOutputs) {
-        *modelOutputs = lModelOutputs;
+        *modelOutputs = localModelOutputs;
     }
-    
     return result;
 }
 

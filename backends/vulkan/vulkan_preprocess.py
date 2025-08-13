@@ -17,18 +17,19 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
-from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinearPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
 )
 from executorch.backends.vulkan._passes import (
+    FuseQuantizedOpsTransform,
     insert_prepack_nodes,
     RemoveLocalScalarDenseOpsTransform,
     RemoveRedundantOpsTransform,
     SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
 )
+from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
@@ -66,7 +67,6 @@ DEFAULT_DEBUG_HANDLE = 65535
 # pyre-ignore
 def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
     for p in passes:
-
         if issubclass(type(p), ExportPass) or issubclass(type(p), PassBase):
             new_gm = program.graph_module
             # This is a workaround to allow the memory planning pass to work without
@@ -109,6 +109,9 @@ def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
         if spec.key == "skip_tag_memory_metadata":
             options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
 
+        if spec.key == "downcast_64_bit":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
         # Unhandled options are ignored
 
     return options
@@ -141,6 +144,7 @@ class VulkanBackend(BackendDetails):
         default_memory_layout = compile_options.get(
             "memory_layout_override", VkMemoryLayout.TENSOR_WIDTH_PACKED
         )
+        downcast_64_bit = compile_options.get("downcast_64_bit", True)
 
         program = unsafe_remove_auto_functionalized_pass(program)
 
@@ -152,7 +156,7 @@ class VulkanBackend(BackendDetails):
             [
                 RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
-                FuseDequantLinearPass(),
+                FuseQuantizedOpsTransform(program),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
@@ -172,6 +176,7 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
+                RemoveAssertsTransform(),
                 # Since this pass may replace a scalar argument with a tensor argument,
                 # this pass may result in a non ATen compliant graph structure.
                 RemoveLocalScalarDenseOpsTransform(),
@@ -211,7 +216,9 @@ class VulkanBackend(BackendDetails):
         )
 
         graph_builder = VkGraphBuilder(
-            program, DelegateMappingBuilder(generated_identifiers=True)
+            program,
+            DelegateMappingBuilder(generated_identifiers=True),
+            downcast_64_bit=downcast_64_bit,
         )
         vk_graph = graph_builder.build_graph()
 

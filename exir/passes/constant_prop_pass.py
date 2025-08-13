@@ -6,12 +6,15 @@
 
 # pyre-unsafe
 
+import logging
 from collections import OrderedDict
 from typing import cast, Mapping, Optional
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.operator.util import _QUANT_PRIMITIVES
+from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -24,10 +27,15 @@ from torch.export import ExportedProgram
 from torch.export.exported_program import InputKind, InputSpec, TensorArgument
 from torch.utils import _pytree as pytree
 
-
 # Avoid propagating constants for `exir.ops.edge.aten.full.default`.
 # Propagating aten.full can significantly increase compiled model size.
-_DEFAULT_SKIP_TARGETS = {exir_ops.edge.aten.full.default}
+_DEFAULT_SKIP_TARGETS_NO_QUANT = {exir_ops.edge.aten.full.default}
+_DEFAULT_SKIP_TARGETS = set(_DEFAULT_SKIP_TARGETS_NO_QUANT)
+
+# Do not const prop quantization primitives
+_QUANT_PRIMITIVES_EDGE = [aten_to_edge(op) for op in _QUANT_PRIMITIVES]
+_DEFAULT_SKIP_TARGETS.update(set(_QUANT_PRIMITIVES_EDGE))
+
 
 _PRIMITIVE_TYPES = (
     float,
@@ -39,6 +47,10 @@ _PRIMITIVE_TYPES = (
     torch.dtype,
     torch.layout,
 )
+
+
+def get_default_skip_targets_no_quant() -> set[EdgeOpOverload]:
+    return _DEFAULT_SKIP_TARGETS_NO_QUANT
 
 
 def is_const(
@@ -53,6 +65,8 @@ def is_const(
             is_const(x, exported_program, const_node_to_tensor) for x in arg.values()
         )
     elif isinstance(arg, _PRIMITIVE_TYPES):
+        return True
+    elif arg is None:
         return True
     elif not isinstance(arg, torch.fx.Node):
         return False
@@ -281,6 +295,37 @@ def create_constant_nodes_and_return_specs(
     return name_to_spec_dict
 
 
+def _update_output_node_and_specs(exported_program: ExportedProgram) -> None:
+    """
+    Update the output node and output specs in the exported program.
+    In case a constant node is used as output, we replace it with a clone of the constant node.
+    """
+    # Dict [node.name -> InputSpec]
+    updated_constant_placeholders = get_constant_placeholder_dict(exported_program)
+    output = exported_program.graph.find_nodes(op="output")[0]
+    output_nodes = cast(list[torch.fx.Node], list(output.args[0]))
+    output_specs = exported_program.graph_signature.output_specs
+    assert len(output_nodes) == len(output_specs)
+
+    for i in range(len(output_specs)):
+        out_node = output_nodes[i]
+        if out_node not in updated_constant_placeholders:
+            continue
+
+        with exported_program.graph.inserting_after(out_node):
+            new_node = exported_program.graph.call_function(
+                exir_ops.edge.aten.clone.default, (out_node,)
+            )
+        assert "val" in out_node.meta
+        new_node.meta["val"] = out_node.meta["val"]
+        output_nodes[i] = new_node
+
+        # Update the constant-propagated output node.
+        output_specs[i].arg = TensorArgument(name=output_nodes[i].name)
+
+    output.args = (output_nodes,)
+
+
 def constant_prop_pass(
     exported_program: ExportedProgram,
     custom_skip_targets: Optional[set[EdgeOpOverload]] = None,
@@ -308,7 +353,9 @@ def constant_prop_pass(
         if node.target == torch.ops.higher_order.cond
     ]
     if len(has_control_flow) > 0:
-        raise RuntimeError("constant_prop_pass for control flow is not supported yet.")
+        logging.warning(
+            "constant_prop_pass does not constant propagate in control flow modules"
+        )
 
     const_node_to_tensor = get_propagated_const_tensor_dict(
         exported_program, custom_skip_targets
@@ -325,11 +372,11 @@ def constant_prop_pass(
 
     # Generate new input spec.
     new_input_specs = []
-    for node in exported_program.graph.nodes:
-        if node.op != "placeholder":
-            continue
+    for node in exported_program.graph.find_nodes(op="placeholder"):
         new_input_specs.append(name_to_spec_dict[node.name])
     exported_program.graph_signature.input_specs = new_input_specs
+
+    _update_output_node_and_specs(exported_program)
 
     # Cleanup the graph.
     exported_program.graph.eliminate_dead_code()

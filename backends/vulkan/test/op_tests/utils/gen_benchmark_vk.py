@@ -177,6 +177,8 @@ using TensorOptions = at::TensorOptions;
 
 vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {{
   switch (at_scalartype) {{
+    case c10::kDouble:
+      return vkapi::kDouble;
     case c10::kFloat:
       return vkapi::kFloat;
     case c10::kHalf:
@@ -187,9 +189,20 @@ vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {{
       return vkapi::kInt;
     case c10::kChar:
       return vkapi::kChar;
+    case c10::kBool:
+      return vkapi::kBool;
     default:
       VK_THROW("Unsupported at::ScalarType!");
   }}
+}}
+
+at::Tensor make_casted_randint_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    int low = 0,
+    int high = 10) {{
+
+  return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
 }}
 
 at::Tensor make_rand_tensor(

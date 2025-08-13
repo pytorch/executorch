@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -10,9 +11,14 @@
 
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
+#ifdef USE_ATEN_LIB
+#define BUNDLED_PROGRAM_NAMESPACE bundled_program::aten
+#else // !USE_ATEN_LIB
+#define BUNDLED_PROGRAM_NAMESPACE bundled_program
+#endif // USE_ATEN_LIB
 
 namespace executorch {
-namespace bundled_program {
+namespace BUNDLED_PROGRAM_NAMESPACE {
 
 /**
  * An opaque pointer to a serialized bundled program.
@@ -31,6 +37,31 @@ using ::executorch::ET_RUNTIME_NAMESPACE::Method;
  * execution.
  */
 ET_NODISCARD ::executorch::runtime::Error load_bundled_input(
+    Method& method,
+    SerializedBundledProgram* bundled_program_ptr,
+    size_t testset_idx);
+
+struct ErrorStats {
+  ::executorch::runtime::Error status;
+  double mean_abs_error;
+  double max_abs_error;
+  double mean_relative_error;
+  double max_relative_error;
+};
+
+/**
+ * Compute error stats for method.outputs() vs. the bundled "expected_outputs"
+ * for testset_idx.
+ *
+ * @param[in] method The Method to extract outputs from.
+ * @param[in] bundled_program_ptr The bundled program contains expected output.
+ * @param[in] testset_idx  The index of expected output needs to be compared.
+ *
+ * @returns Return ErrorStats with status set to Error::Ok if stats are filled
+ * in.
+ */
+
+ET_NODISCARD ErrorStats compute_method_output_error_stats(
     Method& method,
     SerializedBundledProgram* bundled_program_ptr,
     size_t testset_idx);
@@ -94,7 +125,7 @@ ET_DEPRECATED inline bool is_bundled_program(void* file_data) {
   return is_bundled_program(file_data, 128);
 }
 
-} // namespace bundled_program
+} // namespace BUNDLED_PROGRAM_NAMESPACE
 } // namespace executorch
 
 namespace torch {
@@ -103,13 +134,13 @@ namespace bundled_program {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
 using serialized_bundled_program =
-    ::executorch::bundled_program::SerializedBundledProgram;
+    ::executorch::BUNDLED_PROGRAM_NAMESPACE::SerializedBundledProgram;
 
 ET_NODISCARD inline ::executorch::runtime::Error LoadBundledInput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx) {
-  return ::executorch::bundled_program::load_bundled_input(
+  return ::executorch::BUNDLED_PROGRAM_NAMESPACE::load_bundled_input(
       method, bundled_program_ptr, testset_idx);
 }
 
@@ -120,7 +151,7 @@ VerifyResultWithBundledExpectedOutput(
     size_t testset_idx,
     double rtol = 1e-5,
     double atol = 1e-8) {
-  return ::executorch::bundled_program::verify_method_outputs(
+  return ::executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs(
       method, bundled_program_ptr, testset_idx, rtol, atol);
 }
 
@@ -129,13 +160,14 @@ ET_NODISCARD inline ::executorch::runtime::Error GetProgramData(
     size_t file_data_len,
     const void** out_program_data,
     size_t* out_program_data_len) {
-  return ::executorch::bundled_program::get_program_data(
+  return ::executorch::BUNDLED_PROGRAM_NAMESPACE::get_program_data(
       file_data, file_data_len, out_program_data, out_program_data_len);
 }
 
 inline bool IsBundledProgram(void* file_data) {
   // 128 is enough data to contain the identifier in the flatbuffer header.
-  return ::executorch::bundled_program::is_bundled_program(file_data, 128);
+  return ::executorch::BUNDLED_PROGRAM_NAMESPACE::is_bundled_program(
+      file_data, 128);
 }
 } // namespace bundled_program
 } // namespace executor

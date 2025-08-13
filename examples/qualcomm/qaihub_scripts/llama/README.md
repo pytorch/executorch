@@ -19,7 +19,7 @@ Note that the pre-compiled context binaries could not be futher fine-tuned for o
 2. Follow instructions in https://huggingface.co/qualcomm/Llama-v2-7B-Chat to export context binaries (will take some time to finish)
 
 ```bash
-# tokenizer.model: https://huggingface.co/meta-llama/Llama-2-7b-chat-hf/blob/main/tokenizer.model
+# tokenizer.model: https://huggingface.co/meta-llama/Llama-2-7b-chat-hf/tree/main
 # tokenizer.bin:
 python -m examples.models.llama.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 ```

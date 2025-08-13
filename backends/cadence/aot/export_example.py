@@ -18,6 +18,7 @@ from executorch.backends.cadence.aot.compiler import (
     convert_pt2,
     export_to_executorch_gen_etrecord,
     fuse_pt2,
+    prepare_pt2,
 )
 
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceDefaultQuantizer
@@ -48,14 +49,21 @@ def export_model(
     # Instantiate the quantizer
     quantizer = CadenceDefaultQuantizer()
 
+    # Prepare the model
+    prepared_gm = prepare_pt2(model, example_inputs, quantizer)
+
+    # Calibrate the model
+    for samples in [example_inputs]:
+        prepared_gm(*samples)
+
     # Convert the model
-    converted_model = convert_pt2(model, example_inputs, quantizer)
+    converted_model = convert_pt2(prepared_gm)
 
     # Get reference outputs from converted model
     ref_outputs = converted_model(*example_inputs)
 
     # Quantize the model (note: quantizer needs to be the same as
-    # the one used in convert_pt2)
+    # the one used in prepare_and_convert_pt2)
     quantized_model = fuse_pt2(converted_model, quantizer)
 
     # Get edge program after Cadence specific passes

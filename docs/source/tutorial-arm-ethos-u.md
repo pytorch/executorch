@@ -1,14 +1,14 @@
 <!---- Name is a WIP - this reflects better what it can do today ----->
-# Arm Ethos-U Backend
+# Arm Ethos-U Backend Tutorial
 
 <!----This will show a grid card on the page----->
 ::::{grid} 2
 
 :::{grid-item-card}  Tutorials we recommend you complete before this:
 :class-card: card-prerequisites
-* [Introduction to ExecuTorch](./intro-how-it-works.md)
-* [Getting Started](./getting-started.md)
-* [Building ExecuTorch with CMake](./using-executorch-building-from-source.md)
+* [Introduction to ExecuTorch](intro-how-it-works.md)
+* [Getting Started](getting-started.md)
+* [Building ExecuTorch with CMake](using-executorch-building-from-source.md)
 :::
 
 :::{grid-item-card}  What you will learn in this tutorial:
@@ -50,7 +50,11 @@ In the following sections we will walk through the steps to download each of the
 
 In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial.
 
-For that we will use the `examples/arm/setup.sh` script to pull each item in an automated fashion. It is recommended to run the script in a conda environment. Upon successful execution, you can directly go to [the next step](#convert-the-pytorch-model-to-the-pte-file).
+For that we will use the `examples/arm/setup.sh` script to pull each item in an automated fashion. It is recommended to run the script in a conda environment.
+```bash
+examples/arm/setup.sh --i-agree-to-the-contained-eula
+```
+Upon successful execution, you can directly go to [the next step](#convert-the-pytorch-model-to-the-pte-file).
 
 As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.
 
@@ -244,28 +248,9 @@ python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate
 ```
 
 ### Delegated Quantized Workflow
-Before generating the `.pte` file for delegated quantized networks like MobileNetV2, you need to build the `quantized_ops_aot_lib`
-
-You can just run the `backends/arm/scripts/build_quantized_ops_aot_lib.sh` script to build this for you or build it yourself like this. 
-
+Generating the `.pte` file can be done using the aot_arm_compiler:
 ```bash
-
-cd <executorch_root_dir>
-mkdir -p cmake-out-aot-lib
-cmake -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_XNNPACK=OFF \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
-    -DPYTHON_EXECUTABLE=python3 \
--Bcmake-out-aot-lib \
-    "${et_root_dir}"
-
-cmake --build cmake-out-aot-lib --parallel -- quantized_ops_aot_lib
-```
-
-After the `quantized_ops_aot_lib` build, you can run the following script to generate the `.pte` file
-```bash
-python3 -m examples.arm.aot_arm_compiler --model_name="mv2" --delegate --quantize --so_library="$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.so)"
+python3 -m examples.arm.aot_arm_compiler --model_name="mv2" --delegate --quantize
 # should produce ./mv2_arm_delegate_ethos-u55-128.pte
 ```
 
@@ -283,7 +268,7 @@ Now let's try to run these `.pte` files on a Corstone-300 and Corstone-320 platf
 
 In this section, you will go over steps that you need to go through to build the runtime application. This then run on the target device. In the executorch repository you have a functioning script which does the exact same steps. It is located at `executorch/examples/arm/run.sh`. You will use that to build necessary pieces and finally run the previously generated PTE file on an FVP.
 
-By default the `run.sh` will use `arm_test/` as an build and output folder and you will find the build artifacts under it. This can be contolled/overrided with the `--et_build_root` and the `--output` flags if needed.
+By default the `run.sh` will use `arm_test/` as an build and output folder and you will find the build artifacts under it. This can be controlled/overrided with the `--et_build_root` and the `--output` flags if needed.
 
 e.g. running `examples/arm/run.sh --model_name=add --target=ethos-u85-128` will produce a pte and elf file like this:
 
@@ -295,7 +280,7 @@ Also before you get started, make sure that you have completed ExecuTorch cmake 
 
 The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.
 
-![](./arm-delegate-runtime-build.svg)
+![](arm-delegate-runtime-build.svg)
 
 ```{tip}
 The `generate_pte_file` function in `run.sh` script produces the `.pte` files based on the models provided through `--model_name` input argument
@@ -305,7 +290,7 @@ The `generate_pte_file` function in `run.sh` script produces the `.pte` files ba
 
 ExecuTorch's CMake build system produces a set of build pieces which are critical to building the ExecuTorch runtime with-in the bare-metal environment you have for Corstone FVPs from Ethos-U SDK.
 
-[This](./using-executorch-building-from-source.md) document provides a detailed overview of each individual build piece. For running either variant of the `.pte` file, you will need a core set of libraries. Here is a list,
+[This](using-executorch-building-from-source.md) document provides a detailed overview of each individual build piece. For running either variant of the `.pte` file, you will need a core set of libraries. Here is a list,
 
 - `libexecutorch.a`
 - `libportable_kernels.a`
@@ -315,19 +300,15 @@ To run a `.pte` file with the Arm backend delegate call instructions, you will n
 
 - `libexecutorch_delegate_ethos_u.a`
 
-These libraries are generated by the `backends/arm/scripts/build_executorch.sh`, `backends/arm/scripts/build_portable_kernels.sh` and `backends/arm/scripts/build_quantized_ops_aot_lib.sh` scripts called from the `run.sh` script.
-
-The `--portable_kernels` flag can be used to set the build flag `EXECUTORCH_SELECT_OPS_LIST` when running `backends/arm/scripts/build_portable_kernels.sh` that will decide the number of portable operators included in the build and are available at runtime. It must match with `.pte` file's requirements, otherwise you will get `Missing Operator` error at runtime.
-
-For example, there  in the command line above, to run SoftmaxModule, you only included the softmax CPU operator. Similarly, to run AddModule in a non-delegated manner you will need add op and so on. As you might have already realized, for the delegated operators, which will be executed by the Arm backend delegate, you do not need to include those operators in this list. This is only for *non-delegated* operators.
+These libraries are generated by the `backends/arm/scripts/build_executorch.sh` script called from the `run.sh` script.
 
 ### Building the executor_runner Bare-Metal Application
 
 The SDK dir is the same one prepared [earlier](#setup-the-arm-ethos-u-software-development). And, you will be passing the `.pte` file (any one of them) generated above.
 
-Note, you have to generate a new `executor-runner` binary if you want to change the model or the `.pte` file. This constraint is from the constrained bare-metal runtime environment you have for Corstone-300/Corstone-320 platforms.
+Note, you have to generate a new `executor-runner` binary if you want to change the model or the `.pte` file. This constraint is from the constrained bare-metal runtime environment you have for Corstone-300/Corstone-320 platforms. The build also generates a kernel registration library for the relevant operators which could not be delegated to the EthosU, see the [Kernel Library Selective Build documentation](https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html).
 
-This is performed by the `backends/arm/scripts/build_executorch_runner.sh` script runned from `run.sh`.
+This step is executed by the build_executor_runner.sh script, which is invoked from the run.sh in the backends/arm/scripts folder.
 
 ```{tip}
 The `run.sh` script takes in `--target` option, which provides a way to provide a specific target, Corstone-300(ethos-u55-128) or Corstone-320(ethos-u85-128)
@@ -335,17 +316,52 @@ The `run.sh` script takes in `--target` option, which provides a way to provide 
 
 ## Running on Corstone FVP Platforms
 
-Once the elf is prepared, regardless of the `.pte` file variant is used to generate the bare metal elf. `run.sh` will run the FVP for you via the `backends/arm/scripts/run_fvp.sh` script but you can also run it directly.
+Once the elf is prepared, regardless of the `.pte` file variant is used to generate the bare metal elf. `run.sh` will run the FVP for you via the `backends/arm/scripts/run_fvp.sh` script.
+
+#### Automatic FVP Selection 
+
+- To run a specific test model with the compiler flag and target 
+```bash
+./run.sh --model_name=mv2 --delegate --quantize --target=ethos-u85-128
+```
+
+- To run a specific test model and target 
+```bash
+./run.sh --model_name=mv2 --delegate --target=ethos-u85-128
+```
+
+- To run all the test models iteratively in a loop , simply run
+```bash
+./run.sh
+```
+
+Note that you could use `build_executor_runner.sh` and `run_fvp.sh` scripts in tandem by passing the relevant  --target argument (e.g., --target=ethos-u55-128), the correct FVP binary will be chosen automatically. For more details, see the [section on Runtime Integration](https://docs.pytorch.org/executorch/main/backends-arm-ethos-u.html#runtime-integration).
 
 
-The below command is used to run the [MV2Model](#mv2module) on Corstone-320 FVP
+#### Manual FVP Binary Selection
+
+- If you build for the Ethos delegate U55/U65 target (e.g., using --target=ethos-u55-128 or --target=ethos-u65-256 with `build_executor_runner.sh` and `run_fvp.sh`), you should use the corresponding FVP binary:
+  - For U55:
+    ```bash
+    examples/arm/ethos-u-scratch/FVP-corstone300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U55
+    ```
+  - For U65:
+    ```bash
+    examples/arm/ethos-u-scratch/FVP-corstone300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U65
+    ```
+- And say if you are not building for an Ethos target, use:
+  ```bash
+  examples/arm/ethos-u-scratch/FVP-corstone320/models/Linux64_GCC-9.3/FVP_Corstone_SSE-320
+  ```
+
+Following is an example usage:
 
 ```bash
 ethos_u_build_dir=examples/arm/executor_runner/
 
 elf=$(find ${ethos_u_build_dir} -name "arm_executor_runner")
 
-FVP_Corstone_SSE-320_Ethos-U85                          \
+FVP_Corstone_SSE-320                                    \
     -C mps4_board.subsystem.ethosu.num_macs=128         \
     -C mps4_board.visualisation.disable-visualisation=1 \
     -C vis_hdlcd.disable_visualisation=1                \
@@ -356,7 +372,8 @@ FVP_Corstone_SSE-320_Ethos-U85                          \
     --timelimit 120 || true # seconds- after which sim will kill itself
 ```
 
-If successful, the simulator should produce something like the following on the shell,
+#### Verification of Successful FVP Execution
+After running the FVP command, either automatically or manually, you should see output similar to the following on your shell if the execution is successful:
 
 ```console
 I [executorch:arm_executor_runner.cpp:364] Model in 0x70000000 $
@@ -389,12 +406,12 @@ I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr2 : 0
 I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr3 : 503
 I [executorch:arm_perf_monitor.cpp:178] Ethos-U PMU Events:[ETHOSU_PMU_EXT0_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT1_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT0_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]
 I [executorch:arm_executor_runner.cpp:470] model_pte_loaded_size:     4425968 bytes.
-I [executorch:arm_executor_runner.cpp:484] method_allocator_used:     1355722 / 62914560  free: 61558838 ( used: 2 % ) 
+I [executorch:arm_executor_runner.cpp:484] method_allocator_used:     1355722 / 62914560  free: 61558838 ( used: 2 % )
 I [executorch:arm_executor_runner.cpp:491] method_allocator_planned:  752640 bytes
 I [executorch:arm_executor_runner.cpp:493] method_allocator_loaded:   966 bytes
 I [executorch:arm_executor_runner.cpp:494] method_allocator_input:    602116 bytes
 I [executorch:arm_executor_runner.cpp:495] method_allocator_executor: 0 bytes
-I [executorch:arm_executor_runner.cpp:498] temp_allocator_used:       0 / 1048576 free: 1048576 ( used: 0 % ) 
+I [executorch:arm_executor_runner.cpp:498] temp_allocator_used:       0 / 1048576 free: 1048576 ( used: 0 % )
 I [executorch:arm_executor_runner.cpp:152] Model executed successfully.
 I [executorch:arm_executor_runner.cpp:156] 1 outputs:
 Output[0][0]: -0.749744

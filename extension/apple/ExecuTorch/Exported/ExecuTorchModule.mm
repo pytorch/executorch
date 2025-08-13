@@ -9,6 +9,7 @@
 #import "ExecuTorchModule.h"
 
 #import "ExecuTorchError.h"
+#import "ExecuTorchUtils.h"
 
 #import <executorch/extension/module/module.h>
 #import <executorch/extension/tensor/tensor.h>
@@ -37,7 +38,7 @@ static inline EValue toEValue(ExecuTorchValue *value) {
   return EValue();
 }
 
-static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
+static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAINED {
   if (value.isTensor()) {
     auto nativeInstance = make_tensor_ptr(value.toTensor());
     return [ExecuTorchValue valueWithTensor:[[ExecuTorchTensor alloc] initWithNativeInstance:&nativeInstance]];
@@ -61,6 +62,186 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   ET_CHECK_MSG(false, "Unsupported EValue type");
   return [ExecuTorchValue new];
 }
+
+@interface ExecuTorchTensorMetadata ()
+
+- (instancetype)initWithTensorMetadata:(const TensorInfo &)tensorInfo
+    NS_DESIGNATED_INITIALIZER;
+
+@end
+
+@implementation ExecuTorchTensorMetadata {
+  NSArray<NSNumber *> *_shape;
+  NSArray<NSNumber *> *_dimensionOrder;
+  ExecuTorchDataType _dataType;
+  BOOL _isMemoryPlanned;
+  NSString *_name;
+}
+
+- (instancetype)initWithTensorMetadata:(const TensorInfo &)tensorInfo {
+  self = [super init];
+  if (self) {
+    _shape = utils::toNSArray(tensorInfo.sizes());
+    _dimensionOrder = utils::toNSArray(tensorInfo.dim_order());
+    _dataType = (ExecuTorchDataType)tensorInfo.scalar_type();
+    _isMemoryPlanned = tensorInfo.is_memory_planned();
+    _name = [[NSString alloc] initWithBytes:tensorInfo.name().data()
+                                     length:tensorInfo.name().size()
+                                   encoding:NSUTF8StringEncoding];
+  }
+  return self;
+}
+
+@end
+
+@interface ExecuTorchMethodMetadata ()
+
+- (nullable instancetype)initWithMethodMetadata:(const MethodMeta &)methodMeta
+                                          error:(NSError **)error
+    NS_DESIGNATED_INITIALIZER;
+
+@end
+
+@implementation ExecuTorchMethodMetadata {
+  NSString *_name;
+  NSMutableArray<NSNumber *> *_inputValueTags;
+  NSMutableArray<NSNumber *> *_outputValueTags;
+  NSMutableDictionary<NSNumber *, ExecuTorchTensorMetadata *> *_inputTensorMetadata;
+  NSMutableDictionary<NSNumber *, ExecuTorchTensorMetadata *> *_outputTensorMetadata;
+  NSMutableArray<ExecuTorchTensorMetadata *> *_attributeTensorMetadata;
+  NSMutableArray<NSNumber *> *_memoryPlannedBufferSizes;
+  NSMutableArray<NSString *> *_backendNames;
+  NSInteger _instructionCount;
+}
+
+- (nullable instancetype)initWithMethodMetadata:(const MethodMeta &)methodMeta
+                                          error:(NSError **)error {
+  self = [super init];
+  if (self) {
+    _name = [[NSString alloc] initWithUTF8String:methodMeta.name()];
+    const NSInteger inputCount = methodMeta.num_inputs();
+    const NSInteger outputCount = methodMeta.num_outputs();
+    const NSInteger attributeCount = methodMeta.num_attributes();
+    const NSInteger memoryPlannedBufferCount = methodMeta.num_memory_planned_buffers();
+    const NSInteger backendCount = methodMeta.num_backends();
+    _instructionCount = methodMeta.num_instructions();
+    _inputValueTags = [[NSMutableArray alloc] initWithCapacity:inputCount];
+    _outputValueTags = [[NSMutableArray alloc] initWithCapacity:outputCount];
+    _inputTensorMetadata = [NSMutableDictionary new];
+    _outputTensorMetadata = [NSMutableDictionary new];
+    _attributeTensorMetadata = [[NSMutableArray alloc] initWithCapacity:attributeCount];
+    _memoryPlannedBufferSizes = [[NSMutableArray alloc] initWithCapacity:memoryPlannedBufferCount];
+    _backendNames = [[NSMutableArray alloc] initWithCapacity:backendCount];
+
+    for (NSInteger index = 0; index < inputCount; ++index) {
+      auto result = methodMeta.input_tag(index);
+      if (!result.ok()) {
+        if (error) {
+          *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
+        }
+        return nil;
+      }
+      const auto inputValueTag = (ExecuTorchValueTag)result.get();
+      [_inputValueTags addObject:@(inputValueTag)];
+
+      if (inputValueTag == ExecuTorchValueTagTensor) {
+        auto tensorMetadataResult = methodMeta.input_tensor_meta(index);
+        if (!tensorMetadataResult.ok()) {
+          if (error) {
+            *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)tensorMetadataResult.error());
+          }
+          return nil;
+        }
+        _inputTensorMetadata[@(index)] = [[ExecuTorchTensorMetadata alloc] initWithTensorMetadata:tensorMetadataResult.get()];
+      }
+    }
+    for (NSInteger index = 0; index < outputCount; ++index) {
+      auto result = methodMeta.output_tag(index);
+      if (!result.ok()) {
+        if (error) {
+          *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
+        }
+        return nil;
+      }
+      const auto outputValueTag = (ExecuTorchValueTag)result.get();
+      [_outputValueTags addObject:@(outputValueTag)];
+
+      if (outputValueTag == ExecuTorchValueTagTensor) {
+        auto tensorMetadataResult = methodMeta.output_tensor_meta(index);
+        if (!tensorMetadataResult.ok()) {
+          if (error) {
+            *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)tensorMetadataResult.error());
+          }
+          return nil;
+        }
+        _outputTensorMetadata[@(index)] = [[ExecuTorchTensorMetadata alloc] initWithTensorMetadata:tensorMetadataResult.get()];
+      }
+    }
+    for (NSInteger index = 0; index < attributeCount; ++index) {
+      auto result = methodMeta.attribute_tensor_meta(index);
+      if (!result.ok()) {
+        if (error) {
+          *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
+        }
+        return nil;
+      }
+      [_attributeTensorMetadata addObject:[[ExecuTorchTensorMetadata alloc] initWithTensorMetadata:result.get()]];
+    }
+    for (NSInteger index = 0; index < memoryPlannedBufferCount; ++index) {
+      auto result = methodMeta.memory_planned_buffer_size(index);
+      if (!result.ok()) {
+        if (error) {
+          *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
+        }
+        return nil;
+      }
+      const auto memoryPlannedBufferSize = result.get();
+      [_memoryPlannedBufferSizes addObject:@(memoryPlannedBufferSize)];
+    }
+    for (NSInteger index = 0; index < backendCount; ++index) {
+      auto result = methodMeta.get_backend_name(index);
+      if (!result.ok()) {
+        if (error) {
+          *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
+        }
+        return nil;
+      }
+      NSString *backendName = [[NSString alloc] initWithUTF8String:result.get()];
+      [_backendNames addObject:backendName];
+    }
+  }
+  return self;
+}
+
+- (NSArray<NSNumber *> *)inputValueTags {
+  return _inputValueTags;
+}
+
+- (NSArray<NSNumber *> *)outputValueTags {
+  return _outputValueTags;
+}
+
+- (NSDictionary<NSNumber *,ExecuTorchTensorMetadata *> *)inputTensorMetadata {
+  return _inputTensorMetadata;
+}
+
+- (NSDictionary<NSNumber *,ExecuTorchTensorMetadata *> *)outputTensorMetadata {
+  return _outputTensorMetadata;
+}
+
+- (NSArray<ExecuTorchTensorMetadata *> *)attributeTensorMetadata {
+  return _attributeTensorMetadata;
+}
+
+- (NSArray<NSNumber *> *)memoryPlannedBufferSizes {
+  return _memoryPlannedBufferSizes;
+}
+
+- (NSArray<NSString *> *)backendNames {
+  return _backendNames;
+}
+
+@end
 
 @implementation ExecuTorchModule {
   std::unique_ptr<Module> _module;
@@ -87,9 +268,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   const auto errorCode = _module->load(static_cast<Program::Verification>(verification));
   if (errorCode != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
-                                   code:(NSInteger)errorCode
-                               userInfo:nil];
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
     }
     return NO;
   }
@@ -110,9 +289,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   const auto errorCode = _module->load_method(methodName.UTF8String);
   if (errorCode != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
-                                   code:(NSInteger)errorCode
-                               userInfo:nil];
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
     }
     return NO;
   }
@@ -127,37 +304,55 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
   const auto result = _module->method_names();
   if (!result.ok()) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
-                                   code:(NSInteger)result.error()
-                               userInfo:nil];
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
     }
     return nil;
   }
-  NSMutableSet<NSString *> *methods = [NSMutableSet setWithCapacity:result->size()];
+  NSMutableSet<NSString *> *methods = [[NSMutableSet alloc] initWithCapacity:result->size()];
   for (const auto &name : *result) {
-    [methods addObject:(NSString *)@(name.c_str())];
+    [methods addObject:(NSString *)[[NSString alloc] initWithUTF8String:name.c_str()]];
   }
   return methods;
+}
+
+- (nullable ExecuTorchMethodMetadata *)methodMetadata:(NSString *)methodName
+                                                error:(NSError **)error {
+  const auto result = _module->method_meta(methodName.UTF8String);
+  if (!result.ok()) {
+    if (error) {
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
+    }
+    return nil;
+  }
+  return [[ExecuTorchMethodMetadata alloc] initWithMethodMetadata:result.get()
+                                                            error:error];
 }
 
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                             withInputs:(NSArray<ExecuTorchValue *> *)values
                                                  error:(NSError **)error {
-  std::vector<EValue> inputs;
-  inputs.reserve(values.count);
-  for (ExecuTorchValue *value in values) {
-    inputs.push_back(toEValue(value));
-  }
-  const auto result = _module->execute(methodName.UTF8String, inputs);
-  if (!result.ok()) {
+  const char *methodNameString = methodName.UTF8String;
+  __block auto errorCode = Error::Ok;
+  [values enumerateObjectsUsingBlock:^(ExecuTorchValue *value, NSUInteger index, BOOL *stop) {
+    errorCode = _module->set_input(methodNameString, toEValue(value), index);
+    if (errorCode != Error::Ok) {
+      *stop = YES;
+    }
+  }];
+  if (errorCode != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchErrorDomain
-                                   code:(NSInteger)result.error()
-                               userInfo:nil];
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
     }
     return nil;
   }
-  NSMutableArray<ExecuTorchValue *> *outputs = [NSMutableArray arrayWithCapacity:result->size()];
+  const auto result = _module->execute(methodNameString);
+  if (!result.ok()) {
+    if (error) {
+      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)result.error());
+    }
+    return nil;
+  }
+  NSMutableArray<ExecuTorchValue *> *outputs = [[NSMutableArray alloc] initWithCapacity:result->size()];
   for (const auto &value : *result) {
     [outputs addObject:toExecuTorchValue(value)];
   }
@@ -168,7 +363,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
                                              withInput:(ExecuTorchValue *)value
                                                  error:(NSError **)error {
   return [self executeMethod:methodName
-                  withInputs:@[value]
+                  withInputs:[[NSArray alloc] initWithObjects:value, nil]
                        error:error];
 }
 
@@ -182,7 +377,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                            withTensors:(NSArray<ExecuTorchTensor *> *)tensors
                                                  error:(NSError **)error {
-  NSMutableArray<ExecuTorchValue *> *values = [NSMutableArray arrayWithCapacity:tensors.count];
+  NSMutableArray<ExecuTorchValue *> *values = [[NSMutableArray alloc] initWithCapacity:tensors.count];
   for (ExecuTorchTensor *tensor in tensors) {
     [values addObject:[ExecuTorchValue valueWithTensor:tensor]];
   }
@@ -195,7 +390,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
                                             withTensor:(ExecuTorchTensor *)tensor
                                                  error:(NSError **)error {
   return [self executeMethod:methodName
-                  withInputs:@[[ExecuTorchValue valueWithTensor:tensor]]
+                  withInputs:[[NSArray alloc] initWithObjects:[ExecuTorchValue valueWithTensor:tensor], nil]
                        error:error];
 }
 
@@ -209,7 +404,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithInput:(ExecuTorchValue *)value
                                                     error:(NSError **)error {
   return [self executeMethod:@"forward"
-                  withInputs:@[value]
+                  withInputs:[[NSArray alloc] initWithObjects:value, nil]
                        error:error];
 }
 
@@ -221,7 +416,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
 
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithTensors:(NSArray<ExecuTorchTensor *> *)tensors
                                                       error:(NSError **)error {
-  NSMutableArray<ExecuTorchValue *> *values = [NSMutableArray arrayWithCapacity:tensors.count];
+  NSMutableArray<ExecuTorchValue *> *values = [[NSMutableArray alloc] initWithCapacity:tensors.count];
   for (ExecuTorchTensor *tensor in tensors) {
     [values addObject:[ExecuTorchValue valueWithTensor:tensor]];
   }
@@ -233,7 +428,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) {
 - (nullable NSArray<ExecuTorchValue *> *)forwardWithTensor:(ExecuTorchTensor *)tensor
                                                      error:(NSError **)error {
   return [self executeMethod:@"forward"
-                  withInputs:@[[ExecuTorchValue valueWithTensor:tensor]]
+                  withInputs:[[NSArray alloc] initWithObjects:[ExecuTorchValue valueWithTensor:tensor], nil]
                        error:error];
 }
 

@@ -69,13 +69,13 @@ class XNNExecutor {
    * any additional memory planning as needed
    */
   ET_NODISCARD executorch::runtime::Error prepare_args(
-      executorch::runtime::EValue** args);
+      executorch::runtime::Span<executorch::runtime::EValue*> args);
 
   /**
    * Executes the graph using the args prepared at prepare_args().
    */
   ET_NODISCARD executorch::runtime::Error forward(
-      executorch::runtime::BackendExecutionContext& context);
+      executorch::ET_RUNTIME_NAMESPACE::BackendExecutionContext& context);
 
   /**
    * Prepares the outputs to be returned by the delegate
@@ -83,7 +83,7 @@ class XNNExecutor {
    * Performs any post processing of outputs like tensor resizing
    */
   ET_NODISCARD executorch::runtime::Error resize_outputs(
-      executorch::runtime::EValue** args) const;
+      executorch::runtime::Span<executorch::runtime::EValue*> args) const;
 
   friend class XNNCompiler;
 };

@@ -47,13 +47,12 @@ namespace native {
     ::executorch::runtime::KernelRuntimeContext& context,
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& scale,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>&
-        opt_zero_points,
+    const std::optional<::executorch::aten::Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ::executorch::aten::ScalarType dtype,
-    ::executorch::aten::optional<::executorch::aten::ScalarType> out_dtype,
+    std::optional<::executorch::aten::ScalarType> out_dtype,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& dequantize_per_tensor_out(
@@ -64,7 +63,7 @@ namespace native {
     int64_t quant_min,
     int64_t quant_max,
     ::executorch::aten::ScalarType dtype,
-    ::executorch::aten::optional<::executorch::aten::ScalarType> out_dtype,
+    std::optional<::executorch::aten::ScalarType> out_dtype,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& div_out(
@@ -77,7 +76,7 @@ namespace native {
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& a,
     const ::executorch::aten::Tensor& b,
-    ::executorch::aten::optional<::executorch::aten::string_view> mode,
+    std::optional<std::string_view> mode,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& div_scalar_out(
@@ -90,7 +89,7 @@ namespace native {
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& a,
     const ::executorch::aten::Scalar& b,
-    ::executorch::aten::optional<::executorch::aten::string_view> mode,
+    std::optional<std::string_view> mode,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& exp_out(
@@ -101,10 +100,9 @@ namespace native {
 ::executorch::aten::Tensor& mean_dim_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& in,
-    ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
-        dim_list,
+    std::optional<::executorch::aten::ArrayRef<int64_t>> dim_list,
     bool keepdim,
-    ::executorch::aten::optional<::executorch::aten::ScalarType> dtype,
+    std::optional<::executorch::aten::ScalarType> dtype,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& mul_out(
@@ -127,8 +125,8 @@ native_layer_norm_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
     ::executorch::aten::IntArrayRef normalized_shape,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& weight,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& bias,
+    const std::optional<::executorch::aten::Tensor>& weight,
+    const std::optional<::executorch::aten::Tensor>& bias,
     double eps,
     ::executorch::aten::Tensor& out,
     ::executorch::aten::Tensor& mean_out,
@@ -165,8 +163,8 @@ native_layer_norm_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& in,
     int64_t dim,
-    ::executorch::aten::optional<int64_t> start_val,
-    ::executorch::aten::optional<int64_t> end_val,
+    std::optional<int64_t> start_val,
+    std::optional<int64_t> end_val,
     int64_t step,
     ::executorch::aten::Tensor& out);
 
@@ -226,15 +224,15 @@ native_layer_norm_out(
 ::executorch::aten::Tensor& clamp_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& in,
-    const ::executorch::aten::optional<::executorch::aten::Scalar>& min_opt,
-    const ::executorch::aten::optional<::executorch::aten::Scalar>& max_opt,
+    const std::optional<::executorch::aten::Scalar>& min_opt,
+    const std::optional<::executorch::aten::Scalar>& max_opt,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& clamp_tensor_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& in,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& min_opt,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& max_opt,
+    const std::optional<::executorch::aten::Tensor>& min_opt,
+    const std::optional<::executorch::aten::Tensor>& max_opt,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& transpose_copy_int_out(

@@ -23,7 +23,7 @@ namespace internal {
  * @retval Monotonically non-decreasing timestamp in system ticks.
  */
 et_timestamp_t get_log_timestamp() {
-  return et_pal_current_ticks();
+  return pal_current_ticks();
 }
 
 // Double-check that the log levels are ordered from lowest to highest severity.
@@ -96,7 +96,7 @@ void vlogf(
       ? kLevelToPal[size_t(level)]
       : et_pal_log_level_t::kUnknown;
 
-  et_pal_emit_log_message(
+  pal_emit_log_message(
       timestamp, pal_level, filename, function, line, buf, len);
 
 #endif // ET_LOG_ENABLED

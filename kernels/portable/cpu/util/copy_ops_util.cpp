@@ -745,7 +745,7 @@ bool check_split_copy_args(
 bool check_to_copy_args(
     const Tensor& input,
     bool non_blocking,
-    executorch::aten::optional<executorch::aten::MemoryFormat> memory_format,
+    std::optional<executorch::aten::MemoryFormat> memory_format,
     Tensor& out) {
   (void)input;
   (void)out;
@@ -1016,6 +1016,15 @@ void get_unfold_copy_out_target_size(
 
   out_sizes[self.dim()] = size;
   *out_ndim = self.dim() + 1;
+}
+
+void get_view_as_real_copy_out_target_size(
+    const Tensor& self,
+    executorch::aten::SizesType* out_sizes) {
+  for (auto i : c10::irange(self.dim())) {
+    out_sizes[i] = self.size(i);
+  }
+  out_sizes[self.dim()] = 2;
 }
 
 } // namespace executor

@@ -100,23 +100,22 @@ class ExecuTorchLlmCallbackJni
 
   void onStats(const llm::Stats& result) const {
     static auto cls = ExecuTorchLlmCallbackJni::javaClassStatic();
-    static const auto method = cls->getMethod<void(jfloat)>("onStats");
-    double eval_time =
-        (double)(result.inference_end_ms - result.prompt_eval_end_ms);
-
-    float tps = result.num_generated_tokens / eval_time *
-        result.SCALING_FACTOR_UNITS_PER_SECOND;
-
-    method(self(), tps);
+    static const auto on_stats_method =
+        cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onStats");
+    on_stats_method(
+        self(),
+        facebook::jni::make_jstring(
+            executorch::extension::llm::stats_to_json_string(result)));
   }
 };
 
 class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
  private:
   friend HybridBase;
+  float temperature_ = 0.0f;
   int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
-  std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
+  std::unique_ptr<example::LlavaRunner> multi_modal_runner_;
 
  public:
   constexpr static auto kJavaDescriptor =
@@ -147,6 +146,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
       facebook::jni::alias_ref<jstring> data_path = nullptr) {
+    temperature_ = temperature;
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
     int32_t num_performant_cores =
@@ -165,24 +165,20 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           tokenizer_path->toStdString().c_str(),
           temperature);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      if (data_path != nullptr) {
-        runner_ = std::make_unique<example::Runner>(
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            temperature,
-            data_path->toStdString().c_str());
-      } else {
-        runner_ = std::make_unique<example::Runner>(
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            temperature);
-      }
+      std::optional<const std::string> data_path_str = data_path
+          ? std::optional<const std::string>{data_path->toStdString()}
+          : std::nullopt;
+      // TODO(larryliu0820): Use the API in text_llm_runner.h to create the
+      // runner.
+      runner_ = example::create_llama_runner(
+          model_path->toStdString(),
+          tokenizer_path->toStdString(),
+          data_path_str);
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(
           model_path->toStdString().c_str(),
-          tokenizer_path->toStdString().c_str(),
-          temperature);
+          tokenizer_path->toStdString().c_str());
       // Interpret the model type as LLM
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
@@ -222,6 +218,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       executorch::extension::llm::GenerationConfig config{
           .echo = static_cast<bool>(echo),
           .seq_len = seq_len,
+          .temperature = temperature_,
       };
       runner_->generate(
           prompt->toStdString(),
@@ -300,16 +297,27 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jlong start_pos,
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
-    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(Error::NotSupported);
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(multi_modal_runner_->generate_from_pos(
+          prompt->toStdString(),
+          seq_len,
+          start_pos,
+          [callback](const std::string& result) { callback->onResult(result); },
+          [callback](const llm::Stats& stats) { callback->onStats(stats); },
+          echo));
+    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      executorch::extension::llm::GenerationConfig config{
+          .echo = static_cast<bool>(echo),
+          .seq_len = seq_len,
+          .temperature = temperature_,
+      };
+      return static_cast<jint>(runner_->generate_from_pos(
+          prompt->toStdString(),
+          start_pos,
+          config,
+          [callback](std::string result) { callback->onResult(result); },
+          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
     }
-    return static_cast<jint>(multi_modal_runner_->generate_from_pos(
-        prompt->toStdString(),
-        seq_len,
-        start_pos,
-        [callback](const std::string& result) { callback->onResult(result); },
-        [callback](const llm::Stats& stats) { callback->onStats(stats); },
-        echo));
   }
 
   void stop() {

@@ -17,6 +17,11 @@
 cmake_minimum_required(VERSION 3.19)
 project(executorch)
 
+if(ANDROID)
+  set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH)
+  set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+endif()
+
 find_package(executorch CONFIG REQUIRED COMPONENTS vulkan_backend)
 find_package(GTest CONFIG REQUIRED)
 
@@ -24,27 +29,21 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 endif()
 
-# Include this file to access target_link_options_shared_lib This is required to
-# provide access to target_link_options_shared_lib which allows libraries to be
-# linked with the --whole-archive flag. This is required for libraries that
-# perform dynamic registration via static initialization.
+# Include this file to access executorch_target_link_options_shared_lib This is
+# required to provide access to executorch_target_link_options_shared_lib which
+# allows libraries to be linked with the --whole-archive flag. This is required
+# for libraries that perform dynamic registration via static initialization.
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 get_torch_base_path(TORCH_BASE_PATH)
-message(STATUS "torch base path: ${TORCH_BASE_PATH}")
-
-# Only build tests if Vulkan was compiled
-find_library(LIB_VULKAN_BACKEND vulkan_backend)
-find_library(LIB_TORCH torch ${TORCH_BASE_PATH}/lib)
-find_library(LIB_TORCH_CPU torch_cpu ${TORCH_BASE_PATH}/lib)
-find_library(LIB_C10 c10 ${TORCH_BASE_PATH}/lib)
-
-message(STATUS "Vulkan backend lib ${LIB_VULKAN_BACKEND}")
-message(STATUS "Torch ${LIB_TORCH}")
-
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
+if(NOT TORCH_INSTALL_PREFIX)
+  set(TORCH_INSTALL_PREFIX ${TORCH_BASE_PATH})
 endif()
+
+# libtorch is needed for Vulkan correctness tests
+find_library(LIB_TORCH torch HINTS ${TORCH_INSTALL_PREFIX}/lib)
+find_library(LIB_TORCH_CPU torch_cpu HINTS ${TORCH_INSTALL_PREFIX}/lib)
+find_library(LIB_C10 c10 HINTS ${TORCH_INSTALL_PREFIX}/lib)
 
 # Third party include paths
 
@@ -67,7 +66,7 @@ set(COMMON_INCLUDES
     ${TORCH_BASE_PATH}/include/torch/csrc/api/include
 )
 
-target_link_options_shared_lib(vulkan_backend)
+executorch_target_link_options_shared_lib(vulkan_backend)
 
 function(vulkan_op_test test_name test_src)
   set(extra_deps ${ARGN})
@@ -78,7 +77,7 @@ function(vulkan_op_test test_name test_src)
     ${test_name}
     PRIVATE GTest::gtest_main
             vulkan_backend
-            executorch
+            executorch_core
             ${LIB_TORCH}
             ${LIB_TORCH_CPU}
             ${LIB_C10}
@@ -88,7 +87,7 @@ function(vulkan_op_test test_name test_src)
   add_test(${test_name} ${test_name})
 endfunction()
 
-if(LIB_VULKAN_BACKEND AND LIB_TORCH)
+if(TARGET vulkan_backend AND LIB_TORCH)
   find_library(
     CUSTOM_OPS_LIB custom_ops_aot_lib
     HINTS ${CMAKE_INSTALL_PREFIX}/executorch/extension/llm/custom_ops
