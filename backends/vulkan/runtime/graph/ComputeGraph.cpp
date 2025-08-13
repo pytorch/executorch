@@ -206,6 +206,29 @@ utils::StorageType ComputeGraph::suggested_storage_type() {
   return utils::kTexture3D;
 }
 
+bool ComputeGraph::was_value_updated(const ValueRef idx) const noexcept {
+  if (!is_valid_value_idx(idx)) {
+    return false;
+  }
+
+  // Check if this ValueRef itself was updated
+  if (updated_values_.find(idx) != updated_values_.end()) {
+    return true;
+  }
+
+  // If this is a ValueList, check each ValueRef in the list
+  if (val_is_value_list(idx)) {
+    const auto& value_list = values_.at(idx).toConstValueList();
+    for (const auto& nested_idx : value_list) {
+      if (was_value_updated(nested_idx)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 utils::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
     const std::vector<int64_t>& sizes) {
   if (config_.enable_memory_layout_override) {
@@ -234,6 +257,10 @@ void ComputeGraph::check_no_active_value_ptrs() {
       "`ComputeGraph::get_*()` functions in scope before adding Values to the "
       "graph. Modifying the graph's values may cause existing pointers to be "
       "invalidated.");
+}
+
+bool ComputeGraph::is_valid_value_idx(const ValueRef idx) const noexcept {
+  return idx >= 0 && idx < static_cast<int>(values_.size());
 }
 
 std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
@@ -569,7 +596,12 @@ vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
 }
 
 void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
-  get_symint(idx)->set(val);
+  int32_t cur_val = read_symint(idx);
+  if (cur_val != val) {
+    get_symint(idx)->set(val);
+    // Track that this ValueRef was updated
+    updated_values_.insert(idx);
+  }
 }
 
 int32_t ComputeGraph::read_symint(const ValueRef idx) {
@@ -951,6 +983,12 @@ void ComputeGraph::execute() {
   }
 
   execute_count_++;
+
+  // Clear the set of updated values at the end of inference
+  updated_values_.clear();
+
+  // Reset the re-encoding flag at the end of inference
+  requires_reencode_ = false;
 }
 
 void ComputeGraph::virtual_clone(const ValueRef dst, const ValueRef src) {
@@ -968,21 +1006,30 @@ void ComputeGraph::resize_input(
     const int64_t idx,
     const std::vector<int64_t>& new_sizes) {
   IOValueRef io_val = inputs_.at(idx);
-  get_tensor(io_val.value)->virtual_resize(new_sizes);
+  virtual_resize(io_val.value, new_sizes);
+  updated_values_.insert(io_val.staging);
 }
 
 void ComputeGraph::virtual_resize(
     const ValueRef idx,
     const std::vector<int64_t>& new_sizes) {
-  get_tensor(idx)->virtual_resize(new_sizes);
+  std::vector<int64_t> cur_sizes = sizes_of(idx);
+  if (cur_sizes != new_sizes) {
+    get_tensor(idx)->virtual_resize(new_sizes);
+    // Track that this ValueRef was updated
+    updated_values_.insert(idx);
+  }
 }
 
 void ComputeGraph::propagate_resize() {
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->trigger_resize(this);
   }
-  // Only re-encode on resize if dynamic shapes are expected
-  if (config_.expect_dynamic_shapes) {
+  // A command buffer re-encode will be needed if:
+  // 1. Any push constant data (used for tensor metadata) was updated
+  // 2. Compute shader dispatch parameters (i.e. compute shader, global and
+  //    local work group sizes) were updated
+  if (requires_reencode_) {
     clear_deferred_cmds();
   }
 }
