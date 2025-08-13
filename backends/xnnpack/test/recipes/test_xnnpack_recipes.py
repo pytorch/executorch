@@ -6,7 +6,6 @@
 
 # pyre-strict
 
-import logging
 import unittest
 
 import torch
