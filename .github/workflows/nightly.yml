@@ -44,20 +44,12 @@ jobs:
       matrix:
         flow: [xnnpack, xnnpack_static_int8_per_channel]
         suite: [models, operators]
-        runner: [linux.2xlarge]
-        docker-image: [executorch-ubuntu-22.04-clang12]
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      runner: ${{ matrix.runner }}
-      docker-image: ci-image:${{ matrix.docker-image }}
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
       submodules: recursive
       timeout: 90
       script: |
         set -eux
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        ./install_requirements.sh > /dev/null
-        cmake --preset ${{ matrix.preset }}
-        cmake --build cmake-out -j$(( $(nproc) - 1 ))
+        .ci/scripts/backend-test-linux.sh --suite "${{ inputs.suite }}" --flow "${{ inputs.flow }}"
