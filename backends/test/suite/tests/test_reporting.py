@@ -69,7 +69,7 @@ TEST_CASE_SUMMARIES = [
 class Reporting(unittest.TestCase):
     def test_csv_report_simple(self):
         # Verify the format of a simple CSV run report.
-        session_state = TestSessionState()
+        session_state = TestSessionState(seed=0)
         session_state.test_case_summaries.extend(TEST_CASE_SUMMARIES)
         run_summary = RunSummary.from_session(session_state)
 
