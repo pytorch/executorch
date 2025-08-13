@@ -52,4 +52,4 @@ jobs:
       timeout: 90
       script: |
         set -eux
-        .ci/scripts/backend-test-linux.sh --suite "${{ inputs.suite }}" --flow "${{ inputs.flow }}"
+        .ci/scripts/backend-test-linux.sh --suite "${{ matrix.suite }}" --flow "${{ matrix.flow }}"
