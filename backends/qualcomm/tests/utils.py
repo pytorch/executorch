@@ -143,30 +143,6 @@ def validate_context_binary(ctx_bin: bytes):
         assert os.path.isfile(f"{tmp_dir}/ctx.json"), print(result.stderr)
 
 
-def validate_qcir(qcir: bytes):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        with open(f"{tmp_dir}/qcir.bin", "wb") as binary_file:
-            binary_file.write(qcir)
-
-        cmds = [
-            "flatc",
-            "-o",
-            tmp_dir,
-            "--raw-binary",
-            "-t",
-            f"{os.path.dirname(__file__)}/../aot/ir/qcir.fbs",
-            "--",
-            f"{tmp_dir}/qcir.bin",
-        ]
-        result = subprocess.run(
-            " ".join(cmds),
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True,
-        )
-        assert os.path.isfile(f"{tmp_dir}/qcir.json"), print(result.stderr)
-
-
 class TestQNN(unittest.TestCase):
     rtol: float = 0
     atol: float = 0
