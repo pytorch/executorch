@@ -61,6 +61,10 @@ struct GraphConfig final {
   // by taking more advantage of parallelism between the CPU and GPU.
   size_t execute_initial_threshold_node_count = 0;
 
+  // If this number is greater than 0 then, during execute create at most this
+  // many command buffers.
+  size_t execute_max_cmds = 0;
+
   vkapi::Adapter* external_adapter;
 
   // Generate a default graph config with pre-configured settings
