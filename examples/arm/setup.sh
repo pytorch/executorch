@@ -299,10 +299,9 @@ function select_toolchain() {
 	    fi
         elif [[ "${OS}" == "Linux" ]]; then
 	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-	        # eventually, this can be support by downloading the the toolchain from 
-		# "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
-		# but for now, we error if user tries to specify this
-                echo "[main] Error: currently target_toolchain zephyr is only support for x86-64 Linux host systems!"; exit 1;
+                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
+                toolchain_dir="arm-zephyr-eabi"
+		toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
 	    else
                 toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
                 toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
