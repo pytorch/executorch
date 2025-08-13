@@ -198,8 +198,9 @@ target_link_libraries(
                       qnn_dlc_manager
 )
 target_link_libraries(
-  qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
-                                 executorch_core extension_tensor qnn_backend_options
+  qnn_executorch_backend
+  PRIVATE qnn_executorch_header qnn_schema qnn_manager executorch_core
+          extension_tensor qnn_backend_options
 )
 set_target_properties(
   qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"

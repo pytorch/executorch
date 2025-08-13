@@ -18,10 +18,13 @@ from typing import Any, cast, Dict, List, Literal, Optional, Tuple
 import numpy as np
 import torch
 
-from executorch.backends.arm.arm_backend import get_tosa_spec, is_tosa
+from executorch.backends.arm.arm_backend import is_tosa
 from executorch.backends.arm.test.conftest import is_option_enabled
-from executorch.backends.arm.tosa_specification import Tosa_1_00, TosaSpecification
-
+from executorch.backends.arm.tosa_specification import (
+    get_tosa_spec,
+    Tosa_1_00,
+    TosaSpecification,
+)
 from executorch.exir import ExecutorchProgramManager, ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule

@@ -213,6 +213,14 @@ class ComputeGraph final {
   // current Context's command buffer is submitted now.
   size_t staging_nbytes_in_cmd_ = 0;
 
+  // Represents the nodes to wait before submitting commands.
+  // If command buffers created with config.execute_threshold_node_count exceeds
+  // config.execute_max_cmds, then execute_threshold_node_count will be
+  // increased to fit command buffers within the limit. Otherwise,
+  // execute_threshold_node_count will be set to
+  // config.execute_threshold_node_count.
+  size_t execute_threshold_node_count_ = 0;
+
  public:
   //
   // Accessors

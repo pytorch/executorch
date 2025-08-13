@@ -88,73 +88,64 @@ DynamicDispatchNode::DynamicDispatchNode(
 bool DynamicDispatchNode::trigger_resize(ComputeGraph* graph) {
   // DispatchNode::trigger_resize() will return true if any of the values
   // participating in this operation were updated.
-  bool any_value_updated = DispatchNode::trigger_resize(graph);
-  // Indicates if the shader dispatch will have changed since the last time the
-  // command buffer was encoded.
-  bool dispatch_params_changed = false;
-
+  const bool any_value_updated = DispatchNode::trigger_resize(graph);
   // Only re-compute the shader, global workgroup size, and local workgroup size
   // if any of the values participating in this operation were updated.
   // Otherwise, assume that these will not have changed.
-  if (any_value_updated) {
-    if (pick_shader_fn_) {
-      vkapi::ShaderInfo new_shader =
-          pick_shader_fn_(graph, args_, resize_args_);
-      // Compare shader kernel names as a proxy for shader equality
-      if (shader_.kernel_name != new_shader.kernel_name) {
-        shader_ = new_shader;
-        dispatch_params_changed = true;
-      }
-    }
-    if (pick_global_wg_fn_) {
-      utils::uvec3 new_global_wg =
-          pick_global_wg_fn_(graph, shader_, args_, resize_args_);
-      if (global_workgroup_size_[0] != new_global_wg[0] ||
-          global_workgroup_size_[1] != new_global_wg[1] ||
-          global_workgroup_size_[2] != new_global_wg[2]) {
-        global_workgroup_size_ = new_global_wg;
-        // Note that if global workgroup size changes, then the dispatch params
-        // may not actually be different. The actual value to check is the
-        // work group grid size that will be dispatched, which is calculated
-        // below.
-      }
-    }
-    if (pick_local_wg_fn_) {
-      utils::uvec3 new_local_wg_uvec3 = pick_local_wg_fn_(
-          graph, shader_, global_workgroup_size_, args_, resize_args_);
-      utils::WorkgroupSize new_local_wg =
-          utils::WorkgroupSize(new_local_wg_uvec3);
-      if (local_workgroup_size_[0] != new_local_wg[0] ||
-          local_workgroup_size_[1] != new_local_wg[1] ||
-          local_workgroup_size_[2] != new_local_wg[2]) {
-        local_workgroup_size_ = new_local_wg;
-        dispatch_params_changed = true;
-      }
-    }
+  if (!any_value_updated) {
+    return false;
+  }
 
-    // Always recompute the new dispatch grid and check if it's different
-    utils::uvec3 new_wg_dispatch_grid = {
-        utils::div_up(global_workgroup_size_[0], local_workgroup_size_[0]),
-        utils::div_up(global_workgroup_size_[1], local_workgroup_size_[1]),
-        utils::div_up(global_workgroup_size_[2], local_workgroup_size_[2])};
+  // Indicates if the shader dispatch should be changed since the last time the
+  // command buffer was encoded.
+  bool dispatch_params_changed = false;
 
-    // Check if the new dispatch grid is different from the old one
-    if (wg_dispatch_grid_[0] != new_wg_dispatch_grid[0] ||
-        wg_dispatch_grid_[1] != new_wg_dispatch_grid[1] ||
-        wg_dispatch_grid_[2] != new_wg_dispatch_grid[2]) {
+  if (pick_shader_fn_) {
+    vkapi::ShaderInfo new_shader = pick_shader_fn_(graph, args_, resize_args_);
+    // Compare shader kernel names as a proxy for shader equality
+    if (shader_.kernel_name != new_shader.kernel_name) {
+      shader_ = new_shader;
       dispatch_params_changed = true;
     }
-    // Update the dispatch grid
-    wg_dispatch_grid_ = new_wg_dispatch_grid;
-
-    // If any of the dispatch params have changed, then the command buffer must
-    // be re-encoded.
-    if (dispatch_params_changed) {
-      graph->set_requires_reencode();
+  }
+  if (pick_global_wg_fn_) {
+    // Note that if global workgroup size changes, then the dispatch params
+    // may not actually be different. The actual value to check is the
+    // work group grid size that will be dispatched, which is calculated
+    // below.
+    global_workgroup_size_ =
+        pick_global_wg_fn_(graph, shader_, args_, resize_args_);
+  }
+  if (pick_local_wg_fn_) {
+    utils::uvec3 new_local_wg_uvec3 = pick_local_wg_fn_(
+        graph, shader_, global_workgroup_size_, args_, resize_args_);
+    utils::WorkgroupSize new_local_wg =
+        utils::WorkgroupSize(new_local_wg_uvec3);
+    if (local_workgroup_size_ != new_local_wg) {
+      local_workgroup_size_ = new_local_wg;
+      dispatch_params_changed = true;
     }
   }
 
-  return any_value_updated;
+  // Always recompute the new dispatch grid and check if it's different
+  utils::uvec3 new_wg_dispatch_grid = {
+      utils::div_up(global_workgroup_size_[0], local_workgroup_size_[0]),
+      utils::div_up(global_workgroup_size_[1], local_workgroup_size_[1]),
+      utils::div_up(global_workgroup_size_[2], local_workgroup_size_[2])};
+
+  // Check if the new dispatch grid is different from the old one
+  if (wg_dispatch_grid_ != new_wg_dispatch_grid) {
+    dispatch_params_changed = true;
+  }
+  wg_dispatch_grid_ = new_wg_dispatch_grid;
+
+  // If any of the dispatch params have changed, then the command buffer must
+  // be re-encoded.
+  if (dispatch_params_changed) {
+    graph->set_requires_reencode();
+  }
+
+  return true;
 }
 
 } // namespace vkcompute

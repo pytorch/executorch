@@ -248,6 +248,8 @@ class KernelIntegrationTest : public ::testing::Test {
     ASSERT_EQ(inputs_cleanup.error(), Error::Ok);
     inputs_cleanup_ = std::make_unique<executorch::extension::BufferCleanup>(
         std::move(*inputs_cleanup));
+    auto input_err = method_->set_input(executorch::runtime::EValue(1.0), 2);
+    ASSERT_EQ(input_err, Error::Ok);
   }
 
   void TearDown() override {

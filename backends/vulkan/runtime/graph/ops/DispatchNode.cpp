@@ -90,10 +90,9 @@ void DispatchNode::write_push_constant_data() {
 }
 
 bool DispatchNode::trigger_resize(ComputeGraph* graph) {
-  bool any_value_updated = was_any_value_updated(graph);
-  if (resize_fn_ && any_value_updated) {
-    resize_fn_(graph, args_, resize_args_);
+  const bool any_value_updated = ExecuteNode::trigger_resize(graph);
 
+  if (any_value_updated) {
     // If this shader uses push constants, and the tensor metadata associated
     // with the push constants has changed, then the command buffer needs to be
     // re-encoded since push constants cannot be updated.
@@ -105,26 +104,6 @@ bool DispatchNode::trigger_resize(ComputeGraph* graph) {
     }
   }
   return any_value_updated;
-}
-
-bool DispatchNode::was_any_value_updated(ComputeGraph* graph) const {
-  // Check all ValueRefs in ArgGroups
-  for (const auto& arg_group : args_) {
-    for (const auto& value_ref : arg_group.refs) {
-      if (graph->was_value_updated(value_ref)) {
-        return true;
-      }
-    }
-  }
-
-  // Check all ValueRefs in resize_args
-  for (const auto& value_ref : resize_args_) {
-    if (graph->was_value_updated(value_ref)) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 } // namespace vkcompute

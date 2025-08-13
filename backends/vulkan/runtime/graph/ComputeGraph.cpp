@@ -207,13 +207,13 @@ utils::StorageType ComputeGraph::suggested_storage_type() {
 }
 
 bool ComputeGraph::was_value_updated(const ValueRef idx) const noexcept {
+  if (!is_valid_value_idx(idx)) {
+    return false;
+  }
+
   // Check if this ValueRef itself was updated
   if (updated_values_.find(idx) != updated_values_.end()) {
     return true;
-  }
-
-  if (!is_valid_value_idx(idx)) {
-    return false;
   }
 
   // If this is a ValueList, check each ValueRef in the list
@@ -831,6 +831,33 @@ void ComputeGraph::prepare_pipelines() {
   pipeline_descriptors_ = std::unordered_set<
       vkapi::ComputePipelineCache::Key,
       vkapi::ComputePipelineCache::Hasher>();
+
+  const size_t total_node_count = execute_nodes_.size();
+  size_t init_threshold = config_.execute_initial_threshold_node_count;
+  size_t count_threshold = config_.execute_threshold_node_count;
+
+  // If max command buffer count is set, we need to adjust the thresholds to
+  // accommodate execution within the limit, if total command buffers with
+  // current thresholds would exceed execute_max_cmds
+  if (config_.execute_max_cmds > 0) {
+    // Worse case scenario we have one command buffer for nodes before init
+    // threshold and config_.execute_max_cmds - 1 command buffers for the rest
+    // of dispatches
+
+    // If command buffers created after offsetting init_threshold would exceed
+    // max command buffer count, we need to adjust init and count thresholds
+    const bool slicing_exceeds_max_cmds = (total_node_count - init_threshold) >
+        count_threshold * (config_.execute_max_cmds - 1);
+    if (total_node_count > init_threshold && slicing_exceeds_max_cmds) {
+      // Increase count threshold so remaining nodes after offsetting init fits
+      // in config_.execute_max_cmds - 1
+      count_threshold = static_cast<size_t>(ceil(
+          (total_node_count - init_threshold) /
+          double(config_.execute_max_cmds - 1)));
+    }
+  }
+
+  execute_threshold_node_count_ = count_threshold;
 }
 
 void ComputeGraph::submit_current_cmd(const bool final_use) {
@@ -920,6 +947,7 @@ void ComputeGraph::execute() {
     context_->set_cmd(/*reusable = */ true);
 
     context_->cmd_reset_querypool();
+    const size_t total_node_count = execute_nodes_.size();
     uint32_t encoded_node_count = 0;
 
     for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
@@ -932,11 +960,13 @@ void ComputeGraph::execute() {
       const bool reached_threshold =
           encoded_node_count >= config_.execute_initial_threshold_node_count &&
           ((encoded_node_count - config_.execute_initial_threshold_node_count) %
-               config_.execute_threshold_node_count ==
+               execute_threshold_node_count_ ==
            0);
 
       // Create a new command buffer when threashold is reached
-      if (reached_threshold) {
+      // But avoid it if this is the last node, since last cmd buf is submitted
+      // after the loop
+      if (reached_threshold && encoded_node_count != total_node_count) {
         context_->submit_cmd_to_gpu(VK_NULL_HANDLE, false);
         deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
         context_->set_cmd(true);

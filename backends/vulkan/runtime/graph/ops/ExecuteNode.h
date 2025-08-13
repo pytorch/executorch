@@ -69,13 +69,9 @@ class ExecuteNode {
     (void)graph;
   }
 
-  virtual inline bool trigger_resize(ComputeGraph* graph) {
-    if (resize_fn_) {
-      resize_fn_(graph, args_, resize_args_);
-      return true;
-    }
-    return false;
-  }
+  virtual bool trigger_resize(ComputeGraph* graph);
+
+  bool was_any_value_updated(const ComputeGraph* const graph) const;
 
   inline void set_node_id(uint32_t node_id) {
     node_id_ = node_id;

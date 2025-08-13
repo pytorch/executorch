@@ -46,10 +46,6 @@ class DispatchNode : public ExecuteNode {
 
   bool trigger_resize(ComputeGraph* graph) override;
 
- private:
-  // Helper function to check if any ValueRef was updated
-  bool was_any_value_updated(ComputeGraph* graph) const;
-
  protected:
   vkapi::ShaderInfo shader_;
   utils::uvec3 global_workgroup_size_;
