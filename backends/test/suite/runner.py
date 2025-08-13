@@ -1,5 +1,7 @@
 import argparse
+import hashlib
 import importlib
+import random
 import re
 import time
 import unittest
@@ -26,6 +28,7 @@ from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
     count_ops,
+    get_active_test_session,
     RunSummary,
     TestCaseSummary,
     TestResult,
@@ -38,6 +41,25 @@ NAMED_SUITES = {
     "models": "executorch.backends.test.suite.models",
     "operators": "executorch.backends.test.suite.operators",
 }
+
+
+def _get_test_seed(test_base_name: str) -> int:
+    # Set the seed based on the test base name to give consistent inputs between backends. Add the
+    # run seed to allow for reproducible results, but still allow for run-to-run variation.
+    # Having a stable hash between runs and across machines is a plus (builtin python hash is not).
+    # Using MD5 here because it's fast and we don't actually care about cryptographic properties.
+    test_session = get_active_test_session()
+    run_seed = (
+        test_session.seed
+        if test_session is not None
+        else random.randint(0, 100_000_000)
+    )
+
+    hasher = hashlib.md5()
+    data = test_base_name.encode("utf-8")
+    hasher.update(data)
+    # Torch doesn't like very long seeds.
+    return (int.from_bytes(hasher.digest(), "little") % 100_000_000) + run_seed
 
 
 def run_test(  # noqa: C901
@@ -58,6 +80,8 @@ def run_test(  # noqa: C901
 
     error_statistics: list[ErrorStatistics] = []
     extra_stats = {}
+
+    torch.manual_seed(_get_test_seed(test_base_name))
 
     # Helper method to construct the summary.
     def build_result(
@@ -237,6 +261,12 @@ def parse_args():
         help="A file to write the test report to, in CSV format.",
         default="backend_test_report.csv",
     )
+    parser.add_argument(
+        "--seed",
+        nargs="?",
+        help="The numeric seed value to use for random generation.",
+        type=int,
+    )
     return parser.parse_args()
 
 
@@ -254,7 +284,10 @@ def runner_main():
     # lot of log spam. We don't really need the warning here.
     warnings.simplefilter("ignore", category=FutureWarning)
 
-    begin_test_session(args.report)
+    seed = args.seed or random.randint(0, 100_000_000)
+    print(f"Running with seed {seed}.")
+
+    begin_test_session(args.report, seed=seed)
 
     if len(args.suite) > 1:
         raise NotImplementedError("TODO Support multiple suites.")
