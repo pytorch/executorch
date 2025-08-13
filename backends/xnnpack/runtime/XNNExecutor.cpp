@@ -21,6 +21,7 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::is_contiguous_dim_order;
 using executorch::runtime::kTensorDimensionLimit;
+using executorch::runtime::Span;
 
 /**
  * Initializes the XNNExecutor with the runtime and given number of
@@ -69,7 +70,7 @@ ET_NODISCARD Error XNNExecutor::initialize(
  * runtime correspond to their index in the list of arg passed into
  * delegate->execute()
  */
-ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
+ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
   ET_CHECK_OR_RETURN_ERROR(
       runtime_ != nullptr,
       Internal,
@@ -196,7 +197,7 @@ ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
  * XNNPACK gives the index tensor to us as int32, we need to convert it
  * back to int64 for ExecuTorch.
  */
-ET_NODISCARD Error XNNExecutor::resize_outputs(EValue** args) const {
+ET_NODISCARD Error XNNExecutor::resize_outputs(Span<EValue*> args) const {
   size_t output_idx_start = input_ids_.size();
   for (size_t i = output_idx_start; i < externals_.size(); ++i) {
     uint32_t ext_id = externals_[i].id;

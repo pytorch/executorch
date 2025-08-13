@@ -45,7 +45,7 @@ class OpenvinoBackend final : public ::exr::BackendInterface {
   exr::Error execute(
       exr::BackendExecutionContext& context,
       exr::DelegateHandle* input_handle,
-      exr::EValue** args) const override;
+      exr::Span<exr::EValue*> args) const override;
   void destroy(exr::DelegateHandle* handle) const override;
 
  private:

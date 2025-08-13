@@ -40,6 +40,27 @@ add_custom_target(
   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/package.json
 )
 
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  set(ETDUMP_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/unittests_etdump.js)
+else()
+  set(ETDUMP_UNIT_TESTS
+      ${CMAKE_CURRENT_SOURCE_DIR}/unittests_etdump_disabled.js
+  )
+endif()
+
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/unittests_full.js
+  COMMAND cat ${CMAKE_CURRENT_SOURCE_DIR}/unittests.js ${ETDUMP_UNIT_TESTS} >
+          ${CMAKE_CURRENT_BINARY_DIR}/unittests_full.js
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/unittests.js ${ETDUMP_UNIT_TESTS}
+  COMMENT "Copying unittests_full.js to build output directory"
+)
+
+add_custom_target(
+  executorch_wasm_unittests
+  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/unittests_full.js
+)
+
 add_executable(executorch_wasm_tests)
 target_link_libraries(executorch_wasm_tests PRIVATE executorch_wasm)
 target_link_options(
@@ -48,7 +69,7 @@ target_link_options(
   --embed-file
   "${MODELS_DIR}@/"
   --pre-js
-  ${CMAKE_CURRENT_SOURCE_DIR}/unittests.js
+  ${CMAKE_CURRENT_BINARY_DIR}/unittests_full.js
   -sASSERTIONS=2
 )
 set_target_properties(
@@ -57,9 +78,9 @@ set_target_properties(
 set_property(
   TARGET executorch_wasm_tests
   APPEND
-  PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/unittests.js
+  PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/unittests_full.js
 )
 add_dependencies(
-  executorch_wasm_tests executorch_wasm_test_models
+  executorch_wasm_tests executorch_wasm_unittests executorch_wasm_test_models
   executorch_wasm_test_package_json
 )
