@@ -58,6 +58,36 @@ class TestResult(IntEnum):
     def is_backend_failure(self):
         return not self.is_success() and not self.is_non_backend_failure()
 
+    def to_short_str(self):
+        if self in {TestResult.SUCCESS, TestResult.SUCCESS_UNDELEGATED}:
+            return "Pass"
+        elif self == TestResult.SKIPPED:
+            return "Skip"
+        else:
+            return "Fail"
+
+    def to_detail_str(self):
+        if self == TestResult.SUCCESS:
+            return ""
+        elif self == TestResult.SUCCESS_UNDELEGATED:
+            return ""
+        elif self == TestResult.SKIPPED:
+            return ""
+        elif self == TestResult.QUANTIZE_FAIL:
+            return "Quantization Failed"
+        elif self == TestResult.LOWER_FAIL:
+            return "Lowering Failed"
+        elif self == TestResult.PTE_LOAD_FAIL:
+            return "PTE Load Failed"
+        elif self == TestResult.PTE_RUN_FAIL:
+            return "PTE Run Failed"
+        elif self == TestResult.OUTPUT_MISMATCH_FAIL:
+            return "Output Mismatch"
+        elif self == TestResult.UNKNOWN_FAIL:
+            return "Unknown Failure"
+        else:
+            raise ValueError(f"Invalid TestResult value: {self}.")
+
     def display_name(self):
         if self == TestResult.SUCCESS:
             return "Success (Delegated)"
@@ -128,6 +158,13 @@ class TestCaseSummary:
 
     pte_size_bytes: int | None = None
     """ The size of the PTE file in bytes. """
+
+    def is_delegated(self):
+        return (
+            any(v > 0 for v in self.delegated_op_counts.values())
+            if self.delegated_op_counts
+            else False
+        )
 
 
 class TestSessionState:
@@ -260,11 +297,12 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
     field_names = [
         "Test ID",
         "Test Case",
-        "Backend",
         "Flow",
         "Result",
+        "Result Detail",
+        "Delegated",
         "Quantize Time (s)",
-        "Lowering Time (s)",
+        "Lower Time (s)",
     ]
 
     # Tests can have custom parameters. We'll want to report them here, so we need
@@ -289,9 +327,7 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
             [
                 f"Output {i} Error Max",
                 f"Output {i} Error MAE",
-                f"Output {i} Error MSD",
-                f"Output {i} Error L2",
-                f"Output {i} SQNR",
+                f"Output {i} SNR",
             ]
         )
     field_names.extend(
@@ -311,32 +347,35 @@ def generate_csv_report(summary: RunSummary, output: TextIO):
         row = {
             "Test ID": record.name,
             "Test Case": record.base_name,
-            "Backend": record.backend,
             "Flow": record.flow,
-            "Result": record.result.display_name(),
+            "Result": record.result.to_short_str(),
+            "Result Detail": record.result.to_detail_str(),
+            "Delegated": "True" if record.is_delegated() else "False",
             "Quantize Time (s)": (
-                record.quantize_time.total_seconds() if record.quantize_time else None
+                f"{record.quantize_time.total_seconds():.3f}"
+                if record.quantize_time
+                else None
             ),
-            "Lowering Time (s)": (
-                record.lower_time.total_seconds() if record.lower_time else None
+            "Lower Time (s)": (
+                f"{record.lower_time.total_seconds():.3f}"
+                if record.lower_time
+                else None
             ),
         }
         if record.params is not None:
             row.update({k.capitalize(): v for k, v in record.params.items()})
 
         for output_idx, error_stats in enumerate(record.tensor_error_statistics):
-            row[f"Output {output_idx} Error Max"] = error_stats.error_max
-            row[f"Output {output_idx} Error MAE"] = error_stats.error_mae
-            row[f"Output {output_idx} Error MSD"] = error_stats.error_msd
-            row[f"Output {output_idx} Error L2"] = error_stats.error_l2_norm
-            row[f"Output {output_idx} SQNR"] = error_stats.sqnr
+            row[f"Output {output_idx} Error Max"] = f"{error_stats.error_max:.3f}"
+            row[f"Output {output_idx} Error MAE"] = f"{error_stats.error_mae:.3f}"
+            row[f"Output {output_idx} SNR"] = f"{error_stats.sqnr:.3f}"
 
         row["Delegated Nodes"] = _sum_op_counts(record.delegated_op_counts)
         row["Undelegated Nodes"] = _sum_op_counts(record.undelegated_op_counts)
         row["Delegated Ops"] = _serialize_op_counts(record.delegated_op_counts)
         row["Undelegated Ops"] = _serialize_op_counts(record.undelegated_op_counts)
         row["PTE Size (Kb)"] = (
-            record.pte_size_bytes / 1000.0 if record.pte_size_bytes else ""
+            f"{record.pte_size_bytes / 1000.0:.3f}" if record.pte_size_bytes else ""
         )
 
         writer.writerow(row)
