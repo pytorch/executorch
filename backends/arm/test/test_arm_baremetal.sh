@@ -117,7 +117,6 @@ test_pytest_ops_ethosu_fvp() { # Same as test_pytest but also sometime verify us
 
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
-    backends/arm/scripts/build_portable_kernels.sh
     # Build semihosting version of the runner used by pytest testing. This builds:
     # arm_test/arm_semihosting_executor_runner_corstone-300
     # arm_test/arm_semihosting_executor_runner_corstone-320
@@ -133,7 +132,6 @@ test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify
 
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
-    backends/arm/scripts/build_portable_kernels.sh
     # Build semihosting version of the runner used by pytest testing. This builds:
     # arm_test/arm_semihosting_executor_runner_corstone-300
     # arm_test/arm_semihosting_executor_runner_corstone-320
@@ -253,6 +251,31 @@ test_full_ethosu_fvp() { # All End to End model tests
     echo "${TEST_SUITE_NAME}: PASS"
     }
 
+test_smaller_stories_llama() {
+    echo "${TEST_SUITE_NAME}: Test smaller_stories_llama"
+
+    backends/arm/scripts/build_executorch.sh
+
+    mkdir -p stories110M
+    pushd stories110M
+    wget -N https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt
+    echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+    popd
+
+    # Get path to source directory
+    pytest \
+    -c /dev/null \
+    --verbose \
+    --color=yes \
+    --numprocesses=auto \
+    --log-level=DEBUG \
+    --junit-xml=stories110M/test-reports/unittest.xml \
+    -s \
+    backends/arm/test/models/test_llama.py \
+    --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
+
+    echo "${TEST_SUITE_NAME}: PASS"
+    }
 
 
 ${TEST_SUITE}
