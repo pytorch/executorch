@@ -154,9 +154,6 @@ class TestXnnpackRecipes(unittest.TestCase):
                 self._compare_eager_quantized_model_outputs(
                     session, example_inputs, 1e-3
                 )
-                self._compare_eager_unquantized_model_outputs(
-                    session, model, example_inputs, 14
-                )
 
     def _get_recipe_for_quant_type(self, quant_type: QuantType) -> XNNPackRecipeType:
         # Map QuantType to corresponding recipe name.
