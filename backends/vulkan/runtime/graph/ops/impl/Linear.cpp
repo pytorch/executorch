@@ -178,7 +178,7 @@ void add_addmm_naive_texture_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       addmm_naive_texture_global_wg_size,
-      default_pick_local_wg_size,
+      pick_hw_square_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2, self}, vkapi::kRead}},
       // Shader params buffers
@@ -245,7 +245,7 @@ void add_addmm_naive_buffer_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       addmm_naive_buffer_global_wg_size,
-      default_pick_local_wg_size,
+      pick_hw_square_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2, self}, vkapi::kRead}},
       // Shader params buffers
