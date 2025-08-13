@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 #
-# Simple CMake build system for runtime components.
+# Simple CMake build system for runtime components. Dummy
 #
 # ### One-time setup ###
 #
