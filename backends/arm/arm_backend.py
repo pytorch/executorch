@@ -128,7 +128,7 @@ class ArmCompileSpecBuilder:
         self.compiler_flags.append("--output-format=raw")
         self.compiler_flags.append("--debug-force-regor")
 
-        base_tosa_version = "TOSA-1.0+INT"
+        base_tosa_version = "TOSA-1.0+INT+int16"
         if "u55" in target:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"

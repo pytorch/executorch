@@ -19,10 +19,8 @@ from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.examples.xnnpack import MODEL_NAME_TO_OPTIONS, QuantType
 from executorch.exir.schema import DelegateCall, Program
 from executorch.export import export, ExportRecipe, recipe_registry
-from export.types import StageType
 from torch import nn
 from torch.testing._internal.common_quantization import TestHelperModules
-from torchao.quantization.utils import compute_error
 
 
 class TestXnnpackRecipes(unittest.TestCase):
@@ -40,29 +38,6 @@ class TestXnnpackRecipes(unittest.TestCase):
         self.assertEqual(len(instructions), 1)
         self.assertIsInstance(instructions[0].instr_args, DelegateCall)
 
-    # pyre-ignore
-    def _compare_eager_quantized_model_outputs(
-        self, session, example_inputs, atol: float
-    ) -> None:
-        """Utility to compare eager quantized model output with session output after xnnpack lowering"""
-        torch_export_stage_output = session.get_stage_artifacts()[
-            StageType.TORCH_EXPORT
-        ]
-        eager_quantized_model = torch_export_stage_output.data["forward"].module()
-        output = session.run_method("forward", example_inputs[0])[0]
-        expected = eager_quantized_model(*example_inputs[0])
-        Tester._assert_outputs_equal(output, expected, atol=atol)
-
-    def _compare_eager_unquantized_model_outputs(
-        self, session, eager_unquantized_model, example_inputs, sqnr_threshold=20
-    ):
-        """Utility to compare eager unquantized model output with session output using SQNR"""
-        quantized_output = session.run_method("forward", example_inputs[0])[0]
-        original_output = eager_unquantized_model(*example_inputs[0])
-        error = compute_error(original_output, quantized_output)
-        print(f"{self._testMethodName} - SQNR: {error} dB")
-        self.assertTrue(error > sqnr_threshold)
-
     def test_basic_recipe(self) -> None:
         m_eager = TestHelperModules.TwoLinearModule().eval()
         example_inputs = [(torch.randn(9, 8),)]
@@ -71,13 +46,18 @@ class TestXnnpackRecipes(unittest.TestCase):
             example_inputs=example_inputs,
             export_recipe=ExportRecipe.get_recipe(XNNPackRecipeType.FP32),
         )
-        self._compare_eager_quantized_model_outputs(session, example_inputs, 1e-3)
+        self.assertTrue(
+            torch.allclose(
+                session.run_method("forward", example_inputs[0])[0],
+                m_eager(*example_inputs[0]),
+                atol=1e-3,
+            )
+        )
         self.check_fully_delegated(session.get_executorch_program())
-        self._compare_eager_unquantized_model_outputs(session, m_eager, example_inputs)
 
     def test_int8_dynamic_quant_recipe(self) -> None:
         test_cases = [
-            ExportRecipe.get_recipe(XNNPackRecipeType.PT2E_INT8_DYNAMIC_PER_CHANNEL),
+            ExportRecipe.get_recipe(XNNPackRecipeType.INT8_DYNAMIC_PER_CHANNEL),
         ]
 
         for export_recipe in test_cases:
@@ -90,18 +70,19 @@ class TestXnnpackRecipes(unittest.TestCase):
                         example_inputs=example_inputs,
                         export_recipe=export_recipe,
                     )
-                    self._compare_eager_quantized_model_outputs(
-                        session, example_inputs, 1e-1
+                    self.assertTrue(
+                        torch.allclose(
+                            session.run_method("forward", example_inputs[0])[0],
+                            m_eager(*example_inputs[0]),
+                            atol=1e-1,
+                        )
                     )
                     self.check_fully_delegated(session.get_executorch_program())
-                    self._compare_eager_unquantized_model_outputs(
-                        session, m_eager, example_inputs
-                    )
 
     def test_int8_static_quant_recipe(self) -> None:
         test_cases = [
-            ExportRecipe.get_recipe(XNNPackRecipeType.PT2E_INT8_STATIC_PER_CHANNEL),
-            ExportRecipe.get_recipe(XNNPackRecipeType.PT2E_INT8_STATIC_PER_TENSOR),
+            ExportRecipe.get_recipe(XNNPackRecipeType.INT8_STATIC_PER_CHANNEL),
+            ExportRecipe.get_recipe(XNNPackRecipeType.INT8_STATIC_PER_TENSOR),
         ]
 
         for export_recipe in test_cases:
@@ -114,13 +95,14 @@ class TestXnnpackRecipes(unittest.TestCase):
                         example_inputs=example_inputs,
                         export_recipe=export_recipe,
                     )
-                    self._compare_eager_quantized_model_outputs(
-                        session, example_inputs, 1e-2
+                    self.assertTrue(
+                        torch.allclose(
+                            session.run_method("forward", example_inputs[0])[0],
+                            m_eager(*example_inputs[0]),
+                            atol=1e-1,
+                        )
                     )
                     self.check_fully_delegated(session.get_executorch_program())
-                    self._compare_eager_unquantized_model_outputs(
-                        session, m_eager, example_inputs
-                    )
 
     def test_8a4w_recipe(self) -> None:
         class SimpleLinearModel(nn.Module):
@@ -134,10 +116,10 @@ class TestXnnpackRecipes(unittest.TestCase):
 
         test_cases = [
             ExportRecipe.get_recipe(
-                XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_CHANNEL,
+                XNNPackRecipeType.INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_CHANNEL,
             ),
             ExportRecipe.get_recipe(
-                XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR,
+                XNNPackRecipeType.INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR,
                 group_size=32,
             ),
         ]
@@ -151,22 +133,23 @@ class TestXnnpackRecipes(unittest.TestCase):
                     example_inputs=example_inputs,
                     export_recipe=export_recipe,
                 )
+                self.assertTrue(
+                    torch.allclose(
+                        session.run_method("forward", example_inputs[0])[0],
+                        model(*example_inputs[0]),
+                        atol=1e-2,
+                    )
+                )
                 self.check_fully_delegated(session.get_executorch_program())
-                self._compare_eager_quantized_model_outputs(
-                    session, example_inputs, 1e-3
-                )
-                self._compare_eager_unquantized_model_outputs(
-                    session, model, example_inputs, sqnr_threshold=15
-                )
 
     def _get_recipe_for_quant_type(self, quant_type: QuantType) -> XNNPackRecipeType:
         # Map QuantType to corresponding recipe name.
         if quant_type == QuantType.STATIC_PER_CHANNEL:
-            return XNNPackRecipeType.PT2E_INT8_STATIC_PER_CHANNEL
+            return XNNPackRecipeType.INT8_STATIC_PER_CHANNEL
         elif quant_type == QuantType.DYNAMIC_PER_CHANNEL:
-            return XNNPackRecipeType.PT2E_INT8_DYNAMIC_PER_CHANNEL
+            return XNNPackRecipeType.INT8_DYNAMIC_PER_CHANNEL
         elif quant_type == QuantType.STATIC_PER_TENSOR:
-            return XNNPackRecipeType.PT2E_INT8_STATIC_PER_TENSOR
+            return XNNPackRecipeType.INT8_STATIC_PER_TENSOR
         elif quant_type == QuantType.NONE:
             return XNNPackRecipeType.FP32
         else:
@@ -241,13 +224,12 @@ class TestXnnpackRecipes(unittest.TestCase):
 
         # Should not raise any exception
         recipe_w_default_group = provider.create_recipe(
-            XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR
+            XNNPackRecipeType.INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR
         )
         self.assertIsNotNone(recipe_w_default_group)
 
         recipe = provider.create_recipe(
-            XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR,
-            group_size=64,
+            XNNPackRecipeType.INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR, group_size=64
         )
         self.assertIsNotNone(recipe)
 
@@ -258,7 +240,7 @@ class TestXnnpackRecipes(unittest.TestCase):
 
         with self.assertRaises(ValueError) as cm:
             provider.create_recipe(
-                XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR,
+                XNNPackRecipeType.INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR,
                 group_size="32",  # String instead of int
             )
 

@@ -12,11 +12,7 @@ from unittest.mock import Mock
 
 import torch
 from executorch.export import ExportRecipe, ExportSession
-from executorch.export.recipe import (
-    AOQuantizationConfig,
-    LoweringRecipe,
-    QuantizationRecipe,
-)
+from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.stages import PipelineArtifact
 from executorch.export.types import StageType
 
@@ -24,7 +20,7 @@ from executorch.export.types import StageType
 class SimpleTestModel(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.linear: torch.nn.Module = torch.nn.Linear(10, 5)
+        self.linear = torch.nn.Linear(10, 5)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.linear(x)
@@ -453,7 +449,7 @@ class TestExportSessionPipelineBuilding(unittest.TestCase):
         """Test pipeline building with quantization and lowering recipes."""
         # Create comprehensive recipes
         quant_recipe = QuantizationRecipe(
-            ao_quantization_configs=[AOQuantizationConfig(Mock())],
+            ao_base_config=[Mock()],
             quantizers=[Mock()],
         )
         lowering_recipe = LoweringRecipe(
