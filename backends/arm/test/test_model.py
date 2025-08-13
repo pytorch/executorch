@@ -157,6 +157,7 @@ def build_ethosu_runtime(
     extra_flags: str,
     elf_build_path: str,
 ):
+    elf_build_path = os.path.join(elf_build_path, "cmake-out")
     run_external_cmd(
         [
             "bash",
@@ -174,7 +175,7 @@ def build_ethosu_runtime(
         ]
     )
 
-    elf_file = os.path.join(elf_build_path, "cmake-out", "arm_executor_runner")
+    elf_file = os.path.join(elf_build_path, "arm_executor_runner")
     return elf_file
 
 
