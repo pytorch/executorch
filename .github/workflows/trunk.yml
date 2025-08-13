@@ -142,7 +142,7 @@ jobs:
         fi
 
         # Report fail if simulation does not complete successfully
-        grep -qF "SUCCESS: Program complete, exiting." sim.out
+        grep -F "SUCCESS: Program complete, exiting." sim.out
         exit_status=$? #store 0 if found (success), 1 if not (failure)
         if [[ "$exit_status" -eq "1" ]]; then
             cat sim.out
