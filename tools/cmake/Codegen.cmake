@@ -346,7 +346,7 @@ endfunction()
 
 # Append the file list in the variable named `name` in build/build_variables.bzl
 # to the variable named `outputvar` in the caller's scope.
-function(append_filelist name outputvar)
+function(executorch_append_filelist name outputvar)
   # configure_file adds its input to the list of CMAKE_RERUN dependencies
   configure_file(
     ${PROJECT_SOURCE_DIR}/shim_et/xplat/executorch/build/build_variables.bzl
@@ -390,12 +390,16 @@ function(executorch_validate_build_variables)
       EXECUTORCH_SRCS
       EXECUTORCH_CORE_SRCS
       PORTABLE_KERNELS_SRCS
+      KERNELS_UTIL_ALL_DEPS_SRCS
       OPTIMIZED_KERNELS_SRCS
       QUANTIZED_KERNELS_SRCS
       PROGRAM_SCHEMA_SRCS
       OPTIMIZED_CPUBLAS_SRCS
       OPTIMIZED_NATIVE_CPU_OPS_SRCS
+      TEST_BACKEND_COMPILER_LIB_SRCS
       EXTENSION_DATA_LOADER_SRCS
+      EXTENSION_EVALUE_UTIL_SRCS
+      EXTENSION_FLAT_TENSOR_SRCS
       EXTENSION_MODULE_SRCS
       EXTENSION_RUNNER_UTIL_SRCS
       EXTENSION_LLM_RUNNER_SRCS
@@ -419,12 +423,16 @@ function(executorch_validate_build_variables)
       _executorch__srcs
       _executorch_core__srcs
       _portable_kernels__srcs
+      _kernels_util_all_deps__srcs
       _optimized_kernels__srcs
       _quantized_kernels__srcs
       _program_schema__srcs
       _optimized_cpublas__srcs
       _optimized_native_cpu_ops__srcs
+      _test_backend_compiler_lib__srcs
       _extension_data_loader__srcs
+      _extension_evalue_util__srcs
+      _extension_flat_tensor__srcs
       _extension_module__srcs
       _extension_runner_util__srcs
       _extension_llm_runner__srcs
@@ -450,7 +458,7 @@ function(executorch_validate_build_variables)
     if("${filelist_and_varname_1}" STREQUAL "_custom_ops__srcs")
       continue()
     endif()
-    append_filelist(
+    executorch_append_filelist(
       ${filelist_and_varname_0}
       "${filelist_and_varname_1}_from_build_variables"
     )
@@ -458,13 +466,14 @@ function(executorch_validate_build_variables)
        ${filelist_and_varname_1}_from_build_variables
     )
       list(JOIN ${filelist_and_varname_1} "\n" pretty_buck_generated_list)
-      list(JOIN ${filelist_and_varname_1}_from_build_variables "\n" pretty_hardcoded_list)
+      list(JOIN ${filelist_and_varname_1}_from_build_variables "\n"
+           pretty_hardcoded_list
+      )
       message(
         FATAL_ERROR
           "Buck-generated ${filelist_and_varname_1} does not match hardcoded "
           "${filelist_and_varname_0} in build_variables.bzl. Left: "
-          "${pretty_buck_generated_list}\n "
-          "Right: ${pretty_hardcoded_list}"
+          "${pretty_buck_generated_list}\n " "Right: ${pretty_hardcoded_list}"
       )
     endif()
   endforeach()
