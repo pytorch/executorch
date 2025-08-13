@@ -90,9 +90,9 @@ void DispatchNode::write_push_constant_data() {
 }
 
 bool DispatchNode::trigger_resize(ComputeGraph* graph) {
-  const bool any_value_updated = ExecuteNode::trigger_resize(graph);
+  const bool any_arg_updated = ExecuteNode::trigger_resize(graph);
 
-  if (any_value_updated) {
+  if (any_arg_updated) {
     // If this shader uses push constants, and the tensor metadata associated
     // with the push constants has changed, then the command buffer needs to be
     // re-encoded since push constants cannot be updated.
@@ -103,7 +103,7 @@ bool DispatchNode::trigger_resize(ComputeGraph* graph) {
       }
     }
   }
-  return any_value_updated;
+  return any_arg_updated;
 }
 
 } // namespace vkcompute

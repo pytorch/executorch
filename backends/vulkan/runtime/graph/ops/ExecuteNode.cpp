@@ -21,14 +21,14 @@ ExecuteNode::ExecuteNode(
       name_(name) {}
 
 bool ExecuteNode::trigger_resize(ComputeGraph* graph) {
-  const bool any_value_updated = was_any_value_updated(graph);
-  if (resize_fn_ && any_value_updated) {
+  const bool any_arg_updated = was_any_arg_updated(graph);
+  if (resize_fn_ && any_arg_updated) {
     resize_fn_(graph, args_, resize_args_);
   }
-  return any_value_updated;
+  return any_arg_updated;
 }
 
-bool ExecuteNode::was_any_value_updated(const ComputeGraph* const graph) const {
+bool ExecuteNode::was_any_arg_updated(const ComputeGraph* const graph) const {
   // Check all ValueRefs in ArgGroups
   for (const auto& arg_group : args_) {
     for (const auto& value_ref : arg_group.refs) {

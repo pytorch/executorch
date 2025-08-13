@@ -88,11 +88,11 @@ DynamicDispatchNode::DynamicDispatchNode(
 bool DynamicDispatchNode::trigger_resize(ComputeGraph* graph) {
   // DispatchNode::trigger_resize() will return true if any of the values
   // participating in this operation were updated.
-  const bool any_value_updated = DispatchNode::trigger_resize(graph);
+  const bool any_arg_updated = DispatchNode::trigger_resize(graph);
   // Only re-compute the shader, global workgroup size, and local workgroup size
   // if any of the values participating in this operation were updated.
   // Otherwise, assume that these will not have changed.
-  if (!any_value_updated) {
+  if (!any_arg_updated) {
     return false;
   }
 
