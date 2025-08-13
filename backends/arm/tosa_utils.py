@@ -15,7 +15,7 @@ import sympy  # type: ignore
 
 import torch
 
-from executorch.backends.arm.tosa_mapping import extract_tensor_meta, TosaArg
+from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 
 from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -24,13 +24,6 @@ from torch._subclasses.fake_tensor import FakeTensor
 from torch.fx import Node
 
 logger = logging.getLogger(__name__)
-
-
-def getNodeArgs(node: Node, tosa_spec: TosaSpecification) -> list[TosaArg]:
-    try:
-        return [TosaArg(arg, tosa_spec) for arg in node.args]
-    except ValueError as e:
-        raise ValueError(f"Failed processing args to op:\n{node}") from e
 
 
 def are_fake_tensors_broadcastable(

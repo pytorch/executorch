@@ -7,7 +7,7 @@
 # pyre-strict
 
 import logging
-from typing import Any, Callable, Dict, final, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, final, List, Mapping, Optional, Set, Tuple
 
 import executorch.backends.vulkan.utils as utils
 
@@ -17,6 +17,7 @@ from executorch.backends.vulkan.op_registry import (
     get_op_features,
     has_impl,
     OpFeatures,
+    OpKey,
     vulkan_supported_ops,
 )
 
@@ -55,11 +56,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
         texture_limits: utils.ImageExtents,
         buffer_limit: int,
         require_dynamic_shape: bool = False,
+        operator_blocklist: Optional[Set[OpKey]] = None,
+        operator_allowlist: Optional[Set[OpKey]] = None,
     ) -> None:
         super().__init__()
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
+        self.operator_blocklist: Set[OpKey] = (
+            operator_blocklist if operator_blocklist is not None else set()
+        )
+        self.operator_allowlist = operator_allowlist
 
     def op_node_is_compatible(  # noqa: C901: Function is too complex
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -77,6 +84,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
             assert isinstance(first_arg, torch._ops.OpOverload)
             target = first_arg.name()
 
+        # Operator allow list is only used for torch ops
+        if (
+            utils.is_torch_op_node(node)
+            and (self.operator_allowlist is not None)
+            and (target not in self.operator_allowlist)
+        ):
+            return False, "op is not in allowlist"
+
+        if target in self.operator_blocklist:
+            return False, "op is in blocklist"
+
         # Extract the features for the node's operator, if no override was provided
         if features is None:
             if not has_impl(target):
@@ -93,7 +111,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if op_repsets.any_is_empty():
             return (
                 False,
-                "No valid representations for a tensor in the operation",
+                f"no valid representations for op {utils.node_io_str(node)}",
             )
 
         return True, "Op is compatible"
@@ -277,6 +295,8 @@ class VulkanPartitioner(Partitioner):
     def __init__(
         self,
         compile_options: Optional[Dict[str, Any]] = None,
+        operator_blocklist: Optional[List[OpKey]] = None,
+        operator_allowlist: Optional[List[OpKey]] = None,
     ) -> None:
         self.options: Dict[str, Any] = {}
         if compile_options is not None:
@@ -284,6 +304,18 @@ class VulkanPartitioner(Partitioner):
 
         compile_spec = parse_compile_options(self.options)
         self.delegation_spec = DelegationSpec(VulkanBackend.__name__, compile_spec)
+
+        self.operator_blocklist: Set[OpKey] = set()
+        if operator_blocklist is not None:
+            for entry in operator_blocklist or []:
+                self.operator_blocklist.add(entry)
+
+        self.operator_allowlist: Optional[Set[OpKey]] = None
+        if operator_allowlist is not None:
+            self.operator_allowlist = set()
+            for entry in operator_allowlist:
+                assert self.operator_allowlist is not None
+                self.operator_allowlist.add(entry)
 
     def ops_to_not_decompose(
         self, ep: ExportedProgram
@@ -308,6 +340,8 @@ class VulkanPartitioner(Partitioner):
                 texture_limits,
                 buffer_limit,
                 require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
+                operator_blocklist=self.operator_blocklist,
+                operator_allowlist=self.operator_allowlist,
             ),
             allows_single_node_partition=True,
         )

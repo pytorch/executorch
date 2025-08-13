@@ -8,6 +8,8 @@ import typing
 from typing import final
 
 import torch
+import torch.fx
+
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
 )
@@ -65,8 +67,9 @@ class ExecutorBackendPartitioner(Partitioner):
                 partition_tags[delegation_tag] = self.delegation_spec
 
                 # Tag the delegate submodules
-                if node.args[0].op == "get_attr":
-                    node.args[0].meta["delegation_tag"] = delegation_tag
+                arg0 = node.args[0]
+                if isinstance(arg0, torch.fx.Node) and arg0.op == "get_attr":
+                    arg0.meta["delegation_tag"] = delegation_tag
 
         return PartitionResult(
             tagged_exported_program=edge_exported_program,

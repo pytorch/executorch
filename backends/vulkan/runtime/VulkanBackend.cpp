@@ -48,6 +48,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::kTensorDimensionLimit;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 using namespace vkcompute;
 
@@ -547,7 +548,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");
 
     ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);

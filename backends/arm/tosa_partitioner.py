@@ -160,6 +160,7 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.linear.default,
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.logit.default,
         ] + ops_to_not_decompose_if_quant_op
 
         tosa_spec = get_tosa_spec(self.delegation_spec.compile_specs)

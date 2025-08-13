@@ -197,8 +197,11 @@ class Backend1PartitionerDemo(Partitioner):
                     and node.target is torch.ops.higher_order.cond
                 ):
                     # Tag the arguments that take in the submodules to cond
-                    node.args[1].meta["delegation_tag"] = delegation_tag
-                    node.args[2].meta["delegation_tag"] = delegation_tag
+                    arg1, arg2 = node.args[1], node.args[2]
+                    if isinstance(arg1, torch.fx.Node):
+                        arg1.meta["delegation_tag"] = delegation_tag
+                    if isinstance(arg2, torch.fx.Node):
+                        arg2.meta["delegation_tag"] = delegation_tag
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
         return partition_tags

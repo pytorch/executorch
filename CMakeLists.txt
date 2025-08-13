@@ -763,6 +763,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   endif()
 
+  if(EXECUTORCH_BUILD_VULKAN)
+    list(APPEND _dep_libs vulkan_backend)
+  endif()
+
   # compile options for pybind
   set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
                               -fexceptions

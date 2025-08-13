@@ -14,7 +14,7 @@ import torch.fx
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.arm.tosa_utils import getNodeArgs, tosa_shape
+from executorch.backends.arm.tosa_utils import tosa_shape
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -33,7 +33,10 @@ def process_call_function(
     tosa_spec: TosaSpecification,
 ):
     # Unpack arguments and convert
-    inputs = getNodeArgs(node, tosa_spec)
+    try:
+        inputs = [TosaArg(arg, tosa_spec) for arg in node.args]
+    except ValueError as e:
+        raise ValueError(f"Failed processing args to op:\n{node}") from e
 
     # Convert output (this node itself)
     try:

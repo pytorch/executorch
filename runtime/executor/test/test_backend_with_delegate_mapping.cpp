@@ -26,6 +26,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 struct DemoOp {
   const char* name;
@@ -135,7 +136,7 @@ class BackendWithDelegateMapping final : public BackendInterface {
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     (void)args;
     // example: [('prim::Constant#1', 14), ('aten::add', 15)]
     auto op_list = static_cast<const DemoOpList*>(handle);

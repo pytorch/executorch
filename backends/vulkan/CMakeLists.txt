@@ -101,7 +101,7 @@ set_target_properties(vulkan_schema PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
   vulkan_schema
   INTERFACE
-    ${SCHEMA_INCLUDE_DIR}
+    $<BUILD_INTERFACE:${SCHEMA_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
 )
 

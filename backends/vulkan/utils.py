@@ -18,6 +18,8 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
 
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
+
 from executorch.exir.tensor import TensorSpec
 
 from torch._export.utils import is_buffer, is_param
@@ -52,6 +54,18 @@ _Q_OPS = {
 
 # Convenience type
 MaybeNodeList = Union[torch.fx.Node, List[torch.fx.Node], Tuple[torch.fx.Node]]
+
+
+def is_torch_op_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+
+    if isinstance(node.target, EdgeOpOverload):
+        return True
+    if isinstance(node.target, torch._ops.OpOverload):
+        return True
+
+    return False
 
 
 def is_dequant_node(node: torch.fx.Node) -> bool:
@@ -1031,6 +1045,49 @@ def get_node_repr(node) -> Union[TensorRepr, TensorReprList]:
 ##
 ## Misc
 ##
+
+
+def get_tensor_val_str(tensor_val: FakeTensor) -> str:
+    return f"{tensor_val.dtype}: {tensor_val.shape}"
+
+
+def get_node_val_str(node: torch.fx.Node) -> str:
+    if is_single_tensor_node(node):
+        assert isinstance(node.meta["val"], FakeTensor)
+        return get_tensor_val_str(node.meta["val"])
+    elif is_tensor_collection_node(node):
+        assert isinstance(node.meta["val"], (list, tuple))
+        return f"[{', '.join(get_tensor_val_str(t) for t in node.meta['val'])}]"
+    else:
+        return str(node.meta["val"])
+
+
+def get_arg_node_val_str(arg_node: Any) -> str:
+    if isinstance(arg_node, torch.fx.Node):
+        return get_node_val_str(arg_node)
+    elif isinstance(arg_node, (list, tuple)):
+        return f"[{', '.join(get_arg_node_val_str(n) for n in arg_node)}]"
+    else:
+        return str(arg_node)
+
+
+def node_io_str(node: torch.fx.Node) -> str:
+    target = node.target
+    if isinstance(target, EdgeOpOverload):
+        assert isinstance(target, EdgeOpOverload)
+        target_name = target.__name__
+    elif isinstance(target, torch._ops.OpOverload):
+        assert isinstance(target, torch._ops.OpOverload)
+        target_name = target.name()
+    else:
+        target_name = str(target)
+
+    out_str = f"{get_node_val_str(node)} = {target_name}("
+    for arg in node.args:
+        out_str += get_arg_node_val_str(arg) + ", "
+
+    out_str += " ...)"
+    return out_str
 
 
 def update_program_state_dict(

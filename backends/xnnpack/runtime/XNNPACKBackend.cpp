@@ -33,6 +33,7 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 class XnnpackBackend final
     : public ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface {
@@ -126,7 +127,7 @@ class XnnpackBackend final
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE

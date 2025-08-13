@@ -99,7 +99,7 @@ ET_NODISCARD virtual Result<DelegateHandle*> init(
 ET_NODISCARD virtual Error execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
-    EValue** args);
+    Span<EValue*> args);
 
 // [optional] Runtime destroy. Destroy the resource held by the backend
 virtual void destroy(ET_UNUSED DelegateHandle* handle);
