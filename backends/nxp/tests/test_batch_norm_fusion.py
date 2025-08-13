@@ -15,6 +15,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     AddMMConverter,
     MMConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import (
+    ViewCopyConverter,
+)
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import OverrideSupportedTargets
 from torch import nn
@@ -203,12 +206,13 @@ def test_batch_norm_linear_fusing__full_pipeline(bias: bool):
     #  But that doesn't affect the validity of this test.
     with OverrideSupportedTargets(AddMMConverter, new_targets=[]):
         with OverrideSupportedTargets(MMConverter, new_targets=[]):
-            edge_program = to_quantized_edge_program(
-                module, tuple(input_shape)
-            ).exported_program()
-            nodes = list(edge_program.graph.nodes)
+            with OverrideSupportedTargets(ViewCopyConverter, new_targets=[]):
+                edge_program = to_quantized_edge_program(
+                    module, tuple(input_shape)
+                ).exported_program()
+                nodes = list(edge_program.graph.nodes)
 
-    assert len(nodes) == 14
+    assert len(nodes) == 18
     assert not any(
         node.op == "call_function" and "batch_norm" in node.target.__name__
         for node in nodes

@@ -113,7 +113,6 @@ Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
   // DO DESERIALIZE
   state_ = DESERIALIZE;
   QNN_EXECUTORCH_LOG_INFO("Caching: Caching is in RESTORE MODE.");
-
   auto [status, _, context_size, context_ptr] =
       QnnContextCustomProtocol().DeserializeContextCustomBuffer(
           qnn_context_blob_.buffer);
