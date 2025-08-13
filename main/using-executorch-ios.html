@@ -526,6 +526,7 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">kernels_llm</span></code> - Custom kernels for LLMs</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">kernels_optimized</span></code> - Accelerated generic CPU kernels</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">kernels_quantized</span></code> - Quantized kernels</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kernels_torchao</span></code> - Quantized CPU kernels from torchao</p></li>
 </ul>
 <p>Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.</p>
 <p><strong>Note:</strong> To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the <code class="docutils literal notranslate"><span class="pre">executorch_debug</span></code> framework. For optimal performance, always link against the Release version of the deliverables (those without the <code class="docutils literal notranslate"><span class="pre">_debug</span></code> suffix), which have all logging overhead removed.</p>
