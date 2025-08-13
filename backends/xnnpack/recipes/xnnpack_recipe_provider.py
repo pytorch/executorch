@@ -25,7 +25,6 @@ from executorch.backends.xnnpack.utils.configs import (
     get_xnnpack_executorch_backend_config,
 )
 from executorch.export import (
-    AOQuantizationConfig,
     BackendRecipeProvider,
     ExportRecipe,
     LoweringRecipe,
@@ -58,37 +57,31 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
         if recipe_type == XNNPackRecipeType.FP32:
             return self._build_fp32_recipe(recipe_type)
 
-        elif recipe_type == XNNPackRecipeType.PT2E_INT8_DYNAMIC_PER_CHANNEL:
+        elif recipe_type == XNNPackRecipeType.INT8_DYNAMIC_PER_CHANNEL:
             return self._build_quantized_recipe(
                 recipe_type, is_per_channel=True, is_dynamic=True
             )
 
-        elif recipe_type == XNNPackRecipeType.PT2E_INT8_STATIC_PER_CHANNEL:
+        elif recipe_type == XNNPackRecipeType.INT8_STATIC_PER_CHANNEL:
             return self._build_quantized_recipe(
                 recipe_type, is_per_channel=True, is_dynamic=False
             )
 
-        elif recipe_type == XNNPackRecipeType.PT2E_INT8_STATIC_PER_TENSOR:
+        elif recipe_type == XNNPackRecipeType.INT8_STATIC_PER_TENSOR:
             return self._build_quantized_recipe(
                 recipe_type, is_per_channel=False, is_dynamic=False
             )
 
-        elif (
-            recipe_type
-            == XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_CHANNEL
-        ):
-            return self._build_torchao_quantized_recipe(
+        elif recipe_type == XNNPackRecipeType.INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_CHANNEL:
+            return self._build_int8da_intx_weight_recipe(
                 recipe_type=recipe_type,
                 is_per_channel=True,
                 weight_dtype=torch.int4,
             )
 
-        elif (
-            recipe_type
-            == XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR
-        ):
+        elif recipe_type == XNNPackRecipeType.INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR:
             group_size = kwargs.get("group_size", 32)
-            return self._build_torchao_quantized_recipe(
+            return self._build_int8da_intx_weight_recipe(
                 recipe_type=recipe_type,
                 is_per_channel=False,
                 weight_dtype=torch.int4,
@@ -139,7 +132,7 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
             executorch_backend_config=get_xnnpack_executorch_backend_config(),
         )
 
-    def _build_torchao_quantized_recipe(
+    def _build_int8da_intx_weight_recipe(
         self,
         recipe_type: RecipeType,
         is_per_channel: bool = True,
@@ -148,21 +141,17 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
     ) -> ExportRecipe:
         if is_per_channel:
             weight_granularity = PerAxis(axis=0)
-            assert weight_dtype == torch.int4 or weight_dtype == torch.int8
         else:
             weight_granularity = PerGroup(group_size=group_size)
-            assert weight_dtype == torch.int4
 
-        config = AOQuantizationConfig(
-            Int8DynamicActivationIntxWeightConfig(
-                weight_dtype=weight_dtype,
-                weight_granularity=weight_granularity,
-            )
+        config = Int8DynamicActivationIntxWeightConfig(
+            weight_dtype=weight_dtype,
+            weight_granularity=weight_granularity,
         )
 
         quant_recipe = QuantizationRecipe(
             quantizers=None,
-            ao_quantization_configs=[config],
+            ao_base_config=[config],
         )
 
         return ExportRecipe(
@@ -173,10 +162,7 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
         )
 
     def _validate_recipe_kwargs(self, recipe_type: RecipeType, **kwargs: Any) -> None:
-        if (
-            recipe_type
-            == XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR
-        ):
+        if recipe_type == XNNPackRecipeType.INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR:
             expected_keys = {"group_size"}
             unexpected = set(kwargs.keys()) - expected_keys
             if unexpected:
