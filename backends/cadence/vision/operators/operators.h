@@ -15,9 +15,9 @@
 
 namespace cadence {
 namespace impl {
-namespace cpu {
+namespace vision {
 namespace native {
-namespace {
+
 using ::executorch::runtime::getLeadingDims;
 
 #define ET_FORALL_CADENCE_QUANTIZED_TYPES(_) \
@@ -56,8 +56,7 @@ inline __attribute__((always_inline)) void linear_(
   }
 }
 
-} // namespace
 } // namespace native
-} // namespace cpu
+} // namespace vision
 } // namespace impl
 } // namespace cadence

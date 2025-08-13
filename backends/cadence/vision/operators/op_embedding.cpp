@@ -8,12 +8,13 @@
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-namespace torch {
-namespace executor {
-namespace native {
-
 using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
+
+namespace cadence {
+namespace impl {
+namespace vision {
+namespace native {
 
 void embedding_out(
     KernelRuntimeContext& ctx,
@@ -37,5 +38,6 @@ void embedding_out(
 }
 
 } // namespace native
-} // namespace executor
-} // namespace torch
+} // namespace vision
+} // namespace impl
+} // namespace cadence

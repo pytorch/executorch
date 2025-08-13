@@ -25,7 +25,7 @@
 - op: add.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::add_out
+      kernel_name: cadence::impl::vision::add_out
 
 - op: bmm.out
   kernels:
@@ -55,7 +55,7 @@
 - op: embedding.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::embedding_out
+      kernel_name: cadence::impl::vision::embedding_out
 
 - op: empty.out
   kernels:
@@ -70,7 +70,7 @@
 - op: full.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::full_out
+      kernel_name: cadence::impl::vision::full_out
 
 - op: gelu.out
   kernels:
@@ -135,7 +135,7 @@
 - op: view_copy.out
   kernels:
     - arg_meta: null
-      kernel_name: torch::executor::view_copy_out
+      kernel_name: cadence::impl::vision::view_copy_out
 
 - op: where.self_out
   kernels:

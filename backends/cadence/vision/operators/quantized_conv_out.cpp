@@ -67,7 +67,6 @@ __attribute__((noinline)) void conv2d_nchw_core_generic(
     float bias_scale = 1,
     float out_scale = 1,
     OT out_zero_point = 0) {
-  //printf("enter2\n");
   float inv_out_scale = 1. / out_scale;
   bool zero_pad_unit_dilation = d0 == 1 && d1 == 1 && p0 == 0 && p1 == 0;
 
@@ -153,7 +152,6 @@ __attribute__((noinline)) void conv2d_nchw_core_generic(
       }
     }
   }
-  //printf("exit2\n");
 }
 
 template <
