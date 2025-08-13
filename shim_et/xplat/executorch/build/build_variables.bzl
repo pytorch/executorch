@@ -58,7 +58,6 @@ EXECUTORCH_CORE_SRCS = sorted([
     "runtime/executor/tensor_parser_portable.cpp",
     "runtime/executor/pte_data_map.cpp",
     "runtime/kernel/operator_registry.cpp",
-    "runtime/platform/default/posix.cpp",
     "schema/extended_header.cpp",
 ] + ["runtime/executor/" + x for x in PROGRAM_NO_PRIM_OPS_SRCS] + ["runtime/platform/" + x for x in PLATFORM_SRCS])
 
