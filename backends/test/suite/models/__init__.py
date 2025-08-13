@@ -119,7 +119,7 @@ def run_model_test(
         flow,
         context.test_name,
         context.test_base_name,
-        0, # subtest_index - currently unused for model tests
+        0,  # subtest_index - currently unused for model tests
         context.params,
         dynamic_shapes=dynamic_shapes,
     )
