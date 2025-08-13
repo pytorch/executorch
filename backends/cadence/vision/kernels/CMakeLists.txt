@@ -27,3 +27,5 @@ target_include_directories(
     ${EXECUTORCH_ROOT}/backends/cadence/vision/third-party/include_private 
   ${_common_include_directories}
 )
+
+target_link_libraries(cadence_kernels PRIVATE idma)

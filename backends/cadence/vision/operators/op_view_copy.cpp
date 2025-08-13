@@ -8,12 +8,14 @@
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-namespace torch {
-namespace executor {
-namespace native {
-
 using executorch::aten::Tensor;
+using executorch::aten::IntArrayRef;
 using executorch::runtime::KernelRuntimeContext;
+
+namespace cadence {
+namespace impl {
+namespace vision {
+namespace native {
 
 Tensor& view_copy_out(
     KernelRuntimeContext& ctx,
@@ -25,5 +27,6 @@ Tensor& view_copy_out(
 }
 
 } // namespace native
-} // namespace executor
-} // namespace torch
+} // namespace vision
+} // namespace impl
+} // namespace cadence

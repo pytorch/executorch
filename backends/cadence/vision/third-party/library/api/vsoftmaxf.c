@@ -129,8 +129,8 @@ void vsoftmaxf(float32_t *y, const float32_t *x, int N) {
          * components.     */
         /* Q54 <- Q24*Q30 */
         w = IVP_MULN_2X32(xin_i, invln2_Q30);
-        exp = IVP_PACKVNRN_2X64W(w, 54);
-        fr = IVP_SRLN_2X32(IVP_PACKVNRN_2X64W(w, 22), 1);
+        exp = IVP_PACKVRNRN_2X64W(w, 54);
+        fr = IVP_SRLN_2X32(IVP_PACKVRNRN_2X64W(w, 22), 1);
         /* polynomial for 2^x */
         f2 = IVP_PACKVRN_2X64W(IVP_MULN_2X32(fr, fr), 31);
         y1 = IVP_LSRN_2X32_I(pTbl, 0 * sizeof(int32_t));
@@ -177,8 +177,8 @@ void vsoftmaxf(float32_t *y, const float32_t *x, int N) {
          * components.     */
         /* Q54 <- Q24*Q30 */
         w = IVP_MULN_2X32(xin_i, invln2_Q30);
-        exp = IVP_PACKVNRN_2X64W(w, 54);
-        fr = IVP_SRLN_2X32(IVP_PACKVNRN_2X64W(w, 22), 1);
+        exp = IVP_PACKVRNRN_2X64W(w, 54);
+        fr = IVP_SRLN_2X32(IVP_PACKVRNRN_2X64W(w, 22), 1);
         /* polynomial for 2^x */
         f2 = IVP_PACKVRN_2X64W(IVP_MULN_2X32(fr, fr), 31);
         y1 = IVP_LSRN_2X32_I(pTbl, 0 * sizeof(int32_t));

@@ -11,8 +11,19 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::aten::Scalar;
+using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::promoteTypes;
+using torch::executor::Error;
+using torch::executor::apply_binary_elementwise_fn;
+using executorch::runtime::canCast;
+using torch::executor::native::utils::extract_scalar;
+
+namespace cadence {
+namespace impl {
+namespace vision {
 namespace native {
 
 Tensor& add_out(
@@ -22,6 +33,8 @@ Tensor& add_out(
     const Scalar& alpha,
     Tensor& out) {
   (void)ctx;
+
+  using namespace torch::executor::native::utils;
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -39,7 +52,7 @@ Tensor& add_out(
   using CTYPE_IN = float;
   using CTYPE_OUT = float;
   CTYPE_IN alpha_val;
-  ET_EXTRACT_SCALAR(alpha, alpha_val);
+  ET_CHECK_MSG(extract_scalar(alpha, &alpha_val), "Could not be extracted: wrong type or out of range");
 
   apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
       [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
@@ -57,5 +70,6 @@ Tensor& add_out(
 }
 
 } // namespace native
-} // namespace executor
-} // namespace torch
+} // namespace vision
+} // namespace impl
+} // namespace cadence
