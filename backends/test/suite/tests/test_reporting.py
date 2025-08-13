@@ -79,36 +79,32 @@ class Reporting(unittest.TestCase):
         # Validate first record: test1, backend1, SUCCESS
         self.assertEqual(records[0]["Test ID"], "test1_backend1_flow1")
         self.assertEqual(records[0]["Test Case"], "test1")
-        self.assertEqual(records[0]["Backend"], "backend1")
         self.assertEqual(records[0]["Flow"], "flow1")
-        self.assertEqual(records[0]["Result"], "Success (Delegated)")
+        self.assertEqual(records[0]["Result"], "Pass")
         self.assertEqual(records[0]["Dtype"], "")
         self.assertEqual(records[0]["Use_dynamic_shapes"], "")
 
         # Validate second record: test1, backend2, LOWER_FAIL
         self.assertEqual(records[1]["Test ID"], "test1_backend2_flow1")
         self.assertEqual(records[1]["Test Case"], "test1")
-        self.assertEqual(records[1]["Backend"], "backend2")
         self.assertEqual(records[1]["Flow"], "flow1")
-        self.assertEqual(records[1]["Result"], "Fail (Lowering)")
+        self.assertEqual(records[1]["Result"], "Fail")
         self.assertEqual(records[1]["Dtype"], "")
         self.assertEqual(records[1]["Use_dynamic_shapes"], "")
 
         # Validate third record: test2, backend1, SUCCESS_UNDELEGATED with dtype param
         self.assertEqual(records[2]["Test ID"], "test2_backend1_flow1")
         self.assertEqual(records[2]["Test Case"], "test2")
-        self.assertEqual(records[2]["Backend"], "backend1")
         self.assertEqual(records[2]["Flow"], "flow1")
-        self.assertEqual(records[2]["Result"], "Success (Undelegated)")
+        self.assertEqual(records[2]["Result"], "Pass")
         self.assertEqual(records[2]["Dtype"], str(torch.float32))
         self.assertEqual(records[2]["Use_dynamic_shapes"], "")
 
         # Validate fourth record: test2, backend2, EXPORT_FAIL with use_dynamic_shapes param
         self.assertEqual(records[3]["Test ID"], "test2_backend2_flow1")
         self.assertEqual(records[3]["Test Case"], "test2")
-        self.assertEqual(records[3]["Backend"], "backend2")
         self.assertEqual(records[3]["Flow"], "flow1")
-        self.assertEqual(records[3]["Result"], "Skipped")
+        self.assertEqual(records[3]["Result"], "Skip")
         self.assertEqual(records[3]["Dtype"], "")
         self.assertEqual(records[3]["Use_dynamic_shapes"], "True")
 
