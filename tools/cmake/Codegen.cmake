@@ -462,10 +462,9 @@ function(executorch_validate_build_variables)
       ${filelist_and_varname_0}
       "${filelist_and_varname_1}_from_build_variables"
     )
-    # The Buck and CMake mechanisms for getting the default PAL set up
-    # are different. Prevent the Buck choice from flowing into CMake
-    # and causing validation to fail, just like we do in our
-    # CMakeLists.txt.
+    # The Buck and CMake mechanisms for getting the default PAL set up are
+    # different. Prevent the Buck choice from flowing into CMake and causing
+    # validation to fail, just like we do in our CMakeLists.txt.
     if("${filelist_and_varname_1}" STREQUAL "_executorch_core__srcs")
       list(FILTER ${filelist_and_varname_1} EXCLUDE REGEX
            "runtime/platform/default/[^/]*.cpp$"
