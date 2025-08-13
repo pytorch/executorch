@@ -453,8 +453,9 @@ set(EXECUTORCH_BUILD_VARIABLES_VARNAMES
 # involve getting these lists to match!
 function(executorch_validate_build_variables)
   include(${EXECUTORCH_SRCS_FILE})
-  foreach(filelist_and_varname IN ZIP_LISTS EXECUTORCH_BUILD_VARIABLES_FILELISTS
-                                  EXECUTORCH_BUILD_VARIABLES_VARNAMES
+  foreach(filelist_and_varname IN
+          ZIP_LISTS EXECUTORCH_BUILD_VARIABLES_FILELISTS
+          EXECUTORCH_BUILD_VARIABLES_VARNAMES
   )
     executorch_append_filelist(
       ${filelist_and_varname_0}
@@ -507,16 +508,16 @@ function(executorch_validate_build_variables)
 endfunction()
 
 function(executorch_load_build_variables)
-  foreach(filelist_and_varname IN ZIP_LISTS EXECUTORCH_BUILD_VARIABLES_FILELISTS
-                                  EXECUTORCH_BUILD_VARIABLES_VARNAMES
+  foreach(filelist_and_varname IN
+          ZIP_LISTS EXECUTORCH_BUILD_VARIABLES_FILELISTS
+          EXECUTORCH_BUILD_VARIABLES_VARNAMES
   )
     executorch_append_filelist(
-      ${filelist_and_varname_0}
-      "${filelist_and_varname_1}"
+      ${filelist_and_varname_0} "${filelist_and_varname_1}"
     )
     set(${filelist_and_varname_1}
-      "${${filelist_and_varname_1}}"
-      PARENT_SCOPE
+        "${${filelist_and_varname_1}}"
+        PARENT_SCOPE
     )
   endforeach()
 endfunction()

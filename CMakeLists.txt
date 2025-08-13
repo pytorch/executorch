@@ -309,10 +309,13 @@ set(_common_include_directories
 )
 
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
 if(EXECUTORCH_SRCS_FILE)
-  message(WARNING "EXECUTORCH_SRCS_FILE is no longer necessary and will not affect the build.")
+  message(
+    WARNING
+      "EXECUTORCH_SRCS_FILE is no longer necessary and will not affect the build."
+  )
 endif()
 executorch_load_build_variables()
 if(NOT EXECUTORCH_SRCS_FILE)

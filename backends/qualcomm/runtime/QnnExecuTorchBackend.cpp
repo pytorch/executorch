@@ -51,8 +51,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     qnn_context_blob.buffer = ctx_bin;
   } else {
     // This buffer will be verified again in QnnBackendCache.
-    QNN_EXECUTORCH_LOG_INFO(
-        "Deserializing processed data using QnnQcirCustomProtocol");
+    QNN_EXECUTORCH_LOG_INFO("Deserializing processed data using Dlc");
     qnn_context_blob.buffer = const_cast<void*>(processed->data());
     qnn_context_blob.nbytes = processed->size();
   }
