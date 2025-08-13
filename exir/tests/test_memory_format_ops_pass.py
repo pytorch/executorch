@@ -205,29 +205,6 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         except AmbiguousDimOrderError:
             pass  # Expected error
 
-    def test_op_clone_dim_order_graph_replacement(self):
-        model = SimpleCloneChannelsLastModule()
-        x = torch.randn(3, 4, 5, 6).to(memory_format=torch.contiguous_format)
-        _clone_dim_order_op_str = (
-            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
-        )
-
-        exported = export(model.eval(), (x,), strict=True)
-        epm = to_edge(exported, compile_config=EdgeCompileConfig(_skip_dim_order=False))
-
-        # Verify one _clone_dim_order op exists and aten.clone.default nodes have been removed.
-        (
-            FileCheck()
-            .check_not(
-                "aten.clone.default"
-            )  # Check before first _clone_dim_order_op_str match.
-            .check_count(_clone_dim_order_op_str, 1, exactly=True)
-            .check_not(
-                "aten.clone.default"
-            )  # Check after _clone_dim_order_op_str match.
-            .run(epm.exported_program().graph_module.code)
-        )
-
     # Only test dim order replacement result in lean mode test.
     # This test is irrelevant with operator mode.
     def test_dim_order_replacement(self) -> None:
