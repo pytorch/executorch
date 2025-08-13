@@ -48,7 +48,6 @@ EXECUTORCH_CORE_SRCS = [
     "runtime/executor/tensor_parser_portable.cpp",
     "runtime/kernel/operator_registry.cpp",
     "runtime/platform/abort.cpp",
-    "runtime/platform/default/posix.cpp",
     "runtime/platform/log.cpp",
     "runtime/platform/platform.cpp",
     "runtime/platform/profiler.cpp",
