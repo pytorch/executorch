@@ -33,7 +33,8 @@ class QnnExecuTorchBackend final
   executorch::runtime::Error execute(
       ET_UNUSED executorch::runtime::BackendExecutionContext& context,
       executorch::runtime::DelegateHandle* handle,
-      executorch::runtime::EValue** args) const override;
+      executorch::runtime::Span<executorch::runtime::EValue*> args)
+      const override;
 
   ET_NODISCARD executorch::runtime::Error set_option(
       executorch::runtime::BackendOptionContext& context,
