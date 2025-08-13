@@ -51,7 +51,6 @@ EXECUTORCH_CORE_SRCS = sorted([
     "runtime/executor/pte_data_map.cpp",
     "runtime/kernel/operator_registry.cpp",
     "runtime/platform/abort.cpp",
-    "runtime/platform/default/posix.cpp",
     "runtime/platform/log.cpp",
     "runtime/platform/platform.cpp",
     "runtime/platform/profiler.cpp",

@@ -14,11 +14,15 @@ from torch.export import ExportedProgram
 class ToEdgeTransformAndLower(Stage):
     def __init__(
         self,
-        default_partitioner_cls: Type,
+        default_partitioner_cls: Type | None = None,
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
     ):
-        self.partitioners = partitioners or [default_partitioner_cls()]
+        self.partitioners = (
+            partitioners or [default_partitioner_cls()]
+            if default_partitioner_cls is not None
+            else []
+        )
         self.edge_compile_conf = edge_compile_config or EdgeCompileConfig()
         self.edge_dialect_program = None
 
