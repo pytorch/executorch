@@ -15,7 +15,7 @@
 # unnecessary duplication, and people will invariably forget to update one or the other.
 # 3) List them somewhere CMake and Buck can both get at them; that's this file. Buck
 # files can load() it, and our CMake build evaluates it with Python. (See
-# append_filelist in build/Codegen.cmake.)
+# executorch_append_filelist in build/Codegen.cmake.)
 #
 # Inconveniently, the Buck target layout is much more granular than the CMake library
 # layout, leading to several complications:
@@ -230,6 +230,27 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/pattern/unary_ufunc_realhbf16.cpp",
 ]
 
+KERNELS_UTIL_ALL_DEPS_SRCS = [
+    "kernels/portable/cpu/util/activation_ops_util.cpp",
+    "kernels/portable/cpu/util/advanced_index_util.cpp",
+    "kernels/portable/cpu/util/arange_util.cpp",
+    "kernels/portable/cpu/util/broadcast_util.cpp",
+    "kernels/portable/cpu/util/copy_ops_util.cpp",
+    "kernels/portable/cpu/util/delinearize_index.cpp",
+    "kernels/portable/cpu/util/distance_util.cpp",
+    "kernels/portable/cpu/util/dtype_util.cpp",
+    "kernels/portable/cpu/util/index_util.cpp",
+    "kernels/portable/cpu/util/kernel_ops_util.cpp",
+    "kernels/portable/cpu/util/matmul_ops_util.cpp",
+    "kernels/portable/cpu/util/normalization_ops_util.cpp",
+    "kernels/portable/cpu/util/padding_util.cpp",
+    "kernels/portable/cpu/util/reduce_util.cpp",
+    "kernels/portable/cpu/util/repeat_util.cpp",
+    "kernels/portable/cpu/util/select_copy_util.cpp",
+    "kernels/portable/cpu/util/slice_util.cpp",
+    "kernels/portable/cpu/util/upsample_util.cpp",
+]
+
 OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/binary_ops.cpp",
     "kernels/optimized/cpu/op_add.cpp",
@@ -297,9 +318,22 @@ OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
     "kernels/optimized/cpu/op_where.cpp",
 ]
 
+TEST_BACKEND_COMPILER_LIB_SRCS = [
+    "runtime/executor/test/test_backend_compiler_lib.cpp",
+]
+
 EXTENSION_DATA_LOADER_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
     "extension/data_loader/mmap_data_loader.cpp",
+]
+
+EXTENSION_EVALUE_UTIL_SRCS = [
+    "extension/evalue_util/print_evalue.cpp",
+]
+
+EXTENSION_FLAT_TENSOR_SRCS = [
+    "extension/flat_tensor/flat_tensor_data_map.cpp",
+    "extension/flat_tensor/serialize/flat_tensor_header.cpp",
 ]
 
 EXTENSION_MODULE_SRCS = [
