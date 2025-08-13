@@ -31,7 +31,7 @@ def test_int64_model_tosa_FP():
         "executorch_exir_dialects_edge__ops_aten_embedding_default": 1,
     }
     op_checks_after = {
-        "executorch_exir_dialects_edge__ops_aten__to_copy_default": 1,
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
         "executorch_exir_dialects_edge__ops_aten_embedding_default": 1,
     }
 

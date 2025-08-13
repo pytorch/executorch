@@ -26,7 +26,6 @@ SupportedTypeDict = dict[torch.dtype, list[torch.dtype]]
 @register_tosa_support_check
 class ToCopySupported(SupportedTOSAOperatorCheck):
     targets = [
-        exir_ops.edge.aten._to_copy.default,
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     ]
 
@@ -49,16 +48,16 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         return merged_dtypes
 
     SUPPORTED_INT_TYPES: SupportedTypeDict = {
-        torch.bool: [torch.int8, torch.int16, torch.int32],
-        torch.int8: [torch.bool, torch.int16, torch.int32],
-        torch.int16: [torch.bool, torch.int8, torch.int32],
-        torch.int32: [torch.bool, torch.int8, torch.int16],
+        torch.bool: [torch.bool, torch.int8, torch.int16, torch.int32],
+        torch.int8: [torch.bool, torch.int8, torch.int16, torch.int32],
+        torch.int16: [torch.bool, torch.int8, torch.int16, torch.int32],
+        torch.int32: [torch.bool, torch.int8, torch.int16, torch.int32],
         torch.int64: [torch.bool, torch.int8, torch.int16, torch.int32],
     }
     SUPPORTED_FLOAT_TYPES: SupportedTypeDict = {
-        torch.int8: [torch.float16, torch.bfloat16, torch.float32],
-        torch.int16: [torch.float16, torch.bfloat16, torch.float32],
-        torch.int32: [torch.float16, torch.bfloat16, torch.float32],
+        torch.int8: [torch.int8, torch.float16, torch.bfloat16, torch.float32],
+        torch.int16: [torch.int16, torch.float16, torch.bfloat16, torch.float32],
+        torch.int32: [torch.int32, torch.float16, torch.bfloat16, torch.float32],
         # INT64 inputs to casts *should* be ok, since they should be rejected by
         # CheckInt64InputsAndOutputs if the cast can't be done AOT.
         torch.int64: [
@@ -69,9 +68,22 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             torch.bfloat16,
             torch.float32,
         ],
-        torch.bfloat16: [torch.int8, torch.int16, torch.int32, torch.float32],
-        torch.float16: [torch.int8, torch.int16, torch.int32, torch.float32],
+        torch.bfloat16: [
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.bfloat16,
+            torch.float32,
+        ],
+        torch.float16: [
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.float16,
+            torch.float32,
+        ],
         torch.float32: [
+            torch.float32,
             torch.int8,
             torch.int16,
             torch.int32,
@@ -148,31 +160,5 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
                 ),
             )
             return False
-
-        # Check memory format (to_copy)
-        if "memory_format" in node.kwargs:
-            if node.kwargs["memory_format"] in (torch.preserve_format,):
-                self.reporter.report_reject(
-                    node,
-                    (
-                        "Argument 'memory_format' is not supported for "
-                        f"{node.target} right now."
-                    ),
-                )
-                return False
-
-        # Check dim_order (to_dim_order_copy)
-        if "dim_order" in node.kwargs:
-            dim_order = node.kwargs["dim_order"]
-            # pyre-ignore[6]
-            if dim_order is not None and dim_order != list(range(len(dim_order))):  # type: ignore[arg-type]
-                self.reporter.report_reject(
-                    node,
-                    (
-                        f"Argument {dim_order=} is not supported for "
-                        f"{node.target} right now."
-                    ),
-                )
-                return False
 
         return True
