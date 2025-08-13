@@ -1,5 +1,5 @@
 Thank you for your interest in contributing to ExecuTorch! We want to make
-it easy to contribute to this project.
+it easy to contribute to this project
 
 
 ## Dev Install

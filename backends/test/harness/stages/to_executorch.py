@@ -12,6 +12,9 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from executorch.exir.print_program import pretty_print, print_program
 
 
+import torch
+from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib  # noqa: F401
+
 class ToExecutorch(Stage):
     def __init__(
         self,
