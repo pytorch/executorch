@@ -15,9 +15,10 @@
 namespace example {
 
 // Structure to hold key-value cache buffers
+template <typename T>
 struct KVCache {
-  uint8_t* buffer;
-  uint8_t* output_buffer;
+  T* buffer;
+  T* output_buffer;
 };
 
 // Enumeration for key-value manager modes
@@ -26,6 +27,7 @@ enum KVManagerMode { SMART_MASK = 0x0, SHIFT_POINTER = 0x1 };
  * @class KVManager
  * @brief Class for kv cache update, rearrangement, and buffer allocatation.
  */
+template <typename T>
 class KVManager {
  public:
   struct Metadata {
@@ -128,10 +130,10 @@ class KVManager {
       int32_t n_update,
       const std::vector<bool>& selected);
 
-  const std::vector<std::vector<KVCache>>& get_k_cache_() const {
+  const std::vector<std::vector<KVCache<T>>>& get_k_cache_() const {
     return k_cache_;
   }
-  const std::vector<std::vector<KVCache>>& get_v_cache_() const {
+  const std::vector<std::vector<KVCache<T>>>& get_v_cache_() const {
     return v_cache_;
   }
 
@@ -141,15 +143,15 @@ class KVManager {
 
  private:
   // Helper functions to rearrange and update key and value caches
-  void rearrange_key(KVCache& k_cache, int32_t ar_len_dst);
-  void rearrange_value(KVCache& v_cache, int32_t ar_len_dst);
+  void rearrange_key(KVCache<T>& k_cache, int32_t ar_len_dst);
+  void rearrange_value(KVCache<T>& v_cache, int32_t ar_len_dst);
   void update_key(
-      KVCache& k_cache,
+      KVCache<T>& k_cache,
       int32_t n_past,
       int32_t n_update,
       const std::vector<bool>& selected);
   void update_value(
-      KVCache& v_cache,
+      KVCache<T>& v_cache,
       int32_t n_past,
       int32_t n_update,
       const std::vector<bool>& selected);
@@ -162,7 +164,7 @@ class KVManager {
   // Store start pointer of k and v cache for input and output
   // input: layer -> head -> head_dim * max_cache_len
   // output: layer -> head -> head_dim * max_ar_len
-  std::vector<std::vector<KVCache>> k_cache_;
-  std::vector<std::vector<KVCache>> v_cache_;
+  std::vector<std::vector<KVCache<T>>> k_cache_;
+  std::vector<std::vector<KVCache<T>>> v_cache_;
 };
 } // namespace example

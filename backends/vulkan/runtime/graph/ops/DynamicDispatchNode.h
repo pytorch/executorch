@@ -68,12 +68,14 @@ class DynamicDispatchNode final : public DispatchNode {
 
   ~DynamicDispatchNode() override = default;
 
-  void encode(ComputeGraph* graph) override;
+  bool trigger_resize(ComputeGraph* graph) override;
 
  protected:
   const PickShaderFn pick_shader_fn_;
   const PickGlobalFn pick_global_wg_fn_;
   const PickLocalFn pick_local_wg_fn_;
+
+  utils::uvec3 wg_dispatch_grid_{1u, 1u, 1u};
 
  public:
   operator bool() const {
