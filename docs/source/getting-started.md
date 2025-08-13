@@ -124,7 +124,7 @@ To add the library to your app, add the following dependency to gradle build rul
 ```
 # app/build.gradle.kts
 dependencies {
-  implementation("org.pytorch:executorch-android:0.6.0")
+  implementation("org.pytorch:executorch-android:${executorch_version}")
 }
 
 # See latest available versions in https://mvnrepository.com/artifact/org.pytorch/executorch-android

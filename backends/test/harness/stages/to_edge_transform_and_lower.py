@@ -23,7 +23,9 @@ class ToEdgeTransformAndLower(Stage):
             if default_partitioner_cls is not None
             else []
         )
-        self.edge_compile_conf = edge_compile_config or EdgeCompileConfig()
+        self.edge_compile_conf = edge_compile_config or EdgeCompileConfig(
+            _check_ir_validity=False
+        )
         self.edge_dialect_program = None
 
     def stage_type(self) -> StageType:
