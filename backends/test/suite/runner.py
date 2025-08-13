@@ -45,6 +45,7 @@ def run_test(  # noqa: C901
     flow: TestFlow,
     test_name: str,
     test_base_name: str,
+    subtest_index: int,
     params: dict | None,
     dynamic_shapes: Any | None = None,
     generate_random_test_inputs: bool = True,
@@ -64,6 +65,7 @@ def run_test(  # noqa: C901
         return TestCaseSummary(
             backend=flow.backend,
             base_name=test_base_name,
+            subtest_index=subtest_index,
             flow=flow.name,
             name=test_name,
             params=params,
