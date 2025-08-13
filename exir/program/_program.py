@@ -1908,7 +1908,9 @@ class ExecutorchProgramManager:
         """
         assert self._tensor_data is not None
         for filename, cord in self._tensor_data.items():
-            with open(os.path.join(outdir, f"{filename}.ptd"), "wb") as f:
+            if not filename.endswith(".ptd"):
+                filename += ".ptd"
+            with open(os.path.join(outdir, f"{filename}"), "wb") as f:
                 logging.info(f"Writing data file to {filename}")
                 cord.write_to_file(f)
 

@@ -113,6 +113,28 @@ def delegate_external_constants_pass(
         for node in module.graph.nodes:
             if node.op == "placeholder" and is_param_node(ep, node):
                 if gen_tag_fn is not None:
-                    node.meta["delegate_constant_tag"] = gen_tag_fn(node)
+                    node.meta.setdefault("custom", {})
+                    node.meta["custom"]["delegate_constant_tag"] = gen_tag_fn(node)
+                    mutated = True
+    return PassResult(gm, mutated)
+
+
+# Note: this pass must be run on an unlifted graph, e.g. ep.module(),
+# and not on a lifted graph, e.g. ep.graph_module.
+# This is using 'get_attr' to tag constants, which only appears in
+# unlifted graphs.
+def delegate_external_constants_pass_unlifted(
+    gm: GraphModule,
+    gen_tag_fn: Optional[Callable[[torch.fx.Node], str]] = None,
+) -> PassResult:
+    mutated = False
+    for module in gm.modules():
+        if not isinstance(module, torch.fx.GraphModule):
+            continue
+        for node in module.graph.nodes:
+            if node.op == "get_attr":
+                if gen_tag_fn is not None:
+                    node.meta.setdefault("custom", {})
+                    node.meta["custom"]["delegate_constant_tag"] = gen_tag_fn(node)
                     mutated = True
     return PassResult(gm, mutated)
