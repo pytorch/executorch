@@ -444,6 +444,7 @@ class LlamaModel(nn.Module):
         self.output_new_cache_only = output_new_cache_only
         self.use_i64_token = use_i64_token
         self.output_cache = output_cache
+        self.kv_io_bit_width = config.kv_io_bit_width
 
         self.layers = nn.ModuleList(
             [
@@ -607,4 +608,5 @@ class LlamaModel(nn.Module):
             "get_n_layers": self.n_layers,
             "get_vocab_size": self.vocab_size,
             "get_use_kv_cache": self.use_kv_cache,
+            "get_kv_io_bit_width": self.kv_io_bit_width,
         }

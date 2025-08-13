@@ -73,7 +73,6 @@ def define_common_targets():
                 "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
                 ":logging",
                 "//executorch/backends/qualcomm:schema",
-                "//executorch/backends/qualcomm/aot/ir:qcir_utils",
                 "//executorch/backends/qualcomm/aot/wrappers:wrappers",
                 "//executorch/runtime/core:core",
                 "//executorch/extension/tensor:tensor",
