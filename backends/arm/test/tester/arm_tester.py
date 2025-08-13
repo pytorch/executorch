@@ -376,6 +376,7 @@ class ArmTester(Tester):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
+        generate_etrecord: bool = False,
     ):
         if to_edge_and_lower_stage is None:
             if partitioners is None:
@@ -403,6 +404,7 @@ class ArmTester(Tester):
                 edge_compile_config,
                 constant_methods=self.constant_methods,
                 transform_passes=self.transform_passes,
+                generate_etrecord=generate_etrecord,
             )
         else:
             if partitioners is not None:
