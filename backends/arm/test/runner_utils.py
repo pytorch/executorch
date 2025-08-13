@@ -18,7 +18,7 @@ from typing import Any, cast, Dict, List, Literal, Optional, Tuple
 import numpy as np
 import torch
 
-from executorch.backends.arm.arm_backend import is_tosa
+from executorch.backends.arm.arm_backend import is_tosa, is_vgf
 from executorch.backends.arm.test.conftest import is_option_enabled
 from executorch.backends.arm.tosa_specification import (
     get_tosa_spec,
@@ -56,6 +56,8 @@ _torch_to_numpy_dtype_dict = {
     torch.complex64: np.complex64,
     torch.complex128: np.complex128,
 }
+
+VALID_TARGET = {"corstone-300", "corstone-320", "vkml_emulation_layer"}
 
 
 class QuantizationParams:
@@ -218,6 +220,69 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
         return func(*args, **kwargs)
 
 
+def run_target(
+    executorch_program_manager: ExecutorchProgramManager,
+    inputs: Tuple[torch.Tensor],
+    intermediate_path: str | Path,
+    target_board: Literal["corestone-300", "corestone-320", "vkml_emulation_layer"],
+    elf_path: str | Path,
+    timeout: int = 120,  # s
+):
+    if target_board not in VALID_TARGET:
+        raise ValueError(f"Unsupported target: {target_board}")
+
+    if target_board in ("corstone-300", "corstone-320"):
+        return run_corstone(
+            executorch_program_manager,
+            inputs,
+            intermediate_path,
+            target_board,
+            elf_path,
+            timeout,
+        )
+    elif target_board == "vkml_emulation_layer":
+        return run_vkml_emulation_layer(
+            executorch_program_manager,
+            intermediate_path,
+            elf_path,
+        )
+
+
+def run_vkml_emulation_layer(
+    executorch_program_manager: ExecutorchProgramManager,
+    intermediate_path: str | Path,
+    elf_path: str | Path,
+):
+    """Executes an inference of the exported_program on ML Emulation Layer for Vulkan
+    Args:
+        `executorch_program_manager`: The executorch program to run.
+        `intermediate_path`: Directory to save the .pte and capture outputs.
+        `elf_path`: Path to the Vulkan-capable executor_runner binary.
+    """
+
+    intermediate_path = Path(intermediate_path)
+    intermediate_path.mkdir(exist_ok=True)
+    elf_path = Path(elf_path)
+    if not elf_path.exists():
+        raise FileNotFoundError(f"Did not find elf file {elf_path}")
+
+    # Save pte to file
+    pte_path = os.path.join(intermediate_path, "program.pte")
+    with open(pte_path, "wb") as f:
+        f.write(executorch_program_manager.buffer)
+
+    cmd_line = [elf_path, "-model_path", pte_path]
+    result = _run_cmd(cmd_line)
+
+    result_stdout = result.stdout.decode()  # noqa: F841
+    # TODO: MLETORCH-1234: Support VGF e2e tests in VgfPipeline
+    # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
+    # TODO: Retrieve and return the output tensors once VGF runtime is able to dump them.
+    raise NotImplementedError(
+        "Output parsing from VKML Emulation Layer is not yet implemented. "
+    )
+
+
 def run_corstone(
     executorch_program_manager: ExecutorchProgramManager,
     inputs: Tuple[torch.Tensor],
@@ -229,7 +294,7 @@ def run_corstone(
     """Executes an inference of the exported_program on FVP.
     Returns a list of tensors with the output.
     Args:
-        `executorch_program_manager`: the executorch program to run.
+        `executorch_program_manager`: The executorch program to run.
         The output of a EdgeProgramManager.to_executorch() call.
         `inputs`: A list of tensors with the inputs of the inference.
         `dump_path`: A directory where the .pte and inputs are saved to file.
@@ -558,18 +623,52 @@ def model_converter_installed() -> bool:
     return True
 
 
-def get_elf_path(target_board):
-    elf_path = os.path.join(
-        "arm_test",
-        f"arm_semihosting_executor_runner_{target_board}",
-        "arm_executor_runner",
-    )
+def vkml_emulation_layer_installed() -> bool:
+    # Check VK_INSTANCE_LAYERS
+    vk_instance_layers = os.environ.get("VK_INSTANCE_LAYERS", "")
+    required_layers = {
+        "VK_LAYER_ML_Graph_Emulation",
+        "VK_LAYER_ML_Tensor_Emulation",
+    }
+    existing_layers = set(vk_instance_layers.split(":"))
+    layers_exists = required_layers.issubset(existing_layers)
+
+    # Check LD_LIBRARY_PATH for "emulation-layer/deploy"
+    ld_library_path = os.environ.get("LD_LIBRARY_PATH", "")
+    deploy_exists = False
+    for path in ld_library_path.split(os.path.pathsep):
+        if "emulation-layer/deploy" in path and os.path.isdir(path):
+            deploy_exists = True
+
+    return layers_exists and deploy_exists
+
+
+def assert_elf_path_exists(elf_path):
     if not os.path.exists(elf_path):
         raise FileNotFoundError(
-            f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
+            f"Did not find build arm_executor_runner or executor_runner in path {elf_path}, run setup_testing.sh?"
         )
-    else:
-        return elf_path
+
+
+def get_elf_path(target_board):
+    if target_board not in VALID_TARGET:
+        raise ValueError(f"Unsupported target: {target_board}")
+
+    if target_board in ("corstone-300", "corstone-320"):
+        elf_path = os.path.join(
+            "arm_test",
+            f"arm_semihosting_executor_runner_{target_board}",
+            "arm_executor_runner",
+        )
+        assert_elf_path_exists(elf_path)
+    elif target_board == "vkml_emulation_layer":
+        elf_path = os.path.join(
+            "cmake-out",
+            "executor_runner",
+        )
+        assert_elf_path_exists(elf_path)
+
+    return elf_path
 
 
 def arm_executor_runner_exists(target_board):
@@ -629,6 +728,8 @@ def transpose_data_format(data: list[np.ndarray], to: Literal["NHWC", "NCHW"]):
 
 
 def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
+    if is_vgf(compile_spec):
+        return "vkml_emulation_layer"
     for spec in compile_spec:
         if spec.key == "compile_flags":
             flags = spec.value.decode()
