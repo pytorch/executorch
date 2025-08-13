@@ -3,6 +3,7 @@ import importlib
 import re
 import time
 import unittest
+import warnings
 
 from datetime import timedelta
 from typing import Any
@@ -248,6 +249,10 @@ def build_test_filter(args: argparse.Namespace) -> TestFilter:
 
 def runner_main():
     args = parse_args()
+
+    # Suppress deprecation warnings for export_for_training, as it generates a
+    # lot of log spam. We don't really need the warning here.
+    warnings.simplefilter("ignore", category=FutureWarning)
 
     begin_test_session(args.report)
 
