@@ -15,7 +15,7 @@ For more information on TOSA see https://www.mlplatform.org/tosa/tosa_spec.html
 **Currently device support is for:**
 * TOSA to Ethos&trade;-U55/65/85 via the ethos-u-vela compilation stack.
   * This is cross-compiled to the appropriate target CPU
-  * There is a seperate arm_executor_runner for bare-metal platforms
+  * There is a separate arm_executor_runner for bare-metal platforms
 * TOSA to VGF via the model-converter for devices supporting the ML SDK for Vulkan&reg;
   * The VGF graph represents TOSA directly in a SPIR-V&trade; standardized form.
   * As the VGF delegate runs on Vulkan, it's required to be built with the Vulkan delegate also present.
@@ -37,7 +37,7 @@ Export:
 * `tosa_backend.py` - The TOSA conversion flow all other backends rely on.
 * `ethosu/backend.py` - Main entrypoint for the EthosUBackend.
 * `vgf_backend.py` - Main entrypoint for VgfBackend.
-  * For more information see the section on Arm Backend Architecture](#arm-backend-architecture).
+  * For more information see the section on [Arm Backend Architecture](#arm-backend-architecture).
 * `scripts` - For the core scripts which prepare AoT dependencies such as backend compilers.
 
 Passes (which prepare the partitioned graphs for TOSA conversion):
@@ -66,7 +66,7 @@ Other:
 
 ## Testing
 
-The tests and related support scripts will test TOSA, Ethos-U and VGF behaviour based on the installed tools. It is expected that the relevant environment preperation has been performed as outlined in the guide available here https://docs.pytorch.org/executorch/main/tutorial-arm.html
+The tests and related support scripts will test TOSA, Ethos-U and VGF behaviour based on the installed tools. It is expected that the relevant environment preparation has been performed as outlined in the guide available here https://docs.pytorch.org/executorch/main/tutorial-arm.html
 
 After setup you can run unit tests with the test_arm_baremetal.sh script.
 

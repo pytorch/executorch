@@ -40,8 +40,7 @@ for arg in "$@"; do
     esac
 done
 
-echo ${model}
-if [[ -z ${model} ]]; then "Model name needs to be provided"; exit 1; fi
+if [[ -z ${model} ]]; then echo "Model name needs to be provided"; exit 1; fi
 
 
 # Source the tools
@@ -76,7 +75,7 @@ fi
 log_file=$(mktemp)
 
 
-${runner} -model_path ${model} | tee ${log_file}
+${nobuf} ${runner} -model_path ${model} | tee ${log_file}
 echo "[${BASH_SOURCE[0]}] execution complete, $?"
 
 # Most of these can happen for bare metal or linx executor_runner runs.
