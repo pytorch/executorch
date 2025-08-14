@@ -11,7 +11,6 @@ import inspect
 import os
 import sys
 
-from functools import partial
 from typing import Dict, final, Optional, Sequence, Type
 
 import executorch.exir as exir
@@ -28,7 +27,7 @@ from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
     ExecutorBackend,
 )
 from executorch.exir.passes.external_constants_pass import (
-    delegate_external_constants_pass,
+    delegate_external_constants_pass_unlifted,
 )
 from executorch.exir.program import ExecutorchProgramManager
 from torch import nn
@@ -173,17 +172,15 @@ def export_module_to_program(
             XnnpackPartitioner,
         )
 
-        transform_passes = []
         if external_constants:
-            partial_function = partial(
-                delegate_external_constants_pass,
-                ep=exported_program,
+            tagged_module = exported_program.module()
+            delegate_external_constants_pass_unlifted(
+                module=tagged_module,
                 gen_tag_fn=lambda x: module_class.__name__,
             )
-            transform_passes.append(partial_function)
+            exported_program = export(tagged_module, args=inputs, strict=True)
         executorch_program = to_edge_transform_and_lower(
             exported_program,
-            transform_passes=transform_passes,
             compile_config=edge_config,
             partitioner=[XnnpackPartitioner()],
         ).to_executorch(config=et_config)
