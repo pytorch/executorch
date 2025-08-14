@@ -104,22 +104,20 @@ void scatter_value_helper(
 } // namespace
 
 Tensor& scatter_src_out(
-    KernelRuntimeContext& context,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
     const Tensor& src,
     Tensor& out) {
-  (void)context;
-
   ET_KERNEL_CHECK(
-      context,
+      ctx,
       check_scatter_src_args(in, dim, index, src, out),
       InvalidArgument,
       out);
 
   ET_KERNEL_CHECK(
-      context,
+      ctx,
       resize_tensor(out, in.sizes()) == Error::Ok,
       InvalidArgument,
       out);
