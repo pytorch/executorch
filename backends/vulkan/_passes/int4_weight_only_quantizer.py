@@ -246,6 +246,9 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
                     self.groupsize,
                     self.precision,  # dtype for scales_and_zeros
                 )
+
+                print(w_int4x8.shape)
+                print(scales_and_zeros.shape)
                 # If the packing of 2 4-bit values into a single 8-bit value was not
                 # performed in the previous function call, then do it manually now.
                 if w_int4x8.shape == weight.shape:

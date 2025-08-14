@@ -46,6 +46,7 @@ from torch.fx.passes.utils.matcher_utils import InternalMatch, SubgraphMatcher
 # pyre-ignore
 ops_not_to_decompose = [
     torch.ops.aten.upsample_nearest2d.vec,
+    torch.ops.aten.linear.default,
 ]
 
 logger: logging.Logger = logging.getLogger("")
@@ -309,6 +310,7 @@ def get_fusable_subgraphs(graph_module: torch.fx.GraphModule) -> List[InternalMa
 
     fuse_patterns = []
     fuse_patterns.extend(vk_patterns.get_rope_graphs())
+    fuse_patterns.extend(vk_patterns.get_wo_quantized_linear_graphs())
 
     for pattern in fuse_patterns:
         sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
