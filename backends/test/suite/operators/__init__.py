@@ -152,11 +152,15 @@ class OperatorTest(unittest.TestCase):
             flow,
             context.test_name,
             context.test_base_name,
+            context.subtest_index,
             context.params,
             generate_random_test_inputs=generate_random_test_inputs,
         )
 
         log_test_summary(run_summary)
+
+        # This is reset when a new test is started - it creates the context per-test.
+        context.subtest_index = context.subtest_index + 1
 
         if not run_summary.result.is_success():
             if run_summary.result.is_backend_failure():

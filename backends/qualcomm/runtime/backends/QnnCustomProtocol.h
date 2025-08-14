@@ -24,13 +24,8 @@ namespace qnn {
 
 using executorch::runtime::Error;
 
-// We have 2 kinds of protocol here: custom_qcir_protocol,
-// custom_context_protocol. We need this class due to limitation of 32bits
-// flatbuffer. Since larger models can exceed the maximum size for 32bits
-// flatbuffer, we need to define our own protocol and store some information
-// outside of the flatbuffer. The magic number helps determine if we are getting
-// the correct custom protocol buffer and differentiate custom_qcir_protocol
-// from custom_context_protocol.
+// Required for multi-graph support to retrieve qnn manager handle via unique
+// signature.
 class QnnCustomProtocol {
  public:
   QnnCustomProtocol() {}
@@ -45,48 +40,6 @@ class QnnCustomProtocol {
 
  protected:
   std::vector<uint8_t> qnn_custom_buffer_;
-};
-
-// For custom_qcir_protocol, we expect the following format:
-//
-// ------------------------------
-// | qcir magic number (4 bytes)|
-// ------------------------------
-// | qcir.fbs size (4 bytes)    |
-// ------------------------------
-// | tensor size (8 bytes)      |
-// ------------------------------
-// | qcir.fbs (flatbuffer)      |
-// ------------------------------
-// | tensor.data                |
-// ------------------------------
-class QnnQcirCustomProtocol : public QnnCustomProtocol {
- public:
-  // Constructor for Serialize
-  QnnQcirCustomProtocol(uint32_t qcir_fbs_size, uint64_t tensor_size)
-      : QnnCustomProtocol(),
-        qcir_fbs_size_(qcir_fbs_size),
-        tensor_size_(tensor_size) {}
-
-  // Constructor for Deserialize
-  QnnQcirCustomProtocol() : QnnCustomProtocol() {}
-
-  void BuildQcirCustomBuffer(
-      const QnnExecuTorchContextBinary& qcir_binary,
-      const std::vector<uint8_t>& tensor_data);
-  // Return a tuple with 5 elements:
-  // 1) Error: Status of whether deserializing is successful.
-  // 2) uint32_t: Size of qcir fbs
-  // 3) uint64_t: Size of tensor
-  // 4) void*: Pointer pointing to the start of qcir fbs
-  // 5) void*: Pointer pointing to the start of tensor
-  std::tuple<Error, uint32_t, uint64_t, void*, void*>
-  DeserializeQcirCustomBuffer(void* processed_data);
-
- private:
-  static constexpr uint32_t magic_number_ = 0x1234ABCD;
-  uint32_t qcir_fbs_size_{0};
-  uint64_t tensor_size_{0};
 };
 
 // For custom context binary protocol, we expect the following format:
