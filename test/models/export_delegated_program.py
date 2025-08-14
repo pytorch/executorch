@@ -171,6 +171,7 @@ def export_module_to_program(
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackPartitioner,
         )
+
         if external_constants:
             tagged_module = exported_program.module()
             delegate_external_constants_pass_unlifted(

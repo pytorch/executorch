@@ -1088,7 +1088,10 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             from executorch.exir.passes.external_constants_pass import (
                 delegate_external_constants_pass_unlifted,
             )
-            assert builder_exported.pre_autograd_graph_module is not None, "pre_autograd_graph_module shouldn't be None here"
+
+            assert (
+                builder_exported.pre_autograd_graph_module is not None
+            ), "pre_autograd_graph_module shouldn't be None here"
             delegate_external_constants_pass_unlifted(
                 module=builder_exported.pre_autograd_graph_module,
                 gen_tag_fn=gen_tag_fn,
