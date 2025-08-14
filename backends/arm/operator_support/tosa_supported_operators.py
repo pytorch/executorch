@@ -261,6 +261,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.cosh.default,
             exir_ops.edge.aten.glu.default,
             exir_ops.edge.aten.logit.default,
+            exir_ops.edge.aten.acos.default,
         ]
 
         return supported
