@@ -233,7 +233,7 @@ static inline NSString *valueTagDescription(ExecuTorchValueTag tag) {
   [string appendString:@"\n  value: "];
   if (_value) {
     NSString *valueDescription = [_value description];
-    [string appendString:[_value description]];
+    [string appendString:valueDescription];
     [string replaceOccurrencesOfString:@"\n"
                             withString:@"\n  "
                                options:0

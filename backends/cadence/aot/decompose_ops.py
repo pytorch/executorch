@@ -7,9 +7,7 @@
 
 
 # This file contains all the functions that decompose one op into simpler ops in the
-# graph. The functions decomposing ops for models deployed with Jarvis are grouped
-# together in class 'DecomposeOpsInGraph'. Some examples of functions in the class are
-# 1. functions that decompose an ATen gelu op into an equivalent series of simpler ops
+# graph.
 
 # pyre-strict
 
