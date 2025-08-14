@@ -35,13 +35,16 @@ from .decompose_cosh_pass import DecomposeCoshPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
+from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
+from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv import DecomposeGroupedConv  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linalg_vector_norm_pass import DecomposeLinearVectorNormPass  # noqa
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
+from .decompose_logit_pass import DecomposeLogitPass  # noqa
 from .decompose_masked_fill import DecomposeMaskedFill  # noqa
 from .decompose_maxpool2d_with_dilation import DecomposeMaxPool2DPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa

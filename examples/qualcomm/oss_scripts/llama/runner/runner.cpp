@@ -21,7 +21,6 @@
 #include <executorch/runtime/platform/log.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
-
 #include <algorithm>
 #include <fstream>
 
@@ -91,7 +90,9 @@ std::unique_ptr<::tokenizers::Tokenizer> load_llama_tokenizer(
   return llm::load_tokenizer(tokenizer_path, std::move(special_tokens));
 }
 
-Runner::Runner(
+template <typename T>
+Runner<T>::Runner(
+    std::unique_ptr<executorch::extension::Module> module,
     const std::string& decoder_model_version,
     const std::string& model_path,
     const std::string& tokenizer_path,
@@ -104,7 +105,8 @@ Runner::Runner(
     const int window,
     const int gcap,
     std::unique_ptr<tokenizers::Tokenizer> tokenizer)
-    : ngram_(ngram),
+    : module_(std::move(module)),
+      ngram_(ngram),
       window_(window),
       gcap_(gcap),
       tokenizer_path_(tokenizer_path),
@@ -113,8 +115,6 @@ Runner::Runner(
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
       tokenizer_(std::move(tokenizer)) {
-  module_ = std::make_unique<Module>(
-      model_path, Module::LoadMode::MmapUseMlockIgnoreErrors);
   stats_.reset();
   if (kv_updater == "SmartMask") {
     kv_updater_ = KVManagerMode::SMART_MASK;
@@ -130,6 +130,8 @@ Runner::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama3;
   } else if (decoder_model_version == "qwen2_5") {
     decoder_model_version_ = DecoderModelVersion::kQwen2_5;
+  } else if (decoder_model_version == "phi_4_mini") {
+    decoder_model_version_ = DecoderModelVersion::kPhi4;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -140,12 +142,14 @@ Runner::Runner(
   ET_LOG(Info, "kv updater=%s", kv_updater.c_str());
 }
 
-bool Runner::is_loaded() const {
+template <typename T>
+bool Runner<T>::is_loaded() const {
   return module_->is_loaded() && tokenizer_ && decoder_runner_ &&
       prompt_processor_ && token_generator_ && kv_manager_ && buffer_manager_;
 }
 
-Error Runner::load() {
+template <typename T>
+Error Runner<T>::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
@@ -185,6 +189,8 @@ Error Runner::load() {
   }
   if (decoder_model_version_ == DecoderModelVersion::kLlama3) {
     eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+  } else if (decoder_model_version_ == DecoderModelVersion::kPhi4) {
+    eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
   }
   // Try avoid getMetadataHelper as it is time consuming.
   Result<MethodMeta> method_meta =
@@ -203,6 +209,7 @@ Error Runner::load() {
   // retrieve any method meta, can be either prefill or kv
   int64_t num_layers =
       ET_UNWRAP(module_->get("get_n_layers")).toScalar().to<int64_t>();
+
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
   // k_cache: [1, head_dim, seq_len]
   int64_t head_dim = method_meta->output_tensor_meta(1)->sizes()[1];
@@ -237,9 +244,9 @@ Error Runner::load() {
         std::min(token_generator_ar_len, prompt_processor_ar_len);
   max_ar_len = std::max(token_generator_ar_len, prompt_processor_ar_len);
 
-  kv_manager_ = std::make_unique<KVManager>(
+  kv_manager_ = std::make_unique<KVManager<T>>(
       kv_updater_,
-      KVManager::Metadata{
+      typename KVManager<T>::Metadata{
           context_len_,
           head_dim,
           max_ar_len,
@@ -247,11 +254,11 @@ Error Runner::load() {
           num_heads,
           num_layers});
 
-  prompt_processor_ = std::make_unique<PromptProcessor>(
+  prompt_processor_ = std::make_unique<PromptProcessor<T>>(
       decoder_runner_.get(),
       kv_manager_.get(),
       prompt_processor_method_name,
-      PromptProcessor::Metadata{
+      typename PromptProcessor<T>::Metadata{
           context_len_,
           num_heads,
           num_layers,
@@ -259,13 +266,13 @@ Error Runner::load() {
           vocab_size,
           use_int64_token});
   if (eval_mode_ == EvalMode::kLookaheadDecoding) {
-    token_generator_ = std::make_unique<LhdTokenGenerator>(
+    token_generator_ = std::make_unique<LhdTokenGenerator<T>>(
         tokenizer_.get(),
         decoder_runner_.get(),
         kv_manager_.get(),
         token_generator_method_name,
         std::move(eos_ids),
-        LhdTokenGenerator::Metadata{
+        typename LhdTokenGenerator<T>::Metadata{
             context_len_,
             num_heads,
             num_layers,
@@ -277,13 +284,13 @@ Error Runner::load() {
             gcap_},
         &stats_);
   } else {
-    token_generator_ = std::make_unique<TokenGenerator>(
+    token_generator_ = std::make_unique<TokenGenerator<T>>(
         tokenizer_.get(),
         decoder_runner_.get(),
         kv_manager_.get(),
         token_generator_method_name,
         std::move(eos_ids),
-        TokenGenerator::Metadata{
+        typename TokenGenerator<T>::Metadata{
             context_len_,
             num_heads,
             num_layers,
@@ -312,7 +319,8 @@ Error Runner::load() {
   return Error::Ok;
 }
 
-Error Runner::generate(
+template <typename T>
+Error Runner<T>::generate(
     const std::string& prompt,
     bool tokenized_prompt,
     int32_t seq_len,
@@ -418,7 +426,8 @@ Error Runner::generate(
   return Error::Ok;
 }
 
-Result<DecoderModelVersion> Runner::get_decoder_model_version() {
+template <typename T>
+Result<DecoderModelVersion> Runner<T>::get_decoder_model_version() {
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
@@ -426,5 +435,9 @@ Result<DecoderModelVersion> Runner::get_decoder_model_version() {
   }
   return decoder_model_version_;
 }
+
+// Explicit instantiations
+template class Runner<uint16_t>;
+template class Runner<uint8_t>;
 
 } // namespace example

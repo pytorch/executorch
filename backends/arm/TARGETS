@@ -22,6 +22,19 @@ python_library(
     ],
 )
 python_library(
+    name = "common",
+    srcs = [
+        "common/__init__.py",
+        "common/debug.py",
+    ],
+    deps = [
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+python_library(
     name = "arm_partitioner",
     srcs = [
         "tosa_backend.py",
