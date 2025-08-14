@@ -48,14 +48,11 @@ foreach(lib ${required_lib_list})
   endif()
   list(APPEND EXECUTORCH_LIBRARIES ${lib})
 endforeach()
-<<<<<<< HEAD
-=======
 
 # If we reach here, ET required libraries are found.
 target_link_libraries(executorch INTERFACE executorch_core)
 target_link_options_shared_lib(prim_ops_lib)
 
->>>>>>> 2e09b42180 (Address larryliu0820 review comments: remove duplicate installs, clean up target_link_options_shared_lib, and update CMake as requested)
 set(EXECUTORCH_FOUND ON)
 
 target_link_libraries(executorch INTERFACE executorch_core)

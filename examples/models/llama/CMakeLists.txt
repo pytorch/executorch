@@ -77,18 +77,8 @@ find_package(gflags REQUIRED)
 # llama_main: test binary to run llama, with tokenizer and sampler integrated
 #
 
-<<<<<<< HEAD
-# find `executorch` libraries. CMAKE_PREFIX_PATH would work for host
-# compilation, but CMAKE_FIND_ROOT_PATH appears to be necessary for
-# cross-compiling (e.g., to Android) to work as well.
-list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
-find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-executorch_target_link_options_shared_lib(executorch)
-=======
-# find `executorch` libraries Same as for gflags
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
->>>>>>> 4bc106e7a5 (Rename CMake target 'executorch' to 'prim_ops_lib' for clarity)
 
 # llama_runner library
 add_subdirectory(runner)
