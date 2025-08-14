@@ -1680,7 +1680,7 @@
 
         <span class="n">export_program</span> <span class="o">=</span> <span class="kc">None</span>
 
-        <span class="c1"># Will use the exported program to extract intermediate output if and only if exported_program has been provided, and it is the greatest ancestor of the edge_dialect_program</span>
+        <span class="c1"># Will use the exported program to extract intermediate output if and only if exported_program has been provided, and it is one of the ancestors of the edge_dialect_program</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span> <span class="ow">and</span> <span class="n">propagate_back_debug_handle</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">export_graph_id</span><span class="p">,</span>
@@ -1688,6 +1688,10 @@
         <span class="p">):</span>
             <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span>
         <span class="k">else</span><span class="p">:</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;Either aten dialect exported program is not in ETRecord, or it is not one of the ancestors of current edge dialect program.&quot;</span>
+                <span class="s2">&quot;Will fall back to use edge dialect program to extract intermediate output&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
             <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">edge_dialect_program</span>
         <span class="n">graph_module</span> <span class="o">=</span> <span class="n">export_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
         <span class="n">aot_debug_handle_to_op_name</span> <span class="o">=</span> <span class="n">get_aot_debug_handle_to_op_name_mapping</span><span class="p">(</span>
@@ -1902,7 +1906,9 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compares logged intermediate outputs from the exported graph (in ETRecord)</span>
 <span class="sd">        with runtime outputs (in ETDump) using a user-specific numerical comparator.</span>
-<span class="sd">        To use this function, you must first generate the ETRecord using the `bundle_program`,</span>
+<span class="sd">        If the exported graph is not supported, the function will fall back to use edge dialect graph.</span>
+
+<span class="sd">        To use this function, you must first generate the ETRecord with representative inputs,</span>
 <span class="sd">        and then create the Inspector instance with the ETRecord and ETDump. The Inspector can then</span>
 <span class="sd">        compare the intermediate outputs from the AOT and the runtime.</span>
 

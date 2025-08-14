@@ -672,7 +672,8 @@ methods that exist in the spec will be created.</p>
 <span class="sig-prename descclassname"><span class="pre">executorch.devtools.Inspector.</span></span><span class="sig-name descname"><span class="pre">calculate_numeric_gap</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">distance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'MSE'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#executorch.devtools.Inspector.calculate_numeric_gap" title="Permalink to this definition">¶</a></dt>
 <dd><p>Compares logged intermediate outputs from the exported graph (in ETRecord)
 with runtime outputs (in ETDump) using a user-specific numerical comparator.
-To use this function, you must first generate the ETRecord using the <cite>bundle_program</cite>,
+If the exported graph is not supported, the function will fall back to use edge dialect graph.</p>
+<p>To use this function, you must first generate the ETRecord with representative inputs,
 and then create the Inspector instance with the ETRecord and ETDump. The Inspector can then
 compare the intermediate outputs from the AOT and the runtime.</p>
 <dl class="field-list simple">
