@@ -7,12 +7,7 @@
 
 
 # This file contains all the functions that replace one op with another in the
-# graph. The functions replacing ops for models deployed with Jarvis are grouped
-# together in class 'ReplaceOpsInGraph'. Some examples of functions in the class are
-# 1. functions that replace an ATen op with a custom op that accepts extra arguments
-# 2. functions that replace in-place variants of ATen ops with out-of-place version.
-# 3. functions that replace an ATen op with another semantically equivalent ATen op.
-# 4. functions that concretize optional args.
+# graph.
 
 # pyre-unsafe
 
@@ -54,7 +49,7 @@ from torch._subclasses import FakeTensor
 from torch.fx.node import Argument
 
 # A map to represent ops that:
-# (a) are functionally equivalent wrt. Jarvis; and
+# (a) are functionally equivalent; and
 # (b) have identical arguments
 # An op whose target is 'key' in this dict can be replaced by the functionally euivalent
 # op whose target is 'value'. The replacement would just involve changing the op target.
@@ -650,7 +645,7 @@ class ReplaceConstantPadNdWithSlicePass(ExportPass):
 
 # Make that pass runnable standalone at opt level 0.
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceAtenConvolutionWithJarvisConvolutionPass(ExportPass):
+class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
     """
     Replace aten convolution op with jarvis-specific convolution op, since the
     aten version is not supported by jarvis.
@@ -784,7 +779,7 @@ class ReplaceConvWithChannelLastConv:
     tensors. However, if the input and output to the convolution op are originally
     in NWHC layout, and are then permuted to conform to NCHW layout, we can fuse
     the two permute ops with the convolution op, and call the NHWC layout
-    convolution op in Jarvis.
+    convolution op.
     """
 
     def __init__(self):
@@ -821,7 +816,7 @@ class ReplaceConvWithChannelLastConv:
         out_shape = get_shape(self.graph_module, node)
         assert out_shape is not None
         out_dims = len(out_shape)
-        assert out_dims in {3, 4}, "Jarvis only supports conv1d and conv2d"
+        assert out_dims in {3, 4}, "Only supports conv1d and conv2d"
         conv1d = out_dims == 3
 
         # Get the possible targets for the nodes in pt_nodes. Since conv1d has
@@ -951,7 +946,7 @@ class ReplaceConvWithChannelLastConvPass(ExportPass):
     """
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        result = ReplaceAtenConvolutionWithJarvisConvolutionPass()(graph_module)
+        result = ReplaceAtenConvolutionWithCadenceConvolutionPass()(graph_module)
         assert result is not None
         ReplaceConvWithChannelLastConv()(result.graph_module)
         return result
@@ -1871,9 +1866,9 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceAtenAvgPoolWithJarvisAvgPoolPass(ExportPass):
+class ReplaceAtenAvgPoolWithCadenceAvgPoolPass(ExportPass):
     """
-    Replace the aten avg_pool op with the jarvis custom avg_pool2d op.
+    Replace the aten avg_pool op with the cadence custom avg_pool2d op.
     """
 
     def call_operator(self, op, args, kwargs, meta):
@@ -2435,7 +2430,7 @@ class CadenceReplaceOpsInGraph:
         ReplacePadWithCatPass,
         ReplaceConstantPadNdWithSlicePass,
         ReplaceConvWithChannelLastConvPass,
-        ReplaceAtenConvolutionWithJarvisConvolutionPass,
+        ReplaceAtenConvolutionWithCadenceConvolutionPass,
         ForceChannelLastForConvPass,
         ReplaceTrivialConvWithLinear,
         ReplaceConvWithIm2RowAndLinear,
@@ -2454,7 +2449,7 @@ class CadenceReplaceOpsInGraph:
         ReplacePT2DequantWithCadenceDequantPass,
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
         ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
-        ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
+        ReplaceAtenAvgPoolWithCadenceAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
         ReplaceAtenApproxGeluWithApproxGeluPass,
         ReplaceSplitWithSlicePass,
