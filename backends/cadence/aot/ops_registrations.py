@@ -233,6 +233,20 @@ lib.define(
     "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_relu_asym8s_asym8s.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
+)
+lib.define(
+    "quantized_relu_asym8s_asym8s.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, "
+    "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_relu_asym8u_asym8u.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
+)
+lib.define(
+    "quantized_relu_asym8u_asym8u.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, "
+    "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_add.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
@@ -770,6 +784,28 @@ def quantized_relu_per_tensor_meta(
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
+@register_fake("cadence::quantized_relu_asym8s_asym8s.per_tensor")
+def quantized_relu_asym8s_asym8s_per_tensor_meta(
+    input: torch.Tensor,
+    in_zero_point: int,
+    out_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_relu_asym8u_asym8u.per_tensor")
+def quantized_relu_asym8u_asym8u_per_tensor_meta(
+    input: torch.Tensor,
+    in_zero_point: int,
+    out_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=input.dtype)
+
+
 @register_fake("cadence::fully_connected")
 def fully_connected_meta(
     src: torch.Tensor,
@@ -928,7 +964,7 @@ def transposed_convolution_meta(
 ) -> torch.Tensor:
     # The native definition of torch transposed conv will have weight shape as
     # (in_channels, out_channels/groups, *kernel_size).
-    # However, the two channel position is flipped in the Jarvis pass of replacing it
+    # However, the two channel position is flipped in the Cadence pass of replacing it
     # with cadence::transposed_convolution here: https://fburl.com/code/d2s7pkyy
     out_channels, _input_channels, *kernel_size = weight.shape
     out_channels *= groups

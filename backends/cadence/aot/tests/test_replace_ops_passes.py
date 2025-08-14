@@ -22,7 +22,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
     ReplaceAddMMWithLinearPass,
     ReplaceAtenApproxGeluWithApproxGeluPass,
-    ReplaceAtenConvolutionWithJarvisConvolutionPass,
+    ReplaceAtenConvolutionWithCadenceConvolutionPass,
     ReplaceConstantPadNdWithSlicePass,
     ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
     ReplaceConvWithIm2RowAndLinear,
@@ -411,7 +411,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([convolution])
         original_gm = builder.get_graph_module()
 
-        p1 = ReplaceAtenConvolutionWithJarvisConvolutionPass()
+        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
         p2 = ReplaceTransposedConvWithLinearPass()
         graph_after_passes = cast(
             PassResult, p2(cast(PassResult, p1(original_gm)).graph_module)
@@ -969,7 +969,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, weights, bias, [1], [0], [1], 1, False),
         )
         # First, replace the aten convolution with a cadence.convolution op
-        p1 = ReplaceAtenConvolutionWithJarvisConvolutionPass()
+        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
         temp_graph = cast(PassResult, p1(original_gm)).graph_module
         # temp_graph = p1(original_gm).graph_module
         self.assertIsNotNone(temp_graph)
@@ -1003,7 +1003,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, weights, bias, [1, 1], [0, 0], [1, 1], 1, False),
         )
         # First, replace the aten convolution with a cadence.convolution op
-        p1 = ReplaceAtenConvolutionWithJarvisConvolutionPass()
+        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
         temp_graph = cast(PassResult, p1(original_gm)).graph_module
         self.assertIsNotNone(temp_graph)
 
