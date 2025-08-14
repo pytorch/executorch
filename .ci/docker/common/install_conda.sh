@@ -35,7 +35,7 @@ install_miniconda() {
 install_python() {
   pushd /opt/conda
   # Install the selected Python version for CI jobs
-  as_ci_user conda create -n "py_${PYTHON_VERSION}" -y --file /opt/conda/conda-env-ci.txt python="${PYTHON_VERSION}"
+  as_ci_user conda create -c conda-forge -n "py_${PYTHON_VERSION}" -y --file /opt/conda/conda-env-ci.txt python="${PYTHON_VERSION}"
 
   # From https://github.com/pytorch/pytorch/blob/main/.ci/docker/common/install_conda.sh
   if [[ $(uname -m) == "aarch64" ]]; then
