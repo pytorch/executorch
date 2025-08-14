@@ -11,7 +11,6 @@ import inspect
 import os
 import sys
 
-from functools import partial
 from typing import Dict, final, Optional, Sequence, Type
 
 import executorch.exir as exir
