@@ -21,9 +21,11 @@ python_library(
     ],
     deps = [
         "//executorch/exir:lib",
-        "//pytorch/ao:torchao",  
+        "//pytorch/ao:torchao",
         "//executorch/backends/nxp:quantizer",
         "//executorch/backends/nxp:neutron_backend",
+        "//executorch/backends/nxp/edge_passes:neutron_edge_pass_manager",
+        "//executorch/extension/export_util:export_util",
     ]
 )
 
@@ -48,5 +50,33 @@ python_pytest(
         "//executorch/backends/nxp:neutron_backend",
         ":executorch_pipeline",
         ":models",
+    ]
+)
+
+python_pytest(
+    name = "test_edge_passes",
+    srcs = [
+        "test_edge_passes.py",
+    ],
+    deps = [
+        "//executorch/backends/nxp:neutron_backend",
+        ":executorch_pipeline",
+        ":models",
+        "//executorch/exir:lib",
+        "//caffe2:torch",
+    ]
+)
+
+python_pytest(
+    name = "test_batch_norm_fusion",
+    srcs = [
+        "test_batch_norm_fusion.py",
+    ],
+    deps = [
+        "//executorch/backends/nxp:neutron_backend",
+        ":executorch_pipeline",
+        ":models",
+        "//executorch/exir:lib",
+        "//caffe2:torch",
     ]
 )

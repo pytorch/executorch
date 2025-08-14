@@ -1,0 +1,40 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "neutron_edge_pass",
+    srcs = [
+        "neutron_edge_pass.py",
+    ],
+    deps = [
+        "//executorch/exir:lib",
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "move_auxiliary_operator_into_separate_qdq_cluster_pass",
+    srcs = [
+        "move_auxiliary_operator_into_separate_qdq_cluster_pass.py",
+    ],
+    deps = [
+        ":neutron_edge_pass",
+        "//executorch/backends/nxp:neutron_backend",
+        "//executorch/exir:lib",
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "neutron_edge_pass_manager",
+    srcs = [
+        "neutron_edge_pass_manager.py",
+    ],
+    deps = [
+        ":neutron_edge_pass",
+        ":move_auxiliary_operator_into_separate_qdq_cluster_pass",
+        "//executorch/exir:lib",
+        "//caffe2:torch",
+    ],
+)
