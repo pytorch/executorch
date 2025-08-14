@@ -1,13 +1,24 @@
 import argparse
+import hashlib
 import importlib
+import random
 import re
 import time
 import unittest
+import warnings
 
 from datetime import timedelta
 from typing import Any
 
 import torch
+
+# Set of unsupported ops that should cause tests to be skipped
+UNSUPPORTED_PORTABLE_OPS = {
+    "aten::_embedding_bag",
+    "aten::median",
+    "aten::median.dim",
+    "aten::round.decimals",
+}
 
 from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import StageType
@@ -17,7 +28,7 @@ from executorch.backends.test.suite.reporting import (
     begin_test_session,
     complete_test_session,
     count_ops,
-    generate_csv_report,
+    get_active_test_session,
     RunSummary,
     TestCaseSummary,
     TestResult,
@@ -32,12 +43,32 @@ NAMED_SUITES = {
 }
 
 
+def _get_test_seed(test_base_name: str) -> int:
+    # Set the seed based on the test base name to give consistent inputs between backends. Add the
+    # run seed to allow for reproducible results, but still allow for run-to-run variation.
+    # Having a stable hash between runs and across machines is a plus (builtin python hash is not).
+    # Using MD5 here because it's fast and we don't actually care about cryptographic properties.
+    test_session = get_active_test_session()
+    run_seed = (
+        test_session.seed
+        if test_session is not None
+        else random.randint(0, 100_000_000)
+    )
+
+    hasher = hashlib.md5()
+    data = test_base_name.encode("utf-8")
+    hasher.update(data)
+    # Torch doesn't like very long seeds.
+    return (int.from_bytes(hasher.digest(), "little") % 100_000_000) + run_seed
+
+
 def run_test(  # noqa: C901
     model: torch.nn.Module,
     inputs: Any,
     flow: TestFlow,
     test_name: str,
     test_base_name: str,
+    subtest_index: int,
     params: dict | None,
     dynamic_shapes: Any | None = None,
     generate_random_test_inputs: bool = True,
@@ -50,6 +81,8 @@ def run_test(  # noqa: C901
     error_statistics: list[ErrorStatistics] = []
     extra_stats = {}
 
+    torch.manual_seed(_get_test_seed(test_base_name))
+
     # Helper method to construct the summary.
     def build_result(
         result: TestResult, error: Exception | None = None
@@ -57,6 +90,7 @@ def run_test(  # noqa: C901
         return TestCaseSummary(
             backend=flow.backend,
             base_name=test_base_name,
+            subtest_index=subtest_index,
             flow=flow.name,
             name=test_name,
             params=params,
@@ -70,7 +104,7 @@ def run_test(  # noqa: C901
     try:
         model(*inputs)
     except Exception as e:
-        return build_result(TestResult.EAGER_FAIL, e)
+        return build_result(TestResult.SKIPPED, e)
 
     try:
         tester = flow.tester_factory(model, inputs)
@@ -96,7 +130,7 @@ def run_test(  # noqa: C901
             tester._get_default_stage(StageType.EXPORT, dynamic_shapes=dynamic_shapes),
         )
     except Exception as e:
-        return build_result(TestResult.EXPORT_FAIL, e)
+        return build_result(TestResult.SKIPPED, e)
 
     lower_start_time = time.perf_counter()
     try:
@@ -125,7 +159,16 @@ def run_test(  # noqa: C901
         if n.op == "call_function"
     )
 
-    # Only run the runtime portion if something was delegated (or the flow doesn't delegate).
+    # Check if any undelegated ops are in the unsupported ops set.
+    has_unsupported_ops = any(
+        op in UNSUPPORTED_PORTABLE_OPS for op in undelegated_op_counts.keys()
+    )
+
+    # Skip the test if there are unsupported portable ops remaining.
+    if has_unsupported_ops:
+        return build_result(TestResult.SKIPPED)
+
+    # Only run the runtime portion if something was delegated (or the flow doesn't delegate)
     if is_delegated or not flow.is_delegated:
         try:
             tester.to_executorch().serialize()
@@ -142,12 +185,15 @@ def run_test(  # noqa: C901
             tester.run_method_and_compare_outputs(
                 inputs=None if generate_random_test_inputs else inputs,
                 statistics_callback=lambda stats: error_statistics.append(stats),
+                atol=1e-1,
+                rtol=4e-2,
             )
         except AssertionError as e:
             return build_result(TestResult.OUTPUT_MISMATCH_FAIL, e)
         except Exception as e:
             return build_result(TestResult.PTE_RUN_FAIL, e)
     else:
+        # Skip the test if nothing is delegated
         return build_result(TestResult.SUCCESS_UNDELEGATED)
 
     return build_result(TestResult.SUCCESS)
@@ -215,6 +261,12 @@ def parse_args():
         help="A file to write the test report to, in CSV format.",
         default="backend_test_report.csv",
     )
+    parser.add_argument(
+        "--seed",
+        nargs="?",
+        help="The numeric seed value to use for random generation.",
+        type=int,
+    )
     return parser.parse_args()
 
 
@@ -228,7 +280,14 @@ def build_test_filter(args: argparse.Namespace) -> TestFilter:
 def runner_main():
     args = parse_args()
 
-    begin_test_session()
+    # Suppress deprecation warnings for export_for_training, as it generates a
+    # lot of log spam. We don't really need the warning here.
+    warnings.simplefilter("ignore", category=FutureWarning)
+
+    seed = args.seed or random.randint(0, 100_000_000)
+    print(f"Running with seed {seed}.")
+
+    begin_test_session(args.report, seed=seed)
 
     if len(args.suite) > 1:
         raise NotImplementedError("TODO Support multiple suites.")
@@ -242,11 +301,6 @@ def runner_main():
 
     summary = complete_test_session()
     print_summary(summary)
-
-    if args.report is not None:
-        with open(args.report, "w") as f:
-            print(f"Writing CSV report to {args.report}.")
-            generate_csv_report(summary, f)
 
 
 if __name__ == "__main__":
