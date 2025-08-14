@@ -69,16 +69,20 @@ target_link_libraries(aten_ops_cadence PUBLIC executorch)
 target_link_libraries(aten_ops_cadence PRIVATE xa_nnlib)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..
-${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
 
 target_include_directories(
-  aten_ops_cadence PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
-                          ${_common_include_directories}
-                          ${EXECUTORCH_ROOT}/backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3/xa_nnlib/algo/common/include/
-                          ${EXECUTORCH_ROOT}/backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3/xa_nnlib/include/nnlib
-                          ${EXECUTORCH_ROOT}/backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3/xa_nnlib/include
-                          ${EXECUTORCH_ROOT}/backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3/xa_nnlib/algo/kernels/tables/include
+  aten_ops_cadence
+  PUBLIC
+    ${ROOT_DIR}/..
+    ${CMAKE_BINARY_DIR}
+    ${_common_include_directories}
+    ${EXECUTORCH_ROOT}/backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3/xa_nnlib/algo/common/include/
+    ${EXECUTORCH_ROOT}/backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3/xa_nnlib/include/nnlib
+    ${EXECUTORCH_ROOT}/backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3/xa_nnlib/include
+    ${EXECUTORCH_ROOT}/backends/cadence/fusion_g3/third-party/nnlib/nnlib-FusionG3/xa_nnlib/algo/kernels/tables/include
 )
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
@@ -93,6 +97,4 @@ generate_bindings_for_kernels(
 )
 message("Generated files ${gen_command_sources}")
 
-gen_operators_lib(
-  LIB_NAME "cadence_ops_lib" KERNEL_LIBS DEPS aten_ops_cadence
-)
+gen_operators_lib(LIB_NAME "cadence_ops_lib" KERNEL_LIBS DEPS aten_ops_cadence)

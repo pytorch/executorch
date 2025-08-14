@@ -34,7 +34,6 @@ from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.arm_backend import (
     get_intermediate_path,
-    get_tosa_spec,
     is_ethosu,
     is_tosa,
     is_vgf,
@@ -62,7 +61,7 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
 )
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
 
 from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 
@@ -172,7 +171,9 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         super().dump_artifact(path_to_dump)
         _dump_lowered_modules_artifact(path_to_dump, self.artifact, self.graph_module)
 
-    def run(self, artifact: ExportedProgram, inputs=None) -> None:
+    def run(
+        self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
+    ) -> None:
         artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
             artifact_to_run,
@@ -180,6 +181,7 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
             constant_methods=self.constant_methods,
+            generate_etrecord=generate_etrecord,
         )
 
 
