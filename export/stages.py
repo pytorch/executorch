@@ -199,6 +199,7 @@ class EdgeTransformAndLowerStage(Stage):
         """
         exported_programs = artifact.data
         constant_methods = artifact.get_context("constant_methods")
+        generate_etrecord = artifact.get_context("generate_etrecord", False)
 
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
@@ -207,6 +208,7 @@ class EdgeTransformAndLowerStage(Stage):
                 transform_passes=self._transform_passes,
                 constant_methods=constant_methods,
                 compile_config=self._compile_config,
+                generate_etrecord=generate_etrecord,
             )
 
         delegation_info = get_delegation_info(
@@ -418,6 +420,7 @@ class ToEdgeStage(Stage):
             exported_programs,
             constant_methods=constant_methods,
             compile_config=self._edge_compile_config,
+            generate_etrecord=artifact.get_context("generate_etrecord", False),
         )
 
         self._artifact = artifact.copy_with_new_data(edge_program_manager)
