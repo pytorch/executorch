@@ -68,6 +68,8 @@ class QnnMemManager {
   QnnContext* context_;
   QnnExecuTorchLogLevel log_level_;
   std::unordered_map<Qnn_MemHandle_t, void*> registered_map_;
+  // If an Ion buffer is already registered, look it up here to reuse the handle
+  std::unordered_map<void*, Qnn_MemHandle_t> inverse_ion_registered_map_;
   std::unordered_map<CustomMemTensorInfo, void*> pre_registered_handles_;
   std::unordered_map<executorch::aten::ScalarType, Qnn_DataType_t>
       scalar_type_to_qnn_dtype_ = {
