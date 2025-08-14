@@ -807,7 +807,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Run tests"
-        python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE}
+        export OUTPUT_DIR="$(pwd)/${MODEL_ID}_${RECIPE}_${QUANTIZE}"
+        python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE} --model_dir ${OUTPUT_DIR}
         echo "::endgroup::"
 
         echo "::group::Generate artifacts for performance profiling"
