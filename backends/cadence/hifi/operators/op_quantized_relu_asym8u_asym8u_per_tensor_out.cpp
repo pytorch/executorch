@@ -38,7 +38,7 @@ void quantized_relu_asym8u_asym8u_per_tensor_out(
       in_zero_point,
       out_multipler_int32,
       out_shift_int32,
-      _out_zero_point,
+      out_zero_point,
       0,
       255,
       input.numel());
