@@ -9,34 +9,35 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
 #include <executorch/runtime/platform/assert.h>
 namespace example {
-KVManager::KVManager(KVManagerMode kv_updater, Metadata metadata)
+template <typename T>
+KVManager<T>::KVManager(KVManagerMode kv_updater, Metadata metadata)
     : kv_updater_(kv_updater), metadata_(metadata) {
   k_cache_.resize(
-      metadata_.num_layers, std::vector<KVCache>(metadata_.num_heads));
+      metadata_.num_layers, std::vector<KVCache<T>>(metadata_.num_heads));
   v_cache_.resize(
-      metadata_.num_layers, std::vector<KVCache>(metadata_.num_heads));
+      metadata_.num_layers, std::vector<KVCache<T>>(metadata_.num_heads));
 
   // Calculate cache size
   switch (kv_updater_) {
     case KVManagerMode::SMART_MASK: {
       size_t cache_in_bytes = metadata_.num_layers * metadata_.num_heads *
-          metadata_.head_dim * metadata_.max_cache_len * sizeof(uint8_t);
+          metadata_.head_dim * metadata_.max_cache_len * sizeof(T);
       size_t cache_out_bytes = metadata_.num_layers * metadata_.num_heads *
-          metadata_.head_dim * metadata_.max_ar_len * sizeof(uint8_t);
+          metadata_.head_dim * metadata_.max_ar_len * sizeof(T);
       total_cache_size_ = 2 * (cache_in_bytes + cache_out_bytes);
       break;
     }
     case KVManagerMode::SHIFT_POINTER: {
       size_t k_cache_in_bytes = metadata_.num_layers * metadata_.num_heads *
-          (metadata_.head_dim + 1) * metadata_.max_cache_len * sizeof(uint8_t);
+          (metadata_.head_dim + 1) * metadata_.max_cache_len * sizeof(T);
       size_t k_cache_out_bytes = metadata_.num_layers * metadata_.num_heads *
-          metadata_.head_dim * metadata_.max_ar_len * sizeof(uint8_t);
+          metadata_.head_dim * metadata_.max_ar_len * sizeof(T);
       // Use the same memory for input and output of value cache in shift
       // pointer mode. Note that using context length to prevent exceeding the
       // range when the AR-N model updates the last block in shift pointer
       // mode.
       size_t v_cache_bytes = metadata_.num_layers * (metadata_.num_heads + 1) *
-          metadata_.head_dim * metadata_.context_len * sizeof(uint8_t);
+          metadata_.head_dim * metadata_.context_len * sizeof(T);
       total_cache_size_ = k_cache_in_bytes + k_cache_out_bytes + v_cache_bytes;
       break;
     }
@@ -45,7 +46,8 @@ KVManager::KVManager(KVManagerMode kv_updater, Metadata metadata)
   }
 };
 
-void KVManager::init_attention_mask(
+template <typename T>
+void KVManager<T>::init_attention_mask(
     uint16_t* attention_mask,
     const std::vector<int32_t>& attention_map,
     int32_t ar_len,
@@ -114,7 +116,8 @@ void KVManager::init_attention_mask(
   }
 }
 
-void KVManager::update_attention_mask(
+template <typename T>
+void KVManager<T>::update_attention_mask(
     uint16_t* attention_mask,
     int32_t ar_len,
     int32_t n_past,
@@ -132,12 +135,12 @@ void KVManager::update_attention_mask(
   }
 }
 
-void KVManager::init_cache(IMemAlloc* buffer_manager, int32_t ar_len) {
+template <typename T>
+void KVManager<T>::init_cache(IMemAlloc* buffer_manager, int32_t ar_len) {
   cur_ar_len_ = ar_len;
   const size_t max_in_cache_block_in_bytes =
-      metadata_.max_cache_len * sizeof(uint8_t);
-  const size_t max_out_cache_block_in_bytes =
-      metadata_.max_ar_len * sizeof(uint8_t);
+      metadata_.max_cache_len * sizeof(T);
+  const size_t max_out_cache_block_in_bytes = metadata_.max_ar_len * sizeof(T);
 
   switch (kv_updater_) {
     case KVManagerMode::SMART_MASK: {
@@ -148,14 +151,14 @@ void KVManager::init_cache(IMemAlloc* buffer_manager, int32_t ar_len) {
       for (int layer = 0; layer < metadata_.num_layers; ++layer) {
         for (int head = 0; head < metadata_.num_heads; ++head) {
           // Allocate buffer for key cache and value cache
-          uint8_t* single_layer_k_cache_in = reinterpret_cast<uint8_t*>(
-              buffer_manager->allocate(cache_in_bytes));
-          uint8_t* single_layer_k_cache_out = reinterpret_cast<uint8_t*>(
-              buffer_manager->allocate(cache_out_bytes));
-          uint8_t* single_layer_v_cache_in = reinterpret_cast<uint8_t*>(
-              buffer_manager->allocate(cache_in_bytes));
-          uint8_t* single_layer_v_cache_out = reinterpret_cast<uint8_t*>(
-              buffer_manager->allocate(cache_out_bytes));
+          T* single_layer_k_cache_in =
+              reinterpret_cast<T*>(buffer_manager->allocate(cache_in_bytes));
+          T* single_layer_k_cache_out =
+              reinterpret_cast<T*>(buffer_manager->allocate(cache_out_bytes));
+          T* single_layer_v_cache_in =
+              reinterpret_cast<T*>(buffer_manager->allocate(cache_in_bytes));
+          T* single_layer_v_cache_out =
+              reinterpret_cast<T*>(buffer_manager->allocate(cache_out_bytes));
 
           k_cache_[layer][head].buffer = single_layer_k_cache_in;
           k_cache_[layer][head].output_buffer = single_layer_k_cache_out;
@@ -171,20 +174,20 @@ void KVManager::init_cache(IMemAlloc* buffer_manager, int32_t ar_len) {
       const size_t k_cache_out_size_in_bytes = metadata_.num_heads *
           metadata_.head_dim * max_out_cache_block_in_bytes;
       const size_t v_cache_size_in_bytes = (metadata_.num_heads + 1) *
-          metadata_.head_dim * metadata_.context_len * sizeof(uint8_t);
+          metadata_.head_dim * metadata_.context_len * sizeof(T);
       const int32_t single_head_size_in =
           metadata_.head_dim * metadata_.max_cache_len;
       const int32_t single_head_size_out =
           metadata_.head_dim * metadata_.max_ar_len;
       for (int layer = 0; layer < metadata_.num_layers; ++layer) {
         // Allocate buffer for key cache and value cache
-        uint8_t* single_layer_k_cache_in = reinterpret_cast<uint8_t*>(
+        T* single_layer_k_cache_in = reinterpret_cast<T*>(
             buffer_manager->allocate(k_cache_in_size_in_bytes));
-        uint8_t* single_layer_k_cache_out = reinterpret_cast<uint8_t*>(
+        T* single_layer_k_cache_out = reinterpret_cast<T*>(
             buffer_manager->allocate(k_cache_out_size_in_bytes));
         // Note that using context length to prevent exceeding the range when
         // the AR-N model updates the last block in shift pointer mode.
-        uint8_t* single_layer_v_cache = reinterpret_cast<uint8_t*>(
+        T* single_layer_v_cache = reinterpret_cast<T*>(
             buffer_manager->allocate(v_cache_size_in_bytes));
         for (int head = 0; head < metadata_.num_heads; ++head) {
           k_cache_[layer][head].buffer = single_layer_k_cache_in +
@@ -211,7 +214,8 @@ void KVManager::init_cache(IMemAlloc* buffer_manager, int32_t ar_len) {
   }
 }
 
-void KVManager::rearrange_cache(int32_t ar_len_dst) {
+template <typename T>
+void KVManager<T>::rearrange_cache(int32_t ar_len_dst) {
   // Don't need to rearrange if cur_ar_len_ is equal to target ar_len
   if (cur_ar_len_ == ar_len_dst)
     return;
@@ -225,15 +229,16 @@ void KVManager::rearrange_cache(int32_t ar_len_dst) {
   cur_ar_len_ = ar_len_dst;
 }
 
-void KVManager::rearrange_key(KVCache& k_cache, int32_t ar_len_dst) {
+template <typename T>
+void KVManager<T>::rearrange_key(KVCache<T>& k_cache, int32_t ar_len_dst) {
   // The output of key cache doesn't need to rearrange for both of SMART_MASK
   // and SHIFT_POINTER
   const int32_t src_cache_num = (cur_ar_len_ == metadata_.context_len)
       ? metadata_.context_len
       : metadata_.context_len - cur_ar_len_;
   const int32_t dst_cache_num = metadata_.context_len - ar_len_dst;
-  uint8_t* k_cache_in_read_ptr = k_cache.buffer;
-  uint8_t* k_cache_in_write_ptr = k_cache.buffer;
+  T* k_cache_in_read_ptr = k_cache.buffer;
+  T* k_cache_in_write_ptr = k_cache.buffer;
 
   if (src_cache_num > dst_cache_num) {
     if (kv_updater_ == KVManagerMode::SHIFT_POINTER) {
@@ -263,7 +268,8 @@ void KVManager::rearrange_key(KVCache& k_cache, int32_t ar_len_dst) {
   }
 }
 
-void KVManager::rearrange_value(KVCache& v_cache, int32_t ar_len_dst) {
+template <typename T>
+void KVManager<T>::rearrange_value(KVCache<T>& v_cache, int32_t ar_len_dst) {
   // The input and output of the value cache don't need to rearrange for both
   // SMART_MASK and SHIFT_POINTER. However, the input pointer of the value cache
   // needs to be reset by ar_len_dst in SHIFT_POINTER mode. The output pointer
@@ -276,7 +282,8 @@ void KVManager::rearrange_value(KVCache& v_cache, int32_t ar_len_dst) {
   }
 }
 
-bool KVManager::update_cache_tensor(
+template <typename T>
+bool KVManager<T>::update_cache_tensor(
     std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>&
         k_cache_in,
     std::vector<std::vector<std::unique_ptr<executorch::aten::TensorImpl>>>&
@@ -313,7 +320,8 @@ bool KVManager::update_cache_tensor(
   return updated;
 }
 
-void KVManager::update_cache(
+template <typename T>
+void KVManager<T>::update_cache(
     int32_t ar_len,
     int32_t n_past,
     int32_t n_update,
@@ -331,14 +339,15 @@ void KVManager::update_cache(
   }
 }
 
-void KVManager::update_key(
-    KVCache& k_cache,
+template <typename T>
+void KVManager<T>::update_key(
+    KVCache<T>& k_cache,
     int32_t n_past,
     int32_t n_update,
     const std::vector<bool>& selected) {
-  uint8_t* write_ptr = k_cache.buffer;
-  uint8_t* read_ptr = k_cache.output_buffer;
-  const int32_t copy_size = n_update * sizeof(uint8_t);
+  T* write_ptr = k_cache.buffer;
+  T* read_ptr = k_cache.output_buffer;
+  const int32_t copy_size = n_update * sizeof(T);
   const int32_t iter_size = (cur_ar_len_ == metadata_.context_len)
       ? metadata_.context_len
       : metadata_.context_len - cur_ar_len_;
@@ -374,14 +383,15 @@ void KVManager::update_key(
   }
 }
 
-void KVManager::update_value(
-    KVCache& v_cache,
+template <typename T>
+void KVManager<T>::update_value(
+    KVCache<T>& v_cache,
     int32_t n_past,
     int32_t n_update,
     const std::vector<bool>& selected) {
-  uint8_t* write_ptr = v_cache.buffer;
-  uint8_t* read_ptr = v_cache.output_buffer;
-  const int32_t copy_size = n_update * metadata_.head_dim * sizeof(uint8_t);
+  T* write_ptr = v_cache.buffer;
+  T* read_ptr = v_cache.output_buffer;
+  const int32_t copy_size = n_update * metadata_.head_dim * sizeof(T);
   const int32_t past_size = n_past * metadata_.head_dim;
 
   if (kv_updater_ == KVManagerMode::SMART_MASK)
@@ -403,7 +413,7 @@ void KVManager::update_value(
     auto wp = write_ptr, rp = read_ptr;
     for (auto sel : selected) {
       if (sel) {
-        std::memcpy(wp, rp, metadata_.head_dim * sizeof(uint8_t));
+        std::memcpy(wp, rp, metadata_.head_dim * sizeof(T));
         wp += metadata_.head_dim;
         update_times--;
         if (update_times == 0)
@@ -413,5 +423,9 @@ void KVManager::update_value(
     }
   }
 }
+
+// Explicit instantiations
+template class KVManager<uint16_t>;
+template class KVManager<uint8_t>;
 
 } // namespace example
