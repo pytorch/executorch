@@ -15,10 +15,11 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 # For MI case
 edge_asin_op = (exir_ops.edge.aten.asin.default,)
+edge_acos_op = (exir_ops.edge.aten.acos.default,)
 
 
-def get_asin_decomposition(op) -> tuple:
-    if op in edge_asin_op:
+def get_decomposition(op) -> tuple:
+    if op in (edge_asin_op + edge_acos_op):
         return (
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.add.Tensor,
@@ -31,25 +32,26 @@ def get_asin_decomposition(op) -> tuple:
             exir_ops.edge.aten.lt.Scalar,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.full_like.default,
-            exir_ops.edge.aten.where.self,
             exir_ops.edge.aten.neg.default,
         )
 
-    raise RuntimeError(f"Can't get asin decomposition for op {op}")
+    raise RuntimeError(f"Can't get decomposition for op {op}")
 
 
-class DecomposeAsinPass(ArmPass):
+class DecomposeAsinAndAcosPass(ArmPass):
     """
-    This pass decomposes asin into a rational approximation for small values
+    This pass decomposes asin and acos into a rational approximation for small values
     and a transformed rational approximation for large values.
-    Example:
-        y = asin(x)
-    Becomes:
+
+    The decomposition is based on the following mathematical identities:
         if abs(x) < 0.5:
-            y = x + P(x^2) / Q(x^2)
+            asin(x) = x + P(x^2) / Q(x^2)
+            acos(x) = π/2 - asin(x)
         else:
-            y = π/2 - 2 * (s + s^3 * Q(z) / P(z))
-    where P and Q are polynomials defined in the function.
+            asin(x) = π/2 - 2 * (s + s^3 * Q(z) / P(z))
+            acos(x) = 2 * (s + s^3 * Q(z) / P(z))
+    where P and Q are polynomials defined in the function and s is the square root of z.
+
     """
 
     def _build_polynomial(
@@ -84,11 +86,25 @@ class DecomposeAsinPass(ArmPass):
             )
         return result
 
+    def _combine_branches(
+        self,
+        bool_op,
+        bool_args: tuple[torch.Tensor, float],
+        branches: tuple[torch.Tensor, torch.Tensor],
+        meta: dict[str, str],
+    ) -> torch.Tensor:
+        where_op = exir_ops.edge.aten.where.self
+        mask = super().call_operator(bool_op, bool_args, {}, meta, True)
+        branch_true, branch_false = branches
+        return super().call_operator(
+            where_op, (mask, branch_true, branch_false), {}, meta, True
+        )
+
     def call_operator(self, op, args, kwargs, meta):
-        if op not in edge_asin_op:
+        if op not in (edge_asin_op + edge_acos_op):
             return super().call_operator(op, args, kwargs, meta)
         logging.info(
-            f"Approximating asin. This may introduce small numerical errors. For details, see {__file__}."
+            f"Approximating {op}. This may introduce small numerical errors. For details, see {__file__}."
         )
         x = args[0]
         half = 0.5
@@ -111,9 +127,8 @@ class DecomposeAsinPass(ArmPass):
             lt_op,
             sub_op,
             full_like_op,
-            where_op,
             neg_op,
-        ) = get_asin_decomposition(op)
+        ) = get_decomposition(op)
 
         # Coefficients for the rational approximation, calculated with the Minimax (Remez) method
         p_coefficients = [
@@ -129,7 +144,6 @@ class DecomposeAsinPass(ArmPass):
         x_abs = super().call_operator(abs_op, (x,), {}, meta, True)
 
         # Step 1: compute asin_small - rational approximation for [0,0.5]
-
         y = super().call_operator(mul_op, (x_abs, x_abs), {}, meta, True)
         x3 = super().call_operator(mul_op, (x_abs, y), {}, meta, True)
 
@@ -154,47 +168,40 @@ class DecomposeAsinPass(ArmPass):
         Qz = self._build_polynomial(q_coefficients, z, meta)
 
         numer = super().call_operator(mul_op, (s3, Pz), {}, meta, True)
+
         # Calculate r_large = P(z) / Q(z)
         r_large = super().call_operator(div_op, (numer, Qz), {}, meta, True)
 
         # Calculate asin_large = pi/2 - 2 * (s + s^3 * Q(z) / P(z))
         t1 = super().call_operator(add_op, (s, r_large), {}, meta, True)
         t2 = super().call_operator(mul_op_scalar, (t1, two), {}, meta, True)
+
         diff = super().call_operator(sub_op_scalar, (t2, pi_over_2), {}, meta, True)
         tmp_neg_ones = super().call_operator(
             full_like_op, (diff, neg_one), {}, meta, True
         )
         asin_large = super().call_operator(mul_op, (diff, tmp_neg_ones), {}, meta, True)
 
-        # Combine branches
-        is_large = super().call_operator(gt_op, (x_abs, half), {}, meta, True)
-        asin_unsigned = super().call_operator(
-            where_op,
-            (
-                is_large,
-                asin_large,
-                asin_small,
-            ),
-            {},
-            meta,
-            True,
+        asin_unsigned = self._combine_branches(
+            gt_op, (x_abs, half), (asin_large, asin_small), meta
         )
 
         # Handle x < 0
-        is_neg = super().call_operator(lt_op, (x, zero), {}, meta, True)
-        # Compute -asin_unsigned
         negated_asin = super().call_operator(neg_op, (asin_unsigned,), {}, meta, True)
-        # Combine branches for signed asin
-        asin_signed = super().call_operator(
-            where_op,
-            (
-                is_neg,
-                negated_asin,
-                asin_unsigned,
-            ),
-            {},
-            meta,
-            True,
+        asin = self._combine_branches(
+            lt_op, (x, zero), (negated_asin, asin_unsigned), meta
         )
 
-        return asin_signed
+        if op in edge_acos_op:
+            # If x <= 0.5: acos(x) = pi/2 - asin(x)
+            const_tensor = super().call_operator(
+                full_like_op, (x, pi_over_2), {}, meta, True
+            )
+            acos_small = super().call_operator(
+                sub_op, (const_tensor, asin), {}, meta, True
+            )
+            # If x > 0.5, acos(x) = 2 * (s + s^3 * Q(z) / P(z)) = t2
+            acos = self._combine_branches(gt_op, (x, half), (t2, acos_small), meta)
+            return acos
+
+        return asin
