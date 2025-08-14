@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -57,7 +57,7 @@ class CifarNetModel(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(8, 32, 5)
+        self.conv1 = nn.Conv2d(3, 32, 5)
         self.conv2 = nn.Conv2d(32, 32, 5)
         self.conv3 = nn.Conv2d(32, 64, 5)
         self.pool1 = nn.MaxPool2d(2, 2)
@@ -66,10 +66,7 @@ class CifarNetModel(nn.Module):
         self.softmax = nn.Softmax(1)
 
     def forward(self, x):
-
-        # Neutron Backend does not yet have passses for automated padding if number of channels does not
-        # fit to Neutron constrains (#channels == #MAC units). So define the model explicitly tailored for Neutron-C-64.
-        x = F.pad(x, (2, 2, 2, 2, 0, 5))
+        x = F.pad(x, (2, 2, 2, 2))
         x = self.conv1(x)
         x = self.pool1(x)
 
