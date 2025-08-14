@@ -233,6 +233,20 @@ lib.define(
     "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_relu_asym8s_asym8s.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
+)
+lib.define(
+    "quantized_relu_asym8s_asym8s.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, "
+    "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_relu_asym8u_asym8u.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
+)
+lib.define(
+    "quantized_relu_asym8u_asym8u.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, "
+    "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_add.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
@@ -761,6 +775,28 @@ def requantize_per_tensor_meta(
 
 @register_fake("cadence::quantized_relu.per_tensor")
 def quantized_relu_per_tensor_meta(
+    input: torch.Tensor,
+    in_zero_point: int,
+    out_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_relu_asym8s_asym8s.per_tensor")
+def quantized_relu_asym8s_asym8s_per_tensor_meta(
+    input: torch.Tensor,
+    in_zero_point: int,
+    out_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_relu_asym8u_asym8u.per_tensor")
+def quantized_relu_asym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     in_zero_point: int,
     out_zero_point: int,
