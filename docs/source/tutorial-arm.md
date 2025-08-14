@@ -28,7 +28,6 @@ You may encounter some rough edges and features which may be documented or plann
 If you are already familiar with this delegate, you may want to jump directly to the examples:
 * [Examples in the ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm)
 * [Compilation for Ethos-U](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos_u_minimal_example.ipynb)
-* [Compilation for VGF/ML-SDK](https://github.com/pytorch/executorch/blob/main/examples/arm/vgf_minimal_example.ipynb)
 * [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py)
 ```
 

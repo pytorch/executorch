@@ -66,7 +66,7 @@ Other:
 
 ## Testing
 
-The tests and related support scripts will test TOSA, Ethos-U and VGF behaviour based on the installed tools. It is expected that the relevant environment preparation has been performed as outlined in the guide available here https://docs.pytorch.org/executorch/main/tutorial-arm.html
+The tests and related support scripts will test TOSA, Ethos-U and VGF behaviour based on the installed tools. It is expected that the relevant environment preparation has been performed as outlined in ./examples/arm/README.md.
 
 After setup you can run unit tests with the test_arm_baremetal.sh script.
 
