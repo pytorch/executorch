@@ -186,7 +186,7 @@ def export_token_embedding(llava, prompt):
             packed=False,
         ).quantized_model()
 
-    quantized_token_embed = quant_embedding(llava.model_.language_model.model)
+    quantized_token_embed = quant_embedding(llava.model_.model.language_model)
     token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():

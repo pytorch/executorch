@@ -30,9 +30,7 @@ list(PREPEND _qaihub_llama2_7b_runner__srcs
 add_executable(qaihub_llama2_7b_runner ${_qaihub_llama2_7b_runner__srcs})
 
 target_include_directories(
-  qaihub_llama2_7b_runner
-  PUBLIC ${_common_include_directories}
-         ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+  qaihub_llama2_7b_runner PUBLIC ${_common_include_directories}
 )
 target_link_libraries(
   qaihub_llama2_7b_runner
@@ -40,10 +38,10 @@ target_link_libraries(
   executorch_core
   extension_data_loader
   extension_flat_tensor
+  extension_llm_runner
   extension_module
   extension_tensor
   gflags
-  tokenizers
 )
 target_compile_options(
   qaihub_llama2_7b_runner PUBLIC ${_common_compile_options}
@@ -65,10 +63,7 @@ list(APPEND _common_compile_options -DQAIHUB_LLAMA3_RUNNER)
 # build qaihub llama3 8b runner
 add_executable(qaihub_llama3_8b_runner ${_qaihub_llama3_8b_runner__srcs})
 target_include_directories(
-  qaihub_llama3_8b_runner
-  PUBLIC
-    ${_common_include_directories}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/include
+  qaihub_llama3_8b_runner PUBLIC ${_common_include_directories}
 )
 
 target_link_libraries(
@@ -77,10 +72,10 @@ target_link_libraries(
   executorch_core
   extension_data_loader
   extension_flat_tensor
+  extension_llm_runner
   extension_module
   extension_tensor
   gflags
-  tokenizers
 )
 target_compile_options(
   qaihub_llama3_8b_runner PUBLIC ${_common_compile_options}

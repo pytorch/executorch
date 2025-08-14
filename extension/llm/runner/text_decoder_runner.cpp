@@ -22,7 +22,8 @@ namespace llm {
 // NOTE: we observed ~2x loading performance increase on iPhone 15
 // and a ~5% improvement on Galaxy S22 by switching to
 // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
-TextDecoderRunner::TextDecoderRunner(Module* module) : module_(module) {}
+TextDecoderRunner::TextDecoderRunner(Module* module, IOManager* io_manager)
+    : module_(module), io_manager_(io_manager) {}
 
 // This function is functional, meaning it shouldn't modify any state of the
 // input. It should be safe to call multiple times with the same inputs. The
@@ -52,24 +53,36 @@ TextDecoderRunner::TextDecoderRunner(Module* module) : module_(module) {}
     auto numel = sizes[0];
     std::vector<::executorch::aten::SizesType> sizes_vec = {numel};
 
-    // Assuming the last dimension is the one with the variable token length,
-    // for example [1, S] or [1, 1, S]
-    sizes_vec[sizes_vec.size() - 1] = numel;
     TensorPtr start_pos_tensor;
     if (numel > 1) {
-      // Assuming model is exported with cache_positions, create a tensor with
-      // the same size as cache_positions
+      // If we are here, model is exported with cache_positions, create a tensor
+      // with the same length as input_ids. Assuming the last dimension is the
+      // one with the variable token length, for example [1, S] or [1, 1, S]
+      sizes_vec[sizes_vec.size() - 1] = tokens->numel();
       start_pos_tensor = empty(sizes_vec, ::executorch::aten::ScalarType::Long);
       torch::executor::native::arange_out_impl(
-          start_pos, start_pos + numel, 1.0, *start_pos_tensor);
+          start_pos, start_pos + tokens->numel(), 1.0, *start_pos_tensor);
     } else {
       // Assuming model is exported with input_pos, create a tensor with size 1
       start_pos_tensor = from_blob(
           &start_pos, sizes_vec, ::executorch::aten::ScalarType::Long);
     }
-    ET_LOG(Info, "Start pos tensor numel: %zu", start_pos_tensor->numel());
-    auto outputs_res = module_->forward({tokens, start_pos_tensor});
+
+    std::vector<runtime::EValue> inputs;
+    auto method_err = module_->method("forward");
+    ET_CHECK_OK_OR_RETURN_ERROR(method_err.error());
+    auto& method = *(method_err.get());
+
+    auto inputs_res =
+        io_manager_->prepare_decode(tokens, start_pos_tensor, method);
+    ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
+    inputs = inputs_res.get();
+    auto outputs_res = module_->forward(inputs);
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
+
+    auto update_err = io_manager_->update_decode(method, outputs_res.get());
+    ET_CHECK_OK_OR_RETURN_ERROR(update_err);
+
     ET_CHECK_MSG(
         outputs_res.get().size() == 1,
         "More then one output returned from executing LLM.");

@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 add_subdirectory(json)
 add_subdirectory(gflags)
 
@@ -48,7 +49,7 @@ ExternalProject_Add(
 ExternalProject_Get_Property(flatbuffers_external_project INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
 add_dependencies(flatc flatbuffers_external_project)
-if(WIN32)
+if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
   # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
   # config, but from CMake's perspective the build type is always Debug.
   set_target_properties(flatc PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatc.exe)
@@ -86,6 +87,7 @@ ExternalProject_Add(
              -DFLATCC_REFLECTION=OFF
              -DFLATCC_DEBUG_CLANG_SANITIZE=OFF
              -DFLATCC_INSTALL=ON
+             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_POSITION_INDEPENDENT_CODE=ON
              -DCMAKE_TOOLCHAIN_FILE=
@@ -99,7 +101,7 @@ file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
 ExternalProject_Get_Property(flatcc_external_project INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
 add_dependencies(flatcc_cli flatcc_external_project)
-if(WIN32)
+if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
   set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc.exe)
 else()
   set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc)

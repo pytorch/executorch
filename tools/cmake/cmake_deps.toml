@@ -198,6 +198,17 @@ deps = [
   "executorch_core",
 ]
 
+[targets.extension_evalue_util]
+buck_targets = [
+  "//extension/evalue_util:print_evalue",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch_core",
+]
+
 [targets.extension_flat_tensor_schema]
 buck_targets = [
   "//extension/flat_tensor/serialize:generated_headers",
@@ -255,6 +266,7 @@ filters = [
 [targets.extension_llm_runner]
 buck_targets = [
   "//extension/llm/runner:runner_lib",
+  "//extension/llm/runner/io_manager:io_manager",
 ]
 filters = [
   ".cpp$",
@@ -269,6 +281,7 @@ deps = [
   "extension_runner_util",
   "extension_tensor",
   "extension_tokenizers",
+  "kernels_util_all_deps",
 ]
 
 [targets.extension_tensor]
@@ -338,6 +351,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_evalue_util",
+  "extension_runner_util",
   "extension_threadpool",
   "kernels_util_all_deps",
   "portable_kernels",
@@ -358,6 +373,7 @@ excludes = [
 deps = [
   "executorch_core",
   "executorch",
+  "extension_data_loader",
 ]
 # ---------------------------------- binary end ----------------------------------
 # ---------------------------------- MPS start ----------------------------------
@@ -374,6 +390,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_evalue_util",
+  "extension_runner_util",
   "extension_threadpool",
   "kernels_util_all_deps",
   "portable_kernels",
@@ -415,6 +433,8 @@ excludes = [
 deps = [
   "executorch",
   "executorch_core",
+  "extension_evalue_util",
+  "extension_runner_util",
   "extension_threadpool",
   "kernels_util_all_deps",
   "xnnpack_backend",
@@ -489,9 +509,11 @@ deps = [
   "executorch_core",
   "extension_data_loader",
   "extension_flat_tensor",
+  "extension_llm_runner",
   "extension_module",
   "extension_tensor",
   "extension_threadpool",
+  "extension_tokenizers",
   "kernels_util_all_deps",
   "optimized_cpublas",
   "portable_kernels",

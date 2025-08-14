@@ -15,6 +15,10 @@ import contextvars
 import re
 from typing import List
 
+from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
+    CompileSpec,
+)
+
 from packaging.version import Version
 
 
@@ -23,15 +27,12 @@ class TosaSpecification:
     This class implements a representation of TOSA specification
     (https://www.mlplatform.org/tosa/tosa_spec.html) with a version, a profile
     (with extension) and a level (8k).
-    For 0.80 releases the profile is BI or MI, with u55 handled as an inofficial extension
     For 1.00 releases the profile is INT or FP, and the extensions are for
         INT: int16, int4, var, cf
         FP: bf16, fp8e4m3, fp8e5m2, fft, var, cf
 
     The TOSA specification is encoded in the string represenatation
         TOSA-major.minor.patch+profile[+level][+extensions]
-
-    For 0.80 MI implies BI, while for 1.0 the profiles has to explicitely be specified.
 
     Profiles are uppercase letters and extensions and level is lowercase.
     """
@@ -62,10 +63,6 @@ class TosaSpecification:
     def create_from_string(repr: str) -> "TosaSpecification":
         """
         Creates a TOSA specification class from a string representation:
-        TOSA-0.80+MI
-        TOSA-0.80+BI+8k
-        TOSA-0.80+BI+u55   # Ethos-U55 extension to handle TOSA subset
-        TOSA-0.90.0+MI
         TOSA-1.00.0+INT+FP+int4+cf
         """
 
@@ -78,63 +75,12 @@ class TosaSpecification:
             if name != "TOSA":
                 raise ValueError(f"Malformed TOSA specification representation: {repr}")
             match version:
-                case _ if version.major == 0 and version.minor == 80:
-                    return Tosa_0_80(version, extras)
                 case _ if version.major == 1 and version.minor == 0:
                     return Tosa_1_00(version, extras)
                 case _:
                     raise ValueError(f"Wrong TOSA version: {version} from {repr}")
 
         raise ValueError(f"Failed to parse TOSA specification representation: {repr}")
-
-
-class Tosa_0_80(TosaSpecification):
-    profile: str
-    level_8k: bool
-    available_profiles = ["BI", "MI"]  # MT is not defined
-
-    def __init__(self, version: Version, extras: List[str]):
-        super().__init__(version, extras)
-        assert version >= Version("0.80") and version < Version("0.90")
-
-        # Check that we only have one profile in the extensions list
-        if [e in Tosa_0_80.available_profiles for e in extras].count(True) != 1:
-            raise ValueError(
-                f"Bad combination of extras: {extras}, more than one of {Tosa_0_80.available_profiles} found."
-            )
-
-        # The list contains one profile at most, so pick it
-        self.profile = [e for e in extras if e in Tosa_0_80.available_profiles][0]
-        extras.remove(self.profile)
-
-        self.level_8k = "8k" in extras
-        if self.level_8k:
-            extras.remove("8k")
-
-        if len(extras) > 0:
-            raise ValueError(f"Unhandled extras found: {extras}")
-
-    def __repr__(self) -> str:
-        extensions = ""
-        if self.level_8k:
-            extensions += "+8k"
-        if self.is_U55_subset:
-            extensions += "+u55"
-        return f"TOSA-{str(self.version)}+{self.profile}{extensions}"
-
-    def __hash__(self) -> int:
-        return hash(str(self.version) + self.profile)
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, Tosa_0_80):
-            return (self.version == other.version) and (self.profile == other.profile)
-        return False
-
-    def support_integer(self):
-        return True
-
-    def support_float(self):
-        return self.profile == "MI"
 
 
 class Tosa_1_00(TosaSpecification):
@@ -246,3 +192,10 @@ def get_context_spec() -> TosaSpecification:
         return TosaLoweringContext.tosa_spec_var.get()
     except LookupError:
         raise RuntimeError("Function must be executed within a TosaLoweringContext")
+
+
+def get_tosa_spec(compile_spec: List[CompileSpec]) -> TosaSpecification:
+    for spec in compile_spec:
+        if spec.key == "tosa_spec":
+            return TosaSpecification.create_from_string(spec.value.decode())
+    raise ValueError("Could not find TOSA version in CompileSpec")

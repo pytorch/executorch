@@ -57,8 +57,24 @@ lib.define(
     "quantized_linear.per_tensor_out(Tensor src, Tensor weight, Tensor bias, SymInt src_zero_point, SymInt weight_zero_point, SymInt out_multiplier, SymInt out_shift, SymInt out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_linear_asym8sxasym8s_asym8s.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
+    "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_linear_asym8uxasym8u_asym8u.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
+    "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_linear.per_tensor(Tensor src, Tensor weight, Tensor bias, SymInt src_zero_point, "
     "SymInt weight_zero_point, SymInt out_multiplier, SymInt out_shift, SymInt out_zero_point, Tensor? offset) -> Tensor"
+)
+lib.define(
+    "quantized_linear_asym8sxasym8s_asym8s.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
+    "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_linear_asym8uxasym8u_asym8u.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
+    "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
 )
 
 lib.define(
@@ -162,6 +178,14 @@ lib.define(
     "quantized_fully_connected.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
 )
+lib.define(
+    "quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
+    "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
+    "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
+)
 lib.define("where_Scalar(Tensor condition, float self, float other) -> (Tensor Z)")
 lib.define(
     "where_Scalar.out(Tensor condition, float self, float other, *, Tensor(a!) out) -> Tensor(a!)"
@@ -209,6 +233,20 @@ lib.define(
     "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_relu_asym8s_asym8s.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
+)
+lib.define(
+    "quantized_relu_asym8s_asym8s.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, "
+    "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_relu_asym8u_asym8u.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
+)
+lib.define(
+    "quantized_relu_asym8u_asym8u.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, "
+    "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_add.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
@@ -238,6 +276,14 @@ lib.define(
 )
 lib.define(
     "quantized_fully_connected.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
+    "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
+    "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
@@ -275,6 +321,14 @@ lib.define(
 lib.define(
     "requantize.per_tensor_out(Tensor input, float in_scale, int in_zero_point, float out_scale, "
     "int out_zero_point, ScalarType out_dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "roi_align_box_processor.out(Tensor rois, int output_size_h, int output_size_w, "
+    "int sampling_ratio, bool aligned, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "roi_align_box_processor(Tensor rois, int output_size_h, int output_size_w, "
+    "int sampling_ratio, bool aligned) -> (Tensor out)"
 )
 
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
@@ -410,6 +464,50 @@ def quantized_linear_per_tensor_meta(
     out_multiplier: torch.SymInt,
     out_shift: torch.SymInt,
     out_zero_point: torch.SymInt,
+    offset: Optional[torch.Tensor],
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [out_dim, in_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    out_size = list(src.size())
+    weight_size = list(weight.size())
+    assert len(weight_size) == 2
+    out_size[-1] = weight_size[0]
+    return src.new_empty(out_size, dtype=src.dtype)
+
+
+@register_fake("cadence::quantized_linear_asym8sxasym8s_asym8s.per_tensor")
+def quantized_linear_asym8sxasym8s_asym8s_per_tensor_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_zero_point: int,
+    weight_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor],
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [out_dim, in_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    out_size = list(src.size())
+    weight_size = list(weight.size())
+    assert len(weight_size) == 2
+    out_size[-1] = weight_size[0]
+    return src.new_empty(out_size, dtype=src.dtype)
+
+
+@register_fake("cadence::quantized_linear_asym8uxasym8u_asym8u.per_tensor")
+def quantized_linear_asym8uxasym8u_asym8u_per_tensor_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_zero_point: int,
+    weight_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+    out_zero_point: int,
     offset: Optional[torch.Tensor],
 ) -> torch.Tensor:
     # src comes in shape [leading_dims, in_dim]
@@ -686,6 +784,28 @@ def quantized_relu_per_tensor_meta(
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
+@register_fake("cadence::quantized_relu_asym8s_asym8s.per_tensor")
+def quantized_relu_asym8s_asym8s_per_tensor_meta(
+    input: torch.Tensor,
+    in_zero_point: int,
+    out_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_relu_asym8u_asym8u.per_tensor")
+def quantized_relu_asym8u_asym8u_per_tensor_meta(
+    input: torch.Tensor,
+    in_zero_point: int,
+    out_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=input.dtype)
+
+
 @register_fake("cadence::fully_connected")
 def fully_connected_meta(
     src: torch.Tensor,
@@ -726,6 +846,50 @@ def quantized_fully_connected_meta(
 
 @register_fake("cadence::quantized_fully_connected.per_tensor")
 def quantized_fully_connected_per_tensor_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_zero_point: int,
+    weight_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor],
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [out_dim, in_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    out_size = list(src.size())
+    weight_size = list(weight.size())
+    assert len(weight_size) == 2
+    out_size[-1] = weight_size[0]
+    return src.new_empty(out_size, dtype=src.dtype)
+
+
+@register_fake("cadence::quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor")
+def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_zero_point: int,
+    weight_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor],
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [out_dim, in_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    out_size = list(src.size())
+    weight_size = list(weight.size())
+    assert len(weight_size) == 2
+    out_size[-1] = weight_size[0]
+    return src.new_empty(out_size, dtype=src.dtype)
+
+
+@register_fake("cadence::quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")
+def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1038,3 +1202,14 @@ def idma_store_impl(
     channel: int = 0,
 ) -> torch.Tensor:
     return copy_idma_copy_impl(src, task_num, channel)
+
+
+@register_fake("cadence::roi_align_box_processor")
+def roi_align_box_processor_meta(
+    rois: torch.Tensor,
+    output_size_h: int,
+    output_size_w: int,
+    sampling_ratio: int,
+    aligned: bool,
+) -> torch.Tensor:
+    return rois.new_empty((rois.shape[0], 80), dtype=torch.uint8)

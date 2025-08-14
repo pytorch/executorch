@@ -13,28 +13,31 @@ using executorch::runtime::Result;
 
 namespace example {
 
-void LhdTokenGenerator::prepare_io(
+template <typename T>
+void LhdTokenGenerator<T>::prepare_io(
     std::vector<uint64_t> input_tokens,
     std::vector<int32_t> input_pos) {
   for (int i = 0; i < metadata_.ar_len; i++) {
     if (i < input_tokens.size()) {
       // Prepare pos data
-      input_pos_.data[i] = input_pos[i];
+      this->input_pos_.data[i] = input_pos[i];
 
       // Support CPU 4-bit embedding, which requires int64 input.
       // However, for QNN embedding, only int32 input is needed.
       // Therefore, we need to cast to the correct type to write the data.
       if (metadata_.use_int64_token) {
-        input_toks_.data[i] = input_tokens[i];
+        this->input_toks_.data[i] = input_tokens[i];
       } else {
-        int32_t* input_toks_ptr = reinterpret_cast<int32_t*>(input_toks_.data);
+        int32_t* input_toks_ptr =
+            reinterpret_cast<int32_t*>(this->input_toks_.data);
         input_toks_ptr[i] = static_cast<int32_t>(input_tokens[i]);
       }
     }
   }
 }
 
-void LhdTokenGenerator::init_attention_mask(int32_t n_past) {
+template <typename T>
+void LhdTokenGenerator<T>::init_attention_mask(int32_t n_past) {
   std::vector<int32_t> attention_map;
   attention_map.reserve(metadata_.ar_len);
   // Initialize attention mask with current position
@@ -56,11 +59,12 @@ void LhdTokenGenerator::init_attention_mask(int32_t n_past) {
     }
   }
 
-  kv_manager_->init_attention_mask(
-      attention_mask_.data, attention_map, metadata_.ar_len, n_past);
+  this->kv_manager_->init_attention_mask(
+      this->attention_mask_.data, attention_map, metadata_.ar_len, n_past);
 }
 
-void LhdTokenGenerator::init_lookahead_branch(
+template <typename T>
+void LhdTokenGenerator<T>::init_lookahead_branch(
     const std::vector<uint64_t>& tokens) {
   for (int i = 0; i < metadata_.ngram - 1; ++i) {
     for (int j = 0; j < metadata_.window; ++j) {
@@ -77,7 +81,8 @@ void LhdTokenGenerator::init_lookahead_branch(
   is_lhd_branch_initialized_ = true;
 }
 
-void LhdTokenGenerator::init_verification_branch(uint64_t cur_token) {
+template <typename T>
+void LhdTokenGenerator<T>::init_verification_branch(uint64_t cur_token) {
   const int g_cur = ngrams_pool_.cnt[cur_token];
 
   v_branch_.resize(g_cur);
@@ -101,7 +106,8 @@ void LhdTokenGenerator::init_verification_branch(uint64_t cur_token) {
   }
 }
 
-void LhdTokenGenerator::update_ngrams_pool() {
+template <typename T>
+void LhdTokenGenerator<T>::update_ngrams_pool() {
   std::vector<int32_t> ngram(metadata_.ngram - 1);
   // n-gram pool generation
   for (int f = 0; f < metadata_.window; ++f) {
@@ -154,7 +160,8 @@ void LhdTokenGenerator::update_ngrams_pool() {
   }
 }
 
-void LhdTokenGenerator::update_lookahead_branch(
+template <typename T>
+void LhdTokenGenerator<T>::update_lookahead_branch(
     const executorch::aten::Tensor& logits_tensor) {
   for (int i = 0; i < metadata_.window; i++) {
     lhd_branch_prev_[i] = lhd_branch_[0][i];
@@ -168,15 +175,17 @@ void LhdTokenGenerator::update_lookahead_branch(
   for (int i = 0; i < metadata_.window; i++) {
     size_t sample_idx = (metadata_.ngram - 2) * metadata_.window + i;
     lhd_branch_[metadata_.ngram - 2][i] =
-        decoder_runner_->logits_to_token(logits_tensor, sample_idx);
+        this->decoder_runner_->logits_to_token(logits_tensor, sample_idx);
   }
 }
 
-Result<int64_t> LhdTokenGenerator::generate(
+template <typename T>
+Result<int64_t> LhdTokenGenerator<T>::generate(
     std::vector<uint64_t> tokens,
     int64_t start_pos,
     int32_t seq_len,
-    std::function<void(const std::string&)> token_callback) {
+    std::function<void(const std::string&)> token_callback,
+    bool dump_logits) {
   ET_CHECK_MSG(
       !tokens.empty(), "Token generation loop shouldn't take empty tokens");
   // position in the sequence
@@ -196,7 +205,7 @@ Result<int64_t> LhdTokenGenerator::generate(
   input_pos.reserve(metadata_.ar_len);
 
   // Rearrange KV cache first and initialize the input and output of KV cache
-  kv_manager_->rearrange_cache(metadata_.ar_len);
+  this->kv_manager_->rearrange_cache(metadata_.ar_len);
 
   // Initialize attention mask with pos
   init_attention_mask(pos);
@@ -209,10 +218,11 @@ Result<int64_t> LhdTokenGenerator::generate(
 
   // Initialize the output of the module
   ET_CHECK_MSG(
-      decoder_runner_->set_outputs(method_name_, output_tensors_) ==
+      this->decoder_runner_->set_outputs(
+          this->method_name_, this->output_tensors_) ==
           executorch::runtime::Error::Ok,
       "Failed to set output tensor for module %s",
-      method_name_.c_str());
+      this->method_name_.c_str());
 
   // Generate tokens
   while (pos < seq_len - 1) {
@@ -251,25 +261,27 @@ Result<int64_t> LhdTokenGenerator::generate(
     prepare_io(input_tokens, input_pos);
     // Only update data pointer of the cache to the tensor for SHIFT_POINTER
     // mode
-    bool updated = kv_manager_->update_cache_tensor(
-        k_cache_in_,
-        k_cache_out_,
-        v_cache_in_,
-        v_cache_out_,
+    bool updated = this->kv_manager_->update_cache_tensor(
+        this->k_cache_in_,
+        this->k_cache_out_,
+        this->v_cache_in_,
+        this->v_cache_out_,
         metadata_.ar_len,
         pos);
     // Only update the output of module for SHIFT_POINTER mode
     if (updated) {
       // Update the output of the module
       ET_CHECK_MSG(
-          decoder_runner_->set_outputs(method_name_, output_tensors_) ==
+          this->decoder_runner_->set_outputs(
+              this->method_name_, this->output_tensors_) ==
               executorch::runtime::Error::Ok,
           "Failed to set output tensor for module %s",
-          method_name_.c_str());
+          this->method_name_.c_str());
     }
 
     // Run inference
-    auto logits_res = decoder_runner_->step(method_name_, inputs_);
+    auto logits_res =
+        this->decoder_runner_->step(this->method_name_, this->inputs_);
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
     executorch::aten::Tensor& logits_tensor = logits_res.get();
     prev_pos = pos;
@@ -312,18 +324,19 @@ Result<int64_t> LhdTokenGenerator::generate(
 
       prev_token = cur_token;
       // sampler from logits all
-      stats_->on_sampling_begin();
-      cur_token = decoder_runner_->logits_to_token(logits_tensor, sample_idx);
-      stats_->on_sampling_end();
+      this->stats_->on_sampling_begin();
+      cur_token =
+          this->decoder_runner_->logits_to_token(logits_tensor, sample_idx);
+      this->stats_->on_sampling_end();
       result_tokens.push_back(cur_token);
       pos++;
 
       // print the token as string, decode it with the Tokenizer object
       token_callback(
-          ET_UNWRAP_TOKENIZER(tokenizer_->decode(prev_token, cur_token)));
+          ET_UNWRAP_TOKENIZER(this->tokenizer_->decode(prev_token, cur_token)));
 
       // data-dependent terminating condition: we have n_eos_ number of EOS
-      if (eos_ids_->count(cur_token) > 0) {
+      if (this->eos_ids_->count(cur_token) > 0) {
         printf("\n");
         ET_LOG(Info, "\nReached to the end of generation");
         break;
@@ -359,14 +372,15 @@ Result<int64_t> LhdTokenGenerator::generate(
     }
     // Update KV Cache with the output results
     int32_t n_update = pos - prev_pos;
-    kv_manager_->update_cache(metadata_.ar_len, prev_pos, n_update, selected);
+    this->kv_manager_->update_cache(
+        metadata_.ar_len, prev_pos, n_update, selected);
 
     // Update attention mask with current position
-    kv_manager_->update_attention_mask(
-        attention_mask_.data, metadata_.ar_len, prev_pos, n_update);
+    this->kv_manager_->update_attention_mask(
+        this->attention_mask_.data, metadata_.ar_len, prev_pos, n_update);
 
     // data-dependent terminating condition: we have n_eos_ number of EOS
-    if (eos_ids_->count(cur_token) > 0) {
+    if (this->eos_ids_->count(cur_token) > 0) {
       printf("\n");
       ET_LOG(Info, "\nReached to the end of generation");
       break;
@@ -380,4 +394,9 @@ Result<int64_t> LhdTokenGenerator::generate(
 
   return pos - start_pos;
 }
+
+// Explicit instantiations
+template class LhdTokenGenerator<uint16_t>;
+template class LhdTokenGenerator<uint8_t>;
+
 } // namespace example

@@ -400,6 +400,9 @@ class HardswishConfig(GenericNodePartitionerConfig):
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
 
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.hardswish.default
+
 
 class LeakyReLUConfig(GenericNodePartitionerConfig):
     target_name = "leaky_relu.default"
@@ -420,6 +423,35 @@ class TanhConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
+    target_name = "_to_dim_order_copy.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Only support dim order conversion partitioning, not DType conversions
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # Get input node and compare dtypes
+        input_node = get_input_node(node, 0)
+        input_dtype = input_node.meta["val"].dtype
+        output_dtype = node.meta["val"].dtype
+
+        # Return False if doing dtype conversion
+        if input_dtype != output_dtype:
+            why(
+                node,
+                reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
+            )
+            return False
+
+        return True
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
 class MeanDimConfig(GenericNodePartitionerConfig):
@@ -556,6 +588,21 @@ class ReciprocalSquareRootConfig(GenericNodePartitionerConfig):
 
 class ConstantPadConfig(GenericNodePartitionerConfig):
     target_name = "constant_pad_nd.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK does not support cropping with negative padding sizes.
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # Check for negative padding values
+        padding = cast(List[int], node.args[1])
+        if any(p < 0 for p in padding):
+            why(node, reason="XNNPACK does not support negative padding values")
+            return False
+
+        return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]

@@ -205,13 +205,19 @@ def define_common_targets(is_fbcode = False):
         ]
     )
     define_test_targets(
-        "linear_weight_int4_test",
+        "quantized_linear_test",
         extra_deps = [
             ":test_utils",
         ]
     )
     define_test_targets(
         "rotary_embedding_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
+        "quantize_affine_test",
         extra_deps = [
             ":test_utils",
         ]

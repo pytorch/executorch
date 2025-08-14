@@ -48,6 +48,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::kTensorDimensionLimit;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 using namespace vkcompute;
 
@@ -83,10 +84,14 @@ vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
       return vkapi::kChar;
     case vkgraph::VkDataType::INT32:
       return vkapi::kInt;
+    case vkgraph::VkDataType::INT64:
+      return vkapi::kLong;
     case vkgraph::VkDataType::FLOAT16:
       return vkapi::kHalf;
     case vkgraph::VkDataType::FLOAT32:
       return vkapi::kFloat;
+    case vkgraph::VkDataType::FLOAT64:
+      return vkapi::kDouble;
   }
 }
 
@@ -386,18 +391,20 @@ bool maybe_resize_input(
     const size_t input_i,
     executorch::aten::Tensor& et_tensor) {
   ValueRef in_tensor_ref = graph->inputs()[input_i].value;
-  vTensorPtr in_tensor = graph->get_tensor(in_tensor_ref);
+
+  const std::vector<int64_t> in_tensor_vk_sizes =
+      graph->sizes_of(in_tensor_ref);
 
   ET_CHECK_MSG(
-      et_tensor.dim() == in_tensor->sizes().size(),
+      et_tensor.dim() == in_tensor_vk_sizes.size(),
       "Cannot resize input tensor: old ndim %zu does not match new ndim %zu",
-      static_cast<size_t>(in_tensor->sizes().size()),
+      static_cast<size_t>(in_tensor_vk_sizes.size()),
       static_cast<size_t>(et_tensor.dim()));
 
   bool should_resize = false;
   std::vector<int64_t> new_sizes(et_tensor.dim());
   for (size_t i = 0; i < et_tensor.dim(); i++) {
-    if (in_tensor->sizes()[i] != et_tensor.sizes()[i]) {
+    if (in_tensor_vk_sizes[i] != et_tensor.sizes()[i]) {
       should_resize = true;
     }
     new_sizes.at(i) = et_tensor.sizes()[i];
@@ -407,10 +414,11 @@ bool maybe_resize_input(
     graph->resize_input(input_i, new_sizes);
   }
 
+  const size_t in_tensor_vk_numel = graph->numel_of(in_tensor_ref);
   ET_CHECK_MSG(
-      in_tensor->numel() == et_tensor.numel(),
+      in_tensor_vk_numel == et_tensor.numel(),
       "Vulkan tensor numel %zu does not match ET tensor numel %zu",
-      static_cast<size_t>(in_tensor->numel()),
+      static_cast<size_t>(in_tensor_vk_numel),
       static_cast<size_t>(et_tensor.numel()));
 
   return should_resize;
@@ -441,12 +449,14 @@ void maybe_resize_output(
     const size_t output_i,
     executorch::aten::Tensor& et_tensor) {
   ValueRef out_tensor_ref = graph->outputs()[output_i].value;
-  vTensorPtr out_tensor = graph->get_tensor(out_tensor_ref);
+
+  const std::vector<int64_t> out_tensor_vk_sizes =
+      graph->sizes_of(out_tensor_ref);
 
   executorch::aten::SizesType new_output_size[kTensorDimensionLimit];
-  size_t ndim = out_tensor->sizes().size();
+  size_t ndim = out_tensor_vk_sizes.size();
   for (int i = 0; i < ndim; ++i) {
-    new_output_size[i] = out_tensor->sizes()[i];
+    new_output_size[i] = out_tensor_vk_sizes[i];
   }
 
   executorch::aten::ArrayRef<executorch::aten::SizesType> output_size{
@@ -503,15 +513,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     compute_graph->prepare();
     compute_graph->prepare_pipelines();
 
-    compute_graph->encode_prepack();
     compute_graph->prepack();
-
-    // If dynamic shapes are not expected, then the command buffer only needs to
-    // be encoded once. Otherwise, wait until the first inference to encode the
-    // the command buffer, when actual input shapes are known.
-    if (!compute_graph->graphconfig().expect_dynamic_shapes) {
-      compute_graph->encode_execute();
-    }
 
     return Error::Ok;
   }
@@ -546,7 +548,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");
 
     ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
@@ -581,13 +583,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    // propagate_resize() will re-encode the command buffer so that push
-    // constants are updated and DynamicDispatchNode can update the compute
-    // shader, global workgroup size, and local workgroup size to perform the
-    // model inference.
-    if (should_propagate_resize ||
-        (compute_graph->graphconfig().expect_dynamic_shapes &&
-         compute_graph->execute_count() == 0u)) {
+    if (should_propagate_resize) {
       compute_graph->propagate_resize();
     }
 

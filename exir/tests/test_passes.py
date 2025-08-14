@@ -595,33 +595,78 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(counter, 1)
 
     def test_compile_fix_broken_ops(self) -> None:
-        # When pass an input of more than 4 dimensions to Linear
-        # aten._unsafe_view is used under the hood
-        x = torch.randn([2, 3, 4, 5])
-        model: torch.nn.Linear = torch.nn.Linear(5, 5)
-
-        class Foo(torch.nn.Module):
-            def __init__(self):
+        class ExportableLoop(nn.Module):
+            def __init__(self, hidden_size, out_channels):
                 super().__init__()
-                self.model = model
+                self.hidden_size = hidden_size
+                self.B = nn.Parameter(torch.randn(hidden_size, 1))  # (H, in_channels)
+                self.C = nn.Parameter(
+                    torch.randn(out_channels, hidden_size)
+                )  # (C_out, H)
+                A = torch.randn(2, hidden_size)
+                self.A_real = nn.Parameter(A[0].clone())
+                self.A_imag = nn.Parameter(A[1].clone())
 
-            def forward(self, inp: torch.Tensor) -> torch.Tensor:
-                return self.model(inp)
+            def update_state(self, h, x_t):
+                # h: [B, 2, H], x_t: [B, H]
+                hr, hi = h[:, 0, :], h[:, 1, :]  # [B, H]
+                hrn = hr * self.A_real - hi * self.A_imag + x_t  # [B, H]
+                hin = hi * self.A_real + hr * self.A_imag  # [B, H]
+                hn = torch.stack([hrn, hin], dim=1)  # [B, 2, H]
+                return hn, hrn
 
-        f = Foo()
+            def forward(self, u):
+                # u: [B, 1, T]
+                x = torch.matmul(self.B, u)  # (B, H, T)
+                B, H, T = x.shape
 
-        # ReplaceBrokenOpsWithFunctionalOpsPass is used in to_edge()
+                h = torch.zeros(B, 2, H, device=x.device, dtype=x.dtype)  # [B, 2, H]
+                h_accum = torch.zeros(
+                    B, H, T, device=x.device, dtype=x.dtype
+                )  # [B, H, T]
+                i = torch.tensor(0, device=x.device, dtype=torch.int64)
+                one = torch.tensor(1, device=x.device, dtype=torch.int64)
+
+                def cond(i, h, h_accum):
+                    return i < T
+
+                def body(i, h, h_accum):
+                    x_t = x.index_select(-1, i.unsqueeze(0)).squeeze(
+                        -1
+                    )  # ✅ safe for export
+                    h, hr = self.update_state(h, x_t)  # h: [B, 2, H], hr: [B, H]
+                    h_accum = h_accum.index_copy(
+                        -1, i.unsqueeze(0), hr.unsqueeze(-1)
+                    )  # [B, H, T]
+                    i_next = i + one
+                    return i_next, h, h_accum
+
+                _, h, h_accum = torch._higher_order_ops.while_loop(
+                    cond, body, (i, h, h_accum)
+                )
+                y = torch.matmul(self.C, h_accum).transpose(0, 1)  # (B, C_out, T)
+                return y
+
+        # Instantiate and export
+        model = ExportableLoop(hidden_size=128, out_channels=10)
+        inp = torch.randn(1, 1, 32)  # (B, in_channels=1, T=32)
+        ep = export(model, (inp,))
         prog = to_edge(
-            export(f, (x,), strict=True),
+            ep,
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
         gm = prog.exported_program().graph_module
         count_after = 0
         for node in gm.graph.nodes:
-            if node.target == torch.ops.aten._unsafe_view.default:
+            if (
+                node.target == torch.ops.aten.squeeze.dims
+                or node.target == torch.ops.aten.select.int
+            ):
                 count_after += 1
         self.assertEqual(count_after, 0)
-        self.assertTrue(torch.allclose(prog.exported_program().module()(x), f(x)))
+        self.assertTrue(
+            torch.allclose(prog.exported_program().module()(inp), model(inp))
+        )
 
     def test_convert_symb_ops(self) -> None:
         class Foo(torch.nn.Module):
@@ -1418,9 +1463,7 @@ class TestPasses(unittest.TestCase):
                 out = torch.nn.functional.linear(
                     x, self.w.to(torch.float16).to(torch.float32)
                 )
-                return torch.ops.higher_order.cond(
-                    pred, self.true_fn, self.false_fn, [out]
-                )
+                return torch.cond(pred, self.true_fn, self.false_fn, [out])
 
         mod = Module()
         x = torch.randn([3, 3])

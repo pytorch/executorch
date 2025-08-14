@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime", "is_arvr_mode")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def get_preprocessor_flags(is_fbcode):
     flags = ["-DSTANDALONE_TORCH_HEADER"]
@@ -112,7 +112,9 @@ def define_common_targets():
                 "util/complex_utils.h",
                 "util/floating_point_utils.h",
                 "util/irange.h",
+                "util/llvmMathExtras.h",
                 "util/overflows.h",
+                "util/safe_numerics.h",
             ],
             exported_preprocessor_flags = [
                 "-DC10_USING_CUSTOM_GENERATED_MACROS",
@@ -125,7 +127,7 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                "//executorch/runtime/core/portable_type/c10/torch/standalone:torch_standalone_headers",
+                "//executorch/runtime/core/portable_type/c10/torch/headeronly:torch_headeronly",
             ] + select({
                 "DEFAULT": [],
                 # Half-inl.h depends on vec_half.h from ATen, but only when building for x86.

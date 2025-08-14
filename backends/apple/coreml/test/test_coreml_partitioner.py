@@ -2,6 +2,8 @@
 #
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
+import copy
+import sys
 import unittest
 
 import coremltools as ct
@@ -14,6 +16,33 @@ import torchvision
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.exir.backend.utils import format_delegated_graph
+
+
+@torch.library.custom_op("unsupported::linear", mutates_args=())
+def _(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    b: torch.Tensor,
+) -> torch.Tensor:
+    return torch.ops.aten.linear.default(x, w, b)
+
+
+@torch.library.register_fake("unsupported::linear")
+def _(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    b: torch.Tensor,
+) -> torch.Tensor:
+    return torch.ops.aten.linear.default(x, w, b)
+
+
+def is_fbcode():
+    return not hasattr(torch.version, "git_version")
+
+
+_TEST_RUNTIME = (sys.platform == "darwin") and not is_fbcode()
+if _TEST_RUNTIME:
+    from executorch.runtime import Runtime
 
 
 class TestCoreMLPartitioner(unittest.TestCase):
@@ -200,6 +229,113 @@ class TestCoreMLPartitioner(unittest.TestCase):
             "getitem",
         ]
 
+    def test_lower_full_graph(self):
+        class Model(torch.nn.Module):
+            def forward(self, a, x, b):
+                out = torch.ops.aten.linear.default(a, x, b)
+                out2 = torch.ops.unsupported.linear.default(out, x, b)
+                return out2
+
+        model = Model()
+        model.eval()
+
+        example_inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+        exir_program_aten = torch.export.export(model, example_inputs, strict=True)
+        edge_program_manager = executorch.exir.to_edge(exir_program_aten)
+        edge_program_manager2 = copy.deepcopy(edge_program_manager)
+
+        delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner())
+
+        for node in delegated_program_manager.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "unsupported.linear.default",
+                    "executorch_call_delegate",
+                    "getitem",
+                ], node.target.__name__
+
+        with self.assertRaises(NotImplementedError):
+            edge_program_manager2.to_backend(CoreMLPartitioner(lower_full_graph=True))
+
+    # TODO: enable this after bugs are fixed in ExecuTorch's partitioner
+    # def test_symint_arg(self):
+    #     class Model(torch.nn.Module):
+    #         def forward(self, x, w, b, y):
+    #             val = y.item()
+    #             torch._check(val >= 0)
+    #             torch._check(val < 2)
+    #             out = torch.ops.aten.linear.default(x, w, b)
+    #             out2 = out.relu()[val]
+    #             return out2
+
+    #     model = Model()
+    #     model.eval()
+    #     example_inputs = (
+    #         torch.randn(2, 2),
+    #         torch.randn(2, 2),
+    #         torch.randn(2, 2),
+    #         torch.tensor(2),
+    #     )
+    #     exir_program_aten = torch.export.export(model, example_inputs)
+
+    #     edge_program_manager = executorch.exir.to_edge(exir_program_aten)
+
+    #     delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner(skip_ops_for_coreml_delegation=["aten.scalar_tensor.default"]))
+
+    #     # This op has symbolic args
+    #     assert (
+    #         "torch.ops.aten._assert_scalar.default"
+    #         in delegated_program_manager.exported_program().graph_module.code
+    #     )
+
+    #     if _TEST_RUNTIME:
+    #         et_prog = delegated_program_manager.to_executorch()
+    #         runtime = Runtime.get()
+    #         program = runtime.load_program(et_prog.buffer)
+    #         method = program.load_method("forward")
+    #         et_outputs = method.execute(*example_inputs)[0]
+    #         eager_outputs = model(*example_inputs)
+    #         self.assertTrue(torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02))
+
+    def test_take_over_constant_data_false(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(50, 100)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        model = Model()
+        model.eval()
+        example_inputs = (torch.randn(2, 50),)
+        exir_program_aten = torch.export.export(model, example_inputs)
+
+        edge_program_manager = executorch.exir.to_edge_transform_and_lower(
+            exir_program_aten,
+            partitioner=[CoreMLPartitioner(take_over_constant_data=False)],
+        )
+        for node in edge_program_manager.exported_program().graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target.__name__ == "executorch_call_delegate"
+            ):
+                break
+
+        # lowered_module_0, x, p_linear_weight, p_linear_bias
+        assert len(node.args) == 4
+
+        if _TEST_RUNTIME:
+            et_prog = edge_program_manager.to_executorch()
+            runtime = Runtime.get()
+            program = runtime.load_program(et_prog.buffer)
+            method = program.load_method("forward")
+            et_outputs = method.execute(*example_inputs)[0]
+            eager_outputs = model(*example_inputs)
+            self.assertTrue(
+                torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
+            )
+
 
 if __name__ == "__main__":
     test_runner = TestCoreMLPartitioner()
@@ -207,3 +343,6 @@ if __name__ == "__main__":
     test_runner.test_vit_skip_conv()
     test_runner.test_ops_to_not_decompose()
     test_runner.test_buffer()
+    test_runner.test_lower_full_graph()
+    # test_runner.test_symint_arg()
+    test_runner.test_take_over_constant_data_false()

@@ -17,14 +17,6 @@
 
 namespace vkcompute {
 
-std::vector<int64_t> calc_group_norm_mean_sizes(
-    api::vTensor& self,
-    const int64_t group) {
-  const std::vector<int64_t>& input_sizes = self.sizes();
-  const int64_t N = input_sizes.at(0);
-  return {N, group};
-}
-
 utils::uvec3 group_norm_local_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,

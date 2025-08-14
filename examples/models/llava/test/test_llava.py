@@ -41,8 +41,9 @@ class TestLlava(unittest.TestCase):
         # The reference implementation in HF genetates the full logits. Get the last one.
         prefill_logits_ref = self.llava.prefill_ref(
             self.prompt_before_image, self.resized, self.prompt_after_image
-        )[0][:, -1, :]
-        self.assertTrue(torch.allclose(prefill_logits, prefill_logits_ref, atol=3e-2))
+        )[0]
+
+        torch.testing.assert_close(prefill_logits, prefill_logits_ref.squeeze(0))
 
     def test_generated_output(self):
         # source of truth, using HF llava

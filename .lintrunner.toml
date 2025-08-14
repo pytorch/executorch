@@ -10,7 +10,7 @@ exclude_patterns = [
     'exir/serde/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -19,7 +19,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -41,7 +41,7 @@ exclude_patterns = [
     'exir/serde/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -50,7 +50,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -84,7 +84,7 @@ exclude_patterns = [
     'runtime/core/portable_type/c10/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -95,7 +95,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -117,7 +117,7 @@ exclude_patterns = [
     '**/third-party/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -127,7 +127,37 @@ command = [
     '@{{PATHSFILE}}',
 ]
 init_command = [
-    'python3',
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
+code = 'CMAKEFORMAT'
+include_patterns = [
+    "**/*.cmake",
+    "**/*.cmake.in",
+    "**/CMakeLists.txt",
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'cmake_format_linter',
+    '--',
+    '@{{PATHSFILE}}',
+]
+init_command = [
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -151,7 +181,7 @@ exclude_patterns = [
     '**/third-party/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -192,7 +222,7 @@ exclude_patterns = [
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -234,7 +264,7 @@ exclude_patterns = [
     'util/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -287,7 +317,7 @@ exclude_patterns = [
     'util/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -337,7 +367,7 @@ exclude_patterns = [
     'backends/arm/test/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -349,7 +379,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -368,7 +398,7 @@ exclude_patterns = [
     '.lintrunner.toml',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -397,7 +427,7 @@ exclude_patterns = [
 ]
 
 command = [
-  "python3",
+  "python",
   "-m",
   "lintrunner_adapters",
   "run",

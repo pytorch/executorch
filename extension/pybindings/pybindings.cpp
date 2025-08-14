@@ -358,7 +358,7 @@ class Module final {
 
     MallocMemoryAllocator runtime_allocator_;
 
-    MemoryAllocator temp_allocator_{MemoryAllocator(0, nullptr)};
+    MallocMemoryAllocator temp_allocator_{};
 
     std::vector<std::vector<uint8_t>> non_const_buffers_;
 
@@ -1061,7 +1061,7 @@ class ProgramMemory {
 
   MallocMemoryAllocator runtime_allocator_;
 
-  MemoryAllocator temp_allocator_{MemoryAllocator(0, nullptr)};
+  MallocMemoryAllocator temp_allocator_{};
 
   std::vector<std::vector<uint8_t>> non_const_buffers_;
 
@@ -1098,16 +1098,9 @@ struct PyMethod final {
 #ifndef USE_ATEN_LIB // Portable mode
     // So the ETensors and their metadata stay in scope for
     // Module->set_inputs.
-    std::vector<torch::executor::TensorImpl> input_tensors;
-    std::vector<std::vector<torch::executor::Tensor::SizesType>> input_sizes;
-    std::vector<std::vector<torch::executor::Tensor::StridesType>>
-        input_strides;
-    std::vector<std::vector<torch::executor::Tensor::DimOrderType>>
-        input_dim_order;
+    std::vector<TensorPtr> input_tensors;
     // We store pointers to these vector elements so important to reserve so
-    // that we don't lose those on a vector resize. Don't need to do this for
-    // the others since they are vectors of vectors, and we don't store a
-    // pointer to the root level vector data.
+    // that we don't lose those on a vector resize.
     input_tensors.reserve(inputs_size);
 #endif
 
@@ -1127,9 +1120,9 @@ struct PyMethod final {
         size_t dim = at_tensor.dim();
         // cant directly alias at::Tensor sizes and strides due to int64 vs
         // int32 typing conflict
-        input_sizes.emplace_back(
+        std::vector<int> sizes(
             at_tensor.sizes().begin(), at_tensor.sizes().end());
-        input_strides.emplace_back(
+        std::vector<int> strides(
             at_tensor.strides().begin(), at_tensor.strides().end());
 
         // Only works for MemoryFormat::Contiguous or MemoryFormat::ChannelsLast
@@ -1149,19 +1142,14 @@ struct PyMethod final {
               " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
         }
-        input_dim_order.push_back(std::move(dim_order));
-        input_tensors.emplace_back(
-            type,
-            dim,
-            input_sizes.back().data(),
-            nullptr,
-            input_dim_order.back().data(),
-            input_strides.back().data());
-
-        torch::executor::Tensor temp =
-            torch::executor::Tensor(&input_tensors.back());
-        alias_etensor_to_attensor(at_tensor, temp);
-        EValue evalue(temp);
+        TensorPtr tensor =
+            for_blob(at_tensor.data_ptr(), std::move(sizes), type)
+                .strides(std::move(strides))
+                .dim_order(std::move(dim_order))
+                .dynamism(aten::TensorShapeDynamism::STATIC)
+                .make_tensor_ptr();
+        input_tensors.push_back(tensor);
+        EValue evalue(input_tensors.back());
 #endif
 
         cpp_inputs.push_back(evalue);

@@ -12,7 +12,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     TOSAQuantizer,
 )
 from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineBI
+from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineINT
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from torch import nn
@@ -46,11 +46,10 @@ models = {
 
 
 @common.parametrize("model", models)
-def test_qat_tosa_BI(model: torch.nn.Module):
-    pipeline = TosaPipelineBI[input_t1](model, model.test_data, [], [], qtol=1)
+def test_qat_tosa_INT(model: torch.nn.Module):
+    pipeline = TosaPipelineINT[input_t1](model, model.test_data, [], [], qtol=1)
     tosa_version = conftest.get_option("tosa_version")
     tosa_profiles = {
-        "0.80": common.TosaSpecification.create_from_string("TOSA-0.80+BI"),
         "1.0": common.TosaSpecification.create_from_string("TOSA-1.0+INT"),
     }
     tosa_spec = tosa_profiles[tosa_version]
@@ -59,7 +58,9 @@ def test_qat_tosa_BI(model: torch.nn.Module):
         "quantize",
         Quantize(
             quantizer=quantizer,
-            quantization_config=get_symmetric_quantization_config(is_qat=True),
+            quantization_config=get_symmetric_quantization_config(
+                is_qat=True, is_per_channel=False
+            ),
             is_qat=True,
         ),
     )
