@@ -29,6 +29,7 @@ from executorch.backends.vulkan._passes import (
     SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
 )
+from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
@@ -154,6 +155,7 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
+                FusePatternsPass(program),
                 RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
                 FuseQuantizedOpsTransform(program),
