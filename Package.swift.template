@@ -94,6 +94,13 @@ let products = deliverables([
     "sha256": "__SHA256_kernels_quantized__",
     "sha256" + debug_suffix: "__SHA256_kernels_quantized_debug__",
   ],
+  "kernels_torchao": [
+    "sha256": "__SHA256_kernels_torchao__",
+    "sha256" + debug_suffix: "__SHA256_kernels_torchao_debug__",
+    "targets": [
+      "threadpool",
+    ],
+  ],
 ])
 
 let targets = deliverables([
