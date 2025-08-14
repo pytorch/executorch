@@ -158,7 +158,6 @@ def annotate_prefill_kv_output(gm: torch.fx.GraphModule, kv_quant_attrs: dict):
 
 def annotate_matmul_16a8w(  # noqa: C901
     gm: torch.fx.GraphModule,
-    annotate_conv=True,
     is_qat=False,
 ) -> None:
     """
@@ -337,10 +336,9 @@ def annotate_matmul_16a8w(  # noqa: C901
                 # The arguments of cat op: (the past kv cache, the new kv cache)
                 node = node.args[0][1]
             elif node.target == torch.ops.aten.conv2d.default:
-                if annotate_conv:
-                    annotate_conv2d(
-                        node, quantization_config=quantization_config_8a4w_per_channel
-                    )
+                annotate_conv2d(
+                    node, quantization_config=quantization_config_8a4w_per_channel
+                )
                 break
             elif node.target in [torch.ops.aten.add.Tensor, torch.ops.aten.sub.Tensor]:
                 break

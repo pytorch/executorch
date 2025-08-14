@@ -14,8 +14,8 @@ import logging
 from typing import cast, final, List
 
 import serializer.tosa_serializer as ts  # type: ignore
-from executorch.backends.arm.arm_backend import get_tosa_spec
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
+from executorch.backends.arm.tosa_specification import get_tosa_spec
 from executorch.backends.arm._passes import (
     ArmPassManager,
 )  # usort: skip
