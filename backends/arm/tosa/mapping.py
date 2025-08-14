@@ -81,9 +81,15 @@ def extract_tensor_meta(meta, tosa_spec: TosaSpecification):
 class TosaArg:
     def __process_node(self, argument: torch.fx.Node):
         self.name: str = argument.name
-        self.dtype, self.shape, self.dim_order = extract_tensor_meta(
+        output_dtype, self.shape, self.dim_order = extract_tensor_meta(
             argument.meta, self.tosa_spec
         )
+
+        # Handle special case of int
+        if argument.meta.get("tosa_dtype_48bit", False):
+            output_dtype = ts.DType.INT48
+
+        self.dtype = output_dtype
 
     def __process_list(self, argument):
         self.special: list = list(argument)
