@@ -98,7 +98,7 @@ jobs:
 
         # Run setup scripts for Arm FVP and Arm AOT Compilation
         cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
-        install_executorch "--use-pt-pinned-commit"
+        install_executorch
         .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
         source examples/arm/ethos-u-scratch/setup_path.sh
         source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
@@ -142,7 +142,7 @@ jobs:
         fi
 
         # Report fail if simulation does not complete successfully
-        grep -F "SUCCESS: Program complete, exiting." sim.out
+        grep -qF "SUCCESS: Program complete, exiting." sim.out
         exit_status=$? #store 0 if found (success), 1 if not (failure)
         if [[ "$exit_status" -eq "1" ]]; then
             cat sim.out
