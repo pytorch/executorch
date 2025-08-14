@@ -188,14 +188,6 @@ __attribute__((deprecated("This API is experimental.")))
 - (BOOL)isMethodLoaded:(NSString *)methodName NS_SWIFT_NAME(isLoaded(_:));
 
 /**
- * Unloads a method and releases its native resources and planned buffers.
- *
- * @param methodName The method to unload.
- * @return YES if the method was unloaded; NO if it was not loaded at all.
- */
-- (BOOL)unloadMethod:(NSString *)methodName NS_SWIFT_NAME(unload(_:));
-
-/**
  * Retrieves the set of method names available in the loaded program.
  *
  * The method names are returned as an unordered set of strings. The program and methods
