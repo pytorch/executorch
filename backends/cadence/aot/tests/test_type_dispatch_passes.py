@@ -137,3 +137,103 @@ class TestTypeDispatchPasses(unittest.TestCase):
         with self.assertRaises(RuntimeError) as context:
             cast(PassResult, p(gm)).graph_module
         self.assertIn("Unsupported input types", str(context.exception))
+
+    def test_int8_dispatch_quantized_relu(self) -> None:
+        """Test int8 input should dispatch to asym8s_asym8s variant for quantized_relu"""
+        x = torch.randint(-128, 127, (2, 3), dtype=torch.int8)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.cadence.quantized_relu.per_tensor,
+            args=(x, 0, 0, 1, 0),
+        )
+        p = CompileTimeTypeDispatchPass()
+        gm = cast(PassResult, p(gm)).graph_module
+        # Original op should be replaced
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_relu.per_tensor),
+            0,
+        )
+        # Should be replaced with int8 specific variant
+        self.assertEqual(
+            count_node(
+                gm,
+                exir_ops.edge.cadence.quantized_relu_asym8s_asym8s.per_tensor,
+            ),
+            1,
+        )
+
+    def test_uint8_dispatch_quantized_relu(self) -> None:
+        """Test uint8 input should dispatch to asym8u_asym8u variant for quantized_relu"""
+        x = torch.randint(0, 255, (2, 3), dtype=torch.uint8)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.cadence.quantized_relu.per_tensor,
+            args=(x, 0, 0, 1, 0),
+        )
+        p = CompileTimeTypeDispatchPass()
+        gm = cast(PassResult, p(gm)).graph_module
+        # Original op should be replaced
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_relu.per_tensor),
+            0,
+        )
+        # Should be replaced with uint8 specific variant
+        self.assertEqual(
+            count_node(
+                gm,
+                exir_ops.edge.cadence.quantized_relu_asym8u_asym8u.per_tensor,
+            ),
+            1,
+        )
+
+    def test_int8_dispatch_quantized_matmul(self) -> None:
+        """Test int8 x int8 inputs should dispatch to asym8sxasym8s_asym8s variant for quantized_matmul"""
+        x = torch.randint(-128, 127, (2, 3), dtype=torch.int8)
+        y = torch.randint(-128, 127, (3, 4), dtype=torch.int8)
+        bias = torch.randint(-2147483648, 2147483647, (4,), dtype=torch.int32)
+        gm = single_op_builder(
+            placeholders=(x, y, bias),
+            op=exir_ops.edge.cadence.quantized_matmul.default,
+            args=(x, 0, y, 0, bias, 1, 0, 0, False),
+        )
+        p = CompileTimeTypeDispatchPass()
+        gm = cast(PassResult, p(gm)).graph_module
+        # Original op should be replaced
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_matmul.default),
+            0,
+        )
+        # Should be replaced with int8 specific variant
+        self.assertEqual(
+            count_node(
+                gm,
+                exir_ops.edge.cadence.quantized_matmul_asym8sxasym8s_asym8s.default,
+            ),
+            1,
+        )
+
+    def test_uint8_dispatch_quantized_matmul(self) -> None:
+        """Test uint8 x uint8 inputs should dispatch to asym8uxasym8u_asym8u variant for quantized_matmul"""
+        x = torch.randint(0, 255, (2, 3), dtype=torch.uint8)
+        y = torch.randint(0, 255, (3, 4), dtype=torch.uint8)
+        bias = torch.randint(-2147483648, 2147483647, (4,), dtype=torch.int32)
+        gm = single_op_builder(
+            placeholders=(x, y, bias),
+            op=exir_ops.edge.cadence.quantized_matmul.default,
+            args=(x, 0, y, 0, bias, 1, 0, 0, False),
+        )
+        p = CompileTimeTypeDispatchPass()
+        gm = cast(PassResult, p(gm)).graph_module
+        # Original op should be replaced
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_matmul.default),
+            0,
+        )
+        # Should be replaced with uint8 specific variant
+        self.assertEqual(
+            count_node(
+                gm,
+                exir_ops.edge.cadence.quantized_matmul_asym8uxasym8u_asym8u.default,
+            ),
+            1,
+        )
