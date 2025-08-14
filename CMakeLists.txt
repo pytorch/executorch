@@ -50,7 +50,10 @@
 cmake_minimum_required(VERSION 3.29)
 project(executorch)
 
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
+include(${PROJECT_SOURCE_DIR}/tools/cmake/Codegen.cmake)
 include(${PROJECT_SOURCE_DIR}/tools/cmake/Utils.cmake)
 include(CMakeDependentOption)
 include(ExternalProject)
@@ -122,8 +125,6 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
 # Instead please use `find_package(executorch REQUIRED)` in the example
 # directory and add a new executable in the example `CMakeLists.txt`.
-
-set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
@@ -278,29 +279,6 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   )
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
-  set(TORCHAO_BUILD_ATEN_OPS OFF)
-  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
-  set(TORCHAO_BUILD_CPU_AARCH64 ON)
-  set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
-
-  list(
-    APPEND
-    TORCHAO_INCLUDE_DIRS
-    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
-    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
-    ${EXECUTORCH_ROOT}/third-party/ao
-  )
-
-  set(EXECUTORCH_INCLUDE_DIRS ${TORCHAO_INCLUDE_DIRS})
-
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental
-  )
-  executorch_target_link_options_shared_lib(torchao_ops_executorch)
-  list(APPEND _executorch_kernels torchao_ops_executorch)
-endif()
-
 if(EXECUTORCH_BUILD_TESTS)
   set(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
   include(CTest)
@@ -343,6 +321,7 @@ if(NOT EXECUTORCH_SRCS_FILE)
   message(STATUS "executorch: Generating source lists")
   set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/executorch_srcs.cmake")
   extract_sources(${EXECUTORCH_SRCS_FILE})
+  executorch_validate_build_variables()
 endif()
 
 # This file defines the `_<target>__srcs` variables used below.
@@ -705,6 +684,65 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
 endif()
 
+if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
+  if(NOT TARGET cpuinfo)
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_KERNELS_TORCHAO requires EXECUTORCH_BUILD_CPUINFO be set ON"
+    )
+  endif()
+  if(NOT TARGET pthreadpool)
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_KERNELS_TORCHAO requires EXECUTORCH_BUILD_PTHREADPOOL be set ON"
+    )
+  endif()
+
+  # Configure TorchAO kernels
+  set(TORCHAO_BUILD_ATEN_OPS OFF)
+  set(TORCHAO_BUILD_EXECUTORCH_OPS ON)
+  set(TORCHAO_BUILD_CPU_AARCH64 ON)
+  set(TORCHAO_ENABLE_ARM_NEON_DOT ON)
+  set(TORCHAO_BUILD_KLEIDIAI ON)
+
+  # TorchAO kernels look for EXECUTORCH_INCLUDE_DIRS
+  if(DEFINED EXECUTORCH_INCLUDE_DIRS)
+    message(FATAL_ERROR "EXECUTORCH_INCLUDE_DIRS is already defined")
+  endif()
+  set(EXECUTORCH_INCLUDE_DIRS
+      ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
+      ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
+  )
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental
+  )
+  unset(EXECUTORCH_INCLUDE_DIRS)
+
+  executorch_target_link_options_shared_lib(torchao_ops_executorch)
+  list(APPEND _executorch_kernels torchao_ops_executorch)
+
+  install(
+    TARGETS torchao_ops_executorch torchao_kernels_aarch64
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+    INCLUDES
+    DESTINATION ${_common_include_directories}
+  )
+  # If using KleidiAI and XNNPACK has not installed it already, install it
+  if(TORCHAO_BUILD_KLEIDIAI AND NOT (EXECUTORCH_BUILD_XNNPACK
+                                     AND EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
+  )
+    install(
+      TARGETS kleidiai
+      EXPORT ExecuTorchTargets
+      DESTINATION lib
+      INCLUDES
+      DESTINATION ${_common_include_directories}
+    )
+  endif()
+
+endif()
+
 if(EXECUTORCH_BUILD_PYBIND)
 
   # Add codegen tools subdirectory for selective_build pybind module
@@ -761,6 +799,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
     # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
     list(APPEND _dep_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
+  endif()
+
+  if(EXECUTORCH_BUILD_VULKAN)
+    list(APPEND _dep_libs vulkan_backend)
   endif()
 
   # compile options for pybind
