@@ -294,6 +294,12 @@ TEST_F(KernelIntegrationTest, KernelHookIsCalled) {
   EXPECT_EQ(err, Error::Ok);
   EXPECT_EQ(control_->call_count, 1);
 
+  // Set up inputs again.
+  auto inputs_cleanup = executorch::extension::prepare_input_tensors(*method_);
+  ASSERT_EQ(inputs_cleanup.error(), Error::Ok);
+  auto input_err = method_->set_input(executorch::runtime::EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
   // Calling it again bumps the count.
   err = method_->execute();
   EXPECT_EQ(err, Error::Ok);
@@ -336,6 +342,12 @@ TEST_F(KernelIntegrationTest, DefaultPlatformMemoryAllocator) {
   EXPECT_EQ(control_->call_count, 1);
   EXPECT_EQ(control_->total_allocated_size, 4);
 
+  // Set up inputs again.
+  auto inputs_cleanup = executorch::extension::prepare_input_tensors(*method_);
+  ASSERT_EQ(inputs_cleanup.error(), Error::Ok);
+  auto input_err = method_->set_input(executorch::runtime::EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
   control_->temp_memory_size = 8;
   // This is not a simulation. This actually allocates memory, using the
   // default platform memory allocator.
@@ -370,6 +382,12 @@ TEST_F(KernelTempMemoryAllocatorIntegrationTest, UsingTempMemoryAllocator) {
   // The temp allocator should have been reset after the execution.
   EXPECT_EQ(temp_allocator_->number_of_resets, 1);
   EXPECT_EQ(temp_allocator_->currently_allocated_size, 0);
+
+  // Set up inputs again.
+  auto inputs_cleanup = executorch::extension::prepare_input_tensors(*method_);
+  ASSERT_EQ(inputs_cleanup.error(), Error::Ok);
+  auto input_err = method_->set_input(executorch::runtime::EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
 
   control_->temp_memory_size = 8;
   err = method_->execute();
