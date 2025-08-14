@@ -928,7 +928,7 @@ def transposed_convolution_meta(
 ) -> torch.Tensor:
     # The native definition of torch transposed conv will have weight shape as
     # (in_channels, out_channels/groups, *kernel_size).
-    # However, the two channel position is flipped in the Jarvis pass of replacing it
+    # However, the two channel position is flipped in the Cadence pass of replacing it
     # with cadence::transposed_convolution here: https://fburl.com/code/d2s7pkyy
     out_channels, _input_channels, *kernel_size = weight.shape
     out_channels *= groups
