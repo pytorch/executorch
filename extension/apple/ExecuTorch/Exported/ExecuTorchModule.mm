@@ -245,8 +245,6 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 
 @implementation ExecuTorchModule {
   std::unique_ptr<Module> _module;
-  NSMutableDictionary<NSString *, NSMutableArray<ExecuTorchValue *> *> *_inputs;
-  NSMutableDictionary<NSString *, NSMutableArray<ExecuTorchValue *> *> *_outputs;
 }
 
 - (instancetype)initWithFilePath:(NSString *)filePath
@@ -257,8 +255,6 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
       filePath.UTF8String,
       static_cast<Module::LoadMode>(loadMode)
     );
-    _inputs = [NSMutableDictionary new];
-    _outputs = [NSMutableDictionary new];
   }
   return self;
 }
@@ -441,144 +437,6 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   return [self executeMethod:@"forward"
                   withInputs:[[NSArray alloc] initWithObjects:[ExecuTorchValue valueWithTensor:tensor], nil]
                        error:error];
-}
-
-- (BOOL)setInput:(ExecuTorchValue *)value
-           error:(NSError **)error NS_SWIFT_NAME(setInput(_:)) {
-  return [self setInput:value
-              forMethod:@"forward"
-                atIndex:0
-                  error:error];
-}
-
-- (BOOL)setInput:(ExecuTorchValue *)value
-         atIndex:(NSInteger)index
-           error:(NSError **)error {
-  return [self setInput:value
-              forMethod:@"forward"
-                atIndex:index
-                  error:error];
-}
-
-- (BOOL)setInput:(ExecuTorchValue *)value
-       forMethod:(NSString *)methodName
-           error:(NSError **)error {
-  return [self setInput:value
-              forMethod:methodName
-                atIndex:0
-                  error:error];
-}
-
-- (BOOL)setInput:(ExecuTorchValue *)value
-       forMethod:(NSString *)methodName
-         atIndex:(NSInteger)index
-           error:(NSError **)error {
-  const auto errorCode = _module->set_input(methodName.UTF8String, toEValue(value), index);
-  if (errorCode != Error::Ok) {
-    if (error) {
-      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
-    }
-    return NO;
-  }
-  // Cache inputs to keep them alive since ExecuTorchValue owns the actual data.
-  NSMutableArray<ExecuTorchValue *> *inputs = _inputs[methodName];
-  if (!inputs) {
-    inputs = [NSMutableArray new];
-    _inputs[methodName] = inputs;
-  }
-  if (index >= inputs.count) {
-    id placeholder = NSNull.null;
-    while (inputs.count < index) {
-      [inputs addObject:placeholder];
-    }
-    [inputs addObject:value];
-  } else {
-    inputs[index] = value;
-  }
-  return YES;
-}
-
-- (BOOL)setInputs:(NSArray<ExecuTorchValue *> *)values
-            error:(NSError **)error {
-  return [self setInputs:values
-               forMethod:@"forward"
-                   error:error];
-}
-
-- (BOOL)setInputs:(NSArray<ExecuTorchValue *> *)values
-        forMethod:(NSString *)methodName
-            error:(NSError **)error {
-  std::vector<EValue> inputs;
-  inputs.reserve(values.count);
-  for (ExecuTorchValue *value in values) {
-    inputs.push_back(toEValue(value));
-  }
-  const auto errorCode = _module->set_inputs(methodName.UTF8String, inputs);
-  if (errorCode != Error::Ok) {
-    if (error) {
-      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
-    }
-    return NO;
-  }
-  // Cache inputs to keep them alive since ExecuTorchValue owns the actual data.
-  _inputs[methodName] = [values mutableCopy];
-
-  return YES;
-}
-
-- (BOOL)setOutput:(ExecuTorchValue *)value
-            error:(NSError **)error {
-  return [self setOutput:value
-               forMethod:@"forward"
-                 atIndex:0
-                   error:error];
-}
-
-- (BOOL)setOutput:(ExecuTorchValue *)value
-          atIndex:(NSInteger)index
-            error:(NSError **)error {
-  return [self setOutput:value
-               forMethod:@"forward"
-                 atIndex:index
-                   error:error];
-}
-
-- (BOOL)setOutput:(ExecuTorchValue *)value
-        forMethod:(NSString *)methodName
-            error:(NSError **)error {
-  return [self setOutput:value
-               forMethod:methodName
-                 atIndex:0
-                   error:error];
-}
-
-- (BOOL)setOutput:(ExecuTorchValue *)value
-        forMethod:(NSString *)methodName
-          atIndex:(NSInteger)index
-            error:(NSError **)error {
-  const auto errorCode = _module->set_output(methodName.UTF8String, toEValue(value), index);
-  if (errorCode != Error::Ok) {
-    if (error) {
-      *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)errorCode);
-    }
-    return NO;
-  }
-  // Cache outputs to keep them alive since ExecuTorchValue owns the actual data.
-  NSMutableArray<ExecuTorchValue *> *outputs = _outputs[methodName];
-  if (!outputs) {
-    outputs = [NSMutableArray new];
-    _outputs[methodName] = outputs;
-  }
-  if (index >= outputs.count) {
-    id placeholder = NSNull.null;
-    while (outputs.count < index) {
-      [outputs addObject:placeholder];
-    }
-    [outputs addObject:value];
-  } else {
-    outputs[index] = value;
-  }
-  return YES;
 }
 
 @end
