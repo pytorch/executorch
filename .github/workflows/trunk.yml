@@ -92,7 +92,7 @@ jobs:
 
         # TODO @Bujji: Should see if this can be moved into the docker image itself
         download_arm_zephyr_sdk
-        ./zephyr-sdk-0.17.2/setup.sh -c -t arm-zephyr-eabi
+        ./zephyr-sdk-0.17.3/setup.sh -c -t arm-zephyr-eabi
         cd $ZEPHYR_PROJ_ROOT
         setup_zephyr_et_module
 
