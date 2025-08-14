@@ -20,6 +20,6 @@ conda activate "${CONDA_ENV}"
 #source .ci/scripts/setup-vulkan-linux-deps.sh
 
 # We need the runner to test the built library.
-.ci/scripts/setup-linux.sh --build-tool cmake --build-mode Release
+PYTHON_EXECUTABLE=python .ci/scripts/setup-linux.sh --build-tool cmake --build-mode Release
 
 python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report test_results.csv
