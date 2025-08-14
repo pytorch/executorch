@@ -1079,7 +1079,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
 
     if llm_config.backend.xnnpack.enabled:
         if llm_config.export.foundation_weights_file is not None:
-            gen_tag_fn: Callable[[torch.fx.Node], str] = lambda x: (
+            gen_tag_fn: Callable[[torch.fx.Node], Optional[str]] = lambda x: (
                 llm_config.export.foundation_weights_file
                 if "lora" not in x.name
                 else None
@@ -1089,8 +1089,11 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
                 delegate_external_constants_pass_unlifted,
             )
 
+            assert (
+                builder_exported.pre_autograd_graph_module is not None
+            ), "pre_autograd_graph_module shouldn't be None here"
             delegate_external_constants_pass_unlifted(
-                gm=builder_exported.pre_autograd_graph_module,
+                module=builder_exported.pre_autograd_graph_module,
                 gen_tag_fn=gen_tag_fn,
             )
 
