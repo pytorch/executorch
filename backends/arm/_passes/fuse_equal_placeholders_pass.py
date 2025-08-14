@@ -47,9 +47,14 @@ class FuseEqualPlaceholdersPass(ExportPass):
                 continue
             # Create a lightweight fingerprint: dtype + shape + SHA1 of raw bytes
             # Ensure tensor is on CPU and contiguous
+
+            # ensure we don't merge any special case int48_t tensors with int32_t tensors
+            # since int48_t tensors needs to be instantiated separately.
+            is_int48 = node.meta.get("tosa_dtype_48bit", False)
             t_cpu = tensor.detach().cpu().contiguous()
             data_bytes = t_cpu.numpy().tobytes()
             key = (
+                is_int48,
                 str(t_cpu.dtype),
                 tuple(t_cpu.shape),
                 hashlib.sha1(data_bytes).hexdigest(),

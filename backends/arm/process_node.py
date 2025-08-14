@@ -112,10 +112,16 @@ def process_inputs_to_parameters(
     if tosa_arg.dtype == torch.float32:
         assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
 
+    # Handle special case for INT48 tensors
+    if node.meta.get("tosa_dtype_48bit", False):
+        tosa_dtype = ts.DType.INT48
+    else:
+        tosa_dtype = tosa_arg.dtype
+
     parameter_values = np.transpose(parameter_values, tosa_arg.dim_order)
 
     tosa_graph.addConst(
-        parameter_values.shape, tosa_arg.dtype, parameter_values, name=tosa_arg.name
+        parameter_values.shape, tosa_dtype, parameter_values, name=tosa_arg.name
     )
 
 

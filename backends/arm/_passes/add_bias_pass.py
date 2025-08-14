@@ -59,6 +59,8 @@ class AddBiasPass(ArmPass):
                         persistent_buffer=True,
                         name=f"{node.name}_bias",
                     )
+                    if node.args[0].meta["val"].dtype == torch.int16:
+                        bias_node.meta["tosa_dtype_48bit"] = True
                 node.update_arg(2, bias_node)
 
         if modified:
