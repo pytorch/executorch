@@ -741,20 +741,18 @@ jobs:
       id-token: write
       contents: read
     secrets: inherit
-    # Models below selected based on https://huggingface.co/models?pipeline_tag=text-generation&num_parameters=min:0,max:3B&sort=trending.
-    xnnpack: &xnnpack
-      - llama3.2-1b|xnnpack|--quantize
-      - qwen3-0.6b|xnnpack|--quantize
-      - qwen3-1.7b|xnnpack|--quantize
-      - gemma3-1b|xnnpack|--quantize
-      - phi-4-mini|xnnpack|--quantize
-      - smollm2-135m|xnnpack|--quantize
-      - smollm3-3b|xnnpack|--quantize
     strategy:
       matrix:
-        config:
-          - *xnnpack
-          - *coreml
+        config: [
+          # XNNPack.
+          llama3.2-1b|xnnpack|--quantize,
+          qwen3-0.6b|xnnpack|--quantize,
+          qwen3-1.7b|xnnpack|--quantize,
+          gemma3-1b|xnnpack|--quantize,
+          phi-4-mini|xnnpack|--quantize,
+          smollm2-135m|xnnpack|--quantize,
+          smollm3-3b|xnnpack|--quantize
+        ]
       fail-fast: false
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
@@ -834,28 +832,26 @@ jobs:
       contents: read
     secrets: inherit
     # Models below selected based on https://huggingface.co/models?pipeline_tag=text-generation&num_parameters=min:0,max:3B&sort=trending.
-    xnnpack: &xnnpack
-      - llama3.2-1b|xnnpack|--quantize
-      - qwen3-0.6b|xnnpack|--quantize
-      - qwen3-1.7b|xnnpack|--quantize
-      - gemma3-1b|xnnpack|--quantize
-      - phi-4-mini|xnnpack|--quantize
-      - smollm2-135m|xnnpack|--quantize
-      - smollm3-3b|xnnpack|--quantize
-    coreml: &coreml
-      - llama3.2-1b|coreml_fp32_gpu|--quantize,
-      - qwen3-0.6b|coreml_fp32_gpu|--quantize,
-      - qwen3-0.6b|coreml_fp32_gpu|--quantize,
-      - smollm2-135m|coreml_fp32_gpu|--quantize,
-      - olmo-1b|coreml_fp32_gpu|--quantize,
-      # - roberta|coreml_fp32_gpu|--quantize, roberta requires special HF access
-      - bert|coreml_fp32_gpu|--quantize,
-      - distilbert|coreml_fp32_gpu|--quantize,
     strategy:
       matrix:
-        config:
-          - *xnnpack
-          - *coreml
+        config: [
+          # XNNPack.
+          llama3.2-1b|xnnpack|--quantize,
+          qwen3-0.6b|xnnpack|--quantize,
+          qwen3-1.7b|xnnpack|--quantize,
+          gemma3-1b|xnnpack|--quantize,
+          phi-4-mini|xnnpack|--quantize,
+          smollm2-135m|xnnpack|--quantize,
+          smollm3-3b|xnnpack|--quantize,
+          # CoreML.
+          llama3.2-1b|coreml_fp32_gpu|--quantize,
+          qwen3-0.6b|coreml_fp32_gpu|--quantize,
+          qwen3-1.7b|xnnpack|--quantize,
+          smollm2-135m|coreml_fp32_gpu|--quantize,
+          olmo-1b|coreml_fp32_gpu|--quantize,
+          bert|coreml_fp32_gpu|--quantize,
+          distilbert|coreml_fp32_gpu|--quantize
+        ]
       fail-fast: false
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
