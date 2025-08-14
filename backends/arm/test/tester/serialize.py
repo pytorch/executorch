@@ -8,7 +8,7 @@ import os
 import tempfile
 from typing import Optional
 
-import executorch.backends.xnnpack.test.tester.tester as tester
+import executorch.backends.test.harness.stages as BaseStages
 
 import torch.fx
 
@@ -27,7 +27,7 @@ from torch.utils._pytree import tree_flatten
 logger = logging.getLogger(__name__)
 
 
-class Serialize(tester.Serialize):
+class Serialize(BaseStages.Serialize):
     def __init__(
         self,
         compile_spec: ArmCompileSpec,
