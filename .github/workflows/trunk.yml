@@ -92,7 +92,7 @@ jobs:
 
         # TODO @Bujji: Should see if this can be moved into the docker image itself
         download_arm_zephyr_sdk
-        ./zephyr-sdk-0.16.0/setup.sh -c -t arm-zephyr-eabi
+        ./zephyr-sdk-0.17.2/setup.sh -c -t arm-zephyr-eabi
         cd $ZEPHYR_PROJ_ROOT
         setup_zephyr_et_module
 
@@ -288,6 +288,7 @@ jobs:
           - test_arm_baremetal: test_models_tosa
           - test_arm_baremetal: test_models_ethos-u55
           - test_arm_baremetal: test_models_ethos-u85
+          - test_arm_baremetal: test_smaller_stories_llama
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -484,7 +485,7 @@ jobs:
         eval "$(conda shell.bash hook)"
 
         # Install requirements
-        ${CONDA_RUN} EXECUTORCH_BUILD_TORCHAO=1 python install_executorch.py
+        ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 python install_executorch.py
         ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
 
         # Run test

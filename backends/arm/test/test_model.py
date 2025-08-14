@@ -110,15 +110,6 @@ def build_libs(et_build_root: str, script_path: str):
             "--etdump",
         ]
     )
-    run_external_cmd(
-        [
-            "bash",
-            os.path.join(script_path, "build_portable_kernels.sh"),
-            f"--et_build_root={et_build_root}",
-            "--build_type=Release",
-            "--portable_kernels=aten::_softmax.out",
-        ]
-    )
 
 
 def build_pte(
@@ -166,6 +157,7 @@ def build_ethosu_runtime(
     extra_flags: str,
     elf_build_path: str,
 ):
+    elf_build_path = os.path.join(elf_build_path, "cmake-out")
     run_external_cmd(
         [
             "bash",
@@ -183,7 +175,7 @@ def build_ethosu_runtime(
         ]
     )
 
-    elf_file = os.path.join(elf_build_path, "cmake-out", "arm_executor_runner")
+    elf_file = os.path.join(elf_build_path, "arm_executor_runner")
     return elf_file
 
 
