@@ -1655,18 +1655,39 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
             out_shift,
         )
         if channels_last is not None:
-            args = args + (channels_last,)
-        return single_op_builder(
-            placeholders=(x, w, b, w_zero_point, b_scale, out_multiplier, out_shift),
-            op=exir_ops.edge.cadence.quantized_conv.default,
-            args=args,
-        )
+            return single_op_builder(
+                placeholders=(
+                    x,
+                    w,
+                    b,
+                    w_zero_point,
+                    b_scale,
+                    out_multiplier,
+                    out_shift,
+                ),
+                op=exir_ops.edge.cadence.quantized_conv_nhwc.default,
+                args=args,
+            )
+        else:
+            return single_op_builder(
+                placeholders=(
+                    x,
+                    w,
+                    b,
+                    w_zero_point,
+                    b_scale,
+                    out_multiplier,
+                    out_shift,
+                ),
+                op=exir_ops.edge.cadence.quantized_conv_nchw.default,
+                args=args,
+            )
 
     def test_quantized_convolution_default_channel_last(self) -> None:
         # Create a graph with a single convolution node.
         gm = self.create_quantized_convolution_graph_module()
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv_nchw.default), 1
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
@@ -1676,7 +1697,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv.default
+                gm_after_replacement, exir_ops.edge.cadence.quantized_conv_nhwc.default
             ),
             1,
         )
@@ -1685,12 +1706,6 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
             count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
             3,
         )
-        for node in gm_after_replacement.graph.nodes:
-            if node.target != exir_ops.edge.cadence.quantized_conv.default:
-                continue
-            # Check that the channel_last argument is set to True.
-            self.assertEqual(len(node.args), 15, f"{node=}")
-            self.assertTrue(node.args[14])
 
     def test_no_transpose_if_already_quantized_conv_channel_last(self) -> None:
         # Create a graph with a single im2row node.
@@ -1698,7 +1713,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv_nhwc.default), 1
         )
 
         # Apply replacement pass.
@@ -1707,17 +1722,11 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv.default
+                gm_after_replacement, exir_ops.edge.cadence.quantized_conv_nhwc.default
             ),
             1,
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
-        for node in gm_after_replacement.graph.nodes:
-            if node.target != exir_ops.edge.cadence.quantized_conv.default:
-                continue
-            # Check that the channel_last argument is set to True.
-            self.assertEqual(len(node.args), 15, f"{node=}")
-            self.assertTrue(node.args[14])
 
 
 class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
