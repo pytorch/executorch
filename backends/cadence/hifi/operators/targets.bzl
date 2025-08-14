@@ -73,6 +73,8 @@ OPERATORS = [
     "quantized_linear_asym8uxasym8u_asym8u_per_tensor_out",
     "quantized_matmul_out",
     "quantized_relu_out",
+    "quantized_relu_asym8s_asym8s_per_tensor_out",
+    "quantized_relu_asym8u_asym8u_per_tensor_out",
     "quantize_per_tensor",
     "remainder",
     "rsqrt",

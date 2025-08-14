@@ -897,14 +897,14 @@ struct promote_types {
 #define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)         \
   case enum_type: {                                                  \
     ET_INTERNAL_CHECK_SELECTIVE_BUILD(enum_type);                    \
-    using CTYPE_ALIAS =                                              \
+    using CTYPE_ALIAS [[maybe_unused]] =                             \
         ::executorch::runtime::ScalarTypeToCppType<enum_type>::type; \
     return __VA_ARGS__();                                            \
   }
 #else
 #define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)         \
   case enum_type: {                                                  \
-    using CTYPE_ALIAS =                                              \
+    using CTYPE_ALIAS [[maybe_unused]] =                             \
         ::executorch::runtime::ScalarTypeToCppType<enum_type>::type; \
     return __VA_ARGS__();                                            \
   }
