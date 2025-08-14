@@ -6,10 +6,10 @@
 # LICENSE file in the root directory of this source tree.
 set -eux
 
-# shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+SUITE=$1
+FLOW=$2
 
-read -r SUITE FLOW < <(parse_args "$@")
+echo "Running backend test job for suite $SUITE, flow $FLOW."
 
 # The generic Linux job chooses to use base env, not the one setup by the image
 eval "$(conda shell.bash hook)"
