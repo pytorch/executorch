@@ -171,7 +171,9 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         super().dump_artifact(path_to_dump)
         _dump_lowered_modules_artifact(path_to_dump, self.artifact, self.graph_module)
 
-    def run(self, artifact: ExportedProgram, inputs=None) -> None:
+    def run(
+        self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
+    ) -> None:
         artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
             artifact_to_run,
@@ -179,6 +181,7 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
             constant_methods=self.constant_methods,
+            generate_etrecord=generate_etrecord,
         )
 
 

@@ -28,6 +28,11 @@ class ModuleTest: XCTestCase {
     XCTAssertTrue(module.isLoaded())
   }
 
+  func testInvalidModuleLoad() {
+    let module = Module(filePath: "invalid/path")
+    XCTAssertThrowsError(try module.load())
+  }
+
   func testLoadMethod() {
     guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
       XCTFail("Couldn't find the model file")
@@ -148,5 +153,44 @@ class ModuleTest: XCTestCase {
     XCTAssertEqual(methodMetadata.memoryPlannedBufferSizes[0], 48)
     XCTAssertEqual(methodMetadata.backendNames.count, 0)
     XCTAssertEqual(methodMetadata.instructionCount, 1)
+  }
+
+  func testSetInputs() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+
+    XCTAssertNoThrow(try module.setInput(Tensor<Float>([2]), at: 1))
+    XCTAssertNoThrow(try module.setInput(Tensor<Float>([1])))
+    XCTAssertEqual(try module.forward(), Tensor<Float>([3]))
+
+    XCTAssertNoThrow(try module.setInputs(Tensor<Float>([3]), Tensor<Float>([4])))
+    XCTAssertEqual(try module.forward(), Tensor<Float>([7]))
+
+    XCTAssertThrowsError(try module.setInputs(Tensor<Float>([1])))
+  }
+
+  func testUnloadMethod() {
+    guard let modelPath = resourceBundle.path(forResource: "add", ofType: "pte") else {
+      XCTFail("Couldn't find the model file")
+      return
+    }
+    let module = Module(filePath: modelPath)
+    XCTAssertNoThrow(try module.load("forward"))
+    XCTAssertTrue(module.isLoaded("forward"))
+
+    XCTAssertNoThrow(try module.setInputs(Tensor<Float>([1]), Tensor<Float>([2])))
+    XCTAssertEqual(try module.forward(), Tensor<Float>([3]))
+
+    XCTAssertTrue(module.unload("forward"))
+    XCTAssertFalse(module.isLoaded("forward"))
+    XCTAssertFalse(module.unload("forward"))
+
+    XCTAssertThrowsError(try module.forward())
+    XCTAssertTrue(module.isLoaded("forward"))
+    XCTAssertNoThrow(try module.setInputs(Tensor<Float>([2]), Tensor<Float>([3])))
+    XCTAssertEqual(try module.forward(), Tensor<Float>([5]))
   }
 }

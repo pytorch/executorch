@@ -142,6 +142,24 @@ class ConvFCSoftmaxModule(torch.nn.Module):
         return x
 
 
+class ConvFCFCSoftmaxModuleWithoutReshape(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = torch.nn.Conv2d(4, 5, 2, bias=False)
+        self.fc1 = torch.nn.Linear(32, 16)
+        self.fc2 = torch.nn.Linear(16, 8)
+        self.softmax = torch.nn.Softmax(1)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.softmax(x)
+
+        return x
+
+
 class ConstantPadNDModule(torch.nn.Module):
     def __init__(self, paddings: Collection[int], constant: float | int | None = None):
         super().__init__()
