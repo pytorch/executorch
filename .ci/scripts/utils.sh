@@ -202,6 +202,7 @@ parse_args() {
     case "${args[$i]}" in
       --build-tool)
         BUILD_TOOL="${args[$((i+1))]}"
+        echo "Setting build tool to $BUILD_TOOL"
         i=$((i+1))
         ;;
       --build-mode)
