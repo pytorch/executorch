@@ -122,6 +122,12 @@ void quantized_conv_per_tensor_out(
     bool channel_last,
     ::executorch::aten::Tensor& out);
 
+::executorch::aten::Tensor& cat_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    ::executorch::aten::ArrayRef<::executorch::aten::Tensor> tensors,
+    int64_t dim,
+    ::executorch::aten::Tensor& out);
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl
