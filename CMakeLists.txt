@@ -48,6 +48,7 @@
 # TODO Lower to 3.24 when XNNPACK dependency is updated to include
 # https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
 cmake_minimum_required(VERSION 3.29)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 project(executorch)
 
 include(${PROJECT_SOURCE_DIR}/tools/cmake/common/preset.cmake)
