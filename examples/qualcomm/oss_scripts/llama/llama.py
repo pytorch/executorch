@@ -264,8 +264,8 @@ class SingleLlama:
 
         self.llama_graph_module = convert_pt2e(fx_graph_module)
 
-        logging.info("Verifying the QDQ model...")
         if args.eval_perplexity:
+            logging.info("Verifying the QDQ model...")
             # Check qdq cpu results
             graph_module_inference(
                 args=args,
@@ -362,6 +362,7 @@ def compile(args, pte_filename, tokenizer):
     kv_config.use_kv_cache = True
     kv_config.enable_masked_softmax = args.enable_masked_softmax
     kv_config.enable_r3 = args.r3
+    kv_config.kv_io_bit_width = 16 if args.ptq == "16a8w" else 8
 
     prefill_config = copy.copy(kv_config)
     prefill_config.use_kv_cache = (
@@ -535,11 +536,15 @@ def compile(args, pte_filename, tokenizer):
     fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
     if args.ptq:
         use_fp16 = False
-        fixed_point_type["kv_type"] = torch.uint8
         if args.ptq == "8a8w":
             fixed_point_type["io_type"] = torch.uint8
-        elif args.ptq in ("16a4w", "16a4w_block", "16a8w"):
+            fixed_point_type["kv_type"] = torch.uint8
+        elif args.ptq in ("16a4w", "16a4w_block"):
             fixed_point_type["io_type"] = torch.uint16
+            fixed_point_type["kv_type"] = torch.uint8
+        elif args.ptq == "16a8w":
+            fixed_point_type["io_type"] = torch.uint16
+            fixed_point_type["kv_type"] = torch.uint16
         else:
             assert args.ptq in [
                 "8a8w",
@@ -572,14 +577,11 @@ def compile(args, pte_filename, tokenizer):
 
     if args.ptq:
         start_quantize_ts = time.time()
-        custom_annotations = (
-            # For qwen2.5, skip annotate_conv can improve result.
-            partial(
-                annotate_matmul_16a8w,
-                annotate_conv=args.ptq != "16a8w",
-            ),
-        )
-        if args.decoder_model == {"stories110m", "stories260k"}:
+        custom_annotations = ()
+        if args.ptq != "16a8w":
+            # 16a8w use 16bit kv io, so skip this custom annotation
+            custom_annotations = custom_annotations + (annotate_matmul_16a8w,)
+        if args.decoder_model in {"stories110m", "stories260k"}:
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
@@ -1175,11 +1177,16 @@ def export_llama(args) -> None:
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path)
+    elif args.decoder_model == "phi_4_mini":
+        model_id = SUPPORTED_HF_MODELS[args.decoder_model].repo_id
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
+        tokenizer = get_tokenizer(runtime_tokenizer_path)
         with open(runtime_tokenizer_path, "r+") as file:
             data = json.load(file)
             # TODO: Encountered the following error during runtime, so switched behavior for now.
-            # Error: libc++abi: terminating due to uncaught exception of type std::runtime_error: Unsupported Normalizer type: NFC.
-            data.pop("normalizer")
+            # Error: libc++abi: terminating due to uncaught exception of type std::runtime_error: invert=true is not supported for Split PreTokenizer. Only invert=false is supported.
+            data["pre_tokenizer"]["pretokenizers"][-2]["invert"] = False
             file.seek(0)
             json.dump(data, file, indent=4)
             file.truncate()
