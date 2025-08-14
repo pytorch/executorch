@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Arm Ethos-U Backend Tutorial &mdash; ExecuTorch main documentation</title>
+  <title>Arm® Backend Tutorial &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -341,7 +341,7 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Arm Ethos-U Backend Tutorial</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Arm® Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -473,13 +473,13 @@
       </li>
 
         
-      <li>Arm Ethos-U Backend Tutorial</li>
+      <li>Arm® Backend Tutorial</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/tutorial-arm-ethos-u.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/tutorial-arm.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -511,9 +511,8 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <!---- Name is a WIP - this reflects better what it can do today ----->
-<div class="section" id="arm-ethos-u-backend-tutorial">
-<h1>Arm Ethos-U Backend Tutorial<a class="headerlink" href="#arm-ethos-u-backend-tutorial" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="arm-backend-tutorial">
+<h1>Arm® Backend Tutorial<a class="headerlink" href="#arm-backend-tutorial" title="Permalink to this heading">¶</a></h1>
 <!----This will show a grid card on the page----->
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
 <div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
@@ -535,7 +534,7 @@ Tutorials we recommend you complete before this:</div>
 <div class="sd-card-body docutils">
 <div class="sd-card-title sd-font-weight-bold docutils">
 What you will learn in this tutorial:</div>
-<p class="sd-card-text">In this tutorial you will learn how to export a simple PyTorch model for ExecuTorch Arm Ethos-U backend delegate and run it on a Corstone FVP emulators.</p>
+<p class="sd-card-text">In this tutorial you will learn how to export a simple PyTorch model for ExecuTorch Arm backends.</p>
 </div>
 </div>
 </div>
@@ -543,104 +542,69 @@ What you will learn in this tutorial:</div>
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>This ExecuTorch backend delegate is under active development. You may encounter some rough edges and features which may be documented or planned but not implemented.</p>
+<p>This delegate is under active development, to get best results please use a recent version.
+The TOSA and Ethos(tm) backend support is reasonably mature and used in production by some users.
+The VGF backend support is in early development and you may encounter issues.
+You may encounter some rough edges and features which may be documented or planned but not implemented, please refer to the in-tree documentation for the latest status of features.</p>
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>If you are already familiar with this delegate, you may want to jump directly to the examples source dir - <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm">https://github.com/pytorch/executorch/tree/main/examples/arm</a></p>
+<p>If you are already familiar with this delegate, you may want to jump directly to the examples:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm">Examples in the ExecuTorch repository</a></p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/ethos_u_minimal_example.ipynb">Compilation for Ethos-U</a></p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py">A commandline compiler for example models</a></p></li>
+</ul>
 </div>
 <div class="section" id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
 <p>Let’s make sure you have everything you need before you get started.</p>
 <div class="section" id="hardware">
 <h3>Hardware<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
-<p>To successfully complete this tutorial, you will need a Linux-based host machine with Arm aarch64 or x86_64 processor architecture.</p>
-<p>The target device will be an embedded platform with an Arm Cortex-M CPUs and Ethos-U NPUs (ML processor). This tutorial will show you how to run PyTorch models on both.</p>
-<p>We will be using a <a class="reference external" href="https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms">Fixed Virtual Platform (FVP)</a>, simulating <a class="reference external" href="https://developer.arm.com/Processors/Corstone-300">Corstone-300</a>(cs300) and <a class="reference external" href="https://developer.arm.com/Processors/Corstone-320">Corstone-320</a>(cs320)systems. Since we will be using the FVP (think of it as virtual hardware), we won’t be requiring any real embedded hardware for this tutorial.</p>
+<p>To successfully complete this tutorial, you will need a Linux or MacOS host machine with Arm aarch64 or x86_64 processor architecture.</p>
+<p>The target device will be an emulated platform to enable development without a specific development board. This tutorial has guidance for both Ethos-U targets and VGF via the ML SDK for Vulkan®.</p>
+<p>For Ethos-U and Cortex-M, We will be using a <a class="reference external" href="https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms">Fixed Virtual Platform (FVP)</a>, simulating <a class="reference external" href="https://developer.arm.com/Processors/Corstone-300">Corstone-300</a>(cs300) and <a class="reference external" href="https://developer.arm.com/Processors/Corstone-320">Corstone-320</a>(cs320)systems. Since we will be using the FVP (think of it as virtual hardware), we won’t be requiring any real embedded hardware for this tutorial.</p>
+<p>For VGF we will be using the <a class="reference external" href="https://github.com/arm/ai-ml-sdk-for-vulkan/">ML SDK for Vulkan(R)</a>) to emulate the program consumer.</p>
 </div>
 <div class="section" id="software">
 <h3>Software<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
-<p>First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven’t already, to set up a working ExecuTorch development environment.</p>
-<p>To generate software which can be run on an embedded platform (real or virtual), we will need a tool chain for cross-compilation and an Arm Ethos-U software development kit, including the Vela compiler for Ethos-U NPUs.</p>
-<p>In the following sections we will walk through the steps to download each of the dependencies listed above.</p>
+<p>First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven’t already, to set up a working ExecuTorch development environment. For the VGF backend it’s recommended you <a class="reference external" href="https://docs.pytorch.org/executorch/stable/using-executorch-building-from-source.html">install from source</a>, or from a <a class="reference external" href="https://download.pytorch.org/whl/nightly/executorch/">nightly</a>.</p>
+<p>In addition to this, you need to install a number of SDK dependencies for generating Ethos-U command streams or VGF files. There are scripts which automate this, which are found in the main <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm/">ExecuTorch repository</a>.</p>
 </div>
 </div>
 <div class="section" id="set-up-the-developer-environment">
 <h2>Set Up the Developer Environment<a class="headerlink" href="#set-up-the-developer-environment" title="Permalink to this heading">¶</a></h2>
-<p>In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial.</p>
-<p>For that we will use the <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span></code> script to pull each item in an automated fashion. It is recommended to run the script in a conda environment.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>examples/arm/setup.sh<span class="w"> </span>--i-agree-to-the-contained-eula
+<p>In this section, we will do a one-time setup of the platform support files needed to run ExecuTorch programs in this tutorial. It is recommended to run the script in a conda or venv environment.</p>
+<p>With a checkout of the ExecuTorch repository, we will use the <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span></code> script to pull each item in an automated fashion.</p>
+<p>For Ethos-U run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./examples/arm/setup.sh<span class="w"> </span>--i-agree-to-the-contained-eula
 </pre></div>
 </div>
-<p>Upon successful execution, you can directly go to <a class="reference internal" href="#convert-the-pytorch-model-to-the-pte-file"><span class="std std-doc">the next step</span></a>.</p>
-<p>As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>uname<span class="w"> </span>-s
-<span class="c1"># Linux</span>
-
-uname<span class="w"> </span>-m
-<span class="c1"># x86_64 or aarch64</span>
+<p>For VGF run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./examples/arm/setup.sh<span class="w"> </span>--i-agree-to-the-contained-eula<span class="w"> </span>--disable-ethos-u-deps<span class="w"> </span>--enable-mlsdk-deps
 </pre></div>
 </div>
-<p>Next we will walk through the steps performed by the <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script to better understand the development setup.</p>
-<div class="section" id="download-and-set-up-the-corstone-300-and-corstone-320-fvp">
-<h3>Download and Set Up the Corstone-300 and Corstone-320 FVP<a class="headerlink" href="#download-and-set-up-the-corstone-300-and-corstone-320-fvp" title="Permalink to this heading">¶</a></h3>
-<p>Fixed Virtual Platforms (FVPs) are pre-configured, functionally accurate simulations of popular system configurations. Here in this tutorial, we are interested in Corstone-300 and Corstone-320 systems. We can download this from the Arm website.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>By downloading and running the FVP software, you will be agreeing to the FVP <a class="reference external" href="https://developer.arm.com/downloads/-/arm-ecosystem-fvps/eula">End-user license agreement (EULA)</a>.</p>
-</div>
-<p>To download, we can either download <code class="docutils literal notranslate"><span class="pre">Corstone-300</span> <span class="pre">Ecosystem</span> <span class="pre">FVP</span></code> and <code class="docutils literal notranslate"><span class="pre">Corstone-320</span> <span class="pre">Ecosystem</span> <span class="pre">FVP</span></code>from <a class="reference external" href="https://developer.arm.com/downloads/-/arm-ecosystem-fvps">here</a>. or <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script does that for you under <code class="docutils literal notranslate"><span class="pre">setup_fvp</span></code> function.</p>
-</div>
-<div class="section" id="download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain">
-<h3>Download and Install the Arm GNU AArch32 Bare-Metal Toolchain<a class="headerlink" href="#download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain" title="Permalink to this heading">¶</a></h3>
-<p>Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55/M85 CPU available on the Corstone-300/Corstone-320 platform.</p>
-<p>These toolchains are available <a class="reference external" href="https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads">here</a>. We will be using GCC 13.3.rel1 targeting <code class="docutils literal notranslate"><span class="pre">arm-none-eabi</span></code> here for our tutorial. Just like FVP, <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script will down the toolchain for you. See <code class="docutils literal notranslate"><span class="pre">setup_toolchain</span></code> function.</p>
-</div>
-<div class="section" id="setup-the-arm-ethos-u-software-development">
-<h3>Setup the Arm Ethos-U Software Development<a class="headerlink" href="#setup-the-arm-ethos-u-software-development" title="Permalink to this heading">¶</a></h3>
-<p>This git repository is the root directory for all Arm Ethos-U software. It is to help us download required repositories and place them in a tree structure. See <code class="docutils literal notranslate"><span class="pre">setup_ethos_u</span></code> function of the setup script for more details.</p>
-<p>Once this is done, you should have a working FVP simulator, a functioning toolchain for cross compilation, and the Ethos-U software development setup ready for the bare-metal developement.</p>
-</div>
-<div class="section" id="install-the-vela-compiler">
-<h3>Install the Vela Compiler<a class="headerlink" href="#install-the-vela-compiler" title="Permalink to this heading">¶</a></h3>
-<p>Once this is done, the script will finish the setup by installing the Vela compiler for you, details are in <code class="docutils literal notranslate"><span class="pre">setup_vela</span></code> function.</p>
-</div>
-<div class="section" id="install-the-tosa-reference-model">
-<h3>Install the TOSA reference model<a class="headerlink" href="#install-the-tosa-reference-model" title="Permalink to this heading">¶</a></h3>
-<p>This is the last step of the setup process, using <code class="docutils literal notranslate"><span class="pre">setup_tosa_reference_model</span></code> function <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script will install TOSA reference model for you.</p>
-<p>At the end of the setup, if everything goes well, your top level devlopement dir might look something like this,</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>.
-├──<span class="w"> </span>arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi<span class="w"> </span><span class="c1"># for x86-64 hosts</span>
-├──<span class="w"> </span>arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz
-├──<span class="w"> </span>ethos-u
-│<span class="w">   </span>├──<span class="w"> </span>core_platform
-│<span class="w">   </span>├──<span class="w"> </span>core_software
-│<span class="w">   </span>├──<span class="w"> </span>fetch_externals.py
-│<span class="w">   </span>└──<span class="w"> </span><span class="o">[</span>...<span class="o">]</span>
-├──<span class="w"> </span>FVP-corstone300
-│<span class="w">   </span>├──<span class="w"> </span>FVP_Corstone_SSE-300.sh
-│<span class="w">   </span>└──<span class="w"> </span><span class="o">[</span>...<span class="o">]</span>
-├──<span class="w"> </span>FVP-corstone320
-│<span class="w">   </span>├──<span class="w"> </span>FVP_Corstone_SSE-320.sh
-│<span class="w">   </span>└──<span class="w"> </span><span class="o">[</span>...<span class="o">]</span>
-├──<span class="w"> </span>FVP_corstone300.tgz
-├──<span class="w"> </span>FVP_corstone320.tgz
-└──<span class="w"> </span>setup_path.sh
-</pre></div>
-</div>
-</div>
+<p>It is possible to install both sets of dependencies if you omit the disable options.</p>
 <div class="section" id="notes">
 <h3>Notes:<a class="headerlink" href="#notes" title="Permalink to this heading">¶</a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script has generated a <code class="docutils literal notranslate"><span class="pre">setup_path.sh</span></code> script that you need to source everytime you restart you shell.</p>
-<p>e.g. run
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script has generated a <code class="docutils literal notranslate"><span class="pre">setup_path.sh</span></code> script that you need to source whenever you restart your shell.</p>
+</div>
+<p>i.e. run
 <code class="docutils literal notranslate"><span class="pre">source</span>&#160; <span class="pre">executorch/examples/arm/ethos-u-scratch/setup_path.sh</span></code></p>
-<p>As <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> will download and setup the needed Arm toolchain make sure it is used by calling</p>
-<p><code class="docutils literal notranslate"><span class="pre">which</span> <span class="pre">arm-none-eabi-gcc</span></code></p>
-<p>It should show <code class="docutils literal notranslate"><span class="pre">arm-none-eabi-gcc</span></code> in the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> project and not anything in <code class="docutils literal notranslate"><span class="pre">/usr/bin</span></code> something like:</p>
-<p><code class="docutils literal notranslate"><span class="pre">&lt;EXECUTORCH_ROOT&gt;/examples/arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi/bin/arm-none-eabi-gcc</span></code>
-or
-<code class="docutils literal notranslate"><span class="pre">&lt;EXECUTORCH_ROOT&gt;/examples/arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc</span></code></p>
-<p>If not you might need to uninstall <code class="docutils literal notranslate"><span class="pre">arm-none-eabi-gcc</span></code> or make sure its picked after the one in the project in your $PATH env varable.</p>
+<p>To confirm your environment is set up correctly and will enable you to generate .pte’s for your target:</p>
+<p>For Ethos-U run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Check for Vela, which converts TOSA to Ethos-U command streams.</span>
+which<span class="w"> </span>vela
+</pre></div>
+</div>
+<p>For VGF run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Check for model-converter, which converts TOSA to ML-SDK VGF format.</span>
+which<span class="w"> </span>model-converter
+</pre></div>
+</div>
+<p>To ensure there’s no environment pollution you should confirm these binaries reside within your executorch checkout, under the examples/arm tree. Other versions may present compatibility issues, so this should be corrected by modifying your environment variables such as ${PATH} appropriately.</p>
 </div>
 </div>
 <div class="section" id="convert-the-pytorch-model-to-the-pte-file">
@@ -737,26 +701,43 @@ It’s also available as a default model in <a class="reference external" href="
 </pre></div>
 </div>
 <p>Similar to the non-delegate flow, the same script will server as a helper utility to help generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. Notice the <code class="docutils literal notranslate"><span class="pre">--delegate</span></code> option to enable the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> call.</p>
+<p>For Ethos targets:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span><span class="w"> </span>--delegate
+<span class="c1"># This targets the default of ethos-u55-128, see --help for further targets</span>
 <span class="c1"># should produce ./add_arm_delegate_ethos-u55-128.pte</span>
 </pre></div>
 </div>
-</div>
-<div class="section" id="delegated-quantized-workflow">
-<h3>Delegated Quantized Workflow<a class="headerlink" href="#delegated-quantized-workflow" title="Permalink to this heading">¶</a></h3>
-<p>Generating the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file can be done using the aot_arm_compiler:</p>
+<p>For basic post-training quantization:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--delegate<span class="w"> </span>--quantize
+<span class="c1"># This targets the default of ethos-u55-128, see --help for further targets</span>
 <span class="c1"># should produce ./mv2_arm_delegate_ethos-u55-128.pte</span>
 </pre></div>
 </div>
+<p>For VGF targets:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span><span class="w"> </span>--target<span class="o">=</span>vgf<span class="w"> </span>--delegate
+<span class="c1"># should produce ./add_arm_delegate_vgf.pte</span>
+</pre></div>
+</div>
+<p>For basic post-training quantization:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--target<span class="o">=</span>vgf<span class="w"> </span>--delegate<span class="w"> </span>--quantize
+<span class="c1"># should produce ./mv2_arm_delegate_vgf.pte</span>
+</pre></div>
+</div>
+<p>To capture intermediates such as VGF for lower level integration, invoke with the “-i” option:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--target<span class="o">=</span>vgf<span class="w"> </span>--delegate<span class="w"> </span>--quantize<span class="w"> </span>-i<span class="w"> </span>./mv2_output
+<span class="c1"># should produce ./mv2_arm_delegate_vgf.pte and intermediates in ./mv2_out/</span>
+</pre></div>
+</div>
 <br />
-<p>At the end of this, you should have three different <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files.</p>
+<p>At the end of this, you should have a number of different <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files.</p>
 <ul class="simple">
-<li><p>The first one contains the <a class="reference internal" href="#softmaxmodule"><span class="std std-doc">SoftmaxModule</span></a>, without any backend delegates.</p></li>
-<li><p>The second one contains the <a class="reference internal" href="#addmodule"><span class="std std-doc">AddModule</span></a>, with Arm Ethos-U backend delegate enabled.</p></li>
-<li><p>The third one contains the <span class="xref myst">quantized MV2Model</span>, with the Arm Ethos-U backend delegate enabled as well.</p></li>
+<li><p>the SoftmaxModule, without any backend delegates.</p></li>
+<li><p>the AddModule, targeting the Arm Ethos-U backend.</p></li>
+<li><p>the Quantized MV2Model, targeting the Arm Ethos-U backend.</p></li>
+<li><p>the AddModule, targeting the VGF backend.</p></li>
+<li><p>the Quantized MV2Model, targeting the VGF backend.</p></li>
 </ul>
-<p>Now let’s try to run these <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files on a Corstone-300 and Corstone-320 platforms in a bare-metal environment.</p>
+<p>Now let’s try to run these <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files on a target.</p>
 </div>
 </div>
 <div class="section" id="getting-a-bare-metal-executable">
@@ -792,7 +773,7 @@ arm_test/add/cmake-out/arm_executor_runner
 </div>
 <div class="section" id="building-the-executor-runner-bare-metal-application">
 <h3>Building the executor_runner Bare-Metal Application<a class="headerlink" href="#building-the-executor-runner-bare-metal-application" title="Permalink to this heading">¶</a></h3>
-<p>The SDK dir is the same one prepared <a class="reference internal" href="#setup-the-arm-ethos-u-software-development"><span class="std std-doc">earlier</span></a>. And, you will be passing the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file (any one of them) generated above.</p>
+<p>The SDK dir is the same one prepared <span class="xref myst">earlier</span>. And, you will be passing the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file (any one of them) generated above.</p>
 <p>Note, you have to generate a new <code class="docutils literal notranslate"><span class="pre">executor-runner</span></code> binary if you want to change the model or the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This constraint is from the constrained bare-metal runtime environment you have for Corstone-300/Corstone-320 platforms. The build also generates a kernel registration library for the relevant operators which could not be delegated to the EthosU, see the <a class="reference external" href="https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html">Kernel Library Selective Build documentation</a>.</p>
 <p>This step is executed by the build_executor_runner.sh script, which is invoked from the run.sh in the backends/arm/scripts folder.</p>
 <div class="admonition tip">
@@ -925,6 +906,35 @@ FVP_Corstone_SSE-320<span class="w">                                    </span><
 </div>
 </div>
 </div>
+<div class="section" id="running-on-the-vgf-backend-with-the-standard-executor-runner-for-linux">
+<h2>Running on the VGF backend with the standard executor_runner for Linux<a class="headerlink" href="#running-on-the-vgf-backend-with-the-standard-executor-runner-for-linux" title="Permalink to this heading">¶</a></h2>
+<p>Follow typical <a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a> flow to build the linux target, ensuring that the VGF delegate is enabled.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>-DEXECUTORCH_BUILD_VGF<span class="o">=</span>ON
+</pre></div>
+</div>
+<p>A full example buld line is:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cmake</span> <span class="n">bash</span> \
+    <span class="o">-</span><span class="n">DCMAKE_INSTALL_PREFIX</span><span class="o">=</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span> \
+    <span class="o">-</span><span class="n">DCMAKE_BUILD_TYPE</span><span class="o">=</span><span class="n">Release</span> \
+    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER</span><span class="o">=</span><span class="n">ON</span> \
+    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_MODULE</span><span class="o">=</span><span class="n">ON</span> \
+    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR</span><span class="o">=</span><span class="n">ON</span> \
+    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_TENSOR</span><span class="o">=</span><span class="n">ON</span> \
+    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_XNNPACK</span><span class="o">=</span><span class="n">OFF</span> \
+    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_VULKAN</span><span class="o">=</span><span class="n">ON</span> \
+    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_VGF</span><span class="o">=</span><span class="n">ON</span> \
+    <span class="o">-</span><span class="n">DEXECUTORCH_ENABLE_LOGGING</span><span class="o">=</span><span class="n">ON</span> \
+    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL</span><span class="o">=</span><span class="n">ON</span> \
+    <span class="o">-</span><span class="n">DPYTHON_EXECUTABLE</span><span class="o">=</span><span class="n">python</span> \
+    <span class="o">-</span><span class="n">Bcmake</span><span class="o">-</span><span class="n">out</span> <span class="o">.</span>
+<span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">-</span><span class="n">j25</span> <span class="o">--</span><span class="n">target</span> <span class="n">install</span> <span class="o">--</span><span class="n">config</span> <span class="n">Release</span>
+</pre></div>
+</div>
+<p>You can then invoke the executor runner on the host machine, which will use the VGF delegate, and requires the vulkan layer drivers we installed with setup.sh.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>-model_path<span class="w"> </span>add_arm_delegate_vgf.pte
+</pre></div>
+</div>
+</div>
 <div class="section" id="takeaways">
 <h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this heading">¶</a></h2>
 <p>In this tutorial you have learnt how to use the ExecuTorch software to both export a standard model from PyTorch and to run it on the compact and fully functioned ExecuTorch runtime, enabling a smooth path for offloading models from PyTorch to Arm based platforms.</p>
@@ -993,18 +1003,13 @@ Describe what common errors users may see and how to resolve them.
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Arm Ethos-U Backend Tutorial</a><ul>
+<li><a class="reference internal" href="#">Arm® Backend Tutorial</a><ul>
 <li><a class="reference internal" href="#prerequisites">Prerequisites</a><ul>
 <li><a class="reference internal" href="#hardware">Hardware</a></li>
 <li><a class="reference internal" href="#software">Software</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#set-up-the-developer-environment">Set Up the Developer Environment</a><ul>
-<li><a class="reference internal" href="#download-and-set-up-the-corstone-300-and-corstone-320-fvp">Download and Set Up the Corstone-300 and Corstone-320 FVP</a></li>
-<li><a class="reference internal" href="#download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain">Download and Install the Arm GNU AArch32 Bare-Metal Toolchain</a></li>
-<li><a class="reference internal" href="#setup-the-arm-ethos-u-software-development">Setup the Arm Ethos-U Software Development</a></li>
-<li><a class="reference internal" href="#install-the-vela-compiler">Install the Vela Compiler</a></li>
-<li><a class="reference internal" href="#install-the-tosa-reference-model">Install the TOSA reference model</a></li>
 <li><a class="reference internal" href="#notes">Notes:</a></li>
 </ul>
 </li>
@@ -1017,7 +1022,6 @@ Describe what common errors users may see and how to resolve them.
 </li>
 <li><a class="reference internal" href="#non-delegated-workflow">Non-delegated Workflow</a></li>
 <li><a class="reference internal" href="#delegated-workflow">Delegated Workflow</a></li>
-<li><a class="reference internal" href="#delegated-quantized-workflow">Delegated Quantized Workflow</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#getting-a-bare-metal-executable">Getting a Bare-Metal Executable</a><ul>
@@ -1031,6 +1035,7 @@ Describe what common errors users may see and how to resolve them.
 <li><a class="reference internal" href="#verification-of-successful-fvp-execution">Verification of Successful FVP Execution</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#running-on-the-vgf-backend-with-the-standard-executor-runner-for-linux">Running on the VGF backend with the standard executor_runner for Linux</a></li>
 <li><a class="reference internal" href="#takeaways">Takeaways</a></li>
 <li><a class="reference internal" href="#faqs">FAQs</a></li>
 </ul>
