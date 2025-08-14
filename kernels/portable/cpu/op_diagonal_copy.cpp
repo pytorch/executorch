@@ -98,7 +98,6 @@ Tensor& diagonal_copy_out(
       InvalidArgument,
       out);
 
-
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "diagonal_copy.out";
 
