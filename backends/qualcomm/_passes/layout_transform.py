@@ -175,6 +175,7 @@ class LayoutTransform(ExportPass):
             exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.min.dim,
             exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.aten.amax.default,
         }:
             # if dimemsion is not kept, we'll have no clue how to do layout transform
             if len(node.args) < 3 or not node.args[2]:

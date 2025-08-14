@@ -134,6 +134,11 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv_amax(self):
+        sample_input = (torch.randn(2, 3, 64, 64), )  # [batch, channels, height, width]
+        module = ConvAMax2D(in_channels=3, out_channels=16, kernel_size=3, dim=-1, keepdim=False)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_amin(self):
         modules = [AMin(dim=1, keepdim=False), AMin(dim=1, keepdim=True)]  # noqa: F405
         sample_input = (torch.randn(4, 4),)
@@ -1434,6 +1439,11 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv_amax(self):
+        sample_input = (torch.randn(2, 3, 64, 64), )  # [batch, channels, height, width]
+        module = ConvAMax2D(in_channels=3, out_channels=16, kernel_size=3, dim=-1, keepdim=False)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_amin(self):
         modules = [AMin(dim=1, keepdim=False), AMin(dim=1, keepdim=True)]  # noqa: F405
