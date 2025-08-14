@@ -129,6 +129,70 @@ void quantized_relu_per_tensor_out(
 #undef typed_quantized_relu
 }
 
+void quantized_relu_asym8s_asym8s_per_tensor_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const int64_t in_zero_point,
+    const int64_t out_zero_point,
+    const int64_t out_multiplier,
+    const int64_t out_shift,
+    Tensor& output) {
+#define typed_quantized_relu(ctype, dtype)    \
+  case executorch::aten::ScalarType::dtype: { \
+    quantized_relu_per_tensor_out_<ctype>(    \
+        ctx,                                  \
+        input,                                \
+        in_zero_point,                        \
+        out_zero_point,                       \
+        out_multiplier,                       \
+        out_shift,                            \
+        output);                              \
+    break;                                    \
+  }
+
+  executorch::aten::ScalarType dtype = input.scalar_type();
+  switch (dtype) {
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_relu)
+    default:
+      ET_DCHECK_MSG(
+          false, "Unhandled dtype %s", torch::executor::toString(dtype));
+  }
+
+#undef typed_quantized_relu
+}
+
+void quantized_relu_asym8u_asym8u_per_tensor_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const int64_t in_zero_point,
+    const int64_t out_zero_point,
+    const int64_t out_multiplier,
+    const int64_t out_shift,
+    Tensor& output) {
+#define typed_quantized_relu(ctype, dtype)    \
+  case executorch::aten::ScalarType::dtype: { \
+    quantized_relu_per_tensor_out_<ctype>(    \
+        ctx,                                  \
+        input,                                \
+        in_zero_point,                        \
+        out_zero_point,                       \
+        out_multiplier,                       \
+        out_shift,                            \
+        output);                              \
+    break;                                    \
+  }
+
+  executorch::aten::ScalarType dtype = input.scalar_type();
+  switch (dtype) {
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_relu)
+    default:
+      ET_DCHECK_MSG(
+          false, "Unhandled dtype %s", torch::executor::toString(dtype));
+  }
+
+#undef typed_quantized_relu
+}
+
 }; // namespace native
 }; // namespace reference
 }; // namespace impl
