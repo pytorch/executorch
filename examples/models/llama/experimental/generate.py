@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Adapted from gpt-fast: https://github.com/pytorch-labs/gpt-fast/blob/main/generate.py
+# Adapted from gpt-fast: https://github.com/meta-pytorch/gpt-fast/blob/main/generate.py
 import argparse
 
 from typing import Optional, Tuple
