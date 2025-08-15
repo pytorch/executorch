@@ -1040,7 +1040,7 @@ def _build_parser():
     parser.add_argument(
         "--model_mode",
         help="Export and inference kv mode, hybrid mode, or lookahead decoding mode",
-        default="kv",
+        default="hybrid",
         choices=["kv", "hybrid", "lookahead"],
         type=str,
     )
