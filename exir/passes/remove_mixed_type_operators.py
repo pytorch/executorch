@@ -23,6 +23,7 @@ class RemoveMixedTypeOperators(ExportPass):
         promotion_type_allow_list = {
             torch.ops.aten.add.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.mul.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            torch.ops.aten.sub.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             # The correct promotion for div depends on the mode! If there is no mode,
             # it's INT_TO_FLOAT, otherwise it's default.
             torch.ops.aten.div.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT,
