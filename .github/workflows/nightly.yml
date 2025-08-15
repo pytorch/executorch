@@ -53,4 +53,4 @@ jobs:
       upload-artifact: report
       script: |
         set -eux
-        .ci/scripts/backend-test-linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "$${RUNNER_ARTIFACT_DIR}"
+        .ci/scripts/backend-test-linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
