@@ -50,7 +50,7 @@ jobs:
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
       timeout: 90
-      upload-artifact: test-report
+      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
         .ci/scripts/backend-test-linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
@@ -69,7 +69,7 @@ jobs:
       python-version: 3.12
       submodules: recursive
       timeout: 90
-      upload-artifact: test-report
+      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
         .ci/scripts/backend-test-macos.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
