@@ -31,6 +31,16 @@ Error QnnMemManager::RegisterIonMem(
       tensor_wrapper->GetDataType(),
       QNN_MEM_TYPE_ION,
       {{mem_fd}}};
+  if (auto it = inverse_ion_registered_map_.find(mem_ptr);
+      it != inverse_ion_registered_map_.end()) {
+    tensor_wrapper->SetMemHandle(it->second);
+    if (log_level_ >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+      QNN_EXECUTORCH_LOG_INFO(
+          "Tensor %s is using previously registered ION memory.",
+          tensor_wrapper->GetName().c_str());
+    }
+    return Error::Ok;
+  }
   Qnn_MemHandle_t handle = nullptr;
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   error = qnn_interface.qnn_mem_register(
@@ -47,6 +57,7 @@ Error QnnMemManager::RegisterIonMem(
   }
   tensor_wrapper->SetMemHandle(handle);
   registered_map_.insert({handle, mem_ptr});
+  inverse_ion_registered_map_.insert({mem_ptr, handle});
   if (log_level_ >= QnnExecuTorchLogLevel::kLogLevelInfo) {
     QNN_EXECUTORCH_LOG_INFO(
         "Tensor %s is successfully registered to ION shared memory.",
