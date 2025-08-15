@@ -409,6 +409,12 @@ if(MAX_KERNEL_NUM)
   )
 endif()
 
+# Build devtools first if needed - some backends depend on protobuf from
+# devtools
+if(EXECUTORCH_BUILD_DEVTOOLS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
+endif()
+
 if(EXECUTORCH_BUILD_PYBIND AND APPLE)
   # shared version
   add_library(executorch_core_shared SHARED ${_executorch_core__srcs})
@@ -572,10 +578,6 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
-endif()
-
-if(EXECUTORCH_BUILD_DEVTOOLS)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
@@ -742,6 +744,30 @@ if(EXECUTORCH_BUILD_PYBIND)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
 
+  # Create bundled_module target only for pybindings when bundled_program exists
+  # This target has hard dependencies on devtools generated headers
+  if(TARGET bundled_program)
+    add_library(
+      bundled_module STATIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/extension/module/bundled_module.cpp
+    )
+
+    # Ensure bundled_module waits for bundled_program's generated headers
+    add_dependencies(bundled_module bundled_program)
+
+    target_link_libraries(bundled_module PRIVATE extension_data_loader)
+    target_link_libraries(
+      bundled_module PUBLIC extension_module_static bundled_program
+    )
+
+    target_include_directories(
+      bundled_module PUBLIC ${_common_include_directories}
+    )
+    target_compile_options(
+      bundled_module PUBLIC -Wno-deprecated-declarations -fPIC
+    )
+  endif()
+
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
   find_package_torch()
   find_library(
@@ -758,6 +784,16 @@ if(EXECUTORCH_BUILD_PYBIND)
       util
       torch
   )
+
+  if(EXECUTORCH_BUILD_EXTENSION_MODULE)
+    # Always use static linking for pybindings to avoid runtime symbol
+    # resolution issues
+    list(APPEND _dep_libs extension_module_static)
+    # Add bundled_module if available
+    if(TARGET bundled_module)
+      list(APPEND _dep_libs bundled_module)
+    endif()
+  endif()
 
   if(EXECUTORCH_BUILD_TESTS)
     list(APPEND _dep_libs test_backend_compiler_lib)
