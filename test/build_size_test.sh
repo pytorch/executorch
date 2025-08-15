@@ -23,7 +23,7 @@ cmake_install_executorch_lib() {
   update_tokenizers_git_submodule
   local EXTRA_BUILD_ARGS="${@}"
 
-  CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
+  CXXFLAGS="$COMMON_CXXFLAGS" retry cmake \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
