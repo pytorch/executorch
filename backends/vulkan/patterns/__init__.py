@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Callable, List
+from typing import List
 
 import executorch.backends.vulkan.patterns.quantized_linear  # noqa
 
@@ -13,7 +13,9 @@ import executorch.backends.vulkan.patterns.rope  # noqa
 import torch
 
 from executorch.backends.vulkan.patterns.pattern_registry import (
+    CreateReplacementFn,
     fusable_patterns,
+    GetGraphFn,
     register_pattern_graph,
     register_pattern_replacement,
 )
@@ -26,6 +28,8 @@ from torch.fx.passes.utils.matcher_utils import InternalMatch, SubgraphMatcher
 
 
 __all__ = [
+    "GetGraphFn",
+    "CreateReplacementFn",
     "RotaryEmbeddingPattern",
     "fusable_patterns",
     "register_pattern_graph",
@@ -60,7 +64,7 @@ def create_replacement_for_pattern(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     patterns: List[torch.fx.GraphModule],
-    create_replacement_func: Callable,
+    create_replacement_func: CreateReplacementFn,
 ) -> int:
     total_replaced = 0
 
@@ -86,7 +90,11 @@ def replace_all_fusable_subgraphs(
     for entry in fusable_patterns.values():
         if entry.get_graphs_fn is not None and entry.create_replacement_fn is not None:
             total_replaced += create_replacement_for_pattern(
-                ep, graph_module, entry.get_graphs_fn(), entry.create_replacement_fn
+                ep,
+                graph_module,
+                entry.get_graphs_fn(),
+                # pyre-ignore[6]
+                entry.create_replacement_fn,
             )
 
     return total_replaced
