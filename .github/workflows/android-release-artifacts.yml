@@ -90,7 +90,7 @@ jobs:
         fi
 
         FLAVOR="${{ inputs.flavor }}"
-        if [[ "$FLAVOR" == "vulkan+xnnpack" ]]; then
+        if [[ "$FLAVOR" == "vulkan+xnnpack" || -z "$FLAVOR" ]]; then
           export EXECUTORCH_BUILD_VULKAN=ON
         fi
 
