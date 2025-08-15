@@ -241,20 +241,6 @@ deps = [
   "extension_flat_tensor",
 ]
 
-[targets.bundled_module]
-buck_targets = [
-  "//extension/module:bundled_module",
-]
-filters = [
-  ".cpp$",
-]
-deps = [
-  "executorch_core",
-  "extension_data_loader",
-  "extension_module",
-  "bundled_program",
-]
-
 [targets.extension_runner_util]
 buck_targets = [
   "//extension/runner_util:inputs",
@@ -537,17 +523,6 @@ deps = [
 ]
 # ---------------------------------- LLama end ----------------------------------
 # ---------------------------------- devtools start ----------------------------------
-[targets.bundled_program]
-buck_targets = [
-  "//devtools/bundled_program:runtime",
-]
-filters = [
-  ".cpp$",
-]
-deps = [
-  "executorch_core",
-]
-
 [targets.etdump_flatcc]
 buck_targets = [
   "//devtools/etdump:etdump_flatcc",
