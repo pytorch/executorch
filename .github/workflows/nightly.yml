@@ -61,6 +61,9 @@ jobs:
 
   backend-test-macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -68,7 +71,7 @@ jobs:
         suite: [models, operators]
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      runner: macos-latest-xlarge
+      runner: macos-m1-stable
       python-version: 3.12
       submodules: recursive
       timeout: 90
