@@ -455,9 +455,6 @@ function(executorch_validate_build_variables)
   foreach(filelist_and_varname IN ZIP_LISTS BUILD_VARIABLES_FILELISTS
                                   BUILD_VARIABLES_VARNAMES
   )
-    if("${filelist_and_varname_1}" STREQUAL "_custom_ops__srcs")
-      continue()
-    endif()
     executorch_append_filelist(
       ${filelist_and_varname_0}
       "${filelist_and_varname_1}_from_build_variables"

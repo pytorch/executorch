@@ -6,7 +6,9 @@
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
-from typing import List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
+
+import torch
 
 from executorch.exir._warnings import experimental
 
@@ -65,6 +67,20 @@ class Mode(str, Enum):
 
 
 @dataclass
+class AOQuantizationConfig:
+    """
+    Configuration for torchao quantization with optional filter function.
+
+    Attributes:
+        ao_base_config: The AOBaseConfig for quantization
+        filter_fn: Optional filter function to selectively apply quantization
+    """
+
+    ao_base_config: AOBaseConfig
+    filter_fn: Optional[Callable[[torch.nn.Module, str], bool]] = None
+
+
+@dataclass
 class QuantizationRecipe:
     """
     Configuration recipe for quantization.
@@ -73,11 +89,12 @@ class QuantizationRecipe:
 
     Attributes:
         quantizers: Optional list of quantizers for model quantization
-        ao_base_config: Optional list of AO base configurations
+        ao_quantization_configs: Optional list of AOQuantizationConfig objects that pair
+                                 AOBaseConfig with optional filter functions
     """
 
     quantizers: Optional[List[Quantizer]] = None
-    ao_base_config: Optional[List[AOBaseConfig]] = None
+    ao_quantization_configs: Optional[List[AOQuantizationConfig]] = None
 
     def get_quantizers(self) -> Optional[List[Quantizer]]:
         """
