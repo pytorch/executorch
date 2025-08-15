@@ -39,6 +39,14 @@ PROGRAM_NO_PRIM_OPS_SRCS = [
     "tensor_parser_exec_aten.cpp",
 ]
 
+PLATFORM_SRCS = [
+    "abort.cpp",
+    "log.cpp",
+    "platform.cpp",
+    "profiler.cpp",
+    "runtime.cpp",
+]
+
 EXECUTORCH_CORE_SRCS = sorted([
     "runtime/backend/interface.cpp",
     "runtime/core/evalue.cpp",
@@ -50,13 +58,8 @@ EXECUTORCH_CORE_SRCS = sorted([
     "runtime/executor/tensor_parser_portable.cpp",
     "runtime/executor/pte_data_map.cpp",
     "runtime/kernel/operator_registry.cpp",
-    "runtime/platform/abort.cpp",
-    "runtime/platform/log.cpp",
-    "runtime/platform/platform.cpp",
-    "runtime/platform/profiler.cpp",
-    "runtime/platform/runtime.cpp",
     "schema/extended_header.cpp",
-] + ["runtime/executor/" + x for x in PROGRAM_NO_PRIM_OPS_SRCS])
+] + ["runtime/executor/" + x for x in PROGRAM_NO_PRIM_OPS_SRCS] + ["runtime/platform/" + x for x in PLATFORM_SRCS])
 
 PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op__clone_dim_order.cpp",
