@@ -107,6 +107,10 @@ def test_text_generation(model_id, model_dir, recipe, *, quantize=True, run_only
         model_dir,
     ]
     if "xnnpack" in recipe:
+        command += [
+            "--use_custom_sdpa",
+            "--use_custom_kv_cache",
+        ]
         if quantize:
             command += [
                 "--qlinear",
