@@ -392,7 +392,7 @@ See backend-specific documentation for more details.
 2. Copy over the generated `.xcframework` bundles to your Xcode project, link them against
 your targets and don't forget to add an extra linker flag `-all_load`.
 
-Check out the [iOS Demo App](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo) tutorial for more info.
+Check out the [iOS Demo App](https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo) tutorial for more info.
 
 <hr/>
 
@@ -499,5 +499,5 @@ Output 0: tensor(sizes=[1, 1000], [
 ## Next Steps
 
 * [Selective Build](kernel-library-selective-build.md) to link only kernels used by the program. This can provide significant binary size savings.
-* Tutorials on building [Android](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app) and [iOS](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo) demo apps.
+* Tutorials on building [Android](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app) and [iOS](https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo) demo apps.
 * Tutorials on deploying applications to embedded devices such as [ARM Cortex-M/Ethos-U](backends-arm-ethos-u.md) and [XTensa HiFi DSP](backends-cadence.md).
