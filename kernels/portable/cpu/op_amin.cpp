@@ -44,7 +44,11 @@ Tensor& amin_out(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ReduceOverDimListPlan plan(in, dim_list);
-  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "amin.out", CTYPE, [&]() {
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "amin.out";
+
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&]() {
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
     const bool success = parallel_for_each_reduce_over_dim_list_output_index(
         in, dim_list, out, [&](const auto begin, const auto end) {
