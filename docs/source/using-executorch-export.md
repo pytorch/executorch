@@ -129,14 +129,16 @@ To generate a `model.pte`, `model.ptd` pair with the weights inside `model.ptd`,
 
 ```python
 from executorch.exir.passes.external_constants_pass import (
-    delegate_external_constants_pass,
+    delegate_external_constants_pass_unlifted,
 )
-partial_function = partial(
-    delegate_external_constants_pass,
-    ep=exported_program,
+# Tag the unlifted ep.module().
+tagged_module = exported_program.module()
+delegate_external_constants_pass_unlifted(
+    module=tagged_module,
     gen_tag_fn=lambda x: "model", # This is the filename the weights will be saved to. In this case, weights will be saved as "model.ptd"
 )
-
+# Re-export to get the EP.
+exported_program = export(tagged_module, inputs, dynamic_shapes=dynamic_shapes)
 executorch_program = to_edge_transform_and_lower(
     exported_program,
     transform_passes = [partial_function],

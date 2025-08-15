@@ -260,6 +260,8 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.asinh.default,
             exir_ops.edge.aten.cosh.default,
             exir_ops.edge.aten.glu.default,
+            exir_ops.edge.aten.logit.default,
+            exir_ops.edge.aten.acos.default,
         ]
 
         return supported
@@ -302,6 +304,7 @@ class NeedsDecompositionCheck(OperatorSupportBase):
             exir_ops.edge.aten.round.default: None,
             exir_ops.edge.aten.addmm.default: None,
             exir_ops.edge.aten.glu.default: None,
+            exir_ops.edge.aten.logit.default: None,
         }
 
         if node.target in needs_decomp_dict:
