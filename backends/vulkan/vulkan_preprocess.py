@@ -149,9 +149,6 @@ class VulkanBackend(BackendDetails):
 
         program = unsafe_remove_auto_functionalized_pass(program)
 
-        print("\n\nVulkanBackend preprocess")
-        print(program.graph_module.graph)
-        print("VulkanBackend preprocess\n\n")
         # First, apply passes that fuse/remove operators to consolidate the graph
         # structure but still preserve an "ATen-compliant" graph structure (i.e. all
         # arguments to ATen operators must match the ATen function schema).

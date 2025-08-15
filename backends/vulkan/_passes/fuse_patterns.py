@@ -124,6 +124,9 @@ def pack_4bit_weight_tensor(inp: torch.Tensor) -> torch.Tensor:
 
     An input weight tensor of shape (M, K) will produce a packed weight tensor of shape
     (M, K / 2).
+
+    The packing implemented here is the same as the packing produced by
+    backends/vulkan/_passes/int4_weight_only_quantizer.py
     """
 
     # Assert we got a properly quantized tensor.
@@ -157,11 +160,16 @@ def make_combined_scales_and_zeros_tensor(
     scales: torch.Tensor, zeros: torch.Tensor
 ) -> torch.Tensor:
     """
-    Given a scales and zeros tensor, create a combined tensor by packing the values
-    into a single tensor.
+    Given a scales and zeros tensor, create a combined tensor by stacking them into a
+    single tensor.
 
-    An input scales tensor of shape (M,) and zeros tensor of shape (K,) will produce a
-    combined tensor of shape (M, K).
+    The scales and zeros tensors are expected to be 2D tensors of shape
+    (OUTPUT_CHANNELS, NUM_GROUPS). The combined tensor will have the shape
+    (NUM_GROUPS, OUTPUT_CHANNELS, 2).
+
+    This is the scales and zeros format produced by
+    backends/vulkan/_passes/int4_weight_only_quantizer.py, which in turn is the scales
+    and zeros format expected by the _weight_int4pack_mm op in ATen.
     """
     scales_reshaped = scales.transpose(0, 1).unsqueeze(2)
     zeros_reshaped = zeros.transpose(0, 1).unsqueeze(2)
