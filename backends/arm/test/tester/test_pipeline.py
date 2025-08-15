@@ -30,7 +30,10 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -711,9 +714,10 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
             ),
         }
         tosa_version = conftest.get_option("tosa_version")
+        self.tosa_spec = tosa_profiles[tosa_version]
 
         compile_spec = common.get_tosa_compile_spec(
-            tosa_profiles[tosa_version], custom_path=custom_path
+            self.tosa_spec, custom_path=custom_path
         )
         super().__init__(
             module,
@@ -751,6 +755,10 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
         if ops_not_after_pass:
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
         self.add_stage(self.tester.run_method_and_compare_outputs)
+
+    def run(self):
+        with TosaLoweringContext(self.tosa_spec):
+            super().run()
 
 
 class TransformAnnotationPassPipeline(TOSAPipelineMaker, Generic[T]):
