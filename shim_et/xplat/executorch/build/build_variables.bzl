@@ -493,13 +493,15 @@ VULKAN_SCHEMA_SRCS = [
     "backends/vulkan/serialization/schema.fbs",
 ]
 
-CUSTOM_OPS_SRCS = [
-    "extension/llm/custom_ops/op_fallback.cpp",
-    "extension/llm/custom_ops/op_fast_hadamard_transform.cpp",
-    "extension/llm/custom_ops/op_sdpa.cpp",
-    "extension/llm/custom_ops/op_update_cache.cpp",
+EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS = [
+    "op_fallback.cpp",
+    "op_fast_hadamard_transform.cpp",
+    "op_sdpa.cpp",
+    "op_update_cache.cpp",
+]
+
+CUSTOM_OPS_SRCS = ["extension/llm/custom_ops/" + x for x in EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS] + [
     "extension/llm/custom_ops/spinquant/fast_hadamard_transform.cpp",
-    "kernels/portable/cpu/util/reduce_util.cpp",
 ]
 
 LLAMA_RUNNER_SRCS = [
