@@ -55,7 +55,7 @@ jobs:
         set -eux
         .ci/scripts/backend-test-linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
 
-  baceknd-test-macos:
+  backend-test-macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       fail-fast: false
