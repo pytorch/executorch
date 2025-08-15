@@ -72,4 +72,8 @@ jobs:
       upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
+
+        # This is needed to get the prebuilt PyTorch wheel from S3
+        ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
+
         .ci/scripts/backend-test-macos.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
