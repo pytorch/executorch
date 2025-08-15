@@ -212,6 +212,7 @@ if(APPLE)
         ${CMAKE_CURRENT_SOURCE_DIR}/runtime/sdk
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/src
     )
+    set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests" FORCE)
     add_subdirectory(
       ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
     )
