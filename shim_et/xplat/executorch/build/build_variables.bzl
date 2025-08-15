@@ -474,14 +474,16 @@ XNN_EXECUTOR_RUNNER_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
 ]
 
-XNNPACK_BACKEND_SRCS = [
-    "backends/xnnpack/runtime/XNNCompiler.cpp",
-    "backends/xnnpack/runtime/XNNExecutor.cpp",
-    "backends/xnnpack/runtime/XNNHeader.cpp",
-    "backends/xnnpack/runtime/XNNPACKBackend.cpp",
-    "backends/xnnpack/runtime/XNNWeightsCache.cpp",
-    "backends/xnnpack/runtime/profiling/XNNProfiler.cpp",
+XNNPACK_BACKEND_BUCK_SRCS = [
+    "runtime/XNNCompiler.cpp",
+    "runtime/XNNExecutor.cpp",
+    "runtime/XNNHeader.cpp",
+    "runtime/XNNPACKBackend.cpp",
+    "runtime/XNNWeightsCache.cpp",
+    "runtime/profiling/XNNProfiler.cpp",
 ]
+
+XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
 
 XNNPACK_SCHEMA_SRCS = [
     "backends/xnnpack/serialization/runtime_schema.fbs",
