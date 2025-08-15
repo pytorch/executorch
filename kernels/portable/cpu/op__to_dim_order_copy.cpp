@@ -54,19 +54,15 @@ Tensor& _to_dim_order_copy_out(
     return out;
   }
 
-  ET_SWITCH_REALHBBF16_TYPES(
-      self.scalar_type(),
-      ctx,
-      "dim_order_ops::_to_dim_order_copy.out",
-      CTYPE_IN,
-      [&] {
-        ET_SWITCH_REALHBBF16_TYPES(
-            out.scalar_type(),
-            ctx,
-            "dim_order_ops::_to_dim_order_copy.out",
-            CTYPE_OUT,
-            [&] { _to_dim_order_copy_impl<CTYPE_IN, CTYPE_OUT>(self, out); });
-      });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] =
+      "dim_order_ops::_to_dim_order_copy.out";
+
+  ET_SWITCH_REALHBBF16_TYPES(self.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
+      _to_dim_order_copy_impl<CTYPE_IN, CTYPE_OUT>(self, out);
+    });
+  });
 
   return out;
 }

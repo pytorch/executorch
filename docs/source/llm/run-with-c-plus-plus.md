@@ -251,7 +251,7 @@ Supported tokenizer formats include:
 3. **TikToken**: BPE tokenizers
 4. **Llama2c**: BPE tokenizers in the Llama2.c format
 
-For custom tokenizers, you can find implementations in the [pytorch-labs/tokenizers](https://github.com/pytorch-labs/tokenizers) repository.
+For custom tokenizers, you can find implementations in the [meta-pytorch/tokenizers](https://github.com/meta-pytorch/tokenizers) repository.
 
 
 ## Other APIs
