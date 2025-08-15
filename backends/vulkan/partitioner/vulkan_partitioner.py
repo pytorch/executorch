@@ -9,6 +9,7 @@
 import logging
 from typing import Any, Callable, Dict, final, List, Mapping, Optional, Set, Tuple
 
+import executorch.backends.vulkan.patterns as vk_patterns
 import executorch.backends.vulkan.utils as utils
 
 import torch
@@ -40,6 +41,7 @@ from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
 from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.fx.passes.utils.matcher_utils import InternalMatch, SubgraphMatcher
 
 # pyre-ignore
 ops_not_to_decompose = [
@@ -58,6 +60,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         require_dynamic_shape: bool = False,
         operator_blocklist: Optional[Set[OpKey]] = None,
         operator_allowlist: Optional[Set[OpKey]] = None,
+        fusable_subgraphs: Optional[List[InternalMatch]] = None,
     ) -> None:
         super().__init__()
         self.texture_limits: utils.ImageExtents = texture_limits
@@ -67,6 +70,13 @@ class VulkanSupportedOperators(OperatorSupportBase):
             operator_blocklist if operator_blocklist is not None else set()
         )
         self.operator_allowlist = operator_allowlist
+        self.fusable_subgraphs: List[InternalMatch] = (
+            fusable_subgraphs if fusable_subgraphs is not None else []
+        )
+        # Create a set of all nodes that are part of fusable subgraphs for quick lookup
+        self.fusable_nodes: Set[torch.fx.Node] = set()
+        for match in self.fusable_subgraphs:
+            self.fusable_nodes.update(match.nodes_map.values())
 
     def op_node_is_compatible(  # noqa: C901: Function is too complex
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -204,6 +214,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
         return r
 
     def _is_node_supported(self, node: torch.fx.Node) -> bool:
+        # Check if this node is part of a fusable subgraph
+        if node.op == "call_function" and node in self.fusable_nodes:
+            return True
+
         target = node.target
         if node.target == torch.ops.higher_order.auto_functionalized:
             first_arg = node.args[0]
@@ -290,6 +304,20 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
     return compile_specs
 
 
+def get_fusable_subgraphs(graph_module: torch.fx.GraphModule) -> List[InternalMatch]:
+    fusable_subgraphs = []
+
+    fuse_patterns = []
+    fuse_patterns.extend(vk_patterns.get_rope_graphs())
+
+    for pattern in fuse_patterns:
+        sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
+        matches = list(sm.match(graph_module.graph))
+        fusable_subgraphs.extend(matches)
+
+    return fusable_subgraphs
+
+
 @final
 class VulkanPartitioner(Partitioner):
     def __init__(
@@ -330,6 +358,9 @@ class VulkanPartitioner(Partitioner):
         # subgraphs containing the nodes with the tags
         partition_tags = {}
 
+        # Get all fusable subgraphs from fuse_patterns
+        fusable_subgraphs = get_fusable_subgraphs(exported_program.graph_module)
+
         texture_limits: utils.ImageExtents = self.options.get(
             "texture_limits", utils.DEFAULT_TEXTURE_LIMITS
         )
@@ -342,6 +373,7 @@ class VulkanPartitioner(Partitioner):
                 require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
                 operator_blocklist=self.operator_blocklist,
                 operator_allowlist=self.operator_allowlist,
+                fusable_subgraphs=fusable_subgraphs,
             ),
             allows_single_node_partition=True,
         )
