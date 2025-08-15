@@ -754,6 +754,12 @@ Error Method::resolve_operator(
     return op_function.error();
   }
   kernels[kernel_index] = op_function.get();
+
+  // If we used the temp allocator here, reset it.
+  if (allocator == memory_manager_->temp_allocator()) {
+    memory_manager_->temp_allocator()->reset();
+  }
+
   return Error::Ok;
 }
 
@@ -1547,6 +1553,9 @@ Error Method::execute() {
         i);
   }
   ET_LOG(Debug, "Executing method: %s.", method_meta().name());
+  if (temp_allocator_ != nullptr) {
+    temp_allocator_->reset();
+  }
 
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.
