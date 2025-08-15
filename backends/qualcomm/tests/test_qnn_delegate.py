@@ -856,6 +856,13 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.rand([1, 2, 3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_logical_and(self):
+        module = LogicalAnd()  # noqa: F405
+        input1 = torch.tensor([True, False, True, False])
+        input2 = torch.tensor([True, True, False, False])
+        sample_input = (input1, input2)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_logical_not(self):
         module = LogicalNot()  # noqa: F405
         sample_input = (torch.rand([1, 2, 3, 4]),)
@@ -3418,7 +3425,6 @@ class TestQNNFloatingPointUtils(TestQNN):
 
         for compiler_spec in compiler_specs:
             with tempfile.TemporaryDirectory() as tmp_dir:
-
                 edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
                     module, sample_input, compiler_spec
                 ).to_executorch()
