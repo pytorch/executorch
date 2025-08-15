@@ -114,13 +114,8 @@ class FusePatternsPass(ExportPass):
         self.program = exported_program
 
     def call(self, graph_module: torch.fx.GraphModule):
-        total_replaced = 0
-
-        total_replaced += fuse_pattern(
-            self.program,
-            graph_module,
-            vk_patterns.get_rope_graphs(),
-            create_rotary_emb_custom_op,
+        total_replaced = vk_patterns.replace_all_fusable_subgraphs(
+            self.program, graph_module
         )
 
         if total_replaced > 0:

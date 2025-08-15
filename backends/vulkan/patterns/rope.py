@@ -4,12 +4,23 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
+
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 import torch
-from executorch.exir import EdgeCompileConfig, to_edge
+
+from executorch.backends.vulkan.patterns.pattern_registry import (
+    register_pattern_graph,
+    register_pattern_replacement,
+)
+
+from executorch.exir import EdgeCompileConfig, ExportedProgram, to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
+
 from torch.export import export
+from torch.fx.passes.utils.matcher_utils import InternalMatch
 
 
 class RotaryEmbeddingPattern(torch.nn.Module):
@@ -66,7 +77,8 @@ class RotaryEmbeddingPattern(torch.nn.Module):
         return freqs_cis.view(shape)
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=2)
+@register_pattern_graph("export_llama_rope")
 def get_rope_graphs() -> List[torch.fx.GraphModule]:
     batch_size = 1
     seq_len = 1
@@ -94,3 +106,68 @@ def get_rope_graphs() -> List[torch.fx.GraphModule]:
     graphs.append(gm)
 
     return graphs
+
+
+def identify_rotary_emb_io_nodes(
+    ep: ExportedProgram,
+    graph_module: torch.fx.GraphModule,
+    match: InternalMatch,
+) -> Optional[List[torch.fx.Node]]:
+    # Get the input placeholders (xq, xk, freqs_cos, freqs_sin)
+    placeholder_nodes = match.placeholder_nodes
+    if len(placeholder_nodes) != 4:
+        return None
+
+    xq, xk, freqs_cos, freqs_sin = placeholder_nodes
+
+    output_nodes = match.returning_nodes
+    if len(output_nodes) != 2:
+        return None
+
+    xq_out, xk_out = output_nodes
+
+    return [xq, xk, freqs_cos, freqs_sin, xq_out, xk_out]
+
+
+@register_pattern_replacement("export_llama_rope")
+def create_rotary_emb_custom_op(
+    ep: ExportedProgram,
+    graph_module: torch.fx.GraphModule,
+    match: InternalMatch,
+):
+    io_nodes = identify_rotary_emb_io_nodes(ep, graph_module, match)
+    if io_nodes is None:
+        return
+
+    assert len(io_nodes) == 6
+    xq, xk, freqs_cos, freqs_sin, xq_out, xk_out = io_nodes
+
+    # Create the custom op node
+    with graph_module.graph.inserting_before(xq_out):
+        rotary_emb_node = graph_module.graph.create_node(
+            "call_function",
+            exir_ops.edge.et_vk.apply_rotary_emb.default,
+            args=(xq, xk, freqs_cos, freqs_sin),
+        )
+
+    # The custom op returns a tuple (xq_out, xk_out)
+    # We need to extract the individual outputs
+    with graph_module.graph.inserting_after(rotary_emb_node):
+        getitem_0 = graph_module.graph.create_node(
+            "call_function",
+            operator.getitem,
+            args=(rotary_emb_node, 0),
+        )
+        getitem_1 = graph_module.graph.create_node(
+            "call_function",
+            operator.getitem,
+            args=(rotary_emb_node, 1),
+        )
+
+    if hasattr(xq_out, "meta") and "val" in xq_out.meta:
+        getitem_0.meta["val"] = xq_out.meta["val"]
+    if hasattr(xk_out, "meta") and "val" in xk_out.meta:
+        getitem_1.meta["val"] = xk_out.meta["val"]
+
+    xq_out.replace_all_uses_with(getitem_0)
+    xk_out.replace_all_uses_with(getitem_1)
