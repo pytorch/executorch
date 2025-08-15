@@ -13,10 +13,12 @@ ARTIFACT_DIR=$3
 echo "Running backend test job for suite $SUITE, flow $FLOW."
 echo "Saving job artifacts to $ARTIFACT_DIR."
 
+${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
+
+bash .ci/scripts/setup-conda.sh
 eval "$(conda shell.bash hook)"
-CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-conda activate "${CONDA_ENV}"
 
-PYTHON_EXECUTABLE=python .ci/scripts/setup-macos.sh --build-tool cmake --build-mode Release
+PYTHON_EXECUTABLE=python
+${CONDA_RUN} --no-capture-output .ci/scripts/setup-macos.sh --build-tool cmake --build-mode Release
 
-python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$ARTIFACT_DIR/test_results.csv"
+${CONDA_RUN} --no-capture-output python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$ARTIFACT_DIR/test_results.csv"
