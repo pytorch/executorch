@@ -54,6 +54,7 @@ jobs:
         set -eux
         # Intentionally suppressing exit code for now.
         # TODO (gjcomer) Remove this when jobs are stable.
+        EXIT_CODE=0
         .ci/scripts/backend-test-linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" || EXIT_CODE=$?
         echo "Test run complete with exit code $EXIT_CODE."
 
