@@ -72,13 +72,11 @@ def test_permute_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-x_fails = {
-    "rank_4_2": "AssertionError: Output 0 does not match reference output.",
-    "rank_4_3": "AssertionError: Output 0 does not match reference output.",
-}
-
-
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    xfails={"rank_4_3": "MLETORCH-955 : Permutation numerical diff for u55"},
+)
 @common.XfailIfNoCorstone300
 def test_permute_u55_INT(test_data):
     test_data, dims = test_data()
@@ -92,8 +90,7 @@ def test_permute_u55_INT(test_data):
     pipeline.run()
 
 
-# Fails since on FVP since N > 1 is not supported. MLETORCH-517
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_permute_u85_INT(test_data: torch.Tensor):
     test_data, dims = test_data()

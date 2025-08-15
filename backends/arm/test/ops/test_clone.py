@@ -106,6 +106,9 @@ def test_clone_u85_INT(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(
+    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
+)
 def test_clone_vgf_FP(test_data):
     pipeline = VgfPipeline[input_t](
         Clone(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
@@ -115,6 +118,9 @@ def test_clone_vgf_FP(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(
+    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
+)
 def test_clone_vgf_INT(test_data):
     pipeline = VgfPipeline[input_t](
         Clone(),
