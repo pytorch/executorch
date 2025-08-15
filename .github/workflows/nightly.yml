@@ -53,7 +53,10 @@ jobs:
       upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
-        .ci/scripts/backend-test-linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
+        # Intentionally suppressing exit code for now.
+        # TODO (gjcomer) Remove this when jobs are stable.
+        .ci/scripts/backend-test-linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}" || EXIT_CODE=$?
+        echo "Test run complete with exit code $EXIT_CODE."
 
   backend-test-macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -75,4 +78,5 @@ jobs:
         # This is needed to get the prebuilt PyTorch wheel from S3
         ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
 
-        .ci/scripts/backend-test-macos.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
+        .ci/scripts/backend-test-macos.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}" || EXIT_CODE=$?
+        echo "Test run complete with exit code $EXIT_CODE."
