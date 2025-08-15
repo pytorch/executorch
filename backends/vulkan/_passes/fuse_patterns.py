@@ -284,9 +284,6 @@ def create_wo_quantized_linear_custom_op(
 
     out_tensor.replace_all_uses_with(wo_qlinear)
 
-    # Clean up dead code
-    graph_module.graph.eliminate_dead_code()
-
 
 class FusePatternsPass(ExportPass):
     def __init__(self, exported_program: ExportedProgram) -> None:
