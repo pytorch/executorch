@@ -8,8 +8,10 @@ set -eux
 
 SUITE=$1
 FLOW=$2
+ARTIFACT_DIR=$3
 
 echo "Running backend test job for suite $SUITE, flow $FLOW."
+echo "Saving job artifacts to $ARTIFACT_DIR."
 
 # The generic Linux job chooses to use base env, not the one setup by the image
 eval "$(conda shell.bash hook)"
@@ -22,4 +24,4 @@ conda activate "${CONDA_ENV}"
 # We need the runner to test the built library.
 PYTHON_EXECUTABLE=python .ci/scripts/setup-linux.sh --build-tool cmake --build-mode Release
 
-python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report test_results.csv
+python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$ARTIFACT_DIR/test_results.csv"
