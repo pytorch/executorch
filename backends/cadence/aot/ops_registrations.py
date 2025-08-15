@@ -103,6 +103,18 @@ lib.define(
 lib.define(
     "quantized_matmul.out(Tensor X, int X_zero_point, Tensor Y, int Y_zero_point, Tensor? bias, int out_multiplier, int out_shift, int out_zero_point, bool transposed=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
+lib.define(
+    "quantized_matmul_asym8sxasym8s_asym8s(Tensor X, int X_zero_point, Tensor Y, int Y_zero_point, Tensor? bias, int out_multiplier, int out_shift, int out_zero_point, bool transposed=False) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_matmul_asym8sxasym8s_asym8s.out(Tensor X, int X_zero_point, Tensor Y, int Y_zero_point, Tensor? bias, int out_multiplier, int out_shift, int out_zero_point, bool transposed=False, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_matmul_asym8uxasym8u_asym8u(Tensor X, int X_zero_point, Tensor Y, int Y_zero_point, Tensor? bias, int out_multiplier, int out_shift, int out_zero_point, bool transposed=False) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_matmul_asym8uxasym8u_asym8u.out(Tensor X, int X_zero_point, Tensor Y, int Y_zero_point, Tensor? bias, int out_multiplier, int out_shift, int out_zero_point, bool transposed=False, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 lib.define(
     "convolution(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, "
@@ -230,6 +242,20 @@ lib.define(
 )
 lib.define(
     "quantized_relu.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, "
+    "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_relu_asym8s_asym8s.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
+)
+lib.define(
+    "quantized_relu_asym8s_asym8s.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, "
+    "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_relu_asym8u_asym8u.per_tensor(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, int out_shift) -> Tensor"
+)
+lib.define(
+    "quantized_relu_asym8u_asym8u.per_tensor_out(Tensor X, int X_zero_point, int out_zero_point, int out_multiplier, "
     "int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
@@ -686,6 +712,92 @@ def quantized_matmul_meta(
     return X.new_empty(out_size, dtype=X.dtype)
 
 
+@register_fake("cadence::quantized_matmul_asym8sxasym8s_asym8s")
+def quantized_matmul_asym8sxasym8s_asym8s_meta(
+    X: torch.Tensor,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_zero_point: int,
+    bias: Optional[torch.Tensor],
+    out_multiplier: int,
+    out_shift: int,
+    out_zero_point: int,
+    transposed: bool = False,
+) -> torch.Tensor:
+    X_size = list(X.size())
+    Y_size = list(Y.size())
+
+    # Get the batch dimensions for both tensors
+    X_batch_dims = X_size[:-2]
+    Y_batch_dims = Y_size[:-2]
+
+    # If they don't match, check that they're compatible
+    if X_batch_dims != Y_batch_dims:
+        assert prod(X_batch_dims) == prod(
+            Y_batch_dims
+        ), f"Batch dimensions of X and Y do not match: {X_batch_dims} vs {Y_batch_dims}"
+
+    # Get the matmul output size
+    if transposed:
+        assert X_size[-1] == Y_size[-1], "matrices cannot be multiplied"
+        mat_size = [X_size[-2], Y_size[-2]]
+    else:
+        assert X_size[-1] == Y_size[-2], "matrices cannot be multiplied"
+        mat_size = [X_size[-2], Y_size[-1]]
+
+    # Combine the larger batch dimensions with the matmul output size
+    out_size = (
+        X_batch_dims + mat_size
+        if len(X_batch_dims) > len(Y_batch_dims)
+        else Y_batch_dims + mat_size
+    )
+
+    return X.new_empty(out_size, dtype=X.dtype)
+
+
+@register_fake("cadence::quantized_matmul_asym8uxasym8u_asym8u")
+def quantized_matmul_asym8uxasym8u_asym8u_meta(
+    X: torch.Tensor,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_zero_point: int,
+    bias: Optional[torch.Tensor],
+    out_multiplier: int,
+    out_shift: int,
+    out_zero_point: int,
+    transposed: bool = False,
+) -> torch.Tensor:
+    X_size = list(X.size())
+    Y_size = list(Y.size())
+
+    # Get the batch dimensions for both tensors
+    X_batch_dims = X_size[:-2]
+    Y_batch_dims = Y_size[:-2]
+
+    # If they don't match, check that they're compatible
+    if X_batch_dims != Y_batch_dims:
+        assert prod(X_batch_dims) == prod(
+            Y_batch_dims
+        ), f"Batch dimensions of X and Y do not match: {X_batch_dims} vs {Y_batch_dims}"
+
+    # Get the matmul output size
+    if transposed:
+        assert X_size[-1] == Y_size[-1], "matrices cannot be multiplied"
+        mat_size = [X_size[-2], Y_size[-2]]
+    else:
+        assert X_size[-1] == Y_size[-2], "matrices cannot be multiplied"
+        mat_size = [X_size[-2], Y_size[-1]]
+
+    # Combine the larger batch dimensions with the matmul output size
+    out_size = (
+        X_batch_dims + mat_size
+        if len(X_batch_dims) > len(Y_batch_dims)
+        else Y_batch_dims + mat_size
+    )
+
+    return X.new_empty(out_size, dtype=X.dtype)
+
+
 @register_fake("cadence::im2row")
 def im2row_meta(
     input: torch.Tensor,
@@ -761,6 +873,28 @@ def requantize_per_tensor_meta(
 
 @register_fake("cadence::quantized_relu.per_tensor")
 def quantized_relu_per_tensor_meta(
+    input: torch.Tensor,
+    in_zero_point: int,
+    out_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_relu_asym8s_asym8s.per_tensor")
+def quantized_relu_asym8s_asym8s_per_tensor_meta(
+    input: torch.Tensor,
+    in_zero_point: int,
+    out_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_relu_asym8u_asym8u.per_tensor")
+def quantized_relu_asym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     in_zero_point: int,
     out_zero_point: int,
@@ -928,7 +1062,7 @@ def transposed_convolution_meta(
 ) -> torch.Tensor:
     # The native definition of torch transposed conv will have weight shape as
     # (in_channels, out_channels/groups, *kernel_size).
-    # However, the two channel position is flipped in the Jarvis pass of replacing it
+    # However, the two channel position is flipped in the Cadence pass of replacing it
     # with cadence::transposed_convolution here: https://fburl.com/code/d2s7pkyy
     out_channels, _input_channels, *kernel_size = weight.shape
     out_channels *= groups
