@@ -318,17 +318,6 @@ if(EXECUTORCH_SRCS_FILE)
   )
 endif()
 executorch_load_build_variables()
-if(NOT EXECUTORCH_SRCS_FILE)
-  # A file wasn't provided. Run a script to extract the source lists from the
-  # buck2 build system and write them to a file we can include.
-  #
-  # NOTE: This will only happen once during cmake setup, so it will not re-run
-  # if the buck2 targets change.
-  message(STATUS "executorch: Generating source lists")
-  set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/executorch_srcs.cmake")
-  extract_sources(${EXECUTORCH_SRCS_FILE})
-  executorch_validate_build_variables()
-endif()
 
 # Detect if an iOS toolchain is set.
 if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
