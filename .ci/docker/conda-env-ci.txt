@@ -1,5 +1,5 @@
 cmake=3.31.2
 ninja=1.10.2
 libuv
-llvm-openmp=19.1.7
+llvm-openmp
 pkg-config
