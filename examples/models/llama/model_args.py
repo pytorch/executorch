@@ -66,6 +66,9 @@ class ModelArgs:
     target_modules: Optional[list] = None
     peft_type: Optional[str] = None  # PEFT type.
     base_model_name_or_path: Optional[str] = None  # Base model name or path.
+    kv_io_bit_width: Optional[int] = (
+        None  # KV cache bit width. This is for QNN backend only for now.
+    )
 
     def __post_init__(self):
         if self.n_kv_heads is None:
