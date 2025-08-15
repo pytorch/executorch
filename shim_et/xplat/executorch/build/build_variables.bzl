@@ -363,11 +363,13 @@ EXTENSION_TENSOR_SRCS = [
     "extension/tensor/tensor_ptr_maker.cpp",
 ]
 
-EXTENSION_THREADPOOL_SRCS = [
-    "extension/threadpool/thread_parallel.cpp",
-    "extension/threadpool/threadpool.cpp",
-    "extension/threadpool/threadpool_guard.cpp",
+THREADPOOL_SRCS = [
+    "thread_parallel.cpp",
+    "threadpool.cpp",
+    "threadpool_guard.cpp",
 ]
+
+EXTENSION_THREADPOOL_SRCS = ["extension/threadpool/" + x for x in THREADPOOL_SRCS]
 
 EXTENSION_TRAINING_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
