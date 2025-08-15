@@ -859,7 +859,7 @@ class ReplaceConvWithChannelLastConv:
         for node in graph.nodes:
             # We are only interested in convolution nodes that have NHWC layout
             if node.target not in {
-                exir_ops.edge.cadence.quantized_conv.default,
+                exir_ops.edge.cadence.quantized_conv_nchw.default,
                 exir_ops.edge.cadence.convolution.default,
                 exir_ops.edge.cadence.quantized_transposed_conv.default,
                 exir_ops.edge.cadence.transposed_convolution.default,
@@ -969,7 +969,8 @@ class ReplaceTrivialConvWithLinear(ExportPass):
 
     trivial_conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
-        exir_ops.edge.cadence.quantized_conv.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
     }
 
     def call_operator(self, op, args, kwargs, meta):
@@ -980,7 +981,10 @@ class ReplaceTrivialConvWithLinear(ExportPass):
         # and quantized_conv have the same first 8 args. The quantized op has
         # extra args holding at least the zero point and scale of input, weight, bias,
         # and output tensor.
-        quantized_op = op == exir_ops.edge.cadence.quantized_conv.default
+        quantized_op = (
+            op == exir_ops.edge.cadence.quantized_conv_nchw.default
+            or op == exir_ops.edge.cadence.quantized_conv_nhwc.default
+        )
         assert (len(args) == 8 and not quantized_op) or (
             len(args) >= 12 and quantized_op
         ), "Inconsistent args for convolution"
@@ -1157,35 +1161,38 @@ class ForceChannelLastForConvPass(ExportPassWithTransposeHelper):
     ) -> ProxyValue:
         if op not in {
             exir_ops.edge.cadence.convolution.default,
-            exir_ops.edge.cadence.quantized_conv.default,
+            exir_ops.edge.cadence.quantized_conv_nchw.default,
         }:
             return super().call_operator(op, args, kwargs, meta)
 
-        quantized_op = op == exir_ops.edge.cadence.quantized_conv.default
-        channel_last_arg_index = 14 if quantized_op else 7
-        channel_last = (
-            args[channel_last_arg_index]
-            if len(args) > channel_last_arg_index
-            # Default is false (NCHW).
-            else False
-        )
-        if channel_last:
+        quantized_op = op == exir_ops.edge.cadence.quantized_conv_nchw.default
+
+        if not quantized_op and len(args) == 8 and args[-1] is True:
+            # Already in NHWC layout.
             return super().call_operator(op, args, kwargs, meta)
+
+        new_op = (
+            exir_ops.edge.cadence.quantized_conv_nhwc.default
+            if quantized_op
+            else exir_ops.edge.cadence.convolution.default
+        )
 
         input_proxy = cast(ProxyValue, args[0])
         weight_proxy = cast(ProxyValue, args[1])
         input_proxy = self.change_nchw_to_nhwc(input_proxy, meta)
         weight_proxy = self.change_nchw_to_nhwc(weight_proxy, meta)
 
+        # Non-quantized ops still need to set the last optional argument to True.
+        channel_last_arg = [] if quantized_op else [True]
+
         new_args = (
             # Transposed input/weights.
             (input_proxy, weight_proxy)
             # All other args (bias, quant params, etc)
-            + tuple(args[2:channel_last_arg_index])
-            # Channel last.
-            + (True,)
+            + tuple(args[2:])
+            + tuple(channel_last_arg)
         )
-        output_proxy = super().call_operator(op, new_args, kwargs, meta)
+        output_proxy = super().call_operator(new_op, new_args, kwargs, meta)
         nchw_proxy = self.change_nhwc_to_nchw(output_proxy, meta)
         return nchw_proxy
 
@@ -1242,7 +1249,8 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
     # decompose to.
     conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
-        exir_ops.edge.cadence.quantized_conv.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
     }
 
     def call_operator(self, op, args, kwargs, meta):
@@ -1250,7 +1258,10 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
             return super().call_operator(op, args, kwargs, meta)
 
         # Get the relevant args from convolution node.
-        quantized_op = op == exir_ops.edge.cadence.quantized_conv.default
+        quantized_op = (
+            op == exir_ops.edge.cadence.quantized_conv_nchw.default
+            or op == exir_ops.edge.cadence.quantized_conv_nhwc.default
+        )
         assert (len(args) == 8 and not quantized_op) or (
             len(args) >= 12 and quantized_op
         ), "Inconsistent args for convolution"
@@ -1281,9 +1292,7 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
         # channel_last layout is specified by the channel_last arg of conv
         # op, which is either the last argument (15th) or implicitely False
         # if the op is quantized, or the last argument if not.
-        channel_last = (
-            (args[14] if len(args) == 15 else False) if quantized_op else args[-1]
-        )
+        channel_last = op == exir_ops.edge.cadence.quantized_conv_nhwc.default
         # The weight tensor is [out_channels, in_channels, X] for NCHW layout,
         # and [out_channels, X, in_channels] for NHWC layout. Here, X is the
         # kernel_width for conv1d, and X = kernel_height * kernel_width for
@@ -1695,7 +1704,6 @@ class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
         )
 
 
-# pyre-ignore[6]: Incompatible parameter type (doesn't get the inheritance)
 register_cadence_pass(CadencePassAttribute(opt_level=0))(ReplaceScalarWithTensorArgPass)
 
 
@@ -1796,8 +1804,12 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
             exir_ops.edge.cadence.quantized_add.per_tensor,
             [1, 2, 4, 5],
         ),
-        exir_ops.edge.cadence.quantized_conv: (
-            exir_ops.edge.cadence.quantized_conv.per_tensor,
+        exir_ops.edge.cadence.quantized_conv_nchw: (
+            exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
+            [8, 9, 12, 13],
+        ),
+        exir_ops.edge.cadence.quantized_conv_nhwc: (
+            exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
             [8, 9, 12, 13],
         ),
         exir_ops.edge.cadence.quantized_fully_connected: (
