@@ -38,10 +38,10 @@ from executorch.exir.backend.utils import tag_constant_data
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.export.exported_program import ExportedProgram
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
-from torch.fx.passes.utils.matcher_utils import InternalMatch, SubgraphMatcher
+from torch.fx.passes.utils.matcher_utils import InternalMatch
 
 # pyre-ignore
 ops_not_to_decompose = [
@@ -304,21 +304,6 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
     return compile_specs
 
 
-def get_fusable_subgraphs(graph_module: torch.fx.GraphModule) -> List[InternalMatch]:
-    fusable_subgraphs = []
-
-    fuse_patterns = []
-    fuse_patterns.extend(vk_patterns.get_rope_graphs())
-    fuse_patterns.extend(vk_patterns.get_torchao_wo_quantized_linear_graphs())
-
-    for pattern in fuse_patterns:
-        sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
-        matches = list(sm.match(graph_module.graph))
-        fusable_subgraphs.extend(matches)
-
-    return fusable_subgraphs
-
-
 @final
 class VulkanPartitioner(Partitioner):
     def __init__(
@@ -360,7 +345,9 @@ class VulkanPartitioner(Partitioner):
         partition_tags = {}
 
         # Get all fusable subgraphs from fuse_patterns
-        fusable_subgraphs = get_fusable_subgraphs(exported_program.graph_module)
+        fusable_subgraphs = vk_patterns.get_all_fusable_subgraphs(
+            exported_program.graph_module
+        )
 
         texture_limits: utils.ImageExtents = self.options.get(
             "texture_limits", utils.DEFAULT_TEXTURE_LIMITS
