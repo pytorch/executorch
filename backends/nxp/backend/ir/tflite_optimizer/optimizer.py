@@ -43,10 +43,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_qua
     FuseParallelQuantizeOperators,
     PruneQuantizeOperators,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_reshape_operators import (
-    FuseReshapeOperators,
-    RemoveReshapeOperatorsWithNoEffect,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_transpose_operators import (
     FuseTransposeOperators,
     RemoveIdentityTransposeOperators,
@@ -60,9 +56,6 @@ class Optimization(Enum):
     KEEP_ONE_EMPTY_BUFFER = 0
     FUSE_ACTIVATION_FUNCTIONS = 1
     FUSE_FULLY_CONNECTED_AND_ADD = 2
-
-    FUSE_RESHAPE_OPERATORS = 3
-    REMOVE_RESHAPE_OPERATORS_WITH_NO_EFFECT = 4
 
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
@@ -116,12 +109,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.FUSE_FULLY_CONNECTED_AND_ADD: FuseFullyConnectedAndAddOperators(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_RESHAPE_OPERATORS: FuseReshapeOperators(
-                builder, conversion_config
-            ),
-            Optimization.REMOVE_RESHAPE_OPERATORS_WITH_NO_EFFECT: RemoveReshapeOperatorsWithNoEffect(
                 builder, conversion_config
             ),
             Optimization.FUSE_TRANSPOSE_OPERATORS: FuseTransposeOperators(
