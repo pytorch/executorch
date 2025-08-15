@@ -25,6 +25,8 @@ except ImportError:
 # per-io structs to simplify runtime use.
 def vela_bin_pack_io(prefix, data):
     vela_input_shapes = data[prefix + "_shape"]
+    # Vela input/output shape is fixed to 6D
+    vela_io_shape_dims = 6
 
     ios = struct.pack("<i", len(vela_input_shapes))
     for i in range(len(vela_input_shapes)):
@@ -32,10 +34,10 @@ def vela_bin_pack_io(prefix, data):
         io_elem_size = data[prefix + "_elem_size"][i]
         io_offset = data[prefix + "_offset"][i]
         io_region = data[prefix + "_region"][i]
-        assert len(io_shape) <= 4
-        inp_pad = io_shape.tolist() + [0] * (4 - len(io_shape))
+        assert len(io_shape) == vela_io_shape_dims
+        inp_pad = io_shape.tolist()
         io_struct = struct.pack(
-            "<iiiiiii", *inp_pad, io_elem_size, io_offset, io_region
+            "<iiiiiiiii", *inp_pad, io_elem_size, io_offset, io_region
         )
         ios += io_struct
     return ios
