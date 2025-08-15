@@ -10,6 +10,7 @@
 #include <cmath>
 #include <tuple>
 
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -58,7 +59,7 @@ Tensor& argmax_out(
                   // the below condition as written is equivalent to
                   // !isnan(accval) && (isnan(v) || v > acc_val). See
                   // argument in op_argmin.cpp.
-                  if (!std::isnan(acc_val) && !(v <= acc_val)) {
+                  if (!utils::isnan_override(acc_val) && !(v <= acc_val)) {
                     acc_val = v;
                     acc_ix = ix;
                   }
