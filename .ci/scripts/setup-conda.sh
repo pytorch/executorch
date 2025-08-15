@@ -9,7 +9,7 @@ set -ex
 
 install_conda() {
   pushd .ci/docker || return
-  ${CONDA_INSTALL} -y --file conda-env-ci.txt
+  ${CONDA_INSTALL} -c conda-forge -y --file conda-env-ci.txt
   popd || return
 }
 
