@@ -37,6 +37,8 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
 
+from .models.mobilenet_v2 import MobilenetV2
+
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
@@ -87,7 +89,7 @@ def get_model_and_inputs_from_name(model_name: str):
         logging.warning(
             "Using a model from examples/models not all of these are currently supported"
         )
-        model, example_inputs, _ = EagerModelFactory.create_model(
+        model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL[model_name]
         )
     else:
@@ -100,6 +102,7 @@ def get_model_and_inputs_from_name(model_name: str):
 
 models = {
     "cifar10": CifarNet,
+    "mobilenetv2": MobilenetV2,
 }
 
 
