@@ -349,13 +349,16 @@ endfunction()
 function(executorch_append_filelist name outputvar)
   # configure_file adds its input to the list of CMAKE_RERUN dependencies
   configure_file(
-    ${PROJECT_SOURCE_DIR}/shim_et/xplat/executorch/build/build_variables.bzl
+    ${EXECUTORCH_ROOT}/shim_et/xplat/executorch/build/build_variables.bzl
     ${PROJECT_BINARY_DIR}/build_variables.bzl COPYONLY
   )
+  if(NOT PYTHON_EXECUTABLE)
+    resolve_python_executable()
+  endif()
   execute_process(
     COMMAND
       "${PYTHON_EXECUTABLE}" -c
-      "exec(open('${PROJECT_SOURCE_DIR}/shim_et/xplat/executorch/build/build_variables.bzl').read());print(';'.join(${name}))"
+      "exec(open('${EXECUTORCH_ROOT}/shim_et/xplat/executorch/build/build_variables.bzl').read());print(';'.join(${name}))"
     WORKING_DIRECTORY "${_rootdir}"
     RESULT_VARIABLE _retval
     OUTPUT_VARIABLE _tempvar
