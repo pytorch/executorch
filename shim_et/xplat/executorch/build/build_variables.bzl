@@ -61,6 +61,12 @@ EXECUTORCH_CORE_SRCS = sorted([
     "schema/extended_header.cpp",
 ] + ["runtime/executor/" + x for x in PROGRAM_NO_PRIM_OPS_SRCS] + ["runtime/platform/" + x for x in PLATFORM_SRCS])
 
+PATTERN_SRCS = [
+    "unary_ufunc_realhbbf16_to_bool.cpp",
+    "unary_ufunc_realhbbf16_to_floathbf16.cpp",
+    "unary_ufunc_realhbf16.cpp",
+]
+
 PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op__clone_dim_order.cpp",
     "kernels/portable/cpu/op__empty_dim_order.cpp",
@@ -227,10 +233,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_view_copy.cpp",
     "kernels/portable/cpu/op_where.cpp",
     "kernels/portable/cpu/op_zeros.cpp",
-    "kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_bool.cpp",
-    "kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp",
-    "kernels/portable/cpu/pattern/unary_ufunc_realhbf16.cpp",
-]
+] + ["kernels/portable/cpu/pattern/" + x for x in PATTERN_SRCS]
 
 KERNELS_UTIL_ALL_DEPS_SRCS = [
     "kernels/portable/cpu/util/activation_ops_util.cpp",
