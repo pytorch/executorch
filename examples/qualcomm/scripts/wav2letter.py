@@ -66,17 +66,16 @@ def get_dataset(data_size, artifact_dir):
         collate_fn=lambda x: collate_fun(x),
     )
     # prepare input data
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     for wave, label in data_loader:
         for index in range(data_size):
             # reshape input tensor to NCHW
             inputs.append((wave[index].reshape(1, 1, -1, 1),))
             targets.append(label[index])
-            input_list += f"input_{index}_0.raw\n"
         # here we only take first batch, i.e. 'data_size' tensors
         break
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def eval_metric(pred, target_str):
@@ -140,9 +139,7 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_dataset(
-            data_size=data_num, artifact_dir=args.artifact
-        )
+        inputs, targets = get_dataset(data_size=data_num, artifact_dir=args.artifact)
     pte_filename = "w2l_qnn"
     build_executorch_binary(
         model,
@@ -169,7 +166,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data

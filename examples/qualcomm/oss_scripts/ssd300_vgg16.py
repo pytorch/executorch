@@ -88,7 +88,7 @@ def get_dataset(data_size, dataset_dir, download):
         test_dataset, shuffle=True, collate_fn=test_dataset.collate_fn
     )
 
-    inputs, input_list = [], ""
+    inputs = []
     true_boxes = []
     true_labels = []
     true_difficulties = []
@@ -96,12 +96,11 @@ def get_dataset(data_size, dataset_dir, download):
         if index >= data_size:
             break
         inputs.append((images,))
-        input_list += f"input_{index}_0.raw\n"
         true_boxes.extend(boxes)
         true_labels.extend(labels)
         true_difficulties.extend(difficulties)
 
-    return inputs, input_list, true_boxes, true_labels, true_difficulties
+    return inputs, true_boxes, true_labels, true_difficulties
 
 
 def SSD300VGG16(pretrained_weight_model):
@@ -133,7 +132,7 @@ def main(args):
         )
 
     data_num = 100
-    inputs, input_list, true_boxes, true_labels, true_difficulties = get_dataset(
+    inputs, true_boxes, true_labels, true_difficulties = get_dataset(
         data_size=data_num, dataset_dir=args.artifact, download=args.download
     )
 
@@ -165,7 +164,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
