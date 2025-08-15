@@ -51,9 +51,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_tra
     FuseTransposeOperators,
     RemoveIdentityTransposeOperators,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.remove_unused_tensors_and_buffers import (
-    RemoveUnusedTensorsAndBuffers,
-)
 
 
 class Optimization(Enum):
@@ -71,7 +68,6 @@ class Optimization(Enum):
     FUSE_PARALLEL_QUANTIZE_OPERATORS = 8
     FUSE_QUANTIZE_INTO_PRECEDING_OPS = 9
 
-    REMOVE_UNUSED_TENSORS = 10
     ELIMINATE_DEAD_BRANCHES = 11
     PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE = 12
 
@@ -137,9 +133,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.FUSE_QUANTIZE_INTO_PRECEDING_OPS: FuseQuantizeIntoPrecedingOps(
-                builder, conversion_config
-            ),
-            Optimization.REMOVE_UNUSED_TENSORS: RemoveUnusedTensorsAndBuffers(
                 builder, conversion_config
             ),
             Optimization.ELIMINATE_DEAD_BRANCHES: EliminateDeadBranches(
