@@ -352,6 +352,7 @@ EXTENSION_RUNNER_UTIL_SRCS = [
 
 EXTENSION_LLM_RUNNER_SRCS = [
     "extension/llm/runner/llm_runner_helper.cpp",
+    "extension/llm/runner/multimodal_prefiller.cpp",
     "extension/llm/runner/text_decoder_runner.cpp",
     "extension/llm/runner/text_llm_runner.cpp",
     "extension/llm/runner/text_prefiller.cpp",
