@@ -6,6 +6,8 @@
 
 from typing import List
 
+import executorch.backends.vulkan.patterns.quantized_linear  # noqa
+
 import executorch.backends.vulkan.patterns.rope  # noqa
 
 import torch
