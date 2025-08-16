@@ -107,6 +107,7 @@ class BasePipelineMaker(Generic[T]):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
+        quantization_config: Optional[Any] = None,
     ):
 
         self.tester = ArmTester(
@@ -341,6 +342,7 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         qtol: int = 1,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         tosa_extensions: Optional[List[str]] = None,
+        quantization_config: Optional[Any] = None,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
@@ -354,15 +356,6 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         compile_spec = common.get_tosa_compile_spec(
             tosa_profiles[tosa_version], custom_path=custom_path
         )
-
-        quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
-        quantization_config = get_symmetric_quantization_config(
-            is_per_channel=per_channel_quantization
-        )
-        if symmetric_io_quantization:
-            quantizer.set_io(quantization_config)
-        quant_stage = Quantize(quantizer, quantization_config)
-
         super().__init__(
             module,
             test_data,
@@ -372,6 +365,16 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
             use_to_edge_transform_and_lower,
             dynamic_shapes,
         )
+
+        quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+        # Use custom quantization config if provided, otherwise use default
+        quantization_config = quantization_config or get_symmetric_quantization_config(
+                is_per_channel=per_channel_quantization
+        )
+        if symmetric_io_quantization:
+            quantizer.set_io(quantization_config)
+        quant_stage = Quantize(quantizer, quantization_config)
+
         self.add_stage(self.tester.quantize, quant_stage, pos=0)
 
         self.add_stage_after(
