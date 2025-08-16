@@ -605,17 +605,11 @@ def export_llama(
     if not llm_config.base.checkpoint and model_name in HUGGING_FACE_REPO_IDS:
         repo_id = HUGGING_FACE_REPO_IDS[model_name]
         if model_name == "qwen2_5":
-            from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.qwen2_5 import convert_weights
         elif model_name.startswith("qwen3"):
-            from executorch.examples.models.qwen3 import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.qwen3 import convert_weights
         elif model_name == "phi_4_mini":
-            from executorch.examples.models.phi_4_mini import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.phi_4_mini import convert_weights
         elif model_name == "smollm2":
             from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
                 convert_weights,
