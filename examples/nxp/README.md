@@ -13,7 +13,7 @@ $ examples/nxp/setup.sh
 2. Now run the `aot_neutron_compile.py` example with the `cifar10` model 
 ```commandline
 $ python -m examples.nxp.aot_neutron_compile --quantize \
-    --delegate --neutron_converter_flavor SDK_25_03 -m cifar10 
+    --delegate --neutron_converter_flavor SDK_25_06 -m cifar10 
 ```
 
 3. It will generate you `cifar10_nxp_delegate.pte` file which can be used with the MXUXpresso SDK `cifarnet_example` project, presented [here](https://mcuxpresso.nxp.com/mcuxsdk/latest/html/middleware/eiq/executorch/docs/nxp/topics/example_applications.html#how-to-build-and-run-executorch-cifarnet-example).

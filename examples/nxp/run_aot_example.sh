@@ -12,6 +12,6 @@ cd $EXECUTORCH_DIR
 
 # Run the AoT example
 python -m examples.nxp.aot_neutron_compile --quantize \
-    --delegate --neutron_converter_flavor SDK_25_03 -m cifar10
+    --delegate --neutron_converter_flavor SDK_25_06 -m cifar10
 # verify file exists
 test -f cifar10_nxp_delegate.pte

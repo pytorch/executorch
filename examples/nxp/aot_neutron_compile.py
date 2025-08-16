@@ -164,7 +164,7 @@ if __name__ == "__main__":  # noqa C901
         "-c",
         "--neutron_converter_flavor",
         required=False,
-        default="SDK_25_03",
+        default="SDK_25_06",
         help="Flavor of installed neutron-converter module. Neutron-converter module named "
         "'neutron_converter_SDK_24_12' has flavor 'SDK_24_12'.",
     )
