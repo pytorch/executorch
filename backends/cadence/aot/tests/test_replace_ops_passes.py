@@ -17,7 +17,6 @@ from executorch.backends.cadence.aot.graph_builder import (
 )
 from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.backends.cadence.aot.replace_ops import (
-    ForceChannelLastForConvPass,
     MakeSliceAndCatDimOutermostPass,
     ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
     ReplaceAddMMWithLinearPass,
@@ -25,6 +24,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceAtenConvolutionWithCadenceConvolutionPass,
     ReplaceConstantPadNdWithSlicePass,
     ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
+    ReplaceConvWithChannelLastConvPass,
     ReplaceConvWithIm2RowAndLinear,
     ReplaceEmptyTensorsWithFullPass,
     ReplaceFunctionallyEquivalentOpTargets,
@@ -1454,7 +1454,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         )
 
 
-class TestForceChannelLastForConvPass(unittest.TestCase):
+class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
     def create_conv1d_graphmodule(
         self, channels_last: Optional[bool] = None
     ) -> torch.fx.GraphModule:
@@ -1489,7 +1489,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.transpose_copy.int), 0)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1514,7 +1514,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.convolution.default), 1)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1566,7 +1566,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1591,7 +1591,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.convolution.default), 1)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1692,7 +1692,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1717,7 +1717,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         )
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
