@@ -38,7 +38,7 @@ linear_residual_aten_op: list[str] = [
 ]
 linear_residual_exir_op: list[str] = [
     "executorch_exir_dialects_edge__ops_aten_gelu_default",
-    "executorch_exir_dialects_edge__ops_aten_clone_default",
+    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default",
     "executorch_exir_dialects_edge__ops_aten_linear_default",
     "executorch_exir_dialects_edge__ops_aten_add_Tensor",
 ]
