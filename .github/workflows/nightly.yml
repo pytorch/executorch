@@ -49,7 +49,7 @@ jobs:
       runner: linux.4xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
-      timeout: 90
+      timeout: 120
       upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
