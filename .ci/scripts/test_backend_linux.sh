@@ -21,7 +21,7 @@ conda activate "${CONDA_ENV}"
 # CMake options to use, in addition to the defaults.
 EXTRA_BUILD_ARGS=""
 
-if [[ "$FLOW" =~ ".*qualcomm.*"]]; then
+if [[ "$FLOW" =~ ".*qualcomm.*" ]]; then
     # Setup QNN sdk and deps
     ./install_requirements.sh --use-pt-pinned-commit
     PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
@@ -30,7 +30,7 @@ if [[ "$FLOW" =~ ".*qualcomm.*"]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON"
 fi
 
-if [[ "$FLOW" =~ ".*vulkan.*"]]; then
+if [[ "$FLOW" =~ ".*vulkan.*" ]]; then
     # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
     source .ci/scripts/setup-vulkan-linux-deps.sh
     
