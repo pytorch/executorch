@@ -47,7 +47,7 @@ jobs:
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: linux.4xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: recursive
       timeout: 120
       upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
