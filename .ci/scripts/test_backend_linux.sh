@@ -27,7 +27,7 @@ if [[ "$FLOW" == *qualcomm* ]]; then
     PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
     PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
-    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT"
 fi
 
 if [[ "$FLOW" =~ *vulkan* ]]; then
