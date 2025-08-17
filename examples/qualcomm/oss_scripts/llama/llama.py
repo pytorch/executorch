@@ -322,7 +322,7 @@ class SingleLlama:
             )
 
             for n in edge_prog_mgr.exported_program().graph.nodes:
-                if n.op == "output" and QCOM_QUANT_ATTRS_MAP in n.meta:
+                if n.op == "output":
                     for node, output_encoding in n.meta[QCOM_QUANT_ATTRS_MAP].items():
                         if node.meta["val"].size() in self.io_shape:
                             self.quant_attrs = output_encoding
