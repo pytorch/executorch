@@ -123,9 +123,6 @@ bool init_bnns_descriptor(BNNSNDArrayDescriptor& bnns_descriptor, const MultiArr
 }
 
 bool copy_using_bnns(const MultiArray& src, MultiArray& dst) {
-    if (src.layout().dataType() != dst.layout().dataType()) {
-        return false;
-    }
     if (dst.layout().num_bytes() < src.layout().num_bytes()) {
         return false;
     }
