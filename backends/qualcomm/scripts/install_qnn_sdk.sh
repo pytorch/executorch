@@ -41,7 +41,7 @@ verify_pkg_installed() {
 
 install_qnn() {
   # Check if QNN_SDK_ROOT is already set and valid
-  if [ -n "${QNN_SDK_ROOT}" ] && [ -d "${QNN_SDK_ROOT}" ]; then
+  if [ -n "${QNN_SDK_ROOT:-}" ] && [ -d "${QNN_SDK_ROOT:-}" ]; then
     echo "QNN SDK already set to ${QNN_SDK_ROOT} - skipping installation"
     return
   fi
