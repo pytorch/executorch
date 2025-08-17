@@ -141,9 +141,9 @@ setup_libcpp() {
   popd >/dev/null
 
   # Set environment variables
-  export CPLUS_INCLUDE_PATH="${INSTALL_DIR}/include:$CPLUS_INCLUDE_PATH"
-  export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:$LD_LIBRARY_PATH"
-  export LIBRARY_PATH="${INSTALL_DIR}/lib:$LIBRARY_PATH"
+  export CPLUS_INCLUDE_PATH="${INSTALL_DIR}/include:${CPLUS_INCLUDE_PATH:-}"
+  export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:${LD_LIBRARY_PATH:-}"
+  export LIBRARY_PATH="${INSTALL_DIR}/lib:${LIBRARY_PATH:-}"
 
   echo "libc++ installed to ${INSTALL_DIR}"
 }
