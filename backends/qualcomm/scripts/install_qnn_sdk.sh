@@ -9,7 +9,7 @@ source "${SCRIPT_DIR}/qnn_config.sh"
 # Function to install Android NDK (only if not already set)
 setup_android_ndk() {
     # Check if ANDROID_NDK_ROOT is already set and valid
-    if [ -n "${ANDROID_NDK_ROOT}" ] && [ -d "${ANDROID_NDK_ROOT}" ]; then
+    if [ -n "${ANDROID_NDK_ROOT:-}" ] && [ -d "${ANDROID_NDK_ROOT:-}" ]; then
         echo "Android NDK already set to ${ANDROID_NDK_ROOT} - skipping installation"
         return
     fi
