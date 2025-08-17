@@ -18,14 +18,16 @@ eval "$(conda shell.bash hook)"
 CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
 conda activate "${CONDA_ENV}"
 
+export PYTHON_EXECUTABLE=python
+
 # CMake options to use, in addition to the defaults.
 EXTRA_BUILD_ARGS=""
 
 if [[ "$FLOW" == *qualcomm* ]]; then
     # Setup QNN sdk and deps
     ./install_requirements.sh --use-pt-pinned-commit
-    PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-    PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+    source .ci/scripts/setup-qnn-deps.sh
+    source .ci/scripts/build-qnn-sdk.sh
 
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT"
 fi
