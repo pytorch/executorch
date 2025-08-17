@@ -643,7 +643,7 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     set(SUPPORT_REGEX_LOOKAHEAD ON)
     # to avoid error like Undefined symbols for architecture arm64:
     # "___lsan_is_turned_off", referenced from: absl::LeakCheckerIsActive()
-    add_compile_definitions(-ULEAK_SANITIZER)
+    add_compile_options(-ULEAK_SANITIZER)
     # to avoid error like:
     # abseil-cpp/absl/numeric/int128_have_intrinsic.inc:258: undefined reference
     # to `__muloti4'
