@@ -42,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flow: [vulkan, xnnpack, xnnpack_static_int8_per_channel]
+        flow: [qualcomm, vulkan, xnnpack, xnnpack_static_int8_per_channel]
         suite: [models, operators]
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
