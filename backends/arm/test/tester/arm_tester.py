@@ -51,7 +51,7 @@ from executorch.backends.arm.test.runner_utils import (
     get_output_nodes,
     get_output_quantization_params,
     get_target_board,
-    run_corstone,
+    run_target,
     TosaReferenceModelDispatch,
 )
 
@@ -212,7 +212,7 @@ class Serialize(tester.Serialize):
                 f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
             )
 
-        return run_corstone(
+        return run_target(
             self.executorch_program_manager,
             inputs_flattened,
             intermediate_path,
