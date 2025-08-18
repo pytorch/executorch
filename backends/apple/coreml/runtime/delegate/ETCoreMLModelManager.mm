@@ -431,7 +431,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
         return nil;
     }
     
-    NSURL *dstURL = [self.assetManager.trashDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
+    NSURL *dstURL = [self.assetManager.assetsDirectoryPath URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
     NSURL *modelURL = ::write_model_files(dstURL, self.fileManager, identifier, modelAssetType.value(), inMemoryFS, error);
     switch (modelAssetType.value()) {
         case ModelAssetType::CompiledModel: {
@@ -444,6 +444,10 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
             NSURL *compiledModelURL = [ETCoreMLModelCompiler compileModelAtURL:modelURL
                                                           maxWaitTimeInSeconds:(5 * 60)
                                                                          error:error];
+            // Clean up modelURL
+            if (modelURL && modelURL.isFileURL) {
+                [self.fileManager removeItemAtURL:modelURL error:nil];
+            }
             
             return compiledModelURL;
         }
