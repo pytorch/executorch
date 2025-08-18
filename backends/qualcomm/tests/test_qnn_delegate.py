@@ -4560,6 +4560,8 @@ class TestExampleLLMScript(TestQNN):
             "wikitext",
             "--limit",
             "1",
+            "--r3",
+            "--enable_masked_softmax",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -4581,14 +4583,14 @@ class TestExampleLLMScript(TestQNN):
                 self.fail(msg["Error"])
             else:
                 inference_speed_ref = {"SM8650": 110, "SM8750": 130}
-                self.assertLessEqual(msg["wiki_ppl"], 25)
+                self.assertLessEqual(msg["wiki_ppl"], 15)
                 self.assertLessEqual(msg["pte_size"], 800000000)  # 800mb
                 if self.model in inference_speed_ref:
                     self.assertGreaterEqual(
                         msg["inference_speed"], inference_speed_ref[self.model]
                     )
 
-    def test_qwen3(self):
+    def test_static_qwen3(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
 
@@ -4611,7 +4613,7 @@ class TestExampleLLMScript(TestQNN):
             "--ptq",
             "16a8w",
             "--decoder_model",
-            "qwen3_0.6b",
+            "qwen3_0_6b",
             "--model_mode",
             "hybrid",
             "--prefill_ar_len",

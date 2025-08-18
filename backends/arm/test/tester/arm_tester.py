@@ -51,7 +51,7 @@ from executorch.backends.arm.test.runner_utils import (
     get_output_nodes,
     get_output_quantization_params,
     get_target_board,
-    run_corstone,
+    run_target,
     TosaReferenceModelDispatch,
 )
 
@@ -171,7 +171,9 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         super().dump_artifact(path_to_dump)
         _dump_lowered_modules_artifact(path_to_dump, self.artifact, self.graph_module)
 
-    def run(self, artifact: ExportedProgram, inputs=None) -> None:
+    def run(
+        self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
+    ) -> None:
         artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
             artifact_to_run,
@@ -179,6 +181,7 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
             constant_methods=self.constant_methods,
+            generate_etrecord=generate_etrecord,
         )
 
 
@@ -209,7 +212,7 @@ class Serialize(tester.Serialize):
                 f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
             )
 
-        return run_corstone(
+        return run_target(
             self.executorch_program_manager,
             inputs_flattened,
             intermediate_path,
