@@ -424,6 +424,11 @@ int main(int argc, char** argv) {
     int inference_index = 0;
     double elapsed_time = 0;
     while (std::getline(input_list, file_path)) {
+      // to avoid case where \r\n is used as EOL
+      if (!file_path.empty() && file_path.back() == '\r') {
+        file_path.pop_back();
+      }
+
       auto input_files = split(file_path, " ");
       if (input_files.size() == 0) {
         break;

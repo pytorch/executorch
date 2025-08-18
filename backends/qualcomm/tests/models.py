@@ -2042,6 +2042,14 @@ class Sub(torch.nn.Module):
         return torch.sub(x, y)
 
 
+class Sub_y_x_from_x_y(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.sub(y, x)
+
+
 class SubAlpha(torch.nn.Module):
     def __init__(self, alpha):
         super().__init__()
