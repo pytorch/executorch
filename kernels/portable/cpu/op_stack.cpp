@@ -8,6 +8,7 @@
 
 #include <cstring>
 
+#include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -126,7 +127,7 @@ stack_out_shape(executorch::aten::ArrayRef<Tensor> tensors, int64_t dim) {
     if (tensors[i].dim() != tensors[0].dim()) {
       return std::make_tuple(Error::InvalidArgument, out_sizes, out_dim);
     }
-    for (size_t d = 0; d < tensors[0].dim(); ++d) {
+    for (const auto d: c10::irange(tensors[0].dim())) {
       if (tensors[i].size(d) != tensors[0].size(d)) {
         return std::make_tuple(Error::InvalidArgument, out_sizes, out_dim);
       }
