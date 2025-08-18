@@ -431,7 +431,7 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
         return nil;
     }
     
-    NSURL *dstURL = [self.assetManager.assetsDirectoryPath URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
+    NSURL *dstURL = [self.assetManager.assetsDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
     NSURL *modelURL = ::write_model_files(dstURL, self.fileManager, identifier, modelAssetType.value(), inMemoryFS, error);
     switch (modelAssetType.value()) {
         case ModelAssetType::CompiledModel: {
