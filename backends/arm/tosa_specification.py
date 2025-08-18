@@ -162,13 +162,6 @@ class Tosa_1_00(TosaSpecification):
     def support_float(self):
         return "FP" in self.profiles
 
-    def support_extension(self, extension: str) -> bool:
-        for p in self.profiles:
-            if extension in self.valid_extensions[p] and extension in self.extensions:
-                return True
-
-        return False
-
 
 class TosaLoweringContext:
     """
