@@ -644,7 +644,7 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     # to avoid error like:
     # abseil-cpp/absl/numeric/int128_have_intrinsic.inc:258: undefined reference
     # to `__muloti4'
-    add_compile_options(-DABSL_NO_INTRINSIC_INT128)
+    add_definitions(-DABSL_NO_INTRINSIC_INT128)
     # llama/runner/CMakeLists.txt builds a shared library libllama_runner.so
     # that transitively depends on tokenizers. Need to build tokenizers with
     # -fPIC.
