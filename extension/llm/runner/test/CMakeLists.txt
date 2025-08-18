@@ -27,15 +27,13 @@ if(APPLE)
   list(APPEND _test_srcs lsan_stub.cpp)
 endif()
 
-find_library(GCC_S_LIB gcc_s)
 et_cxx_test(
-  test_runner
-  SOURCES
-  ${_test_srcs}
-  EXTRA_LIBS
-  executorch
-  extension_llm_runner
-  ${GCC_S_LIB}
+  test_runner SOURCES ${_test_srcs} EXTRA_LIBS executorch extension_llm_runner
 )
 
-target_compile_definitions(test_runner PRIVATE ABSL_NO_INTRINSIC_INT128)
+# Override sanitizer to this issue:
+# https://github.com/abseil/abseil-cpp/issues/841 Root issue:
+# https://github.com/llvm/llvm-project/issues/16778
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  target_link_options(test_runner PUBLIC --rtlib=compiler-rt)
+endif()
