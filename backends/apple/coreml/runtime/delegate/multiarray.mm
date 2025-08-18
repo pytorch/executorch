@@ -125,7 +125,7 @@ bool init_bnns_descriptor(BNNSNDArrayDescriptor& bnns_descriptor, const MultiArr
 bool copy_using_bnns(const MultiArray& src, MultiArray& dst) {
     if (src.layout().dataType() != dst.layout().dataType()) {
         // Copying from FP16 to FP32 is supported and this is a common use case
-        if !(src.layout().dataType() == MultiArray::DataType::Float16 && dst.layout().dataType() == MultiArray::DataType::Float32) {
+        if (!(src.layout().dataType() == MultiArray::DataType::Float16 && dst.layout().dataType() == MultiArray::DataType::Float32)) {
             return false;
         }
     }
