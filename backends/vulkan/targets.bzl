@@ -344,6 +344,7 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//caffe2:torch",
+                "//executorch/backends/vulkan/patterns:vulkan_patterns",
             ]
         )
 

@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "XNNPACK_BACKEND_BUCK_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def _get_preprocessor_flags():
@@ -37,10 +38,7 @@ def define_common_targets():
         aten_suffix = "_aten" if aten_mode else ""
         runtime.cxx_library(
             name = "xnnpack_backend" + aten_suffix,
-            srcs = native.glob([
-                "runtime/*.cpp",
-                "runtime/profiling/*.cpp",
-            ]),
+            srcs = XNNPACK_BACKEND_BUCK_SRCS,
             headers = native.glob([
                 "runtime/*.h",
                 "runtime/profiling/*.h",
