@@ -429,7 +429,7 @@ def compile(args, pte_filename, tokenizer):
     if args.checkpoint is None:  # HF models
         checkpoint = download_and_convert_hf_checkpoint(
             SUPPORTED_HF_MODELS[args.decoder_model].repo_id,
-            SUPPORTED_HF_MODELS[args.decoder_model].convert_weights,
+            SUPPORTED_HF_MODELS[args.decoder_model].convert_weights.__func__,
         )
         state_dict = torch.load(
             checkpoint, weights_only=True, map_location="cpu", mmap=True

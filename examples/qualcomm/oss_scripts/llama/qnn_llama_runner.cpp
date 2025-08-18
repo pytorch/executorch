@@ -10,7 +10,7 @@
  * @file
  *
  * This tool can run Llama2 110M, Llama3.2 1B / 3B, Qwen2.5 0.5B, Qwen3 0.6B
- * / 1.7B phi4-mini-instruct, Smollm2 135M with Qualcomm AI Engine Direct.
+ * / 1.7B, phi4-mini-instruct, Smollm2 135M with Qualcomm AI Engine Direct.
  *
  */
 

@@ -521,8 +521,9 @@ void runner_init(
     ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
 
     /* Move to it's own allocator when MemoryPlanner is in place. */
-    uint8_t* buffer =
-        reinterpret_cast<uint8_t*>(ctx.method_allocator->allocate(buffer_size));
+    /* Ethos-U driver requires 16 bit alignment. */
+    uint8_t* buffer = reinterpret_cast<uint8_t*>(
+        ctx.method_allocator->allocate(buffer_size, 16UL));
     ET_CHECK_MSG(
         buffer != nullptr,
         "Could not allocate memory for memory planned buffer size %zu",
