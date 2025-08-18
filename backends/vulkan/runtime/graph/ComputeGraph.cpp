@@ -958,9 +958,24 @@ void ComputeGraph::prepack() {
   staging_nbytes_in_cmd_ = 0;
 
   // Initialize allocations for intermediate tensors
-  for (SharedObject& shared_object : shared_objects_) {
-    shared_object.allocate(this);
-    shared_object.bind_users(this);
+
+  // If shared objects are used, then that implies memory planning was
+  // performed. Memory for intermediate tensors can be allocated by allocating
+  // the shared objects. Assume that no intermediate tensors use dedicated
+  // allocations.
+  if (shared_objects_.size() > 0) {
+    for (SharedObject& shared_object : shared_objects_) {
+      shared_object.allocate(this);
+      shared_object.bind_users(this);
+    }
+  }
+  // Otherwise, intermediate tensors likely use dedicated allocations.
+  else {
+    for (int i = 0; i < values_.size(); i++) {
+      if (values_.at(i).isTensor()) {
+        create_dedicated_allocation_for(i);
+      }
+    }
   }
 }
 

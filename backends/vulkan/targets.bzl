@@ -305,7 +305,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/vulkan/serialization:vk_delegate_schema",
                 "//executorch/runtime/core:event_tracer",
                 "//executorch/runtime/core/exec_aten/util:tensor_util",
-                "//executorch/runtime/executor:pte_data_map",
+                "//executorch/runtime/core:named_data_map",
             ],
             define_static_target = True,
             # VulkanBackend.cpp needs to compile with executor as whole

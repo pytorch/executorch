@@ -156,6 +156,10 @@ class VulkanImage final {
   Allocation memory_;
   // Indicates whether the underlying memory is owned by this resource
   bool owns_memory_;
+  // Indicates whether the allocation for the image was created with the image
+  // via vmaCreateImage; if this is false, the memory is owned but was bound
+  // separately via vmaBindImageMemory
+  bool memory_bundled_;
   // In some cases, a VulkanImage may be a copy of another VulkanImage but still
   // own a unique view of the VkImage.
   bool owns_view_;

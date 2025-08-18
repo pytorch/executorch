@@ -100,6 +100,10 @@ class VulkanBuffer final {
   Allocation memory_;
   // Indicates whether the underlying memory is owned by this resource
   bool owns_memory_;
+  // Indicates whether the allocation for the buffer was created with the buffer
+  // via vmaCreateBuffer; if this is false, the memory is owned but was bound
+  // separately via vmaBindBufferMemory
+  bool memory_bundled_;
   // Indicates whether this VulkanBuffer was copied from another VulkanBuffer,
   // thus it does not have ownership of the underlying VKBuffer
   bool is_copy_;
