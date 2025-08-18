@@ -8,7 +8,7 @@
 
 #
 # This file contains logic to run generated operator tests using the FACTO
-# library (https://github.com/pytorch-labs/FACTO). To run the tests, first
+# library (https://github.com/meta-pytorch/FACTO). To run the tests, first
 # clone and install FACTO by running pip install . from the FACTO source
 # directory. Then, from the executorch root directory, run the following:
 #
