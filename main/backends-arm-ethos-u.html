@@ -562,14 +562,14 @@
     <span class="p">)</span><span class="o">.</span><span class="n">build</span><span class="p">()</span>
 
 <span class="c1"># Post training quantization</span>
-<span class="n">graph_module</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
 <span class="n">quantizer</span> <span class="o">=</span> <span class="n">EthosUQuantizer</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">)</span>
 <span class="n">operator_config</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span><span class="n">is_per_channel</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">operator_config</span><span class="p">)</span>
 <span class="n">graph_module</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
 <span class="n">graph_module</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span>
 <span class="n">graph_module</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
-<span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+<span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
 
 <span class="c1"># Lower the exported program to the Ethos-U backend and save pte file.</span>
 <span class="n">edge_program_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
