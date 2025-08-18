@@ -1176,6 +1176,7 @@ TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   // Run graph
 
@@ -1218,6 +1219,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   // Run graph
 
@@ -1303,6 +1305,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   // Run graph
 
@@ -1361,6 +1364,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   // Run graph
 
@@ -1519,6 +1523,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();
+  graph.prepack();
 
   // +3: shared memory allocations for tensors
   expected_vma_allocation_count += 3;
@@ -1659,6 +1664,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   // Run graph
 
@@ -1725,6 +1731,7 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   auto build_end_time = std::chrono::system_clock::now();
 
@@ -1801,6 +1808,7 @@ void test_clone(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   fill_vtensor(graph, a, 0.0f, /*iota = */ true);
 
@@ -1885,6 +1893,7 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   fill_vtensor(graph, a, 0.0f, /*iota = */ true);
 
@@ -1948,6 +1957,7 @@ TEST(VulkanComputeGraphTest, DISABLED_test_etvk_copy_channel_offset_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   fill_vtensor(graph, a, 0.0f, true);
 
@@ -2038,6 +2048,7 @@ TEST(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   float a_value = 1.0f;
   float b_value = 2.0f;
@@ -2150,6 +2161,7 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_int_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   fill_vtensor(graph, a, 0, /*iota = */ true);
 
@@ -2213,6 +2225,7 @@ TEST(VulkanComputeGraphTest, DISABLED_test_etvk_copy_channel_offset_int_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   fill_vtensor(graph, a, 0.0f, true);
 
@@ -2272,6 +2285,7 @@ TEST(VulkanComputeGraphTest, test_view_change_packing) {
     out.staging = graph.set_output_tensor(out.value);
 
     graph.prepare();
+    graph.prepack();
 
     fill_vtensor(graph, in, 0.0, true);
 
@@ -2430,6 +2444,7 @@ void compute_graph_round_trip_test(
   ValueRef r_staging_out = graph.set_output_tensor(r_tensor);
 
   graph.prepare();
+  graph.prepack();
 
   std::vector<T> data_in(graph.numel_of(r_tensor));
   for (int i = 0; i < data_in.size(); i++) {
@@ -2620,7 +2635,6 @@ void test_mm(
       B, M, K, N, dtype, storage_type, memory_layout, mat2_data, prepack);
 
   graph.prepare();
-
   graph.prepack();
 
   for (int i = 1; i < 4; i++) {
@@ -2700,7 +2714,6 @@ void test_mm_with_resize_reencode(
       B, M, K, N, dtype, storage_type, memory_layout, mat2_data, false);
 
   graph.prepare();
-
   graph.prepack();
 
   for (int i = 1; i < 4; i++) {
@@ -3122,7 +3135,6 @@ void test_dynamic_dispatch(int M, int N) {
   ComputeGraph graph = build_dynamic_dispatch_test_graph(M, N);
 
   graph.prepare();
-
   graph.prepack();
 
   for (int i = 1; i < 4; i++) {
