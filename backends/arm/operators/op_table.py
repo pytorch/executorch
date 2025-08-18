@@ -23,7 +23,7 @@ from executorch.backends.arm.tosa_specification import TosaSpecification
 
 @register_node_visitor
 class TableVisitor(NodeVisitor):
-    target = "tosa.TABLE.default"
+    target = "_table.default"
 
     tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+INT")]
 
@@ -36,7 +36,7 @@ class TableVisitor(NodeVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts  # type: ignore
 
-        validate_num_inputs(self.target, inputs, 2)
+        validate_num_inputs(self.target, inputs, 1)
         validate_valid_dtype(
             self.target, inputs, [ts.DType.INT8, ts.DType.INT16], output.tosa_spec
         )
@@ -45,12 +45,12 @@ class TableVisitor(NodeVisitor):
         if inputs[0].dtype == ts.DType.INT16:
             validate_valid_dtype(self.target, output, ts.DType.INT32, output.tosa_spec)
 
-        if inputs[1].name not in self._exported_program.state_dict.keys():  # type: ignore[union-attr]
+        if node.name not in self._exported_program.state_dict.keys():  # type: ignore[union-attr]
             raise RuntimeError(
                 f"Did not find key {node.name} in state_dict {self._exported_program.state_dict.keys()}."
             )
 
-        table = self._exported_program.state_dict[inputs[1].name]  # type: ignore[union-attr]
+        table = self._exported_program.state_dict[node.name]
 
         table_tensor_name = node.name + "_table"
         tosa_graph.addConst(
