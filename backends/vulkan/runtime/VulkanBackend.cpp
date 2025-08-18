@@ -68,35 +68,6 @@ using BytesVector =
     const flatbuffers::Vector<flatbuffers::Offset<vkgraph::VkBytes>>*;
 using UIntVector = const flatbuffers::Vector<uint32_t>*;
 
-const uint8_t* get_constant_data_ptr(
-    VkGraphPtr flatbuffer_graph,
-    const int32_t buffer_idx,
-    const uint8_t* constant_data,
-    const NamedDataMap* named_data_map,
-    std::vector<FreeableBuffer>& loaded_buffers_from_map) {
-  VkBytesPtr constant_bytes = flatbuffer_graph->constants()->Get(buffer_idx);
-
-  // Check if there's a named key for this constant data
-  if (constant_bytes->named_key() != nullptr && named_data_map != nullptr) {
-    const std::string& data_name = constant_bytes->named_key()->str();
-    Result<FreeableBuffer> buffer = named_data_map->get_data(data_name.c_str());
-    if (!buffer.ok()) {
-      ET_LOG(
-          Error,
-          "Failed to get constant data for key %s from named_data_map. Error code: %u",
-          data_name.c_str(),
-          static_cast<uint32_t>(buffer.error()));
-      return nullptr;
-    }
-    const uint8_t* data_ptr = static_cast<const uint8_t*>(buffer.get().data());
-    loaded_buffers_from_map.push_back(std::move(buffer.get()));
-    return data_ptr;
-  }
-
-  // Fallback to offset-based access
-  return constant_data + constant_bytes->offset();
-}
-
 vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
   switch (vk_datatype) {
     case vkgraph::VkDataType::BOOL:
