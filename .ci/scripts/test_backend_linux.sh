@@ -25,11 +25,13 @@ EXTRA_BUILD_ARGS=""
 
 if [[ "$FLOW" == *qualcomm* ]]; then
     # Setup QNN sdk and deps
-    ./install_requirements.sh --use-pt-pinned-commit
-    source .ci/scripts/setup-qnn-deps.sh
-    source .ci/scripts/build-qnn-sdk.sh
+    # ./install_requirements.sh --use-pt-pinned-commit
+    PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+    PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+    PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
-    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT"
+    # TODO Get SDK root from install scripts
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=/tmp/qnn/2.28.0.241029"
 fi
 
 if [[ "$FLOW" =~ *vulkan* ]]; then
