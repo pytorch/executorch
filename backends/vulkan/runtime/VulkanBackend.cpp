@@ -22,7 +22,7 @@
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 #endif // ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
-#include <executorch/runtime/executor/pte_data_map.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/profiler.h>
 
