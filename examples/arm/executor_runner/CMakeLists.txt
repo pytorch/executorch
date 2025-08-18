@@ -143,47 +143,8 @@ target_sources(
                               arm_memory_allocator.cpp
 )
 
-# Check for "U55" in SYSTEM_CONFIG
-string(FIND "${SYSTEM_CONFIG}" "U55" U55_FOUND)
-
-# Check for "U85" in SYSTEM_CONFIG
-string(FIND "${SYSTEM_CONFIG}" "U85" U85_FOUND)
-
-# Check if neither "U55" nor "U85" was found
-if(U55_FOUND EQUAL -1 AND U85_FOUND EQUAL -1)
-  message(
-    FATAL_ERROR
-      "SYSTEM_CONFIG does not contain 'U55' or 'U85'. Configuration aborting."
-  )
-endif()
-
-# Proceed with specific actions if either is found
-if(NOT U55_FOUND EQUAL -1)
-  message(STATUS "SYSTEM_CONFIG contains 'U55'.")
-  set(LINK_FILE_IN "${CMAKE_SOURCE_DIR}/Corstone-300.ld")
-endif()
-
-if(NOT U85_FOUND EQUAL -1)
-  message(STATUS "SYSTEM_CONFIG contains 'U85'.")
-  set(LINK_FILE_IN "${CMAKE_SOURCE_DIR}/Corstone-320.ld")
-endif()
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  set(LINK_FILE_EXT ld)
-  set(LINK_FILE_OPTION "-T")
-  set(COMPILER_PREPROCESSOR_OPTIONS -E -x c -P)
-endif()
-
-get_filename_component(LINK_FILE_OUT_BASE ${LINK_FILE} NAME)
-set(LINK_FILE_OUT
-    ${CMAKE_CURRENT_BINARY_DIR}/${LINK_FILE_OUT_BASE}.${LINK_FILE_EXT}
-)
-
-execute_process(
-  COMMAND ${CMAKE_C_COMPILER} ${COMPILER_PREPROCESSOR_OPTIONS} -o
-          ${LINK_FILE_OUT} ${LINK_FILE_IN}
-)
-target_link_options(arm_executor_runner PRIVATE "-T" "${LINK_FILE_OUT}")
+# Include the target's bare-metal linker script
+ethosu_eval_link_options(arm_executor_runner)
 
 set(arm_executor_runner_link)
 list(
@@ -212,38 +173,23 @@ execute_process(
   COMMAND
     python "${ET_DIR_PATH}/codegen/tools/gen_oplist.py"
     --model_file_path=${ET_PTE_FILE_PATH}
-    --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
+    --output_path=${CURRENT_BINARY_DIR}/temp.yaml
   OUTPUT_VARIABLE CMD_RESULT
 )
-
-if(CMD_RESULT MATCHES "aten::" OR CMD_RESULT MATCHES "dim_order_ops::")
-  set(FOUND_OPS_IN_FILE "true")
+if(NOT CMD_RESULT MATCHES "aten::")
+  set(NO_OPS_IN_FILE "true")
 else()
-  set(FOUND_OPS_IN_FILE "false")
+  set(NO_OPS_IN_FILE "false")
 endif()
 
-if(${SEMIHOSTING})
+if(${SEMIHOSTING} OR ${ET_BUNDLE_IO})
   set(EXECUTORCH_SELECT_OPS_MODEL "")
-  message(
-    "gen_oplist: Building with semihosting, no model is used to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
-  )
-elseif(${FOUND_OPS_IN_FILE})
+elseif(${NO_OPS_IN_FILE})
   set(EXECUTORCH_SELECT_OPS_LIST "")
-  set(EXECUTORCH_SELECT_OPS_MODEL "${ET_PTE_FILE_PATH}")
-  message(
-    "gen_oplist:  EXECUTORCH_SELECT_OPS_MODEL=${ET_PTE_FILE_PATH} is used to auto generate ops from"
-  )
-elseif(NOT ${FOUND_OPS_IN_FILE} AND ${ET_BUNDLE_IO})
   set(EXECUTORCH_SELECT_OPS_MODEL "")
-  message(
-    "gen_oplist: Building with ET_BUNDLE_IO and .bpte is not supported to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
-  )
 else()
   set(EXECUTORCH_SELECT_OPS_LIST "")
-  set(EXECUTORCH_SELECT_OPS_MODEL "")
-  message(
-    "gen_oplist: No non delagated ops was found in ${ET_PTE_FILE_PATH} no ops added to build"
-  )
+  set(EXECUTORCH_SELECT_OPS_MODEL "${ET_PTE_FILE_PATH}")
 endif()
 
 # Ensure that either executorch_select_ops_list or executorch_select_ops_model
