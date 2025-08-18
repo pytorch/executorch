@@ -22,6 +22,11 @@ set(_test_srcs
     test_text_decoder_runner.cpp test_multimodal_input.cpp
 )
 
+# Add LSan stub for Apple platforms
+if(APPLE)
+  list(APPEND _test_srcs lsan_stub.cpp)
+endif()
+
 et_cxx_test(
   test_runner SOURCES ${_test_srcs} EXTRA_LIBS executorch extension_llm_runner
 )

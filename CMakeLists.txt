@@ -641,12 +641,6 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
     set(SUPPORT_REGEX_LOOKAHEAD ON)
-    # to avoid error like Undefined symbols for architecture arm64:
-    # "___lsan_is_turned_off", referenced from: absl::LeakCheckerIsActive()
-    if(APPLE)
-      # Prevent Abseil from detecting sanitizers on macOS
-      add_compile_options(-fno-sanitize=leak)
-    endif()
     # to avoid error like:
     # abseil-cpp/absl/numeric/int128_have_intrinsic.inc:258: undefined reference
     # to `__muloti4'
