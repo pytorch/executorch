@@ -264,8 +264,8 @@ class SingleLlama:
 
         self.llama_graph_module = convert_pt2e(fx_graph_module)
 
-        logging.info("Verifying the QDQ model...")
         if args.eval_perplexity:
+            logging.info("Verifying the QDQ model...")
             # Check qdq cpu results
             graph_module_inference(
                 args=args,
@@ -362,6 +362,7 @@ def compile(args, pte_filename, tokenizer):
     kv_config.use_kv_cache = True
     kv_config.enable_masked_softmax = args.enable_masked_softmax
     kv_config.enable_r3 = args.r3
+    kv_config.kv_io_bit_width = 16 if args.ptq == "16a8w" else 8
 
     prefill_config = copy.copy(kv_config)
     prefill_config.use_kv_cache = (
@@ -428,7 +429,7 @@ def compile(args, pte_filename, tokenizer):
     if args.checkpoint is None:  # HF models
         checkpoint = download_and_convert_hf_checkpoint(
             SUPPORTED_HF_MODELS[args.decoder_model].repo_id,
-            SUPPORTED_HF_MODELS[args.decoder_model].convert_weights,
+            SUPPORTED_HF_MODELS[args.decoder_model].convert_weights.__func__,
         )
         state_dict = torch.load(
             checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -535,11 +536,15 @@ def compile(args, pte_filename, tokenizer):
     fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
     if args.ptq:
         use_fp16 = False
-        fixed_point_type["kv_type"] = torch.uint8
         if args.ptq == "8a8w":
             fixed_point_type["io_type"] = torch.uint8
-        elif args.ptq in ("16a4w", "16a4w_block", "16a8w"):
+            fixed_point_type["kv_type"] = torch.uint8
+        elif args.ptq in ("16a4w", "16a4w_block"):
             fixed_point_type["io_type"] = torch.uint16
+            fixed_point_type["kv_type"] = torch.uint8
+        elif args.ptq == "16a8w":
+            fixed_point_type["io_type"] = torch.uint16
+            fixed_point_type["kv_type"] = torch.uint16
         else:
             assert args.ptq in [
                 "8a8w",
@@ -572,13 +577,10 @@ def compile(args, pte_filename, tokenizer):
 
     if args.ptq:
         start_quantize_ts = time.time()
-        custom_annotations = (
-            # For qwen2.5, skip annotate_conv can improve result.
-            partial(
-                annotate_matmul_16a8w,
-                annotate_conv=args.ptq != "16a8w",
-            ),
-        )
+        custom_annotations = ()
+        if args.ptq != "16a8w":
+            # 16a8w use 16bit kv io, so skip this custom annotation
+            custom_annotations = custom_annotations + (annotate_matmul_16a8w,)
         if args.decoder_model in {"stories110m", "stories260k"}:
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,

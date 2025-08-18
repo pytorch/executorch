@@ -299,10 +299,9 @@ function select_toolchain() {
 	    fi
         elif [[ "${OS}" == "Linux" ]]; then
 	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-	        # eventually, this can be support by downloading the the toolchain from 
-		# "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
-		# but for now, we error if user tries to specify this
-                echo "[main] Error: currently target_toolchain zephyr is only support for x86-64 Linux host systems!"; exit 1;
+                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
+                toolchain_dir="arm-zephyr-eabi"
+		toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
 	    else
                 toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
                 toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
@@ -372,17 +371,17 @@ function create_setup_path(){
         cd "${root_dir}"
         model_vgf_path="$(cd ${mlsdk_manifest_dir}/sw/vgf-lib/deploy && pwd)"
         echo "export PATH=\${PATH}:${model_vgf_path}/bin" >> ${setup_path_script}
-        echo "export LD_LIBRARY_PATH=\${LD_LIBRARY_PATH}:${model_vgf_path}/lib" >> ${setup_path_script}
-        echo "export DYLD_LIBRARY_PATH=\${DYLD_LIBRARY_PATH}:${model_vgf_path}/lib" >> ${setup_path_script}
+        echo "export LD_LIBRARY_PATH=\${LD_LIBRARY_PATH-}:${model_vgf_path}/lib" >> ${setup_path_script}
+        echo "export DYLD_LIBRARY_PATH=\${DYLD_LIBRARY_PATH-}:${model_vgf_path}/lib" >> ${setup_path_script}
     fi
 
     if [[ "${enable_emulation_layer}" -eq 1 ]]; then
         cd "${root_dir}"
         model_emulation_layer_path="$(cd ${mlsdk_manifest_dir}/sw/emulation-layer/ && pwd)"
         echo "export LD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${LD_LIBRARY_PATH}" >> ${setup_path_script}
-        echo "export DYLD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${DYLD_LIBRARY_PATH}" >> ${setup_path_script}
-        echo "export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation:\${VK_INSTANCE_LAYERS}" >> ${setup_path_script}
-        echo "export VK_ADD_LAYER_PATH=${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d:\${VK_ADD_LAYER_PATH}" >> ${setup_path_script}
+        echo "export DYLD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${DYLD_LIBRARY_PATH-}" >> ${setup_path_script}
+        echo "export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation:\${VK_INSTANCE_LAYERS-}" >> ${setup_path_script}
+        echo "export VK_ADD_LAYER_PATH=${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d:\${VK_ADD_LAYER_PATH-}" >> ${setup_path_script}
     fi
 }
 

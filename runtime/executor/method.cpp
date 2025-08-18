@@ -748,7 +748,7 @@ Error Method::resolve_operator(
   if (!op_function.ok()) {
     ET_LOG(
         Error,
-        "Missing operator: [%zd] %s",
+        "Missing operator: [%" ET_PRIssize_t "] %s",
         static_cast<ssize_t>(op_index),
         operator_name);
     return op_function.error();
@@ -1178,6 +1178,13 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
 ET_NODISCARD Error
 Method::set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues) {
   const size_t n_input = inputs_size();
+  ET_CHECK_OR_RETURN_ERROR(
+      input_evalues.size() == n_input,
+      InvalidArgument,
+      "Invalid number of inputs provided. Expected %" ET_PRIsize_t
+      ", but got %" ET_PRIsize_t,
+      n_input,
+      input_evalues.size());
   for (size_t i = 0; i < n_input; ++i) {
     ET_CHECK_OK_OR_RETURN_ERROR(set_input(input_evalues[i], i));
   }
@@ -1250,20 +1257,17 @@ ET_NODISCARD Error Method::get_outputs(EValue* output_evalues, size_t length) {
       initialized(),
       InvalidState,
       "Outputs can not be retrieved until method has been initialized.");
-
+  const size_t n_output = outputs_size();
   ET_CHECK_OR_RETURN_ERROR(
-      length >= outputs_size(),
+      length >= n_output,
       InvalidArgument,
       "The given array is not large enough to hold all outputs.");
-
-  for (size_t i = 0; i < outputs_size(); i++) {
+  for (size_t i = 0; i < n_output; ++i) {
     output_evalues[i] = values_[get_output_index(i)];
   }
-
-  for (size_t i = outputs_size(); i < length; i++) {
+  for (size_t i = n_output; i < length; ++i) {
     output_evalues[i] = EValue();
   }
-
   return Error::Ok;
 }
 
