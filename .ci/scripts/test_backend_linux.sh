@@ -31,10 +31,11 @@ if [[ "$FLOW" == *qualcomm* ]]; then
     PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
     PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
     QNN_X86_LIB_DIR=`realpath build-x86/lib/`
-    export LD_LIBRARY_PATH=$QNN_X86_LIB_DIR:${LD_LIBRARY_PATH:-}
+    QNN_SDK_ROOT="/tmp/qnn/2.28.0.241029"
+    export LD_LIBRARY_PATH"=$QNN_X86_LIB_DIR:$QNN_SDK_ROOT/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
 
     # TODO Get SDK root from install scripts
-    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=/tmp/qnn/2.28.0.241029"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT"
 fi
 
 if [[ "$FLOW" =~ *vulkan* ]]; then
