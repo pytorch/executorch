@@ -201,11 +201,11 @@ def serialize_constant_tensors(
                     named_key=named_key,
                 )
             )
-        elif tensor is None or tensor.numel() == 0:
-            assert isinstance(tensor, torch.Tensor)
+        elif tensor is None or (
+            isinstance(tensor, torch.Tensor) and tensor.numel() == 0
+        ):
             vk_graph.constants.append(VkBytes(current_offset, 0))
-        else:
-            assert isinstance(tensor, torch.Tensor)
+        elif isinstance(tensor, torch.Tensor):
             array_type = ctypes.c_char * tensor.untyped_storage().nbytes()
             array = ctypes.cast(
                 tensor.untyped_storage().data_ptr(),
@@ -219,6 +219,8 @@ def serialize_constant_tensors(
 
             vk_graph.constants.append(VkBytes(current_offset, len(tensor_bytes)))
             current_offset += aligned_size(len(tensor_bytes))
+        else:
+            raise ValueError(f"Unsupported constant tensor type: {type(tensor)}")
 
 
 def serialize_custom_shaders(
