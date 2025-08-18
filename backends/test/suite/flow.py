@@ -81,10 +81,22 @@ def all_flows() -> dict[str, TestFlow]:
         logger.info(f"Skipping Vulkan flow registration: {e}")
 
     try:
-        from executorch.backends.test.suite.flows.qualcomm import QUALCOMM_TEST_FLOW
+        from executorch.backends.test.suite.flows.qualcomm import (
+            QUALCOMM_TEST_FLOW,
+            QUALCOMM_16A16W_TEST_FLOW,
+            QUALCOMM_16A8W_TEST_FLOW,
+            QUALCOMM_16A4W_TEST_FLOW,
+            QUALCOMM_16A4W_BLOCK_TEST_FLOW,
+            QUALCOMM_8A8W_TEST_FLOW,
+        )
 
         flows += [
             QUALCOMM_TEST_FLOW,
+            QUALCOMM_16A16W_TEST_FLOW,
+            QUALCOMM_16A8W_TEST_FLOW,
+            QUALCOMM_16A4W_TEST_FLOW,
+            QUALCOMM_16A4W_BLOCK_TEST_FLOW,
+            QUALCOMM_8A8W_TEST_FLOW,
         ]
     except Exception as e:
         logger.info(f"Skipping Qualcomm flow registration: {e}")
