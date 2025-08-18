@@ -24,10 +24,13 @@ from executorch.exir import (
     ExecutorchProgramManager,
 )
 from torch.export import Dim, export, export_for_training, ExportedProgram
+from torchao.quantization.granularity import PerGroup
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+from torchao.utils import unwrap_tensor_subclass
 
 ctypes.CDLL("libvulkan.so.1")
 
@@ -84,7 +87,7 @@ def quantize_and_lower_module(
         model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
     ).module()
 
-    program = prepare_pt2e(program, quantizer)  # pyre-ignore
+    program = prepare_pt2e(program, quantizer)
     # Calibrate
     program(*sample_inputs)
 
@@ -2293,4 +2296,87 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
             dynamic_shapes=dynamic_shapes,
             test_inputs=test_inputs,
+        )
+
+    def test_vulkan_backend_torchao_wo_quantized_linear(self):
+        in_features = 1024
+        out_features = 512
+        bias = False
+        group_size = 64
+        weight_bits = 4
+
+        class TorchAOQuantizedLinearModule(torch.nn.Module):
+            def __init__(
+                self,
+                in_features: int,
+                out_features: int,
+                bias: bool = False,
+                group_size: int = 64,
+                weight_bits: int = 4,
+            ):
+                super().__init__()
+                self.linear = torch.nn.Linear(in_features, out_features, bias=bias)
+                self.group_size = group_size
+                self.weight_bits = weight_bits
+
+                if self.weight_bits == 4:
+                    self.weight_dtype = torch.int4
+                else:
+                    self.weight_dtype = torch.int8
+
+                self.quant_granularity = PerGroup(self.group_size)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.linear(x)
+
+            def apply_quantization(self):
+                """Apply TorchAO weight-only quantization to the linear layer."""
+                q_config = IntxWeightOnlyConfig(
+                    weight_dtype=self.weight_dtype,
+                    granularity=self.quant_granularity,
+                )
+                quantize_(self, q_config)
+                unwrap_tensor_subclass(self)
+                return self
+
+        # Test with GEMV pattern (batch_size=1, seq_len=1)
+        quantized_linear_module = TorchAOQuantizedLinearModule(
+            in_features=in_features,
+            out_features=out_features,
+            bias=bias,
+            group_size=group_size,
+            weight_bits=weight_bits,
+        )
+
+        # Apply quantization
+        quantized_linear_module = quantized_linear_module.apply_quantization()
+
+        # Test with 2D input (GEMV pattern)
+        sample_inputs = (torch.randn(size=(1, in_features), dtype=torch.float32),)
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            quantized_linear_module, sample_inputs, atol=1e-2, rtol=1e-2
+        )
+
+        # Test with GEMM pattern (batch_size > 1)
+        quantized_linear_module_gemm = TorchAOQuantizedLinearModule(
+            in_features=in_features,
+            out_features=out_features,
+            bias=bias,
+            group_size=group_size,
+            weight_bits=weight_bits,
+        )
+
+        # Apply quantization
+        quantized_linear_module_gemm = quantized_linear_module_gemm.apply_quantization()
+
+        # Test with 3D input (GEMM pattern)
+        sample_inputs_gemm = (
+            torch.randn(size=(1, 248, in_features), dtype=torch.float32),
+        )
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            quantized_linear_module_gemm, sample_inputs_gemm, atol=1e-2, rtol=1e-2
         )

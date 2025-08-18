@@ -710,7 +710,7 @@ def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
         args.evaluate_config,
     )
     # Wrap quantized model back into an exported_program
-    exported_program = torch.export.export_for_training(
+    exported_program = torch.export.export(
         model_int8, example_inputs, strict=args.strict_export
     )
 
@@ -803,9 +803,9 @@ if __name__ == "__main__":  # noqa: C901
     )
     model = original_model.eval()
 
-    # export_for_training under the assumption we quantize, the exported form also works
+    # export under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
-    exported_program = torch.export.export_for_training(
+    exported_program = torch.export.export(
         model, example_inputs, strict=args.strict_export
     )
     model = exported_program.module()
