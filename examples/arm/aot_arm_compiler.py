@@ -834,8 +834,9 @@ if __name__ == "__main__":  # noqa: C901
             exported_program, args, model, example_inputs
         )
 
-    # Transform so we can use ops from the Cortex M backend
-    edge = transform_for_cortex_m_backend(edge)
+    if args.target != "vgf":
+        # Transform so we can use ops from the Cortex M backend
+        edge = transform_for_cortex_m_backend(edge)
 
     dump_delegation_info(edge, args.intermediates)
 
