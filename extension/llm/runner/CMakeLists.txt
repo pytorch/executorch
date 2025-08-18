@@ -33,7 +33,18 @@ list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
-set(runner_deps executorch_core extension_module extension_tensor tokenizers)
+set(runner_deps executorch_core extension_module extension_tensor
+                tokenizers::tokenizers
+)
+
+# depend on arange_utils
+if(NOT TARGET kernels_util_all_deps)
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/kernels/portable/cpu/util
+    ${CMAKE_CURRENT_BINARY_DIR}/kernels_util
+  )
+endif()
+list(APPEND runner_deps kernels_util_all_deps)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
 set_target_properties(
