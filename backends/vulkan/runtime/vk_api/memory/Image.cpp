@@ -319,6 +319,30 @@ void VulkanImage::create_image_view() {
       &(handles_.image_view)));
 }
 
+void VulkanImage::bind_allocation_impl(const Allocation& memory) {
+  VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
+  // To prevent multiple instances of binding the same VkImage to a memory
+  // block, do not actually bind memory if this VulkanImage is a copy. Assume
+  // that the original VulkanImage is responsible for binding the image.
+  if (!is_copy_) {
+    VK_CHECK(vmaBindImageMemory(allocator_, memory.allocation, handles_.image));
+  }
+
+  // Only create the image view if the image has been bound to memory
+  owns_view_ = true;
+  create_image_view();
+}
+
+void VulkanImage::bind_allocation(const Allocation& memory) {
+  bind_allocation_impl(memory);
+  memory_.allocation = memory.allocation;
+}
+
+void VulkanImage::acquire_allocation(Allocation&& memory) {
+  bind_allocation_impl(memory);
+  memory_ = std::move(memory);
+}
+
 VkMemoryRequirements VulkanImage::get_memory_requirements() const {
   VkMemoryRequirements memory_requirements;
   vkGetImageMemoryRequirements(

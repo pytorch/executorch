@@ -136,6 +136,23 @@ VmaAllocationInfo VulkanBuffer::allocation_info() const {
   return info;
 }
 
+void VulkanBuffer::bind_allocation_impl(const Allocation& memory) {
+  VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
+  if (!is_copy_) {
+    VK_CHECK(vmaBindBufferMemory(allocator_, memory.allocation, handle_));
+  }
+}
+
+void VulkanBuffer::bind_allocation(const Allocation& memory) {
+  bind_allocation_impl(memory);
+  memory_.allocation = memory.allocation;
+}
+
+void VulkanBuffer::acquire_allocation(Allocation&& memory) {
+  bind_allocation_impl(memory);
+  memory_ = std::move(memory);
+}
+
 VkMemoryRequirements VulkanBuffer::get_memory_requirements() const {
   VkMemoryRequirements memory_requirements;
   vkGetBufferMemoryRequirements(this->device(), handle_, &memory_requirements);

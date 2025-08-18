@@ -162,13 +162,21 @@ class VulkanBuffer final {
     return (handle_ == other.handle_) && is_copy_;
   }
 
-  inline void bind_allocation(const Allocation& memory) {
-    VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
-    if (!is_copy_) {
-      VK_CHECK(vmaBindBufferMemory(allocator_, memory.allocation, handle_));
-    }
-    memory_.allocation = memory.allocation;
-  }
+ private:
+  void bind_allocation_impl(const Allocation& memory);
+
+ public:
+  /*
+   * Given a memory allocation, bind it to the underlying VkImage. The lifetime
+   * of the memory allocation is assumed to be managed externally.
+   */
+  void bind_allocation(const Allocation& memory);
+
+  /*
+   * Given a rvalue memory allocation, bind it to the underlying VkImage and
+   * also acquire ownership of the memory allocation.
+   */
+  void acquire_allocation(Allocation&& memory);
 
   VkMemoryRequirements get_memory_requirements() const;
 
