@@ -892,7 +892,9 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
        if not using use_edge_to_transform_and_lower.
 
-       run_on_vulkan_runtime: Not yet supported.
+       run_on_vulkan_runtime: Partially supported. However, comparison between reference and model
+       outputs is expected to fail, as the VGF runtime doesn't dump the output tensors in a usable
+       format at the moment.
 
        vgf_compiler_flags: Optional compiler flags.
 
@@ -992,4 +994,11 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
             )
 
         if run_on_vulkan_runtime:
-            pass
+            self.add_stage(self.tester.serialize)
+            self.add_stage(
+                self.tester.run_method_and_compare_outputs,
+                atol=atol,
+                rtol=rtol,
+                qtol=qtol,
+                inputs=self.test_data,
+            )
