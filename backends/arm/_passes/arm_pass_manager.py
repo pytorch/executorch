@@ -39,6 +39,7 @@ from executorch.backends.arm._passes import (
     DecomposeBatchNormNoStatsPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
+    DecomposeCumsumPass,
     DecomposeDivPass,
     DecomposeEluPass,
     DecomposeEmbeddingPass,
@@ -151,6 +152,7 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
+        self.add_pass(DecomposeCumsumPass(exported_program))
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(SizeAdjustInputPass())
@@ -231,6 +233,7 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
+        self.add_pass(DecomposeCumsumPass(exported_program))
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(SizeAdjustInputPass())
