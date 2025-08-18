@@ -27,6 +27,15 @@ if(APPLE)
   list(APPEND _test_srcs lsan_stub.cpp)
 endif()
 
+find_library(GCC_S_LIB gcc_s)
 et_cxx_test(
-  test_runner SOURCES ${_test_srcs} EXTRA_LIBS executorch extension_llm_runner
+  test_runner
+  SOURCES
+  ${_test_srcs}
+  EXTRA_LIBS
+  executorch
+  extension_llm_runner
+  ${GCC_S_LIB}
 )
+
+target_compile_definitions(test_runner PRIVATE ABSL_NO_INTRINSIC_INT128)
