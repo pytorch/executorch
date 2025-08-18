@@ -23,9 +23,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_acti
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_fully_connected_and_add_operators import (
     FuseFullyConnectedAndAddOperators,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_quanitze_into_preceding_ops import (
-    FuseQuantizeIntoPrecedingOps,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.keep_one_empty_buffer import (
     KeepOneEmptyBuffer,
 )
@@ -69,7 +66,6 @@ class Optimization(Enum):
 
     PRUNE_QUANTIZE_OPERATORS = 7
     FUSE_PARALLEL_QUANTIZE_OPERATORS = 8
-    FUSE_QUANTIZE_INTO_PRECEDING_OPS = 9
 
     REMOVE_UNUSED_TENSORS = 10
     ELIMINATE_DEAD_BRANCHES = 11
@@ -134,9 +130,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.FUSE_PARALLEL_QUANTIZE_OPERATORS: FuseParallelQuantizeOperators(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_QUANTIZE_INTO_PRECEDING_OPS: FuseQuantizeIntoPrecedingOps(
                 builder, conversion_config
             ),
             Optimization.REMOVE_UNUSED_TENSORS: RemoveUnusedTensorsAndBuffers(
