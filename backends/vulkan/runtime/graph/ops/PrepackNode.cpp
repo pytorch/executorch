@@ -64,6 +64,9 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   graph->update_staging_nbytes_in_cmd(staging.buffer().mem_size_as_size_t());
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
   staging.copy_from(tref->data, nbytes);
+  // Once the staging buffer is copied, if the TensorRef owns a FreeableBuffer,
+  // it can be freed.
+  tref->free_buffer();
   return staging;
 }
 
