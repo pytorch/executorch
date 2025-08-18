@@ -748,7 +748,7 @@ Error Method::resolve_operator(
   if (!op_function.ok()) {
     ET_LOG(
         Error,
-        "Missing operator: [%zd] %s",
+        "Missing operator: [%" ET_PRIssize_t "] %s",
         static_cast<ssize_t>(op_index),
         operator_name);
     return op_function.error();

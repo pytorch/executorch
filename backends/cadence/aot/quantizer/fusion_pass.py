@@ -331,7 +331,6 @@ def get_args_and_kwargs_conv(
         "out_zero_point": quant_node.args[2],
         "out_multiplier": out_multiplier_,
         "out_shift": out_shift_,
-        "channel_last": False,
     }
     return args, kwargs
 
