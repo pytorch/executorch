@@ -173,23 +173,38 @@ execute_process(
   COMMAND
     python "${ET_DIR_PATH}/codegen/tools/gen_oplist.py"
     --model_file_path=${ET_PTE_FILE_PATH}
-    --output_path=${CURRENT_BINARY_DIR}/temp.yaml
+    --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
   OUTPUT_VARIABLE CMD_RESULT
 )
-if(NOT CMD_RESULT MATCHES "aten::")
-  set(NO_OPS_IN_FILE "true")
+
+if(CMD_RESULT MATCHES "aten::" OR CMD_RESULT MATCHES "dim_order_ops::")
+  set(FOUND_OPS_IN_FILE "true")
 else()
-  set(NO_OPS_IN_FILE "false")
+  set(FOUND_OPS_IN_FILE "false")
 endif()
 
-if(${SEMIHOSTING} OR ${ET_BUNDLE_IO})
+if(${SEMIHOSTING})
   set(EXECUTORCH_SELECT_OPS_MODEL "")
-elseif(${NO_OPS_IN_FILE})
-  set(EXECUTORCH_SELECT_OPS_LIST "")
-  set(EXECUTORCH_SELECT_OPS_MODEL "")
-else()
+  message(
+    "gen_oplist: Building with semihosting, no model is used to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
+  )
+elseif(${FOUND_OPS_IN_FILE})
   set(EXECUTORCH_SELECT_OPS_LIST "")
   set(EXECUTORCH_SELECT_OPS_MODEL "${ET_PTE_FILE_PATH}")
+  message(
+    "gen_oplist:  EXECUTORCH_SELECT_OPS_MODEL=${ET_PTE_FILE_PATH} is used to auto generate ops from"
+  )
+elseif(NOT ${FOUND_OPS_IN_FILE} AND ${ET_BUNDLE_IO})
+  set(EXECUTORCH_SELECT_OPS_MODEL "")
+  message(
+    "gen_oplist: Building with ET_BUNDLE_IO and .bpte is not supported to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
+  )
+else()
+  set(EXECUTORCH_SELECT_OPS_LIST "")
+  set(EXECUTORCH_SELECT_OPS_MODEL "")
+  message(
+    "gen_oplist: No non delagated ops was found in ${ET_PTE_FILE_PATH} no ops added to build"
+  )
 endif()
 
 # Ensure that either executorch_select_ops_list or executorch_select_ops_model
