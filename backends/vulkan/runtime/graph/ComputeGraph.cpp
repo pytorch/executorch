@@ -480,6 +480,17 @@ ValueRef ComputeGraph::add_tensorref(
   return idx;
 }
 
+ValueRef ComputeGraph::add_tensorref(
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    executorch::runtime::FreeableBuffer&& buffer) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
+  values_.emplace_back(TensorRef(sizes, dtype, std::move(buffer)));
+  total_constant_nbytes_ += values_.back().toConstTensorRef().nbytes();
+  return idx;
+}
+
 ValueRef ComputeGraph::add_staging(
     const vkapi::ScalarType dtype,
     const size_t numel) {
