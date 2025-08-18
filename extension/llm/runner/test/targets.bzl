@@ -36,3 +36,11 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )
+
+    runtime.cxx_test(
+        name = "test_multimodal_input",
+        srcs = ["test_multimodal_input.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:multimodal_runner_lib",
+        ],
+    )
