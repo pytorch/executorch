@@ -39,10 +39,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_cas
     FuseCastOperators,
     RemoveCastOperatorsWithNoEffect,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_quantize_operators import (
-    FuseParallelQuantizeOperators,
-    PruneQuantizeOperators,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_reshape_operators import (
     FuseReshapeOperators,
     RemoveReshapeOperatorsWithNoEffect,
@@ -67,8 +63,6 @@ class Optimization(Enum):
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
 
-    PRUNE_QUANTIZE_OPERATORS = 7
-    FUSE_PARALLEL_QUANTIZE_OPERATORS = 8
     FUSE_QUANTIZE_INTO_PRECEDING_OPS = 9
 
     REMOVE_UNUSED_TENSORS = 10
@@ -128,12 +122,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.REMOVE_IDENTITY_TRANSPOSE_OPERATORS: RemoveIdentityTransposeOperators(
-                builder, conversion_config
-            ),
-            Optimization.PRUNE_QUANTIZE_OPERATORS: PruneQuantizeOperators(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_PARALLEL_QUANTIZE_OPERATORS: FuseParallelQuantizeOperators(
                 builder, conversion_config
             ),
             Optimization.FUSE_QUANTIZE_INTO_PRECEDING_OPS: FuseQuantizeIntoPrecedingOps(
