@@ -24,11 +24,13 @@ export PYTHON_EXECUTABLE=python
 EXTRA_BUILD_ARGS=""
 
 if [[ "$FLOW" == *qualcomm* ]]; then
-    # Setup QNN sdk and deps
-    # ./install_requirements.sh --use-pt-pinned-commit
+    # Setup QNN sdk and deps - note that this is a bit hacky due to the nature of the 
+    # Qualcomm build. TODO (gjcomer) Clean this up once the QNN pybinding integration is
+    # cleaned up.
     PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
     PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
     PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+    export LD_LIBRARY_PATH=$EXECUTORCH_ROOT/build-x86/lib/:$LD_LIBRARY_PATH
 
     # TODO Get SDK root from install scripts
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=/tmp/qnn/2.28.0.241029"
