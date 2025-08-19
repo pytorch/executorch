@@ -35,7 +35,7 @@ python_library(
 
 python_library(
     name = "llama_lib",
-    srcs = ["llama.py"],
+    srcs = ["__init__.py", "llama.py"],
     deps = [
         ":decoder_constants",
         ":decoder_utils",
@@ -47,6 +47,7 @@ python_library(
         "//executorch/devtools:lib",
         "//executorch/examples/models:models",
         "//executorch/examples/models/llama:hf_download",
+        "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
         "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
         "//executorch/examples/qualcomm:utils",
         "//executorch/extension/export_util:export_util",
@@ -73,7 +74,6 @@ python_binary(
     ],
     deps = [
         ":llama_lib",
-        "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
     ],
 )
 
