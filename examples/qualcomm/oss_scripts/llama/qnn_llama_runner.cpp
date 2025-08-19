@@ -115,15 +115,13 @@ std::string get_formatted_prompt(
       formatted_prompt.append("<|end|><|assistant|>");
     case example::DecoderModelVersion::kSmollm2_135m:
       if (!system_prompt.empty()) {
-        formatted_prompt.append(
-            "<|im_start|>system\n");
+        formatted_prompt.append("<|im_start|>system\n");
         formatted_prompt.append(system_prompt);
         formatted_prompt.append("<|im_end|>\n\n");
       }
       formatted_prompt.append("<|im_start|>user\n");
       formatted_prompt.append(prompt);
-      formatted_prompt.append(
-          "<|im_end|>\n\n");
+      formatted_prompt.append("<|im_end|>\n\n");
       break;
     case example::DecoderModelVersion::kLlama3:
       if (!system_prompt.empty()) {
