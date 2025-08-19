@@ -137,6 +137,7 @@ class VkValue:
 class VkBytes:
     offset: int
     length: int
+    named_key: str = ""
 
 
 @dataclass
