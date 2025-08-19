@@ -26,7 +26,7 @@ bool validate_cache_params(
     const Tensor& quantized_cache,
     int64_t start_pos,
     int64_t seq_length,
-    const optional<Tensor>& indices = nullopt) {
+    const std::optional<Tensor>& indices = std::nullopt) {
   ET_CHECK_OR_RETURN_FALSE(
       quantized_cache.dim() == 4, "quantized cache must be a 4D tensor");
 
@@ -94,7 +94,7 @@ Tensor& update_cache_impl(
     Tensor& cache,
     const int64_t start_pos,
     Tensor& output,
-    const optional<Tensor>& indices = nullopt) {
+    const std::optional<Tensor>& indices = std::nullopt) {
   (void)ctx;
 
   ET_CHECK_MSG(

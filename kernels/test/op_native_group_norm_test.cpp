@@ -22,8 +22,8 @@ using torch::executor::testing::TensorFactory;
 
 ::std::tuple<Tensor&, Tensor&, Tensor&> op_native_group_norm_out(
     const Tensor& input,
-    const optional<Tensor>& weight,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
     int64_t N,
     int64_t C,
     int64_t HxW,
@@ -57,9 +57,9 @@ TEST(OpNativeGroupNormOutTest, SmokeTest) {
        2.4375,  2.0625,  -2.4375, -3.9375, 3.6875,  2.7500,  -0.8750, -0.9375,
        2.7500,  -2.4375, -2.3750, -0.9375, -4.8750, 0.1875,  3.5000,  -2.0000,
        -0.2500, -2.7500, 0.3125,  1.2500,  -0.5625, 0.0000,  1.8125,  1.0625});
-  optional<Tensor> weight =
+  std::optional<Tensor> weight =
       tfFloat.make({6}, {4.5625, -2.8750, -0.6875, 0.5625, -2.0625, -2.7500});
-  optional<Tensor> bias =
+  std::optional<Tensor> bias =
       tfFloat.make({6}, {-0.5000, -2.7500, 1.1875, 3.6875, 3.8125, 4.6875});
   double eps = 1e-5;
   Tensor out0 = tfFloat.zeros({5, 6, 2, 2});
