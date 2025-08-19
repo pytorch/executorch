@@ -19,9 +19,12 @@ CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
 conda activate "${CONDA_ENV}"
 
 # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
-#source .ci/scripts/setup-vulkan-linux-deps.sh
+source .ci/scripts/setup-vulkan-linux-deps.sh
+
+# CMake options to use, in addition to the defaults.
+EXTRA_BUILD_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON"
 
 # We need the runner to test the built library.
-PYTHON_EXECUTABLE=python .ci/scripts/setup-linux.sh --build-tool cmake --build-mode Release
+PYTHON_EXECUTABLE=python CMAKE_ARGS="$EXTRA_BUILD_ARGS" .ci/scripts/setup-linux.sh --build-tool cmake --build-mode Release
 
 python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$ARTIFACT_DIR/test_results.csv"
