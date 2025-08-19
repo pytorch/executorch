@@ -290,11 +290,6 @@ QUANTIZED_KERNELS_SRCS = [
     "kernels/quantized/cpu/op_quantize.cpp",
 ]
 
-PROGRAM_SCHEMA_SRCS = [
-    "schema/program.fbs",
-    "schema/scalar_type.fbs",
-]
-
 OPTIMIZED_CPUBLAS_SRCS = [
     "kernels/optimized/blas/BlasKernel.cpp",
     "kernels/optimized/blas/CPUBlas.cpp",
