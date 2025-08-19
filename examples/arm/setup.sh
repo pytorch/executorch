@@ -347,15 +347,6 @@ function create_setup_path(){
     fi
 }
 
-function check_platform_support() {
-    # Make sure we are on a supported platform
-    if [[ "${ARCH}" != "x86_64" ]] && [[ "${ARCH}" != "aarch64" ]] \
-        && [[ "${ARCH}" != "arm64" ]]; then
-        echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"
-        exit 1
-    fi
-}
-
 
 ########
 ### main
@@ -367,9 +358,13 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     check_options "$@"
 
+    # Import utils
+    source $et_dir/backends/arm/scripts/utils.sh
     source $et_dir/backends/arm/scripts/fvp_utils.sh
 
+    echo "[main]: Checking platform and os"
     check_platform_support
+    check_os_support
 
     cd "${script_dir}"
 
@@ -386,9 +381,6 @@ if [[ $is_script_sourced -eq 0 ]]; then
     echo "enable-vulkan-sdk=${enable_vulkan_sdk}"
     echo "enable-vela=${enable_vela}"
     echo "mlsdk-manifest-url=${mlsdk_manifest_url}"
-
-    # Import utils
-    source $et_dir/backends/arm/scripts/utils.sh
 
     # Select appropriate toolchain
     select_toolchain
