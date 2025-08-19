@@ -12,6 +12,7 @@
 using namespace ::testing;
 using executorch::extension::llm::GenerationConfig;
 
+namespace {
 class GenerationConfigTest : public Test {};
 
 TEST_F(GenerationConfigTest, TestResolveMaxNewTokensBothDefault) {
@@ -112,3 +113,4 @@ TEST_F(GenerationConfigTest, TestResolveMaxNewTokensBothSpecified) {
   // Expected: min(max_new_tokens, available) = min(5, 30) = 5
   EXPECT_EQ(config.resolve_max_new_tokens(100, 20), 5);
 }
+} // namespace
