@@ -33,6 +33,8 @@ main() {
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
               -DEXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER=ON \
               -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
               -B"${build_dir}"
 
 
@@ -72,14 +74,10 @@ main() {
 
         # Configure the project with CMake
         # Note: Add any additional configuration options you need here
-        cmake -DBUILD_TESTING=OFF \
-            -DCMAKE_INSTALL_PREFIX="${build_dir}" \
+        cmake -DCMAKE_INSTALL_PREFIX="${build_dir}" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DEXECUTORCH_BUILD_OPENVINO=ON \
-            -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
             -B"${build_dir}"/examples/models/llama \
             examples/models/llama
-        
         # Build the export llama runner
         cmake --build cmake-out/examples/models/llama -j$(nproc) --config Release
     else
