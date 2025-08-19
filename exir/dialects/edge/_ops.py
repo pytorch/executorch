@@ -1,12 +1,14 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from importlib import resources
 from typing import Any, Dict, List, Optional, Set, Union
 
-import pkg_resources
+import executorch.exir.dialects.edge as edge_package
 
 import torch
 
@@ -166,9 +168,8 @@ class FunctionDtypeConstraint:
 def _load_edge_dialect_info() -> Dict[str, Dict[str, Any]]:
     # pyre-ignore
     yaml = YAML(typ="safe")
-    edge_dialect_yaml_info = yaml.load(
-        pkg_resources.resource_string(__name__, "edge.yaml").decode("utf8")
-    )
+    edge_yaml = resources.read_text(edge_package, "edge.yaml", encoding="utf-8")
+    edge_dialect_yaml_info = yaml.load(edge_yaml)
     if edge_dialect_yaml_info:
         return {
             edge_op_yaml_info["inherits"]: edge_op_yaml_info
