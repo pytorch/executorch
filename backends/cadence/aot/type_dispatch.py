@@ -25,7 +25,7 @@ class OpConfig:
     """Configuration for type dispatch operations."""
 
     base_name: str
-    input_arg_idx: int = 0
+    type_dispatch_suffixes: dict[tuple[torch.dtype, ...], str]
     weight_arg_idx: Optional[int] = None
     variant: str = "per_tensor"
 
@@ -36,25 +36,54 @@ class CompileTimeTypeDispatchPass(ExportPass):
     Replaces generic ops with ops that have explicit types.
     """
 
-    _TYPE_DISPATCH_MAP: dict[tuple[torch.dtype, ...], str] = {
-        (torch.int8,): "asym8s_asym8s",
-        (torch.uint8,): "asym8u_asym8u",
-        (torch.int8, torch.int8): "asym8sxasym8s_asym8s",
-        (torch.uint8, torch.uint8): "asym8uxasym8u_asym8u",
-    }
-
     _SUPPORTED_OPS: dict[OpOverload, OpConfig] = {
         exir_ops.edge.cadence.quantized_fully_connected.per_tensor: OpConfig(
-            "quantized_fully_connected", input_arg_idx=0, weight_arg_idx=1
+            "quantized_fully_connected",
+            type_dispatch_suffixes={
+                (torch.int8, torch.int8): "asym8sxasym8s_asym8s",
+                (torch.uint8, torch.uint8): "asym8uxasym8u_asym8u",
+            },
+            weight_arg_idx=1,
         ),
         exir_ops.edge.cadence.quantized_linear.per_tensor: OpConfig(
-            "quantized_linear", input_arg_idx=0, weight_arg_idx=1
+            "quantized_linear",
+            type_dispatch_suffixes={
+                (torch.int8, torch.int8): "asym8sxasym8s_asym8s",
+                (torch.uint8, torch.uint8): "asym8uxasym8u_asym8u",
+            },
+            weight_arg_idx=1,
         ),
         exir_ops.edge.cadence.quantized_matmul.default: OpConfig(
-            "quantized_matmul", input_arg_idx=0, weight_arg_idx=2, variant="default"
+            "quantized_matmul",
+            type_dispatch_suffixes={
+                (torch.int8, torch.int8): "asym8sxasym8s_asym8s",
+                (torch.uint8, torch.uint8): "asym8uxasym8u_asym8u",
+            },
+            weight_arg_idx=2,
+            variant="default",
+        ),
+        exir_ops.edge.cadence.quantized_conv_nchw.per_tensor: OpConfig(
+            "quantized_conv_nchw",
+            type_dispatch_suffixes={
+                (torch.int8, torch.int8): "asym8sxsym8s_asym8s",
+                (torch.uint8, torch.uint8): "asym8uxsym8u_asym8u",
+            },
+            weight_arg_idx=1,
+        ),
+        exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor: OpConfig(
+            "quantized_conv_nhwc",
+            type_dispatch_suffixes={
+                (torch.int8, torch.int8): "asym8sxsym8s_asym8s",
+                (torch.uint8, torch.uint8): "asym8uxsym8u_asym8u",
+            },
+            weight_arg_idx=1,
         ),
         exir_ops.edge.cadence.quantized_relu.per_tensor: OpConfig(
-            "quantized_relu", input_arg_idx=0
+            "quantized_relu",
+            type_dispatch_suffixes={
+                (torch.int8,): "asym8s_asym8s",
+                (torch.uint8,): "asym8u_asym8u",
+            },
         ),
     }
 
@@ -71,7 +100,7 @@ class CompileTimeTypeDispatchPass(ExportPass):
         config = self._SUPPORTED_OPS[op]
 
         # pyre-ignore[16]: None has no attribute `to_tensor`.
-        input_dtype = args[config.input_arg_idx].to_tensor().dtype
+        input_dtype = args[0].to_tensor().dtype
 
         if config.weight_arg_idx is not None:
             weight_dtype = args[config.weight_arg_idx].to_tensor().dtype
@@ -79,10 +108,10 @@ class CompileTimeTypeDispatchPass(ExportPass):
         else:
             dtype_key = (input_dtype,)
 
-        if dtype_key not in self._TYPE_DISPATCH_MAP:
+        if dtype_key not in config.type_dispatch_suffixes:
             raise RuntimeError(f"Unsupported input types for {op}: {dtype_key}")
 
-        type_suffix = self._TYPE_DISPATCH_MAP[dtype_key]
+        type_suffix = config.type_dispatch_suffixes[dtype_key]
         typed_op_name = f"{config.base_name}_{type_suffix}"
 
         typed_op = getattr(
