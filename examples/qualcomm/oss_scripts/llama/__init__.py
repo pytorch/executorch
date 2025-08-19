@@ -68,7 +68,7 @@ class Qwen3_0_6B(HFModel):
 @register_hf_model("qwen3_1_7b")
 @dataclass(init=False, frozen=True)
 class Qwen3_1_7B(HFModel):
-    repo_id: str = "Qwen/Qwen/Qwen3-1.7B"
+    repo_id: str = "Qwen/Qwen3-1.7B"
     params_path: str = os.path.join(
         BASE_DIR, "../../../models/qwen3/config/1_7b_config.json"
     )

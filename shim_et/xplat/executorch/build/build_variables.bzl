@@ -32,7 +32,22 @@ EXECUTORCH_SRCS = [
     "kernels/prim_ops/register_prim_ops.cpp",
 ]
 
-EXECUTORCH_CORE_SRCS = [
+PROGRAM_NO_PRIM_OPS_SRCS = [
+    "method.cpp",
+    "method_meta.cpp",
+    "program.cpp",
+    "tensor_parser_exec_aten.cpp",
+]
+
+PLATFORM_SRCS = [
+    "abort.cpp",
+    "log.cpp",
+    "platform.cpp",
+    "profiler.cpp",
+    "runtime.cpp",
+]
+
+EXECUTORCH_CORE_SRCS = sorted([
     "runtime/backend/interface.cpp",
     "runtime/core/evalue.cpp",
     "runtime/core/exec_aten/util/tensor_shape_to_c_string.cpp",
@@ -40,19 +55,16 @@ EXECUTORCH_CORE_SRCS = [
     "runtime/core/portable_type/tensor_impl.cpp",
     "runtime/core/tag.cpp",
     "runtime/core/tensor_layout.cpp",
-    "runtime/executor/method.cpp",
-    "runtime/executor/method_meta.cpp",
-    "runtime/executor/program.cpp",
-    "runtime/executor/pte_data_map.cpp",
-    "runtime/executor/tensor_parser_exec_aten.cpp",
     "runtime/executor/tensor_parser_portable.cpp",
+    "runtime/executor/pte_data_map.cpp",
     "runtime/kernel/operator_registry.cpp",
-    "runtime/platform/abort.cpp",
-    "runtime/platform/log.cpp",
-    "runtime/platform/platform.cpp",
-    "runtime/platform/profiler.cpp",
-    "runtime/platform/runtime.cpp",
     "schema/extended_header.cpp",
+] + ["runtime/executor/" + x for x in PROGRAM_NO_PRIM_OPS_SRCS] + ["runtime/platform/" + x for x in PLATFORM_SRCS])
+
+PATTERN_SRCS = [
+    "unary_ufunc_realhbbf16_to_bool.cpp",
+    "unary_ufunc_realhbbf16_to_floathbf16.cpp",
+    "unary_ufunc_realhbf16.cpp",
 ]
 
 PORTABLE_KERNELS_SRCS = [
@@ -215,16 +227,14 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_unfold_copy.cpp",
     "kernels/portable/cpu/op_unsqueeze_copy.cpp",
     "kernels/portable/cpu/op_upsample_bilinear2d.cpp",
+    "kernels/portable/cpu/op_upsample_bilinear2d_aa.cpp",
     "kernels/portable/cpu/op_upsample_nearest2d.cpp",
     "kernels/portable/cpu/op_var.cpp",
     "kernels/portable/cpu/op_view_as_real_copy.cpp",
     "kernels/portable/cpu/op_view_copy.cpp",
     "kernels/portable/cpu/op_where.cpp",
     "kernels/portable/cpu/op_zeros.cpp",
-    "kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_bool.cpp",
-    "kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp",
-    "kernels/portable/cpu/pattern/unary_ufunc_realhbf16.cpp",
-]
+] + ["kernels/portable/cpu/pattern/" + x for x in PATTERN_SRCS]
 
 KERNELS_UTIL_ALL_DEPS_SRCS = [
     "kernels/portable/cpu/util/activation_ops_util.cpp",
@@ -343,6 +353,8 @@ EXTENSION_RUNNER_UTIL_SRCS = [
 
 EXTENSION_LLM_RUNNER_SRCS = [
     "extension/llm/runner/llm_runner_helper.cpp",
+    "extension/llm/runner/multimodal_prefiller.cpp",
+    "extension/llm/runner/multimodal_runner.cpp",
     "extension/llm/runner/text_decoder_runner.cpp",
     "extension/llm/runner/text_llm_runner.cpp",
     "extension/llm/runner/text_prefiller.cpp",
@@ -354,11 +366,13 @@ EXTENSION_TENSOR_SRCS = [
     "extension/tensor/tensor_ptr_maker.cpp",
 ]
 
-EXTENSION_THREADPOOL_SRCS = [
-    "extension/threadpool/thread_parallel.cpp",
-    "extension/threadpool/threadpool.cpp",
-    "extension/threadpool/threadpool_guard.cpp",
+THREADPOOL_SRCS = [
+    "thread_parallel.cpp",
+    "threadpool.cpp",
+    "threadpool_guard.cpp",
 ]
+
+EXTENSION_THREADPOOL_SRCS = ["extension/threadpool/" + x for x in THREADPOOL_SRCS]
 
 EXTENSION_TRAINING_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
@@ -426,31 +440,33 @@ MPS_EXECUTOR_RUNNER_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
 ]
 
-MPS_BACKEND_SRCS = [
-    "backends/apple/mps/runtime/MPSBackend.mm",
-    "backends/apple/mps/runtime/MPSCompiler.mm",
-    "backends/apple/mps/runtime/MPSDelegateHeader.mm",
-    "backends/apple/mps/runtime/MPSDevice.mm",
-    "backends/apple/mps/runtime/MPSExecutor.mm",
-    "backends/apple/mps/runtime/MPSGraphBuilder.mm",
-    "backends/apple/mps/runtime/MPSStream.mm",
-    "backends/apple/mps/runtime/operations/ActivationOps.mm",
-    "backends/apple/mps/runtime/operations/BinaryOps.mm",
-    "backends/apple/mps/runtime/operations/ClampOps.mm",
-    "backends/apple/mps/runtime/operations/ConstantOps.mm",
-    "backends/apple/mps/runtime/operations/ConvolutionOps.mm",
-    "backends/apple/mps/runtime/operations/IndexingOps.mm",
-    "backends/apple/mps/runtime/operations/LinearAlgebra.mm",
-    "backends/apple/mps/runtime/operations/NormalizationOps.mm",
-    "backends/apple/mps/runtime/operations/OperationUtils.mm",
-    "backends/apple/mps/runtime/operations/PadOps.mm",
-    "backends/apple/mps/runtime/operations/PoolingOps.mm",
-    "backends/apple/mps/runtime/operations/QuantDequant.mm",
-    "backends/apple/mps/runtime/operations/RangeOps.mm",
-    "backends/apple/mps/runtime/operations/ReduceOps.mm",
-    "backends/apple/mps/runtime/operations/ShapeOps.mm",
-    "backends/apple/mps/runtime/operations/UnaryOps.mm",
+MPS_BACKEND_BUCK_SRCS = [
+    "runtime/MPSBackend.mm",
+    "runtime/MPSCompiler.mm",
+    "runtime/MPSDelegateHeader.mm",
+    "runtime/MPSDevice.mm",
+    "runtime/MPSExecutor.mm",
+    "runtime/MPSGraphBuilder.mm",
+    "runtime/MPSStream.mm",
+    "runtime/operations/ActivationOps.mm",
+    "runtime/operations/BinaryOps.mm",
+    "runtime/operations/ClampOps.mm",
+    "runtime/operations/ConstantOps.mm",
+    "runtime/operations/ConvolutionOps.mm",
+    "runtime/operations/IndexingOps.mm",
+    "runtime/operations/LinearAlgebra.mm",
+    "runtime/operations/NormalizationOps.mm",
+    "runtime/operations/OperationUtils.mm",
+    "runtime/operations/PadOps.mm",
+    "runtime/operations/PoolingOps.mm",
+    "runtime/operations/QuantDequant.mm",
+    "runtime/operations/RangeOps.mm",
+    "runtime/operations/ReduceOps.mm",
+    "runtime/operations/ShapeOps.mm",
+    "runtime/operations/UnaryOps.mm",
 ]
+
+MPS_BACKEND_SRCS = ["backends/apple/mps/" + x for x in MPS_BACKEND_BUCK_SRCS]
 
 MPS_SCHEMA_SRCS = [
     "backends/apple/mps/serialization/schema.fbs",
@@ -461,14 +477,16 @@ XNN_EXECUTOR_RUNNER_SRCS = [
     "extension/data_loader/file_data_loader.cpp",
 ]
 
-XNNPACK_BACKEND_SRCS = [
-    "backends/xnnpack/runtime/XNNCompiler.cpp",
-    "backends/xnnpack/runtime/XNNExecutor.cpp",
-    "backends/xnnpack/runtime/XNNHeader.cpp",
-    "backends/xnnpack/runtime/XNNPACKBackend.cpp",
-    "backends/xnnpack/runtime/XNNWeightsCache.cpp",
-    "backends/xnnpack/runtime/profiling/XNNProfiler.cpp",
+XNNPACK_BACKEND_BUCK_SRCS = [
+    "runtime/XNNCompiler.cpp",
+    "runtime/XNNExecutor.cpp",
+    "runtime/XNNHeader.cpp",
+    "runtime/XNNPACKBackend.cpp",
+    "runtime/XNNWeightsCache.cpp",
+    "runtime/profiling/XNNProfiler.cpp",
 ]
+
+XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
 
 XNNPACK_SCHEMA_SRCS = [
     "backends/xnnpack/serialization/runtime_schema.fbs",
@@ -478,13 +496,15 @@ VULKAN_SCHEMA_SRCS = [
     "backends/vulkan/serialization/schema.fbs",
 ]
 
-CUSTOM_OPS_SRCS = [
-    "extension/llm/custom_ops/op_fallback.cpp",
-    "extension/llm/custom_ops/op_fast_hadamard_transform.cpp",
-    "extension/llm/custom_ops/op_sdpa.cpp",
-    "extension/llm/custom_ops/op_update_cache.cpp",
+EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS = [
+    "op_fallback.cpp",
+    "op_fast_hadamard_transform.cpp",
+    "op_sdpa.cpp",
+    "op_update_cache.cpp",
+]
+
+CUSTOM_OPS_SRCS = ["extension/llm/custom_ops/" + x for x in EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS] + [
     "extension/llm/custom_ops/spinquant/fast_hadamard_transform.cpp",
-    "kernels/portable/cpu/util/reduce_util.cpp",
 ]
 
 LLAMA_RUNNER_SRCS = [
