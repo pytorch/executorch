@@ -1,8 +1,8 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
 
-    for aten in (True, False):
+    for aten in get_aten_mode_options():
         aten_suffix = "_aten" if aten else ""
 
         # Interface for IOManager. No concrete impl from this dep.
