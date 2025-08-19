@@ -434,6 +434,7 @@ def compile(args, pte_filename, tokenizer):
         state_dict = torch.load(
             checkpoint, weights_only=True, map_location="cpu", mmap=True
         )
+        transform_weight = SUPPORTED_HF_MODELS[args.decoder_model].transform_weight
     else:
         state_dict = torch.load(
             args.checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -444,7 +445,9 @@ def compile(args, pte_filename, tokenizer):
 
         if args.decoder_model == "stories260k":
             state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+        transform_weight = True
 
+    if transform_weight:
         # Change to HuggingFace weight to improve the performance of RoPE in HTP backend.
         def permute(w, heads):
             dim_0 = w.size(0)
@@ -1172,11 +1175,6 @@ def export_llama(args) -> None:
             tokenizer, TiktokenTokenizer
         ), f"Wrong tokenizer provided for llama3_2."
         runtime_tokenizer_path = args.tokenizer_model
-    elif args.decoder_model in {"qwen2_5", "qwen3_0_6b", "qwen3_1_7b"}:
-        model_id = SUPPORTED_HF_MODELS[args.decoder_model].repo_id
-        tokenizer = AutoTokenizer.from_pretrained(model_id)
-        runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
-        tokenizer = get_tokenizer(runtime_tokenizer_path)
     elif args.decoder_model == "phi_4_mini":
         model_id = SUPPORTED_HF_MODELS[args.decoder_model].repo_id
         tokenizer = AutoTokenizer.from_pretrained(model_id)
@@ -1190,6 +1188,11 @@ def export_llama(args) -> None:
             file.seek(0)
             json.dump(data, file, indent=4)
             file.truncate()
+    elif args.decoder_model in SUPPORTED_HF_MODELS:
+        model_id = SUPPORTED_HF_MODELS[args.decoder_model].repo_id
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
+        tokenizer = get_tokenizer(runtime_tokenizer_path)
     else:
         raise RuntimeError(f"Unknown decoder_model: {args.decoder_model}.")
 
