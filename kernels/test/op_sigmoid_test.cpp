@@ -35,7 +35,6 @@ class OpSigmoidOutTest : public OperatorTest {
 
     const std::vector<int32_t> sizes = {2, 2};
 
-    // Destination for the sigmoid operator.
     Tensor out = tf_out.zeros(sizes);
 
     op_sigmoid_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), out);
@@ -58,25 +57,18 @@ class OpSigmoidOutTest : public OperatorTest {
 
     const std::vector<int32_t> sizes = {2, 2};
 
-    // Destination for the sigmoid operator.
     Tensor out = tf_out.zeros(sizes);
 
-    // Test with boolean tensor: [True, False, True, False]
-    // True should convert to 1.0 and produce sigmoid(1.0) ≈ 0.731059
-    // False should convert to 0.0 and produce sigmoid(0.0) = 0.5
     op_sigmoid_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
 
-    // Check that it matches the expected output.
     EXPECT_TENSOR_CLOSE(
         out,
         tf_out.make(sizes, /*data=*/{0.731059, 0.5, 0.731059, 0.5}));
 
-    // Test with all true values
     out = tf_out.zeros({3});
     op_sigmoid_out(tf.make({3}, /*data=*/{true, true, true}), out);
     EXPECT_TENSOR_CLOSE(out, tf_out.full({3}, 0.731059));
 
-    // Test with all false values
     out = tf_out.zeros({3});
     op_sigmoid_out(tf.make({3}, /*data=*/{false, false, false}), out);
     EXPECT_TENSOR_CLOSE(out, tf_out.full({3}, 0.5));
