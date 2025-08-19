@@ -836,14 +836,14 @@ jobs:
     strategy:
       matrix:
         config: [
-          # XNNPack.
-          llama3.2-1b|xnnpack|--quantize,
-          qwen3-0.6b|xnnpack|--quantize,
-          qwen3-1.7b|xnnpack|--quantize,
-          gemma3-1b|xnnpack|--quantize,
-          phi4-mini|xnnpack|--quantize,
-          smollm2-135m|xnnpack|--quantize,
-          smollm3-3b|xnnpack|--quantize,
+          # # XNNPack. (Skipping for now due to intermittent segmentation faults, see https://github.com/huggingface/optimum-executorch/issues/122.)
+          # llama3.2-1b|xnnpack|--quantize,
+          # qwen3-0.6b|xnnpack|--quantize,
+          # qwen3-1.7b|xnnpack|--quantize,
+          # gemma3-1b|xnnpack|--quantize,
+          # phi4-mini|xnnpack|--quantize,
+          # smollm2-135m|xnnpack|--quantize,
+          # smollm3-3b|xnnpack|--quantize,
           # CoreML.
           llama3.2-1b|coreml_fp32_gpu|--quantize,
           qwen3-0.6b|coreml_fp32_gpu|--quantize,
