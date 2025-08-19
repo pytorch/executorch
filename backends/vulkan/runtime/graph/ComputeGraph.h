@@ -694,6 +694,16 @@ class ComputeGraph final {
       const void* const data);
 
   /*
+   * Add a `TensorRef` value to the graph with the specific properties. A
+   * `TensorRef` is a reference to a `api::vTensor` whose data is stored in a
+   * FreeableBuffer. The TensorRef will take ownership of the FreeableBuffer.
+   */
+  ValueRef add_tensorref(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      executorch::runtime::FreeableBuffer&& buffer);
+
+  /*
    * Add a staging buffer to the graph. Staging buffers are data buffers that
    * use memory that is visible to both the CPU and GPU, and therefore is used
    * as a intermediary when transferring data between the CPU and GPU.
