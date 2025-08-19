@@ -4,10 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.nxp.backend.ir.converter.node_converter import (
-    NodeConverter,
-    Target,
-)
+
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -20,7 +18,6 @@ def _has_supported_memory_format(node: Node) -> bool:
 
 
 class CloneConverter(NodeConverter):
-    supported_targets = [Target.RT700]
 
     @staticmethod
     def _is_supported_in_IR(

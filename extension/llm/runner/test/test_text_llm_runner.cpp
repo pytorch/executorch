@@ -195,16 +195,20 @@ TEST_F(RunnerTest, GenerateCallsCallbackExactlyMaxNewTokensTimes) {
   auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
 
   // Set up expectations for the tokenizer encode method
-  EXPECT_CALL(*tokenizer, encode(_, _, _))
-      .WillOnce(Return(::tokenizers::Result<std::vector<uint64_t>>(
-          std::vector<uint64_t>{1, 2, 3})));
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
 
   // Set up expectations for the text prefiller
-  EXPECT_CALL(*text_prefiller, prefill(_, _))
-      .WillOnce(Return(Result<uint64_t>(4)));
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+        return (Result<uint64_t>(4));
+      });
 
   // Set up expectations for load methods
-  EXPECT_CALL(*text_prefiller, is_loaded()).WillRepeatedly(Return(true));
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
 
   std::unique_ptr<executorch::llm::Stats> stats =
       std::make_unique<executorch::llm::Stats>();
@@ -256,15 +260,20 @@ TEST_F(RunnerTest, WarmupCallsGenerateWithWarmingFlag) {
   auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
 
   // Set up expectations for the tokenizer encode method
-  EXPECT_CALL(*tokenizer, encode(_, _, _))
-      .WillOnce(Return(::tokenizers::Result<std::vector<uint64_t>>(
-          std::vector<uint64_t>{1, 2, 3})));
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
 
   // Set up expectations for the text prefiller
-  EXPECT_CALL(*text_prefiller, prefill(_, _))
-      .WillOnce(Return(Result<uint64_t>(4)));
+  ON_CALL(*text_prefiller, prefill(_, _))
+      .WillByDefault([&](std::vector<uint64_t>&, int64_t&) {
+        return (Result<uint64_t>(4));
+      });
 
-  EXPECT_CALL(*text_prefiller, is_loaded()).WillRepeatedly(Return(true));
+  // Set up expectations for load methods
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
 
   std::unique_ptr<executorch::llm::Stats> stats =
       std::make_unique<executorch::llm::Stats>();
@@ -334,12 +343,14 @@ TEST_F(RunnerTest, GenerateFromPosErrorsWithNegativeMaxNewTokens) {
   auto text_prefiller = createMockTextPrefiller(text_decoder_runner.get());
 
   // Set up expectations for the tokenizer encode method
-  EXPECT_CALL(*tokenizer, encode(_, _, _))
-      .WillOnce(Return(::tokenizers::Result<std::vector<uint64_t>>(
-          std::vector<uint64_t>{1, 2, 3})));
+  ON_CALL(*tokenizer, encode(_, _, _))
+      .WillByDefault([&](const std::string&, int8_t, int8_t) {
+        return ::tokenizers::Result<std::vector<uint64_t>>(
+            std::vector<uint64_t>{1, 2, 3});
+      });
 
   // Set up expectations for load methods
-  EXPECT_CALL(*text_prefiller, is_loaded()).WillRepeatedly(Return(true));
+  ON_CALL(*text_prefiller, is_loaded()).WillByDefault(Return(true));
 
   std::unique_ptr<executorch::llm::Stats> stats =
       std::make_unique<executorch::llm::Stats>();

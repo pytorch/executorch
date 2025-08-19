@@ -731,6 +731,9 @@ class CustomBuild(build):
             cmake_build_args += ["--target", "portable_lib"]
             cmake_build_args += ["--target", "selective_build"]
 
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
+            cmake_build_args += ["--target", "extension_module"]
+
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_TRAINING"):
             cmake_build_args += ["--target", "_training_lib"]
 
