@@ -813,25 +813,8 @@ void ComputeGraph::prepare() {
     context_->initialize_querypool();
   }
 
-  for (SharedObject& shared_object : shared_objects_) {
-    shared_object.allocate(this);
-    shared_object.bind_users(this);
-  }
-}
-
-void ComputeGraph::prepare_pipelines() {
-  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
-    node->prepare_pipelines(this);
-  }
-  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
-    node->prepare_pipelines(this);
-  }
-  context_->pipeline_cache().create_pipelines(pipeline_descriptors_);
-
-  pipeline_descriptors_ = std::unordered_set<
-      vkapi::ComputePipelineCache::Key,
-      vkapi::ComputePipelineCache::Hasher>();
-
+  // Calculate the threshold at which a new command buffer should be created
+  // during execute()
   const size_t total_node_count = execute_nodes_.size();
   size_t init_threshold = config_.execute_initial_threshold_node_count;
   size_t count_threshold = config_.execute_threshold_node_count;
@@ -858,6 +841,25 @@ void ComputeGraph::prepare_pipelines() {
   }
 
   execute_threshold_node_count_ = count_threshold;
+
+  for (SharedObject& shared_object : shared_objects_) {
+    shared_object.allocate(this);
+    shared_object.bind_users(this);
+  }
+}
+
+void ComputeGraph::prepare_pipelines() {
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    node->prepare_pipelines(this);
+  }
+  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+    node->prepare_pipelines(this);
+  }
+  context_->pipeline_cache().create_pipelines(pipeline_descriptors_);
+
+  pipeline_descriptors_ = std::unordered_set<
+      vkapi::ComputePipelineCache::Key,
+      vkapi::ComputePipelineCache::Hasher>();
 }
 
 void ComputeGraph::submit_current_cmd(const bool final_use) {
