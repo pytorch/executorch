@@ -201,13 +201,6 @@ def contains_node_with_matching_target(
     return any(node.target == op_target for node in nodes)
 
 
-def is_quantized_tensor(x: torch.Tensor) -> bool:
-    """
-    Return true if the tensor x is quantized
-    """
-    return x.is_quantized
-
-
 def get_scale(x: torch.Tensor) -> torch.Tensor:
     """
     Return the scale of a quantized tensor as a float32 tensor.
