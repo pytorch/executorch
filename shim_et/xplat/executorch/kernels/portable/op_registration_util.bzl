@@ -1312,6 +1312,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_upsample_bilinear2d_aa",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:upsample_util",
+        ],
+    ),
+    op_target(
         name = "op_upsample_nearest2d",
         deps = [
             "//executorch/kernels/portable/cpu/util:upsample_util",
