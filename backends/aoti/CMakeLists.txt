@@ -25,7 +25,11 @@ endif()
 
 find_package(CUDAToolkit REQUIRED)
 
-set(_aoti_sources runtime/AotiBackend.cpp)
+set(_aoti_sources
+    runtime/aoti_backend.cpp
+    runtime/aoti_model_container.cpp
+    runtime/shims/memory.cpp
+    runtime/shims/tensor_attribute.cpp)
 add_library(aoti_backend STATIC ${_aoti_sources})
 target_include_directories(
   aoti_backend

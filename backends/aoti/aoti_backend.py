@@ -7,6 +7,7 @@
 import copy
 import os
 import shutil
+import typing
 
 from subprocess import check_call
 from typing import final, List
@@ -29,18 +30,29 @@ class AotiBackend(BackendDetails):
     ) -> PreprocessResult:
         print("entering  the lowerable parts in AotiBackend.preprocess....")
 
-        print("here", edge_program.example_inputs)
+        # print("here", edge_program.example_inputs)
         copy_edge_program = copy.deepcopy(edge_program)
-        graph_module = copy_edge_program.graph_module
+        # graph_module = copy_edge_program.graph_module
+        edge_program_module = copy_edge_program.module()
         args, kwargs = copy_edge_program.example_inputs
-        temp_so_path = torch._inductor.aot_compile(graph_module, args, kwargs, options={})  # type: ignore[arg-type]
-        so_path = os.path.join(os.getcwd(), "aoti.so")
-        print("so_path after aot_compile: ", temp_so_path)
-        print("so path we will using ", so_path)
-        shutil.copyfile(temp_so_path, so_path)
+        # print("args, kwargs", args, kwargs)
+        print("len(args)", len(args))
+        print("args[0].shape", args[0].shape)
+        print("len(kwargs)", len(kwargs))
+
+        output_path = os.path.join(os.getcwd(), "aoti.so")
+
+        options: dict[str, typing.Any] = {
+            "aot_inductor.package_constants_in_so": True,
+            "aot_inductor.output_path": output_path,
+        }
+
+        so_path = torch._inductor.aot_compile(edge_program_module, args, kwargs, options=options)  # type: ignore[arg-type]
+
+        assert so_path == output_path, f"Expected {output_path} but got {so_path}"
 
         check_call(
-            f"patchelf --remove-needed libtorch.so --remove-needed libc10.so --remove-needed libtorch_cuda.so --remove-needed libc10_cuda.so --remove-needed libtorch_cpu.so --add-needed libcudart.so {so_path}",
+            f"patchelf --remove-needed libtorch.so --remove-needed libc10.so --remove-needed libtorch_cuda.so --remove-needed libc10_cuda.so --remove-needed libtorch_cpu.so --add-needed libcudart.so {output_path}",
             shell=True,
         )
 

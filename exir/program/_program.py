@@ -1825,6 +1825,7 @@ class ExecutorchProgramManager:
 
         backend_config = backend_config or ExecutorchBackendConfig()
 
+        print("start emitting..")
         # Emit methods
         self._emitter_output: EmitterOutput = emit_program(
             self._execution_programs,
@@ -1832,6 +1833,7 @@ class ExecutorchProgramManager:
             self._config_methods,
             backend_config.emit_mutable_buffer_names,
         )
+        print("done. start serializing..")
 
         # Serialize emitter output, ready to be written to a file.
         self._data_serializer = FlatTensorSerializer()
