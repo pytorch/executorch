@@ -32,7 +32,7 @@ class HFModel(ABC):
     convert_weights: Callable
 
 
-SUPPORTED_HF_MODELS: Dict[str, Type[HFModel]] = {}
+SUPPORTED_HF_MODELS: Dict[str, HFModel] = {}
 
 
 def register_hf_model(name: str):
