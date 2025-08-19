@@ -229,4 +229,5 @@ class VulkanBackend(BackendDetails):
                 vk_graph, graph_builder.const_tensors, []
             ),
             debug_handle_map=graph_builder.delegate_mapping_builder.get_delegate_mapping(),
+            data_store_output=graph_builder.named_data_store.get_named_data_store_output(),
         )
