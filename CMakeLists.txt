@@ -79,11 +79,6 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 announce_configured_options(PYTHON_EXECUTABLE)
 
-if(NOT BUCK2)
-  resolve_buck2()
-endif()
-announce_configured_options(BUCK2)
-
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 announce_configured_options(BUILD_TESTING)
