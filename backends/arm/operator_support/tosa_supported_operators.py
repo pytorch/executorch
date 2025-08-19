@@ -169,6 +169,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.cat.default,
             exir_ops.edge.aten.ceil.default,
             exir_ops.edge.aten.clamp.default,
+            exir_ops.edge.aten.cumsum.default,
             exir_ops.edge.aten.bmm.default,
             exir_ops.edge.aten.permute_copy.default,
             exir_ops.edge.aten.hardsigmoid.default,
@@ -261,6 +262,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.cosh.default,
             exir_ops.edge.aten.glu.default,
             exir_ops.edge.aten.logit.default,
+            exir_ops.edge.aten.acos.default,
         ]
 
         return supported
