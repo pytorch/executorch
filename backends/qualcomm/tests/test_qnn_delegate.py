@@ -4590,7 +4590,7 @@ class TestExampleLLMScript(TestQNN):
                         msg["inference_speed"], inference_speed_ref[self.model]
                     )
 
-    def test_qwen3(self):
+    def test_static_qwen3(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
 
@@ -4613,7 +4613,7 @@ class TestExampleLLMScript(TestQNN):
             "--ptq",
             "16a8w",
             "--decoder_model",
-            "qwen3_0.6b",
+            "qwen3_0_6b",
             "--model_mode",
             "hybrid",
             "--prefill_ar_len",

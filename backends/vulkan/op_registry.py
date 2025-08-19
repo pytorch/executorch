@@ -125,6 +125,7 @@ def update_features(aten_op):
         operator.gt,
         operator.ge,
         operator.le,
+        operator.eq,
         # Guard and assert ops
         torch.ops.aten._assert_scalar.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
