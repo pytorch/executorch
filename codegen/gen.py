@@ -243,6 +243,10 @@ class ComputeCodegenUnboxedKernels:
             argument_type_gen=argument_type_gen
         ).convert_arguments(arguments)
 
+        # +1 for the return value
+        num_boxed_args = len(binding_list) + 1
+        # This safety check does not account for optional args with default values. ET itself doesnt support default args, but when supported is added this check can be relaxed to >= # of non default arg.
+        safety_check = f"""ET_KERNEL_CHECK_MSG(context, stack.size() == {num_boxed_args}, InvalidProgram, /*void*/, \"Expected %\" ET_PRIsize_t \"args received %\" ET_PRIsize_t, (size_t){num_boxed_args}, stack.size());"""
         # for each C++ argument, generate the conversion code
         code_connector = "\n\t"
         arg_connector = ", "
@@ -292,12 +296,13 @@ class ComputeCodegenUnboxedKernels:
 {indent}  context.fail(torch::executor::Error::Internal);
 {indent}}}"""
         newline = "\n    "
-        return "\n".join(
+        temp = "\n".join(
             [
                 f"""
 Kernel(
     "{f.namespace}::{f.func.name}",{newline + '"' + (k + '",') if k != "default" else ""}
-    []({contextArg.defn()}, EValue** stack) {{
+    []({contextArg.defn()}, Span<EValue*> stack) {{
+        {safety_check}
         {code_connector.join(code_list)}
 
 {exception_boundary_begin}
@@ -313,6 +318,7 @@ Kernel(
                 for k in used_kernel_keys
             ]
         )
+        return temp
 
 
 def gen_unboxing(
@@ -534,6 +540,7 @@ def gen_headers(
         "headers": [
             "#include <executorch/runtime/core/exec_aten/exec_aten.h> // at::Tensor etc.",
             "#include <executorch/runtime/kernel/kernel_runtime_context.h>",
+            "#include <executorch/runtime/core/error.h>",
         ],
     }
     if use_aten_lib:

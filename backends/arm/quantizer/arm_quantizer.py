@@ -14,18 +14,17 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
 from executorch.backends.arm._passes import ArmPassManager
 
 from executorch.backends.arm.quantizer import QuantizationConfig
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
 
 from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
 from .quantization_annotator import annotate_graph
 from executorch.backends.arm.arm_backend import (
-    get_tosa_spec,
     is_ethosu,
     is_vgf,
 )  # usort: skip
@@ -218,9 +217,35 @@ def _get_not_module_type_or_name_filter(
 
 class TOSAQuantizer(Quantizer):
 
-    def __init__(self, tosa_spec: TosaSpecification) -> None:
+    def __init__(
+        self, compile_spec_or_tosa_spec: Union[TosaSpecification, List[CompileSpec]]
+    ) -> None:
+
         super().__init__()
-        self.tosa_spec = tosa_spec
+        if isinstance(compile_spec_or_tosa_spec, TosaSpecification):
+            self.tosa_spec = compile_spec_or_tosa_spec
+            self.compile_spec = None
+        elif isinstance(compile_spec_or_tosa_spec, list):
+            self.compile_spec = compile_spec_or_tosa_spec
+            # find entry that is 'tosa_spec'
+            for cs in compile_spec_or_tosa_spec:
+                if cs.key == "tosa_spec":
+                    spec_val = (
+                        cs.value.decode() if isinstance(cs.value, bytes) else cs.value
+                    )
+                    self.tosa_spec = TosaSpecification.create_from_string(spec_val)
+                    break
+            else:
+                raise ValueError(
+                    "compile_spec list did not contain a 'tosa_spec' entry"
+                )
+        else:
+            raise TypeError(
+                f"TOSAQuantizer constructor expects "
+                f"a TosaSpecification or compile_spec list, "
+                f"got {type(compile_spec_or_tosa_spec)}"
+            )
+
         self.global_config: Optional[QuantizationConfig] = None
         self.io_config: Optional[QuantizationConfig] = None
         self.module_type_config: Dict[Callable, Optional[QuantizationConfig]] = {}

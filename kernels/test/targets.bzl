@@ -177,6 +177,7 @@ def define_common_targets():
 
     _common_op_test("op__to_dim_order_copy_test", ["aten", "portable"])
     _common_op_test("op__empty_dim_order_test", ["aten", "portable"])
+    _common_op_test("op__clone_dim_order_test", ["portable"])
     _common_op_test("op_abs_test", ["aten", "portable"])
     _common_op_test("op_acos_test", ["aten", "portable"])
     _common_op_test("op_acosh_test", ["aten", "portable"])
@@ -334,6 +335,7 @@ def define_common_targets():
     _common_op_test("op_unfold_copy_test", ["aten", "portable"])
     _common_op_test("op_unsqueeze_copy_test", ["aten", "portable"])
     _common_op_test("op_upsample_bilinear2d_test", ["aten", "portable"])
+    _common_op_test("op_upsample_bilinear2d_aa_test", ["portable"])
     _common_op_test("op_upsample_nearest2d_test", ["aten", "portable"])
     _common_op_test("op_var_test", ["aten", "portable"])
     _common_op_test("op_view_as_real_copy_test", ["aten", "portable"])

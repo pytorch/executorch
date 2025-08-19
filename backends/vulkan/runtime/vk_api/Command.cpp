@@ -29,7 +29,7 @@ CommandBuffer::CommandBuffer(
 CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept
     : handle_(other.handle_),
       flags_(other.flags_),
-      state_(CommandBuffer::State::INVALID),
+      state_(other.state_),
       bound_(other.bound_) {
   other.handle_ = VK_NULL_HANDLE;
   other.bound_.reset();

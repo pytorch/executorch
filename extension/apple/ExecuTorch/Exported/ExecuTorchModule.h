@@ -188,6 +188,14 @@ __attribute__((deprecated("This API is experimental.")))
 - (BOOL)isMethodLoaded:(NSString *)methodName NS_SWIFT_NAME(isLoaded(_:));
 
 /**
+ * Unloads a method and releases its native resources and planned buffers.
+ *
+ * @param methodName The method to unload.
+ * @return YES if the method was unloaded; NO if it was not loaded at all.
+ */
+- (BOOL)unloadMethod:(NSString *)methodName NS_SWIFT_NAME(unload(_:));
+
+/**
  * Retrieves the set of method names available in the loaded program.
  *
  * The method names are returned as an unordered set of strings. The program and methods
@@ -357,6 +365,145 @@ __attribute__((deprecated("This API is experimental.")))
                                                      error:(NSError **)error
     NS_SWIFT_UNAVAILABLE("")
     NS_RETURNS_RETAINED;
+
+/**
+ * Sets a single input value for the "forward" method at index 0.
+ *
+ * @param value The input value.
+ * @param error On failure, set to an NSError describing the issue.
+ * @return YES on success; NO otherwise.
+ */
+- (BOOL)setInput:(ExecuTorchValue *)value
+           error:(NSError **)error NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Sets a single input value for the "forward" method at the specified index.
+ *
+ * @param value The input value.
+ * @param index Zero-based input index.
+ * @param error On failure, set to an NSError describing the issue.
+ * @return YES on success; NO otherwise.
+ */
+- (BOOL)setInput:(ExecuTorchValue *)value
+         atIndex:(NSInteger)index
+           error:(NSError **)error NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Sets a single input value for the specified method at index 0.
+ *
+ * @param value The input value.
+ * @param methodName The method name.
+ * @param error On failure, set to an NSError describing the issue.
+ * @return YES on success; NO otherwise.
+ */
+- (BOOL)setInput:(ExecuTorchValue *)value
+       forMethod:(NSString *)methodName
+           error:(NSError **)error NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Sets a single input value for the specified method at the given index.
+ *
+ * The module retains the provided value to keep its backing storage alive
+ * until the value is overwritten or the module is deallocated.
+ *
+ * @param value The input value.
+ * @param methodName The method name.
+ * @param index Zero-based input index.
+ * @param error On failure, set to an NSError describing the issue.
+ * @return YES on success; NO otherwise.
+ */
+- (BOOL)setInput:(ExecuTorchValue *)value
+       forMethod:(NSString *)methodName
+         atIndex:(NSInteger)index
+           error:(NSError **)error NS_REFINED_FOR_SWIFT;
+
+/**
+ * Sets all input values for the "forward" method.
+ *
+ * The number and types of values must match the method’s declared inputs.
+ *
+ * @param values The input values, one per declared input.
+ * @param error On failure, set to an NSError describing the issue.
+ * @return YES on success; NO otherwise.
+ */
+- (BOOL)setInputs:(NSArray<ExecuTorchValue *> *)values
+            error:(NSError **)error NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Sets all input values for the specified method.
+ *
+ * The module retains the provided values to keep their backing storage alive
+ * until the values are overwritten or the module is deallocated.
+ *
+ * @param values The input values, one per declared input.
+ * @param methodName The method name.
+ * @param error On failure, set to an NSError describing the issue.
+ * @return YES on success; NO otherwise.
+ */
+- (BOOL)setInputs:(NSArray<ExecuTorchValue *> *)values
+        forMethod:(NSString *)methodName
+            error:(NSError **)error NS_REFINED_FOR_SWIFT;
+
+/**
+ * Sets the output buffer for the "forward" method at index 0.
+ *
+ * Only tensor outputs are supported. The provided value must wrap a tensor
+ * compatible with the method’s output slot.
+ *
+ * @param value The output buffer (must wrap a tensor).
+ * @param error On failure, set to an NSError describing the issue.
+ * @return YES on success; NO otherwise.
+ */
+- (BOOL)setOutput:(ExecuTorchValue *)value
+            error:(NSError **)error NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Sets the output buffer for the "forward" method at the specified index.
+ *
+ * Only tensor outputs are supported. The provided value must wrap a tensor
+ * compatible with the method’s output slot.
+ *
+ * @param value The output buffer (must wrap a tensor).
+ * @param index Zero-based output index.
+ * @param error On failure, set to an NSError describing the issue.
+ * @return YES on success; NO otherwise.
+ */
+- (BOOL)setOutput:(ExecuTorchValue *)value
+          atIndex:(NSInteger)index
+            error:(NSError **)error NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Sets the output buffer for the specified method at index 0.
+ *
+ * Only tensor outputs are supported. The provided value must wrap a tensor
+ * compatible with the method’s output slot.
+ *
+ * @param value The output buffer (must wrap a tensor).
+ * @param methodName The method name.
+ * @param error On failure, set to an NSError describing the issue.
+ * @return YES on success; NO otherwise.
+ */
+- (BOOL)setOutput:(ExecuTorchValue *)value
+        forMethod:(NSString *)methodName
+            error:(NSError **)error NS_SWIFT_UNAVAILABLE("");
+
+/**
+ * Sets the output buffer for the specified method at the given index.
+ *
+ * The module retains the provided value to keep its backing storage alive
+ * until the value is overwritten or the module is deallocated.
+ * Only tensor outputs are supported.
+ *
+ * @param value The output buffer (must wrap a tensor).
+ * @param methodName The method name.
+ * @param index Zero-based output index.
+ * @param error On failure, set to an NSError describing the issue.
+ * @return YES on success; NO otherwise.
+ */
+- (BOOL)setOutput:(ExecuTorchValue *)value
+        forMethod:(NSString *)methodName
+          atIndex:(NSInteger)index
+            error:(NSError **)error NS_REFINED_FOR_SWIFT;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;

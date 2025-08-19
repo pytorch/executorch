@@ -24,16 +24,16 @@ set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 set(_common_include_directories
     ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
 )
-set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
-find_package(executorch CONFIG REQUIRED)
-
-target_link_options_shared_lib(executorch)
+list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
+find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 
 set(BUILD_TESTING OFF)
-add_subdirectory(
-  ${EXECUTORCH_ROOT}/extension/llm/runner
-  ${CMAKE_BINARY_DIR}/../../../extension/llm/runner
-)
+if(NOT TARGET extension_llm_runner)
+  message(
+    FATAL_ERROR
+      "ExecuTorch must be installed with EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER enabled."
+  )
+endif()
 
 if(NOT TARGET gflags)
   add_subdirectory(

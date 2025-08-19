@@ -15,7 +15,8 @@ namespace example {
  * @brief Class for generating the token using decoder and key-value manager
  * with lookahead decoding.
  */
-class LhdTokenGenerator : public TokenGenerator {
+template <typename T>
+class LhdTokenGenerator : public TokenGenerator<T> {
  public:
   struct Metadata {
     int32_t context_len;
@@ -31,18 +32,18 @@ class LhdTokenGenerator : public TokenGenerator {
   LhdTokenGenerator(
       tokenizers::Tokenizer* tokenizer,
       DecoderRunner* decoder_runner,
-      KVManager* kv_manager,
+      KVManager<T>* kv_manager,
       const std::string& forward_name,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Metadata metadata,
       executorch::llm::Stats* stats)
-      : TokenGenerator(
+      : TokenGenerator<T>(
             tokenizer,
             decoder_runner,
             kv_manager,
             forward_name,
             std::move(eos_ids),
-            TokenGenerator::Metadata{
+            typename TokenGenerator<T>::Metadata{
                 metadata.context_len,
                 metadata.num_heads,
                 metadata.num_layers,
@@ -76,7 +77,8 @@ class LhdTokenGenerator : public TokenGenerator {
       std::vector<uint64_t> tokens,
       int64_t start_pos,
       int32_t seq_len,
-      std::function<void(const std::string&)> token_callback) override;
+      std::function<void(const std::string&)> token_callback,
+      bool dump_logits) override;
 
  private:
   /**

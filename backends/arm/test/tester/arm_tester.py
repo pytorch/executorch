@@ -25,24 +25,25 @@ from typing import (
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
+import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
+
 import torch.fx
 import torch.utils._pytree as pytree
 
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore[import-untyped]
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.arm_backend import (
     get_intermediate_path,
-    get_tosa_spec,
     is_ethosu,
     is_tosa,
     is_vgf,
 )
-from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.ethosu import EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
+    VgfQuantizer,
 )
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
@@ -50,7 +51,7 @@ from executorch.backends.arm.test.runner_utils import (
     get_output_nodes,
     get_output_quantization_params,
     get_target_board,
-    run_corstone,
+    run_target,
     TosaReferenceModelDispatch,
 )
 
@@ -60,7 +61,7 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
 )
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
 
 from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 
@@ -170,7 +171,9 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         super().dump_artifact(path_to_dump)
         _dump_lowered_modules_artifact(path_to_dump, self.artifact, self.graph_module)
 
-    def run(self, artifact: ExportedProgram, inputs=None) -> None:
+    def run(
+        self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
+    ) -> None:
         artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
             artifact_to_run,
@@ -178,6 +181,7 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
             constant_methods=self.constant_methods,
+            generate_etrecord=generate_etrecord,
         )
 
 
@@ -208,7 +212,7 @@ class Serialize(tester.Serialize):
                 f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
             )
 
-        return run_corstone(
+        return run_target(
             self.executorch_program_manager,
             inputs_flattened,
             intermediate_path,
@@ -332,6 +336,8 @@ class ArmTester(Tester):
                 quantizer = TOSAQuantizer(tosa_spec)
             elif is_ethosu(self.compile_spec):
                 quantizer = EthosUQuantizer(self.compile_spec)
+            elif is_vgf(self.compile_spec):
+                quantizer = VgfQuantizer(self.compile_spec)
             quantize_stage = tester.Quantize(
                 quantizer,
                 get_symmetric_quantization_config(),
@@ -726,7 +732,7 @@ def _get_dtype_distribution(
         if node.op == "placeholder":
             placeholder_dtypes.append(str(node.meta["val"].dtype))
         if node.op == "call_function":
-            if "val" in node.meta:
+            if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
                 dtype, _, _ = extract_tensor_meta(node.meta, tosa_spec)
                 call_function_dtypes.append(ts.DTypeNames[dtype])
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)

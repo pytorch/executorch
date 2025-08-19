@@ -1,0 +1,116 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef QLINEAR_UTILS_H
+#define QLINEAR_UTILS_H
+
+/***********************************
+ * Packed Weight data read/write functions
+ *
+ * These functions assume that t_qmat2 is declared in the shader layout as a storage
+ * buffer or storage image.
+ */
+
+#ifdef BUFFER_WEIGHT
+
+uvec4 load_transposed_weight_block(const uint k4, const uint n8, const uint K4) {
+  return t_qmat2[n8 * K4 + k4];
+}
+
+#else // TEXTURE_WEIGHT
+
+uvec4 load_transposed_weight_block(const uint k4, const uint n8, const uint K4) {
+  return texelFetch(t_qmat2, ivec2(k4, n8), 0);
+}
+
+#endif // BUFFER_WEIGHT
+
+/***********************************
+ * Packed weight data extraction functions
+ */
+
+/*
+ * uvec4 block contains a packed 4 high x 8 wide matrix of 4-bit signed integers. This
+ * function extracts the 4-bit values at the given column and row index.
+ *
+ * Each uint in the uvec4 corresponds to one row; thus the desired row can be extracted
+ * via block[row]. From there, column 0 is packed in bits 28-31, column 1 is packed into
+ * bits 24-27, column 3 is packed into bits 20-23, and so on. To extract the desired
+ * value:
+ *
+ * 1. First, shift the row uint by 4 * (7 - col) bits
+ * 2. Apply a mask of 0b1111 = 15
+ *
+ * Finally, convert the masked value to int and subtract it by int to obtain the desired
+ * signed integer.
+ */
+T extract_4bit_from_transposed_block(const uvec4 block, const uint col, const uint row) {
+  return T(int((block[row] >> (4 * (7 - col))) & 15) - 8);
+}
+
+/***********************************
+ * Input/Output read/write functions
+ *
+ * These functions assume that t_input and t_output are declared in the shader layout as
+ * storage buffers or storage images.
+ */
+
+#ifdef BUFFER_IO
+
+VEC4_T load_input_texel_1d(const uint k4) {
+  return t_input[k4];
+}
+
+VEC4_T load_input_texel_2d(
+    const uint k4,
+    const uint m,
+    const uint K4) {
+  return t_input[(m * K4) + k4];
+}
+
+void write_output_texel_1d(const VEC4_T out_texel, const uint n4) {
+  t_output[n4] = out_texel;
+}
+
+void write_output_texel_2d(
+    const VEC4_T out_texel,
+    const uint n4,
+    const uint m,
+    const uint N4) {
+  t_output[m * N4 + n4] = out_texel;
+}
+
+#else // TEXTURE_IO
+
+VEC4_T load_input_texel_1d(const uint k4) {
+  return texelFetch(t_input, ivec3(k4, 0, 0), 0);
+}
+
+VEC4_T load_input_texel_2d(
+    const uint k4,
+    const uint m,
+    const uint K4) {
+  return texelFetch(t_input, ivec3(k4, m, 0), 0);
+}
+
+
+void write_output_texel_1d(const VEC4_T out_texel, const uint n4) {
+  imageStore(t_output, ivec3(n4, 0, 0), out_texel);
+}
+
+void write_output_texel_2d(
+    const VEC4_T out_texel,
+    const uint n4,
+    const uint m,
+    const uint N4) {
+  imageStore(t_output, ivec3(n4, m, 0), out_texel);
+}
+
+#endif // BUFFER_IO
+
+#endif // QLINEAR_UTILS_H

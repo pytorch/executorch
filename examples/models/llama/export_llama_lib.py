@@ -86,7 +86,6 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_quantized_sdpa,
     replace_sdpa_with_simple_sdpa,
 )
-from .source_transformation.vulkan_rope import replace_with_vulkan_rotary_emb
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -238,6 +237,18 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--checkpoint_dir",
         default=None,
         help="checkpoint directory. Use with a sharded checkpoint, not for the standard llama2 model. Note, checkpoint_dir takes precedence over checkpoint if both are set.",
+    )
+
+    parser.add_argument(
+        "--adapter_checkpoint",
+        required=False,
+        help="Path to the adapter.pt file from torchtune. Used if the model has trained LoRA adapters. Must provide adapter_config.json",
+    )
+
+    parser.add_argument(
+        "--adapter_config",
+        required=False,
+        help="Path to the adapter_config.json file. Used if the model has trained LoRA adapters. Must provide adapter_checkpoint.",
     )
 
     parser.add_argument(
@@ -794,7 +805,7 @@ def get_quantizer_and_quant_params(llm_config):
 
 
 def _qmode_type(value):
-    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
+    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w", "4w"]
     patterns = [r"torchao:8da(\d+)w", r"torchao:fpa(\d+)w"]
 
     if value in choices:
@@ -1149,6 +1160,25 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         llm_config.backend.xnnpack.enabled = True
 
     if llm_config.backend.xnnpack.enabled:
+        if llm_config.export.foundation_weights_file is not None:
+            gen_tag_fn: Callable[[torch.fx.Node], Optional[str]] = lambda x: (
+                llm_config.export.foundation_weights_file
+                if "lora" not in x.name
+                else None
+            )
+
+            from executorch.exir.passes.external_constants_pass import (
+                delegate_external_constants_pass_unlifted,
+            )
+
+            assert (
+                builder_exported.pre_autograd_graph_module is not None
+            ), "pre_autograd_graph_module shouldn't be None here"
+            delegate_external_constants_pass_unlifted(
+                module=builder_exported.pre_autograd_graph_module,
+                gen_tag_fn=gen_tag_fn,
+            )
+
         builder = _to_edge_and_lower_llama_xnnpack(
             builder_exported,
             modelname,
@@ -1529,9 +1559,6 @@ def _get_source_transforms(  # noqa
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
-
-    if vulkan:
-        transforms.append(replace_with_vulkan_rotary_emb)
 
     if local_global_attention:
         transforms.append(

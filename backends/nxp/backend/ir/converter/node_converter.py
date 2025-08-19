@@ -1,11 +1,10 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Collection
 
 import torch
 
@@ -53,7 +52,6 @@ class NodeConverter(ABC):
     """
 
     context: ConversionContext
-    supported_targets: Collection
 
     def __init__(self, context: ConversionContext):
         self.context = context
@@ -78,25 +76,23 @@ class NodeConverter(ABC):
             Classes which implement conversion for individual operators must overwrite this method.
 
         :param node: torch.Node to check.
+        :param parameters_mapping: Dictionary mapping tensor names to their static data (if they have it).
         """
         pass
 
-    @classmethod
-    def _is_supported_on_target(cls, target: Target) -> bool:
-        """Check if the node is supported on the target platform. It uses the 'supported_platform' attribute, which is
-             a list of supported target platforms, and it must be defined by the specific `NodeConverter`.
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node, target: Target, parameters_mapping: dict[str, Parameter]
+    ) -> bool:
+        """Check if the node is supported on the target platform.
+            Child classes should overwrite this method to implement specific target checks. The default implementation
+            can be used by operators with no target specific requirements.
 
+        :param node: The node (edge operator) to check.
         :param target: Value of the `Target` enum representing the target platform to check for.
+        :param parameters_mapping: Dictionary mapping tensor names to their static data (if they have it).
         """
-        if not (
-            hasattr(cls, "supported_targets")
-            and isinstance(cls.supported_targets, Collection)
-        ):
-            raise NotImplementedError(
-                f"The NodeConverter `{cls}` does not define its `supported_targets` collection."
-            )
-
-        return target == Target.IGNORE or target in cls.supported_targets
+        return target == Target.RT700
 
     @classmethod
     def is_supported(
@@ -110,7 +106,7 @@ class NodeConverter(ABC):
         """
         return cls._is_supported_in_IR(
             node, parameters_mapping
-        ) and cls._is_supported_on_target(target)
+        ) and cls._is_supported_on_target(node, target, parameters_mapping)
 
     @staticmethod
     def _has_shared_q_params_if_quantized(node: Node) -> bool:
@@ -173,7 +169,8 @@ class NodeConverter(ABC):
 
         # Initialize node's inputs
         t_operator.inputs = tflite_model.OperatorInputs()
-        for ancestor_node in node.all_input_nodes:
+        input_nodes = [arg for arg in node.args if isinstance(arg, Node)]
+        for ancestor_node in input_nodes:
             assert self.context.tflite_builder.tensor_exists(ancestor_node.name)
             t_operator.tmp_inputs.append(
                 self.context.tflite_builder.tensor_for_name(ancestor_node.name)

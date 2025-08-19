@@ -54,7 +54,7 @@ jobs:
       contents: read
     with:
       secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
-      docker-image: executorch-ubuntu-22.04-clang12-android
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.sha }}
       timeout: 90
@@ -90,7 +90,7 @@ jobs:
         fi
 
         FLAVOR="${{ inputs.flavor }}"
-        if [[ "$FLAVOR" == "vulkan+xnnpack" ]]; then
+        if [[ "$FLAVOR" == "vulkan+xnnpack" || -z "$FLAVOR" ]]; then
           export EXECUTORCH_BUILD_VULKAN=ON
         fi
 

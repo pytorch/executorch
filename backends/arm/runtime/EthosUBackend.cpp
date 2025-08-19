@@ -70,6 +70,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 #define ETHOSU_NUM_BASE_ADDRS 3
 
@@ -140,7 +141,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
 #if defined(ET_EVENT_TRACER_ENABLED)
     EventTracer* event_tracer = context.event_tracer();
     EventTracerEntry event_tracer_local_scope;
@@ -191,8 +192,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // Use a temporary allocator for the intermediate tensors of the
     // computation. The allocator is released in runtime/executor/method.cpp at
     // the end of the execution of the Ethos-U custom delegate
-    char* ethosu_scratch =
-        static_cast<char*>(temp_allocator->allocate(handles.scratch_data_size));
+    // Ethos-U driver requires 16 bit alignment.
+    char* ethosu_scratch = static_cast<char*>(
+        temp_allocator->allocate(handles.scratch_data_size, 16UL));
     if (ethosu_scratch == nullptr) {
       ET_LOG(
           Error,

@@ -27,7 +27,6 @@ from executorch.exir.program._program import (
     ExecutorchProgramManager,
     to_edge,
     to_edge_transform_and_lower,
-    to_edge_with_preserved_ops,
 )
 from executorch.exir.tracer import _default_decomposition_table
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
@@ -38,6 +37,7 @@ from executorch.extension.pybindings.portable_lib import (
 from torch._export.verifier import Verifier
 from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
+from torch.fx.passes.infra.pass_manager import PassManager
 
 from torch.library import impl, Library
 from torch.nn import functional as F
@@ -471,6 +471,30 @@ class TestProgramManagers(unittest.TestCase):
             torch.ones(1) + 1,  # x + 1
         )
 
+    def test_transform_pass_manager_api(self):
+        edge_manager = to_edge(get_exported_programs(), get_config_methods())
+
+        pm = PassManager()
+        pm.add_pass(AddToMulPassEdge())
+
+        transformed_edge = edge_manager.transform(pm)
+
+        x = torch.ones(1) * 2
+        y = torch.ones(1) * 3
+
+        # x * y + x -> x * y * x
+        self.assertEqual(
+            transformed_edge.exported_program("forward").module()(x, y), x * y * x
+        )
+
+        # x + 1 -> x * 1
+        self.assertEqual(
+            transformed_edge.exported_program("foo").module()(
+                x,
+            ),
+            x * 1,
+        )
+
     def test_edge_to_backend_replaces_subgraph(self):
         edge_manager: EdgeProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
@@ -784,7 +808,9 @@ class TestProgramManagers(unittest.TestCase):
     def _test_to_edge_with_preserved_ops(
         self, program, preserved_ops, expected_preserved_ops
     ):
-        edge = to_edge_with_preserved_ops(program, preserve_ops=preserved_ops)
+        edge = to_edge(
+            program, compile_config=EdgeCompileConfig(preserve_ops=preserved_ops)
+        )
 
         def count_nodes(graph_module, target):
             count = 0

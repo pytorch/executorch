@@ -24,7 +24,7 @@ using executorch::runtime::testing::TensorFactory;
 // Mock class for TextDecoderRunner
 class MockTextDecoderRunner : public TextDecoderRunner {
  public:
-  MockTextDecoderRunner() : TextDecoderRunner(nullptr) {}
+  MockTextDecoderRunner() : TextDecoderRunner(nullptr, nullptr) {}
   MOCK_METHOD(
       Result<executorch::aten::Tensor>,
       step,
@@ -286,9 +286,10 @@ TEST_F(TextPrefillerTest, PrefillChunkWorksWithParallelPrefill) {
   auto prefiller = createTextPrefiller(10, true, true);
 
   // Set up expectations for the text decoder runner
-  EXPECT_CALL(text_decoder_runner_, step(_, _))
-      .Times(1)
-      .WillOnce(Return(Result<executorch::aten::Tensor>(tensor)));
+  ON_CALL(text_decoder_runner_, step(_, _))
+      .WillByDefault([&](executorch::extension::TensorPtr&, int64_t) {
+        return Result<executorch::aten::Tensor>(tensor);
+      });
 
   // Create prompt tokens
   std::vector<uint64_t> prompt_tokens = {1, 2, 3};

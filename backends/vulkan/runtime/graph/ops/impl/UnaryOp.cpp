@@ -26,10 +26,11 @@ void resize_unary_op_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(0);
 
-  out->virtual_resize(self->sizes());
+  const std::vector<int64_t> self_sizes = graph->sizes_of(self);
+  graph->virtual_resize(out, self_sizes);
 }
 
 void add_unary_op_node(
@@ -104,6 +105,11 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         kClampShaderName);                                               \
   }
 
+#define DEFINE_RELU6_FN(op_name)                                               \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) {       \
+    return add_unary_op_node(graph, args[0], 0, 6, args[1], kClampShaderName); \
+  }
+
 #define DEFINE_HARDSHRINK_FN(op_name)                                    \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
     return add_unary_op_node(                                            \
@@ -146,6 +152,7 @@ DEFINE_ACTIVATION_FN(tanh);
 DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
 DEFINE_RELU_FN(relu);
+DEFINE_RELU6_FN(relu6);
 DEFINE_HARDSHRINK_FN(hardshrink);
 DEFINE_ACTIVATION_FN(hardswish);
 DEFINE_ACTIVATION_FN(hardsigmoid);
@@ -161,6 +168,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.hardtanh.default, hardtanh);
   VK_REGISTER_OP(aten.neg.default, neg);
   VK_REGISTER_OP(aten.relu.default, relu);
+  VK_REGISTER_OP(aten.relu6.default, relu6);
   VK_REGISTER_OP(aten.sigmoid.default, sigmoid);
   VK_REGISTER_OP(aten.sin.default, sin);
   VK_REGISTER_OP(aten.sqrt.default, sqrt);

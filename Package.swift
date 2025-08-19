@@ -69,6 +69,11 @@ let products = deliverables([
       "c++",
     ],
   ],
+  "executorch_llm": [
+    "targets": [
+      "executorch",
+    ],
+  ],
   "kernels_llm": [:],
   "kernels_optimized": [
     "frameworks": [
@@ -79,6 +84,11 @@ let products = deliverables([
     ],
   ],
   "kernels_quantized": [:],
+  "kernels_torchao": [
+    "targets": [
+      "threadpool",
+    ],
+  ],
 ])
 
 let targets = deliverables([

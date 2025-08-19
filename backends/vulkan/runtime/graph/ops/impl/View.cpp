@@ -44,15 +44,19 @@ void resize_view_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
-  if (extra_args[0] == kDummyValueRef || graph->val_is_none(extra_args[0])) {
-    out->virtual_resize(in->sizes());
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+  if (extra_args.at(0) == kDummyValueRef ||
+      graph->val_is_none(extra_args.at(0))) {
+    const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+    graph->virtual_resize(out, in_sizes);
   } else {
     std::vector<int64_t> view_sizes =
-        graph->extract_int_or_symint_list(extra_args[0]);
-    std::vector<int64_t> out_sizes = compute_out_sizes(in->sizes(), view_sizes);
-    out->virtual_resize(out_sizes);
+        graph->extract_int_or_symint_list(extra_args.at(0));
+    const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+    const std::vector<int64_t> out_sizes =
+        compute_out_sizes(in_sizes, view_sizes);
+    graph->virtual_resize(out, out_sizes);
   }
 }
 
@@ -61,12 +65,9 @@ void add_view_node(
     ValueRef in,
     ValueRef sizes,
     ValueRef out) {
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_out = graph.get_tensor(out);
-
   std::string kernel_name = "view";
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -81,7 +82,7 @@ void add_view_node(
       // Push Constants
       {{graph.sizes_pc_of(out), graph.sizes_pc_of(in)}},
       // Specialization Constants
-      {SV(t_in->packed_dim()), SV(t_out->packed_dim())},
+      {graph.packed_dim_of(in), graph.packed_dim_of(out)},
       // Resize Args
       {sizes},
       // Resizing Logic

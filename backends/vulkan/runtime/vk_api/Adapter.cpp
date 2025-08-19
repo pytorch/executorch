@@ -307,17 +307,22 @@ void Adapter::return_queue(Adapter::Queue& compute_queue) {
 void Adapter::submit_cmd(
     const Adapter::Queue& device_queue,
     VkCommandBuffer cmd,
-    VkFence fence) {
+    VkFence fence,
+    VkSemaphore wait_semaphore,
+    VkSemaphore signal_semaphore) {
+  const VkPipelineStageFlags flags = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+  const bool set_wait_semaphore = wait_semaphore != VK_NULL_HANDLE;
+  const bool set_signal_semaphore = signal_semaphore != VK_NULL_HANDLE;
   const VkSubmitInfo submit_info{
       VK_STRUCTURE_TYPE_SUBMIT_INFO, // sType
       nullptr, // pNext
-      0u, // waitSemaphoreCount
-      nullptr, // pWaitSemaphores
-      nullptr, // pWaitDstStageMask
+      set_wait_semaphore ? 1u : 0u, // waitSemaphoreCount
+      set_wait_semaphore ? &wait_semaphore : nullptr, // pWaitSemaphores
+      &flags, // pWaitDstStageMask
       1u, // commandBufferCount
       &cmd, // pCommandBuffers
-      0u, // signalSemaphoreCount
-      nullptr, // pSignalSemaphores
+      set_signal_semaphore ? 1u : 0u, // signalSemaphoreCount
+      set_signal_semaphore ? &signal_semaphore : nullptr, // pSignalSemaphores
   };
 
   std::lock_guard<std::mutex> queue_lock(

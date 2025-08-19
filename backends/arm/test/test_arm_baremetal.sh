@@ -17,7 +17,6 @@ _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly ins
 
 
 TEST_SUITE=$1
-TOSA_VERSION="${2:-TOSA-1.0+INT}"
 
 # Source the tools
 # This should be prepared by the setup.sh
@@ -97,8 +96,11 @@ test_pytest_models() { # Test ops and other things
     # Prepare for pytest
     backends/arm/scripts/build_executorch.sh
 
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
     # Run arm baremetal pytest tests without FVP
-    pytest  --verbose --color=yes --durations=0 backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -114,7 +116,6 @@ test_pytest_ops_ethosu_fvp() { # Same as test_pytest but also sometime verify us
 
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
-    backends/arm/scripts/build_portable_kernels.sh
     # Build semihosting version of the runner used by pytest testing. This builds:
     # arm_test/arm_semihosting_executor_runner_corstone-300
     # arm_test/arm_semihosting_executor_runner_corstone-320
@@ -130,14 +131,16 @@ test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify
 
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
-    backends/arm/scripts/build_portable_kernels.sh
     # Build semihosting version of the runner used by pytest testing. This builds:
     # arm_test/arm_semihosting_executor_runner_corstone-300
     # arm_test/arm_semihosting_executor_runner_corstone-320
     backends/arm/test/setup_testing.sh
 
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
     # Run arm baremetal pytest tests with FVP
-    pytest  --verbose --color=yes --durations=0 backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -153,17 +156,23 @@ test_run_ethosu_fvp() { # End to End model tests using run.sh
 
     # TOSA quantized
     echo "${TEST_SUITE_NAME}: Test ethos-u target TOSA"
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=${TOSA_VERSION} --model_name=add
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=${TOSA_VERSION} --model_name=mul
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA-1.0+INT --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA-1.0+INT --model_name=mul
 
     # Ethos-U55
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U55"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --etdump
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul
 
     # Ethos-U85
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add --bundleio --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add --etdump
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul
 
     # Cortex-M op tests
@@ -183,17 +192,17 @@ test_models_tosa() { # End to End model tests using model_test.py
 
     # TOSA quantized
     echo "${TEST_SUITE_NAME}: Test ethos-u target TOSA"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=mv2
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=mv3
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=lstm
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=edsr
-    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=emformer_transcribe # Takes long time to run
-    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=emformer_join       # Takes long time to run
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=w2l
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=ic3
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=ic4
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=resnet18
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=resnet50
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=mv2
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=mv3
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=lstm
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=edsr
+    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=emformer_transcribe # Takes long time to run
+    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=emformer_join       # Takes long time to run
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=w2l
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=ic3
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=ic4
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=resnet18
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=resnet50
 
     echo "${TEST_SUITE_NAME}: PASS"
     }
@@ -228,7 +237,7 @@ test_models_ethos-u85() { # End to End model tests using model_test.py
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=mv2 --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-512 --model=mv3 --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=lstm --extra_flags="-DET_ATOL=0.03 -DET_RTOL=0.03"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"
+    #python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"  # Takes long time to run
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=ic4 --extra_flags="-DET_ATOL=0.8 -DET_RTOL=0.8" --timeout=2400
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=resnet18 --extra_flags="-DET_ATOL=0.2 -DET_RTOL=0.2"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=resnet50 --extra_flags="-DET_ATOL=0.2 -DET_RTOL=0.2"
@@ -247,6 +256,31 @@ test_full_ethosu_fvp() { # All End to End model tests
     echo "${TEST_SUITE_NAME}: PASS"
     }
 
+test_smaller_stories_llama() {
+    echo "${TEST_SUITE_NAME}: Test smaller_stories_llama"
+
+    backends/arm/scripts/build_executorch.sh
+
+    mkdir -p stories110M
+    pushd stories110M
+    wget -N https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt
+    echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+    popd
+
+    # Get path to source directory
+    pytest \
+    -c /dev/null \
+    --verbose \
+    --color=yes \
+    --numprocesses=auto \
+    --log-level=DEBUG \
+    --junit-xml=stories110M/test-reports/unittest.xml \
+    -s \
+    backends/arm/test/models/test_llama.py \
+    --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
+
+    echo "${TEST_SUITE_NAME}: PASS"
+    }
 
 
 ${TEST_SUITE}

@@ -190,9 +190,36 @@ class ComputeGraph final {
       vkapi::ComputePipelineCache::Hasher>
       pipeline_descriptors_;
 
+  // Utility constexpr to express byte quantities
+  constexpr static size_t MB = 1024 * 1024;
+
+  // List of command buffers deferred for submission
+  std::vector<vkapi::CommandBuffer> deferred_cmd_list_;
+
+  // Set to track which ValueRefs were updated during inference
+  std::unordered_set<ValueRef> updated_values_;
+
+  // Flag to indicate if re-encoding is required
+  bool requires_reencode_ = false;
+
  protected:
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
+
+  // Total number of bytes needed to store model weights
+  size_t total_constant_nbytes_ = 0;
+
+  // Represents the amount of staging buffer data that will be copied if the
+  // current Context's command buffer is submitted now.
+  size_t staging_nbytes_in_cmd_ = 0;
+
+  // Represents the nodes to wait before submitting commands.
+  // If command buffers created with config.execute_threshold_node_count exceeds
+  // config.execute_max_cmds, then execute_threshold_node_count will be
+  // increased to fit command buffers within the limit. Otherwise,
+  // execute_threshold_node_count will be set to
+  // config.execute_threshold_node_count.
+  size_t execute_threshold_node_count_ = 0;
 
  public:
   //
@@ -223,6 +250,9 @@ class ComputeGraph final {
     return config_;
   }
 
+  // Check if the ComputeGraph has a value at the specified index
+  bool is_valid_value_idx(const ValueRef idx) const noexcept;
+
   //
   // Value Extraction
   //
@@ -235,7 +265,16 @@ class ComputeGraph final {
     return values_.at(idx).is##type_name();                                \
   }
 
-  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(vTensorPtr, tensor, Tensor)
+ protected:
+  inline vTensorPtr get_tensor(const ValueRef idx) {
+    return vTensorPtr(this, idx);
+  }
+
+ public:
+  inline bool val_is_tensor(const ValueRef idx) const {
+    return values_.at(idx).isTensor();
+  }
+
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(TensorRefPtr, tref, TensorRef)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(StagingPtr, staging, Staging)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(IntListPtr, int_list, IntList)
@@ -304,6 +343,10 @@ class ComputeGraph final {
 
   inline int32_t numel_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().numel();
+  }
+
+  inline size_t staging_buffer_numel_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().staging_buffer_numel();
   }
 
   inline utils::StorageType storage_type_of(const ValueRef idx) const {
@@ -393,31 +436,41 @@ class ComputeGraph final {
   }
 
   inline PushConstantDataInfo sizes_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorSizes);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo dim_order_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorDimOrder);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo strides_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorStrides);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo logical_limits_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorLogicalLimits);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo numel_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorNumel);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   //
@@ -819,6 +872,20 @@ class ComputeGraph final {
    */
   utils::uvec3 create_local_wg_size(const ValueRef idx);
 
+  void bind_tensor_to_descriptor_set(
+      const ValueRef ref,
+      vkapi::PipelineBarrier& pipeline_barrier,
+      const vkapi::MemoryAccessFlags accessType,
+      vkapi::DescriptorSet& descriptor_set,
+      const uint32_t idx);
+
+  void bind_value_to_descriptor_set(
+      const ValueRef ref,
+      vkapi::PipelineBarrier& pipeline_barrier,
+      const vkapi::MemoryAccessFlags access_type,
+      vkapi::DescriptorSet& descriptor_set,
+      const uint32_t idx);
+
   //
   // Input/Output
   //
@@ -827,29 +894,87 @@ class ComputeGraph final {
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
   void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
 
+ protected:
+  // Command Buffer Management
+
+  /*
+   * Submits the current command buffer in the Context to the GPU for execution.
+   */
+  void submit_current_cmd(const bool final_use = false);
+
+  /*
+   * Submits the current command buffer in the Context to the GPU for execution,
+   * and wait for it to complete before returning.
+   */
+  void submit_current_cmd_and_wait(const bool final_use = false);
+
+  /*
+   * Submit one command buffer to the GPU.
+   */
+  void submit_cmd(vkapi::CommandBuffer& cmd_buf, VkFence fence);
+
+  /*
+   * Submits all the commands gathered in deferred_cmd_bufs_ to the GPU.
+   */
+  void submit_deferred_cmds_and_wait();
+
+  /*
+   * Ends and invalidates all deferred commands.
+   */
+  void clear_deferred_cmds();
+
+ public:
   //
   // Graph Prepacking
   //
 
-  void encode_prepack();
-  void prepack() const;
+  inline void update_staging_nbytes_in_cmd(const size_t staging_bytes) {
+    staging_nbytes_in_cmd_ += staging_bytes;
+  }
+
+  /*
+   * Executes prepacking operations to transfer model weight data from the CPU
+   * to GPU.
+   */
+  void prepack();
 
   //
   // Graph Execution
   //
 
-  void encode_execute();
   void execute();
+
+  //
+  // Tensor View
+  //
+
+  void virtual_clone(const ValueRef dst, const ValueRef src);
+
+  void virtual_transpose(
+      const ValueRef tensor,
+      const int64_t dim0,
+      const int64_t dim1);
 
   //
   // Dynamic Shape support
   //
 
   void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
+
   void virtual_resize(
       const ValueRef idx,
       const std::vector<int64_t>& new_sizes);
+
   void propagate_resize();
+
+  // Check if a specific ValueRef (or ValueList) was updated, with recursive
+  // handling
+  bool was_value_updated(const ValueRef idx) const noexcept;
+
+  // Set the flag to indicate that re-encoding is required
+  inline void set_requires_reencode() noexcept {
+    requires_reencode_ = true;
+  }
 
   //
   // Miscellaneous Utilities
@@ -890,6 +1015,8 @@ class ComputeGraph final {
   friend class SymIntPtr;
 
   friend struct TmpTensor;
+  friend struct SharedObject;
+  friend class BlitNode;
 };
 
 template <typename T>

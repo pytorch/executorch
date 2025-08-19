@@ -85,6 +85,23 @@ class SoftmaxConvModule(torch.nn.Module):
         return self.softmax(x)
 
 
+class ConvWithSigmoid(torch.nn.Module):
+    def __init__(self, conv_in_channels: int = 3):
+        super().__init__()
+        self.block = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=conv_in_channels,
+                out_channels=3,
+                kernel_size=(2, 2),
+                stride=(2, 2),
+            ),
+            torch.nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        return self.block(x)
+
+
 class LinearModule(torch.nn.Module):
     def __init__(self, bias: bool):
         super().__init__()
@@ -120,6 +137,24 @@ class ConvFCSoftmaxModule(torch.nn.Module):
         x = self.conv(x)
         x = torch.reshape(x, (-1, 1024))
         x = self.fc(x)
+        x = self.softmax(x)
+
+        return x
+
+
+class ConvFCFCSoftmaxModuleWithoutReshape(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = torch.nn.Conv2d(4, 5, 2, bias=False)
+        self.fc1 = torch.nn.Linear(32, 16)
+        self.fc2 = torch.nn.Linear(16, 8)
+        self.softmax = torch.nn.Softmax(1)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.fc1(x)
+        x = self.fc2(x)
         x = self.softmax(x)
 
         return x
@@ -209,6 +244,41 @@ class AvgPool2dConvModule(torch.nn.Module):
         return self.avg_pool(x)
 
 
+class AdaptiveAvgPool2dModule(torch.nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d(output_size=output_size)
+
+    def forward(self, x):
+        return self.adaptive_avg_pool(x)
+
+
+class AdaptiveAvgPool2dConvModule(torch.nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+
+        self.conv = Conv2dModule(padding=1)
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d(output_size=output_size)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.adaptive_avg_pool(x)
+
+
+class AdaptiveAvgPool2dConvMeanDimModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = Conv2dModule()
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool2d(output_size=(1, 1))
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.adaptive_avg_pool(x)
+        return x
+
+
 class ReLUModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -239,3 +309,68 @@ class Conv2dPermuteModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return torch.permute(x, [0, 2, 1, 3])
+
+
+class Conv2dReLUMaxPoolModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 64, 2, bias=False)
+        self.relu = torch.nn.ReLU()
+        self.pool = torch.nn.MaxPool2d(2, 2)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.relu(x)
+        return self.pool(x)
+
+
+class AddTensorModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return x + y
+
+
+class AddTensorConvModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = Conv2dModule(padding=1, stride=1)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x + x
+
+
+class AddTensorOneInputModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x):
+        return x + x
+
+
+class MeanDimLinearModule(torch.nn.Module):
+    def __init__(self, dim, keepdim):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+        self.linear = torch.nn.Linear(32, 16)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return torch.mean(x, dim=self.dim, keepdim=self.keepdim)
+
+
+class MeanDimConvModule(torch.nn.Module):
+    def __init__(self, dim, keepdim):
+        super().__init__()
+        self.conv = Conv2dModule(stride=1, padding=1)
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.mean(x, dim=self.dim, keepdim=self.keepdim)

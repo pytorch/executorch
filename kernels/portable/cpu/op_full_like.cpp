@@ -50,9 +50,10 @@ Tensor& full_like_out(
 
   ScalarType out_type = out.scalar_type();
 
-  constexpr auto name = "scalar_tensor.out";
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "full_like.out";
 
-  ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, op_name, CTYPE_OUT, [&] {
     auto opt_val_casted =
         utils::internal::check_overflow_scalar_cast<CTYPE_OUT>(fill_value);
     ET_KERNEL_CHECK(ctx, opt_val_casted.has_value(), InvalidArgument, );

@@ -172,7 +172,18 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   // only offset, the constant segment is empty and does not need to be loaded.
   const auto* constant_segment = flatbuffer_program->constant_segment();
   if (constant_segment != nullptr && constant_segment->offsets() != nullptr &&
-      constant_segment->offsets()->size() > 1) {
+      constant_segment->offsets()->size() > 0) {
+    if (constant_segment->offsets()->size() == 1) {
+      // No constants; the constant segment is empty and does not
+      // need to be loaded.
+      return Program(
+          loader,
+          segment_base_offset,
+          std::move(program_data.get()),
+          flatbuffer_program,
+          /*constant_segment_data=*/FreeableBuffer{},
+          std::move(pte_data_map));
+    }
     // The constant data is inside a separate segment.
     const auto* constant_buffer = flatbuffer_program->constant_buffer();
     ET_CHECK_OR_RETURN_ERROR(
@@ -219,6 +230,16 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   } else {
     // The constant data is stored inside the flatbuffer, so this program does
     // not contain a separate segment for it.
+
+    // NOTE: This branch is deprecated from ExecuTorch 0.7 onwards.
+    // Please regenerate your PTE file to ensure newer ExecuTorch runtimes can
+    // support it. ExecuTorch deprecation policy:
+    // https://docs.pytorch.org/executorch/stable/api-life-cycle.html#deprecation-policy.
+    // For support, contact the PyTorch Edge team or make an issue in:
+    // https://github.com/pytorch/executorch/issues.
+    ET_LOG(
+        Error,
+        "!!DEPRECATED!! This branch is deprecated from ExecuTorch 0.7; re-export this PTE file to ensure support on newer runtimes.");
     return Program(
         loader,
         segment_base_offset,

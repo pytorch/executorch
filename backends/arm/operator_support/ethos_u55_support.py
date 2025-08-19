@@ -6,15 +6,16 @@
 # pyre-unsafe
 
 import typing
+from typing import cast
 
 import torch
 import torch.fx as fx
+
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.operators.op_permute import transform_permutation_vector
 from executorch.backends.arm.tosa_utils import tosa_shape
 from executorch.exir.backend.utils import WhyNoPartitionReporter
-
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -124,6 +125,9 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.bitwise_or.Tensor,
         exir_ops.edge.aten.bitwise_xor.Tensor,
+        exir_ops.edge.aten.bitwise_and.Scalar,
+        exir_ops.edge.aten.bitwise_or.Scalar,
+        exir_ops.edge.aten.bitwise_xor.Scalar,
         exir_ops.edge.aten.bitwise_not,
         exir_ops.edge.aten.logical_and.default,
         exir_ops.edge.aten.logical_or.default,
@@ -145,6 +149,8 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.ne.Scalar,
         exir_ops.edge.aten.flip.default,  # REVERSE
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
+        exir_ops.edge.aten.index.Tensor,  # GATHER
+        exir_ops.edge.aten.index_select.default,  # GATHER
         exir_ops.edge.aten.scatter.src,
         exir_ops.edge.aten.scatter.value,
         exir_ops.edge.aten.select_scatter.default,
@@ -212,19 +218,51 @@ class EthosU55ViewCheck(OperatorSupportBase):
         Returns:
             False if the operator is not support and True if it is supported.
         """
-        if not node.target == exir_ops.edge.aten.view_copy.default:
+        # Select decomposes into squeeze, which in turn becomes a view. Therefore,
+        # perform the same check on select operators as view operators.
+        if node.target not in (
+            exir_ops.edge.aten.view_copy.default,
+            exir_ops.edge.aten.select.int,
+            exir_ops.edge.aten.select_copy.int,
+        ):
             return True
 
-        shape = list(get_first_fake_tensor(node).shape)
+        if node.target in (
+            exir_ops.edge.aten.select.int,
+            exir_ops.edge.aten.select_copy.int,
+        ):
+            input_node, dim, index = cast(tuple[fx.Node, int, int], node.args)
+
+            shape = input_node.meta["val"].shape
+            rank = len(shape)
+            if not -rank <= dim < rank:
+                raise IndexError(
+                    f"Dim {dim} is outside of the range for tensor '{node.target}' of "
+                    f"rank {rank}"
+                )
+            dim = dim % rank
+
+            size = shape[dim]
+            if not -size <= index < size:
+                raise IndexError(
+                    f"Index {index} is outside of the range for dim {dim} with size "
+                    f"{size} for tensor {node.target}"
+                )
+            index = index % size
+
+            # Shape after squeeze. This may get converted into a view which may become
+            # a transpose. This is why we're checking select.
+            squeezed_shape = shape[:dim] + shape[dim + 1 :]
+            shape = squeezed_shape
+        else:
+            shape = list(get_first_fake_tensor(node).shape)
+
         dtype = _try_determine_dtype(node)
-        permutation = list(typing.cast(list[int], node.args[1]))
 
         rank = len(shape)
         if rank > 4:
             if dtype == torch.int32:
-                self.reporter.report_reject(
-                    node, f"No support for {permutation=} in int32."
-                )
+                self.reporter.report_reject(node, "No support for rank > 4 in int32.")
                 return False
 
         if dtype in (torch.int8, torch.int16):

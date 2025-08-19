@@ -37,6 +37,7 @@ from nncf.common.quantization.structs import QuantizerConfig, QuantizationScheme
 from executorch.backends.openvino.quantizer.observers.nncf_observers import PTPerBlockParamObserver,NNCFInt8observer
 
 QUANT_ANNOTATION_KEY = "quantization_annotation"
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 class QuantizationMode(Enum):
@@ -146,7 +147,7 @@ class OpenVINOQuantizer(Quantizer):
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         nncf_graph = nncf_fx.nncf_graph_builder.GraphConverter.create_nncf_graph(model)
-        
+
         graph = model.graph
         node_vs_torch_annotation: DefaultDict[torch.fx.Node, QuantizationAnnotation] = (
             defaultdict(QuantizationAnnotation)
@@ -217,8 +218,8 @@ class OpenVINOQuantizer(Quantizer):
                     self._fill_torch_ao_annotation(edge_or_node, qspec, annotation)
 
         for node, annotation in node_vs_torch_annotation.items():
-            assert QUANT_ANNOTATION_KEY not in node.meta
-            node.meta[QUANT_ANNOTATION_KEY] = annotation
+            assert Q_ANNOTATION_KEY not in node.meta
+            node.meta[Q_ANNOTATION_KEY] = annotation
         return model
 
     @staticmethod
@@ -369,7 +370,7 @@ class OpenVINOQuantizer(Quantizer):
         if is_weight:
             mapping_type = MappingType.SYMMETRIC if qconfig.mode == QuantizationScheme.SYMMETRIC else MappingType.ASYMMETRIC
             if qconfig.num_bits==4:
-                extra_args["mapping_type"] = mapping_type 
+                extra_args["mapping_type"] = mapping_type
                 extra_args["target_dtype"] = torch.int8
                 extra_args["granularity"] = PerGroup(group_size=group_size)
                 observer = PTPerBlockParamObserver
