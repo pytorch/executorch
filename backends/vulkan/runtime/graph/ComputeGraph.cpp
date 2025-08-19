@@ -861,25 +861,6 @@ void ComputeGraph::prepare() {
   }
 
   execute_threshold_node_count_ = count_threshold;
-
-  for (SharedObject& shared_object : shared_objects_) {
-    shared_object.allocate(this);
-    shared_object.bind_users(this);
-  }
-}
-
-void ComputeGraph::prepare_pipelines() {
-  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
-    node->prepare_pipelines(this);
-  }
-  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
-    node->prepare_pipelines(this);
-  }
-  context_->pipeline_cache().create_pipelines(pipeline_descriptors_);
-
-  pipeline_descriptors_ = std::unordered_set<
-      vkapi::ComputePipelineCache::Key,
-      vkapi::ComputePipelineCache::Hasher>();
 }
 
 void ComputeGraph::prepare_pipelines() {
