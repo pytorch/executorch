@@ -39,6 +39,7 @@ def _create_qualcomm_flow(
         quantize_stage_factory=create_quantize_stage if quantize else None,
     )
 
+
 QUALCOMM_TEST_FLOW = _create_qualcomm_flow("qualcomm")
 QUALCOMM_16A16W_TEST_FLOW = _create_qualcomm_flow(
     "qualcomm_16a16w", quantize=True, quant_dtype=QuantDtype.use_8a8w, use_fp16=False
@@ -50,7 +51,10 @@ QUALCOMM_16A4W_TEST_FLOW = _create_qualcomm_flow(
     "qualcomm_16a4w", quantize=True, quant_dtype=QuantDtype.use_16a4w, use_fp16=False
 )
 QUALCOMM_16A4W_BLOCK_TEST_FLOW = _create_qualcomm_flow(
-    "qualcomm_16a4w_block", quantize=True, quant_dtype=QuantDtype.use_8a8w, use_fp16=False
+    "qualcomm_16a4w_block",
+    quantize=True,
+    quant_dtype=QuantDtype.use_8a8w,
+    use_fp16=False,
 )
 QUALCOMM_8A8W_TEST_FLOW = _create_qualcomm_flow(
     "qualcomm_8a8w", quantize=True, quant_dtype=QuantDtype.use_8a8w, use_fp16=False
