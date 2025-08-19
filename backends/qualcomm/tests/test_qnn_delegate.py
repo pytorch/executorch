@@ -2383,6 +2383,7 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    @unittest.skipIf(is_qnn_sdk_version_less_than("2.30"), "UT pass after QNN 2.30")
     def test_qnn_backend_linear_block(self):
         modules = [
             Linear(use_bias=False),  # noqa: F405
