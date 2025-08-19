@@ -45,6 +45,13 @@ MODEL_NAME_TO_OPTIONS = {
     "emformer_join": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
     "emformer_predict": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
     "emformer_transcribe": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
+    "efficientnet_b4": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
+    "detr_resnet50": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
+    "segformer_ade": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
+    "swin2sr_2x": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
+    "albert": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
+    "trocr_handwritten": XNNPACKOptions(QuantType.STATIC_PER_CHANNEL, True),
+    "wav2vec2": XNNPACKOptions(QuantType.DYNAMIC_PER_CHANNEL, True),
 }
 
 

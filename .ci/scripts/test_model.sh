@@ -358,8 +358,9 @@ elif [[ "${BACKEND}" == *"xnnpack"* ]]; then
   echo "Testing ${MODEL_NAME} with xnnpack..."
   WITH_QUANTIZATION=true
   WITH_DELEGATION=true
-  if [[ "$MODEL_NAME" == "mobilebert" ]]; then
-    # TODO(T197452682)
+  if [[ "$MODEL_NAME" == "mobilebert" || "$MODEL_NAME" == "albert" ]]; then
+    # TODO(https://github.com/pytorch/executorch/issues/12341) 
+    # mobilebert, albert incompatible with XNNPACK quantization
     WITH_QUANTIZATION=false
   fi
   test_model_with_xnnpack "${WITH_QUANTIZATION}" "${WITH_DELEGATION}"
