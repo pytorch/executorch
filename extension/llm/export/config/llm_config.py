@@ -315,7 +315,13 @@ class QuantizationConfig:
     """
 
     # Constants.
-    QMODE_OPTIONS: ClassVar[List[str]] = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
+    QMODE_OPTIONS: ClassVar[List[str]] = [
+        "int8",
+        "8da4w",
+        "8da4w-gptq",
+        "vulkan_4w",
+        "4w",
+    ]
     AO_QUANT_PATTERNS: ClassVar[List[str]] = [
         r"torchao:8da(\d+)w",
         r"torchao:fpa(\d+)w",
