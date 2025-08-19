@@ -21,6 +21,7 @@ using executorch::runtime::Error;
 using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
 
+namespace {
 // Mock class for TextDecoderRunner
 class MockTextDecoderRunner : public TextDecoderRunner {
  public:
@@ -304,3 +305,4 @@ TEST_F(TextPrefillerTest, PrefillChunkWorksWithParallelPrefill) {
   // Verify that start_pos has been updated correctly
   EXPECT_EQ(start_pos, prompt_tokens.size());
 }
+} // namespace
