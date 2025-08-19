@@ -1,14 +1,11 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
-from executorch.backends.nxp.backend.ir.converter.node_converter import (
-    NodeConverter,
-    Target,
-)
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     fully_connected_options,
 )
@@ -31,8 +28,6 @@ class AddMMConverter(NodeConverter):
             return False
 
         return True
-
-    supported_targets = [Target.RT700]
 
     def convert(self, node: Node):
         self.assert_convertible(node)
