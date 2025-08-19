@@ -29,7 +29,7 @@ fi
 "${SOURCE_ROOT_DIR}/scripts/print_exported_headers.py" \
     --buck2=$(realpath "$BUCK2") --targets \
     //extension/data_loader: //extension/evalue_util: \
-    //extension/flat_tensor: //extension/kernel_util: //extension/module: \
+    //extension/flat_tensor: //extension/llm/runner: //extension/kernel_util: //extension/module: \
     //extension/runner_util: //extension/tensor: //extension/threadpool: \
     | sort > "${BUCK_HEADERS_TEMPFILE}"
 find "${SOURCE_ROOT_DIR}/cmake-out/include/executorch" -name '*.h' | \
