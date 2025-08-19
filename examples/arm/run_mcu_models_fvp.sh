@@ -75,7 +75,7 @@ validate_models() {
 show_usage() {
     echo "Usage: $0 --target=<target> [--models=<model1,model2,...>]"
     echo ""
-    echo "MCU Model Validation with Portable Kernels"
+    echo "MCU Model Validation without delegation"
     echo ""
     echo "Required arguments:"
     echo "  --target=<target>         Target platform for validation"
