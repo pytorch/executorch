@@ -27,7 +27,7 @@ static constexpr auto kDecoderStartTokenId = "decoder_start_token_id";
 static constexpr auto kEosId = "get_eos_id";
 static constexpr auto kMaxContextLen = "get_max_context_len";
 } // namespace
-Runner::Runner(
+WhisperRunner::WhisperRunner(
     const std::string& model_path,
     const std::string& tokenizer_json_path)
     : tokenizer_json_path_(tokenizer_json_path) {
@@ -35,12 +35,12 @@ Runner::Runner(
   decoder_ = std::make_unique<WhisperDecoder>(model_path);
   tokenizer_ = std::make_unique<tokenizers::HFTokenizer>();
 }
-bool Runner::is_loaded() const {
+bool WhisperRunner::is_loaded() const {
   return encoder_->is_method_loaded() && decoder_->is_method_loaded() &&
       tokenizer_->is_loaded() && sampler_;
 }
 
-Error Runner::load() {
+Error WhisperRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
@@ -108,7 +108,7 @@ Error Runner::load() {
 
   return Error::Ok;
 }
-uint64_t Runner::logits_to_token(
+uint64_t WhisperRunner::logits_to_token(
     const executorch::aten::Tensor& logits_tensor) {
   return sampler_->sample(logits_tensor.data_ptr<float>());
 }
@@ -117,7 +117,7 @@ uint64_t Runner::logits_to_token(
  * encodes a float tensor in little-endian byte order.
  *
  */
-Error Runner::transcribe(
+Error WhisperRunner::transcribe(
     int32_t seq_len,
     std::vector<std::vector<char>>& inputs,
     std::function<void(const std::string&)> token_callback) {
@@ -188,7 +188,7 @@ Error Runner::transcribe(
   return Error::Ok;
 }
 
-Error Runner::print_performance() {
+Error WhisperRunner::print_performance() {
   ET_LOG(Info, "\tTotal Generated token:\t\t\t\t%ld", num_generated_token_);
 
   ET_LOG(

@@ -121,6 +121,35 @@ non_fbcode_target(_kind = fb_android_cxx_library,
     ],
 )
 
+non_fbcode_target(_kind = fb_android_cxx_library,
+    name = "executorch_whisper_jni",
+    srcs = [
+        "jni_layer.cpp",
+        "jni_layer_whisper.cpp",
+        "jni_layer_runtime.cpp",
+    ],
+    allow_jni_merging = False,
+    compiler_flags = ET_JNI_COMPILER_FLAGS + [
+        "-DEXECUTORCH_BUILD_WHISPER_JNI",
+    ],
+    soname = "libexecutorch.$(ext)",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":jni_headers",
+        ":log_provider_static",
+        "//fbandroid/libraries/fbjni:fbjni",
+        "//fbandroid/native/fb:fb",
+        "//third-party/glog:glog",
+        "//xplat/executorch/backends/xnnpack:xnnpack_backend_static",
+        "//xplat/executorch/examples/oss_scripts/qualcomm/whisper/runner:runner_static",
+        "//xplat/executorch/extension/module:module_static",
+        "//xplat/executorch/extension/runner_util:inputs_static",
+        "//xplat/executorch/extension/tensor:tensor_static",
+        "//xplat/executorch/extension/threadpool:cpuinfo_utils_static",
+        "//xplat/executorch/extension/threadpool:threadpool_static",
+    ],
+)
+
 non_fbcode_target(_kind = runtime.cxx_library,
     name = "log_provider",
     srcs = ["log.cpp"],

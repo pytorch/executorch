@@ -69,10 +69,14 @@ set_target_properties(
 
 executorch_target_link_options_shared_lib(executorch)
 
+<<<<<<< HEAD
 add_library(
   executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp
                         jni/jni_helper.cpp
 )
+=======
+add_library(executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp)
+>>>>>>> 37d0a6944a (Whisper JNI first commit)
 
 set(link_libraries)
 list(
@@ -217,6 +221,25 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     list(APPEND link_libraries neuron_backend libneuron_buffer_allocator)
     target_compile_definitions(
       executorch_jni PRIVATE EXECUTORCH_BUILD_MEDIATEK=1
+    )
+  endif()
+endif()
+
+if(EXECUTORCH_BUILD_WHISPER_JNI)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_whisper.cpp jni/log.cpp)
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_WHISPER_JNI=1)
+  if(QNN_SDK_ROOT)
+    target_sources(
+      executorch_jni
+      PRIVATE
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner/encoder.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner/decoder.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner/runner.cpp
+    )
+
+    target_include_directories(
+      executorch_jni
+      PRIVATE ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner
     )
   endif()
 endif()

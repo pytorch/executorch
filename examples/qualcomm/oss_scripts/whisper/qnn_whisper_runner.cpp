@@ -97,7 +97,7 @@ std::vector<std::vector<std::vector<char>>> parse_input_list_file(
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   // create llama runner
-  example::Runner runner(FLAGS_model_path, FLAGS_tokenizer_json_path);
+  example::WhisperRunner runner(FLAGS_model_path, FLAGS_tokenizer_json_path);
 
   std::vector<std::vector<std::vector<char>>> multi_turns_input_buffers =
       parse_input_list_file(FLAGS_input_list_path);
