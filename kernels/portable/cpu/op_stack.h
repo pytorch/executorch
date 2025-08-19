@@ -21,6 +21,20 @@ Tensor& stack_out(
     int64_t dim,
     Tensor& out);
 
+/**
+ * Computes the output shape for tensor stacking.
+ *
+ * @param[in] tensors Array of input tensors to stack
+ * @param[in] dim Dimension along which to stack
+ * @return Tuple containing the Error, output shape array, and number of
+ * dimensions
+ */
+std::tuple<
+    Error,
+    std::array<executorch::aten::SizesType, kTensorDimensionLimit>,
+    size_t>
+stack_out_shape(executorch::aten::ArrayRef<Tensor> tensors, int64_t dim);
+
 } // namespace utils
 } // namespace native
 } // namespace executor

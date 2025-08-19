@@ -38,7 +38,7 @@ if [[ "$FLOW" == *qualcomm* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT"
 fi
 
-if [[ "$FLOW" =~ *vulkan* ]]; then
+if [[ "$FLOW" == *vulkan* ]]; then
     # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
     source .ci/scripts/setup-vulkan-linux-deps.sh
     
