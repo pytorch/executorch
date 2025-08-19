@@ -356,8 +356,6 @@ ValueRef ComputeGraph::add_tensor(
     const utils::GPUMemoryLayout memory_layout,
     const int64_t shared_object_idx,
     const utils::AxisMapLayout axis_map_layout) {
-  bool allocate_memory = shared_object_idx < 0;
-
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
   values_.emplace_back(api::vTensor(
@@ -366,10 +364,10 @@ ValueRef ComputeGraph::add_tensor(
       dtype,
       storage_type,
       memory_layout,
-      allocate_memory,
+      false,
       axis_map_layout));
 
-  if (!allocate_memory) {
+  if (shared_object_idx >= 0) {
     get_shared_object(shared_object_idx).add_user(this, idx);
   }
   return idx;
@@ -626,6 +624,17 @@ SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
   return shared_objects_.at(idx);
 }
 
+void ComputeGraph::create_dedicated_allocation_for(const ValueRef idx) {
+  vTensorPtr tensor = get_tensor(idx);
+  if (!tensor->memory_is_bound()) {
+    VmaAllocationCreateInfo alloc_create_info =
+        context()->adapter_ptr()->vma().gpuonly_resource_create_info();
+    tensor->acquire_allocation(
+        context()->adapter_ptr()->vma().create_allocation(
+            tensor->get_memory_requirements(), alloc_create_info));
+  }
+}
+
 void ComputeGraph::update_descriptor_counts(
     const vkapi::ShaderInfo& shader_info,
     bool execute) {
@@ -852,11 +861,6 @@ void ComputeGraph::prepare() {
   }
 
   execute_threshold_node_count_ = count_threshold;
-
-  for (SharedObject& shared_object : shared_objects_) {
-    shared_object.allocate(this);
-    shared_object.bind_users(this);
-  }
 }
 
 void ComputeGraph::prepare_pipelines() {
@@ -952,6 +956,18 @@ void ComputeGraph::prepack() {
   submit_current_cmd_and_wait(/*final_use=*/true);
   context_->flush();
   staging_nbytes_in_cmd_ = 0;
+
+  // Initialize allocations for intermediate tensors
+  for (SharedObject& shared_object : shared_objects_) {
+    shared_object.allocate(this);
+    shared_object.bind_users(this);
+  }
+  // Make sure all remaining tensors have allocations
+  for (int i = 0; i < values_.size(); i++) {
+    if (values_.at(i).isTensor()) {
+      create_dedicated_allocation_for(i);
+    }
+  }
 }
 
 void ComputeGraph::execute() {

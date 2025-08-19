@@ -97,6 +97,10 @@ void PrepackNode::encode(ComputeGraph* graph) {
   }
 
   {
+    // If the vTensor is not yet bound to a memory allocation, create a new one
+    // and aquire it.
+    graph->create_dedicated_allocation_for(packed_);
+
     vkapi::PipelineBarrier pipeline_barrier{};
     vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
         shader_, local_workgroup_size_, spec_vars_, push_constants_offset);

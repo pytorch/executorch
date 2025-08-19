@@ -897,6 +897,16 @@ VkMemoryRequirements vTensor::get_memory_requirements() const {
   return {};
 }
 
+bool vTensor::memory_is_bound() const {
+  switch (storage_type()) {
+    case utils::kBuffer:
+      return storage_->buffer_.has_memory();
+    case utils::kTexture2D:
+    case utils::kTexture3D:
+      return storage_->image_.has_memory();
+  }
+}
+
 void vTensor::bind_allocation(const vkapi::Allocation& allocation) {
   switch (storage_type()) {
     case utils::kBuffer:
@@ -905,6 +915,18 @@ void vTensor::bind_allocation(const vkapi::Allocation& allocation) {
     case utils::kTexture2D:
     case utils::kTexture3D:
       storage_->image_.bind_allocation(allocation);
+      break;
+  }
+}
+
+void vTensor::acquire_allocation(vkapi::Allocation&& allocation) {
+  switch (storage_type()) {
+    case utils::kBuffer:
+      storage_->buffer_.acquire_allocation(std::move(allocation));
+      break;
+    case utils::kTexture2D:
+    case utils::kTexture3D:
+      storage_->image_.acquire_allocation(std::move(allocation));
       break;
   }
 }

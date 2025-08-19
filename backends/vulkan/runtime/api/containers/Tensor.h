@@ -561,6 +561,12 @@ class vTensor final {
   VmaAllocationCreateInfo get_allocation_create_info() const;
 
   /*
+   * Checks if the tensor's underlying buffer or image resource is bound to a
+   * memory allocation.
+   */
+  bool memory_is_bound() const;
+
+  /*
    * Return the VkMemoryRequirements of the underlying resource
    */
   VkMemoryRequirements get_memory_requirements() const;
@@ -569,6 +575,11 @@ class vTensor final {
    * Binds the underlying resource to the given memory allocation
    */
   void bind_allocation(const vkapi::Allocation& allocation);
+
+  /*
+   * Binds and acquires a rvalue memory allocation
+   */
+  void acquire_allocation(vkapi::Allocation&& allocation);
 
  private:
   /*

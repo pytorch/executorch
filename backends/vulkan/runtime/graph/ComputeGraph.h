@@ -827,6 +827,13 @@ class ComputeGraph final {
 
   SharedObject& get_shared_object(const int64_t idx);
 
+  /*
+   * Creates a dedicated memory allocation for a vTensor value, and have the
+   * tensor acquire the allocation object. If the tensor is already bound to a
+   * memory allocation, this function will be a no-op.
+   */
+  void create_dedicated_allocation_for(const ValueRef idx);
+
   //
   // Graph Preparation
   //
