@@ -48,6 +48,7 @@
 # TODO Lower to 3.24 when XNNPACK dependency is updated to include
 # https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
 cmake_minimum_required(VERSION 3.29)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
@@ -532,6 +533,12 @@ install(FILES tools/cmake/executorch-config.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
 
+# Build devtools first if needed - some backends depend on protobuf from
+# devtools
+if(EXECUTORCH_BUILD_DEVTOOLS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
+endif()
+
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
   list(APPEND _executorch_backends executorch_delegate_ethos_u)
@@ -852,8 +859,17 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_definitions(
     portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib
   )
+  # For portable_lib, do not define USE_ATEN_LIB (portable mode)
+  # This ensures it uses the correct bundled_module namespace
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
+
+  # Ensure bundled_module is linked to portable_lib since it uses bundled_module functionality
+  # when USE_ATEN_LIB is not defined (which is the case for portable_lib)
+  if(TARGET bundled_module)
+    list(APPEND _dep_libs bundled_module)
+  endif()
+
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
   install(

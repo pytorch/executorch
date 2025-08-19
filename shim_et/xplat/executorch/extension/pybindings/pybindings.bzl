@@ -42,6 +42,16 @@ MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
 ]
 
 def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = [], compiler_flags = []):
+    # Determine if this is an ATen mode target based on the module name
+    is_aten_mode = "aten" in python_module_name
+
+    # Set preprocessor flags based on ATen mode
+    preprocessor_flags = [
+        "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
+    ]
+    if is_aten_mode:
+        preprocessor_flags.append("-DUSE_ATEN_LIB")
+
     runtime.cxx_python_extension(
         # @autodeps-skip
         name = python_module_name,
@@ -51,9 +61,7 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         types = types,
         base_module = "executorch.extension.pybindings",
         compiler_flags = compiler_flags,
-        preprocessor_flags = [
-            "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
-        ],
+        preprocessor_flags = preprocessor_flags,
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/extension/threadpool:threadpool",

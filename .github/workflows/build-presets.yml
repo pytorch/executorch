@@ -28,6 +28,7 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        ${CONDA_RUN} echo $PWD && ls $PWD/backends/apple/coreml/third-party
         ${CONDA_RUN} ./install_requirements.sh > /dev/null
         ${CONDA_RUN} cmake --preset ${{ matrix.preset }}
         ${CONDA_RUN} cmake --build cmake-out -j$(( $(sysctl -n hw.ncpu) - 1 ))
