@@ -68,7 +68,7 @@ def attach_get_scratch_metas_fn(
 
     def wrapper(get_scratch_metas_fn: ScratchCallableType) -> ScratchCallableType:
         # pyre-fixme[16]: `OpOverload` has no attribute `get_scratch_metas`.
-        out_variant.get_scratch_metas = adapt_return_value(get_scratch_metas_fn)
+        out_variant.get_scratch_metas = adapt_return_value(get_scratch_metas_fn)  # type: ignore[attr-defined]
         return get_scratch_metas_fn
 
     return wrapper

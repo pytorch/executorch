@@ -42,7 +42,7 @@ def _get_submodule(
     assert submod_node.op == "get_attr"
     assert isinstance(submod_node.target, str)
     submodule = graph_module.get_submodule(submod_node.target)
-    # pyre-ignore
+    assert isinstance(submodule, torch.nn.Module)
     return submod_node.target, submodule, node
 
 
@@ -67,7 +67,7 @@ def get_control_flow_submodules(
         if node.target is torch.ops.higher_order.map_impl:
             control_flow_submodules.append(_get_submodule(graph_module, node, 0))
 
-    return control_flow_submodules
+    return control_flow_submodules  # type: ignore[return-value]
 
 
 def bfs_trace_with_node_process(
