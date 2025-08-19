@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ctypes
+import hashlib
 import logging
 import operator
 from types import NoneType
@@ -25,6 +27,7 @@ from executorch.backends.vulkan.utils import (
     is_symint_node,
     TensorRepr,
 )
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
 from executorch.exir.tensor import TensorSpec
@@ -56,6 +59,7 @@ class VkGraphBuilder:
         self.input_ids = []
         self.output_ids = []
         self.const_tensors = []
+        self.named_data_store = NamedDataStore()
 
         # Mapping from Node to VkValue id
         self.node_to_value_ids = {}
@@ -129,8 +133,36 @@ class VkGraphBuilder:
     def maybe_add_constant_tensor(self, node: Node) -> int:
         constant_id = -1
         if is_param_node(self.program, node):
-            constant_id = len(self.const_tensors)
-            self.const_tensors.append(self.get_param_tensor(node))
+            tensor = self.get_param_tensor(node)
+
+            # Serialize tensor data to bytes
+            tensor = tensor.contiguous()
+            size = tensor.untyped_storage().nbytes()
+
+            if size > 0:
+                array_type = ctypes.c_char * size
+                array = ctypes.cast(
+                    tensor.untyped_storage().data_ptr(),
+                    ctypes.POINTER(array_type),
+                ).contents
+
+                # Generate SHA256 hash as the named key
+                tensor_bytes = bytes(array)
+                sha256_hash = hashlib.sha256(tensor_bytes)
+                named_key = sha256_hash.hexdigest()
+
+                # Add to named data store with 16-byte alignment (matching XNNPACK)
+                self.named_data_store.add_named_data(
+                    named_key, tensor_bytes, alignment=16
+                )
+
+                # Create VkBytes entry with named_key and set offset to indicate named data usage
+                constant_id = len(self.const_tensors)
+                self.const_tensors.append((named_key, size))
+            else:
+                # Handle empty tensors
+                constant_id = len(self.const_tensors)
+                self.const_tensors.append(None)
 
         return constant_id
 

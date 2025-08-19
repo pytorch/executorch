@@ -227,6 +227,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_unfold_copy.cpp",
     "kernels/portable/cpu/op_unsqueeze_copy.cpp",
     "kernels/portable/cpu/op_upsample_bilinear2d.cpp",
+    "kernels/portable/cpu/op_upsample_bilinear2d_aa.cpp",
     "kernels/portable/cpu/op_upsample_nearest2d.cpp",
     "kernels/portable/cpu/op_var.cpp",
     "kernels/portable/cpu/op_view_as_real_copy.cpp",
@@ -352,6 +353,7 @@ EXTENSION_RUNNER_UTIL_SRCS = [
 
 EXTENSION_LLM_RUNNER_SRCS = [
     "extension/llm/runner/llm_runner_helper.cpp",
+    "extension/llm/runner/multimodal_prefiller.cpp",
     "extension/llm/runner/text_decoder_runner.cpp",
     "extension/llm/runner/text_llm_runner.cpp",
     "extension/llm/runner/text_prefiller.cpp",
