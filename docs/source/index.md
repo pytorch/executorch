@@ -41,8 +41,8 @@ ExecuTorch provides support for:
 - [Quantization](quantization-overview)
 - [FAQs](using-executorch-faqs)
 #### Examples
-- [Android Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
-- [iOS Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
+- [Android Demo Apps](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
+- [iOS Demo Apps](https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
 - [Hugging Face Models](https://github.com/huggingface/optimum-executorch/blob/main/README.md)
 #### Backends
 - [Overview](backends-overview)
@@ -147,7 +147,7 @@ using-executorch-faqs
 :hidden:
 
 Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
-Building an ExecuTorch iOS Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
+Building an ExecuTorch iOS Demo App <https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
 tutorial-arm.md
 ```
 

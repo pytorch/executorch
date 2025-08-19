@@ -30,7 +30,10 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -711,9 +714,10 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
             ),
         }
         tosa_version = conftest.get_option("tosa_version")
+        self.tosa_spec = tosa_profiles[tosa_version]
 
         compile_spec = common.get_tosa_compile_spec(
-            tosa_profiles[tosa_version], custom_path=custom_path
+            self.tosa_spec, custom_path=custom_path
         )
         super().__init__(
             module,
@@ -751,6 +755,10 @@ class PassPipeline(TOSAPipelineMaker, Generic[T]):
         if ops_not_after_pass:
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
         self.add_stage(self.tester.run_method_and_compare_outputs)
+
+    def run(self):
+        with TosaLoweringContext(self.tosa_spec):
+            super().run()
 
 
 class TransformAnnotationPassPipeline(TOSAPipelineMaker, Generic[T]):
@@ -884,7 +892,9 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
        if not using use_edge_to_transform_and_lower.
 
-       run_on_vulkan_runtime: Not yet supported.
+       run_on_vulkan_runtime: Partially supported. However, comparison between reference and model
+       outputs is expected to fail, as the VGF runtime doesn't dump the output tensors in a usable
+       format at the moment.
 
        vgf_compiler_flags: Optional compiler flags.
 
@@ -984,4 +994,11 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
             )
 
         if run_on_vulkan_runtime:
-            pass
+            self.add_stage(self.tester.serialize)
+            self.add_stage(
+                self.tester.run_method_and_compare_outputs,
+                atol=atol,
+                rtol=rtol,
+                qtol=qtol,
+                inputs=self.test_data,
+            )
