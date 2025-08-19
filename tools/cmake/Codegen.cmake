@@ -386,7 +386,6 @@ function(executorch_load_build_variables)
       KERNELS_UTIL_ALL_DEPS_SRCS
       OPTIMIZED_KERNELS_SRCS
       QUANTIZED_KERNELS_SRCS
-      PROGRAM_SCHEMA_SRCS
       OPTIMIZED_CPUBLAS_SRCS
       OPTIMIZED_NATIVE_CPU_OPS_SRCS
       TEST_BACKEND_COMPILER_LIB_SRCS
@@ -419,7 +418,6 @@ function(executorch_load_build_variables)
       _kernels_util_all_deps__srcs
       _optimized_kernels__srcs
       _quantized_kernels__srcs
-      _program_schema__srcs
       _optimized_cpublas__srcs
       _optimized_native_cpu_ops__srcs
       _test_backend_compiler_lib__srcs
