@@ -23,7 +23,7 @@ export PYTHON_EXECUTABLE=python
 # CMake options to use, in addition to the defaults.
 EXTRA_BUILD_ARGS=""
 
-if [[ "$FLOW" == *qualcomm* ]]; then
+if [[ "$FLOW" == *qnn* ]]; then
     # Setup QNN sdk and deps - note that this is a bit hacky due to the nature of the
     # Qualcomm build. TODO (gjcomer) Clean this up once the QNN pybinding integration is
     # cleaned up.
