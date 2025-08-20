@@ -106,6 +106,35 @@ class SharedSpecPattern(QuantizationPattern):
         )
 
 
+def get_anchors_for_fixed_quant_specs(
+    fused_partition: list[fx.GraphModule],
+    scale: float,
+    zero_point: int,
+    quant_min: int = -128,
+    quant_max: int = 127,
+) -> PartitionAnchors:
+    node = fused_partition[0].nodes[-1]
+    assert len(fused_partition[0].input_nodes) == 1
+
+    qspec = FixedQParamsQuantizationSpec(
+        dtype=torch.int8,
+        scale=scale,
+        zero_point=zero_point,
+        quant_min=quant_min,
+        quant_max=quant_max,
+        qscheme=torch.per_tensor_affine,
+    )
+
+    return PartitionAnchors(
+        inputs=[(node, 0)],
+        weights=[],
+        biases=[],
+        output=[
+            (node, qspec),
+        ],
+    )
+
+
 class AbsPattern(SharedSpecPattern):
     """
     Quantizer for Abs operator.
@@ -438,31 +467,6 @@ class ViewPattern(SharedSpecPattern):
         return [torch.ops.aten.view.default]
 
 
-def get_anchors_for_softmax_like_operators(
-    fused_partition: List[fx.GraphModule],
-) -> PartitionAnchors:
-    node = fused_partition[0].nodes[-1]
-    assert len(fused_partition[0].input_nodes) == 1
-
-    qspec = FixedQParamsQuantizationSpec(
-        dtype=torch.int8,
-        scale=1.0 / 256.0,
-        zero_point=-128,
-        quant_min=-128,
-        quant_max=127,
-        qscheme=torch.per_tensor_affine,
-    )
-
-    return PartitionAnchors(
-        inputs=[(node, 0)],
-        weights=[],
-        biases=[],
-        output=[
-            (node, qspec),
-        ],
-    )
-
-
 class SoftMaxPattern(QuantizationPattern):
     """
     Quantizer for Softmax operator.
@@ -474,9 +478,47 @@ class SoftMaxPattern(QuantizationPattern):
         return [torch.ops.aten.softmax.int]
 
     def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors:
-        return get_anchors_for_softmax_like_operators(fused_partition)
+        return get_anchors_for_fixed_quant_specs(
+            fused_partition, scale=1.0 / 256.0, zero_point=-128
+        )
+
+
+class TanhPattern(QuantizationPattern):
+    """
+    Quantizer for Tanh operator.
+
+    The quantization of Tanh output is fixed to scale 1/128, zero point 0, dtype int8.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.tanh.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors:
+        return get_anchors_for_fixed_quant_specs(
+            fused_partition, scale=1.0 / 128.0, zero_point=0
+        )
+
+
+class TanhInPlacePattern(QuantizationPattern):
+    """
+    Quantizer for inplace version of Tanh operator (torch.tanh_).
+
+    The quantization of Tanh output is fixed to scale 1/128, zero point 0, dtype int8.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.tanh_.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors:
+        return get_anchors_for_fixed_quant_specs(
+            fused_partition, scale=1.0 / 128.0, zero_point=0
+        )
 
 
 class SigmoidPattern(QuantizationPattern):
@@ -492,4 +534,6 @@ class SigmoidPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
-        return get_anchors_for_softmax_like_operators(fused_partition)
+        return get_anchors_for_fixed_quant_specs(
+            fused_partition, scale=1.0 / 256.0, zero_point=-128
+        )

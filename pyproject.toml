@@ -55,6 +55,7 @@ dependencies=[
   "expecttest",
   "flatbuffers",
   "hypothesis",
+  "kgb",
   "mpmath==1.3.0",
   "numpy>=2.0.0; python_version >= '3.10'",
   "packaging",

@@ -34,6 +34,8 @@ from executorch.backends.nxp.quantizer.patterns import (
     SharedSpecPattern,
     SigmoidPattern,
     SoftMaxPattern,
+    TanhInPlacePattern,
+    TanhPattern,
     ViewPattern,
 )
 from executorch.backends.nxp.quantizer.utils import (
@@ -221,6 +223,8 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(ReshapePattern(), static_qconfig),
                 NeutronAtenQuantizer(SigmoidPattern(), static_qconfig),
                 NeutronAtenQuantizer(SoftMaxPattern(), static_qconfig),
+                NeutronAtenQuantizer(TanhPattern(), static_qconfig),
+                NeutronAtenQuantizer(TanhInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(ViewPattern(), static_qconfig),
             ]
         )
