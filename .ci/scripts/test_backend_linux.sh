@@ -18,11 +18,32 @@ eval "$(conda shell.bash hook)"
 CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
 conda activate "${CONDA_ENV}"
 
-# Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
-source .ci/scripts/setup-vulkan-linux-deps.sh
+export PYTHON_EXECUTABLE=python
 
 # CMake options to use, in addition to the defaults.
-EXTRA_BUILD_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON"
+EXTRA_BUILD_ARGS=""
+
+if [[ "$FLOW" == *qnn* ]]; then
+    # Setup QNN sdk and deps - note that this is a bit hacky due to the nature of the
+    # Qualcomm build. TODO (gjcomer) Clean this up once the QNN pybinding integration is
+    # cleaned up.
+    PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+    PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+    PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+    QNN_X86_LIB_DIR=`realpath build-x86/lib/`
+    QNN_SDK_ROOT="/tmp/qnn/2.28.0.241029"
+    export LD_LIBRARY_PATH"=$QNN_X86_LIB_DIR:$QNN_SDK_ROOT/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
+
+    # TODO Get SDK root from install scripts
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT"
+fi
+
+if [[ "$FLOW" == *vulkan* ]]; then
+    # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
+    source .ci/scripts/setup-vulkan-linux-deps.sh
+
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
+fi
 
 # We need the runner to test the built library.
 PYTHON_EXECUTABLE=python CMAKE_ARGS="$EXTRA_BUILD_ARGS" .ci/scripts/setup-linux.sh --build-tool cmake --build-mode Release --editable true
