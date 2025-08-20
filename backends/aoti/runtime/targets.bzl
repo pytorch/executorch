@@ -23,5 +23,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
+            "//caffe2/torch/csrc/inductor:aoti_torch",
+            "//caffe2/torch/csrc/inductor:aoti_torch_cuda",
         ],
     )

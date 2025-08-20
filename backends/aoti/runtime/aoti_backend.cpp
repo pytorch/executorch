@@ -30,6 +30,9 @@
 #include "shims/memory.h"
 #include "shims/tensor_attribute.h"
 
+// Include CUDA AOTI shims
+#include <torch/csrc/inductor/aoti_torch/generated/c_shim_cuda.h>
+
 namespace executorch {
 namespace backends {
 namespace aoti {
@@ -111,6 +114,14 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       return Error::AccessFailed;
     }
 
+    AOTInductorModelContainerGetInputName =
+        reinterpret_cast<AOTInductorModelContainerGetInputNameFunc>(
+            dlsym(so_handle, "AOTInductorModelContainerGetInputName"));
+    if (AOTInductorModelContainerGetInputName == nullptr) {
+      perror("dlsym AOTInductorModelContainerGetInputName");
+      return Error::AccessFailed;
+    }
+
     AOTInductorModelContainerGetNumOutputs =
         reinterpret_cast<AOTInductorModelContainerGetNumOutputsFunc>(
             dlsym(so_handle, "AOTInductorModelContainerGetNumOutputs"));
@@ -152,29 +163,35 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
 
     ET_LOG(Debug, "AOTIBackend Handle generated");
 
-    size_t n_inputs, n_constants;
+    size_t n_inputs;
     AOTInductorModelContainerGetNumInputs(handle->container_handle, &n_inputs);
 
-    AOTInductorModelContainerGetNumConstants(
-        handle->container_handle, &n_constants);
-    size_t n_user_inputs = n_inputs - n_constants;
+    // for (int i = 0; i < n_inputs; i++) {
+    //   const char* input_name;
+    //   AOTInductorModelContainerGetInputName(
+    //       handle->container_handle, i, &input_name);
+    //   ET_LOG(Debug, "AOTIBackend %d-th input name %s", i, input_name);
+    // }
 
-    if (n_user_inputs != n_inputs) {
-      ET_LOG(
-          Error,
-          "number of user input does not match number of inputs. n_user_inputs %zd, n_constant %zd, n_inputs %zd. Exit.",
-          n_user_inputs,
-          n_constants,
-          n_inputs);
-      return Error::InvalidArgument;
-    }
+    // AOTInductorModelContainerGetNumConstants(
+    //     handle->container_handle, &n_constants);
+    // size_t n_user_inputs = n_inputs - n_constants;
 
-    ET_LOG(
-        Debug,
-        "AOTIBackend n_inputs %zd generated, where %zd is constant input, %zd is user input",
-        n_inputs,
-        n_constants,
-        n_user_inputs);
+    // if (n_user_inputs != n_inputs) {
+    //   ET_LOG(
+    //       Error,
+    //       "number of user input does not match number of inputs.
+    //       n_user_inputs %zd, n_constant %zd, n_inputs %zd. Exit.",
+    //       n_user_inputs,
+    //       n_constants,
+    //       n_inputs);
+    //   return Error::InvalidArgument;
+    // }
+
+    // ET_LOG(
+    //     Debug,
+    //     "AOTIBackend n_inputs %zd generated, where %zd is constant input,
+    //     %zd is user input", n_inputs, n_constants, n_user_inputs);
 
     size_t n_outputs;
     AOTInductorModelContainerGetNumOutputs(
@@ -199,22 +216,87 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
         n_outputs,
         args.size());
 
-    std::vector<AOTITensorHandle> inputs(n_inputs);
-    std::vector<AOTITensorHandle> outputs(n_outputs);
+    // NOTE: ExecutorTorch tensors are always on CPU/host memory
+    // We need to create GPU copies for CUDA kernel execution
+    std::vector<AOTITensorHandle> gpu_inputs(
+        n_inputs); // GPU copies for kernel execution
+    std::vector<AOTITensorHandle> gpu_outputs(
+        n_outputs); // GPU tensors for kernel output
 
     ET_LOG(Debug, "AOTIBackend input/output vectors generated");
 
+    // Process input tensors: ExecutorTorch provides CPU tensors, create GPU
+    // copies
     for (int i = 0; i < n_inputs; i++) {
-      ET_LOG(Debug, "Copying input %d from args to inputs vector", i);
+      ET_LOG(Debug, "Processing input %d from args to inputs vector", i);
       ET_LOG(
           Debug, "is %d input a tensor input? %d", i, int(args[i]->isTensor()));
-      inputs[i] = &(args[i]->toTensor());
+
+      // Get tensor dimensions and properties from ExecutorTorch CPU tensor
+      auto cpu_tensor = &(args[i]->toTensor());
+      auto sizes = cpu_tensor->sizes();
+      auto scalar_type = cpu_tensor->scalar_type();
+
+      // Create GPU tensor with same shape
+      std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+
+      AOTITensorHandle gpu_input_handle;
+      Error create_err = aoti_torch_empty_strided(
+          sizes_vec.size(),
+          sizes_vec.data(),
+          nullptr, // use default strides
+          static_cast<int32_t>(scalar_type),
+          1, // device_type = cuda
+          0, // device_index = 0
+          &gpu_input_handle);
+
+      if (create_err != Error::Ok) {
+        ET_LOG(Error, "Failed to create GPU tensor for input %d", i);
+        return Error::Internal;
+      }
+
+      gpu_inputs[i] = gpu_input_handle;
+
+      // Copy data from CPU to GPU
+      Error copy_err = aoti_torch_copy_(gpu_inputs[i], cpu_tensor, 0);
+      if (copy_err != Error::Ok) {
+        ET_LOG(Error, "Failed to copy input %d from CPU to GPU", i);
+        return Error::Internal;
+      }
+
+      ET_LOG(Debug, "Successfully copied input %d from CPU to GPU", i);
     }
 
-    ET_LOG(Debug, "AOTIBackend input generated");
+    ET_LOG(Debug, "AOTIBackend GPU inputs generated");
 
+    // Process output tensors: create GPU counterparts for ExecutorTorch CPU
+    // tensors
     for (int i = 0; i < n_outputs; i++) {
-      outputs[i] = &(args[i + n_inputs]->toTensor());
+      // Get output tensor dimensions from ExecutorTorch CPU tensor
+      auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
+      auto sizes = cpu_output_tensor->sizes();
+      auto scalar_type = cpu_output_tensor->scalar_type();
+
+      // Create GPU tensor with same shape for kernel output
+      std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+
+      AOTITensorHandle gpu_output_handle;
+      Error create_err = aoti_torch_empty_strided(
+          sizes_vec.size(),
+          sizes_vec.data(),
+          nullptr, // use default strides
+          static_cast<int32_t>(scalar_type),
+          1, // device_type = cuda
+          0, // device_index = 0
+          &gpu_output_handle);
+
+      if (create_err != Error::Ok) {
+        ET_LOG(Error, "Failed to create GPU tensor for output %d", i);
+        return Error::Internal;
+      }
+
+      gpu_outputs[i] = gpu_output_handle;
+      ET_LOG(Debug, "Created GPU output tensor %d", i);
     }
 
     ET_LOG(Debug, "AOTIBackend output generated");
@@ -232,13 +314,12 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
 
     ET_LOG(Debug, "Created CUDA stream: %p", cuda_stream);
 
-    // Run AOTI container with the stream (AOTI will create its own stream guard
-    // internally)
+    // Run AOTI container with GPU tensors
     AOTIRuntimeError error = AOTInductorModelContainerRun(
         handle->container_handle,
-        inputs.data(),
+        gpu_inputs.data(), // Use GPU input tensors
         n_inputs,
-        outputs.data(),
+        gpu_outputs.data(), // Use GPU output tensors
         n_outputs,
         cuda_stream, // Pass the actual CUDA stream!
         nullptr); // proxy_executor_handle can remain nullptr
@@ -253,27 +334,46 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
 
     ET_LOG(Debug, "AOTIBackend running done");
 
-    // Synchronize and destroy the CUDA stream
+    // Synchronize the CUDA stream to ensure kernels complete
     cudaError_t sync_err = cudaStreamSynchronize(cuda_stream);
     if (sync_err != cudaSuccess) {
       ET_LOG(
           Error,
           "Failed to synchronize CUDA stream: %s",
           cudaGetErrorString(sync_err));
-      // Continue anyway to avoid fatal errors
+      return Error::Internal;
     }
 
-    cudaStreamDestroy(cuda_stream);
-    ET_LOG(Debug, "CUDA stream synchronized and destroyed");
+    ET_LOG(Debug, "CUDA stream synchronized");
 
-    // Still need to copy the output to args, because they are malloc'ed but
-    // not using the data_ptr from outputs.
+    // Copy GPU output results back to CPU output tensors
     for (int i = 0; i < n_outputs; i++) {
-      auto args_out = args[i + n_inputs]->toTensor();
-      aoti_torch_copy_(&args_out, outputs[i], 0);
+      auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
+      Error copy_err = aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0);
+      if (copy_err != Error::Ok) {
+        ET_LOG(Error, "Failed to copy GPU output %d back to CPU", i);
+        return Error::Internal;
+      }
+      ET_LOG(Debug, "Copied GPU output %d back to CPU", i);
     }
 
-    ET_LOG(Debug, "AOTIBackend output copied");
+    // Clean up GPU tensors that we created (ExecutorTorch tensors are always
+    // CPU, so all GPU tensors are our copies)
+    for (int i = 0; i < n_inputs; i++) {
+      // All GPU input tensors were created by us, delete them
+      aoti_torch_delete_tensor_object(gpu_inputs[i]);
+    }
+
+    for (int i = 0; i < n_outputs; i++) {
+      // All GPU output tensors were created by us, delete them
+      aoti_torch_delete_tensor_object(gpu_outputs[i]);
+    }
+
+    // Destroy the CUDA stream
+    cudaStreamDestroy(cuda_stream);
+    ET_LOG(Debug, "CUDA stream destroyed and GPU tensors cleaned up");
+
+    ET_LOG(Debug, "AOTIBackend execution completed successfully");
 
     return Error::Ok;
   }

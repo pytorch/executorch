@@ -57,6 +57,25 @@ if [[ -n "$MODEL_ARG" ]]; then
     echo "Model argument: $MODEL_ARG"
 fi
 
+# Cleanup function to remove temporary files and directories
+cleanup_temp_files() {
+    echo "Cleaning up temporary files and directories..."
+
+    # Remove temporary files with specific extensions
+    rm -f *.cubin
+    rm -f *.pte
+    rm -f *.so
+    rm -f *kernel_metadata.json
+    rm -f *kernel.cpp
+    rm -f *wrapper_metadata.json
+    rm -f *wrapper.cpp
+
+    echo "Cleanup completed."
+}
+
+# Run cleanup at the start
+cleanup_temp_files
+
 # Function definitions for each step
 install_executorch() {
     echo "Installing executorch..."

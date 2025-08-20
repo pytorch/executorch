@@ -44,7 +44,7 @@ class Linear(torch.nn.Module):
         self.linear = nn.Linear(3, 5)
 
     def forward(self, x: torch.Tensor):
-        return self.linear(x).cpu()
+        return self.linear(x)
 
 
 class SingleConv2d(nn.Module):
@@ -63,7 +63,7 @@ class Add(torch.nn.Module):
         super(Add, self).__init__()
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
-        return (x + y).cpu()
+        return x + y
 
 
 # Model registry mapping model names to their configurations
@@ -132,7 +132,7 @@ def export_model(model, example_inputs, output_filename="aoti_model.pte"):
     # 2. to_edge: Make optimizations for Edge devices
     print("Step 2: Converting to Edge program...")
     edge_program = to_edge(aten_dialect)
-    print(edge_program.exported_program().graph)
+    print(edge_program.exported_program().graph.print_tabular())
 
     print("Step 3: Converting to backend...")
     edge_program = edge_program.to_backend(AotiPartitioner([]))

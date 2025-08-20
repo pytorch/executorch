@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstdlib> // For posix_memalign
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -147,14 +148,19 @@ AOTITorchError aoti_torch_empty_strided(
     std::cout << "Allocating " << nbytes << " bytes on CUDA " << std::endl;
     cudaError_t err = cudaMalloc(&ptr, nbytes);
     if (err != cudaSuccess) {
-      std::cout << "failed to allocate " << nbytes << std::endl;
+      std::cout << "failed to allocate " << nbytes
+                << " error: " << cudaGetErrorString(err) << std::endl;
       throw std::runtime_error("Failed to call cudaMalloc");
     }
   } else if (device_type == 0) { // cpu
     std::cout << "Allocating " << nbytes << " bytes on CPU " << std::endl;
-    ptr = malloc(nbytes);
+    // Ensure 16-byte alignment for CPU memory to match CUDA requirements
+    int result = posix_memalign(&ptr, 16, nbytes);
+    if (result != 0) {
+      throw std::runtime_error("Failed to allocate aligned CPU memory");
+    }
     if (ptr == nullptr) {
-      throw std::runtime_error("Failed to call malloc");
+      throw std::runtime_error("Failed to call posix_memalign");
     }
   } else {
     throw std::runtime_error(
