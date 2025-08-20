@@ -179,14 +179,18 @@ AOTITorchError aoti_torch_empty_strided(
 
   // Store the tensor
   tensors.insert(tensor);
+  *ret_new_tensor = tensor.get();
+  is_tensor_own_memory[tensor.get()] = true;
 
-  std::cout << "sizes.data(): " << sizes.data()
+  std::cout << "Finished. Created tensor " << tensor.get() << " with sizes "
+            << std::endl
+            << "sizes.data(): " << sizes.data()
             << ", tensor->sizes().data(): " << tensor->sizes().data()
             << std::endl;
   std::cout << "Size[0] of tensor " << tensor.get() << " is "
-            << tensor->sizes()[0] << std::endl;
-  *ret_new_tensor = tensor.get();
-  is_tensor_own_memory[tensor.get()] = true;
+            << tensor->sizes()[0] << std::endl
+            << std::endl;
+
   return Error::Ok;
 }
 

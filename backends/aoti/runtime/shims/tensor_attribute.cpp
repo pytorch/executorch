@@ -103,6 +103,26 @@ AOTITorchError aoti_torch_get_storage_size(
   throw std::runtime_error("Cannot get storage size on ETensor");
 }
 
+AOTITorchError aoti_torch_get_device_type(
+    AOTITensorHandle tensor,
+    int32_t* ret_device_type) {
+  // Let's assume all tensors AOTI using are on CUDA device
+  *ret_device_type = aoti_torch_device_type_cuda(); // CUDA device type
+  std::cout << "getting device_type from tensor " << tensor << " = "
+            << *ret_device_type << std::endl;
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_get_device_index(
+    AOTITensorHandle tensor,
+    int32_t* ret_device_index) {
+  // Let's assume all tensors AOTI using are on CUDA:0
+  *ret_device_index = 0;
+  std::cout << "getting device_index from tensor " << tensor << " = "
+            << *ret_device_index << std::endl;
+  return Error::Ok;
+}
+
 int32_t aoti_torch_device_type_cpu() {
   // Let's say cpu is 0 for ET as well
   return 0;

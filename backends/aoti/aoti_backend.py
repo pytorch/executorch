@@ -45,6 +45,8 @@ class AotiBackend(BackendDetails):
         options: dict[str, typing.Any] = {
             "aot_inductor.package_constants_in_so": True,
             "aot_inductor.output_path": output_path,
+            "aot_inductor.debug_compile": True,
+            "aot_inductor.repro_level": 3
         }
         so_path = torch._inductor.aot_compile(edge_program_module, args, kwargs, options=options)  # type: ignore[arg-type]
 
