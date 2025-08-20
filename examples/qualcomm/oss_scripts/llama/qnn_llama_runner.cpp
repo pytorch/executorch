@@ -16,6 +16,7 @@
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
+#include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/runtime/platform/log.h>
 #include <gflags/gflags.h>
 #include <fstream>
@@ -61,7 +62,7 @@ DEFINE_int32(
     "Total number of tokens to generate (prompt + output).");
 DEFINE_int32(
     eval_mode,
-    0,
+    1,
     "0: TokenGenerator(kv) / 1: HybridMode (prefill+kv) / 2: Lookahead Decoding");
 DEFINE_string(
     kv_updater,
@@ -172,13 +173,17 @@ void start_runner(
       buf.push_back(c);
     }
   };
-
+  executorch::extension::llm::GenerationConfig config{
+      true,
+      -1,
+      false,
+      FLAGS_seq_len,
+      static_cast<float>(FLAGS_temperature),
+      0,
+      0};
   if (use_tokenized_prompt) {
-    runner.generate(
-        FLAGS_tokenized_prompt.c_str(),
-        use_tokenized_prompt,
-        FLAGS_seq_len,
-        callback);
+    runner.generate_from_prompt_or_file(
+        FLAGS_tokenized_prompt.c_str(), use_tokenized_prompt, config, callback);
   } else {
     // generate tokens & store inference output
     for (int i = 0; i < FLAGS_num_iters; i++) {
@@ -186,11 +191,8 @@ void start_runner(
         std::string formatted_prompt;
         formatted_prompt = get_formatted_prompt(
             prompt, FLAGS_system_prompt, decoder_model_version.get());
-        runner.generate(
-            formatted_prompt.c_str(),
-            use_tokenized_prompt,
-            FLAGS_seq_len,
-            callback);
+        runner.generate_from_prompt_or_file(
+            formatted_prompt.c_str(), use_tokenized_prompt, config, callback);
       }
     }
   }
