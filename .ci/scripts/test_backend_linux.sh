@@ -32,4 +32,4 @@ PYTHON_EXECUTABLE=python CMAKE_ARGS="$EXTRA_BUILD_ARGS" .ci/scripts/setup-linux.
 python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$REPORT_FILE"
 
 # Generate markdown summary.
-python -m executorch.backends.test.suite.generate_markdown_summary "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:step_summary.md}
+python -m executorch.backends.test.suite.generate_markdown_summary "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:"step_summary.md"}
