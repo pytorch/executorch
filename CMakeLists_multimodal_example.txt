@@ -1,0 +1,49 @@
+cmake_minimum_required(VERSION 3.19)
+project(multimodal_runner_example)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find the executorch package
+# You may need to adjust these paths based on your ExecutorTorch installation
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Add the ExecutorTorch include directories
+include_directories(
+    ${EXECUTORCH_ROOT}
+    ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+)
+
+# Find required libraries
+find_library(EXECUTORCH_LIB executorch HINTS ${EXECUTORCH_ROOT}/build/lib)
+find_library(EXTENSION_MODULE_LIB extension_module HINTS ${EXECUTORCH_ROOT}/build/lib)
+find_library(EXTENSION_LLM_RUNNER_LIB extension_llm_runner HINTS ${EXECUTORCH_ROOT}/build/lib)
+find_library(TOKENIZERS_LIB tokenizers HINTS ${EXECUTORCH_ROOT}/build/lib)
+
+# Create the executable
+add_executable(run_multimodal_runner run_multimodal_runner.cpp)
+
+# Link against ExecutorTorch libraries
+target_link_libraries(run_multimodal_runner
+    ${EXTENSION_LLM_RUNNER_LIB}
+    ${EXTENSION_MODULE_LIB}
+    ${TOKENIZERS_LIB}
+    ${EXECUTORCH_LIB}
+    pthread
+)
+
+# Add compiler flags
+target_compile_options(run_multimodal_runner PRIVATE
+    -Wall
+    -Wextra
+    -O2
+)
+
+# Print build information
+message(STATUS "Building run_multimodal_runner")
+message(STATUS "ExecutorTorch root: ${EXECUTORCH_ROOT}")
+message(STATUS "Libraries found:")
+message(STATUS "  executorch: ${EXECUTORCH_LIB}")
+message(STATUS "  extension_module: ${EXTENSION_MODULE_LIB}")
+message(STATUS "  extension_llm_runner: ${EXTENSION_LLM_RUNNER_LIB}")
+message(STATUS "  tokenizers: ${TOKENIZERS_LIB}")
