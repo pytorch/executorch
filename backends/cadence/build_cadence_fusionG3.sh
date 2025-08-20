@@ -36,7 +36,7 @@ if $STEPWISE_BUILD; then
         -Bcmake-out .
 
     echo "Building any Cadence-specific binaries on top"
-    CXXFLAGS="-fno-exceptions -fno-rtti" cmake -DBUCK2="$BUCK" \
+    CXXFLAGS="-fno-exceptions -fno-rtti" cmake \
         -DCMAKE_TOOLCHAIN_FILE=/home/zonglinpeng/ws/zonglinpeng/executorch/backends/cadence/cadence.cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
@@ -57,7 +57,7 @@ if $STEPWISE_BUILD; then
 else
     echo "Building Cadence toolchain with ExecuTorch packages"
     cmake_prefix_path="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
-    CXXFLAGS="-fno-exceptions -fno-rtti" cmake -DBUCK2="$BUCK" \
+    CXXFLAGS="-fno-exceptions -fno-rtti" cmake \
         -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
         -DHAVE_SYS_STAT_H=ON \
         -DCMAKE_TOOLCHAIN_FILE=./backends/cadence/cadence.cmake \

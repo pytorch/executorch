@@ -18,4 +18,5 @@ DECODER_MODEL_VERSION = {
     "qwen3_0_6b": "qwen2_5",  # TODO: temp workaround, use special token for qwen3 in runner
     "qwen3_1_7b": "qwen2_5",
     "phi_4_mini": "phi_4_mini",
+    "smollm2_135m": "smollm2_135m",
 }

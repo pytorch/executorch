@@ -16,9 +16,7 @@
 #include <string>
 #include <variant>
 
-namespace executorch {
-namespace extension {
-namespace llm {
+namespace executorch::extension::llm {
 
 /**
  * A generic class to hold either image or text data for multimodal inputs.
@@ -181,6 +179,4 @@ inline MultimodalInput make_image_input(Image&& image) noexcept {
   return MultimodalInput(std::move(image));
 }
 
-} // namespace llm
-} // namespace extension
-} // namespace executorch
+} // namespace executorch::extension::llm

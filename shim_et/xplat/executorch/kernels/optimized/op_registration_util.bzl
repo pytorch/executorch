@@ -165,6 +165,17 @@ OPTIMIZED_ATEN_OPS = (
     ),
     op_target(
         name = "op_div",
+        # A bug in instruction selection in clang 19 for android seems to trigger some
+        # terrible, multiple hour, backend generation when building for asan with thinlto.
+        # generally maybe a good idea to just make this fully optimized anyway, but -O2
+        # is not sufficient to avoid it.
+        compiler_flags = [] if runtime.is_oss else select({
+            "DEFAULT": [],
+            "ovr_config//toolchain/clang/constraints:19": select({
+                "DEFAULT": [],
+                "ovr_config//os:android": ["-O3"],
+            }),
+        }),
         deps = [
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",

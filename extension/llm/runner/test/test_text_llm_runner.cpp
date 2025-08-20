@@ -26,6 +26,8 @@ using executorch::extension::llm::TextTokenGenerator;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
+
+namespace {
 // Mock classes for dependencies
 class MockTokenizer : public ::tokenizers::Tokenizer {
  public:
@@ -392,3 +394,4 @@ TEST_F(RunnerTest, GenerateFromPosErrorsWithNegativeMaxNewTokens) {
   // Verify that an InvalidArgument error is returned
   EXPECT_EQ(err, Error::InvalidArgument);
 }
+} // namespace

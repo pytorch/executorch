@@ -103,17 +103,16 @@ def get_dataset(data_size, dataset_dir):
 
     dataset = COCODataset(dataset_root=dataset_dir)
     test_loader = torch.utils.data.DataLoader(dataset=dataset, shuffle=True)
-    inputs, input_list = [], ""
+    inputs = []
     bboxes, targets = [], []
     for index, (img, boxes, labels) in enumerate(test_loader):
         if index >= data_size:
             break
         inputs.append((img,))
-        input_list += f"input_{index}_0.raw\n"
         bboxes.append(boxes)
         targets.append(labels)
 
-    return inputs, input_list, bboxes, targets, dataset.label_names
+    return inputs, bboxes, targets, dataset.label_names
 
 
 def calculate_precision(
@@ -226,7 +225,7 @@ def main(args):
     data_num = 100
     # 91 classes appear in COCO dataset
     n_classes, n_coord_of_bbox = 91, 4
-    inputs, input_list, bboxes, targets, label_names = get_dataset(
+    inputs, bboxes, targets, label_names = get_dataset(
         data_size=data_num, dataset_dir=args.dataset
     )
     pte_filename = "retinanet_qnn"
@@ -255,7 +254,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data

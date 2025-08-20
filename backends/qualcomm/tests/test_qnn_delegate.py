@@ -4649,6 +4649,64 @@ class TestExampleLLMScript(TestQNN):
                 )
                 self.assertGreaterEqual(msg["inference_speed"], 70)  # Lanai
 
+    def test_smollm2(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "My favourite condiment is "
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a8w",
+            "--decoder_model",
+            "smollm2_135m",
+            "--model_mode",
+            "kv",
+            "--temperature",
+            "0",
+            "--prefill_ar_len",
+            "128",
+            "--max_seq_len",
+            "1024",
+            "--eval_perplexity",
+            "--task",
+            "wikitext",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertLessEqual(msg["wiki_ppl"], 25)
+                self.assertGreaterEqual(msg["inference_speed"], 200)
+
 
 class TestExampleOssScript(TestQNN):
     def test_albert(self):

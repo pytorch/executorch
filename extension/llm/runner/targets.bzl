@@ -124,6 +124,7 @@ def define_common_targets():
             srcs = [
                 "text_llm_runner.cpp",
                 "llm_runner_helper.cpp",
+                "multimodal_runner.cpp",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",

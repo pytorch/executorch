@@ -26,7 +26,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
 
-// Mock Module class for testing
+namespace {
 class MockModule : public Module {
  public:
   MockModule() : Module("") {}
@@ -204,3 +204,5 @@ TEST_F(TextDecoderRunnerTest, StepWithAllModels) {
   ASSERT_TRUE(any_model_tested)
       << "No models were tested despite environment variables being set";
 }
+
+} // namespace

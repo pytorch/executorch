@@ -219,7 +219,7 @@ def main(args):
 
     tokenizer = AutoTokenizer.from_pretrained("google-t5/t5-small")
     model = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-small").eval()
-    inputs, targets, input_list = get_seq2seq_dataset_from_squad_csv(
+    inputs, targets = get_seq2seq_dataset_from_squad_csv(
         args.dataset,
         tokenizer,
         data_size,
@@ -307,7 +307,6 @@ def main(args):
         )
         adb.push(
             inputs=inputs,
-            input_list=input_list,
             files=[spiece_model],
         )
         adb.execute(custom_runner_cmd=runner_cmd)
