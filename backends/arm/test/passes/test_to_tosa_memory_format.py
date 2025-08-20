@@ -23,7 +23,7 @@ class NoNHWC(torch.nn.Module):
     Test-module with no ops requiring NHWC mermory format.
     """
 
-    ops_after_pass = {"torch.ops.passthrough_to_tosa._transpose.default": 2}
+    ops_after_pass = {"executorch_exir_dialects_backend__ops_tosa_TRANSPOSE_default": 2}
     ops_not_after_pass = []
 
     def forward(self, x):
@@ -39,7 +39,7 @@ class ParallelClusters(torch.nn.Module):
     Test-module with multiple parallel clusters of nodes requiring different memory formats.
     """
 
-    ops_after_pass = {"torch.ops.passthrough_to_tosa._transpose.default": 2}
+    ops_after_pass = {"executorch_exir_dialects_backend__ops_tosa_TRANSPOSE_default": 2}
     ops_not_after_pass = []
 
     def __init__(self):
@@ -70,7 +70,7 @@ class SerialClusters(torch.nn.Module):
     """
 
     ops_before_pass = {}
-    ops_after_pass = {"torch.ops.passthrough_to_tosa._transpose.default": 4}
+    ops_after_pass = {"executorch_exir_dialects_backend__ops_tosa_TRANSPOSE_default": 4}
     ops_not_after_pass = []
 
     def __init__(self):
@@ -107,7 +107,9 @@ class Reshapes(torch.nn.Module):
     """
 
     ops_before_pass = {}
-    ops_after_pass = {"torch.ops.passthrough_to_tosa._transpose.default": 16}
+    ops_after_pass = {
+        "executorch_exir_dialects_backend__ops_tosa_TRANSPOSE_default": 16
+    }
     ops_not_after_pass = []
 
     def __init__(self):
@@ -177,6 +179,9 @@ def test_to_tosa_memory_format_tosa_INT(module):
         pass_list=[RemoveGetItemPass],
         passes_with_exported_program=[ToTosaMemoryFormatPass],
     )
+    pipeline.pop_stage(
+        "run_method_and_compare_outputs"
+    )  # Eager execution is not possible after introducing tosa.TRANSPOSE
     pipeline.run()
 
 

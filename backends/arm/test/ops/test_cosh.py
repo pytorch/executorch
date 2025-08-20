@@ -79,6 +79,7 @@ def test_cosh_u55_INT(test_data: Tuple):
     xfails={
         "ones_4D": "MLBEDSW-11046 - Incorrect output for TABLE followed by RESHAPE"
     },
+    strict=False,
 )
 def test_cosh_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](

@@ -105,7 +105,7 @@ class ToTosaMemoryFormatPass(ExportPass):
 
     @staticmethod
     def insert_input_transpose(node, input_node, graph_module):
-        if input_node.target == torch.ops.passthrough_to_tosa._transpose.default:
+        if input_node.target == exir_ops.backend.tosa.TRANSPOSE.default:
             pre_permute_node = input_node.all_input_nodes[0]
             node.replace_input_with(input_node, pre_permute_node)
             return
