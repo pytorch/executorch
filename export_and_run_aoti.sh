@@ -61,6 +61,17 @@ fi
 cleanup_temp_files() {
     echo "Cleaning up temporary files and directories..."
 
+    # Remove temporary directories
+    for file in *wrapper.cpp; do
+        if [[ -f "$file" ]]; then
+            basename="${file%wrapper.cpp}"
+            if [[ -d "$basename" ]]; then
+                echo "Removing directory: $basename"
+                rm -rf "$basename"
+            fi
+        fi
+    done
+
     # Remove temporary files with specific extensions
     rm -f *.cubin
     rm -f *.pte
@@ -117,27 +128,28 @@ run_inference() {
 case "$MODE" in
     "reinstall_all")
         echo "Mode: reinstall_all - Full reinstall and run"
-        install_executorch          # Line 1
-        export_aoti_model           # Line 2
-        clean_install_executorch    # Line 3
-        build_runtime              # Lines 6-16
-        run_inference              # Lines 17-18
+        install_executorch
+        export_aoti_model
+        clean_install_executorch
+        build_runtime
+        run_inference
         ;;
     "reinstall_aot")
-        echo "Mode: reinstall_aot - Reinstall AOT components only"
-        install_executorch          # Line 1
-        export_aoti_model           # Line 2
-        run_inference              # Lines 17-18
+        echo "Mode: reinstall_aot - Reinstall AOT components and run e2e"
+        install_executorch
+        export_aoti_model
+        run_inference
         ;;
     "reinstall_runtime")
-        echo "Mode: reinstall_runtime - Rebuild runtime and run"
-        build_runtime              # Lines 6-16
-        run_inference              # Lines 17-18
+        echo "Mode: reinstall_runtime - Rebuild runtime and run e2e"
+        export_aoti_model
+        build_runtime
+        run_inference
         ;;
     "inference")
         echo "Mode: inference - Export model and run inference only"
-        export_aoti_model           # Line 2
-        run_inference              # Lines 17-18
+        export_aoti_model
+        run_inference
         ;;
     *)
         echo "Error: Unknown mode '$MODE'"
