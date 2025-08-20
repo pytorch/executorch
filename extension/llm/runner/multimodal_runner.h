@@ -19,6 +19,7 @@
 #include <unordered_map>
 
 #include <executorch/extension/llm/runner/image.h>
+#include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/image_prefiller.h>
 #include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/runner/irunner.h>
@@ -63,6 +64,7 @@ namespace llm {
  *   std::vector<MultimodalInput> inputs;
  *   inputs.emplace_back(make_text_input("Describe this image:"));
  *   inputs.emplace_back(make_image_input(std::move(image)));
+ *   inputs.emplace_back(make_audio_input(std::move(audio)));
  *
  *   GenerationConfig config;
  *   config.max_new_tokens = 100;
@@ -106,7 +108,7 @@ class ET_EXPERIMENTAL MultimodalRunner {
 
   /**
    * Generate tokens from the given multimodal inputs using GenerationConfig.
-   * @param inputs A vector of MultimodalInput objects containing images and
+   * @param inputs A vector of MultimodalInput objects containing images, audio, and
    * text.
    * @param config Generation configuration parameters.
    * @param token_callback Callback function called for each generated token.
