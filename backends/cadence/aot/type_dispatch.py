@@ -112,7 +112,20 @@ class CompileTimeTypeDispatchPass(ExportPass):
             raise RuntimeError(f"Unsupported input types for {op}: {dtype_key}")
 
         type_suffix = config.type_dispatch_suffixes[dtype_key]
-        typed_op_name = f"{config.base_name}_{type_suffix}"
+        base_name = config.base_name
+
+        if op in [
+            exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
+            exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
+        ]:
+            dilation = args[5]
+            # pyre-ignore[16]: None has no attribute '__iter__'.
+            is_dilated = any(d > 1 for d in dilation)
+
+            if is_dilated:
+                type_suffix = f"dilated_{type_suffix}"
+
+        typed_op_name = f"{base_name}_{type_suffix}"
 
         typed_op = getattr(
             getattr(exir_ops.edge.cadence, typed_op_name), config.variant
