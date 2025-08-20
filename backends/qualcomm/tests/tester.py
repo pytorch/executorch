@@ -22,11 +22,6 @@ from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
-from torch.ao.quantization.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-    prepare_qat_pt2e,
-)
 from torch.export import ExportedProgram
 
 
