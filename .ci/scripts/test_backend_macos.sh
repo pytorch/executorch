@@ -26,4 +26,4 @@ ${CONDA_RUN} --no-capture-output .ci/scripts/setup-macos.sh --build-tool cmake -
 ${CONDA_RUN} --no-capture-output python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$REPORT_FILE"
 
 # Generate markdown summary.
-GITHUB_STEP_SUMMARY=`${CONDA_RUN} --no-capture-output python -m executorch.backends.test.suite.generate_markdown_summary "$REPORT_FILE"`
+${CONDA_RUN} --no-capture-output python -m executorch.backends.test.suite.generate_markdown_summary "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:step_summary.md}
