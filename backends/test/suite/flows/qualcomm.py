@@ -4,7 +4,7 @@ from executorch.backends.test.suite.flow import TestFlow
 from torchao.quantization.pt2e import MovingAverageMinMaxObserver
 
 
-def _create_qualcomm_flow(
+def _create_qnn_flow(
     name: str,
     quantize: bool = False,
     quant_dtype: QuantDtype | None = None,
@@ -40,22 +40,22 @@ def _create_qualcomm_flow(
     )
 
 
-QUALCOMM_TEST_FLOW = _create_qualcomm_flow("qualcomm")
-QUALCOMM_16A16W_TEST_FLOW = _create_qualcomm_flow(
-    "qualcomm_16a16w", quantize=True, quant_dtype=QuantDtype.use_8a8w, use_fp16=False
+QNN_TEST_FLOW = _create_qnn_flow("qnn")
+QNN_16A16W_TEST_FLOW = _create_qnn_flow(
+    "qnn_16a16w", quantize=True, quant_dtype=QuantDtype.use_8a8w, use_fp16=False
 )
-QUALCOMM_16A8W_TEST_FLOW = _create_qualcomm_flow(
-    "qualcomm_16a8w", quantize=True, quant_dtype=QuantDtype.use_16a8w, use_fp16=False
+QNN_16A8W_TEST_FLOW = _create_qnn_flow(
+    "qnn_16a8w", quantize=True, quant_dtype=QuantDtype.use_16a8w, use_fp16=False
 )
-QUALCOMM_16A4W_TEST_FLOW = _create_qualcomm_flow(
-    "qualcomm_16a4w", quantize=True, quant_dtype=QuantDtype.use_16a4w, use_fp16=False
+QNN_16A4W_TEST_FLOW = _create_qnn_flow(
+    "qnn_16a4w", quantize=True, quant_dtype=QuantDtype.use_16a4w, use_fp16=False
 )
-QUALCOMM_16A4W_BLOCK_TEST_FLOW = _create_qualcomm_flow(
-    "qualcomm_16a4w_block",
+QNN_16A4W_BLOCK_TEST_FLOW = _create_qnn_flow(
+    "qnn_16a4w_block",
     quantize=True,
     quant_dtype=QuantDtype.use_8a8w,
     use_fp16=False,
 )
-QUALCOMM_8A8W_TEST_FLOW = _create_qualcomm_flow(
-    "qualcomm_8a8w", quantize=True, quant_dtype=QuantDtype.use_8a8w, use_fp16=False
+QNN_8A8W_TEST_FLOW = _create_qnn_flow(
+    "qnn_8a8w", quantize=True, quant_dtype=QuantDtype.use_8a8w, use_fp16=False
 )

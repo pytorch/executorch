@@ -82,23 +82,23 @@ def all_flows() -> dict[str, TestFlow]:
 
     try:
         from executorch.backends.test.suite.flows.qualcomm import (
-            QUALCOMM_16A16W_TEST_FLOW,
-            QUALCOMM_16A4W_BLOCK_TEST_FLOW,
-            QUALCOMM_16A4W_TEST_FLOW,
-            QUALCOMM_16A8W_TEST_FLOW,
-            QUALCOMM_8A8W_TEST_FLOW,
-            QUALCOMM_TEST_FLOW,
+            QNN_16A16W_TEST_FLOW,
+            QNN_16A4W_BLOCK_TEST_FLOW,
+            QNN_16A4W_TEST_FLOW,
+            QNN_16A8W_TEST_FLOW,
+            QNN_8A8W_TEST_FLOW,
+            QNN_TEST_FLOW,
         )
 
         flows += [
-            QUALCOMM_TEST_FLOW,
-            QUALCOMM_16A16W_TEST_FLOW,
-            QUALCOMM_16A8W_TEST_FLOW,
-            QUALCOMM_16A4W_TEST_FLOW,
-            QUALCOMM_16A4W_BLOCK_TEST_FLOW,
-            QUALCOMM_8A8W_TEST_FLOW,
+            QNN_TEST_FLOW,
+            QNN_16A16W_TEST_FLOW,
+            QNN_16A8W_TEST_FLOW,
+            QNN_16A4W_TEST_FLOW,
+            QNN_16A4W_BLOCK_TEST_FLOW,
+            QNN_8A8W_TEST_FLOW,
         ]
     except Exception as e:
-        logger.info(f"Skipping Qualcomm flow registration: {e}")
+        logger.info(f"Skipping QNN flow registration: {e}")
 
     return {f.name: f for f in flows if f is not None}
