@@ -137,6 +137,15 @@ class Program:
         """
         return self._program.method_meta(method_name)
 
+    def write_etdump_result_to_file(self, etdump_path: str, debug_buffer_path: str) -> None:
+        """Writes the etdump and debug result to a file.
+
+        Args:
+            etdump_path: The path to the etdump file.
+            debug_buffer_path: The path to the debug buffer file.
+        """
+        self._program.write_etdump_result_to_file(etdump_path, debug_buffer_path)
+
 
 class BackendRegistry:
     """The registry of backends that are available to the runtime."""
@@ -201,6 +210,8 @@ class Runtime:
         data: Union[bytes, bytearray, BinaryIO, Path, str],
         *,
         verification: Verification = Verification.InternalConsistency,
+        enable_etdump: bool = False,
+        debug_buffer_size: int = 0,
     ) -> Program:
         """Loads an ExecuTorch program from a PTE binary.
 
@@ -214,8 +225,8 @@ class Runtime:
         if isinstance(data, (Path, str)):
             p = self._legacy_module._load_program(
                 str(data),
-                enable_etdump=False,
-                debug_buffer_size=0,
+                enable_etdump=enable_etdump,
+                debug_buffer_size=debug_buffer_size,
                 program_verification=verification,
             )
             return Program(p, data=None)
