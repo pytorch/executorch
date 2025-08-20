@@ -12,10 +12,10 @@ import sys
 #
 
 
-def generate_markdown(csv_path: str, exit_code: int = 0):
+def generate_markdown(csv_path: str, exit_code: int = 0):  # noqa (C901)
     # Print warning if exit code is non-zero
     if exit_code != 0:
-        print(f"> [!WARNING]")
+        print("> [!WARNING]")
         print(
             f"> Exit code {exit_code} was non-zero. Test process may have crashed. Check the job logs for more information.\n"
         )
