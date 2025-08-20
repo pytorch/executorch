@@ -85,6 +85,14 @@ class CompileTimeTypeDispatchPass(ExportPass):
                 (torch.uint8,): "asym8u_asym8u",
             },
         ),
+        exir_ops.edge.cadence.quantized_add.per_tensor: OpConfig(
+            "quantized_add",
+            type_dispatch_suffixes={
+                (torch.int8, torch.int8): "asym8sxasym8s_asym8s",
+                (torch.uint8, torch.uint8): "asym8uxasym8u_asym8u",
+            },
+            weight_arg_idx=3,
+        ),
     }
 
     def call_operator(
