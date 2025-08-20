@@ -254,6 +254,18 @@ get_assets_to_remove(ModelAssetsStore& store,
     
     return assets;
 }
+
+NSURL * _Nullable move_to_directory(NSURL *url,
+                                    NSURL *directoryURL,
+                                    NSFileManager *fileManager,
+                                    NSError * __autoreleasing *error) {
+    NSURL *dstURL = [directoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
+    if (![fileManager moveItemAtURL:url toURL:dstURL error:error]) {
+        return nil;
+    }
+    return dstURL;
+}
+
 } //namespace
 
 @interface ETCoreMLAssetManager () <NSFileManagerDelegate> {
@@ -299,12 +311,20 @@ get_assets_to_remove(ModelAssetsStore& store,
     if (!managedAssetsDirectoryURL) {
         return nil;
     }
-    
+
     NSURL *managedTrashDirectoryURL = ::create_directory_if_needed(trashDirectoryURL, @"models", fileManager, error);
     if (!managedTrashDirectoryURL) {
         return nil;
     }
-    
+
+    // Remove any existing contents in the staging directory by moving them to the trash directory,
+    // then recreate a clean staging directory for new use.
+    move_to_directory([assetsDirectoryURL URLByAppendingPathComponent:@"staging"], managedTrashDirectoryURL, fileManager, nil);
+    NSURL *managedStagingDirectoryURL = ::create_directory_if_needed(assetsDirectoryURL, @"staging", fileManager, error);
+    if (!managedStagingDirectoryURL) {
+        return nil;
+    }
+
     // If directory is empty then purge the stores
     if (::is_directory_empty(managedAssetsDirectoryURL, fileManager, nil)) {
         assetsMetaStore.impl()->purge(ec);
@@ -315,6 +335,7 @@ get_assets_to_remove(ModelAssetsStore& store,
         _assetsStore = std::move(assetsStore);
         _assetsMetaStore = std::move(assetsMetaStore);
         _assetsDirectoryURL = managedAssetsDirectoryURL;
+        _stagingDirectoryURL = managedStagingDirectoryURL;
         _trashDirectoryURL = managedTrashDirectoryURL;
         _estimatedSizeInBytes = sizeInBytes.value();
         _maxAssetsSizeInBytes = maxAssetsSizeInBytes;
@@ -349,12 +370,18 @@ get_assets_to_remove(ModelAssetsStore& store,
 - (nullable NSURL *)moveURL:(NSURL *)url
      toUniqueURLInDirectory:(NSURL *)directoryURL
                       error:(NSError * __autoreleasing *)error {
-    NSURL *dstURL = [directoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
-    if (![self.fileManager moveItemAtURL:url toURL:dstURL error:error]) {
-        return nil;
+    return move_to_directory(url, directoryURL, self.fileManager, error);
+}
+
+- (void)withTemporaryDirectory:(void (^)(NSURL *directoryURL))block {
+    NSURL *dstURL = [self.stagingDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
+    block(dstURL);
+    if (![self.fileManager fileExistsAtPath:dstURL.path]) {
+        return;
     }
-    
-    return dstURL;
+
+    [self moveURL:dstURL toUniqueURLInDirectory:self.trashDirectoryURL error:nil];
+    [self cleanupTrashDirectory];
 }
 
 - (void)cleanupAssetIfNeeded:(ETCoreMLAsset *)asset {
@@ -407,7 +434,7 @@ get_assets_to_remove(ModelAssetsStore& store,
             return false;
         }
         
-        // If an asset exists move it
+        // If an asset exists move it,
         [self moveURL:dstURL toUniqueURLInDirectory:self.trashDirectoryURL error:nil];
         
         // Move the asset to assets directory.
@@ -433,16 +460,25 @@ get_assets_to_remove(ModelAssetsStore& store,
 }
 
 - (void)triggerCompaction {
-    if (self.estimatedSizeInBytes < self.maxAssetsSizeInBytes) {
-        return;
+    if (self.estimatedSizeInBytes >= self.maxAssetsSizeInBytes) {
+        __weak __typeof(self) weakSelf = self;
+        dispatch_async(self.syncQueue, ^{
+            NSError *localError = nil;
+            if (![weakSelf _compact:self.maxAssetsSizeInBytes error:&localError]) {
+                ETCoreMLLogError(localError, "Failed to compact asset store.");
+            }
+        });
     }
-    
+
+    // Always clean the trash directory to ensure a minimal footprint.
+    // The `trashQueue` is serialized, so only one cleanup will run at a time.
+    [self cleanupTrashDirectory];
+}
+
+- (void)cleanupTrashDirectory {
     __weak __typeof(self) weakSelf = self;
-    dispatch_async(self.syncQueue, ^{
-        NSError *localError = nil;
-        if (![weakSelf _compact:self.maxAssetsSizeInBytes error:&localError]) {
-            ETCoreMLLogError(localError, "Failed to compact asset store.");
-        }
+    dispatch_async(self.trashQueue, ^{
+        [weakSelf removeFilesInTrashDirectory];
     });
 }
 
@@ -649,13 +685,7 @@ get_assets_to_remove(ModelAssetsStore& store,
                              identifier);
         }
     }
-    
-    // Trigger cleanup.
-    __weak __typeof(self) weakSelf = self;
-    dispatch_async(self.trashQueue, ^{
-        [weakSelf removeFilesInTrashDirectory];
-    });
-    
+
     return _estimatedSizeInBytes;
 }
 
@@ -664,7 +694,10 @@ get_assets_to_remove(ModelAssetsStore& store,
     dispatch_sync(self.syncQueue, ^{
         result = [self _compact:sizeInBytes error:error];
     });
-    
+
+    // Always clean the trash directory to ensure a minimal footprint.
+    // The `trashQueue` is serialized, so only one cleanup will run at a time.
+    [self cleanupTrashDirectory];
     return result;
 }
 
@@ -724,13 +757,7 @@ get_assets_to_remove(ModelAssetsStore& store,
     
     ::set_error_from_error_code(ec, error);
     // Trigger cleanup
-    if (status) {
-        __weak __typeof(self) weakSelf = self;
-        dispatch_async(self.trashQueue, ^{
-            [weakSelf removeFilesInTrashDirectory];
-        });
-    }
-    
+    [self cleanupTrashDirectory];
     return static_cast<BOOL>(status);
 }
 
