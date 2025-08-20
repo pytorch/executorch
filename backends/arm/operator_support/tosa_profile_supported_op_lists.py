@@ -136,6 +136,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.logit.default,
     exir_ops.edge.aten.acos.default,
     exir_ops.edge.aten.elu.default,
+    exir_ops.edge.aten.bitwise_not.default,
 }
 
 

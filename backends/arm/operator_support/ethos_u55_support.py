@@ -128,7 +128,7 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.bitwise_and.Scalar,
         exir_ops.edge.aten.bitwise_or.Scalar,
         exir_ops.edge.aten.bitwise_xor.Scalar,
-        exir_ops.edge.aten.bitwise_not,
+        exir_ops.edge.aten.bitwise_not.default,
         exir_ops.edge.aten.logical_and.default,
         exir_ops.edge.aten.logical_or.default,
         exir_ops.edge.aten.logical_xor.default,
