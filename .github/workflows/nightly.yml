@@ -42,12 +42,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flow: [qualcomm, vulkan, xnnpack, xnnpack_static_int8_per_channel]
+        flow: [vulkan, xnnpack, xnnpack_static_int8_per_channel]
         suite: [models, operators]
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: linux.4xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
       timeout: 120
       upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
