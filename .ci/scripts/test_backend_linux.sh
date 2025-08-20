@@ -10,6 +10,8 @@ SUITE=$1
 FLOW=$2
 ARTIFACT_DIR=$3
 
+REPORT_FILE="$ARTIFACT_DIR/test-report-$FLOW-$SUITE.csv"
+
 echo "Running backend test job for suite $SUITE, flow $FLOW."
 echo "Saving job artifacts to $ARTIFACT_DIR."
 
@@ -27,4 +29,7 @@ EXTRA_BUILD_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON"
 # We need the runner to test the built library.
 PYTHON_EXECUTABLE=python CMAKE_ARGS="$EXTRA_BUILD_ARGS" .ci/scripts/setup-linux.sh --build-tool cmake --build-mode Release
 
-python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$ARTIFACT_DIR/test_results.csv"
+python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$REPORT_FILE"
+
+# Generate markdown summary.
+GITHUB_STEP_SUMMARY=`${CONDA_RUN} --no-capture-output python -m executorch.backends.test.suite.generate_markdown_summary "$REPORT_FILE"`

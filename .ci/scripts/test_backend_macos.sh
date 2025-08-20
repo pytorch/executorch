@@ -10,6 +10,8 @@ SUITE=$1
 FLOW=$2
 ARTIFACT_DIR=$3
 
+REPORT_FILE="$ARTIFACT_DIR/test-report-$FLOW-$SUITE.csv"
+
 echo "Running backend test job for suite $SUITE, flow $FLOW."
 echo "Saving job artifacts to $ARTIFACT_DIR."
 
@@ -21,4 +23,7 @@ eval "$(conda shell.bash hook)"
 PYTHON_EXECUTABLE=python
 ${CONDA_RUN} --no-capture-output .ci/scripts/setup-macos.sh --build-tool cmake --build-mode Release
 
-${CONDA_RUN} --no-capture-output python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$ARTIFACT_DIR/test_results.csv"
+${CONDA_RUN} --no-capture-output python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$REPORT_FILE"
+
+# Generate markdown summary.
+GITHUB_STEP_SUMMARY=`${CONDA_RUN} --no-capture-output python -m executorch.backends.test.suite.generate_markdown_summary "$REPORT_FILE"`

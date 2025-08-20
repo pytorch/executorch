@@ -60,7 +60,7 @@ jobs:
         # Intentionally suppressing exit code for now.
         # TODO (gjcomer) Remove this when jobs are stable.
         EXIT_CODE=0
-        .ci/scripts/test_backend_linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}" || EXIT_CODE=$?
+        source .ci/scripts/test_backend_linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}" || EXIT_CODE=$?
         echo "Test run complete with exit code $EXIT_CODE."
 
   backend-test-macos:
@@ -87,5 +87,5 @@ jobs:
         ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
 
         EXIT_CODE=0
-        .ci/scripts/test_backend_macos.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}" || EXIT_CODE=$?
+        source .ci/scripts/test_backend_macos.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}" || EXIT_CODE=$?
         echo "Test run complete with exit code $EXIT_CODE."
