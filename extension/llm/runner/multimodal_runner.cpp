@@ -15,6 +15,8 @@
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/sentencepiece.h>
 
+#include <iostream>
+
 namespace executorch::extension::llm {
 
 using ::executorch::extension::Module;
@@ -49,8 +51,11 @@ Error MultimodalRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
+  std::cout << "loading multimodal runner" << std::endl;
   ET_CHECK_OK_OR_RETURN_ERROR(multimodal_prefiller_->load());
+  std::cout << "loaded multimodal prefiller" << std::endl;
   ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
+  std::cout << "loaded multimodal generator" << std::endl;
   return Error::Ok;
 }
 

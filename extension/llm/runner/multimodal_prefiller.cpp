@@ -15,6 +15,8 @@
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/tensor/tensor.h>
 
+#include <iostream>
+
 namespace executorch::extension::llm {
 
 MultimodalPrefiller::MultimodalPrefiller(
@@ -89,20 +91,31 @@ Result<uint64_t> MultimodalPrefiller::prefill(
  * @return The error code.
  */
 ::executorch::runtime::Error MultimodalPrefiller::load() {
+  std::cout << "A";
   if (is_method_loaded()) {
     return ::executorch::runtime::Error::Ok;
   }
+  std::cout << "B";
   // token_embeddings and text_model have to show up in method names.
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kTokenEmbeddingMethod));
+  std::cout << "C";
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kTextModelMethod));
+  std::cout << "D";
 
   std::unordered_set<std::string> methods =
       ET_UNWRAP(module_->method_names(), "Failed to get method names");
+
+  std::cout << "E";
 
   // Load image_encoder method if exists.
   if (methods.find(kImageEncoderMethod) != methods.end()) {
     ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kImageEncoderMethod));
   }
+
+  if (methods.find(kAudioEncoderMethod) != methods.end()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kAudioEncoderMethod));
+  }
+
   return ::executorch::runtime::Error::Ok;
 }
 
