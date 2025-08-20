@@ -62,8 +62,7 @@ class OpSigmoidOutTest : public OperatorTest {
     op_sigmoid_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
 
     EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make(sizes, /*data=*/{0.731059, 0.5, 0.731059, 0.5}));
+        out, tf_out.make(sizes, /*data=*/{0.731059, 0.5, 0.731059, 0.5}));
 
     out = tf_out.zeros({3});
     op_sigmoid_out(tf.make({3}, /*data=*/{true, true, true}), out);
