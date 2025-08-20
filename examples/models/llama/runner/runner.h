@@ -18,6 +18,7 @@
 #include <string>
 #include <unordered_map>
 
+#include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <pytorch/tokenizers/tokenizer.h>
@@ -33,6 +34,7 @@ std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
     float temperature = -1.0f);
 
 std::unique_ptr<tokenizers::Tokenizer> load_llama_tokenizer(
-    const std::string& tokenizer_path);
+    const std::string& tokenizer_path,
+    Version version = Version::Default);
 
 } // namespace example
