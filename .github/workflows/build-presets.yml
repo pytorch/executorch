@@ -127,7 +127,7 @@ jobs:
           conda activate et
 
           python install_requirements.py
-          cmake --preset ${{ matrix.preset }}
+          cmake --preset ${{ matrix.preset }} -T ClangCL
           if (\$LASTEXITCODE -ne 0) {
             Write-Host "CMake configuration was unsuccessful. Exit code: \$LASTEXITCODE."
             exit \$LASTEXITCODE
