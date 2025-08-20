@@ -111,8 +111,9 @@ class FuseConstantArgsPass(ExportPass):
             if node.op != "call_function":
                 continue
             if node.target in [
-                exir_ops.backend.tosa.TABLE.default,
                 exir_ops.backend.tosa.RESCALE.default,
+                exir_ops.backend.tosa.RESIZE.default,
+                exir_ops.backend.tosa.TABLE.default,
                 exir_ops.backend.tosa.TRANSPOSE.default,
             ]:
                 continue
