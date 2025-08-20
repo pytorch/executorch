@@ -6,9 +6,9 @@
 # LICENSE file in the root directory of this source tree.
 
 download_arm_zephyr_sdk () {
-    wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/zephyr-sdk-0.17.2_linux-x86_64.tar.xz
-    tar -xf zephyr-sdk-0.17.2_linux-x86_64.tar.xz
-    rm -f zephyr-sdk-0.17.2_linux-x86_64.tar.xz
+    wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.3/zephyr-sdk-0.17.3_linux-x86_64.tar.xz
+    tar -xf zephyr-sdk-0.17.3_linux-x86_64.tar.xz
+    rm -f zephyr-sdk-0.17.3_linux-x86_64.tar.xz
 }
 
 setup_zephyr_et_module () {

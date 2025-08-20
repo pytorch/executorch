@@ -277,7 +277,7 @@ function select_toolchain() {
         if [[ "${OS}" == "Linux" ]]; then
 	    if [[ "${target_toolchain}" == "zephyr" ]]; then
 	        # TODO can include support for zephyr toolchain for other host platforms later
-                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
+                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.3/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
                 toolchain_dir="arm-zephyr-eabi"
                 toolchain_md5_checksum="93128be0235cf5cf5f1ee561aa6eac5f"
             else
@@ -299,7 +299,7 @@ function select_toolchain() {
 	    fi
         elif [[ "${OS}" == "Linux" ]]; then
 	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
+                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.3/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
                 toolchain_dir="arm-zephyr-eabi"
 		toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
 	    else
