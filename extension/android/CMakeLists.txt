@@ -179,6 +179,35 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama/runner
   )
 
+  target_sources(
+    executorch_jni
+    PRIVATE ${EXECUTORCH_ROOT}/extension/llm/runner/llm_runner_helper.cpp
+  )
+
+  target_include_directories(
+    executorch_jni PRIVATE ${EXECUTORCH_ROOT}/extension/llm/runner
+  )
+
+  if(QNN_SDK_ROOT)
+    target_sources(
+      executorch_jni
+      PRIVATE
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/runner.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/token_generator.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/rpc_mem.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/kv_manager.cpp
+    )
+
+    target_include_directories(
+      executorch_jni
+      PRIVATE ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner
+    )
+    target_compile_definitions(executorch_jni PRIVATE EXECUTORCH_BUILD_QNN=1)
+  endif()
+
   if(NEURON_BUFFER_ALLOCATOR_LIB)
     target_sources(
       executorch_jni
