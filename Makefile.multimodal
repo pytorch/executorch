@@ -1,0 +1,45 @@
+# Makefile for multimodal runner example
+CXX = g++
+CXXFLAGS = -std=c++17 -O2 -Wall -Wextra
+BUILD_DIR = build
+EXECUTORCH_ROOT = .
+
+# Include directories
+INCLUDES = -I$(EXECUTORCH_ROOT)/.. \
+          -I$(EXECUTORCH_ROOT) \
+          -I$(BUILD_DIR) \
+          -I$(BUILD_DIR)/configuration \
+          -I$(BUILD_DIR)/configurations
+
+# Library paths  
+LIBDIRS = -L$(BUILD_DIR) \
+         -L$(BUILD_DIR)/extension/llm/runner \
+         -L$(BUILD_DIR)/extension/llm/tokenizers \
+         -L$(BUILD_DIR)/extension/module \
+         -L$(BUILD_DIR)/extension/data_loader \
+         -L$(BUILD_DIR)/extension/flat_tensor
+
+# Libraries to link against
+LIBS = -lextension_llm_runner \
+       -lextension_module \
+       -lexecutorch \
+       -lextension_data_loader \
+       -lextension_flat_tensor \
+       -lpthread
+
+# Source files
+SRCS = multimodal_runner_example.cpp
+
+# Target executable
+TARGET = multimodal_runner_example
+
+# Default target
+all: $(TARGET)
+
+$(TARGET): $(SRCS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRCS) -o $(TARGET) $(LIBDIRS) $(LIBS)
+
+clean:
+	rm -f $(TARGET)
+
+.PHONY: all clean

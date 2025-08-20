@@ -1,0 +1,19 @@
+cmake_minimum_required(VERSION 3.19)
+
+# Add the current directory to the build
+add_executable(run_multimodal_runner run_multimodal_runner.cpp)
+
+# Include the main executorch includes
+target_include_directories(run_multimodal_runner PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/tokenizers/include
+)
+
+# Link against the libraries that were already built
+target_link_libraries(run_multimodal_runner PRIVATE
+    extension_llm_runner
+    extension_module
+    tokenizers  
+    executorch
+    pthread
+)
