@@ -43,7 +43,8 @@ class StaticKVCache {
       size_t head_dim,
       size_t max_input_len,
       size_t n_heads_per_cache,
-      StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK)
+      StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK,
+      size_t attention_sink_size = 0)
       : n_caches_(cache_lengths.size()),
         cache_lengths_(cache_lengths),
         cache_pos_(n_caches_, 0),
@@ -51,6 +52,7 @@ class StaticKVCache {
         n_heads_per_cache_(n_heads_per_cache),
         head_dim_(head_dim),
         style_(style),
+        attention_sink_size_(attention_sink_size),
         input_ptrs_(n_caches_),
         output_ptrs_(n_caches_) {
     size_t total_cache_len =
@@ -224,10 +226,12 @@ class StaticKVCache {
           update_head + (update_pos + update_n) * head_dim_,
           cache_head + cache_pos * head_dim_);
     }
-    cache_pos = (cache_pos + update_n) % cache_len;
+    cache_pos += update_n;
+    if (cache_pos >= cache_len) {
+      cache_pos = attention_sink_size_;
+    }
 
     if (wrap_n > 0) {
-      ET_CHECK(cache_pos == 0);
       return update_one_cache(
           update,
           update_len,
@@ -248,6 +252,7 @@ class StaticKVCache {
   size_t n_heads_per_cache_;
   size_t head_dim_;
   StaticAttentionUpdateStyle style_;
+  size_t attention_sink_size_;
   AllocatorT allocator_;
   size_t cache_data_size_;
   T* cache_data_;
