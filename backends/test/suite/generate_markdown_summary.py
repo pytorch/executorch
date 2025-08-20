@@ -11,7 +11,12 @@ import sys
 # Markdown is written to stdout.
 #
 
-def generate_markdown(csv_path: str):
+def generate_markdown(csv_path: str, exit_code: int = 0):
+    # Print warning if exit code is non-zero
+    if exit_code != 0:
+        print(f"> [!WARNING]")
+        print(f"> Exit code {exit_code} was non-zero. Test process may have crashed. Check the job logs for more information.\n")
+    
     with open(csv_path, newline='', encoding='utf-8') as f:
         reader = csv.reader(f)
         rows = list(reader)
@@ -98,9 +103,10 @@ def generate_markdown(csv_path: str):
 def main():
     parser = argparse.ArgumentParser(description="Generate a Markdown representation of a test report.")
     parser.add_argument("csv_path", help="Path to the test report CSV file.")
+    parser.add_argument("--exit_code", type=int, default=0, help="Exit code from the test process.")
     args = parser.parse_args()
     try:
-        generate_markdown(args.csv_path)
+        generate_markdown(args.csv_path, args.exit_code)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

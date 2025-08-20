@@ -29,7 +29,8 @@ EXTRA_BUILD_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON"
 # We need the runner to test the built library.
 PYTHON_EXECUTABLE=python CMAKE_ARGS="$EXTRA_BUILD_ARGS" .ci/scripts/setup-linux.sh --build-tool cmake --build-mode Release --editable true
 
-python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$REPORT_FILE"
+EXIT_CODE=0
+python -m executorch.backends.test.suite.runner $SUITE --flow $FLOW --report "$REPORT_FILE" || EXIT_CODE=$?
 
 # Generate markdown summary.
-python -m executorch.backends.test.suite.generate_markdown_summary "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"}
+python -m executorch.backends.test.suite.generate_markdown_summary "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE
