@@ -20,7 +20,7 @@ The following models in two folders can be categorized based on their primary us
    - torchvision_vit
 
 ## Prerequisite
-Please follow another [README](examples/qualcomm/README.md) first to set up environment.
+Please follow another [README](../README.md) first to set up environment.
 
 ## Model running
 Some models require specific datasets. Please download them in advance and place them in the appropriate folders.
