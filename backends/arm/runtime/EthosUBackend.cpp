@@ -192,8 +192,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // Use a temporary allocator for the intermediate tensors of the
     // computation. The allocator is released in runtime/executor/method.cpp at
     // the end of the execution of the Ethos-U custom delegate
-    char* ethosu_scratch =
-        static_cast<char*>(temp_allocator->allocate(handles.scratch_data_size));
+    // Ethos-U driver requires 16 bit alignment.
+    char* ethosu_scratch = static_cast<char*>(
+        temp_allocator->allocate(handles.scratch_data_size, 16UL));
     if (ethosu_scratch == nullptr) {
       ET_LOG(
           Error,

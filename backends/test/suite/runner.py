@@ -15,6 +15,7 @@ import torch
 # Set of unsupported ops that should cause tests to be skipped
 UNSUPPORTED_PORTABLE_OPS = {
     "aten::_embedding_bag",
+    "aten::_adaptive_avg_pool2d",
     "aten::median",
     "aten::median.dim",
     "aten::round.decimals",
@@ -251,6 +252,7 @@ def parse_args():
     parser.add_argument(
         "-b", "--backend", nargs="*", help="The backend or backends to test."
     )
+    parser.add_argument("-l", "--flow", nargs="*", help="The flow or flows to test.")
     parser.add_argument(
         "-f", "--filter", nargs="?", help="A regular expression filter for test names."
     )
@@ -273,6 +275,7 @@ def parse_args():
 def build_test_filter(args: argparse.Namespace) -> TestFilter:
     return TestFilter(
         backends=set(args.backend) if args.backend is not None else None,
+        flows=set(args.flow) if args.flow is not None else None,
         name_regex=re.compile(args.filter) if args.filter is not None else None,
     )
 

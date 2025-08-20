@@ -199,7 +199,7 @@ function check_options() {
 function setup_root_dir() {
     mkdir -p ${root_dir}
     root_dir=$(realpath ${root_dir})
-    setup_path_script="${root_dir}/setup_path.sh"
+    setup_path_script="${root_dir}/setup_path"
 }
 
 function check_fvp_eula () {
@@ -333,10 +333,22 @@ function setup_vela() {
     pip install ethos-u-vela@git+${vela_repo_url}@${vela_rev}
 }
 
+function prepend_env_in_setup_path() {
+    echo "export $1=$2:\${$1-}" >> ${setup_path_script}.sh
+    echo "set --path -pgx $1 $2" >> ${setup_path_script}.fish
+}
+
+function append_env_in_setup_path() {
+    echo "export $1=\${$1-}:$2" >> ${setup_path_script}.sh
+    echo "set --path -agx $1 $2" >> ${setup_path_script}.fish
+}
+
 function create_setup_path(){
     cd "${root_dir}"
 
-    echo "" > "${setup_path_script}"
+    # Clear setup_path_script
+    echo "" > "${setup_path_script}.sh"
+    echo "" > "${setup_path_script}.fish"
 
     if [[ "${enable_fvps}" -eq 1 ]]; then
         fvps=("corstone300" "corstone320")
@@ -344,44 +356,45 @@ function create_setup_path(){
             model_dir_variable=${fvp}_model_dir
             fvp_model_dir=${!model_dir_variable}
             fvp_bin_path="${root_dir}/FVP-${fvp}/models/${fvp_model_dir}"
-            echo "export PATH=\${PATH}:${fvp_bin_path}" >> ${setup_path_script}
+            append_env_in_setup_path PATH ${fvp_bin_path}
         done
 
         # Fixup for Corstone-320 python dependency
-        echo "export LD_LIBRARY_PATH=${root_dir}/FVP-corstone320/python/lib/" >> ${setup_path_script}
+        append_env_in_setup_path LD_LIBRARY_PATH "${root_dir}/FVP-corstone320/python/lib/"
 
-        echo "hash FVP_Corstone_SSE-300_Ethos-U55" >> ${setup_path_script}
-        echo "hash FVP_Corstone_SSE-300_Ethos-U65" >> ${setup_path_script}
-        echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}
+        echo "hash FVP_Corstone_SSE-300_Ethos-U55" >> ${setup_path_script}.sh
+        echo "hash FVP_Corstone_SSE-300_Ethos-U65" >> ${setup_path_script}.sh
+        echo "hash FVP_Corstone_SSE-320" >> ${setup_path_script}.sh
     fi
 
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
         toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
-        echo "export PATH=\${PATH}:${toolchain_bin_path}" >> ${setup_path_script}
+        append_env_in_setup_path PATH ${toolchain_bin_path}
     fi
 
     if [[ "${enable_model_converter}" -eq 1 ]]; then
         cd "${root_dir}"
         model_converter_bin_path="$(cd ${mlsdk_manifest_dir}/sw/model-converter/build && pwd)"
-        echo "export PATH=\${PATH}:${model_converter_bin_path}" >> ${setup_path_script}
+        append_env_in_setup_path PATH ${model_converter_bin_path}
     fi
 
     # Add Path for vgf-lib and emulation-layer
     if [[ "${enable_vgf_lib}" -eq 1 ]]; then
         cd "${root_dir}"
         model_vgf_path="$(cd ${mlsdk_manifest_dir}/sw/vgf-lib/deploy && pwd)"
-        echo "export PATH=\${PATH}:${model_vgf_path}/bin" >> ${setup_path_script}
-        echo "export LD_LIBRARY_PATH=\${LD_LIBRARY_PATH}:${model_vgf_path}/lib" >> ${setup_path_script}
-        echo "export DYLD_LIBRARY_PATH=\${DYLD_LIBRARY_PATH}:${model_vgf_path}/lib" >> ${setup_path_script}
+        append_env_in_setup_path PATH ${model_vgf_path}/bin
+        append_env_in_setup_path LD_LIBRARY_PATH "${model_vgf_path}/lib"
+        append_env_in_setup_path DYLD_LIBRARY_PATH "${model_vgf_path}/lib"
     fi
 
     if [[ "${enable_emulation_layer}" -eq 1 ]]; then
         cd "${root_dir}"
         model_emulation_layer_path="$(cd ${mlsdk_manifest_dir}/sw/emulation-layer/ && pwd)"
-        echo "export LD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${LD_LIBRARY_PATH}" >> ${setup_path_script}
-        echo "export DYLD_LIBRARY_PATH=${model_emulation_layer_path}/deploy/lib:\${DYLD_LIBRARY_PATH}" >> ${setup_path_script}
-        echo "export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation:\${VK_INSTANCE_LAYERS}" >> ${setup_path_script}
-        echo "export VK_ADD_LAYER_PATH=${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d:\${VK_ADD_LAYER_PATH}" >> ${setup_path_script}
+        prepend_env_in_setup_path LD_LIBRARY_PATH "${model_emulation_layer_path}/deploy/lib"
+        prepend_env_in_setup_path DYLD_LIBRARY_PATH "${model_emulation_layer_path}/deploy/lib"
+        prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Tensor_Emulation
+        prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Graph_Emulation
+        prepend_env_in_setup_path VK_ADD_LAYER_PATH "${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d"
     fi
 }
 
@@ -460,8 +473,8 @@ if [[ $is_script_sourced -eq 0 ]]; then
         setup_vela
     fi
 
-    echo "[main] update path by doing 'source ${setup_path_script}'"
-
+    echo "[main] Update path by running 'source ${setup_path_script}.sh'"
+    hash fish 2>/dev/null && echo >&2 "[main] Or for fish shell use 'source ${setup_path_script}.fish'"
     echo "[main] success!"
     exit 0
 fi

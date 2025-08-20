@@ -24,7 +24,7 @@ from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_acosh_pass import DecomposeAcoshPass  # noqa
 from .decompose_adaptive_avg_pool2d_pass import DecomposeAdaptiveAvgPool2dPass  # noqa
 from .decompose_addmm_pass import DecomposeAddmmPass  # noqa
-from .decompose_asin_pass import DecomposeAsinPass  # noqa
+from .decompose_asin_and_acos_pass import DecomposeAsinAndAcosPass  # noqa
 from .decompose_asinh_pass import DecomposeAsinhPass  # noqa
 from .decompose_atan_pass import DecomposeAtanPass  # noqa
 from .decompose_atanh_pass import DecomposeAtanhPass  # noqa
@@ -32,6 +32,7 @@ from .decompose_avg_pool2d import DecomposeAvgPool2d  # noqa
 from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
 from .decompose_cosh_pass import DecomposeCoshPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
+from .decompose_cumsum_pass import DecomposeCumsumPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa

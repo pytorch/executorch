@@ -16,30 +16,6 @@ from executorch.backends.arm.tosa_utils import is_consumer_node_depthwise_conv2d
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.library import impl, Library
-
-# Define lib with passthrough operators. The operators have no real meaning in edge IR
-# except for argument validaiton and a passthrough output. The operators will be used
-# when lowering to TOSA, e.g. a passthrough_to_tosa._transpose will not affect
-# the edge IR graph but will be lowered to a TOSA-TRANSPOSE.
-lib = Library("passthrough_to_tosa", "DEF")
-# For certain operators we need the data in a specific data format. Changing tosa_dim_order
-# is not sufficient as we also need transpose the data.
-# By utilizing an edge IR passthrough operator we can keep the edge program in
-# channels-first/contiguous and get the desired behavior in the TOSA lowering.
-lib.define("_transpose(Tensor self, int[] dim_order) -> Tensor")
-
-
-@impl(lib, "_transpose")
-def _transpose_impl(*args, **kwargs):
-    # Validate length of dim_order array
-    dim = args[1]
-    if len(dim) != 4 and len(dim) != 5:
-        raise ValueError(
-            f"Dim order length must be either 4 or 5, got {len(dim)}: {dim}"
-        )
-    # Pass-through in edge-IR
-    return args[0]
 
 
 def _is_input(node: torch.fx.Node, exported_program: ExportedProgram) -> bool:
@@ -52,7 +28,7 @@ def _is_input(node: torch.fx.Node, exported_program: ExportedProgram) -> bool:
 class ToTosaMemoryFormatPass(ExportPass):
     """
     Annotates each node with a tosa_dim_order. tosa_dim_order can be seen as a channels-last dim-order
-    that in most cases will be (0, 2, 3, 1) for nodes with 4D-shapes. The pass also inserts passthrough_to_tosa._transpose
+    that in most cases will be (0, 2, 3, 1) for nodes with 4D-shapes. The pass also inserts backend.tosa.TRANSPOSE
     when a transition between 3D and 4D/5D tensors happen.
     The annotated tosa_dim_order is used to permute the node's shape such that it gives a TOSA-compliant shape.
     """
@@ -137,7 +113,7 @@ class ToTosaMemoryFormatPass(ExportPass):
         with graph_module.graph.inserting_before(node):
             permute_node = create_node(
                 graph_module.graph,
-                torch.ops.passthrough_to_tosa._transpose.default,
+                exir_ops.backend.tosa.TRANSPOSE.default,
                 args=(
                     input_node,
                     list(
@@ -159,7 +135,7 @@ class ToTosaMemoryFormatPass(ExportPass):
         with graph_module.graph.inserting_after(node):
             permute_node = create_node(
                 graph_module.graph,
-                torch.ops.passthrough_to_tosa._transpose.default,
+                exir_ops.backend.tosa.TRANSPOSE.default,
                 args=(
                     node,
                     list(

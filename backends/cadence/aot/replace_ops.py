@@ -7,12 +7,7 @@
 
 
 # This file contains all the functions that replace one op with another in the
-# graph. The functions replacing ops for models deployed with Jarvis are grouped
-# together in class 'ReplaceOpsInGraph'. Some examples of functions in the class are
-# 1. functions that replace an ATen op with a custom op that accepts extra arguments
-# 2. functions that replace in-place variants of ATen ops with out-of-place version.
-# 3. functions that replace an ATen op with another semantically equivalent ATen op.
-# 4. functions that concretize optional args.
+# graph.
 
 # pyre-unsafe
 
@@ -20,17 +15,15 @@ import logging
 import math
 import operator
 from operator import neg
-from typing import cast, Dict, Iterable, Optional, Sequence, Set, Tuple
+from typing import cast, Dict, Iterable, Optional, Sequence, Tuple
 
 import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import (
     get_shape,
     get_tensor_from_attr,
-    get_transposed_dims,
     get_zero_point,
     is_node_with_op,
-    is_quantized_tensor,
     quantize_tensor_multiplier,
 )
 from executorch.backends.cadence.aot.fuse_ops import (
@@ -54,7 +47,7 @@ from torch._subclasses import FakeTensor
 from torch.fx.node import Argument
 
 # A map to represent ops that:
-# (a) are functionally equivalent wrt. Jarvis; and
+# (a) are functionally equivalent; and
 # (b) have identical arguments
 # An op whose target is 'key' in this dict can be replaced by the functionally euivalent
 # op whose target is 'value'. The replacement would just involve changing the op target.
@@ -650,7 +643,7 @@ class ReplaceConstantPadNdWithSlicePass(ExportPass):
 
 # Make that pass runnable standalone at opt level 0.
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceAtenConvolutionWithJarvisConvolutionPass(ExportPass):
+class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
     """
     Replace aten convolution op with jarvis-specific convolution op, since the
     aten version is not supported by jarvis.
@@ -777,186 +770,6 @@ class ReplaceAtenConvolutionWithJarvisConvolutionPass(ExportPass):
         return super().call_operator(target, new_args, kwargs, meta)
 
 
-# TODO(matthiascremon): this is a fuse op, not a replace op
-class ReplaceConvWithChannelLastConv:
-    """
-    Convolution op in pytorch expects NCHW layout for input, weight, and output
-    tensors. However, if the input and output to the convolution op are originally
-    in NWHC layout, and are then permuted to conform to NCHW layout, we can fuse
-    the two permute ops with the convolution op, and call the NHWC layout
-    convolution op in Jarvis.
-    """
-
-    def __init__(self):
-        self.counter = 0
-        self.graph_module = None
-
-    def __call__(self, graph_module: torch.fx.GraphModule):
-        self.replace_conv_with_nhwc_conv(graph_module)
-
-    def conv_layout_is_nhwc(self, node: torch.fx.Node) -> bool:
-        """
-        Return true if the convolution input and output are connected to permute
-        ops, and the input/output to/from the permute ops is NHWC layout tensor.
-        """
-        # There must only be a single user of the output node (which must be a
-        # permute/tranpsose op). The input of the convolution must be connected
-        # to a permute op, and that permute op should have a single user.
-        conv_inp = node.args[0]
-        assert isinstance(conv_inp, torch.fx.Node)
-        if len(node.users) != 1 or len(conv_inp.users) != 1:
-            return False
-
-        # Get the input and output (permute/transpose) nodes of the convolution
-        conv_user = list(node.users.keys())[0]
-        assert isinstance(conv_user, torch.fx.Node)
-        pt_nodes: Set[torch.fx.Node] = {conv_inp, conv_user}
-
-        # Any node in pt_nodes must not be a placeholder.
-        if contains_placeholder_or_param(pt_nodes):
-            return False
-
-        # Determine if the convolution is 1d or 2d. The output tensor must be
-        # 3- or 4-dimensional
-        out_shape = get_shape(self.graph_module, node)
-        assert out_shape is not None
-        out_dims = len(out_shape)
-        assert out_dims in {3, 4}, "Jarvis only supports conv1d and conv2d"
-        conv1d = out_dims == 3
-
-        # Get the possible targets for the nodes in pt_nodes. Since conv1d has
-        # 3-dimensional input and output tensors, the nodes in pt_nodes could
-        # be either permute or transpose op. For conv2d, the nodes in pt_nodes
-        # must be permute ops.
-        p_target = exir_ops.edge.aten.permute_copy.default
-        t_target = exir_ops.edge.aten.transpose_copy.int
-        pt_targets = [p_target] + ([t_target] if conv1d else [])
-
-        # If any node in pt_nodes is not permute op (or tranpose op for conv1d),
-        # bail.
-        if any(x.target not in pt_targets for x in pt_nodes):
-            return False
-
-        # Now we need to determine the dimension permutations:
-        # If the input had NHWC layout, which was then permuted/transposed
-        # by a permute/transpose op to NCHW layout, the permutation must be
-        # [0, 3, 2, 1] (or [0, 2, 1] for conv1d).
-        # If the output had NCHW layout, and was then permuted to NHWC layout,
-        # the permutation must be [0, 2, 3, 1] (or [0, 2, 1] for conv1d).
-        nhwc_permute_order = {
-            node.args[0]: [0, 2, 1] if conv1d else [0, 3, 1, 2],
-            list(node.users.keys())[0]: [0, 2, 1] if conv1d else [0, 2, 3, 1],
-        }
-        for x in pt_nodes:
-            order = (
-                x.args[1]
-                if x.target == p_target
-                else get_transposed_dims(x, list(range(out_dims)))
-            )
-            if order != nhwc_permute_order[x]:
-                return False
-
-        return True
-
-    def replace_conv_with_nhwc_conv(self, graph_module: torch.fx.GraphModule):
-        self.graph_module = graph_module
-        graph = graph_module.graph
-        for node in graph.nodes:
-            # We are only interested in convolution nodes that have NHWC layout
-            if node.target not in {
-                exir_ops.edge.cadence.quantized_conv.default,
-                exir_ops.edge.cadence.convolution.default,
-                exir_ops.edge.cadence.quantized_transposed_conv.default,
-                exir_ops.edge.cadence.transposed_convolution.default,
-            } or not self.conv_layout_is_nhwc(node):
-                continue
-
-            # Get the args of convolution op
-            args = list(node.args)
-            # The input is connected to a permute/transpose op that converts the
-            # NHWC layout to NCHW layout. The input of the permute op will become
-            # this convolution op's input.
-            in_tp = args[0]
-            args[0] = in_tp.args[0]
-            # The weight is in NHWC layout. Permute it to NHWC layout.
-            weight_tensor = get_tensor_from_attr(graph_module, args[1])
-            assert isinstance(weight_tensor, torch.Tensor)
-            # We cannot directly permute a per-channel quantized tensor. We will
-            # dequantize it, permute the fp32 tensor, and then requantize the
-            # permuted tensor.
-            if (
-                is_quantized_tensor(weight_tensor)
-                and weight_tensor.qscheme() == torch.per_channel_affine
-            ):
-                # We have already asserted during quantizing conv op that the
-                # quantization axis is 0.
-                dequant_weight = weight_tensor.dequantize()
-                dequant_weight = (
-                    dequant_weight.permute([0, 2, 1])
-                    if dequant_weight.dim() == 3
-                    else dequant_weight.permute([0, 2, 3, 1])
-                )
-                weight_tensor = torch.quantize_per_channel(
-                    dequant_weight.contiguous(),
-                    weight_tensor.q_per_channel_scales(),
-                    weight_tensor.q_per_channel_zero_points(),
-                    0,
-                    weight_tensor.dtype,
-                )
-            else:
-                weight_tensor = (
-                    weight_tensor.permute([0, 2, 1])
-                    if weight_tensor.dim() == 3
-                    else weight_tensor.permute([0, 2, 3, 1])
-                )
-            # Make the weight tensor contiguous, since we have permuted it.
-            weight_tensor = weight_tensor.contiguous()
-            # Add the permuted weight into the graph, and update the weight in
-            # args.
-            with graph.inserting_before(node):
-                weight_name = f"_weight_nhwc_{self.counter}"
-                graph_module.register_buffer(weight_name, weight_tensor)
-                weight = graph.get_attr(weight_name)
-            args[1] = weight
-
-            # The 'channel_last' arg is True. It is the last arg.
-            args[-1] = True
-            # Now update the convolution node args to mark it as NHWC convolution
-            node.args = tuple(args)
-
-            # Replace all the uses of the permute op connected to the output op
-            # with this convolution.
-            out_tp = list(node.users.keys())[0]
-            out_tp.replace_all_uses_with(node)
-            node.meta = out_tp.meta
-
-            # Erase the permute ops connected to the input and output of the
-            # convolution op.
-            graph.erase_node(in_tp)
-            graph.erase_node(out_tp)
-            self.counter += 1
-
-        graph_module.recompile()
-
-
-# This pass needs to be reworked to be compatible with PT2. It is an optimization
-# pass anyway, so move it to opt level 2.
-# TODO: T213724613 update and improve this pass.
-# @register_cadence_pass(CadencePassAttribute(opt_level=2))
-class ReplaceConvWithChannelLastConvPass(ExportPass):
-    """
-    Replace the ATen convolution op with custom conv op with NCHW or NHWC layout
-    input tensors, depending on the presence of permute/transpose ops connected
-    to the input tensor.
-    """
-
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        result = ReplaceAtenConvolutionWithJarvisConvolutionPass()(graph_module)
-        assert result is not None
-        ReplaceConvWithChannelLastConv()(result.graph_module)
-        return result
-
-
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceTrivialConvWithLinear(ExportPass):
     """
@@ -974,7 +787,8 @@ class ReplaceTrivialConvWithLinear(ExportPass):
 
     trivial_conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
-        exir_ops.edge.cadence.quantized_conv.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
     }
 
     def call_operator(self, op, args, kwargs, meta):
@@ -985,7 +799,10 @@ class ReplaceTrivialConvWithLinear(ExportPass):
         # and quantized_conv have the same first 8 args. The quantized op has
         # extra args holding at least the zero point and scale of input, weight, bias,
         # and output tensor.
-        quantized_op = op == exir_ops.edge.cadence.quantized_conv.default
+        quantized_op = (
+            op == exir_ops.edge.cadence.quantized_conv_nchw.default
+            or op == exir_ops.edge.cadence.quantized_conv_nhwc.default
+        )
         assert (len(args) == 8 and not quantized_op) or (
             len(args) >= 12 and quantized_op
         ), "Inconsistent args for convolution"
@@ -1132,7 +949,7 @@ class ExportPassWithTransposeHelper(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=3))
-class ForceChannelLastForConvPass(ExportPassWithTransposeHelper):
+class ReplaceConvWithChannelLastConvPass(ExportPassWithTransposeHelper):
     def change_nchw_to_nhwc(self, proxy: ProxyValue, meta: NodeMetadata) -> ProxyValue:
         shape = proxy.to_tensor().shape
         if len(shape) == 3:
@@ -1162,35 +979,38 @@ class ForceChannelLastForConvPass(ExportPassWithTransposeHelper):
     ) -> ProxyValue:
         if op not in {
             exir_ops.edge.cadence.convolution.default,
-            exir_ops.edge.cadence.quantized_conv.default,
+            exir_ops.edge.cadence.quantized_conv_nchw.default,
         }:
             return super().call_operator(op, args, kwargs, meta)
 
-        quantized_op = op == exir_ops.edge.cadence.quantized_conv.default
-        channel_last_arg_index = 14 if quantized_op else 7
-        channel_last = (
-            args[channel_last_arg_index]
-            if len(args) > channel_last_arg_index
-            # Default is false (NCHW).
-            else False
-        )
-        if channel_last:
+        quantized_op = op == exir_ops.edge.cadence.quantized_conv_nchw.default
+
+        if not quantized_op and len(args) == 8 and args[-1] is True:
+            # Already in NHWC layout.
             return super().call_operator(op, args, kwargs, meta)
+
+        new_op = (
+            exir_ops.edge.cadence.quantized_conv_nhwc.default
+            if quantized_op
+            else exir_ops.edge.cadence.convolution.default
+        )
 
         input_proxy = cast(ProxyValue, args[0])
         weight_proxy = cast(ProxyValue, args[1])
         input_proxy = self.change_nchw_to_nhwc(input_proxy, meta)
         weight_proxy = self.change_nchw_to_nhwc(weight_proxy, meta)
 
+        # Non-quantized ops still need to set the last optional argument to True.
+        channel_last_arg = [] if quantized_op else [True]
+
         new_args = (
             # Transposed input/weights.
             (input_proxy, weight_proxy)
             # All other args (bias, quant params, etc)
-            + tuple(args[2:channel_last_arg_index])
-            # Channel last.
-            + (True,)
+            + tuple(args[2:])
+            + tuple(channel_last_arg)
         )
-        output_proxy = super().call_operator(op, new_args, kwargs, meta)
+        output_proxy = super().call_operator(new_op, new_args, kwargs, meta)
         nchw_proxy = self.change_nhwc_to_nchw(output_proxy, meta)
         return nchw_proxy
 
@@ -1247,7 +1067,8 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
     # decompose to.
     conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
-        exir_ops.edge.cadence.quantized_conv.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
     }
 
     def call_operator(self, op, args, kwargs, meta):
@@ -1255,7 +1076,10 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
             return super().call_operator(op, args, kwargs, meta)
 
         # Get the relevant args from convolution node.
-        quantized_op = op == exir_ops.edge.cadence.quantized_conv.default
+        quantized_op = (
+            op == exir_ops.edge.cadence.quantized_conv_nchw.default
+            or op == exir_ops.edge.cadence.quantized_conv_nhwc.default
+        )
         assert (len(args) == 8 and not quantized_op) or (
             len(args) >= 12 and quantized_op
         ), "Inconsistent args for convolution"
@@ -1286,9 +1110,7 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
         # channel_last layout is specified by the channel_last arg of conv
         # op, which is either the last argument (15th) or implicitely False
         # if the op is quantized, or the last argument if not.
-        channel_last = (
-            (args[14] if len(args) == 15 else False) if quantized_op else args[-1]
-        )
+        channel_last = op == exir_ops.edge.cadence.quantized_conv_nhwc.default
         # The weight tensor is [out_channels, in_channels, X] for NCHW layout,
         # and [out_channels, X, in_channels] for NHWC layout. Here, X is the
         # kernel_width for conv1d, and X = kernel_height * kernel_width for
@@ -1700,7 +1522,6 @@ class ReplaceLinearWithFullyConnectedOpPass(ExportPass):
         )
 
 
-# pyre-ignore[6]: Incompatible parameter type (doesn't get the inheritance)
 register_cadence_pass(CadencePassAttribute(opt_level=0))(ReplaceScalarWithTensorArgPass)
 
 
@@ -1801,8 +1622,12 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
             exir_ops.edge.cadence.quantized_add.per_tensor,
             [1, 2, 4, 5],
         ),
-        exir_ops.edge.cadence.quantized_conv: (
-            exir_ops.edge.cadence.quantized_conv.per_tensor,
+        exir_ops.edge.cadence.quantized_conv_nchw: (
+            exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
+            [8, 9, 12, 13],
+        ),
+        exir_ops.edge.cadence.quantized_conv_nhwc: (
+            exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
             [8, 9, 12, 13],
         ),
         exir_ops.edge.cadence.quantized_fully_connected: (
@@ -1871,9 +1696,9 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
-class ReplaceAtenAvgPoolWithJarvisAvgPoolPass(ExportPass):
+class ReplaceAtenAvgPoolWithCadenceAvgPoolPass(ExportPass):
     """
-    Replace the aten avg_pool op with the jarvis custom avg_pool2d op.
+    Replace the aten avg_pool op with the cadence custom avg_pool2d op.
     """
 
     def call_operator(self, op, args, kwargs, meta):
@@ -2327,10 +2152,16 @@ class ReplaceMulTensorWithMulAndFullOpsPass(ExportPass):
             # Cast the const_arg to the dtype of the x_arg
             full_arg = self.resolve_full_arg(x_arg, const_arg)
 
+            full_output_dtype = (
+                torch.int32 if isinstance(full_arg, int) else torch.float32
+            )
+
             # Extract an argument to a separate full op.
             with graph_module.graph.inserting_before(mul_node):
                 full_node = graph_module.graph.call_function(
-                    torch.ops.aten.full.default, args=([1], full_arg)
+                    torch.ops.aten.full.default,
+                    args=([1], full_arg),
+                    kwargs={"dtype": full_output_dtype},
                 )
                 full_node.meta = mul_node.meta
                 full_node.meta["val"] = [1]
@@ -2428,9 +2259,8 @@ class CadenceReplaceOpsInGraph:
         ReplaceRepeatWithCatPass,
         ReplacePadWithCatPass,
         ReplaceConstantPadNdWithSlicePass,
+        ReplaceAtenConvolutionWithCadenceConvolutionPass,
         ReplaceConvWithChannelLastConvPass,
-        ReplaceAtenConvolutionWithJarvisConvolutionPass,
-        ForceChannelLastForConvPass,
         ReplaceTrivialConvWithLinear,
         ReplaceConvWithIm2RowAndLinear,
         ReplaceTransposedConvWithLinearPass,
@@ -2448,7 +2278,7 @@ class CadenceReplaceOpsInGraph:
         ReplacePT2DequantWithCadenceDequantPass,
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
         ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
-        ReplaceAtenAvgPoolWithJarvisAvgPoolPass,
+        ReplaceAtenAvgPoolWithCadenceAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
         ReplaceAtenApproxGeluWithApproxGeluPass,
         ReplaceSplitWithSlicePass,
