@@ -91,14 +91,6 @@ def generate_markdown(csv_path: str, exit_code: int = 0):
             print("| " + " | ".join(row) + " |")
     else:
         print("No failed tests.\n")
-    print()
-    
-    # Generate Test Cases section
-    print("# Test Cases\n")
-    print("| " + " | ".join(header) + " |")
-    print("|" + "|".join(['---'] * len(header)) + "|")
-    for row in processed_rows:
-        print("| " + " | ".join(row) + " |")
 
 def main():
     parser = argparse.ArgumentParser(description="Generate a Markdown representation of a test report.")
