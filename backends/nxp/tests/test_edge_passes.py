@@ -5,7 +5,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import (
     EdgeProgramExecutor,
-    OverrideSupportedTargets,
+    OverrideTargetSupportCheck,
 )
 from executorch.backends.nxp.tests.models import ConvFCFCSoftmaxModuleWithoutReshape
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -62,7 +62,12 @@ def test_moving_view_copy_into_separate_qdq_clusters():
     input_shape = (1, 4, 3, 33)
 
     # Prohibit `view_copy` conversion for the testing purposes.
-    with OverrideSupportedTargets(ViewCopyConverter, new_targets=[]):
+    def unsupported_target(*_):
+        return False
+
+    with OverrideTargetSupportCheck(
+        ViewCopyConverter, new_target_support_check=unsupported_target
+    ):
         epm = to_quantized_edge_program(model, input_shape, target="imxrt700")
         exported_program = epm.exported_program()
 
