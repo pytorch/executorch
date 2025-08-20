@@ -45,6 +45,11 @@ using AOTInductorModelContainerGetNumInputsFunc = AOTIRuntimeError (*)(
     AOTInductorModelContainerHandle container_handle,
     size_t* num_constants);
 
+using AOTInductorModelContainerGetInputNameFunc = AOTIRuntimeError (*)(
+    AOTInductorModelContainerHandle container_handle,
+    size_t input_idx,
+    const char** input_name);
+
 using AOTInductorModelContainerGetNumConstantsFunc = AOTIRuntimeError (*)(
     AOTInductorModelContainerHandle container_handle,
     size_t* num_constants);
@@ -72,6 +77,8 @@ extern AOTInductorModelContainerCreateWithDeviceFunc
 extern AOTInductorModelContainerDeleteFunc AOTInductorModelContainerDelete;
 extern AOTInductorModelContainerGetNumInputsFunc
     AOTInductorModelContainerGetNumInputs;
+extern AOTInductorModelContainerGetInputNameFunc
+    AOTInductorModelContainerGetInputName;
 extern AOTInductorModelContainerGetNumConstantsFunc
     AOTInductorModelContainerGetNumConstants;
 extern AOTInductorModelContainerGetNumOutputsFunc

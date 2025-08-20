@@ -11,6 +11,7 @@
 #include <cuda_runtime.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/error.h>
+#include <torch/csrc/inductor/aoti_torch/generated/c_shim_cuda.h>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>

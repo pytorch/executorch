@@ -21,9 +21,11 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-# include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-
 find_package(CUDAToolkit REQUIRED)
+
+# Use ExecutorTorch's standard way to find PyTorch libraries for AOTI
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+find_package_torch()
 
 set(_aoti_sources
     runtime/aoti_backend.cpp
@@ -37,17 +39,22 @@ target_include_directories(
     ${CUDAToolkit_INCLUDE_DIRS}
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
     $<INSTALL_INTERFACE:include>
+    # PyTorch AOTI headers from ExecutorTorch's torch detection
+    ${TORCH_INCLUDE_DIRS}
 )
 target_compile_options(aoti_backend PUBLIC -fexceptions -frtti -fPIC)
 # Ensure symbols are exported properly
 target_link_options(aoti_backend PUBLIC -Wl,--export-dynamic)
-# Link against CUDA::cudart (the CUDA runtime library)
+
+# Link against CUDA::cudart, PyTorch libraries and standard libraries
 target_link_libraries(
   aoti_backend
   PUBLIC
     extension_tensor
     CUDA::cudart
     ${CMAKE_DL_LIBS}
+    # Link PyTorch libraries for AOTI CUDA functions
+    ${TORCH_LIBRARIES}
 )
 # If you need other CUDA libraries, link them similarly:
 # target_link_libraries(aoti_backend PUBLIC CUDA::cublas CUDA::cufft ...)

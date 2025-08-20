@@ -21,6 +21,8 @@ AOTInductorModelContainerCreateWithDeviceFunc
 AOTInductorModelContainerDeleteFunc AOTInductorModelContainerDelete = nullptr;
 AOTInductorModelContainerGetNumInputsFunc
     AOTInductorModelContainerGetNumInputs = nullptr;
+AOTInductorModelContainerGetInputNameFunc
+    AOTInductorModelContainerGetInputName = nullptr;
 AOTInductorModelContainerGetNumConstantsFunc
     AOTInductorModelContainerGetNumConstants = nullptr;
 AOTInductorModelContainerGetNumOutputsFunc
