@@ -85,6 +85,7 @@ class InsertRescaleInt32Pass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     included_targets = [
+        exir_ops.edge.aten.abs.default,
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.gt.Tensor,
@@ -92,43 +93,85 @@ class InsertRescaleInt32Pass(ArmPass):
         exir_ops.edge.aten.lt.Tensor,
     ]
 
-    def _get_rescale_qparams(
-        self, target, input_qparams: Dict[int, QuantArgs]
-    ) -> Tuple[Dict[int, QuantArgs], Optional[QuantArgs]]:
-        """
-        Get the quantization parameters of the Int32 inputs/outputs that will
-        surround the node.
-        """
+    def _int32_qargs(self, s):
+        """Helper creator function for INT32-based QuantArgs"""
 
-        # Helper creator function for Int32-based QuantArgs
-        def int32_qargs(s):
-            return QuantArgs(
-                scale=s,
-                zp=0,
-                qmin=torch.iinfo(torch.int32).min,
-                qmax=torch.iinfo(torch.int32).max,
-                dtype=torch.int32,
-            )
+        return QuantArgs(
+            scale=s,
+            zp=0,
+            qmin=torch.iinfo(torch.int32).min,
+            qmax=torch.iinfo(torch.int32).max,
+            dtype=torch.int32,
+        )
+
+    def _get_inputs_rescaled_qparams(
+        self, target, input_qparams: Dict[int, QuantArgs]
+    ) -> Dict[int, QuantArgs]:
+        """Get the qparams for the INT32 operands to the op ``target``
+
+        Inputs to the INT32-based operator must be rescaled from INT8 to INT32.
+        This function computes the ``QuantArgs`` for each of the operands and returns
+        it as a dict, mapping tensor index to ``QuantArgs``.
+        """
 
         if target in [
+            exir_ops.edge.aten.abs.default,
             exir_ops.edge.aten.eq.Tensor,
             exir_ops.edge.aten.ge.Tensor,
             exir_ops.edge.aten.gt.Tensor,
             exir_ops.edge.aten.le.Tensor,
             exir_ops.edge.aten.lt.Tensor,
         ]:
-            # Use the lowest scale of the operands since that yields the best numerical precision.
+            # For these ops, use the smallest scale among the INT8 operands.
             min_scale = min(
                 [qp.get_scale_per_tensor() for qp in input_qparams.values()]
             )
-            inputs_rescale_qparams = {
-                i: int32_qargs(min_scale) for i in range(len(input_qparams))
+            qparams = {
+                i: self._int32_qargs(min_scale) for i in range(len(input_qparams))
             }
-
-            # Return None as output quant args since the output is not quantized (bool dtype)
-            return (inputs_rescale_qparams, None)
         else:
-            raise ValueError(f"Unknown target: {target}")
+            raise ValueError(f"Not a valid target: {target}")
+
+        return qparams
+
+    def _get_output_qparams(
+        self, target, inputs_qparams: Dict[int, QuantArgs]
+    ) -> Optional[QuantArgs]:
+        """Given an op ``target`` and the ``QuantArgs`` for each of its inputs, compute
+        the scale of the output based on how the operator itself affects it."""
+
+        if target in [
+            exir_ops.edge.aten.abs.default,
+        ]:
+            # The op has not altered the scale; the output scale is equal to
+            # the operands' scales.
+            return self._int32_qargs(inputs_qparams[0].get_scale_per_tensor())
+        elif target in [
+            exir_ops.edge.aten.eq.Tensor,
+            exir_ops.edge.aten.ge.Tensor,
+            exir_ops.edge.aten.gt.Tensor,
+            exir_ops.edge.aten.le.Tensor,
+            exir_ops.edge.aten.lt.Tensor,
+        ]:
+            # Output is bool for these ops and thus no qparams are present
+            return None
+        else:
+            raise ValueError(f"Not a valid target: {target}")
+
+    def _get_rescale_qparams(
+        self, target, input_qparams: Dict[int, QuantArgs]
+    ) -> Tuple[Dict[int, QuantArgs], Optional[QuantArgs]]:
+        """
+        Get the quantization parameters of the INT32 inputs/outputs that will
+        surround the node after the new RESCALE ops have been inserted.
+        """
+
+        inputs_rescaled_qparams = self._get_inputs_rescaled_qparams(
+            target, input_qparams
+        )
+        output_qparams = self._get_output_qparams(target, inputs_rescaled_qparams)
+
+        return (inputs_rescaled_qparams, output_qparams)
 
     def _rescale_inputs(self, graph, node, rescale_qargs: Dict[int, QuantArgs]) -> bool:
         qargs = node.meta["input_qparams"]
