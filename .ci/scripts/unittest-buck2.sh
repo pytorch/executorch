@@ -11,9 +11,10 @@ set -eux
 # TODO: can't query //kernels/prim_ops because of non-buckified stuff in OSS.
 buck2 query "//backends/apple/... + //backends/example/... + \
 //backends/mediatek/... + //backends/transforms/... + \
-//backends/xnnpack/... + //configurations/... + //kernels/aten/... + \
-//kernels/optimized/... + //kernels/portable/... + //kernels/quantized/... + \
-//kernels/test/... + //runtime/... + //schema/... + //test/... + //util/..."
+//backends/xnnpack/... + //configurations/... + //extension/flat_tensor: + \
+//extension/llm/runner: + //kernels/aten/... + //kernels/optimized/... + \
+//kernels/portable/... + //kernels/quantized/... + //kernels/test/... + \
+//runtime/... + //schema/... + //test/... + //util/..."
 
 # TODO: optimized ops are unbuildable because they now use ATen; put
 # them back after we can use PyTorch in OSS buck.
