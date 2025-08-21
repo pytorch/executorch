@@ -25,8 +25,10 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
+  set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
+  set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
