@@ -309,6 +309,8 @@ class TestPipelineValidation(unittest.TestCase):
             # Edge stage cannot start pipeline
             [StageType.TO_EDGE_TRANSFORM_AND_LOWER],
             [StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_EXECUTORCH],
+            # AOTI Lowering stage cannot start pipeline
+            [StageType.AOTI_LOWERING],
         ]
 
         for i, stages in enumerate(invalid_stage_sequence):
@@ -341,6 +343,15 @@ class TestPipelineValidation(unittest.TestCase):
                 False,
             ),
             ([StageType.TO_EXECUTORCH, StageType.TORCH_EXPORT], False),
+            ([StageType.TORCH_EXPORT, StageType.AOTI_LOWERING], True),
+            (
+                [
+                    StageType.TORCH_EXPORT,
+                    StageType.AOTI_LOWERING,
+                    StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+                ],
+                False,
+            ),
         ]
 
         for i, (stages, should_pass) in enumerate(test_cases):
