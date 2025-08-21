@@ -535,3 +535,62 @@ class ToBackendStage(Stage):
         Returns the delegation info.
         """
         return self._artifact.get_context("delegation_info")
+
+
+class AOTILoweringStage(Stage):
+    """
+    For Executorch-full runtime, lowering with AOTInductor.
+    """
+
+    def __init__(
+        self,
+        partitioners: Optional[List[Any]] = None,
+        compile_config: Optional[Any] = None,
+    ) -> None:
+        self._partitioners = partitioners
+        self._compile_config = compile_config
+
+    @classmethod
+    def from_recipe(
+        cls, lowering_recipe: Optional["LoweringRecipe"]
+    ) -> "AOTILoweringStage":
+        if lowering_recipe is None:
+            return cls()
+
+        return cls(
+            partitioners=lowering_recipe.partitioners,
+            compile_config=lowering_recipe.edge_compile_config,
+        )
+
+    @property
+    def stage_type(self) -> str:
+        return StageType.AOTI_LOWERING
+
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return [StageType.TORCH_EXPORT]
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return False
+
+    def run(self, artifact: PipelineArtifact) -> None:
+        """
+        Lowering with AOTInductor.
+        """
+        from executorch.backends.aoti.aoti_delegate_module import AOTIDelegateModule
+
+        aoti_delegate_modules = {}
+        exported_programs = artifact.data
+        for name, exported_program in exported_programs.items():
+            args, kwargs = exported_program.example_inputs
+            so_path = torch._inductor.aot_compile(
+                exported_program.module(),
+                args,
+                kwargs,
+            )
+            assert isinstance(so_path, str)
+            aoti_delegate_module = AOTIDelegateModule(exported_program, so_path)
+            aoti_delegate_modules[name] = aoti_delegate_module
+
+        self._artifact = artifact.copy_with_new_data(aoti_delegate_modules)

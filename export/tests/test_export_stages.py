@@ -13,6 +13,7 @@ import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
 from executorch.export import AOQuantizationConfig, QuantizationRecipe, StageType
 from executorch.export.stages import (
+    AOTILoweringStage,
     EdgeTransformAndLowerStage,
     ExecutorchStage,
     PipelineArtifact,
@@ -98,6 +99,27 @@ class TestTorchExportStage(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             stage.get_artifacts()
         self.assertIn("Stage: TorchExportStage not executed", str(cm.exception))
+
+
+class TestAOTILoweringStage(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mock_exported_program = Mock(spec=ExportedProgram)
+        self.exported_programs = {"forward": self.mock_exported_program}
+        self.context = {"constant_methods": None}
+
+    def test_run_with_partitioners_and_config(self) -> None:
+        """Test execution with partitioners and compile config"""
+        mock_partitioners = [Mock()]
+        mock_compile_config = Mock()
+
+        stage = AOTILoweringStage(
+            partitioners=mock_partitioners, compile_config=mock_compile_config
+        )
+
+        # Test that the stage has the right configuration
+        self.assertEqual(stage.stage_type, StageType.AOTI_LOWERING)
+        self.assertEqual(stage._partitioners, mock_partitioners)
+        self.assertEqual(stage._compile_config, mock_compile_config)
 
 
 class TestEdgeTransformAndLowerStage(unittest.TestCase):
