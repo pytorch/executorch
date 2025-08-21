@@ -5619,7 +5619,7 @@ class TestExampleOssScript(TestQNN):
             "python",
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/t5/t5.py",
             "--dataset",
-            self.sentence_dataset,
+            self.qa_dataset,
             "--artifact",
             self.artifact_dir,
             "--build_folder",
@@ -6487,6 +6487,11 @@ def setup_environment():
         type=str,
     )
     parser.add_argument(
+        "--qa_dataset",
+        help="Location for QA dataset",
+        type=str,
+    )
+    parser.add_argument(
         "--sentence_dataset",
         help="Location for sentence dataset",
         type=str,
@@ -6549,6 +6554,7 @@ def setup_environment():
     TestQNN.executorch_root = args.executorch_root
     TestQNN.artifact_dir = args.artifact_dir
     TestQNN.image_dataset = args.image_dataset
+    TestQNN.qa_dataset = args.qa_dataset
     TestQNN.sentence_dataset = args.sentence_dataset
     TestQNN.pretrained_weight = args.pretrained_weight
     TestQNN.model_name = args.model_name
