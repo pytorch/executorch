@@ -352,7 +352,6 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
   }
 
   void destroy(DelegateHandle* handle_) const override {
-    ET_LOG(Debug, "AOTIBackend handle %p destroy", handle_);
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
     // Delete the container BEFORE closing the shared library
@@ -364,11 +363,6 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
             Error,
             "AOTInductorModelContainerDelete failed with error code %d",
             delete_result);
-      } else {
-        ET_LOG(
-            Debug,
-            "AOTIBackend container_handle %p deleted",
-            handle->container_handle);
       }
     }
 
@@ -380,6 +374,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
     free(handle);
     cleanup_memory();
     cleanup_tensor_metadata();
+    ET_LOG(Debug, "AOTIBackend handle %p destroy", handle_);
   }
 };
 
