@@ -46,8 +46,13 @@ class AotiBackend(BackendDetails):
             "aot_inductor.package_constants_in_so": True,
             "aot_inductor.output_path": output_path,
             "aot_inductor.debug_compile": True,
-            "aot_inductor.repro_level": 3
+            "aot_inductor.repro_level": 3,
+            "aot_inductor.debug_intermediate_value_printer": "3",
+            "max_autotune": True,
+            "max_autotune_gemm_backends": "TRITON",
+            "max_autotune_conv_backends": "TRITON",
         }
+
         so_path = torch._inductor.aot_compile(edge_program_module, args, kwargs, options=options)  # type: ignore[arg-type]
 
         assert so_path == output_path, f"Expected {output_path} but got {so_path}"

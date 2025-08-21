@@ -122,6 +122,11 @@ def get_model_and_inputs(
 
 def export_model(model, example_inputs, output_filename="aoti_model.pte"):
     """Export model through the AOTI pipeline."""
+    all_one_input = tuple(
+        torch.ones_like(example_input) for example_input in example_inputs
+    )
+
+    print("label", model(*all_one_input))
 
     print(f"Starting export process...")
 

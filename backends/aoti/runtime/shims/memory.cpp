@@ -174,10 +174,11 @@ AOTITorchError aoti_torch_empty_strided(
   for (int i = 0; i < ndim; i++) {
     sizes[i] = sizes_ptr[i];
   }
+
   // ETensor creation
   auto tensor = executorch::extension::make_tensor_ptr(sizes, ptr);
 
-  // Store the tensor
+  // Store the tensor so it doesn't get destroyed
   tensors.insert(tensor);
   *ret_new_tensor = tensor.get();
   is_tensor_own_memory[tensor.get()] = true;

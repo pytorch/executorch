@@ -107,7 +107,7 @@ AOTITorchError aoti_torch_get_device_type(
     AOTITensorHandle tensor,
     int32_t* ret_device_type) {
   // Let's assume all tensors AOTI using are on CUDA device
-  *ret_device_type = aoti_torch_device_type_cuda(); // CUDA device type
+  *ret_device_type = aoti_torch_device_type_cuda();
   std::cout << "getting device_type from tensor " << tensor << " = "
             << *ret_device_type << std::endl;
   return Error::Ok;
