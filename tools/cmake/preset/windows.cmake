@@ -12,6 +12,8 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
+set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
+set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 
 # These XNNPACK options don't currently build on Windows.
@@ -19,7 +21,3 @@ set_overridable_option(XNNPACK_ENABLE_AVX256SKX OFF)
 set_overridable_option(XNNPACK_ENABLE_AVX256VNNI OFF)
 set_overridable_option(XNNPACK_ENABLE_AVX256VNNIGFNI OFF)
 set_overridable_option(XNNPACK_ENABLE_AVX512BF16 OFF)
-
-# Below options are not yet buildable on Windows, but should be.
-# set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
-# set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
