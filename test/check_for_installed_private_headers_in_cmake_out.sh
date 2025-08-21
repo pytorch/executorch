@@ -21,14 +21,9 @@ set -euxo pipefail
 BUCK_HEADERS_TEMPFILE=$(mktemp /tmp/check_private_headers_buck.txt.XXXXXX)
 ACTUAL_HEADERS_TEMPFILE=$(mktemp /tmp/check_private_headers_installed.txt.XXXXXX)
 SOURCE_ROOT_DIR=$(git rev-parse --show-toplevel)
-BUCK2=$(python3 "${SOURCE_ROOT_DIR}/tools/cmake/resolve_buck.py" --cache_dir="${SOURCE_ROOT_DIR}/buck2-bin")
-if [[ "$BUCK2" == "buck2" ]]; then
-  BUCK2=$(command -v buck2)
-fi
 
 "${SOURCE_ROOT_DIR}/scripts/print_exported_headers.py" \
-    --buck2=$(realpath "$BUCK2") --targets \
-    //extension/data_loader: //extension/evalue_util: \
+    --targets //extension/data_loader: //extension/evalue_util: \
     //extension/flat_tensor: //extension/llm/runner: //extension/kernel_util: //extension/module: \
     //extension/runner_util: //extension/tensor: //extension/threadpool: \
     | sort > "${BUCK_HEADERS_TEMPFILE}"
