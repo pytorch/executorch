@@ -4,41 +4,42 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
-
 import torch
-from nncf.experimental.torch.fx.node_utils import get_tensor_constant_from_node
-from nncf.experimental.torch.fx.transformations import (
+from nncf.experimental.torch.fx.node_utils import (  # type: ignore[import-untyped]
+    get_tensor_constant_from_node,
+)
+from nncf.experimental.torch.fx.transformations import (  # type: ignore[import-untyped]
     constant_update_fn,
     module_insertion_transformation_builder,
 )
-from nncf.parameters import CompressWeightsMode
-from nncf.quantization.algorithms.weight_compression.config import (
+from nncf.parameters import CompressWeightsMode  # type: ignore[import-untyped]
+from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionConfig,
 )
 
-from nncf.quantization.algorithms.weight_compression.weight_lowering import (
+from nncf.quantization.algorithms.weight_compression.weight_lowering import (  # type: ignore[import-untyped]
     do_integer_quantization,
 )
-from nncf.tensor.tensor import Tensor
-from nncf.torch.graph.transformations.commands import PTTargetPoint, TargetType
-from nncf.torch.quantization.layers import (
+from nncf.tensor.tensor import Tensor  # type: ignore[import-untyped]
+from nncf.torch.graph.transformations.commands import (  # type: ignore[import-untyped]
+    PTTargetPoint,
+    TargetType,
+)
+from nncf.torch.quantization.layers import (  # type: ignore[import-untyped]
     INT4AsymmetricWeightsDecompressor,
     INT4SymmetricWeightsDecompressor,
     INT8AsymmetricWeightsDecompressor,
     INT8SymmetricWeightsDecompressor,
 )
-from torch.ao.quantization.observer import (
+from torchao.quantization.observer import AffineQuantizedMinMaxObserver
+from torchao.quantization.pt2e import (
     get_block_size,
     MappingType,
     PerAxis,
     PerChannelMinMaxObserver,
     PerGroup,
 )
-from torch.ao.quantization.pt2e._affine_quantization import (
-    _get_reduction_params,
-    AffineQuantizedMinMaxObserver,
-)
+from torchao.quantization.quant_primitives import _get_reduction_params
 
 
 class PTPerBlockParamObserver(AffineQuantizedMinMaxObserver):

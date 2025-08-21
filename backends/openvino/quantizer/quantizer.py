@@ -21,8 +21,13 @@ from executorch.backends.openvino.quantizer.observers.nncf_observers import (
 )
 
 from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
-from nncf.common.quantization.structs import QuantizationScheme, QuantizerConfig
-from nncf.quantization.quantize_model import get_weight_compression_configuration
+from nncf.common.quantization.structs import (  # type: ignore[import-untyped]
+    QuantizationScheme,
+    QuantizerConfig,
+)
+from nncf.quantization.quantize_model import (  # type: ignore[import-untyped]
+    get_weight_compression_configuration,
+)
 from torchao.quantization.pt2e import (
     HistogramObserver,
     MappingType,
