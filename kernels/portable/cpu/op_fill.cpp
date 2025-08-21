@@ -90,7 +90,7 @@ Tensor& fill_tensor_out(
   static constexpr const char op_name[] = "fill.Tensor_out";
 
   ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, op_name, CTYPE_A, [&] {
-    CTYPE_A b_casted;
+    CTYPE_A b_casted{};
     ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, op_name, CTYPE_B, [&] {
       CTYPE_B b_val;
       ET_EXTRACT_SCALAR_TENSOR(b, b_val);

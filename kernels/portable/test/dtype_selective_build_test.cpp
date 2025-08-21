@@ -15,6 +15,12 @@ using executorch::aten::ScalarType;
 using torch::executor::ScalarTypeToCppType;
 
 TEST(DtypeSelectiveBuildTest, UnknownOp) {
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype");
+    }
+  } ctx;
   ET_EXPECT_DEATH(
       ET_SWITCH_TWO_TYPES(
           Float,
@@ -29,6 +35,12 @@ TEST(DtypeSelectiveBuildTest, UnknownOp) {
 }
 
 TEST(DtypeSelectiveBuildTest, OpWithoutDtype) {
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype");
+    }
+  } ctx;
   ET_EXPECT_DEATH(
       ET_SWITCH_TWO_TYPES(
           Float,
@@ -43,6 +55,12 @@ TEST(DtypeSelectiveBuildTest, OpWithoutDtype) {
 }
 
 TEST(DtypeSelectiveBuildTest, OpWithDtype) {
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype");
+    }
+  } ctx;
   ASSERT_EQ(
       ET_SWITCH_TWO_TYPES(
           Float,
