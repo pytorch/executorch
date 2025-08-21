@@ -326,6 +326,22 @@ lib.define(
     "int Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_add_asym8sxasym8s_asym8s.per_tensor(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point) -> Tensor"
+)
+lib.define(
+    "quantized_add_asym8sxasym8s_asym8s.per_tensor_out(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_add_asym8uxasym8u_asym8u.per_tensor(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point) -> Tensor"
+)
+lib.define(
+    "quantized_add_asym8uxasym8u_asym8u.per_tensor_out(Tensor X, float X_scale, int X_zero_point, Tensor Y, float Y_scale, "
+    "int Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_mul.out(Tensor X, Tensor X_scale, Tensor X_zero_point, Tensor Y, Tensor Y_scale, "
     "Tensor Y_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
@@ -499,6 +515,36 @@ def quantized_add_per_tensor_meta(
     out_zero_point: int,
 ) -> torch.Tensor:
 
+    out_size = torch.broadcast_shapes(X.size(), Y.size())
+    return X.new_empty(out_size, dtype=X.dtype)
+
+
+@register_fake("cadence::quantized_add_asym8sxasym8s_asym8s.per_tensor")
+def quantized_add_asym8sxasym8s_asym8s_per_tensor_meta(
+    X: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    out_size = torch.broadcast_shapes(X.size(), Y.size())
+    return X.new_empty(out_size, dtype=X.dtype)
+
+
+@register_fake("cadence::quantized_add_asym8uxasym8u_asym8u.per_tensor")
+def quantized_add_asym8uxasym8u_asym8u_per_tensor_meta(
+    X: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
     out_size = torch.broadcast_shapes(X.size(), Y.size())
     return X.new_empty(out_size, dtype=X.dtype)
 
