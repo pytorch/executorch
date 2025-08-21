@@ -64,6 +64,9 @@ def group_conv_convertible_into_multiple_convolutions(
     if group == 1:
         return False
 
+    if group_conv_convertible_as_depthwise(node, group):
+        return False
+
     _, output_channels = _get_IO_channels(node)
     if output_channels % group != 0:
         return False  # Unable to split group Conv into separated convolutions because out_channels % group != 0.
