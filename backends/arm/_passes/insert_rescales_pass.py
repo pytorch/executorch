@@ -91,6 +91,8 @@ class InsertRescaleInt32Pass(ArmPass):
         exir_ops.edge.aten.gt.Tensor,
         exir_ops.edge.aten.le.Tensor,
         exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.maximum.default,
+        exir_ops.edge.aten.minimum.default,
     ]
 
     def _int32_qargs(self, s):
@@ -121,6 +123,8 @@ class InsertRescaleInt32Pass(ArmPass):
             exir_ops.edge.aten.gt.Tensor,
             exir_ops.edge.aten.le.Tensor,
             exir_ops.edge.aten.lt.Tensor,
+            exir_ops.edge.aten.minimum.default,
+            exir_ops.edge.aten.maximum.default,
         ]:
             # For these ops, use the smallest scale among the INT8 operands.
             min_scale = min(
@@ -142,6 +146,8 @@ class InsertRescaleInt32Pass(ArmPass):
 
         if target in [
             exir_ops.edge.aten.abs.default,
+            exir_ops.edge.aten.maximum.default,
+            exir_ops.edge.aten.minimum.default,
         ]:
             # The op has not altered the scale; the output scale is equal to
             # the operands' scales.
