@@ -29,6 +29,7 @@ def define_common_targets():
         exported_deps = [
             "//executorch/extension/module:module",
             "//executorch/extension/llm/sampler:sampler",
+            "//executorch/examples/models/llama/runner:runner",
             "//executorch/examples/models/llama/tokenizer:tiktoken",
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/backends/qualcomm/runtime:runtime",
