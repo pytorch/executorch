@@ -1248,7 +1248,7 @@ def export_llama(args) -> None:
         chat_template = (
             tokenizer.apply_chat_template
             if hasattr(tokenizer, "apply_chat_template")
-            and SUPPORTED_HF_MODELS[args.decoder_model].transform_weight
+            and SUPPORTED_HF_MODELS[args.decoder_model].instruct_model
             else None
         )
         runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]

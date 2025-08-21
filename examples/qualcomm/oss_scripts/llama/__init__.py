@@ -19,16 +19,13 @@ from executorch.examples.models.qwen3 import convert_weights as convert_qwen3_we
 from executorch.examples.models.smollm2 import (
     convert_weights as convert_smollm2_weights,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
-    DECODER_MODEL_VERSION,
-)
 
 BASE_DIR = os.path.dirname(__file__)
 
 
 @dataclass(init=False, frozen=True)
 class HFModel(ABC):
-    """ Base class for all hugging face models
+    """Base class for all hugging face models
 
     repo_id: Hugging Face Repo ID.
     params_path: Path to model's config.json. If the corresponding .json has not yet exsit, please create one.
@@ -36,6 +33,7 @@ class HFModel(ABC):
     transform_weight: Set to true to change HuggingFace weight to improve the performance of RoPE in HTP backend.
     instruct_model: True if the model uses chat templates. Check Hugging Face model card to ensure the model uses chat templates.
     """
+
     repo_id: str
     params_path: str
     convert_weights: Callable
