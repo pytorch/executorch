@@ -5,6 +5,8 @@
 
 import numpy as np
 import torch
+from torch.fx import Node
+from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.edge_helper import (
     input_tensor,
@@ -16,6 +18,9 @@ from executorch.backends.nxp.backend.ir.converter.conversion import (
     common,
 )
 from executorch.backends.nxp.backend.ir.converter.conversion.common import try_get_input
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    tf_lite_type_to_numpy,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
@@ -38,8 +43,6 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     conv_2d_options,
     depthwise_conv_2d_options,
 )
-from torch.fx import Node
-from torch.nn import Parameter
 
 
 class ConvolutionConverter(NodeConverter):
@@ -188,9 +191,19 @@ class ConvolutionConverter(NodeConverter):
                 aten_translator.convert_padding(conv_params.padding)
             )
             if explicit_padding is not None:
-                # Need to prepend a 'Pad' operator, which adds 0s.
+                # Need to prepend a 'Pad' operator, which adds 0s (or `zero_point` for the quantized case).
+                input_quantization = t_op.tmp_inputs[0].quantization
+                pad_value = (
+                    None
+                    if input_quantization is None
+                    else np.array(input_quantization.zero_point[0]).astype(
+                        tf_lite_type_to_numpy(t_op.tmp_inputs[0].type)
+                    )
+                )
                 conversion_result.ops_list.add_pre(
-                    self.builder.create_pad_operator_before(t_op, 0, explicit_padding)
+                    self.builder.create_pad_operator_before(
+                        t_op, 0, explicit_padding, constant_value=pad_value
+                    )
                 )
 
             # DepthwiseConv2D expects weights in format [kernel_channels, kernel_height, kernel_width, output_channels]
@@ -227,9 +240,19 @@ class ConvolutionConverter(NodeConverter):
                 aten_translator.convert_padding(conv_params.padding)
             )
             if explicit_padding is not None:
-                # Need to prepend a 'Pad' operator, which adds 0s.
+                # Need to prepend a 'Pad' operator, which adds 0s (or `zero_point` for the quantized case).
+                input_quantization = t_op.tmp_inputs[0].quantization
+                pad_value = (
+                    None
+                    if input_quantization is None
+                    else np.array(input_quantization.zero_point[0]).astype(
+                        tf_lite_type_to_numpy(t_op.tmp_inputs[0].type)
+                    )
+                )
                 conversion_result.ops_list.add_pre(
-                    self.builder.create_pad_operator_before(t_op, 0, explicit_padding)
+                    self.builder.create_pad_operator_before(
+                        t_op, 0, explicit_padding, constant_value=pad_value
+                    )
                 )
 
         return conversion_result.ops_list.flatten()
