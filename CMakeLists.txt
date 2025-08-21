@@ -481,6 +481,13 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(
+  DIRECTORY runtime/backend/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/backend
+  FILES_MATCHING
+  PATTERN "*.h"
+  PATTERN "test" EXCLUDE
+)
+install(
   DIRECTORY runtime/core/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core
   FILES_MATCHING
