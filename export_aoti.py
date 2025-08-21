@@ -41,7 +41,7 @@ class MV2(torch.nn.Module):
 class Linear(torch.nn.Module):
     def __init__(self):
         super(Linear, self).__init__()
-        self.linear = nn.Linear(3, 5)
+        self.linear = nn.Linear(7, 101)
 
     def forward(self, x: torch.Tensor):
         return self.linear(x)
@@ -76,7 +76,7 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "linear": {
         "model_class": Linear,
-        "input_shapes": [(4, 3)],
+        "input_shapes": [(127, 7)],
         "device": "cuda",
         "description": "Simple linear layer model",
     },
