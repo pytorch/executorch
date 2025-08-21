@@ -9,7 +9,7 @@ source "${SCRIPT_DIR}/qnn_config.sh"
 # Function to install Android NDK (only if not already set)
 setup_android_ndk() {
     # Check if ANDROID_NDK_ROOT is already set and valid
-    if [ -n "${ANDROID_NDK_ROOT}" ] && [ -d "${ANDROID_NDK_ROOT}" ]; then
+    if [ -n "${ANDROID_NDK_ROOT:-}" ] && [ -d "${ANDROID_NDK_ROOT:-}" ]; then
         echo "Android NDK already set to ${ANDROID_NDK_ROOT} - skipping installation"
         return
     fi
@@ -41,7 +41,7 @@ verify_pkg_installed() {
 
 install_qnn() {
   # Check if QNN_SDK_ROOT is already set and valid
-  if [ -n "${QNN_SDK_ROOT}" ] && [ -d "${QNN_SDK_ROOT}" ]; then
+  if [ -n "${QNN_SDK_ROOT:-}" ] && [ -d "${QNN_SDK_ROOT:-}" ]; then
     echo "QNN SDK already set to ${QNN_SDK_ROOT} - skipping installation"
     return
   fi
@@ -141,9 +141,9 @@ setup_libcpp() {
   popd >/dev/null
 
   # Set environment variables
-  export CPLUS_INCLUDE_PATH="${INSTALL_DIR}/include:$CPLUS_INCLUDE_PATH"
-  export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:$LD_LIBRARY_PATH"
-  export LIBRARY_PATH="${INSTALL_DIR}/lib:$LIBRARY_PATH"
+  export CPLUS_INCLUDE_PATH="${INSTALL_DIR}/include:${CPLUS_INCLUDE_PATH:-}"
+  export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:${LD_LIBRARY_PATH:-}"
+  export LIBRARY_PATH="${INSTALL_DIR}/lib:${LIBRARY_PATH:-}"
 
   echo "libc++ installed to ${INSTALL_DIR}"
 }

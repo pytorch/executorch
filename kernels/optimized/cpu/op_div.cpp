@@ -130,11 +130,11 @@ Tensor& opt_div_out(
           selected_optimized_path ==
               ElementwiseOptimizedPath::kBroadcastNdByNdReverseArguments) {
         auto div_lambda = [](auto x, auto y) { return y / x; };
-        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+        torch::executor::handle_broadcast_elementwise<CTYPE>(
             ctx, div_lambda, a, b, out, selected_optimized_path);
       } else {
         auto div_lambda = [](auto x, auto y) { return x / y; };
-        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+        torch::executor::handle_broadcast_elementwise<CTYPE>(
             ctx, div_lambda, a, b, out, selected_optimized_path);
       }
     });
