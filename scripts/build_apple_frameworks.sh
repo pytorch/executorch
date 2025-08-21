@@ -15,11 +15,6 @@ PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
 SOURCE_ROOT_DIR=$(git rev-parse --show-toplevel)
 OUTPUT_DIR="${SOURCE_ROOT_DIR}/cmake-out"
 
-BUCK2=$(python3 "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="$SOURCE_ROOT_DIR/buck2-bin")
-if [[ "$BUCK2" == "buck2" ]]; then
-  BUCK2=$(command -v buck2)
-fi
-
 FRAMEWORK_EXECUTORCH_NAME="executorch"
 FRAMEWORK_EXECUTORCH_MODULE_NAME="ExecuTorch"
 FRAMEWORK_EXECUTORCH_HEADERS_DIR="${FRAMEWORK_EXECUTORCH_NAME}_include"
@@ -208,10 +203,14 @@ fi
 echo "Building libraries"
 
 rm -rf "${OUTPUT_DIR}"
+mkdir -p "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 for preset_index in "${!PRESETS[@]}"; do
   preset="${PRESETS[$preset_index]}"
   preset_output_dir="${OUTPUT_DIR}/${PRESETS_RELATIVE_OUT_DIR[$preset_index]}"
-
+  do_install=""
+  if [[ "${preset}" == "macos" ]]; then
+      do_install="--target install"
+  fi
   for mode in "${MODES[@]}"; do
     echo "Building preset ${preset} (${mode}) in ${preset_output_dir}..."
 
@@ -221,24 +220,23 @@ for preset_index in "${!PRESETS[@]}"; do
           --fresh \
           -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
           -DCMAKE_BUILD_TYPE="${mode}" \
+          -DCMAKE_INSTALL_PREFIX="${preset_output_dir}" \
           ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
           --preset "${preset}"
 
     cmake --build "${preset_output_dir}" \
-          --config "${mode}"
+          --config "${mode}" ${do_install}
   done
+  if [[ "${preset}" == "macos" ]]; then
+      find "${preset_output_dir}/include/executorch" -name '*.h' \
+          | sort | sed -e "s|${preset_output_dir}/include/executorch/||" \
+          | rsync -av --files-from=- "${preset_output_dir}/include/executorch" "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
+  fi
 done
 
 echo "Exporting headers"
 
 # FRAMEWORK_EXECUTORCH
-
-mkdir -p "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
-
-"$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
-  //extension/module: \
-  //extension/tensor: \
-| rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 
 # HACK: XCFrameworks don't appear to support exporting any build
 # options, but we need the following:
