@@ -166,33 +166,6 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
     size_t n_inputs;
     AOTInductorModelContainerGetNumInputs(handle->container_handle, &n_inputs);
 
-    // for (int i = 0; i < n_inputs; i++) {
-    //   const char* input_name;
-    //   AOTInductorModelContainerGetInputName(
-    //       handle->container_handle, i, &input_name);
-    //   ET_LOG(Debug, "AOTIBackend %d-th input name %s", i, input_name);
-    // }
-
-    // AOTInductorModelContainerGetNumConstants(
-    //     handle->container_handle, &n_constants);
-    // size_t n_user_inputs = n_inputs - n_constants;
-
-    // if (n_user_inputs != n_inputs) {
-    //   ET_LOG(
-    //       Error,
-    //       "number of user input does not match number of inputs.
-    //       n_user_inputs %zd, n_constant %zd, n_inputs %zd. Exit.",
-    //       n_user_inputs,
-    //       n_constants,
-    //       n_inputs);
-    //   return Error::InvalidArgument;
-    // }
-
-    // ET_LOG(
-    //     Debug,
-    //     "AOTIBackend n_inputs %zd generated, where %zd is constant input,
-    //     %zd is user input", n_inputs, n_constants, n_user_inputs);
-
     size_t n_outputs;
     AOTInductorModelContainerGetNumOutputs(
         handle->container_handle, &n_outputs);
@@ -381,8 +354,29 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
   void destroy(DelegateHandle* handle_) const override {
     ET_LOG(Debug, "AOTIBackend handle %p destroy", handle_);
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
-    dlclose(handle->so_handle);
-    AOTInductorModelContainerDelete(handle->container_handle);
+
+    // Delete the container BEFORE closing the shared library
+    if (handle->container_handle != nullptr) {
+      AOTIRuntimeError delete_result =
+          AOTInductorModelContainerDelete(handle->container_handle);
+      if (delete_result != Error::Ok) {
+        ET_LOG(
+            Error,
+            "AOTInductorModelContainerDelete failed with error code %d",
+            delete_result);
+      } else {
+        ET_LOG(
+            Debug,
+            "AOTIBackend container_handle %p deleted",
+            handle->container_handle);
+      }
+    }
+
+    // Now close the shared library
+    if (handle->so_handle != nullptr) {
+      dlclose(handle->so_handle);
+    }
+
     free(handle);
     cleanup_memory();
     cleanup_tensor_metadata();
