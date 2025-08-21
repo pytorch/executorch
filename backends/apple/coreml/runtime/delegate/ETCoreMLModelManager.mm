@@ -520,8 +520,6 @@ NSString *raw_model_identifier(NSString *identifier) {
             return;
         }
 
-
-        ETCoreMLAsset *modelAsset = nil;
         // The directory specified by `directoryURL` is unique and will be automatically cleaned up
         // once the enclosing block completes.
         NSURL *modelURL = ::write_model_files(directoryURL,
@@ -803,10 +801,8 @@ NSString *raw_model_identifier(NSString *identifier) {
         }
     }
 
-    if (!result) {
-        if (error) {
-            *error = localError;
-        }
+    if (localError && error) {
+        *error = localError;
     }
 
     return result;
