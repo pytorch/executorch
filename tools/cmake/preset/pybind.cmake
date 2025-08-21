@@ -31,7 +31,15 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
-  # Windows or other OS-specific code here
+  if (NOT CMAKE_GENERATOR_TOOLSET MATCHES "ClangCL")
+    message(FATAL_ERROR "ExecuTorch requires the ClangCL toolset on Windows. Please configure with -T ClangCL.")
+  endif()
+
+  # These XNNPACK options don't currently build on Windows with Clang.
+  set_overridable_option(XNNPACK_ENABLE_AVX256SKX OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX256VNNI OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX256VNNIGFNI OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX512BF16 OFF)
 else()
   message(
     FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for pybind: ${CMAKE_SYSTEM_NAME}"
