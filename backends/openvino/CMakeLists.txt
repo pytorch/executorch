@@ -38,11 +38,9 @@ add_library(openvino_backend STATIC .)
 target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
 
 # Include Executorch directories
-target_include_directories(openvino_backend
- PUBLIC
- $<BUILD_INTERFACE:${COMMON_INCLUDE_DIRS}>
+target_include_directories(
+  openvino_backend PUBLIC $<BUILD_INTERFACE:${COMMON_INCLUDE_DIRS}>
 )
-
 
 # Link OpenVINO and ExecuteTorch core libraries
 target_link_libraries(
@@ -82,6 +80,8 @@ if(EXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER)
 endif()
 
 # Install OpenVINO backend library and export target
-install(TARGETS openvino_backend
-        EXPORT ExecuTorchTargets
-        DESTINATION lib)
+install(
+  TARGETS openvino_backend
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
+)

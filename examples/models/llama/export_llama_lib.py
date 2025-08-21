@@ -906,7 +906,6 @@ def _to_edge_and_lower_llama_openvino(
     partitioners.append(get_openvino_partitioner(openvino_device))
     modelname = f"openvino_{modelname}"
 
-
     logging.info("Lowering model using following partitioner(s): ")
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
@@ -915,8 +914,9 @@ def _to_edge_and_lower_llama_openvino(
     # TODO: Enable passing OpenVINOQuantizer as a parameter to pt2e_quantize
     if nncf_compression:
         try:
-            import nncf
             from functools import partial
+
+            import nncf
             from pytorch_tokenizers import get_tokenizer
         except ImportError:
             raise ImportError(
@@ -924,9 +924,7 @@ def _to_edge_and_lower_llama_openvino(
             )
         tokenizer = get_tokenizer(builder_exported.tokenizer_path)
 
-        def transform_fn(
-            prompts: str, tokenizer
-        ):
+        def transform_fn(prompts: str, tokenizer):
             tokenized_text = tokenizer.encode(prompts, bos=False, eos=False)
             logging.error(tokenized_text)
 
@@ -938,20 +936,33 @@ def _to_edge_and_lower_llama_openvino(
 
             return inputs
 
-        builder_exported.calibration_data = [builder_exported.calibration_data] if isinstance(builder_exported.calibration_data, str) else builder_exported.calibration_data
-        builder_exported.calibration_data = [word for prompt in builder_exported.calibration_data for word in prompt.split()] if not builder_exported.dynamic_shapes else builder_exported.calibration_data
+        builder_exported.calibration_data = (
+            [builder_exported.calibration_data]
+            if isinstance(builder_exported.calibration_data, str)
+            else builder_exported.calibration_data
+        )
+        builder_exported.calibration_data = (
+            [
+                word
+                for prompt in builder_exported.calibration_data
+                for word in prompt.split()
+            ]
+            if not builder_exported.dynamic_shapes
+            else builder_exported.calibration_data
+        )
 
         builder_exported.pre_autograd_graph_module = nncf.compress_weights(
-                                                            builder_exported.pre_autograd_graph_module,
-                                                            dataset=nncf.Dataset(builder_exported.calibration_data, transform_func=partial(transform_fn, tokenizer=tokenizer)),
-                                                            mode=nncf.CompressWeightsMode.INT4_SYM,
-                                                            ratio=0.8,
-                                                            sensitivity_metric=nncf.SensitivityMetric.HESSIAN_INPUT_ACTIVATION,
-                                                        )
+            builder_exported.pre_autograd_graph_module,
+            dataset=nncf.Dataset(
+                builder_exported.calibration_data,
+                transform_func=partial(transform_fn, tokenizer=tokenizer),
+            ),
+            mode=nncf.CompressWeightsMode.INT4_SYM,
+            ratio=0.8,
+            sensitivity_metric=nncf.SensitivityMetric.HESSIAN_INPUT_ACTIVATION,
+        )
 
-    builder = builder_exported.to_edge_transform_and_lower(
-        partitioners
-    )
+    builder = builder_exported.to_edge_transform_and_lower(partitioners)
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)

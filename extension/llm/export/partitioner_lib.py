@@ -63,12 +63,11 @@ def get_mps_partitioner(use_kv_cache: bool = False):
     compile_specs = [CompileSpec("use_fp16", bytes([True]))]
     return MPSPartitioner(compile_specs)  # pyre-fixme[16]
 
+
 def get_openvino_partitioner(device: str):
     try:
+        from executorch.backends.openvino.partitioner import OpenvinoPartitioner
         from executorch.exir.backend.backend_details import CompileSpec
-        from executorch.backends.openvino.partitioner import (
-            OpenvinoPartitioner,
-        )
     except ImportError:
         raise ImportError(
             "Please install the OpenVINO backend following https://github.com/pytorch/executorch/tree/main/backends/openvino"
@@ -76,6 +75,7 @@ def get_openvino_partitioner(device: str):
 
     compile_specs = [CompileSpec("device", device.encode())]
     return OpenvinoPartitioner(compile_specs)
+
 
 def get_coreml_partitioner(
     ios: int = 15,
