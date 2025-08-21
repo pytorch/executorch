@@ -576,6 +576,10 @@ class StaticAttentionIOManager {
     }
   }
 
+  size_t input_pos() const {
+    return input_pos_;
+  }
+
   /**
    * Prefill helper. Run multiple inferences as needed depending on the length
    * of the prompt and method's input length. Returns the position in the output
@@ -586,6 +590,7 @@ class StaticAttentionIOManager {
       executorch::runtime::Span<TokenT> tokens,
       executorch::runtime::Span<TokenT> input_buffer,
       executorch::runtime::Method& method) {
+    ET_LOG(Info, "Prefilling at position %zu", input_pos_);
     size_t input_len = input_buffer.size();
     auto& masks = get_mask(input_buffer.size());
     for (auto& pair : masks) {
@@ -621,6 +626,7 @@ class StaticAttentionIOManager {
       executorch::runtime::Method& method,
       std::function<TokenT(executorch::runtime::Method&)>& sample,
       std::function<bool(TokenT)>& token_callback) {
+    ET_LOG(Info, "Decoding at position %zu", input_pos_);
     set_input(method, 0, input_buffer.data());
     auto& masks = get_mask(input_buffer.size());
     for (auto& pair : masks) {
@@ -661,6 +667,10 @@ class StaticAttentionIOManager {
       size_t window_size,
       size_t n_verifications,
       std::unordered_map<TokenT, SuffixCache<TokenT>> suffix_caches) {
+    ET_LOG(
+        Info,
+        "Decoding with lookahead and verification at position %zu",
+        input_pos_);
     set_input(method, 0, input_buffer.data());
     size_t input_len = input_buffer.size();
 
