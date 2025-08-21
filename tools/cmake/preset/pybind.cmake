@@ -31,8 +31,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
-  if (NOT CMAKE_GENERATOR_TOOLSET MATCHES "ClangCL")
-    message(FATAL_ERROR "ExecuTorch requires the ClangCL toolset on Windows. Please configure with -T ClangCL.")
+  if(NOT CMAKE_GENERATOR_TOOLSET MATCHES "ClangCL")
+    message(
+      FATAL_ERROR
+        "ExecuTorch requires the ClangCL toolset on Windows. Please configure with -T ClangCL."
+    )
   endif()
 
   # These XNNPACK options don't currently build on Windows with Clang.
