@@ -21,7 +21,7 @@ from typing import Any, Dict, Tuple
 
 import torch
 from executorch.backends.aoti.aoti_partitioner import AotiPartitioner
-from executorch.exir import to_edge
+from executorch.exir import to_edge_transform_and_lower
 from torch import nn
 from torch.export import export
 from torchvision import models
@@ -135,13 +135,17 @@ def export_model(model, example_inputs, output_filename="aoti_model.pte"):
     aten_dialect = export(model, example_inputs)
 
     # 2. to_edge: Make optimizations for Edge devices
-    print("Step 2: Converting to Edge program...")
-    edge_program = to_edge(aten_dialect)
-    print(edge_program.exported_program().graph.print_tabular())
+    # print("Step 2: Converting to Edge program...")
+    # edge_program = to_edge(aten_dialect)
+    # print(edge_program.exported_program().graph.print_tabular())
 
-    print("Step 3: Converting to backend...")
-    edge_program = edge_program.to_backend(AotiPartitioner([]))
-    print("To backend done.")
+    # print("Step 3: Converting to backend...")
+    # edge_program = edge_program.to_backend(AotiPartitioner([]))
+    # print("To backend done.")
+
+    edge_program = to_edge_transform_and_lower(
+        aten_dialect, partitioner=[AotiPartitioner([])]
+    )
 
     # 3. to_executorch: Convert the graph to an ExecuTorch program
     print("Step 4: Converting to ExecuTorch program...")
