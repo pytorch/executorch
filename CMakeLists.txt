@@ -871,6 +871,10 @@ if(EXECUTORCH_BUILD_WASM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm)
 endif()
 
+if(EXECUTORCH_BUILD_TOKENIZERS_WASM)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm/tokenizers)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
   list(APPEND _executorch_extensions extension_training)
