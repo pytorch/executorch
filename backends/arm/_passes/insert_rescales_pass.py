@@ -101,6 +101,7 @@ class InsertRescaleInt32Pass(ArmPass):
         exir_ops.edge.aten.maximum.default,
         exir_ops.edge.aten.minimum.default,
         exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.sum.dim_IntList,
     ]
 
@@ -144,6 +145,7 @@ class InsertRescaleInt32Pass(ArmPass):
             }
         elif target in [
             exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.sub.Tensor,
         ]:
             if input_qparams[0].dtype != input_qparams[1].dtype:
                 raise ValueError(
@@ -196,6 +198,7 @@ class InsertRescaleInt32Pass(ArmPass):
             exir_ops.edge.aten.minimum.default,
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.sub.Tensor,
         ]:
             # The op has not altered the scale; the output scale is equal to
             # the operands' scales.

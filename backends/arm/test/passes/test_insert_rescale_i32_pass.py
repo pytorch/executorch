@@ -19,7 +19,7 @@ class MultipleOpsModel(torch.nn.Module):
     input_t = Tuple[torch.Tensor, torch.Tensor]
 
     def forward(self, x, y):
-        a = x + y
+        a = x - y
         b = x * a
         c = torch.maximum(a, b)
         d = torch.abs(b)
