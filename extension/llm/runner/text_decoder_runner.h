@@ -68,12 +68,20 @@ class ET_EXPERIMENTAL TextDecoderRunner {
       const executorch::aten::Tensor& logits_tensor,
       const float temperature = 0.0f) {
     int32_t result = 0;
+
+    // Create a minimal context for error handling in ET_SWITCH
+    struct {
+      [[noreturn]] void fail(torch::executor::Error /* error */) {
+        ET_CHECK_MSG(false, "Unsupported dtype in logits_to_token");
+      }
+    } ctx;
+
     ET_SWITCH_THREE_TYPES(
         Float,
         Half,
         BFloat16,
         logits_tensor.scalar_type(),
-        unused,
+        ctx,
         "logits_to_token",
         CTYPE,
         [&]() {

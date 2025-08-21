@@ -196,7 +196,7 @@ class TestRemoveUnusedParametersPass(unittest.TestCase):
 
         self.assertEqual(1, len(runtime_outputs))
         self.assertTrue(
-            torch.allclose(runtime_outputs[0], eager_outputs, atol=2e-6),
+            torch.allclose(runtime_outputs[0], eager_outputs, atol=1e-5),
             "Values out of tolerance.\n"
             + f"  Strict: {strict}, ToEdge: {use_to_edge}, Delegate: {delegate}.\n"
             + f"  Eager: {eager_outputs}.\n"

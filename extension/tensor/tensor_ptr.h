@@ -111,7 +111,15 @@ inline TensorPtr make_tensor_ptr(
         runtime::canCast(deduced_type, type),
         "Cannot cast deduced type to specified type.");
     std::vector<uint8_t> casted_data(data.size() * runtime::elementSize(type));
-    ET_SWITCH_REALHBBF16_TYPES(type, nullptr, "make_tensor_ptr", CTYPE, [&] {
+
+    // Create a minimal context for error handling in ET_SWITCH
+    struct {
+      [[noreturn]] void fail(torch::executor::Error /* error */) {
+        ET_CHECK_MSG(false, "Unsupported dtype in make_tensor_ptr");
+      }
+    } ctx;
+
+    ET_SWITCH_REALHBBF16_TYPES(type, ctx, "make_tensor_ptr", CTYPE, [&] {
       std::transform(
           data.begin(),
           data.end(),

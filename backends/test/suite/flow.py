@@ -47,13 +47,17 @@ def all_flows() -> dict[str, TestFlow]:
 
     try:
         from executorch.backends.test.suite.flows.xnnpack import (
+            XNNPACK_DYNAMIC_INT8_PER_CHANNEL_TEST_FLOW,
             XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
+            XNNPACK_STATIC_INT8_PER_TENSOR_TEST_FLOW,
             XNNPACK_TEST_FLOW,
         )
 
         flows += [
             XNNPACK_TEST_FLOW,
+            XNNPACK_DYNAMIC_INT8_PER_CHANNEL_TEST_FLOW,
             XNNPACK_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
+            XNNPACK_STATIC_INT8_PER_TENSOR_TEST_FLOW,
         ]
     except Exception as e:
         logger.info(f"Skipping XNNPACK flow registration: {e}")
@@ -72,21 +76,37 @@ def all_flows() -> dict[str, TestFlow]:
         logger.info(f"Skipping Core ML flow registration: {e}")
 
     try:
-        from executorch.backends.test.suite.flows.vulkan import VULKAN_TEST_FLOW
+        from executorch.backends.test.suite.flows.vulkan import (
+            VULKAN_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
+            VULKAN_TEST_FLOW,
+        )
 
         flows += [
             VULKAN_TEST_FLOW,
+            VULKAN_STATIC_INT8_PER_CHANNEL_TEST_FLOW,
         ]
     except Exception as e:
         logger.info(f"Skipping Vulkan flow registration: {e}")
 
     try:
-        from executorch.backends.test.suite.flows.qualcomm import QUALCOMM_TEST_FLOW
+        from executorch.backends.test.suite.flows.qualcomm import (
+            QNN_16A16W_TEST_FLOW,
+            QNN_16A4W_BLOCK_TEST_FLOW,
+            QNN_16A4W_TEST_FLOW,
+            QNN_16A8W_TEST_FLOW,
+            QNN_8A8W_TEST_FLOW,
+            QNN_TEST_FLOW,
+        )
 
         flows += [
-            QUALCOMM_TEST_FLOW,
+            QNN_TEST_FLOW,
+            QNN_16A16W_TEST_FLOW,
+            QNN_16A8W_TEST_FLOW,
+            QNN_16A4W_TEST_FLOW,
+            QNN_16A4W_BLOCK_TEST_FLOW,
+            QNN_8A8W_TEST_FLOW,
         ]
     except Exception as e:
-        logger.info(f"Skipping Qualcomm flow registration: {e}")
+        logger.info(f"Skipping QNN flow registration: {e}")
 
     return {f.name: f for f in flows if f is not None}

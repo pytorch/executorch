@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 import executorch
 import executorch.backends.test.harness.stages as BaseStages
@@ -12,6 +12,7 @@ import executorch.backends.test.harness.stages as BaseStages
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
+from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -22,6 +23,24 @@ from executorch.backends.test.harness.stages import StageType
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
 from torch.export import ExportedProgram
+
+
+class Quantize(BaseStages.Quantize):
+    def __init__(
+        self,
+        quantizer: QnnQuantizer,
+        quantization_config: Optional[Any] = None,
+        calibrate: bool = True,
+        calibration_samples: Optional[Sequence[Any]] = None,
+        is_qat: Optional[bool] = False,
+    ):
+        super().__init__(
+            quantizer=quantizer,
+            calibrate=calibrate,
+            calibration_samples=calibration_samples,
+            is_qat=is_qat,
+            set_global=False,
+        )
 
 
 class Partition(BaseStages.Partition):
@@ -37,8 +56,9 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
         soc_model: str = "SM8650",
+        use_fp16: bool = True,
     ):
-        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
         self.chipset = get_soc_to_chipset_map()[soc_model]
         self.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset,
@@ -73,15 +93,17 @@ class QualcommTester(TesterBase):
         module: torch.nn.Module,
         example_inputs: Tuple[torch.Tensor],
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        use_fp16: bool = True,
     ):
+        def create_to_edge_transform_and_lower(*args, **kwargs):
+            kwargs["use_fp16"] = use_fp16
+            return ToEdgeTransformAndLower(*args, **kwargs)
+
         # Specialize for Qualcomm
-        stage_classes = (
-            executorch.backends.test.harness.Tester.default_stage_classes()
-            | {
-                StageType.PARTITION: Partition,
-                StageType.TO_EDGE_TRANSFORM_AND_LOWER: ToEdgeTransformAndLower,
-            }
-        )
+        stage_classes = executorch.backends.test.harness.Tester.default_stage_classes() | {
+            StageType.PARTITION: Partition,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER: create_to_edge_transform_and_lower,
+        }
 
         super().__init__(
             module=module,
