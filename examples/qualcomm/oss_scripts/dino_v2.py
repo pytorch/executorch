@@ -49,7 +49,7 @@ def main(args):
         )
 
     img_size, data_num = 224, 100
-    inputs, targets, input_list = get_imagenet_dataset(
+    inputs, targets = get_imagenet_dataset(
         dataset_path=f"{args.dataset}",
         data_size=data_num,
         image_shape=(256, 256),
@@ -85,7 +85,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data

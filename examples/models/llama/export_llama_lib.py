@@ -85,7 +85,6 @@ from .source_transformation.sdpa import (
     replace_sdpa_with_quantized_sdpa,
     replace_sdpa_with_simple_sdpa,
 )
-from .source_transformation.vulkan_rope import replace_with_vulkan_rotary_emb
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -606,17 +605,11 @@ def export_llama(
     if not llm_config.base.checkpoint and model_name in HUGGING_FACE_REPO_IDS:
         repo_id = HUGGING_FACE_REPO_IDS[model_name]
         if model_name == "qwen2_5":
-            from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.qwen2_5 import convert_weights
         elif model_name.startswith("qwen3"):
-            from executorch.examples.models.qwen3 import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.qwen3 import convert_weights
         elif model_name == "phi_4_mini":
-            from executorch.examples.models.phi_4_mini import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.phi_4_mini import convert_weights
         elif model_name == "smollm2":
             from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
                 convert_weights,
@@ -790,7 +783,7 @@ def get_quantizer_and_quant_params(llm_config):
 
 
 def _qmode_type(value):
-    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
+    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w", "4w"]
     patterns = [r"torchao:8da(\d+)w", r"torchao:fpa(\d+)w"]
 
     if value in choices:
@@ -1079,7 +1072,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
 
     if llm_config.backend.xnnpack.enabled:
         if llm_config.export.foundation_weights_file is not None:
-            gen_tag_fn: Callable[[torch.fx.Node], str] = lambda x: (
+            gen_tag_fn: Callable[[torch.fx.Node], Optional[str]] = lambda x: (
                 llm_config.export.foundation_weights_file
                 if "lora" not in x.name
                 else None
@@ -1089,8 +1082,11 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
                 delegate_external_constants_pass_unlifted,
             )
 
+            assert (
+                builder_exported.pre_autograd_graph_module is not None
+            ), "pre_autograd_graph_module shouldn't be None here"
             delegate_external_constants_pass_unlifted(
-                gm=builder_exported.pre_autograd_graph_module,
+                module=builder_exported.pre_autograd_graph_module,
                 gen_tag_fn=gen_tag_fn,
             )
 
@@ -1465,9 +1461,6 @@ def _get_source_transforms(  # noqa
             else:
                 transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_kv_cache_with_coreml_kv_cache)
-
-    if vulkan:
-        transforms.append(replace_with_vulkan_rotary_emb)
 
     if local_global_attention:
         transforms.append(

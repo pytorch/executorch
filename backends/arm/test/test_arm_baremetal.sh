@@ -17,7 +17,6 @@ _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly ins
 
 
 TEST_SUITE=$1
-TOSA_VERSION="${2:-TOSA-1.0+INT}"
 
 # Source the tools
 # This should be prepared by the setup.sh
@@ -101,7 +100,7 @@ test_pytest_models() { # Test ops and other things
     source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest  --verbose --color=yes --durations=0 backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -141,7 +140,7 @@ test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify
     source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests with FVP
-    pytest  --verbose --color=yes --durations=0 backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -157,17 +156,23 @@ test_run_ethosu_fvp() { # End to End model tests using run.sh
 
     # TOSA quantized
     echo "${TEST_SUITE_NAME}: Test ethos-u target TOSA"
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=${TOSA_VERSION} --model_name=add
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=${TOSA_VERSION} --model_name=mul
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA-1.0+INT --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA-1.0+INT --model_name=mul
 
     # Ethos-U55
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U55"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --etdump
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul
 
     # Ethos-U85
     echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add --bundleio --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add --etdump
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul
 
     # Cortex-M op tests
@@ -187,17 +192,17 @@ test_models_tosa() { # End to End model tests using model_test.py
 
     # TOSA quantized
     echo "${TEST_SUITE_NAME}: Test ethos-u target TOSA"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=mv2
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=mv3
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=lstm
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=edsr
-    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=emformer_transcribe # Takes long time to run
-    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=emformer_join       # Takes long time to run
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=w2l
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=ic3
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=ic4
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=resnet18
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=resnet50
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=mv2
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=mv3
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=lstm
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=edsr
+    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=emformer_transcribe # Takes long time to run
+    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=emformer_join       # Takes long time to run
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=w2l
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=ic3
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=ic4
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=resnet18
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=resnet50
 
     echo "${TEST_SUITE_NAME}: PASS"
     }

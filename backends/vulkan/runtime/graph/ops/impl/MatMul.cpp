@@ -102,7 +102,7 @@ void add_matmul_naive_buffer_node(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       matmul_naive_buffer_global_wg_size,
-      default_pick_local_wg_size,
+      pick_hw_square_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers
@@ -158,7 +158,7 @@ void add_matmul_naive_texture3d_node(
       graph,
       pick_matmul_naive_texture3d_shader,
       default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      pick_hw_square_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers
@@ -273,7 +273,7 @@ void add_matmul_optimized_node(
       graph,
       pick_matmul_optimized_shader,
       matmul_optimized_global_wg_size,
-      default_pick_local_wg_size,
+      pick_hw_square_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1_W_packed, mat2_packed}, vkapi::kRead}},
       // Shader params buffers

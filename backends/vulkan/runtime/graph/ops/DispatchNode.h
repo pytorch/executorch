@@ -44,6 +44,8 @@ class DispatchNode : public ExecuteNode {
 
   void encode(ComputeGraph* graph) override;
 
+  bool trigger_resize(ComputeGraph* graph) override;
+
  protected:
   vkapi::ShaderInfo shader_;
   utils::uvec3 global_workgroup_size_;

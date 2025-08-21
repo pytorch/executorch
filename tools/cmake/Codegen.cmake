@@ -343,3 +343,116 @@ function(merge_yaml)
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
 endfunction()
+
+# Append the file list in the variable named `name` in build/build_variables.bzl
+# to the variable named `outputvar` in the caller's scope.
+function(executorch_append_filelist name outputvar)
+  # configure_file adds its input to the list of CMAKE_RERUN dependencies
+  configure_file(
+    ${EXECUTORCH_ROOT}/shim_et/xplat/executorch/build/build_variables.bzl
+    ${PROJECT_BINARY_DIR}/build_variables.bzl COPYONLY
+  )
+  if(NOT PYTHON_EXECUTABLE)
+    resolve_python_executable()
+  endif()
+  execute_process(
+    COMMAND
+      "${PYTHON_EXECUTABLE}" -c
+      "exec(open('${EXECUTORCH_ROOT}/shim_et/xplat/executorch/build/build_variables.bzl').read());print(';'.join(${name}))"
+    WORKING_DIRECTORY "${_rootdir}"
+    RESULT_VARIABLE _retval
+    OUTPUT_VARIABLE _tempvar
+    ERROR_VARIABLE _stderr
+  )
+  if(NOT _retval EQUAL 0)
+    message(
+      FATAL_ERROR
+        "Failed to fetch filelist ${name} from build_variables.bzl with output ${_tempvar} and stderr ${_stderr}"
+    )
+  endif()
+  string(REPLACE "\n" "" _tempvar "${_tempvar}")
+  list(APPEND ${outputvar} ${_tempvar})
+  set(${outputvar}
+      "${${outputvar}}"
+      PARENT_SCOPE
+  )
+endfunction()
+
+function(executorch_load_build_variables)
+  set(EXECUTORCH_BUILD_VARIABLES_FILELISTS
+      EXECUTORCH_SRCS
+      EXECUTORCH_CORE_SRCS
+      PORTABLE_KERNELS_SRCS
+      KERNELS_UTIL_ALL_DEPS_SRCS
+      OPTIMIZED_KERNELS_SRCS
+      QUANTIZED_KERNELS_SRCS
+      OPTIMIZED_CPUBLAS_SRCS
+      OPTIMIZED_NATIVE_CPU_OPS_SRCS
+      TEST_BACKEND_COMPILER_LIB_SRCS
+      EXTENSION_DATA_LOADER_SRCS
+      EXTENSION_EVALUE_UTIL_SRCS
+      EXTENSION_FLAT_TENSOR_SRCS
+      EXTENSION_MODULE_SRCS
+      EXTENSION_RUNNER_UTIL_SRCS
+      EXTENSION_LLM_RUNNER_SRCS
+      EXTENSION_TENSOR_SRCS
+      EXTENSION_THREADPOOL_SRCS
+      EXTENSION_TRAINING_SRCS
+      TRAIN_XOR_SRCS
+      EXECUTOR_RUNNER_SRCS
+      SIZE_TEST_SRCS
+      MPS_EXECUTOR_RUNNER_SRCS
+      MPS_BACKEND_SRCS
+      MPS_SCHEMA_SRCS
+      XNN_EXECUTOR_RUNNER_SRCS
+      XNNPACK_BACKEND_SRCS
+      XNNPACK_SCHEMA_SRCS
+      VULKAN_SCHEMA_SRCS
+      CUSTOM_OPS_SRCS
+      LLAMA_RUNNER_SRCS
+  )
+  set(EXECUTORCH_BUILD_VARIABLES_VARNAMES
+      _executorch__srcs
+      _executorch_core__srcs
+      _portable_kernels__srcs
+      _kernels_util_all_deps__srcs
+      _optimized_kernels__srcs
+      _quantized_kernels__srcs
+      _optimized_cpublas__srcs
+      _optimized_native_cpu_ops__srcs
+      _test_backend_compiler_lib__srcs
+      _extension_data_loader__srcs
+      _extension_evalue_util__srcs
+      _extension_flat_tensor__srcs
+      _extension_module__srcs
+      _extension_runner_util__srcs
+      _extension_llm_runner__srcs
+      _extension_tensor__srcs
+      _extension_threadpool__srcs
+      _extension_training__srcs
+      _train_xor__srcs
+      _executor_runner__srcs
+      _size_test__srcs
+      _mps_executor_runner__srcs
+      _mps_backend__srcs
+      _mps_schema__srcs
+      _xnn_executor_runner__srcs
+      _xnnpack_backend__srcs
+      _xnnpack_schema__srcs
+      _vulkan_schema__srcs
+      _custom_ops__srcs
+      _llama_runner__srcs
+  )
+  foreach(filelist_and_varname IN
+          ZIP_LISTS EXECUTORCH_BUILD_VARIABLES_FILELISTS
+          EXECUTORCH_BUILD_VARIABLES_VARNAMES
+  )
+    executorch_append_filelist(
+      ${filelist_and_varname_0} "${filelist_and_varname_1}"
+    )
+    set(${filelist_and_varname_1}
+        "${${filelist_and_varname_1}}"
+        PARENT_SCOPE
+    )
+  endforeach()
+endfunction()
