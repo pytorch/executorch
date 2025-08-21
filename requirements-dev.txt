@@ -5,7 +5,5 @@ pip>=23  # For building the pip package.
 pyyaml  # Imported by the kernel codegen tools.
 setuptools>=63  # For building the pip package contents.
 wheel  # For building the pip package archive.
-zstd  # Imported by resolve_buck.py.
-certifi  # Imported by resolve_buck.py.
 lintrunner==0.12.7
 lintrunner-adapters==0.12.6
