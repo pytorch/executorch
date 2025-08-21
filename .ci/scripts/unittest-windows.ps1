@@ -1,6 +1,6 @@
 Set-PSDebug -Trace 1
 $ErrorActionPreference = 'Stop'
-$PSNativeCommandUseErrorActionPreference = \$true
+$PSNativeCommandUseErrorActionPreference = $true
 
 conda create --yes --quiet -n et python=3.12
 conda activate et
