@@ -130,28 +130,8 @@ def get_input_quantization_params(
     return quant_params
 
 
-def get_output_nodes(program: ExportedProgram) -> list[Node]:
-    """
-    Get output node to this model.
-
-    Args:
-        program (ExportedProgram): The program to get the output nodes from.
-    Returns:
-        The nodes that are the outputs of the 'program'.
-    """
-    output_nodes = []
-    for node in program.graph.nodes:
-        if node.op == "output":
-            for output in node.args[0]:
-                output_nodes.append(output)
-    if len(output_nodes) == 0:
-        raise RuntimeError("No output nodes found.")
-    else:
-        return output_nodes
-
-
 def get_output_quantization_params(
-    output_nodes: list[Node],
+    output_node: Node,
 ) -> dict[Node, QuantizationParams | None]:
     """
     Get output QuantizationParams from a program.
@@ -164,7 +144,7 @@ def get_output_quantization_params(
         RuntimeError if no output quantization parameters are found.
     """
     quant_params = {}
-    for node in output_nodes:
+    for node in output_node.args[0]:
         if node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default:
             quant_params[node] = QuantizationParams(
                 node_name=node.args[0].name,
@@ -411,9 +391,9 @@ def run_corstone(
             f"Corstone simulation failed:\ncmd: {' '.join(command_args)}\nlog: \n {result_stdout}\n{result.stderr.decode()}"
         )
 
-    output_nodes = get_output_nodes(exported_program)
     output_np = []
-    for i, node in enumerate(output_nodes):
+    output_node = exported_program.graph_module.graph.output_node()
+    for i, node in enumerate(output_node.args[0]):
         output_shape = node.meta["val"].shape
         output_dtype = node.meta["val"].dtype
         tosa_ref_output = np.fromfile(

@@ -8,6 +8,7 @@ This file provides you the instructions to run LLM Decoder model with different 
  4. QWEN2.5 0.5B
  5. QWEN3 0.6B / 1.7B
  6. Phi4-mini-instruct
+ 7. SMOLLM2 135M
 
 We offer the following modes to execute the model:
 
@@ -72,6 +73,12 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 Default example using hybrid mode
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --ptq 16a8w --enable_masked_softmax --r3 --decoder_model qwen2_5 --prompt "I would like to learn python, could you teach me with a simple example?"
+```
+
+#### SMOLLM2
+Default example using hybrid mode.
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -H mlgtw-linux -s ${SERIAL_NUM} -m ${SOC_MODEL} --ptq 16a8w --tokenizer_bin tokenizer.bin --decoder_model smollm2 --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?"
 ```
 
 ### KV Cache update mechanism
