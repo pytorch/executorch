@@ -98,7 +98,7 @@ jobs:
                   //repo: "executorch",
                   //issue_number: pull.number,
                   //state: "closed",
-                });
+                  //});
               } else {
                 // For PRs not labeled stale, label them stale.
                 core.info(`[${pull.number}] Labeling PR as stale.`);
@@ -109,7 +109,7 @@ jobs:
                   //repo: "executorch",
                   //issue_number: pull.number,
                   //body: STALE_MESSAGE,
-                });
+                //});
 
                 numAPIRequests += 1;
                   //await github.rest.issues.addLabels({
@@ -117,7 +117,7 @@ jobs:
                   //repo: "executorch",
                   //issue_number: pull.number,
                   //labels: ["Stale"],
-                });
+                //});
               }
             }
 
