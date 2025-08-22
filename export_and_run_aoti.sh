@@ -10,7 +10,7 @@
 #   ./export_and_run_aoti.sh conv2d inference          # Uses inference mode
 #   ./export_and_run_aoti.sh conv2d --mode=inference   # Alternative syntax
 #
-# Available modes: reinstall_all (default), reinstall_aot, reinstall_runtime, inference
+# Available modes: reinstall_all (default), reinstall_aot, reinstall_runtime, inference, export_aoti_only
 # model_arg: argument to pass to export_aoti.py
 
 set -e  # Exit on any error
@@ -26,7 +26,7 @@ for arg in "$@"; do
             MODE="${arg#*=}"
             shift
             ;;
-        reinstall_all|reinstall_aot|reinstall_runtime|inference)
+        reinstall_all|reinstall_aot|reinstall_runtime|inference|export_aoti_only)
             # If it's the second argument and a valid mode, use it as mode
             if [[ "$arg" == "$2" ]]; then
                 MODE="$arg"
@@ -37,17 +37,18 @@ done
 
 # Validate mode
 case "$MODE" in
-    reinstall_all|reinstall_aot|reinstall_runtime|inference)
+    reinstall_all|reinstall_aot|reinstall_runtime|inference|export_aoti_only)
         # Valid mode, continue
         ;;
     *)
         echo "Error: Unknown mode '$MODE'"
-        echo "Available modes: reinstall_all, reinstall_aot, reinstall_runtime, inference"
+        echo "Available modes: reinstall_all, reinstall_aot, reinstall_runtime, inference, export_aoti_only"
         echo ""
         echo "Usage examples:"
-        echo "  ./export_and_run_aoti.sh conv2d                    # Uses default mode"
-        echo "  ./export_and_run_aoti.sh conv2d inference          # Positional mode"
-        echo "  ./export_and_run_aoti.sh conv2d --mode=inference   # GNU-style mode"
+        echo "  ./export_and_run_aoti.sh conv2d                         # Uses default mode"
+        echo "  ./export_and_run_aoti.sh conv2d inference               # Positional mode"
+        echo "  ./export_and_run_aoti.sh conv2d --mode=inference        # GNU-style mode"
+        echo "  ./export_and_run_aoti.sh conv2d export_aoti_only        # Export AOTI only (no runtime)"
         exit 1
         ;;
 esac
@@ -94,8 +95,13 @@ install_executorch() {
 }
 
 export_aoti_model() {
+    local use_aoti_only=$1
     echo "Exporting AOTI model..."
-    python export_aoti.py $MODEL_ARG
+    if [[ "$use_aoti_only" == "--aoti_only" ]]; then
+        python export_aoti.py $MODEL_ARG --aoti_only
+    else
+        python export_aoti.py $MODEL_ARG
+    fi
 }
 
 clean_install_executorch() {
@@ -151,9 +157,13 @@ case "$MODE" in
         export_aoti_model
         run_inference
         ;;
+    "export_aoti_only")
+        echo "Mode: export_aoti_only - Export model using pure AOTI only (no runtime or installation)"
+        export_aoti_model "--aoti_only"
+        ;;
     *)
         echo "Error: Unknown mode '$MODE'"
-        echo "Available modes: reinstall_all, reinstall_aot, reinstall_runtime, inference"
+        echo "Available modes: reinstall_all, reinstall_aot, reinstall_runtime, inference, export_aoti_only"
         exit 1
         ;;
 esac

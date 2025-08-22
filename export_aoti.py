@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 Unified export script for AOTI backend.
-Usage: python export_aoti.py <model_name>
+Usage:
+  python export_aoti.py <model_name>              # Uses export_model_to_et_aoti
+  python export_aoti.py <model_name> --aoti_only  # Uses export_model_to_pure_aoti
 
 Supported models:
 - mv2: MobileNetV2 model
@@ -10,6 +12,7 @@ Supported models:
 - add: Simple tensor addition model
 """
 
+import argparse
 import copy
 import os
 
@@ -66,6 +69,25 @@ class Add(torch.nn.Module):
         return x + y
 
 
+class DepthwiseConv(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # 32 input channels, 32 output channels, groups=32 for depthwise
+        self.conv = nn.Conv2d(
+            in_channels=32,
+            out_channels=32,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            dilation=1,
+            groups=32,
+            bias=False,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
 # Model registry mapping model names to their configurations
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "mv2": {
@@ -85,6 +107,12 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "input_shapes": [(4, 3, 8, 8)],
         "device": "cuda",
         "description": "Single Conv2d layer model",
+    },
+    "depthwise_conv": {
+        "model_class": DepthwiseConv,
+        "input_shapes": [(1, 32, 112, 112)],
+        "device": "cuda",
+        "description": "Single Depthwise Conv2d layer model",
     },
     "add": {
         "model_class": Add,
@@ -120,7 +148,7 @@ def get_model_and_inputs(
     return model, example_inputs
 
 
-def export_model(model, example_inputs, output_filename="aoti_model.pte"):
+def export_model_to_et_aoti(model, example_inputs, output_filename="aoti_model.pte"):
     """Export model through the AOTI pipeline."""
     all_one_input = tuple(
         torch.ones_like(example_input) for example_input in example_inputs
@@ -135,14 +163,6 @@ def export_model(model, example_inputs, output_filename="aoti_model.pte"):
     aten_dialect = export(model, example_inputs)
 
     # 2. to_edge: Make optimizations for Edge devices
-    # print("Step 2: Converting to Edge program...")
-    # edge_program = to_edge(aten_dialect)
-    # print(edge_program.exported_program().graph.print_tabular())
-
-    # print("Step 3: Converting to backend...")
-    # edge_program = edge_program.to_backend(AotiPartitioner([]))
-    # print("To backend done.")
-
     # aoti part should be decomposed by the internal torch._inductor.aot_compile
     # we should preserve the lowerable part and waiting for aoti backend handle that
     # Q: maybe need to turn on fallback_random?
@@ -163,21 +183,91 @@ def export_model(model, example_inputs, output_filename="aoti_model.pte"):
     print(f"Export completed successfully! Output saved to {output_filename}")
 
 
+def export_model_to_pure_aoti(model, example_inputs):
+    """Export model through the AOTI pipeline."""
+    all_one_input = tuple(
+        torch.ones_like(example_input) for example_input in example_inputs
+    )
+
+    print("label", model(*all_one_input))
+
+    print(f"Starting export process...")
+
+    # 1. torch.export: Defines the program with the ATen operator set.
+    print("Step 1: Converting to ATen dialect...")
+    aten_dialect = export(model, example_inputs)
+
+    # 2. torch._inductor.aot_compile to aoti delegate
+    aten_dialect_module = aten_dialect.module()
+
+    output_path = os.path.join(os.getcwd(), "aoti.so")
+
+    options: dict[str, Any] = {
+        "aot_inductor.package_constants_in_so": True,
+        "aot_inductor.output_path": output_path,
+        "aot_inductor.debug_compile": True,
+        "aot_inductor.repro_level": 3,
+        "aot_inductor.debug_intermediate_value_printer": "3",
+        "max_autotune": True,
+        "max_autotune_gemm_backends": "TRITON",
+        "max_autotune_conv_backends": "TRITON",
+    }
+
+    so_path = torch._inductor.aot_compile(aten_dialect_module, example_inputs, options=options)  # type: ignore[arg-type]
+
+    assert so_path == output_path, f"Expected {output_path} but got {so_path}"
+
+    check_call(
+        f"patchelf --remove-needed libtorch.so --remove-needed libc10.so --remove-needed libtorch_cuda.so --remove-needed libc10_cuda.so --remove-needed libtorch_cpu.so --add-needed libcudart.so {output_path}",
+        shell=True,
+    )
+
+
 def main():
-    if len(sys.argv) != 2:
-        available_models = ", ".join(MODEL_REGISTRY.keys())
-        print("Usage: python export_aoti.py <model_name>")
-        print(f"Available models: {available_models}")
+    # Set up argument parser
+    parser = argparse.ArgumentParser(
+        description="Unified export script for AOTI backend",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    # Add model name as positional argument
+    parser.add_argument(
+        "model_name",
+        help="Name of the model to export",
+        choices=list(MODEL_REGISTRY.keys()),
+        metavar="model_name",
+    )
+
+    # Add the --aoti_only flag
+    parser.add_argument(
+        "--aoti_only",
+        action="store_true",
+        help="Use export_model_to_pure_aoti instead of export_model_to_et_aoti",
+    )
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Show available models and descriptions in help
+    if len(sys.argv) == 1:
+        parser.print_help()
+        print(f"\nAvailable models: {', '.join(MODEL_REGISTRY.keys())}")
         print("\nModel descriptions:")
         for name, config in MODEL_REGISTRY.items():
             print(f"  {name}: {config['description']}")
         sys.exit(1)
 
-    model_name = sys.argv[1]
-
     try:
-        model, example_inputs = get_model_and_inputs(model_name)
-        export_model(model, example_inputs)
+        model, example_inputs = get_model_and_inputs(args.model_name)
+
+        # Choose export function based on --aoti_only flag
+        if args.aoti_only:
+            print("Using export_model_to_pure_aoti...")
+            export_model_to_pure_aoti(model, example_inputs)
+        else:
+            print("Using export_model_to_et_aoti...")
+            export_model_to_et_aoti(model, example_inputs)
+
     except ValueError as e:
         print(f"Error: {e}")
         sys.exit(1)
