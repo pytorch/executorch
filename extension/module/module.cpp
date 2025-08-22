@@ -278,6 +278,25 @@ runtime::Error Module::set_output(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
+runtime::Error Module::set_outputs(
+    const std::string& method_name,
+    const std::vector<runtime::EValue>& output_values) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
+  const auto outputs_size = method->outputs_size();
+  ET_CHECK_OR_RETURN_ERROR(
+      output_values.size() == outputs_size,
+      InvalidArgument,
+      "output size: %zu is not equal to method output size: %zu",
+      output_values.size(),
+      outputs_size);
+  for (auto index = 0; index < outputs_size; ++index) {
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        set_output(method_name, output_values[index], index));
+  }
+  return runtime::Error::Ok;
+}
+
 } // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch
