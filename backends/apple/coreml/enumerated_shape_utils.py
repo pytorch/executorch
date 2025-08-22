@@ -231,24 +231,3 @@ def _get_ct_inputs(ep, emap: _SymbolicShapeToEnumeratedShapeMap):
             ct.TensorType(name=name, shape=ct_enumerated_shape, dtype=ct_dtype)
         )
     return ct_inputs
-
-
-# inputs = (
-#     torch.randn((3,5,10)),
-#     torch.randn((3,5,10)),
-# )
-# class Model(torch.nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.linear1 = torch.nn.Linear(10, 5)
-#         self.linear2 = torch.nn.Linear(10, 5)
-#     def forward(self, x, y):
-#         return self.linear1(x).sum() + self.linear2(y)
-# model = Model()
-# dynamic_shapes = [{0: torch.export.Dim(name="i1", min=1, max=50), 1: torch.export.Dim("i2", min=1, max=10)}, {0: torch.export.Dim(name="i1", min=1, max=50), 1: torch.export.Dim("i2", min=1, max=10)}]
-# ep = torch.export.export(model.eval(), inputs, dynamic_shapes=dynamic_shapes)
-# enumerated_shapes = {"x": [[1, 3, 10], [5, 7, 10], [3, 9, 10]], "y": [[1, 3, 10], [5, 7, 10], [3, 9, 10]]}
-
-
-# emap = _SymbolicShapeToEnumeratedShapeMap.from_exported_program(ep, enumerated_shapes)
-# get_enumerated_ct_inputs(ep, emap)
