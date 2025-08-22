@@ -21,8 +21,27 @@ memcpy(void* dst, const void* src, size_t num_bytes) {
 }
 
 void* allocate_temp_memory(KernelRuntimeContext& ctx, size_t size) {
-  Result<void*> temp_mem_res = ctx.allocate_temp(size);
-  return temp_mem_res.ok() ? temp_mem_res.get() : nullptr;
+  constexpr size_t kAlignment =
+      16; // 16-byte alignment for vectorized operations
+  ET_LOG(
+      Info,
+      "Attempting to allocate %zu bytes of temp memory (16-byte aligned)",
+      size);
+  Result<void*> temp_mem_res = ctx.allocate_temp(size, kAlignment);
+  if (temp_mem_res.ok()) {
+    void* ptr = temp_mem_res.get();
+    ET_LOG(
+        Info,
+        "Successfully allocated temp memory at %p (16-byte aligned)",
+        ptr);
+    return ptr;
+  } else {
+    ET_LOG(
+        Error,
+        "Failed to allocate temp memory, error: 0x%x",
+        static_cast<uint32_t>(temp_mem_res.error()));
+    return nullptr;
+  }
 }
 
 // Quantize a fp32 value to an int8_t/uint8_t value
