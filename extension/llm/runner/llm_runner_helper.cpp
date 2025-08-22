@@ -171,7 +171,7 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       llm::get_eos_ids(tokenizer.get(), module.get()));
 
   // Create IOManager
-  std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>();
+  std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>(*module);
 
   // Create text_decoder_runner. Use a shared_ptr so that it can be shared with
   // TextPrefiller and TextTokenGenerator
@@ -234,7 +234,7 @@ std::unique_ptr<MultimodalRunner> create_multimodal_runner(
       get_eos_ids(tokenizer.get(), module.get()));
 
   // Create IOManager
-  std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>();
+  std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>(*module);
 
   // Create text_decoder_runner
   auto text_decoder_runner =
