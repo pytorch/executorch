@@ -108,11 +108,6 @@ class OpElementWiseAdd:
 
 
 @dataclass(init=False, frozen=True)
-class OpElementWiseAnd:
-    op_name: str = "ElementWiseAnd"
-
-
-@dataclass(init=False, frozen=True)
 class OpElementWiseAtan:
     op_name: str = "ElementWiseAtan"
 
@@ -198,6 +193,11 @@ class OpElementWiseNeuron:
     param_operation: str = "operation"
     param_alpha: str = "alpha"
     param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseAnd:
+    op_name: str = "ElementWiseAnd"
 
 
 @dataclass(init=False, frozen=True)
