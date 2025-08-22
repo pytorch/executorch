@@ -143,6 +143,9 @@ def export_model(model, example_inputs, output_filename="aoti_model.pte"):
     # edge_program = edge_program.to_backend(AotiPartitioner([]))
     # print("To backend done.")
 
+    # aoti part should be decomposed by the internal torch._inductor.aot_compile
+    # we should preserve the lowerable part and waiting for aoti backend handle that
+    # Q: maybe need to turn on fallback_random?
     edge_program = to_edge_transform_and_lower(
         aten_dialect, partitioner=[AotiPartitioner([])]
     )
