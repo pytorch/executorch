@@ -68,8 +68,24 @@ class ETRecord:
             Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]
         ] = None,
         _reference_outputs: Optional[Dict[str, List[ProgramOutput]]] = None,
-        _representative_inputs: Optional[List[ProgramOutput]] = None,
+        _representative_inputs: Optional[List[ProgramInput]] = None,
     ):
+        """
+        Please do not construct an ETRecord object directly.
+
+        If you want to create an ETRecord for logging AOT information to further analysis, please mark `generate_etrecord`
+        as True in your export api, and get the ETRecord object from the `ExecutorchProgramManager`.
+        For exmaple:
+        ```python
+            exported_program = torch.export.export(model, inputs)
+            edge_program = to_edge_transform_and_lower(exported_program, generate_etrecord=True)
+            executorch_program = edge_program.to_executorch()
+            etrecord = executorch_program.get_etrecord()
+        ```
+
+        If user need to create an ETRecord manually, please use the `create_etrecord` function.
+        """
+
         self.exported_program = exported_program
         self.export_graph_id = export_graph_id
         self.edge_dialect_program = edge_dialect_program
@@ -81,14 +97,24 @@ class ETRecord:
 
     def save(self, path: Union[str, os.PathLike, BinaryIO, IO[bytes]]) -> None:
         """
-        Serialize and save the ETRecord to the specified path.
+        Serialize and save the ETRecord to the specified path for use in Inspector. The ETRecord
+        should contains at least edge dialect program and executorch program information for further
+        analysis, otherwise it will raise an exception.
 
         Args:
             path: Path where the ETRecord file will be saved to.
+
+        Raises:
+            RuntimeError: If the ETRecord does not contain essential information for Inpector.
         """
         if isinstance(path, (str, os.PathLike)):
             # pyre-ignore[6]: In call `os.fspath`, for 1st positional argument, expected `str` but got `Union[PathLike[typing.Any], str]`
             path = os.fspath(path)
+
+        if not (self.edge_dialect_program and self._debug_handle_map):
+            raise RuntimeError(
+                "ETRecord must contain edge dialect program and executorch program to be saved"
+            )
 
         etrecord_zip = ZipFile(path, "w")
 
@@ -200,6 +226,201 @@ class ETRecord:
             f"{base_name}_example_inputs", serialized_artifact.example_inputs
         )
 
+    def add_extra_export_modules(
+        self,
+        extra_recorded_export_modules: Dict[
+            str,
+            Union[
+                ExportedProgram,
+                ExirExportedProgram,
+                EdgeProgramManager,
+            ],
+        ],
+    ) -> None:
+        """
+        Add extra export modules to the ETRecord after it has been created.
+
+        This method allows users to add more export modules they want to record
+        to an existing ETRecord instance. The modules will be added to the graph_map
+        and will be included when the ETRecord is saved.
+
+        Args:
+            extra_recorded_export_modules: A dictionary of graph modules with the key being
+                the user provided name and the value being the corresponding exported module.
+                The exported graph modules can be either the output of `torch.export()` or `exir.to_edge()`.
+        """
+        if self.graph_map is None:
+            self.graph_map = {}
+
+        # Now self.graph_map is guaranteed to be non-None
+        graph_map = self.graph_map
+        for module_name, export_module in extra_recorded_export_modules.items():
+            _add_module_to_graph_map(graph_map, module_name, export_module)
+
+    def add_executorch_program(
+        self,
+        executorch_program: Union[
+            ExecutorchProgram,
+            ExecutorchProgramManager,
+            BundledProgram,
+        ],
+    ) -> None:
+        """
+        Add executorch program data to the ETRecord after it has been created.
+
+        This method allows users to add executorch program data they want to record
+        to an existing ETRecord instance. The executorch program data includes debug handle map,
+        delegate map, reference outputs, and representative inputs that will be included
+        when the ETRecord is saved.
+
+        Args:
+            executorch_program: The ExecuTorch program for this model returned by the call to
+                `to_executorch()` or the `BundledProgram` of this model.
+
+        Raises:
+            RuntimeError: If executorch program data already exists in the ETRecord.
+        """
+        # Check if executorch program data already exists
+        if (
+            self._debug_handle_map is not None
+            or self._delegate_map is not None
+            or self._reference_outputs is not None
+            or self._representative_inputs is not None
+        ):
+            raise RuntimeError(
+                "Executorch program data already exists in the ETRecord. "
+                "Cannot add executorch program data when it already exists."
+            )
+
+        # Process executorch program and extract data
+        debug_handle_map, delegate_map, reference_outputs, representative_inputs = (
+            _process_executorch_program(executorch_program)
+        )
+
+        # Set the extracted data
+        self._debug_handle_map = debug_handle_map
+        self._delegate_map = delegate_map
+        self._reference_outputs = reference_outputs
+        self._representative_inputs = representative_inputs
+
+    def add_exported_program(
+        self,
+        exported_program: Optional[Union[ExportedProgram, Dict[str, ExportedProgram]]],
+    ) -> None:
+        """
+        Add exported program to the ETRecord after it has been created.
+
+        This method allows users to add an exported program they want to record
+        to an existing ETRecord instance. The exported program will be included
+        when the ETRecord is saved.
+
+        Args:
+            exported_program: The exported program for this model returned by the call to
+                `torch.export()` or a dictionary with method names as keys and exported programs as values.
+                Can be None, in which case no exported program data will be added.
+
+        Raises:
+            RuntimeError: If exported program already exists in the ETRecord.
+        """
+        # Check if exported program already exists
+        if self.exported_program is not None or self.export_graph_id is not None:
+            raise RuntimeError(
+                "Exported program already exists in the ETRecord. "
+                "Cannot add exported program when it already exists."
+            )
+
+        # Process exported program and extract data
+        processed_exported_program, export_graph_id = _process_exported_program(
+            exported_program
+        )
+
+        # Set the extracted data
+        self.exported_program = processed_exported_program
+        self.export_graph_id = export_graph_id
+
+    def add_edge_dialect_program(
+        self,
+        edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram],
+    ) -> None:
+        """
+        Add edge dialect program to the ETRecord after it has been created.
+
+        This method allows users to add an edge dialect program they want to record
+        to an existing ETRecord instance. The edge dialect program will be included
+        when the ETRecord is saved.
+
+        Args:
+            edge_dialect_program: The edge dialect program for this model returned by the call to
+                `to_edge()` or `EdgeProgramManager` for this model.
+
+        Raises:
+            RuntimeError: If edge dialect program already exists in the ETRecord.
+        """
+        # Check if edge dialect program already exists
+        if self.edge_dialect_program is not None:
+            raise RuntimeError(
+                "Edge dialect program already exists in the ETRecord. "
+                "Cannot add edge dialect program when it already exists."
+            )
+
+        # Process edge dialect program and extract data
+        processed_edge_dialect_program = _process_edge_dialect_program(
+            edge_dialect_program
+        )
+
+        # Set the extracted data
+        self.edge_dialect_program = processed_edge_dialect_program
+
+    def update_representative_inputs(
+        self,
+        representative_inputs: Union[List[ProgramInput], BundledProgram],
+    ) -> None:
+        """
+        Update the representative inputs in the ETRecord.
+
+        This method allows users to customize the representative inputs that will be
+        included when the ETRecord is saved. The representative inputs can be provided
+        directly as a list or extracted from a BundledProgram.
+
+        Args:
+            representative_inputs: Either a list of ProgramInput objects or a BundledProgram
+                from which representative inputs will be extracted.
+        """
+        if isinstance(representative_inputs, BundledProgram):
+            self._representative_inputs = _get_representative_inputs(
+                representative_inputs
+            )
+        else:
+            self._representative_inputs = representative_inputs
+
+    def update_reference_outputs(
+        self,
+        reference_outputs: Union[
+            Dict[str, List[ProgramOutput]], List[ProgramOutput], BundledProgram
+        ],
+    ) -> None:
+        """
+        Update the reference outputs in the ETRecord.
+
+        This method allows users to customize the reference outputs that will be
+        included when the ETRecord is saved. The reference outputs can be provided
+        directly as a dictionary mapping method names to lists of outputs, as a
+        single list of outputs (which will be treated as {"forward": List[ProgramOutput]}),
+        or extracted from a BundledProgram.
+
+        Args:
+            reference_outputs: Either a dictionary mapping method names to lists of
+                ProgramOutput objects, a single list of ProgramOutput objects (treated
+                as outputs for the "forward" method), or a BundledProgram from which
+                reference outputs will be extracted.
+        """
+        if isinstance(reference_outputs, BundledProgram):
+            self._reference_outputs = _get_reference_outputs(reference_outputs)
+        elif isinstance(reference_outputs, list):
+            self._reference_outputs = {"forward": reference_outputs}
+        else:
+            self._reference_outputs = reference_outputs
+
 
 def _get_reference_outputs(
     bundled_program: BundledProgram,
@@ -285,37 +506,24 @@ def generate_etrecord(
     Returns:
         None
     """
-    # Process all inputs and prepare data for ETRecord construction
-    processed_exported_program, export_graph_id = _process_exported_program(
-        exported_program
-    )
-    graph_map = _process_extra_recorded_modules(extra_recorded_export_modules)
-    processed_edge_dialect_program = _process_edge_dialect_program(edge_dialect_program)
-    debug_handle_map, delegate_map, reference_outputs, representative_inputs = (
-        _process_executorch_program(executorch_program)
-    )
+    etrecord = ETRecord()
+    etrecord.add_exported_program(exported_program)
+    etrecord.add_edge_dialect_program(edge_dialect_program)
+    etrecord.add_executorch_program(executorch_program)
 
-    # Create ETRecord instance and save
-    etrecord = ETRecord(
-        exported_program=processed_exported_program,
-        export_graph_id=export_graph_id,
-        edge_dialect_program=processed_edge_dialect_program,
-        graph_map=graph_map if graph_map else None,
-        _debug_handle_map=debug_handle_map,
-        _delegate_map=delegate_map,
-        _reference_outputs=reference_outputs,
-        _representative_inputs=representative_inputs,
-    )
+    # Add extra export modules if user provided
+    if extra_recorded_export_modules is not None:
+        etrecord.add_extra_export_modules(extra_recorded_export_modules)
 
     etrecord.save(et_record)
 
 
 def _process_exported_program(
     exported_program: Optional[Union[ExportedProgram, Dict[str, ExportedProgram]]]
-) -> tuple[Optional[ExportedProgram], int]:
+) -> tuple[Optional[ExportedProgram], Optional[int]]:
     """Process exported program and return the processed program and export graph id."""
     processed_exported_program = None
-    export_graph_id = 0
+    export_graph_id = None
 
     if exported_program is not None:
         if isinstance(exported_program, dict) and "forward" in exported_program:
@@ -327,29 +535,6 @@ def _process_exported_program(
             export_graph_id = id(processed_exported_program.graph)
 
     return processed_exported_program, export_graph_id
-
-
-def _process_extra_recorded_modules(
-    extra_recorded_export_modules: Optional[
-        Dict[
-            str,
-            Union[
-                ExportedProgram,
-                ExirExportedProgram,
-                EdgeProgramManager,
-            ],
-        ]
-    ]
-) -> Dict[str, ExportedProgram]:
-    """Process extra recorded export modules and return graph map."""
-    graph_map = {}
-
-    if extra_recorded_export_modules is not None:
-        for module_name, export_module in extra_recorded_export_modules.items():
-            _validate_module_name(module_name)
-            _add_module_to_graph_map(graph_map, module_name, export_module)
-
-    return graph_map
 
 
 def _validate_module_name(module_name: str) -> None:
@@ -369,6 +554,8 @@ def _add_module_to_graph_map(
     export_module: Union[ExportedProgram, ExirExportedProgram, EdgeProgramManager],
 ) -> None:
     """Add export module to graph map based on its type."""
+    _validate_module_name(module_name)
+
     if isinstance(export_module, ExirExportedProgram):
         graph_map[f"{module_name}/forward"] = export_module.exported_program
     elif isinstance(export_module, ExportedProgram):

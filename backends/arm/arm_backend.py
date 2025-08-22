@@ -57,7 +57,7 @@ class ArmCompileSpecBuilder:
                 f"Invalid TOSA version: {tosa_version}"
             )
 
-        if not ("FP" or "INT" in tosa_profiles):
+        if "FP" not in tosa_profiles and "INT" not in tosa_profiles:
             raise ValueError(
                 "Arm backend only supports converter-backend for FP or INT. "
                 f"Invalid TOSA profile: {tosa_profiles}"
@@ -128,7 +128,7 @@ class ArmCompileSpecBuilder:
         self.compiler_flags.append("--output-format=raw")
         self.compiler_flags.append("--debug-force-regor")
 
-        base_tosa_version = "TOSA-1.0+INT"
+        base_tosa_version = "TOSA-1.0+INT+int16"
         if "u55" in target:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
@@ -215,13 +215,6 @@ def is_vgf(compile_spec: List[CompileSpec]) -> bool:
         if spec.key == "output_format":
             return spec.value.decode() == "vgf"
     return False
-
-
-def get_tosa_spec(compile_spec: List[CompileSpec]) -> TosaSpecification:
-    for spec in compile_spec:
-        if spec.key == "tosa_spec":
-            return TosaSpecification.create_from_string(spec.value.decode())
-    raise ValueError("Could not find TOSA version in CompileSpec")
 
 
 def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:

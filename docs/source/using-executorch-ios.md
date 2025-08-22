@@ -14,6 +14,7 @@ The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection 
 * `kernels_llm` - Custom kernels for LLMs
 * `kernels_optimized` - Accelerated generic CPU kernels
 * `kernels_quantized` - Quantized kernels
+* `kernels_torchao` - Quantized CPU kernels from torchao
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
 
@@ -243,10 +244,10 @@ let imageBuffer: UnsafeMutableRawPointer = ... // Existing image buffer
 let inputTensor = Tensor<Float>(&imageBuffer, shape: [1, 3, 224, 224])
 
 // Execute the 'forward' method with the given input tensor and get an output tensor back.
-let outputTensor: Tensor<Float> = try module.forward(inputTensor)[0].tensor()!
+let outputTensor = try Tensor<Float>(module.forward(inputTensor))
 
 // Copy the tensor data into logits array for easier access.
-let logits = try outputTensor.scalars()
+let logits = outputTensor.scalars()
 
 // Use logits...
 ```
@@ -444,11 +445,11 @@ Swift:
 let tensor = Tensor<Float>([1.0, 2.0, 3.0, 4.0], shape: [2, 2])
 
 // Get data copy as a Swift array.
-let scalars = try tensor.scalars()
+let scalars = tensor.scalars()
 print("All scalars: \(scalars)") // [1.0, 2.0, 3.0, 4.0]
 
 // Access data via a buffer pointer.
-try tensor.withUnsafeBytes { buffer in
+tensor.withUnsafeBytes { buffer in
   print("First float element: \(buffer.first ?? 0.0)")
 }
 
@@ -482,7 +483,7 @@ Swift:
 let tensor = Tensor<Float>([1.0, 2.0, 3.0, 4.0], shape: [2, 2])
 
 // Modify the tensor's data in place.
-try tensor.withUnsafeMutableBytes { buffer in
+tensor.withUnsafeMutableBytes { buffer in
   buffer[1] = 200.0
 }
 // tensor's data is now [1.0, 200.0, 3.0, 4.0]
@@ -711,7 +712,10 @@ Inputs can be any type conforming to `ValueConvertible` (like `Tensor`, `Int`, `
 - `forward(_:)`: A convenient shortcut for executing the common "forward" method.
 
 The API provides overloads for single inputs, multiple inputs, or no inputs.
-Outputs are always returned as an array of `Value`.
+
+Outputs are returned in two ways:
+- As an array of `Value`s, letting you inspect and cast results yourself.
+- As your expected type. The generic overloads decode the result directly into your desired Swift type (such as a single `Tensor<Float>`, an array, or any custom type conforming to the `ValueSequenceConstructible` protocol). If the output doesn’t match the expected type (e.g. multiple Values returned when a single object is expected, or a tensor data type mismatch), an invalid type error is thrown.
 
 Objective-C:
 
@@ -777,6 +781,10 @@ do {
     let logits = try outputTensor.scalars()
     print("First 5 logits: \(logits.prefix(5))")
   }
+
+  // Try casting the outputs to a single typed object.
+  let tensorOutput = try Tensor<Float>(module.forward(inputTensor1, inputTensor2))
+  let logits = tensorOutput.scalars()
 } catch {
   print("Execution failed: \(error)")
 }

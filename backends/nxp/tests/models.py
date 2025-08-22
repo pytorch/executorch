@@ -85,6 +85,23 @@ class SoftmaxConvModule(torch.nn.Module):
         return self.softmax(x)
 
 
+class ConvWithSigmoid(torch.nn.Module):
+    def __init__(self, conv_in_channels: int = 3):
+        super().__init__()
+        self.block = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=conv_in_channels,
+                out_channels=3,
+                kernel_size=(2, 2),
+                stride=(2, 2),
+            ),
+            torch.nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        return self.block(x)
+
+
 class LinearModule(torch.nn.Module):
     def __init__(self, bias: bool):
         super().__init__()
@@ -120,6 +137,24 @@ class ConvFCSoftmaxModule(torch.nn.Module):
         x = self.conv(x)
         x = torch.reshape(x, (-1, 1024))
         x = self.fc(x)
+        x = self.softmax(x)
+
+        return x
+
+
+class ConvFCFCSoftmaxModuleWithoutReshape(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = torch.nn.Conv2d(4, 5, 2, bias=False)
+        self.fc1 = torch.nn.Linear(32, 16)
+        self.fc2 = torch.nn.Linear(16, 8)
+        self.softmax = torch.nn.Softmax(1)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.fc1(x)
+        x = self.fc2(x)
         x = self.softmax(x)
 
         return x

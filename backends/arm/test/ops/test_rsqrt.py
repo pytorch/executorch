@@ -16,6 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -79,5 +80,29 @@ def test_rsqrt_u85_INT(test_tensor: torch.Tensor):
         aten_op,
         exir_ops=[],
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.SkipIfNoModelConverter
+def test_rsqrt_vgf_FP(test_tensor: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.SkipIfNoModelConverter
+def test_rsqrt_vgf_INT(test_tensor: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

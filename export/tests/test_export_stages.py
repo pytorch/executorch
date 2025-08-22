@@ -11,25 +11,25 @@ from unittest.mock import Mock, patch
 
 import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
-from executorch.export import QuantizationRecipe
+from executorch.export import AOQuantizationConfig, QuantizationRecipe, StageType
 from executorch.export.stages import (
     EdgeTransformAndLowerStage,
     ExecutorchStage,
     PipelineArtifact,
     QuantizeStage,
     SourceTransformStage,
-    StageType,
     ToBackendStage,
     ToEdgeStage,
     TorchExportStage,
 )
 from torch.export import ExportedProgram
+from torchao.quantization.pt2e.quantizer import Quantizer as TorchAOPT2EQuantizer
 
 
 class SimpleTestModel(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.linear = torch.nn.Linear(10, 5)
+        self.linear: torch.nn.Module = torch.nn.Linear(10, 5)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.linear(x)
@@ -163,7 +163,7 @@ class TestSourceTransformStage(unittest.TestCase):
 
     def test_source_transform_stage_no_quantization(self) -> None:
         mock_recipe = Mock(spec=QuantizationRecipe)
-        mock_recipe.ao_base_config = None
+        mock_recipe.ao_quantization_configs = None
         stage = SourceTransformStage(mock_recipe)
         artifact = PipelineArtifact(data=self.models_dict, context={})
 
@@ -174,12 +174,18 @@ class TestSourceTransformStage(unittest.TestCase):
 
     @patch("executorch.export.stages.quantize_")
     @patch("executorch.export.stages.unwrap_tensor_subclass")
-    def test_run_with_ao_base_config(
+    def test_run_with_ao_quantization_configs(
         self, mock_unwrap: Mock, mock_quantize: Mock
     ) -> None:
-        mock_config = Mock()
+        from torchao.core.config import AOBaseConfig
+
+        mock_config = Mock(spec=AOBaseConfig)
+        mock_filter_fn = Mock()
+        mock_ao_config: AOQuantizationConfig = AOQuantizationConfig(
+            ao_base_config=mock_config, filter_fn=mock_filter_fn
+        )
         mock_recipe = Mock(spec=QuantizationRecipe)
-        mock_recipe.ao_base_config = [mock_config]
+        mock_recipe.ao_quantization_configs = [mock_ao_config]
 
         stage = SourceTransformStage(mock_recipe)
 
@@ -188,7 +194,7 @@ class TestSourceTransformStage(unittest.TestCase):
         stage.run(artifact)
 
         # Verify quantize_ was called with the model and config
-        mock_quantize.assert_called_once_with(self.model, mock_config)
+        mock_quantize.assert_called_once_with(self.model, mock_config, mock_filter_fn)
 
         # Verify unwrap_tensor_subclass was called with the model
         mock_unwrap.assert_called_once_with(self.model)
@@ -200,6 +206,21 @@ class TestQuantizeStage(unittest.TestCase):
         self.models_dict = {"forward": self.model}
         self.example_inputs = [(torch.randn(2, 10),)]
         self.context = {"example_inputs": {"forward": self.example_inputs}}
+
+    @staticmethod
+    def create_dummy_quantizer() -> TorchAOPT2EQuantizer:
+
+        class DummyQuantizer(TorchAOPT2EQuantizer):
+            def __init__(self):
+                pass
+
+            def annotate(self, model):
+                return model
+
+            def validate(self, model):
+                pass
+
+        return DummyQuantizer()
 
     def test_run_no_quantizers(self) -> None:
         """Test execution with no quantizers."""
@@ -224,7 +245,7 @@ class TestQuantizeStage(unittest.TestCase):
         mock_convert_pt2e: Mock,
     ) -> None:
         """Test execution with quantizers"""
-        mock_quantizer = Mock()
+        mock_quantizer = self.create_dummy_quantizer()
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
         stage = QuantizeStage(mock_recipe)
@@ -285,6 +306,35 @@ class TestQuantizeStage(unittest.TestCase):
             "Example inputs for method forward not found or empty", str(cm.exception)
         )
 
+    @patch("executorch.export.stages.ComposableQuantizer")
+    def test_get_quantizer_for_prepare_pt2e(
+        self, mock_composable_quantizer: Mock
+    ) -> None:
+        """Test _get_quantizer_for_prepare_pt2e method with different quantizer scenarios."""
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        stage = QuantizeStage(mock_recipe)
+
+        # Test empty quantizers list - should raise ValueError
+        with self.assertRaises(ValueError) as cm:
+            stage._get_quantizer_for_prepare_pt2e([])
+        self.assertIn("No quantizers detected", str(cm.exception))
+
+        # Test ComposableQuantizer path with multiple torchao quantizers
+        # Create instances of dummy quantizers using the reusable method
+        quantizer1 = self.create_dummy_quantizer()
+        quantizer2 = self.create_dummy_quantizer()
+
+        # Set up ComposableQuantizer mock
+        mock_composed_quantizer = Mock()
+        mock_composable_quantizer.return_value = mock_composed_quantizer
+
+        # Call the method with multiple torchao quantizers
+        result = stage._get_quantizer_for_prepare_pt2e([quantizer1, quantizer2])
+
+        # Verify ComposableQuantizer was called with the quantizers
+        mock_composable_quantizer.assert_called_once_with([quantizer1, quantizer2])
+        self.assertEqual(result, mock_composed_quantizer)
+
 
 class TestToEdgeStage(unittest.TestCase):
     def setUp(self) -> None:
@@ -307,6 +357,7 @@ class TestToEdgeStage(unittest.TestCase):
             self.exported_programs,
             constant_methods=None,
             compile_config=mock_config,
+            generate_etrecord=False,
         )
 
         # Verify artifacts are set correctly

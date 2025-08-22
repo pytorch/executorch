@@ -85,6 +85,35 @@ Tensor& opt_add_sub_out_impl(
   ScalarType out_type = out.scalar_type();
 
   auto selected_optimized_path = select_optimized_path(a, b, out);
+
+  if (executorch::runtime::isComplexType(a_type) ||
+      executorch::runtime::isComplexType(b_type) ||
+      executorch::runtime::isComplexType(out_type)) {
+    // TODO: The current implementation for complex dtypes enforces that the
+    // inputs and output tensors have same dtype and shape. Handle mixed dtypes
+    // and broadcasting in the future.
+    ET_KERNEL_CHECK(
+        ctx,
+        a_type == b_type && a_type == out_type &&
+            selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d,
+        InvalidArgument,
+        out);
+    ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
+      CTYPE alpha_val = torch::executor::native::utils::scalar_to<CTYPE>(alpha);
+      if constexpr (is_sub) {
+        alpha_val = -alpha_val;
+      }
+      using Vec = at::vec::Vectorized<CTYPE>;
+      at::vec::map2<CTYPE>(
+          [alpha_val](Vec x, Vec y) { return x + Vec(alpha_val) * y; },
+          out.mutable_data_ptr<CTYPE>(),
+          a.const_data_ptr<CTYPE>(),
+          b.const_data_ptr<CTYPE>(),
+          out.numel());
+    });
+    return out;
+  }
+
   if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
@@ -115,13 +144,13 @@ Tensor& opt_add_sub_out_impl(
   } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
     // Cannot apply the trick of -alpha here because alpha is Scalar without
     // support for - operator. At least not right now.
-    ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() {
+    ET_SWITCH_REALB_TYPES(out_type, ctx, op_name, CTYPE, [&]() -> void {
       CTYPE alpha_val;
       ET_KERNEL_CHECK_MSG(
           ctx,
           torch::executor::native::utils::extract_scalar(alpha, &alpha_val),
           InvalidArgument,
-          out,
+          ,
           "Failed to extract scalar alpha.");
       using Vec = at::vec::Vectorized<CTYPE>;
       Vec alpha_val_vec(alpha_val);
@@ -135,13 +164,13 @@ Tensor& opt_add_sub_out_impl(
           auto add_lambda = [&alpha_val_vec](auto x, auto y) {
             return y - alpha_val_vec * x;
           };
-          return torch::executor::handle_broadcast_elementwise<CTYPE>(
+          torch::executor::handle_broadcast_elementwise<CTYPE>(
               ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
         } else {
           auto add_lambda = [&alpha_val_vec](auto x, auto y) {
             return x - alpha_val_vec * y;
           };
-          return torch::executor::handle_broadcast_elementwise<CTYPE>(
+          torch::executor::handle_broadcast_elementwise<CTYPE>(
               ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
         }
       } else {
@@ -162,13 +191,13 @@ Tensor& opt_add_sub_out_impl(
           auto add_lambda = [&alpha_val_vec](auto x, auto y) {
             return y + alpha_val_vec * x;
           };
-          return torch::executor::handle_broadcast_elementwise<CTYPE>(
+          torch::executor::handle_broadcast_elementwise<CTYPE>(
               ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
         } else {
           auto add_lambda = [&alpha_val_vec](auto x, auto y) {
             return x + alpha_val_vec * y;
           };
-          return torch::executor::handle_broadcast_elementwise<CTYPE>(
+          torch::executor::handle_broadcast_elementwise<CTYPE>(
               ctx, add_lambda, a, b, out, selected_optimized_path, alpha);
         }
       }

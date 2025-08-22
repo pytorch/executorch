@@ -15,6 +15,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -72,6 +73,20 @@ def test_copy_tosa_FP(test_data: Tuple):
     pipeline.run()
 
 
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_FP)
+@common.SkipIfNoModelConverter
+def test_copy_vgf_FP(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
 """
 Casting operations that output floating-point dtypes should be rejected under INT profile,
 rather than introducing an invalid dtype into the tosa graph.
@@ -116,3 +131,10 @@ def test_copy_tosa_INT(test_data: Tuple):
         quantize=True,
     )
     pipeline.run()
+
+
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_INT)
+@common.SkipIfNoModelConverter
+def test_copy_vgf_INT(test_data: Tuple):
+    # Op not supported
+    pass

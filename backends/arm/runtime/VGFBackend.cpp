@@ -25,6 +25,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
@@ -152,7 +153,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
 
     // Copy all inputs from EValue to VkDeviceMemory
@@ -264,15 +265,60 @@ VkResult vkml_allocate_basics(
       .engineVersion = 0,
       .apiVersion = VK_API_VERSION_1_3,
   };
+
+  std::vector<const char*> requested_extensions;
+  VkInstanceCreateFlags instance_flags = 0;
+
+#ifdef __APPLE__
+  instance_flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+
+  uint32_t extension_count = 0;
+  result = vkEnumerateInstanceExtensionProperties(
+      nullptr, &extension_count, nullptr);
+
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to enumerate instance extensions");
+    return result;
+  }
+
+  std::vector<VkExtensionProperties> extension_properties(extension_count);
+  result = vkEnumerateInstanceExtensionProperties(
+      nullptr, &extension_count, extension_properties.data());
+
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to enumerate instance extensions");
+    return result;
+  }
+
+  if (std::any_of(
+          extension_properties.begin(),
+          extension_properties.end(),
+          [](const auto& extension) {
+            return strcmp(
+                       VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
+                       extension.extensionName) == 0;
+          })) {
+    requested_extensions.push_back(
+        VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+  }
+
+  if (requested_extensions.empty()) {
+    ET_LOG(Error, "VK_KHR_portability_enumeration not found");
+  }
+
+#endif
+
   VkInstanceCreateInfo instance_info{
       .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
       .pNext = nullptr,
-      .flags = 0,
+      .flags = instance_flags,
       .pApplicationInfo = &app_info,
-      0,
-      nullptr,
-      0,
-      nullptr};
+      .enabledLayerCount = 0,
+      .ppEnabledLayerNames = nullptr,
+      .enabledExtensionCount =
+          static_cast<uint32_t>(requested_extensions.size()),
+      .ppEnabledExtensionNames = requested_extensions.data(),
+  };
   result = vkCreateInstance(&instance_info, nullptr, instance);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create VkInstance");

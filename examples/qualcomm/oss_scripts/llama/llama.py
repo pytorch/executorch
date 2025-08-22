@@ -46,7 +46,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_QUANT_ATTRS_MAP,
 )
 from executorch.backends.qualcomm.utils.utils import (
-    capture_program,
     convert_linear_to_conv2d,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -65,6 +64,17 @@ from executorch.examples.models.llama.hf_download import (
 from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
+from executorch.examples.qualcomm.oss_scripts.llama import SUPPORTED_HF_MODELS
+from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
+    DECODER_MODEL_VERSION,
+    EVAL_MODE,
+)
+from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
+    graph_module_inference,
+    QnnRunnerEvalWrapper,
+    shift_pointer_updater,
+    smart_mask_updater,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
@@ -79,7 +89,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.range_setting_pt2e import (
 
 from executorch.examples.qualcomm.utils import (
     make_output_dir,
-    make_quantizer,
     setup_common_args_and_variables,
     SimpleADB,
 )
@@ -89,221 +98,30 @@ from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
 from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
-from pytorch_tokenizers.hf_tokenizer import HuggingFaceTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 
 from torchao.prototype.spinquant import apply_spinquant
 
-from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoTokenizer
+
+try:
+    from lm_eval.evaluator import simple_evaluate
+except ImportError:
+    raise ImportError(
+        "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
+    )
 
 sys.setrecursionlimit(4096)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logging.getLogger().setLevel(logging.INFO)
 
-HUGGING_FACE_REPO_IDS = {"qwen2_5": "Qwen/Qwen2.5-0.5B"}
-
 
 def next_power_of_two(n):
     if n == 0:
         return 1
     return 2 ** math.ceil(math.log2(n))
-
-
-def smart_mask_updater(
-    ar_len, atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
-):
-    # Update the KV cache input for the next inference when the position exceeds the autoregressive length.
-    if pos >= ar_len:
-        for i, k_cache in enumerate(k_caches):
-            k_cache[:, :, pos - ar_len] = new_k_caches[i][:, :, 0]
-
-        for i, v_cache in enumerate(v_caches):
-            v_cache[:, pos - ar_len, :] = new_v_caches[i][:, 0, :]
-        atten_mask[:, :, pos - ar_len] = 0
-
-    pos += 1
-    return (atten_mask, pos, k_caches, v_caches)
-
-
-def shift_pointer_updater(
-    ar_len, atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
-):
-    # Update the KV cache input for the next inference when the position exceeds the autoregressive length.
-    if pos >= ar_len:
-        k_caches = [
-            torch.cat([k_cache[:, :, 1:], new_k_caches[i][:, :, :1]], dim=-1)
-            for i, k_cache in enumerate(k_caches)
-        ]
-        v_caches = [
-            torch.cat([v_cache[:, 1:, :], new_v_caches[i][:, :1, :]], dim=1)
-            for i, v_cache in enumerate(v_caches)
-        ]
-        atten_mask[:, :, -pos - 1] = 0
-
-    pos += 1
-    return (atten_mask, pos, k_caches, v_caches)
-
-
-def _kv_calibrate(
-    example_inputs,
-    user_prompts,
-    module: torch.fx.GraphModule,
-    tokenizer,
-    ar_len=1,
-    max_seq_len=512,
-    updater=smart_mask_updater,
-    use_i64_token=False,
-):
-    _, atten_mask, _, k_caches, v_caches = example_inputs
-
-    # TODO: change criteria & support batch inputs if necessary
-    all_pos = torch.arange(0, max_seq_len, 1, dtype=torch.int32).unsqueeze(0)
-
-    token_list = []
-    # Llama2 tokenizer has no special tokens
-    if isinstance(tokenizer, (SentencePieceTokenizer, HuggingFaceTokenizer)):
-        token_list = tokenizer.encode(user_prompts, bos=True, eos=False)
-    elif isinstance(tokenizer, TiktokenTokenizer):
-        token_list = tokenizer.encode(
-            user_prompts, bos=True, eos=False, allowed_special="all"
-        )
-    else:
-        raise RuntimeError("Unkown tokenizer")
-    pos = len(token_list) if len(token_list) < ar_len else ar_len
-    dtype = torch.int64 if use_i64_token else torch.int32
-
-    with torch.no_grad():
-        while token_list[-1] != tokenizer.eos_id and pos < max_seq_len:
-            tmp_token_list = torch.tensor(
-                token_list[pos - ar_len : pos], dtype=dtype
-            ).reshape(1, -1)
-            tmp_pos = all_pos[:, pos - ar_len : pos]
-            tmp_atten_mask = atten_mask
-            if pos < ar_len:
-                tmp_token_list = torch.cat(
-                    [
-                        torch.zeros((1, ar_len - pos), dtype=dtype),
-                        torch.tensor(token_list, dtype=dtype).reshape(1, -1),
-                    ],
-                    dim=1,
-                )
-                tmp_pos = torch.cat(
-                    [
-                        torch.zeros((1, ar_len - pos), dtype=torch.int32),
-                        all_pos[:, :pos],
-                    ],
-                    dim=1,
-                )
-                tmp_atten_mask = torch.cat(
-                    [
-                        torch.ones(1, ar_len, max_seq_len - pos) * -255.0,
-                        atten_mask[:, :, -pos:],
-                    ],
-                    dim=-1,
-                )
-
-            logits, new_k_caches, new_v_caches = module(
-                tmp_token_list,
-                tmp_atten_mask,
-                tmp_pos,
-                *k_caches,
-                *v_caches,
-            )
-            atten_mask, pos, k_caches, v_caches = updater(
-                ar_len, atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
-            )
-            if pos > len(token_list):
-                token_list.append(torch.argmax(logits[:, -1], dim=-1).item())
-
-    print(f"kv calibration data:\n{tokenizer.decode(token_list)}")
-
-
-def _prefill_calibrate(
-    example_inputs,
-    user_prompts,
-    module: torch.fx.GraphModule,
-    tokenizer,
-    max_seq_len=512,
-    use_i64_token=False,
-):
-    _, atten_mask = example_inputs
-
-    # TODO: change criteria & support batch inputs if necessary
-
-    token_list = []
-    # Llama2 tokenizer has no special tokens
-    if isinstance(tokenizer, (SentencePieceTokenizer, HuggingFaceTokenizer)):
-        token_list = tokenizer.encode(user_prompts, bos=True, eos=False)
-    elif isinstance(tokenizer, TiktokenTokenizer):
-        token_list = tokenizer.encode(
-            user_prompts, bos=True, eos=False, allowed_special="all"
-        )
-    else:
-        raise RuntimeError("Unkown tokenizer")
-
-    pos = len(token_list)
-    dtype = torch.int64 if use_i64_token else torch.int32
-
-    with torch.no_grad():
-        while token_list[-1] != tokenizer.eos_id and pos < max_seq_len:
-            tmp_token_list = torch.tensor(token_list, dtype=dtype).reshape(1, -1)
-            if pos < max_seq_len:
-                tmp_token_list = torch.cat(
-                    [
-                        tmp_token_list,
-                        torch.zeros((1, max_seq_len - pos), dtype=dtype),
-                    ],
-                    dim=1,
-                )
-            results = module(
-                tmp_token_list,
-                atten_mask,
-            )
-            if len(results) == 3:
-                logits, new_k_caches, new_v_caches = results
-            elif len(results) == 1:
-                logits = results
-            token_list.append(torch.argmax(logits[:, pos - 1], dim=-1).item())
-            pos += 1
-
-    print(f"prefill calibration data:\n{tokenizer.decode(token_list)}")
-
-
-def calibrate(
-    example_inputs,
-    user_prompts,
-    module: torch.fx.GraphModule,
-    tokenizer,
-    ar_len=1,
-    max_seq_len=512,
-    kv_updater=smart_mask_updater,
-    use_i64_token=False,
-):
-    if len(example_inputs) == 2:
-        _prefill_calibrate(
-            example_inputs,
-            user_prompts,
-            module,
-            tokenizer,
-            max_seq_len,
-            use_i64_token,
-        )
-    elif len(example_inputs) == 5:
-        _kv_calibrate(
-            example_inputs,
-            user_prompts,
-            module,
-            tokenizer,
-            ar_len,
-            max_seq_len,
-            updater=kv_updater,
-            use_i64_token=use_i64_token,
-        )
-    else:
-        raise RuntimeError("Get wrong inputs")
 
 
 class SingleLlama:
@@ -409,7 +227,6 @@ class SingleLlama:
 
         self.has_quant_io = True
         fx_graph_module = None
-
         with torch.no_grad():
             fx_graph_module = torch.export.export(
                 self.llama_graph_module, self.inputs, strict=True
@@ -426,15 +243,18 @@ class SingleLlama:
 
         logging.info("Quantizing the model...")
 
-        calibrate(
-            self.get_example_inputs(self.llama_meta["get_use_kv_cache"]),
-            args.prompt[0],
-            fx_graph_module,
+        # Calibration
+        graph_module_inference(
+            args=args,
+            use_kv_cache=self.llama_meta["get_use_kv_cache"],
+            get_example_inputs=self.get_example_inputs,
+            module=fx_graph_module,
             tokenizer=tokenizer,
             ar_len=self.llama_meta["get_ar_len"],
             max_seq_len=self.llama_meta["get_max_seq_len"],
             kv_updater=args.kv_updater,
             use_i64_token=args.embedding_quantize is not None,
+            event_name="prepare_pt2e",
         )
 
         if scales_state_dict:
@@ -443,6 +263,22 @@ class SingleLlama:
             )
 
         self.llama_graph_module = convert_pt2e(fx_graph_module)
+
+        if args.eval_perplexity:
+            logging.info("Verifying the QDQ model...")
+            # Check qdq cpu results
+            graph_module_inference(
+                args=args,
+                use_kv_cache=self.llama_meta["get_use_kv_cache"],
+                get_example_inputs=self.get_example_inputs,
+                module=self.llama_graph_module,
+                tokenizer=tokenizer,
+                ar_len=self.llama_meta["get_ar_len"],
+                max_seq_len=self.llama_meta["get_max_seq_len"],
+                kv_updater=args.kv_updater,
+                use_i64_token=args.embedding_quantize is not None,
+                event_name="convert_pt2e",
+            )
 
     def lowering_modules(
         self,
@@ -513,22 +349,10 @@ def compile(args, pte_filename, tokenizer):
     start_ts = time.time()
 
     kv_config, prefill_config = None, None
-    params_path = ""
     if args.params:
         params_path = args.params
     else:
-        if args.decoder_model == "qwen2_5":
-            cur_dir = os.path.dirname(__file__)
-            params_path = os.path.join(
-                cur_dir,
-                "..",
-                "..",
-                "..",
-                "models",
-                "qwen2_5",
-                "config",
-                "0_5b_config.json",
-            )
+        params_path = SUPPORTED_HF_MODELS[args.decoder_model].params_path
     with open(params_path) as f:
         kv_config = ModelArgs(**json.load(f))
 
@@ -537,6 +361,8 @@ def compile(args, pte_filename, tokenizer):
     kv_config.max_seq_len = args.max_seq_len
     kv_config.use_kv_cache = True
     kv_config.enable_masked_softmax = args.enable_masked_softmax
+    kv_config.enable_r3 = args.r3
+    kv_config.kv_io_bit_width = 16 if args.ptq == "16a8w" else 8
 
     prefill_config = copy.copy(kv_config)
     prefill_config.use_kv_cache = (
@@ -601,16 +427,14 @@ def compile(args, pte_filename, tokenizer):
             raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
 
     if args.checkpoint is None:  # HF models
-        model_id = HUGGING_FACE_REPO_IDS[args.decoder_model]
-        if args.decoder_model == "qwen2_5":
-            from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
-                convert_weights,
-            )
-
-            checkpoint = download_and_convert_hf_checkpoint(model_id, convert_weights)
+        checkpoint = download_and_convert_hf_checkpoint(
+            SUPPORTED_HF_MODELS[args.decoder_model].repo_id,
+            SUPPORTED_HF_MODELS[args.decoder_model].convert_weights.__func__,
+        )
         state_dict = torch.load(
             checkpoint, weights_only=True, map_location="cpu", mmap=True
         )
+        transform_weight = SUPPORTED_HF_MODELS[args.decoder_model].transform_weight
     else:
         state_dict = torch.load(
             args.checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -621,7 +445,9 @@ def compile(args, pte_filename, tokenizer):
 
         if args.decoder_model == "stories260k":
             state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+        transform_weight = True
 
+    if transform_weight:
         # Change to HuggingFace weight to improve the performance of RoPE in HTP backend.
         def permute(w, heads):
             dim_0 = w.size(0)
@@ -667,7 +493,7 @@ def compile(args, pte_filename, tokenizer):
             apply_spinquant(
                 model,
                 use_r1=True,
-                use_r2=True,
+                use_r2=False,
                 use_r4=False,
                 pretrained_rotation_path=None,
                 qkv_split=True,
@@ -713,11 +539,15 @@ def compile(args, pte_filename, tokenizer):
     fixed_point_type = {"kv_type": torch.float32, "io_type": torch.float32}
     if args.ptq:
         use_fp16 = False
-        fixed_point_type["kv_type"] = torch.uint8
         if args.ptq == "8a8w":
             fixed_point_type["io_type"] = torch.uint8
-        elif args.ptq in ("16a4w", "16a4w_block", "16a8w"):
+            fixed_point_type["kv_type"] = torch.uint8
+        elif args.ptq in ("16a4w", "16a4w_block"):
             fixed_point_type["io_type"] = torch.uint16
+            fixed_point_type["kv_type"] = torch.uint8
+        elif args.ptq == "16a8w":
+            fixed_point_type["io_type"] = torch.uint16
+            fixed_point_type["kv_type"] = torch.uint16
         else:
             assert args.ptq in [
                 "8a8w",
@@ -750,14 +580,11 @@ def compile(args, pte_filename, tokenizer):
 
     if args.ptq:
         start_quantize_ts = time.time()
-        custom_annotations = (
-            # For qwen2.5, skip annotate_conv can improve result.
-            partial(
-                annotate_matmul_16a8w,
-                annotate_conv=args.ptq != "16a8w",
-            ),
-        )
-        if args.decoder_model == {"stories110m", "stories260k"}:
+        custom_annotations = ()
+        if args.ptq != "16a8w":
+            # 16a8w use 16bit kv io, so skip this custom annotation
+            custom_annotations = custom_annotations + (annotate_matmul_16a8w,)
+        if args.decoder_model in {"stories110m", "stories260k"}:
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
@@ -888,27 +715,80 @@ def compile(args, pte_filename, tokenizer):
             exec_prog_mgr.write_to_file(file)
 
     end_lowering_ts = time.time()
-    logging.info(f"Time for compiling: {end_lowering_ts - start_lowering_ts}")
-    return quant_attrs
 
-
-def inference(args, pte_filename, runtime_tokenizer_path, decoder_model_version):
-    workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
-
-    if args.model_mode == "kv":
-        eval_mode = 0
-    elif args.model_mode == "hybrid":
-        eval_mode = 1
-    elif args.model_mode == "lookahead":
-        eval_mode = 2
+    quant_attrs_path = (
+        f"{args.artifact}/{pte_filename}_quant_attrs.json"
+        if args.quant_attrs_path is None
+        else args.quant_attrs_path
+    )
+    if quant_attrs:
+        json.dump(
+            {
+                "scale": quant_attrs["scale"],
+                "zero_point": quant_attrs["zero_point"],
+            },
+            open(quant_attrs_path, "w"),
+        )
     else:
-        raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
+        logging.warning("Quant attributes of the logit is None.")
+    if args.quant_attrs_path is None:
+        args.quant_attrs_path = quant_attrs_path
+
+    logging.info(f"Time for compiling: {end_lowering_ts - start_lowering_ts}")
+
+
+def inference(args, pte_filename, runtime_tokenizer_path, tokenizer):
+    assert args.model_mode in EVAL_MODE, f"Unknown model_mode: {args.model_mode}."
+    assert (
+        args.decoder_model in DECODER_MODEL_VERSION
+    ), f"Unknown decoder_model: {args.decoder_model}."
 
     pte_path = (
         f"{args.pre_gen_pte}/{pte_filename}.pte"
         if args.pre_gen_pte
         else f"{args.artifact}/{pte_filename}.pte"
     )
+
+    if args.eval_perplexity:
+        # Generate the eval wrapper
+        eval_wrapper = QnnRunnerEvalWrapper(
+            args=args,
+            pte_path=pte_path,
+            tokenizer=tokenizer,
+            runtime_tokenizer_path=runtime_tokenizer_path,
+            max_seq_length=args.max_seq_len,
+        )
+
+        # Evaluate the model
+        with torch.no_grad():
+            eval_results = simple_evaluate(
+                model=eval_wrapper,
+                tasks=args.tasks,
+                num_fewshot=args.num_fewshot,
+                limit=args.limit,
+            )
+
+        if args.ip and args.port != -1:
+            assert (
+                len(args.tasks) == 1 and args.tasks[0] == "wikitext"
+            ), "CI currently supports wikitext only"
+            wiki_ppl = eval_results["results"][args.tasks[0]]["word_perplexity,none"]
+            pte_size = os.path.getsize(pte_path)
+            with Client((args.ip, args.port)) as conn:
+                conn.send(
+                    json.dumps(
+                        {
+                            "wiki_ppl": wiki_ppl,
+                            "pte_size": pte_size,
+                            "inference_speed": eval_wrapper.inference_speed,
+                        }
+                    )
+                )
+        else:
+            for task, res in eval_results["results"].items():
+                logging.info(f"{task}: {res}")
+        return
+    workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/single_llama"
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
@@ -924,7 +804,7 @@ def inference(args, pte_filename, runtime_tokenizer_path, decoder_model_version)
     runner_args = " ".join(
         [
             multi_prompts,
-            f"--eval_mode {eval_mode}",
+            f"--eval_mode {EVAL_MODE[args.model_mode]}",
             f"--temperature {args.temperature}",
             f"--system_prompt '{args.system_prompt}'",
         ]
@@ -947,7 +827,7 @@ def inference(args, pte_filename, runtime_tokenizer_path, decoder_model_version)
             [
                 f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{args.build_folder}/lib &&",
                 f"./{args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
-                f"--decoder_model_version {decoder_model_version}",
+                f"--decoder_model_version {DECODER_MODEL_VERSION[args.decoder_model]}",
                 f"--tokenizer_path {runtime_tokenizer_path}",
                 f"--model_path {pte_path}",
                 f"--seq_len {seq_len}",
@@ -969,7 +849,7 @@ def inference(args, pte_filename, runtime_tokenizer_path, decoder_model_version)
             [
                 f"cd {workspace} &&",
                 f"./qnn_llama_runner",
-                f"--decoder_model_version {decoder_model_version}",
+                f"--decoder_model_version {DECODER_MODEL_VERSION[args.decoder_model]}",
                 f"--tokenizer_path {os.path.basename(runtime_tokenizer_path)}",
                 f"--model_path {pte_filename}.pte",
                 f"--seq_len {seq_len}",
@@ -995,7 +875,7 @@ def inference(args, pte_filename, runtime_tokenizer_path, decoder_model_version)
             runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=[], input_list="", files=[runtime_tokenizer_path])
+        adb.push(inputs=[], files=[runtime_tokenizer_path])
         adb.execute(custom_runner_cmd=runner_cmd)
 
         adb.pull(output_path=args.artifact, callback=post_process)
@@ -1022,8 +902,49 @@ def inference(args, pte_filename, runtime_tokenizer_path, decoder_model_version)
             logging.info(f"Results[{idx}]:\n{output}")
 
 
+def _build_tasks_parser(parser):
+    parser.add_argument(
+        "--eval_perplexity",
+        help="If enabled, this will use the tasks provided under args.tasks to calibrate the model",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--tasks",
+        nargs="+",
+        type=str,
+        default=None,
+        help="list of lm-eluther tasks to evaluate usage: --tasks task1 task2",
+    )
+
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=1,
+        help="number of samples to evalulate. If not set, evaluate all samples",
+    )
+    parser.add_argument(
+        "--num_fewshot",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of examples in few-shot context",
+    )
+
+    parser.add_argument(
+        "--quant_attrs_path",
+        help="A json file holding logit's quant_attributes. This file is generated after model compilation, stored under the artifacts. This file is required when eval_perplexity is enabled",
+        type=str,
+        required=False,
+    )
+
+    return parser
+
+
 def _build_parser():
     parser = setup_common_args_and_variables()
+    parser = _build_tasks_parser(parser)
     parser.add_argument(
         "-a",
         "--artifact",
@@ -1041,8 +962,9 @@ def _build_parser():
 
     parser.add_argument(
         "--decoder_model",
-        choices=["stories260k", "stories110m", "llama3_2", "qwen2_5"],
-        help="The Llama model to export. Current available options are: [stories260k, stories110m, llama3_2, qwen2_5]",
+        choices=["stories260k", "stories110m", "llama3_2"]
+        + list(SUPPORTED_HF_MODELS.keys()),
+        help=f"The Llama model to export. Current available options are: [stories260k, stories110m, llama3_2] + {SUPPORTED_HF_MODELS.keys()}",
         required=True,
     )
 
@@ -1121,7 +1043,7 @@ def _build_parser():
     parser.add_argument(
         "--model_mode",
         help="Export and inference kv mode, hybrid mode, or lookahead decoding mode",
-        default="kv",
+        default="hybrid",
         choices=["kv", "hybrid", "lookahead"],
         type=str,
     )
@@ -1195,6 +1117,13 @@ def _build_parser():
         action="store_true",
     )
 
+    parser.add_argument(
+        "--r3",
+        help="Enable SpinQuant R3 quantization optimization. Please notice enable R3 could possibly cause performance drop.",
+        action="store_true",
+        default=False,
+    )
+
     parser.add_argument("-v", "--verbose", action="store_true")
 
     return parser
@@ -1203,6 +1132,10 @@ def _build_parser():
 def export_llama(args) -> None:
     if args.compile_only and args.pre_gen_pte:
         raise RuntimeError("Cannot set both compile_only and pre_gen_pte as true")
+    if args.eval_perplexity and args.model_mode != "kv":
+        raise RuntimeError("Eval device perplexity is only supported for KV mode")
+    if args.eval_perplexity and args.tasks is None:
+        raise RuntimeError("Please provide --tasks to eval perplexity")
 
     if args.model_mode == "kv":
         pte_filename = "kv_llama_qnn"
@@ -1226,7 +1159,7 @@ def export_llama(args) -> None:
         pte_filename = f"{args.decoder_model}_" + pte_filename
 
     tokenizer = None
-    runtime_tokenizer_path, decoder_model_version = "", ""
+    runtime_tokenizer_path = ""
     if args.decoder_model in {"stories110m", "stories260k"}:
         tokenizer = get_tokenizer(args.tokenizer_model)
         assert isinstance(
@@ -1236,29 +1169,30 @@ def export_llama(args) -> None:
             args.tokenizer_bin is not None
         ), "Please provide tokenizer_bin for stories."
         runtime_tokenizer_path = args.tokenizer_bin
-        decoder_model_version = "llama2"
     elif args.decoder_model == "llama3_2":
         tokenizer = get_tokenizer(args.tokenizer_model)
         assert isinstance(
             tokenizer, TiktokenTokenizer
         ), f"Wrong tokenizer provided for llama3_2."
         runtime_tokenizer_path = args.tokenizer_model
-        decoder_model_version = "llama3"
-    elif args.decoder_model == "qwen2_5":
-        model_id = HUGGING_FACE_REPO_IDS[args.decoder_model]
+    elif args.decoder_model == "phi_4_mini":
+        model_id = SUPPORTED_HF_MODELS[args.decoder_model].repo_id
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path)
-        decoder_model_version = args.decoder_model
-
         with open(runtime_tokenizer_path, "r+") as file:
             data = json.load(file)
             # TODO: Encountered the following error during runtime, so switched behavior for now.
-            # Error: libc++abi: terminating due to uncaught exception of type std::runtime_error: Unsupported Normalizer type: NFC.
-            data.pop("normalizer")
+            # Error: libc++abi: terminating due to uncaught exception of type std::runtime_error: invert=true is not supported for Split PreTokenizer. Only invert=false is supported.
+            data["pre_tokenizer"]["pretokenizers"][-2]["invert"] = False
             file.seek(0)
             json.dump(data, file, indent=4)
             file.truncate()
+    elif args.decoder_model in SUPPORTED_HF_MODELS:
+        model_id = SUPPORTED_HF_MODELS[args.decoder_model].repo_id
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
+        tokenizer = get_tokenizer(runtime_tokenizer_path)
     else:
         raise RuntimeError(f"Unknown decoder_model: {args.decoder_model}.")
 
@@ -1276,7 +1210,7 @@ def export_llama(args) -> None:
         )
 
     if args.pre_gen_pte:
-        inference(args, pte_filename, runtime_tokenizer_path, decoder_model_version)
+        inference(args, pte_filename, runtime_tokenizer_path, tokenizer)
         print(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
         return
 
@@ -1298,7 +1232,7 @@ def export_llama(args) -> None:
         return
 
     compile(args, pte_filename, tokenizer)
-    inference(args, pte_filename, runtime_tokenizer_path, decoder_model_version)
+    inference(args, pte_filename, runtime_tokenizer_path, tokenizer)
 
 
 def main():

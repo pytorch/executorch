@@ -517,6 +517,7 @@ void vTensorStorage::transition(
   vkapi::MemoryAccessFlags prev_access = last_access_.access;
 
   const bool prev_written = (prev_access & vkapi::MemoryAccessType::WRITE) != 0;
+  const bool cur_written = (cur_access & vkapi::MemoryAccessType::WRITE) != 0;
 
   VkImageLayout cur_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   VkImageLayout new_layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -528,7 +529,13 @@ void vTensorStorage::transition(
     layout_changed = cur_layout != new_layout;
   }
 
-  if (prev_written || layout_changed) {
+  // RAW: need to make sure current read sees previous writes
+  // WAW: need to make sure the current write occurs after previous write so
+  //      the final value is correct.
+  // WAR: need to make sure previous read does not read the value from the
+  //      current write.
+  // RAR: no need for synchronization
+  if (prev_written || cur_written || layout_changed) {
     VkPipelineStageFlags src_stage = vkapi::vk_stage(prev_stage);
     if (0u == src_stage) {
       src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
@@ -890,6 +897,16 @@ VkMemoryRequirements vTensor::get_memory_requirements() const {
   return {};
 }
 
+bool vTensor::memory_is_bound() const {
+  switch (storage_type()) {
+    case utils::kBuffer:
+      return storage_->buffer_.has_memory();
+    case utils::kTexture2D:
+    case utils::kTexture3D:
+      return storage_->image_.has_memory();
+  }
+}
+
 void vTensor::bind_allocation(const vkapi::Allocation& allocation) {
   switch (storage_type()) {
     case utils::kBuffer:
@@ -898,6 +915,18 @@ void vTensor::bind_allocation(const vkapi::Allocation& allocation) {
     case utils::kTexture2D:
     case utils::kTexture3D:
       storage_->image_.bind_allocation(allocation);
+      break;
+  }
+}
+
+void vTensor::acquire_allocation(vkapi::Allocation&& allocation) {
+  switch (storage_type()) {
+    case utils::kBuffer:
+      storage_->buffer_.acquire_allocation(std::move(allocation));
+      break;
+    case utils::kTexture2D:
+    case utils::kTexture3D:
+      storage_->image_.acquire_allocation(std::move(allocation));
       break;
   }
 }

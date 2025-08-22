@@ -6,10 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#pragma once
+
 #include <algorithm>
 #include <memory>
 #include <numeric>
-#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -38,14 +39,13 @@ class StaticKVCache {
    * caches.
    */
   StaticKVCache(
-      size_t n_caches,
-      size_t cache_len,
+      const std::vector<size_t>& cache_lengths,
       size_t head_dim,
-      size_t max_input_len = 1,
-      size_t n_heads_per_cache = 1,
+      size_t max_input_len,
+      size_t n_heads_per_cache,
       StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK)
-      : n_caches_(n_caches),
-        cache_len_(n_caches_, cache_len),
+      : n_caches_(cache_lengths.size()),
+        cache_lengths_(cache_lengths),
         cache_pos_(n_caches_, 0),
         max_input_len_(max_input_len),
         n_heads_per_cache_(n_heads_per_cache),
@@ -54,7 +54,7 @@ class StaticKVCache {
         input_ptrs_(n_caches_),
         output_ptrs_(n_caches_) {
     size_t total_cache_len =
-        std::accumulate(cache_len_.begin(), cache_len_.end(), 0);
+        std::accumulate(cache_lengths_.begin(), cache_lengths_.end(), 0);
     cache_data_size_ = total_cache_len * n_heads_per_cache_ * head_dim_;
     update_data_size_ =
         n_caches_ * n_heads_per_cache_ * max_input_len_ * head_dim_;
@@ -83,12 +83,12 @@ class StaticKVCache {
    */
   void prepare(
       torch::executor::Method& method,
-      const std::vector<size_t>& inputIndices,
+      const std::vector<size_t>& input_indices,
       const std::vector<size_t>& output_indices) {
-    ET_CHECK(inputIndices.size() == output_indices.size());
+    ET_CHECK(input_indices.size() == output_indices.size());
     auto methodMeta = method.method_meta();
     for (size_t i = 0; i < n_caches_; i++) {
-      auto inIdx = inputIndices[i];
+      auto inIdx = input_indices[i];
       auto outIdx = output_indices[i];
       auto inMeta = methodMeta.input_tensor_meta(inIdx);
       auto outMeta = methodMeta.output_tensor_meta(outIdx);
@@ -113,6 +113,7 @@ class StaticKVCache {
         ET_CHECK_MSG(
             outSizes[1] == n_heads_per_cache_,
             "Number of heads per cache mismatch.");
+        ET_CHECK_MSG(inSizes[2] == cache_lengths_[i], "Cache length mismatch.");
       } else {
         // 1 head per cache, meaning MHA is split up into multiple SHAs for QNN.
         // Tensor shape is (1, seq_len, head_dim).
@@ -121,12 +122,18 @@ class StaticKVCache {
         ET_CHECK_MSG(
             outSizes.size() == 3,
             "Cache input tensor expected to have rank 3.");
+        ET_CHECK_MSG(inSizes[1] == cache_lengths_[i], "Cache length mismatch.");
+        if (i < n_caches_ - 1) {
+          ET_CHECK_MSG(
+              inSizes[1] * head_dim_ == (input_ptrs_[i + 1] - input_ptrs_[i]),
+              "Cache length mismatch.");
+        }
       }
       auto ndim = inSizes.size();
       ET_CHECK_MSG(inSizes[ndim - 1] == head_dim_, "KV head dim mismatch.");
       ET_CHECK_MSG(outSizes[ndim - 1] == head_dim_, "KV head dim mismatch.");
       ET_CHECK_MSG(
-          inSizes[ndim - 2] == cache_len_[i], "Cache length dim mismatch.");
+          inSizes[ndim - 2] == cache_lengths_[i], "Cache length dim mismatch.");
 
       auto impl = ::executorch::runtime::etensor::TensorImpl(
           inMeta->scalar_type(),
@@ -167,7 +174,7 @@ class StaticKVCache {
           update_n,
           update_pos,
           input_ptrs_[i],
-          cache_len_[i],
+          cache_lengths_[i],
           cache_pos_[i]);
     }
   }
@@ -187,7 +194,7 @@ class StaticKVCache {
     size_t cache_data_offset = 0;
     for (size_t i = 0; i < n_caches_; i++) {
       input_ptrs_[i] = cache_data_ + cache_data_offset;
-      cache_data_offset += cache_len_[i] * n_heads_per_cache_ * head_dim_;
+      cache_data_offset += cache_lengths_[i] * n_heads_per_cache_ * head_dim_;
       output_ptrs_[i] =
           update_data_ + i * n_heads_per_cache_ * max_input_len_ * head_dim_;
     }
@@ -217,9 +224,10 @@ class StaticKVCache {
           update_head + (update_pos + update_n) * head_dim_,
           cache_head + cache_pos * head_dim_);
     }
-    cache_pos += update_n;
+    cache_pos = (cache_pos + update_n) % cache_len;
 
     if (wrap_n > 0) {
+      ET_CHECK(cache_pos == 0);
       return update_one_cache(
           update,
           update_len,
@@ -227,14 +235,14 @@ class StaticKVCache {
           update_pos + contiguous_n,
           cache,
           cache_len,
-          0);
+          cache_pos);
     }
 
     return cache_pos;
   }
 
   size_t n_caches_;
-  std::vector<size_t> cache_len_;
+  std::vector<size_t> cache_lengths_;
   std::vector<size_t> cache_pos_;
   size_t max_input_len_;
   size_t n_heads_per_cache_;
@@ -320,7 +328,7 @@ class StaticAttentionMask {
   }
 
   void set_causal_mask() {
-    for (size_t i = 0; i < input_len_ - 1; i++) {
+    for (size_t i = 0; i < input_len_; i++) {
       auto* p = data_ + (cache_len_ + input_len_) * i;
       std::fill(p + cache_len_, p + cache_len_ + 1 + i, zero_val_);
       std::fill(p + cache_len_ + 1 + i, p + cache_len_ + input_len_, mask_val_);
@@ -415,11 +423,11 @@ class StaticAttentionIOManager {
  public:
   struct StaticAttentionIOConfig {
     size_t n_caches{};
-    size_t cache_len{};
+    std::vector<size_t> cache_lengths{};
     size_t head_dim{};
     size_t max_input_len{};
     size_t n_heads_per_cache{};
-    size_t attn_mask_input_index{};
+    std::unordered_map<size_t, size_t> cache_len_to_mask_idx;
     size_t rope_freqs_cos_input_index{};
     size_t rope_freqs_sin_input_index{};
     std::vector<size_t> k_cache_input_indices;
@@ -433,50 +441,55 @@ class StaticAttentionIOManager {
 
   StaticAttentionIOManager(StaticAttentionIOConfig config)
       : config_(std::move(config)),
-        kCaches_(
-            config_.n_caches,
-            config_.cache_len,
+        k_caches_(
+            config_.cache_lengths,
             config_.head_dim,
             config_.max_input_len,
             config_.n_heads_per_cache,
             config_.style),
-        vCaches_(
-            config_.n_caches,
-            config_.cache_len,
+        v_caches_(
+            config_.cache_lengths,
             config_.head_dim,
             config_.max_input_len,
             config_.n_heads_per_cache,
             config_.style) {
     ET_LOG(
         Info,
-        "Created StaticAttentionIOManager with"
-        " max input length = %zu cache length = %zu",
-        config_.max_input_len,
-        config_.cache_len);
+        "Created StaticAttentionIOManager with max input length = %zu",
+        config_.max_input_len);
+    for (auto cache_len : config_.cache_lengths) {
+      ET_LOG(Info, "Cache length = %zu", cache_len);
+    }
   }
 
+  using PerCacheLenMasks = std::vector<std::pair<
+      size_t,
+      std::unique_ptr<StaticAttentionMask<MaskT, MaskAllocatorT>>>>;
+
   /**
-   * Create a new StaticAttentionMask that will be managed by this object.
+   * Create a new StaticAttentionMask for each cache length used.
    */
-  StaticAttentionMask<MaskT, MaskAllocatorT>&
-  add_mask(size_t input_len, MaskT zero_val, MaskT mask_val) {
-    auto it = attentionMasks_.emplace(
-        std::piecewise_construct,
-        std::forward_as_tuple(input_len),
-        std::forward_as_tuple(
-            config_.cache_len,
-            input_len,
-            config_.head_dim,
-            zero_val,
-            mask_val,
-            config_.style));
+  PerCacheLenMasks& add_mask(size_t input_len, MaskT zero_val, MaskT mask_val) {
+    PerCacheLenMasks masks;
+    for (auto& pair : config_.cache_len_to_mask_idx) {
+      masks.emplace_back(
+          pair.first,
+          std::make_unique<StaticAttentionMask<MaskT, MaskAllocatorT>>(
+              pair.first,
+              input_len,
+              config_.head_dim,
+              zero_val,
+              mask_val,
+              config_.style));
+    }
+    auto it = attentionMasks_.emplace(input_len, std::move(masks));
     return it.first->second;
   }
 
   /**
    * Retrieve a mask suitable for given input length.
    */
-  StaticAttentionMask<MaskT, MaskAllocatorT>& get_mask(size_t input_len) {
+  PerCacheLenMasks& get_mask(size_t input_len) {
     return attentionMasks_.at(input_len);
   }
 
@@ -487,9 +500,9 @@ class StaticAttentionIOManager {
       torch::executor::Method& method,
       std::optional<const executorch::runtime::Span<size_t>> pos_offsets =
           std::nullopt) {
-    kCaches_.prepare(
+    k_caches_.prepare(
         method, config_.k_cache_input_indices, config_.k_cache_output_indices);
-    vCaches_.prepare(
+    v_caches_.prepare(
         method, config_.v_cache_input_indices, config_.v_cache_output_indices);
 
     size_t rope_dim = config_.head_dim / 2;
@@ -538,12 +551,14 @@ class StaticAttentionIOManager {
       size_t update_len,
       size_t cache_update_pos = 0) {
     input_pos_ += update_len;
-    kCaches_.update(
+    k_caches_.update(
         method, k_cache_output_indices, update_len, cache_update_pos);
-    vCaches_.update(
+    v_caches_.update(
         method, v_cache_output_indices, update_len, cache_update_pos);
     for (auto& it : attentionMasks_) {
-      it.second.unmask(update_len);
+      for (auto& mask : it.second) {
+        mask.second->unmask(update_len);
+      }
     }
   }
 
@@ -552,11 +567,17 @@ class StaticAttentionIOManager {
    */
   void reset() {
     input_pos_ = 0;
-    kCaches_.reset();
-    vCaches_.reset();
+    k_caches_.reset();
+    v_caches_.reset();
     for (auto& it : attentionMasks_) {
-      it.second.reset();
+      for (auto& mask : it.second) {
+        mask.second->reset();
+      }
     }
+  }
+
+  size_t input_pos() const {
+    return input_pos_;
   }
 
   /**
@@ -569,8 +590,14 @@ class StaticAttentionIOManager {
       executorch::runtime::Span<TokenT> tokens,
       executorch::runtime::Span<TokenT> input_buffer,
       executorch::runtime::Method& method) {
+    ET_LOG(Info, "Prefilling at position %zu", input_pos_);
     size_t input_len = input_buffer.size();
-    get_mask(input_buffer.size()).set_causal_mask();
+    auto& masks = get_mask(input_buffer.size());
+    for (auto& pair : masks) {
+      auto& mask = *pair.second;
+      mask.set_causal_mask();
+      set_input(method, config_.cache_len_to_mask_idx[pair.first], mask.get());
+    }
 
     size_t batch_len = 0;
     for (size_t i = 0; i < tokens.size(); i += input_len) {
@@ -593,17 +620,21 @@ class StaticAttentionIOManager {
    * the sampled token.
    */
   template <typename TokenT>
-  std::vector<TokenT> decode(
+  void decode(
       TokenT prev_tok,
       executorch::runtime::Span<TokenT> input_buffer,
       executorch::runtime::Method& method,
       std::function<TokenT(executorch::runtime::Method&)>& sample,
-      std::function<bool(TokenT)>& should_stop) {
+      std::function<bool(TokenT)>& token_callback) {
+    ET_LOG(Info, "Decoding at position %zu", input_pos_);
     set_input(method, 0, input_buffer.data());
-    auto& mask = get_mask(input_buffer.size());
-    set_input(method, config_.attn_mask_input_index, mask.get());
+    auto& masks = get_mask(input_buffer.size());
+    for (auto& pair : masks) {
+      auto& mask = *pair.second;
+      mask.set_causal_mask();
+      set_input(method, config_.cache_len_to_mask_idx[pair.first], mask.get());
+    }
 
-    std::vector<TokenT> generated_tokens;
     while (true) {
       input_buffer[0] = prev_tok;
       prepare(method);
@@ -614,12 +645,10 @@ class StaticAttentionIOManager {
           config_.v_cache_output_indices,
           1);
       prev_tok = sample(method);
-      generated_tokens.emplace_back(prev_tok);
-      if (should_stop(prev_tok)) {
+      if (!token_callback(prev_tok)) {
         break;
       }
     }
-    return generated_tokens;
   }
 
   /**
@@ -628,24 +657,36 @@ class StaticAttentionIOManager {
    * output and return the sampled token for all output positions.
    */
   template <typename TokenT>
-  std::vector<TokenT> lookahead_decode(
+  void lookahead_decode(
       TokenT prev_tok,
       executorch::runtime::Span<TokenT> input_buffer,
       executorch::runtime::Method& method,
       std::function<std::vector<TokenT>(executorch::runtime::Method&)>& sample,
-      std::function<bool(TokenT)>& should_stop,
+      std::function<bool(TokenT)>& token_callback,
       size_t ngram_size,
       size_t window_size,
       size_t n_verifications,
       std::unordered_map<TokenT, SuffixCache<TokenT>> suffix_caches) {
+    ET_LOG(
+        Info,
+        "Decoding with lookahead and verification at position %zu",
+        input_pos_);
     set_input(method, 0, input_buffer.data());
     size_t input_len = input_buffer.size();
 
     // Set up attention mask for current input length.
-    auto& mask = get_mask(input_buffer.size());
-    set_lookahead_decoding_mask(
-        mask, input_len, ngram_size, window_size, n_verifications);
-    set_input(method, config_.attn_mask_input_index, mask.get());
+    auto& masks = get_mask(input_buffer.size());
+    for (auto& pair : masks) {
+      auto& mask = *pair.second;
+      set_lookahead_decoding_mask(
+          mask,
+          input_len,
+          pair.first,
+          ngram_size,
+          window_size,
+          n_verifications);
+      set_input(method, config_.cache_len_to_mask_idx[pair.first], mask.get());
+    }
 
     // Position offsets relative to current position, for indexing RoPE
     // frequence tensors.
@@ -663,7 +704,7 @@ class StaticAttentionIOManager {
         n_verifications);
 
     // Decoding loop.
-    std::vector<TokenT> generated_tokens;
+    size_t n_generated = 0;
     size_t verification_offset =
         std::max(window_size * (ngram_size - 1), static_cast<size_t>(1));
     size_t n_inference = 0;
@@ -743,40 +784,42 @@ class StaticAttentionIOManager {
         }
       }
 
-      bool generated_stop_tok = false;
+      bool should_stop = false;
+      // Count the number of accepted tokns in the matched branched, can be
+      // less than the match length due to callback request stopping.
+      size_t n_accepted = 0;
       for (auto tok : longest_match) {
-        generated_tokens.emplace_back(tok);
-        if (should_stop(tok)) {
-          generated_stop_tok = true;
+        n_generated++;
+        n_accepted++;
+        if (!token_callback(tok)) {
+          should_stop = true;
           break;
         }
       }
 
       // Update KV caches and mask for additional matches.
-      if (longest_match.size() > 1) {
+      if (n_accepted > 1) {
         size_t branch_offset =
             verification_offset + (ngram_size - 1) * matched_branch;
         update(
             method,
             config_.k_cache_output_indices,
             config_.v_cache_output_indices,
-            longest_match.size() - 1,
+            n_accepted - 1,
             branch_offset);
       }
 
-      if (generated_stop_tok) {
+      if (should_stop) {
         break;
       }
-      prev_tok = generated_tokens.back();
+      prev_tok = longest_match.back();
     }
 
     ET_LOG(
         Info,
         "Generated %zu tokens with %zu inferences(s).",
-        generated_tokens.size(),
+        n_generated,
         n_inference);
-
-    return generated_tokens;
   }
 
  private:
@@ -793,12 +836,14 @@ class StaticAttentionIOManager {
         const_cast<executorch::aten::TensorImpl::DimOrderType*>(
             inputMeta->dim_order().data()));
     executorch::runtime::etensor::Tensor t(&impl);
+    ET_CHECK(data != nullptr);
     ET_CHECK(method.set_input(t, idx) == executorch::runtime::Error::Ok);
   }
 
   void set_lookahead_decoding_mask(
       StaticAttentionMask<MaskT, MaskAllocatorT>& mask,
       size_t input_len,
+      size_t cache_len,
       size_t ngram_size,
       size_t window_size,
       size_t n_verifications) {
@@ -815,8 +860,8 @@ class StaticAttentionIOManager {
       size_t stride_;
     };
 
-    size_t stride = config_.cache_len + input_len;
-    auto input_submask = SubMask(mask.get() + config_.cache_len, stride);
+    size_t stride = cache_len + input_len;
+    auto input_submask = SubMask(mask.get() + cache_len, stride);
     input_submask.at(0, 0) = mask.zero_val();
 
     // Fill entire input mask first.
@@ -895,10 +940,9 @@ class StaticAttentionIOManager {
 
   StaticAttentionIOConfig config_;
   size_t input_pos_ = 0;
-  StaticKVCache<CacheT, CacheAllocatorT> kCaches_;
-  StaticKVCache<CacheT, CacheAllocatorT> vCaches_;
-  std::unordered_map<size_t, StaticAttentionMask<MaskT, MaskAllocatorT>>
-      attentionMasks_;
+  StaticKVCache<CacheT, CacheAllocatorT> k_caches_;
+  StaticKVCache<CacheT, CacheAllocatorT> v_caches_;
+  std::unordered_map<size_t, PerCacheLenMasks> attentionMasks_;
   std::vector<RopeT> rope_freqs_cos_override_;
   std::vector<RopeT> rope_freqs_sin_override_;
 };
