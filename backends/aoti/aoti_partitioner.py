@@ -196,6 +196,8 @@ class AOTISupportedOperators(OperatorSupportBase):
             or node.target._op not in inductor_fallback_ops
             or node.target._op in supported_fallback_operators
         )
+        if supported and node.target != operator.getitem:
+            print(f"op {node.target._op} is supported: {supported}")
 
         return supported
 
