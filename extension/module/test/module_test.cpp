@@ -477,6 +477,24 @@ TEST_F(ModuleTest, TestSetOutputInvalidType) {
   EXPECT_NE(module.set_output(EValue()), Error::Ok);
 }
 
+TEST_F(ModuleTest, TestSetOutputsCountMismatch) {
+  Module module(model_path_);
+
+  EXPECT_NE(module.set_outputs(std::vector<EValue>{}), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSetOutputsInvalidType) {
+  Module module(model_path_);
+
+  EXPECT_NE(module.set_outputs({EValue()}), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSetOutputsMemoryPlanned) {
+  Module module(model_path_);
+
+  EXPECT_NE(module.set_outputs({empty({1})}), Error::Ok);
+}
+
 TEST_F(ModuleTest, TestPTD) {
   Module module(add_mul_path_, add_mul_data_path_);
 
