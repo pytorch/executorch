@@ -17,7 +17,10 @@ from typing import Any, Dict, final, List, Optional, Tuple
 import coremltools as ct
 import coremltools.optimize as cto
 from executorch.backends.apple.coreml import executorchcoreml
-from numpy import isin
+from executorch.backends.apple.coreml.enumerated_shape_utils import (
+    _get_ct_inputs,
+    _SymbolicShapeToEnumeratedShapeMap,
+)
 from executorch.backends.apple.coreml.logging import get_coreml_log_level
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -38,7 +41,7 @@ class COMPILE_SPEC_KEYS(Enum):
     MIN_DEPLOYMENT_TARGET = "min_deployment_target"
     MODEL_COMPUTE_PRECISION = "model_compute_precision"
     OP_LINEAR_QUANTIZER_CONFIG = "op_linear_quantizer_config"
-    CT_INPUTS = "ct_inputs"
+    ENUMERATED_SHAPES = "enumerated_shapes"
 
 
 class MODEL_PATHS(Enum):
@@ -145,7 +148,7 @@ class CoreMLBackend(BackendDetails):
     @staticmethod
     def min_deployment_target_from_compile_specs(
         compile_specs: List[CompileSpec],
-    ) -> ct.target:
+    ) -> Optional[ct.target]:
         """
         Returns the minimum deployment target by parsing the list of compile specs.
         """
@@ -216,151 +219,53 @@ class CoreMLBackend(BackendDetails):
 
         return None
 
-
     @staticmethod
-    def generate_ct_inputs_compile_spec(
-        ct_inputs: List[ct.TensorType],
+    def generate_enumerated_shapes_compile_spec(
+        ep: ExportedProgram,
+        enumerated_shapes: Dict[str, List[List[int]]],
     ) -> CompileSpec:
         """
-        Returns the compile spec representing the model inputs
-        Generally this is not needed, but is used to specify things that cannot be inferred from
-        the exported program, like enumerated shapes
+        Returns the compile spec representing the model enumerated shapes
+        enumerated_shapes is a dictionary for each input to its enumerated shapes, e.g.,
+
+        enumerated_shapes = {
+         {"x": [[1, 1, 24], [8, 9, 24]]
+         {"y": [[1, 6], [30, 6]],
+        ]
+
+        means the model can handle x can be shape [1, 1, 24] or [8, 9, 24] and y can be shape [1, 6] or [30, 6].
+
+        Only multiple inputs can have enumerated shapes if using iOS18 or later.
+        In this case, each input must have the same number of enumerated shapes, and these shapes are tied together
+        by their order in the list. For example, the model above can handle x with shape [1, 1, 24] and y with shape [1, 6],
+        or x with shape [8, 9, 24] and y with shape [30, 6], but not x with shape [1, 1, 24] and y with shape [30, 6].
+
+        Passing incorrect shapes at runtime will result in an error.
         """
-
-        def _is_int_shape(seq):
-            return isinstance(seq, (list, tuple)) and all(isinstance(x, int) for x in seq)
-
-        def _serialize_shape(shape):
-            # Case 1: None
-            if shape is None:
-                return {"kind": "fixed", "shape": None}
-
-            # Case 2: Plain list/tuple of ints
-            if _is_int_shape(shape):
-                return {"kind": "fixed", "shape": list(shape)}
-
-            # Case 3: EnumeratedShapes (with ct.Shape entries)
-            if isinstance(shape, ct.EnumeratedShapes):
-                shapes = []
-                for s in shape.shapes:
-                    # ct.Shape(...) -> s.shape should be a tuple of ints
-                    if not _is_int_shape(s.shape):
-                        raise TypeError("EnumeratedShapes entries must be tuples/lists of ints")
-                    shapes.append(list(s.shape))
-                default = None
-                if shape.default is not None:
-                    if not _is_int_shape(shape.default.shape):
-                        raise TypeError("EnumeratedShapes.default must be a tuple/list of ints")
-                    default = list(shape.default.shape)
-                return {"kind": "enumerated", "shapes": shapes, "default": default}
-
-            # Anything else is out of scope for now
-            raise TypeError("Shape must be EnumeratedShapes, a list/tuple of ints, or None")
-
-        def tensor_type_to_dict(t: ct.TensorType):
-            assert isinstance(t, ct.TensorType)
-            for attr in ["name", "dtype", "default_value"]:
-                assert getattr(t, attr) is None, f"{attr} cannot be given a value"
-            return {
-                "kind": "TensorType",
-                "name": t.name,
-                "shape": _serialize_shape(t.shape),
-                "dtype": t.dtype,
-                "default_value": t.default_value,
-            }
-
-        str_representation = json.dumps([tensor_type_to_dict(ct_in) for ct_in in ct_inputs])
+        emap = _SymbolicShapeToEnumeratedShapeMap.from_exported_program(
+            ep,
+            enumerated_shapes,
+        )
+        str_representation = emap.to_json()
         byte_representation = str_representation.encode("utf-8")
         return CompileSpec(
-            COMPILE_SPEC_KEYS.CT_INPUTS.value,
+            COMPILE_SPEC_KEYS.ENUMERATED_SHAPES.value,
             byte_representation,
         )
 
     @staticmethod
-    def ct_inputs_from_compile_specs(
-        compile_specs: List["CompileSpec"],
-    ) -> Optional[List[ct.TensorType]]:
+    def enumerated_shapes_from_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> cto.coreml.OpLinearQuantizerConfig:
         """
-        Returns the model's ct.inputs by parsing the list of compile specs.
-
-        Expected JSON schema per entry (as produced by generate_ct_inputs_compile_spec):
-        {
-            "kind": "TensorType",
-            "name": "<non-empty string>",
-            "shape": {
-                "kind": "fixed", "shape": [int, ...] | null
-            | "kind": "enumerated", "shapes": [[int, ...], ...], "default": [int, ...] | null
-            }
-        }
+        Returns the model's post conversion quantization by parsing the list of compile specs.
         """
-        def _is_int_shape(seq):
-            return isinstance(seq, (list, tuple)) and all(isinstance(x, int) for x in seq)
-
-        def _parse_shape(shape_json):
-            if not isinstance(shape_json, dict) or "kind" not in shape_json:
-                raise ValueError("Invalid shape JSON: missing 'kind'")
-
-            kind = shape_json["kind"]
-
-            # Case: fixed
-            if kind == "fixed":
-                shp = shape_json.get("shape", None)
-                if shp is None:
-                    return None
-                if not _is_int_shape(shp):
-                    raise TypeError("Fixed shape must be a list/tuple of ints or null")
-                return tuple(shp)
-
-            # Case: enumerated
-            if kind == "enumerated":
-                shapes = shape_json.get("shapes", None)
-                if not isinstance(shapes, list) or not shapes:
-                    raise ValueError("Enumerated shape must have non-empty 'shapes' list")
-
-                parsed_shapes = []
-                for s in shapes:
-                    if not _is_int_shape(s):
-                        raise TypeError("EnumeratedShapes entries must be lists of ints")
-                    parsed_shapes.append(ct.Shape(tuple(s)))
-
-                default = shape_json.get("default", None)
-                default_shape = None
-                if default is not None:
-                    if not _is_int_shape(default):
-                        raise TypeError("EnumeratedShapes.default must be a list of ints")
-                    default_shape = ct.Shape(tuple(default))
-
-                return ct.EnumeratedShapes(shapes=parsed_shapes, default=default_shape)
-
-            raise ValueError(f"Unsupported shape kind: {kind}")
-
         for compile_spec in compile_specs:
-            if compile_spec.key == COMPILE_SPEC_KEYS.CT_INPUTS.value:
-                raw = compile_spec.value.decode("utf-8")
-                payload = json.loads(raw)
-
-                if not isinstance(payload, list):
-                    raise ValueError("CT_INPUTS payload must be a list")
-
-                ct_inputs: List[ct.TensorType] = []
-                for entry in payload:
-                    if not isinstance(entry, dict) or entry.get("kind") != "TensorType":
-                        raise ValueError("Each entry must be a dict with kind == 'TensorType'")
-
-                    name = entry.get("name", "")
-                    if not isinstance(name, str) or not name:
-                        raise ValueError("TensorType.name must be a non-empty string")
-
-                    shape_json = entry.get("shape", None)
-                    shape = _parse_shape(shape_json) if shape_json is not None else None
-
-                    # Per your current contract, dtype/default_value must be None (and were omitted).
-                    # So we only pass name + shape here.
-                    ct_inputs.append(ct.TensorType(name=name, shape=shape))
-
-                return ct_inputs
-
-            return None
+            if compile_spec.key == COMPILE_SPEC_KEYS.ENUMERATED_SHAPES.value:
+                emap_json = compile_spec.value.decode("utf-8")
+                emap = _SymbolicShapeToEnumeratedShapeMap.from_json(emap_json)
+                return emap
+        return None
 
     @staticmethod
     def generate_compile_specs(
@@ -594,9 +499,28 @@ class CoreMLBackend(BackendDetails):
         op_linear_quantizer_config = (
             CoreMLBackend.op_linear_quantizer_config_from_compile_specs(compile_specs)
         )
-        enumerated_shapes = (
-            CoreMLBackend.enumerate_shapes_from_compile_specs(compile_specs)
+        enumerated_shapes = CoreMLBackend.enumerated_shapes_from_compile_specs(
+            compile_specs
         )
+
+        # If using enumerated shapes, we need to pass the inputs to CoreML's convert() function
+        # explicitly
+        ct_inputs = None
+        if enumerated_shapes is not None:
+            ct_inputs = _get_ct_inputs(edge_program, enumerated_shapes)
+
+            # Check there are not multiple enumerated inputs if iOS is below 18
+            if (minimum_deployment_target is None) or (
+                minimum_deployment_target < ct.target.iOS18
+            ):
+                n_enumerated_inputs = 0
+                for ct_in in ct_inputs:
+                    if isinstance(ct_in.shape, ct.EnumeratedShapes):
+                        n_enumerated_inputs += 1
+                if n_enumerated_inputs > 1:
+                    raise ValueError(
+                        f"You're program has {n_enumerated_inputs}, but the minimum_deployment_target is set to {minimum_deployment_target}.  Multiple enumerated inputs requires iOS18 or later."
+                    )
 
         # Load the model if MODEL_TYPE is 'COMPILED_MODEL'. This step is necessary because
         # get_compiled_model_path() requires a loaded model.
@@ -610,6 +534,7 @@ class CoreMLBackend(BackendDetails):
             compute_precision=model_compute_precision,
             minimum_deployment_target=minimum_deployment_target,
             compute_units=compute_units,
+            inputs=ct_inputs,
         )
 
         if op_linear_quantizer_config is not None:
