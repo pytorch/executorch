@@ -298,6 +298,28 @@ def get_conv_inputs():
 
     test_cases = [
         Test(
+            self=(1, 64, 256, 256),
+            weight=(64, 32, 3, 3),
+            bias=None,
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=2,
+        ),
+        Test(
+            self=(1, 16, 3, 3),
+            weight=(16, 8, 3, 3),
+            bias=None,
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=2,
+        ),
+        Test(
             self=(1, 6, 40, 50),
             weight=(8, 6, 3, 3),
             bias=(8,),
