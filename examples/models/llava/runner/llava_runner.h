@@ -42,7 +42,7 @@ class ET_EXPERIMENTAL LlavaRunner {
       const float temperature = 0.8f)
       : temperature_(temperature),
         module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
-        io_manager_(std::make_unique<IOManager>()),
+        io_manager_(std::make_unique<IOManager>(*module_)),
         tokenizer_path_(tokenizer_path) {
     ET_LOG(
         Info,
