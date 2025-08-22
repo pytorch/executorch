@@ -6,8 +6,12 @@
 
 # pyre-unsafe
 
+import logging
+
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+
+logger = logging.getLogger(__name__)
 
 
 class RemoveClonePass(ExportPass):
@@ -21,4 +25,10 @@ class RemoveClonePass(ExportPass):
             raise ValueError(
                 f"clone operator expects exactly one argument, got {len(args)}"
             )
+
+        if "memory_format" in kwargs:
+            logger.warning(
+                f"Removing clone with memory_format '{kwargs['memory_format']}'."
+            )
+
         return args[0]

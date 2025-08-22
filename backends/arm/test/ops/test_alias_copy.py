@@ -10,6 +10,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -40,6 +41,11 @@ class AliasCopy(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
+    def forward(self, x: torch.Tensor):
+        return torch.alias_copy(x) + x
+
+
+class SingleAliasCopy(AliasCopy):
     def forward(self, x: torch.Tensor):
         return torch.alias_copy(x)
 
@@ -84,6 +90,21 @@ def test_alias_u85_INT(test_data: input_t1):
         AliasCopy.aten_op,
         AliasCopy.exir_op,
     ).run()
+
+
+def test_alias_tosa_MI_not_delegated():
+    x = torch.randn(2, 3)
+    module = SingleAliasCopy()
+    pipeline = OpNotSupportedPipeline[(torch.Tensor,)](
+        module,
+        (x,),
+        non_delegated_ops={
+            "executorch_exir_dialects_edge__ops_aten_alias_copy_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
+        },
+        n_expected_delegates=0,
+    )
+    pipeline.run()
 
 
 @common.parametrize("test_data", AliasCopy.test_data)

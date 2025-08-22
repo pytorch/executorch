@@ -491,14 +491,40 @@ def get_quant_properties(  # noqa: C901
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
     ):
-        shared_qspec = SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
-        quant_properties.quant_inputs = [
-            _QuantProperty(0, input_act_qspec),
-            _QuantProperty(
-                1, input_act_qspec if node.args[0] == node.args[1] else shared_qspec  # type: ignore[arg-type]
-            ),
-        ]
+
+        same_input = node.args[0] == node.args[1]
+
+        # Handle an edge case leading to an infinite recursion of shared qspecs
+        input_0_has_quant_info = (
+            hasattr(node.args[0], "meta")
+            and "quantization_annotation" in node.args[0].meta  # type: ignore[union-attr]
+        )
+        input_0_shared = input_0_has_quant_info and isinstance(  # type: ignore[union-attr]
+            node.args[0].meta["quantization_annotation"].output_qspec,  # type: ignore[union-attr]
+            SharedQuantizationSpec,  # type: ignore[union-attr]
+        )
+
+        if same_input:
+            shared_qspec = SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+            quant_properties.quant_inputs = [
+                _QuantProperty(0, input_act_qspec),  # type: ignore[arg-type]
+                _QuantProperty(1, input_act_qspec),  # type: ignore[arg-type]
+            ]
+        elif input_0_shared:
+            shared_qspec = SharedQuantizationSpec((node.args[1], node))  # type: ignore[arg-type]
+            quant_properties.quant_inputs = [
+                _QuantProperty(0, shared_qspec),  # type: ignore[arg-type]
+                _QuantProperty(1, input_act_qspec),  # type: ignore[arg-type]
+            ]
+        else:
+            shared_qspec = SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+            quant_properties.quant_inputs = [
+                _QuantProperty(0, input_act_qspec),  # type: ignore[arg-type]
+                _QuantProperty(1, shared_qspec),  # type: ignore[arg-type]
+            ]
+
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
+
     elif node.target in (torch.ops.aten.where.self,):
         shared_qspec = SharedQuantizationSpec(node.args[1])  # type: ignore[arg-type]
         quant_properties.quant_inputs = [
