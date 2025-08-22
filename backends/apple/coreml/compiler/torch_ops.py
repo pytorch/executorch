@@ -14,11 +14,9 @@ from coremltools import _logger
 from coremltools.converters.mil.frontend import _utils
 from coremltools.converters.mil.frontend.torch.ops import (
     _get_inputs,
-    _get_kwinputs,
     NUM_TO_NUMPY_DTYPE,
     NUM_TO_TORCH_DTYPE,
     split,
-    to,
     transpose,
     unbind,
 )
@@ -26,7 +24,6 @@ from coremltools.converters.mil.frontend.torch.torch_op_registry import (
     register_torch_op,
 )
 from coremltools.converters.mil.mil import types
-from executorch.exir.dim_order_utils import get_memory_format
 
 
 # https://github.com/apple/coremltools/pull/2556
@@ -45,26 +42,6 @@ def unbind_copy(context, node):
 @register_torch_op(override=False)
 def split_copy(context, node):
     split(context, node)
-
-
-@register_torch_op(
-    torch_alias=[
-        "dim_order_ops::_to_dim_order_copy",
-        "dim_order_ops._to_dim_order_copy",
-    ],
-    override=False,
-)
-def _to_dim_order_copy(context, node):
-    dim_order = _get_kwinputs(context, node, "dim_order", default=[None])[0]
-    node.kwinputs.pop("dim_order")
-
-    # In CoreML, dim_order.val will be an ndarray, so we convert it to a list
-    dim_order = [int(d) for d in dim_order.val]
-    memory_format = get_memory_format(dim_order)
-    assert (
-        memory_format == _torch.contiguous_format
-    ), "Only contiguous memory format is supported in CoreML"
-    to(context, node)
 
 
 # https://github.com/apple/coremltools/pull/2558
