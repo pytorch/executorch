@@ -11,10 +11,9 @@ def define_common_targets():
             exported_headers = [
                 "io_manager.h",
             ],
-            deps = [
+            exported_deps = [
                 "//executorch/extension/tensor:tensor" + aten_suffix,
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-                "//executorch/runtime/executor:program_no_prim_ops" + aten_suffix,
+                "//executorch/extension/module:module" + aten_suffix,
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
