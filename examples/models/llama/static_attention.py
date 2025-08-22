@@ -549,7 +549,7 @@ class StaticAttentionIOManager:
                 style=self.style,
                 update_pos=update_pos,
                 update_len=update_len,
-            )
+            ).detach()
         for cache_id, update in v_cache_updates.items():
             self.v_caches[cache_id] = StaticKVCache.apply_update(
                 self.v_caches[cache_id],
@@ -558,7 +558,7 @@ class StaticAttentionIOManager:
                 style=self.style,
                 update_pos=update_pos,
                 update_len=update_len,
-            )
+            ).detach()
         self.pos += update_len
 
     def _get_lookahead_decoding_mask(
