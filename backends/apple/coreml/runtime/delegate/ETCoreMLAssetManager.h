@@ -107,7 +107,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// the directory and its contents are removed.
 ///
 /// @param block A block to execute. The block receives a unique URL.
-- (void)withTemporaryDirectory:(void (^)(NSURL *directoryURL))block;
+- (void)withTemporaryDirectory:(void (^)(NSURL* directoryURL))block;
 
 
 /// Purges the assets storage. The assets are moved to the trash directory and are asynchronously
