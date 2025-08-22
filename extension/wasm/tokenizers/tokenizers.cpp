@@ -12,6 +12,7 @@
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 #include <pytorch/tokenizers/sentencepiece.h>
+#include <pytorch/tokenizers/tekken.h>
 #include <pytorch/tokenizers/tiktoken.h>
 #include <cstdio>
 
@@ -20,6 +21,7 @@ using tokenizers::Error;
 using tokenizers::HFTokenizer;
 using tokenizers::Llama2cTokenizer;
 using tokenizers::SPTokenizer;
+using tokenizers::Tekken;
 using tokenizers::Tiktoken;
 using tokenizers::Tokenizer;
 
@@ -57,7 +59,8 @@ namespace {
   _(HFTokenizer)                \
   _(Tiktoken)                   \
   _(SPTokenizer)                \
-  _(Llama2cTokenizer)
+  _(Llama2cTokenizer)           \
+  _(Tekken)
 
 /**
  * EXPERIMENTAL: JavaScript wrapper for Tokenizer.
