@@ -499,6 +499,41 @@ class Module {
   }
 
   /**
+   * Sets all output tensors for a specific method.
+   *
+   * Loads the program and method if needed, and for each output uses
+   * the provided tensor's data buffer as the method's output buffer.
+   *
+   * @param[in] method_name The name of the method.
+   * @param[in] output_values A vector of EValues to set as the method outputs.
+   *
+   * @returns An Error to indicate success or failure.
+   *
+   * @note Only Tensor outputs are currently supported for setting.
+   * @note Will fail for outputs that are memory-planned or constants.
+   */
+  ET_NODISCARD
+  runtime::Error set_outputs(
+      const std::string& method_name,
+      const std::vector<runtime::EValue>& output_values);
+
+  /**
+   * Sets all output tensors for the "forward" method.
+   *
+   * @param[in] output_values A vector of EValues to set as the method outputs.
+   *
+   * @returns An Error to indicate success or failure.
+   *
+   * @note Only Tensor outputs are currently supported for setting.
+   * @note Will fail for outputs that are memory-planned or constants.
+   */
+  ET_NODISCARD
+  inline runtime::Error set_outputs(
+      const std::vector<runtime::EValue>& output_values) {
+    return set_outputs("forward", output_values);
+  }
+
+  /**
    * Retrieves the EventTracer instance being used by the Module.
    * EventTracer is used for tracking and logging events during the execution
    * of methods.

@@ -106,6 +106,10 @@ inline TensorPtr make_tensor_ptr(
     executorch::aten::ScalarType type = deduced_type,
     executorch::aten::TensorShapeDynamism dynamism =
         executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND) {
+  ET_CHECK_MSG(
+      data.size() ==
+          executorch::aten::compute_numel(sizes.data(), sizes.size()),
+      "Data size does not match tensor size.");
   if (type != deduced_type) {
     ET_CHECK_MSG(
         runtime::canCast(deduced_type, type),
