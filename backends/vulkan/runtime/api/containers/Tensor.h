@@ -676,6 +676,7 @@ class vTensor final {
   }
 
   const std::shared_ptr<UniformData>& get_uniform_data() const {
+    VK_CHECK_COND(sizes_.size() <= 4);
     return uniform_data_;
   }
 };
