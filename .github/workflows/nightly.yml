@@ -36,3 +36,51 @@ jobs:
     uses: ./.github/workflows/_link_check.yml
     with:
       ref: ${{ github.sha }}
+
+  backend-test-linux:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        flow: [
+          qnn, qnn_16a16w, qnn_16a8w, qnn_16a4w, qnn_16a4w_block, qnn_8a8w,
+          vulkan, vulkan_static_int8_per_channel,
+          xnnpack, xnnpack_dynamic_int8_per_channel, xnnpack_static_int8_per_channel, xnnpack_static_int8_per_tensor
+        ]
+        suite: [models, operators]
+    with:
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      runner: linux.4xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: recursive
+      timeout: 120
+      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
+      script: |
+        set -eux
+
+        source .ci/scripts/test_backend_linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
+
+  backend-test-macos:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        flow: [coreml, coreml_static_int8]
+        suite: [models, operators]
+    with:
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      runner: macos-m1-stable
+      python-version: 3.12
+      submodules: recursive
+      timeout: 120
+      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
+      script: |
+        set -eux
+
+        # This is needed to get the prebuilt PyTorch wheel from S3
+        ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
+
+        source .ci/scripts/test_backend_macos.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"

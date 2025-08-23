@@ -127,7 +127,7 @@ class BackendDelegate final {
 
   Error Execute(
       BackendExecutionContext& backend_execution_context,
-      EValue** args) const {
+      Span<EValue*> args) const {
     EXECUTORCH_SCOPE_PROF("delegate_execute");
     return backend_->execute(backend_execution_context, handle_, args);
   }
@@ -713,6 +713,9 @@ Error Method::resolve_operator(
   }
   TensorMeta* meta = allocator->allocateList<TensorMeta>(n_args);
   if (meta == nullptr) {
+    if (allocator == memory_manager_->temp_allocator()) {
+      memory_manager_->temp_allocator()->reset();
+    }
     return Error::MemoryAllocationFailed;
   }
 
@@ -726,6 +729,9 @@ Error Method::resolve_operator(
       executorch::aten::DimOrderType* dim_order_ptr =
           allocator->allocateList<executorch::aten::DimOrderType>(tensor.dim());
       if (dim_order_ptr == nullptr) {
+        if (allocator == memory_manager_->temp_allocator()) {
+          memory_manager_->temp_allocator()->reset();
+        }
         return Error::MemoryAllocationFailed;
       }
       size_t size = tensor.dim();
@@ -748,12 +754,21 @@ Error Method::resolve_operator(
   if (!op_function.ok()) {
     ET_LOG(
         Error,
-        "Missing operator: [%zd] %s",
+        "Missing operator: [%" ET_PRIssize_t "] %s",
         static_cast<ssize_t>(op_index),
         operator_name);
+    if (allocator == memory_manager_->temp_allocator()) {
+      memory_manager_->temp_allocator()->reset();
+    }
     return op_function.error();
   }
   kernels[kernel_index] = op_function.get();
+
+  // If we used the temp allocator here, reset it.
+  if (allocator == memory_manager_->temp_allocator()) {
+    memory_manager_->temp_allocator()->reset();
+  }
+
   return Error::Ok;
 }
 
@@ -1178,6 +1193,13 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
 ET_NODISCARD Error
 Method::set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues) {
   const size_t n_input = inputs_size();
+  ET_CHECK_OR_RETURN_ERROR(
+      input_evalues.size() == n_input,
+      InvalidArgument,
+      "Invalid number of inputs provided. Expected %" ET_PRIsize_t
+      ", but got %" ET_PRIsize_t,
+      n_input,
+      input_evalues.size());
   for (size_t i = 0; i < n_input; ++i) {
     ET_CHECK_OK_OR_RETURN_ERROR(set_input(input_evalues[i], i));
   }
@@ -1250,20 +1272,17 @@ ET_NODISCARD Error Method::get_outputs(EValue* output_evalues, size_t length) {
       initialized(),
       InvalidState,
       "Outputs can not be retrieved until method has been initialized.");
-
+  const size_t n_output = outputs_size();
   ET_CHECK_OR_RETURN_ERROR(
-      length >= outputs_size(),
+      length >= n_output,
       InvalidArgument,
       "The given array is not large enough to hold all outputs.");
-
-  for (size_t i = 0; i < outputs_size(); i++) {
+  for (size_t i = 0; i < n_output; ++i) {
     output_evalues[i] = values_[get_output_index(i)];
   }
-
-  for (size_t i = outputs_size(); i < length; i++) {
+  for (size_t i = n_output; i < length; ++i) {
     output_evalues[i] = EValue();
   }
-
   return Error::Ok;
 }
 
@@ -1366,7 +1385,7 @@ Error Method::execute_instruction() {
           /*method_name=*/serialization_plan_->name()->c_str());
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
-          chain.argument_lists_[step_state_.instr_idx].data());
+          chain.argument_lists_[step_state_.instr_idx]);
       if (err != Error::Ok) {
         ET_LOG(
             Error,
@@ -1543,6 +1562,9 @@ Error Method::execute() {
         i);
   }
   ET_LOG(Debug, "Executing method: %s.", method_meta().name());
+  if (temp_allocator_ != nullptr) {
+    temp_allocator_->reset();
+  }
 
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.

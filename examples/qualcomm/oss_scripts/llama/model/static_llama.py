@@ -39,6 +39,24 @@ def apply_rotary_emb_single(
     return x_out
 
 
+def apply_partial_rotary_emb_single(
+    x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
+) -> torch.Tensor:
+
+    if x.dim() == 4:
+        freqs_cos = freqs_cos[None, :, None, :]
+        freqs_sin = freqs_sin[None, :, None, :]
+
+    rotary_dim = freqs_cos.shape[-1] * 2
+
+    x_rot, x_pass = x[..., :rotary_dim], x[..., rotary_dim:]
+    x_r, x_i = x_rot[..., : x_rot.shape[-1] // 2], x_rot[..., x_rot.shape[-1] // 2 :]
+    x_out_r = x_r * freqs_cos - x_i * freqs_sin
+    x_out_i = x_r * freqs_sin + x_i * freqs_cos
+    x_rotated = torch.cat([x_out_r, x_out_i], dim=-1)
+    return torch.cat([x_rotated, x_pass], dim=-1)
+
+
 class LlamaAttention(nn.Module):
     def __init__(self, config: ModelArgs, output_new_cache_only=False):
         super().__init__()
@@ -59,6 +77,11 @@ class LlamaAttention(nn.Module):
             k_norm_dim = self.head_dim
             self.q_norm_fn = torch.nn.RMSNorm(q_norm_dim, eps=config.norm_eps)
             self.k_norm_fn = torch.nn.RMSNorm(k_norm_dim, eps=config.norm_eps)
+
+        if config.partial_rotary_factor < 1:
+            self.apply_rope_emb = apply_partial_rotary_emb_single
+        else:
+            self.apply_rope_emb = apply_rotary_emb_single
 
         self.wq = nn.Linear(
             self.dim,
@@ -81,7 +104,7 @@ class LlamaAttention(nn.Module):
 
         self.scale = float(self.head_dim) ** 0.5
 
-        if hasattr(config, "enable_r3") and config.enable_r3:
+        if getattr(config, "enable_r3", False):
             self.register_buffer(
                 "r3_weight",
                 torch.tensor(
@@ -199,19 +222,21 @@ class LlamaAttention(nn.Module):
         for i in range(len(q)):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 q[i] = self.q_norm_fn(q[i])
-            q[i] = apply_rotary_emb_single(q[i], freqs_cos, freqs_sin)
-            if hasattr(self.config, "enable_r3") and self.config.enable_r3:
-                q[i] = torch.matmul(q[i], self.r3_weight.T)
+            q[i] = self.apply_rope_emb(q[i], freqs_cos, freqs_sin)
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 q[i] = self.q_norm_fn(q[i])
+            if getattr(self.config, "enable_r3", False):
+                q[i] = torch.matmul(q[i], self.r3_weight)
+
         for i in range(len(k)):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 k[i] = self.k_norm_fn(k[i])
-            k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin).transpose(1, 2)
-            if hasattr(self.config, "enable_r3") and self.config.enable_r3:
-                k[i] = torch.matmul(k[i], self.r3_weight.T)
+            k[i] = self.apply_rope_emb(k[i], freqs_cos, freqs_sin)
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 k[i] = self.k_norm_fn(k[i])
+            if getattr(self.config, "enable_r3", False):
+                k[i] = torch.matmul(k[i], self.r3_weight)
+            k[i] = k[i].transpose(1, 2)
 
         output_y = []
         kh, vh = [], []
@@ -272,8 +297,8 @@ class LlamaAttention(nn.Module):
             q = self.q_norm_fn(q)
             k = self.k_norm_fn(k)
 
-        q = apply_rotary_emb_single(q, freqs_cos, freqs_sin)
-        k = apply_rotary_emb_single(k, freqs_cos, freqs_sin).permute(0, 2, 3, 1)
+        q = self.apply_rope_emb(q, freqs_cos, freqs_sin)
+        k = self.apply_rope_emb(k, freqs_cos, freqs_sin).permute(0, 2, 3, 1)
 
         if self.use_qk_norm and not self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
@@ -368,7 +393,8 @@ class LlamaDecoderLayer(nn.Module):
         super().__init__()
         self.dim = config.dim
         self.attention = LlamaAttention(
-            config=config, output_new_cache_only=output_new_cache_only
+            config=config,
+            output_new_cache_only=output_new_cache_only,
         )
         self.feed_forward = FeedForward(config)
         self.attention_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
@@ -420,6 +446,7 @@ class LlamaModel(nn.Module):
         self.output_new_cache_only = output_new_cache_only
         self.use_i64_token = use_i64_token
         self.output_cache = output_cache
+        self.kv_io_bit_width = config.kv_io_bit_width
 
         self.layers = nn.ModuleList(
             [
@@ -583,4 +610,5 @@ class LlamaModel(nn.Module):
             "get_n_layers": self.n_layers,
             "get_vocab_size": self.vocab_size,
             "get_use_kv_cache": self.use_kv_cache,
+            "get_kv_io_bit_width": self.kv_io_bit_width,
         }

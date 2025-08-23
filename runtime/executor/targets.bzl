@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "PROGRAM_NO_PRIM_OPS_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def _program_preprocessor_flags():
@@ -93,11 +94,7 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "program_no_prim_ops" + aten_suffix,
-            srcs = [
-                "method.cpp",
-                "method_meta.cpp",
-                "program.cpp",
-                "tensor_parser_exec_aten.cpp",
+            srcs = PROGRAM_NO_PRIM_OPS_SRCS + [
                 "tensor_parser{}.cpp".format(aten_suffix if aten_mode else "_portable"),
             ],
             headers = [

@@ -120,11 +120,13 @@ runtime.python_test(
         "test/*.py",
     ]),
     deps = [
+        "fbsource//third-party/pypi/coremltools:coremltools",
         "fbsource//third-party/pypi/pytest:pytest",
         ":partitioner",
         ":quantizer",
         ":recipes",
         "//caffe2:torch",
         "//pytorch/vision:torchvision",
+        "fbsource//third-party/pypi/scikit-learn:scikit-learn",
     ],
 )

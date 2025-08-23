@@ -4,9 +4,8 @@ cmake>=3.29, <4.0.0  # For building binary targets in the wheel.
 pip>=23  # For building the pip package.
 pyyaml  # Imported by the kernel codegen tools.
 setuptools>=63  # For building the pip package contents.
-tomli  # Imported by extract_sources.py when using python < 3.11.
 wheel  # For building the pip package archive.
 zstd  # Imported by resolve_buck.py.
 certifi  # Imported by resolve_buck.py.
 lintrunner==0.12.7
-lintrunner-adapters==0.12.4
+lintrunner-adapters==0.12.6

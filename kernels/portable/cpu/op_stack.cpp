@@ -8,12 +8,14 @@
 
 #include <cstring>
 
+#include <c10/util/irange.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
 namespace native {
+namespace impl {
 
 using Tensor = executorch::aten::Tensor;
 
@@ -76,6 +78,70 @@ Tensor& stack_out(
   return out;
 }
 
+} // namespace impl
+
+Tensor& stack_out(
+    KernelRuntimeContext& ctx,
+    executorch::aten::ArrayRef<Tensor> tensors,
+    int64_t dim,
+    Tensor& out) {
+  return impl::stack_out(ctx, tensors, dim, out);
+}
+
+namespace utils {
+
+Tensor& stack_out(
+    KernelRuntimeContext& ctx,
+    executorch::aten::ArrayRef<Tensor> tensors,
+    int64_t dim,
+    Tensor& out) {
+  return impl::stack_out(ctx, tensors, dim, out);
+}
+
+std::tuple<
+    Error,
+    std::array<executorch::aten::SizesType, kTensorDimensionLimit>,
+    size_t>
+stack_out_shape(executorch::aten::ArrayRef<Tensor> tensors, int64_t dim) {
+  std::array<executorch::aten::SizesType, kTensorDimensionLimit> out_sizes{};
+  size_t out_dim = 0;
+
+  // Check if tensors array is empty
+  if (tensors.size() == 0) {
+    return std::make_tuple(Error::InvalidArgument, out_sizes, out_dim);
+  }
+
+  // Normalize negative dimension
+  int64_t normalized_dim = dim;
+  if (normalized_dim < 0) {
+    normalized_dim += tensors[0].dim() + 1;
+  }
+
+  // Check if dimension is valid
+  if (normalized_dim < 0 || normalized_dim > tensors[0].dim()) {
+    return std::make_tuple(Error::InvalidArgument, out_sizes, out_dim);
+  }
+
+  // Check that all tensors have the same shape
+  for (size_t i = 1; i < tensors.size(); ++i) {
+    if (tensors[i].dim() != tensors[0].dim()) {
+      return std::make_tuple(Error::InvalidArgument, out_sizes, out_dim);
+    }
+    for (const auto d : c10::irange(tensors[0].dim())) {
+      if (tensors[i].size(d) != tensors[0].size(d)) {
+        return std::make_tuple(Error::InvalidArgument, out_sizes, out_dim);
+      }
+    }
+  }
+
+  // Compute output shape using the existing utility
+  ::torch::executor::get_stack_out_target_size(
+      tensors, normalized_dim, out_sizes.data(), &out_dim);
+
+  return std::make_tuple(Error::Ok, out_sizes, out_dim);
+}
+
+} // namespace utils
 } // namespace native
 } // namespace executor
 } // namespace torch

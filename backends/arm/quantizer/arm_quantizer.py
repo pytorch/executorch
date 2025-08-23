@@ -20,12 +20,11 @@ import torch
 from executorch.backends.arm._passes import ArmPassManager
 
 from executorch.backends.arm.quantizer import QuantizationConfig
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
 
 from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
 from .quantization_annotator import annotate_graph
 from executorch.backends.arm.arm_backend import (
-    get_tosa_spec,
     is_ethosu,
     is_vgf,
 )  # usort: skip
@@ -102,17 +101,19 @@ def get_symmetric_quantization_config(
     weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
         MinMaxObserver
     )
+
     # Determine the right observer/fake-quant constructor
     if is_qat:
-        # Set plain fake-quant with true min/max
-        weight_observer_or_fake_quant_ctr = FakeQuantize
+        if is_per_channel:
+            weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+        else:
+            # Set plain fake-quant with true min/max
+            weight_observer_or_fake_quant_ctr = FakeQuantize
     else:
         # PTQ: set min/max observer
         weight_observer_or_fake_quant_ctr = (
             PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
         )
-
-    extra_args = {"eps": 2**-12}
 
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
