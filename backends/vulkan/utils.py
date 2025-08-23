@@ -1059,6 +1059,8 @@ def get_node_val_str(node: torch.fx.Node) -> str:
         assert isinstance(node.meta["val"], (list, tuple))
         return f"[{', '.join(get_tensor_val_str(t) for t in node.meta['val'])}]"
     else:
+        if "val" not in node.meta:
+            return str(node)
         return str(node.meta["val"])
 
 
