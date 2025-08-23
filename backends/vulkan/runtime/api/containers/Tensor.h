@@ -36,10 +36,6 @@ std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
     const std::vector<int64_t>& dim_order);
 
-std::vector<int64_t> unsqueeze_strides(
-    const std::vector<int64_t>& strides,
-    const int64_t numel);
-
 /*
  * When stored on the GPU, tensor data is stored using texels (i.e. a vector of
  * 4 scalar values) in order to take advantage of the GPU's native vectorization
@@ -236,28 +232,23 @@ class vTensor final {
   };
 
   class UniformData {
-    utils::ivec4 sizes_v;
-    utils::ivec4 whcn_dim_order_v;
-    utils::ivec4 strides_v;
-    // See the comments documenting logical_limits() for more context.
-    TextureLimits logical_limits;
     // Contains the number of elements in the tensor according to the canonical
     // sizes.
     int32_t numel;
+    utils::ivec4 sizes_v;
+    utils::ivec4 dim_order_v;
+    utils::ivec4 strides_v;
+    // See the comments documenting logical_limits() for more context.
+    TextureLimits logical_limits;
 
     friend class vTensor;
 
     UniformData(
+        const size_t numel_ll,
         const std::vector<int64_t>& sizes,
-        const std::vector<int64_t>& whcn_dim_order,
+        const std::vector<int64_t>& dim_order,
         const std::vector<int64_t>& strides,
-        const utils::uvec3& logical_limits,
-        const size_t numel_ll)
-        : sizes_v(utils::make_whcn_ivec4(sizes)),
-          whcn_dim_order_v(utils::make_ivec4(whcn_dim_order)),
-          strides_v(utils::make_whcn_ivec4(strides)),
-          logical_limits(logical_limits),
-          numel(utils::safe_downcast<int32_t>(numel_ll)) {}
+        const utils::uvec3& limits);
 
    public:
     /*
@@ -326,7 +317,7 @@ class vTensor final {
   int32_t hashed_layout_;
 
   // Pre-compute these quantities to avoid frequent re-computation
-  size_t nbytes_per_ubo_;
+  size_t min_nbytes_per_ubo_;
   size_t max_ubo_nbytes_;
 
   /*
@@ -523,6 +514,26 @@ class vTensor final {
 
   size_t get_max_ubo_nbytes(const size_t nbytes_per_ubo) const;
 
+  template <typename T>
+  const vkapi::BufferBindInfo metadata_ubo_impl(
+      uint32_t* param_buffer_offset,
+      const T& data) {
+    if (!uniforms_.buffer()) {
+      uniforms_ = ParamsBuffer(storage_->context_, max_ubo_nbytes_, true);
+    }
+    size_t ubo_nbytes = utils::align_up(sizeof(data), min_nbytes_per_ubo_);
+    if (*param_buffer_offset == kUniformOffsetUnset) {
+      VK_CHECK_COND(
+          (uniforms_size_ + ubo_nbytes) <= max_ubo_nbytes_,
+          "Uniform data allocation has exceeded Tensor uniform buffer size");
+      *param_buffer_offset = uniforms_size_;
+      uniforms_size_ += ubo_nbytes;
+      uniforms_.update(data, *param_buffer_offset);
+    }
+    return vkapi::BufferBindInfo(
+        uniforms_.buffer(), *param_buffer_offset, ubo_nbytes);
+  }
+
  public:
   /*
    * The functions below return the buffer binding info for a UBO that contains
@@ -648,6 +659,71 @@ static constexpr vTensor::Attribute kTensorStrides =
 static constexpr vTensor::Attribute kTensorLogicalLimits =
     vTensor::Attribute::LOGICAL_LIMITS;
 static constexpr vTensor::Attribute kTensorNumel = vTensor::Attribute::NUMEL;
+
+/*
+ * Prepare tensor metadata vector for consumption on the GPU:
+ * 1. Convert NCHW dim order and indexes to WCHN dim order and indexes
+ * 2. Unsqueeze to the next multiple of 4 dims
+ * 3. Convert to requested output dtype
+ */
+template <
+    typename T,
+    typename std::enable_if<std::is_integral<T>::value, int>::type = 0>
+std::vector<T> flip_and_unsqueeze(
+    const std::vector<int64_t>& tensor_metadata,
+    const vTensor::Attribute metadata_type,
+    const size_t numel,
+    const int32_t fixed_ndim = -1) {
+  const size_t ndim = tensor_metadata.size();
+  size_t ndim_up4 =
+      std::max(utils::align_up_4(tensor_metadata.size()), size_t(4));
+
+  if (fixed_ndim > 0) {
+    VK_CHECK_COND(fixed_ndim >= ndim);
+    ndim_up4 = static_cast<size_t>(fixed_ndim);
+  }
+
+  std::vector<T> flipped_metadata(ndim_up4);
+
+  for (int flipped_i = 0; flipped_i < ndim; ++flipped_i) {
+    T val_at_dim =
+        utils::safe_downcast<T>(tensor_metadata.at(ndim - 1 - flipped_i));
+    if (metadata_type == kTensorDimOrder) {
+      val_at_dim = utils::safe_downcast<T>(ndim - 1 - val_at_dim);
+    }
+    flipped_metadata.at(flipped_i) = val_at_dim;
+  }
+
+  switch (metadata_type) {
+    case kTensorStrides:
+      for (int unsqueezed_i = ndim; unsqueezed_i < ndim_up4; ++unsqueezed_i) {
+        flipped_metadata.at(unsqueezed_i) = utils::safe_downcast<T>(numel);
+      }
+      break;
+    case kTensorDimOrder:
+      for (int unsqueezed_i = ndim; unsqueezed_i < ndim_up4; ++unsqueezed_i) {
+        flipped_metadata.at(unsqueezed_i) =
+            utils::safe_downcast<T>(unsqueezed_i);
+      }
+      break;
+    // Default: unsqueeze with ones
+    default:
+      for (int unsqueezed_i = ndim; unsqueezed_i < ndim_up4; ++unsqueezed_i) {
+        flipped_metadata.at(unsqueezed_i) = utils::safe_downcast<T>(1);
+      }
+      break;
+  }
+
+  return flipped_metadata;
+}
+
+/*
+ * Same as flip and unsqueeze, but returns the metadata as an `ivec4`.
+ */
+utils::ivec4 flip_and_unsqueezed_ivec4(
+    const std::vector<int64_t>& tensor_metadata,
+    const vTensor::Attribute metadata_type,
+    const size_t numel);
 
 } // namespace api
 } // namespace vkcompute
