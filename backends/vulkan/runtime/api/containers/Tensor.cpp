@@ -567,6 +567,7 @@ vTensor::vTensor(
       max_ubo_nbytes_{
           calculate_max_ubo_nbytes(min_nbytes_per_ubo_, storage_type)},
       uniforms_(),
+      buffer_meta_(),
       // Construct Tensor storage
       storage_(std::make_shared<vTensorStorage>(
           context,
@@ -611,6 +612,7 @@ vTensor::vTensor(
       max_ubo_nbytes_{
           calculate_max_ubo_nbytes(min_nbytes_per_ubo_, utils::kTexture3D)},
       uniforms_(),
+      buffer_meta_(),
       // Construct Tensor storage
       storage_(std::make_shared<vTensorStorage>(context, image)) {
   uniform_data_ = std::make_shared<UniformData>(UniformData{
@@ -634,6 +636,7 @@ vTensor::vTensor(vTensor& other)
       min_nbytes_per_ubo_{other.min_nbytes_per_ubo_},
       max_ubo_nbytes_{other.max_ubo_nbytes_},
       uniforms_(),
+      buffer_meta_(),
       // Copy Tensor storage
       storage_(other.storage_) {
   uniform_data_ = std::make_shared<UniformData>(*other.get_uniform_data());
@@ -659,6 +662,7 @@ vTensor::vTensor(
       min_nbytes_per_ubo_{other.min_nbytes_per_ubo_},
       max_ubo_nbytes_{other.max_ubo_nbytes_},
       uniforms_(),
+      buffer_meta_(),
       // Copy Tensor storage
       storage_(other.storage_) {
   uniform_data_ = std::make_shared<UniformData>(UniformData{
@@ -709,6 +713,38 @@ uint32_t vTensor::UniformData::write_attribute(
   }
 #undef WRITE_ATTRIBUTE_CASE
   return 0;
+}
+
+vTensor::BufferMetadata::BufferMetadata(
+    std::vector<int64_t>& src_sizes,
+    std::vector<int64_t>& src_dim_order,
+    std::vector<int64_t>& src_strides,
+    size_t src_numel) {
+  update(src_sizes, src_dim_order, src_strides, src_numel);
+}
+
+void vTensor::BufferMetadata::update(
+    std::vector<int64_t>& src_sizes,
+    std::vector<int64_t>& src_dim_order,
+    std::vector<int64_t>& src_strides,
+    size_t src_numel) {
+  int32_t fixed_ndim = utils::safe_downcast<int32_t>(kTensorDimLimit);
+
+  std::vector<uint32_t> fu_sizes = flip_and_unsqueeze<uint32_t>(
+      src_sizes, kTensorSizes, src_numel, fixed_ndim);
+  std::vector<uint32_t> fu_dim_order = flip_and_unsqueeze<uint32_t>(
+      src_dim_order, kTensorDimOrder, src_numel, fixed_ndim);
+  std::vector<uint32_t> fu_strides = flip_and_unsqueeze<uint32_t>(
+      src_strides, kTensorStrides, src_numel, fixed_ndim);
+
+  for (int i = 0; i < fixed_ndim; ++i) {
+    sizes[i] = fu_sizes.at(i);
+    dim_order[i] = fu_dim_order.at(i);
+    strides[i] = fu_strides.at(i);
+  }
+
+  ndim = utils::safe_downcast<uint32_t>(src_sizes.size());
+  numel = utils::safe_downcast<uint32_t>(src_numel);
 }
 
 vkapi::VulkanImage& vTensor::image(
@@ -799,6 +835,15 @@ const vkapi::BufferBindInfo vTensor::numel_ubo() {
   return metadata_ubo_impl(&numel_uniform_offset_, uniform_data_->numel);
 }
 
+const vkapi::BufferBindInfo vTensor::buffer_meta_ubo() {
+  size_t ubo_nbytes = sizeof(BufferMetadata);
+  if (!buffer_meta_.buffer()) {
+    BufferMetadata data(sizes_, dim_order_, strides_, numel_);
+    buffer_meta_ = ParamsBuffer(storage_->context_, data);
+  }
+  return vkapi::BufferBindInfo(buffer_meta_.buffer(), 0, ubo_nbytes);
+}
+
 VkMemoryRequirements vTensor::get_memory_requirements() const {
   switch (storage_type()) {
     case utils::kBuffer:
@@ -874,6 +919,11 @@ void vTensor::update_metadata() {
   if (logical_limits_uniform_offset_ != kUniformOffsetUnset) {
     uniforms_.update(
         uniform_data_->logical_limits.limits, logical_limits_uniform_offset_);
+  }
+
+  if (buffer_meta_.buffer()) {
+    BufferMetadata data(sizes_, dim_order_, strides_, numel_);
+    buffer_meta_.update(data);
   }
 }
 
