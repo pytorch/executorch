@@ -19,6 +19,8 @@
 namespace vkcompute {
 namespace api {
 
+static constexpr size_t kTensorDimLimit = 8;
+
 /*
  * Given a GPUMemoryLayout value, produce a dim order vector that matches the
  * given memory layout. The produced dim order vector will be in the NCHW
@@ -262,6 +264,26 @@ class vTensor final {
         const Attribute attr);
   };
 
+  struct BufferMetadata {
+    uint32_t sizes[kTensorDimLimit];
+    uint32_t dim_order[kTensorDimLimit];
+    uint32_t strides[kTensorDimLimit];
+    uint32_t ndim;
+    uint32_t numel;
+
+    BufferMetadata(
+        std::vector<int64_t>& sizes,
+        std::vector<int64_t>& dim_order,
+        std::vector<int64_t>& strides,
+        size_t numel);
+
+    void update(
+        std::vector<int64_t>& sizes,
+        std::vector<int64_t>& dim_order,
+        std::vector<int64_t>& strides,
+        size_t numel);
+  };
+
  private:
   /*
    * "Core" tensor metadata. They are the minimum amount of information required
@@ -331,6 +353,11 @@ class vTensor final {
    * context about the data contained in each buffer.
    */
   ParamsBuffer uniforms_;
+
+  /*
+   * Used to store data for BufferMetadata to pass to shaders as buffer_meta_ubo
+   */
+  ParamsBuffer buffer_meta_;
 
   uint32_t uniforms_size_ = 0u;
   uint32_t sizes_uniform_offset_ = kUniformOffsetUnset;
@@ -556,6 +583,8 @@ class vTensor final {
   const vkapi::BufferBindInfo logical_limits_ubo();
 
   const vkapi::BufferBindInfo numel_ubo();
+
+  const vkapi::BufferBindInfo buffer_meta_ubo();
 
  public:
   inline size_t staging_buffer_numel() const {
