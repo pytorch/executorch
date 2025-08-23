@@ -55,16 +55,28 @@ def get_binary_elementwise_inputs():
             ((3, 64, 1), (1, 64, 1)),
         ]
     )
-    test_suite.layouts = [
-        "utils::kWidthPacked",
-        "utils::kChannelsPacked",
-    ]
     test_suite.storage_types = [
         "utils::kBuffer",
         "utils::kTexture3D",
     ]
 
-    return test_suite
+    highdim_test_suite = VkTestSuite(
+        [
+            ((4, 5, 8, 1, 2, 1), (4, 5, 8, 1, 1, 1)),
+        ]
+    )
+    highdim_test_suite.storage_types = [
+        "utils::kBuffer",
+    ]
+    highdim_test_suite.test_name_suffix = "highdim"
+
+    for suite in [test_suite, highdim_test_suite]:
+        suite.layouts = [
+            "utils::kWidthPacked",
+            "utils::kChannelsPacked",
+        ]
+
+    return [test_suite, highdim_test_suite]
 
 
 # Eq requires a different test generator so it was split from the other test case.
