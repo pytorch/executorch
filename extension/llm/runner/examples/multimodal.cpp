@@ -7,12 +7,15 @@
  */
 
 #include <iostream>
+#include <fstream>
+#include <cstring>
 
 #include <gflags/gflags.h>
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
+#include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/log.h>
@@ -34,6 +37,8 @@ DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 DEFINE_string(prompt, "Describe this image:", "Text prompt.");
 
 DEFINE_string(image_path, "", "Path to input image file.");
+
+DEFINE_string(audio_path, "", "Path to input audio file.");
 
 DEFINE_double(
     temperature,
@@ -92,6 +97,7 @@ int32_t main(int32_t argc, char** argv) {
   const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
   const char* prompt = FLAGS_prompt.c_str();
   const char* image_path = FLAGS_image_path.c_str();
+  const char* audio_path = FLAGS_audio_path.c_str();
   float temperature = FLAGS_temperature;
   int32_t seq_len = FLAGS_seq_len;
   int32_t cpu_threads = FLAGS_cpu_threads;
@@ -145,46 +151,60 @@ int32_t main(int32_t argc, char** argv) {
 
   // Prepare inputs
   std::vector<MultimodalInput> inputs;
+
+  // 1. Add start bos-related text inputs and modality start token.
+  inputs.emplace_back(make_text_input("<s>[INST][BEGIN_AUDIO]"));
   
+  // 2. Add audio input
+  // Using a preprocessed audio, saved using:
+  // with open("tensor.bin", "wb") as f:
+  //     f.write(t.numpy().tobytes())
+  int32_t batch_size = 3;
+  int32_t n_bins = 128;
+  int32_t n_frames = 3000;
+  std::cout << "Loading audio.bin from path: " << audio_path << std::endl;
+  std::ifstream f(audio_path, std::ios::binary);
+  std::vector<float> audio_data(batch_size * n_bins * n_frames);
+  f.read(reinterpret_cast<char*>(audio_data.data()), audio_data.size() * sizeof(float));
+
+  // Verify the first 10 values.
+  std::cout << "First 10 audio values: ";
+  for (int i = 0; i < 10; ++i) {
+    std::cout << audio_data[i];
+    if (i < 9) std::cout << ", ";
+  }
+  std::cout << std::endl;
+
+  auto audio = std::make_unique<::executorch::extension::llm::Audio>();
+  audio->batch_size = batch_size;
+  audio->n_bins = n_bins;
+  audio->n_frames = n_frames;
+  
+  // Keep data as floats - convert to uint8_t by copying byte representation
+  audio->data.resize(audio_data.size() * sizeof(float));
+  std::memcpy(audio->data.data(), audio_data.data(), audio_data.size() * sizeof(float));
+  
+  inputs.emplace_back(::executorch::extension::llm::make_audio_input(std::move(*audio)));
+
   // Add text input
-  inputs.emplace_back(make_text_input(std::string(prompt)));
-  
-  // // Add image input if provided
-  // if (strlen(image_path) > 0) {
-  //   auto image = load_image(image_path);
-  //   if (image != nullptr) {
-  //     inputs.emplace_back(make_image_input(std::move(*image)));
-  //   } else {
-  //     ET_LOG(Error, "Failed to load image from: %s", image_path);
-  //     return 1;
-  //   }
-  // }
+  inputs.emplace_back(make_text_input(std::string(prompt) + "[/INST]"));
+  // inputs.emplace_back(make_text_input("[/INST]"));
 
   std::cout << "Inputs:" << std::endl;
   std::cout << inputs[0].is_text() << std::endl;
-  std::cout << inputs[0].get_text() << std::endl;
+  std::cout << inputs[1].is_audio() << std::endl;
+  std::cout << inputs[2].is_text() << std::endl;
 
   // Set up generation config
   ::executorch::extension::llm::GenerationConfig config;
-  config.seq_len = seq_len;
+  // config.seq_len = seq_len;
+  config.max_new_tokens = 100; // TODO: no tokenizer so it can't automatically end, prompt tokens turn out to be around 1138, so set this for now to be 100, so that it doesn't go 2048 (max context len inferred from export max seq len) - 1138 = around ~1000.
   config.temperature = temperature;
-
-  // Set up callbacks
-  std::function<void(const std::string&)> token_callback = 
-      [](const std::string& token) {
-        printf("%s", token.c_str());
-        fflush(stdout);
-      };
-
-  std::function<void(const ::executorch::extension::llm::Stats&)> stats_callback =
-      [](const ::executorch::extension::llm::Stats& stats) {
-        // Print stats if needed
-      };
 
   // Run warmup if requested
   if (warmup) {
     ET_LOG(Info, "Running warmup...");
-    auto warmup_error = runner->generate(inputs, config, token_callback, stats_callback);
+    auto warmup_error = runner->generate(inputs, config);
     if (warmup_error != ::executorch::runtime::Error::Ok) {
       ET_LOG(Error, "Failed to run warmup");
       return 1;
@@ -192,9 +212,11 @@ int32_t main(int32_t argc, char** argv) {
     runner->reset();
   }
 
+  std::cout << "Starting generation..." << std::endl;
+
   // Generate
   ET_LOG(Info, "Starting generation...");
-  auto error = runner->generate(inputs, config, token_callback, stats_callback);
+  auto error = runner->generate(inputs, config);
   if (error != ::executorch::runtime::Error::Ok) {
     ET_LOG(Error, "Failed to generate with multimodal runner");
     return 1;

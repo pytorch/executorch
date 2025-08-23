@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <iostream>
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -70,6 +72,9 @@ struct GenerationConfig {
       int32_t num_prompt_tokens) const {
     int32_t result;
 
+    std::cout << "seq_len: " << seq_len << std::endl;
+    std::cout << "max_new_tokens: " << max_new_tokens << std::endl;
+
     if (seq_len == -1 && max_new_tokens == -1) {
       // Both are -1, use max context len minus prompt tokens
       result = max_context_len - num_prompt_tokens;
@@ -85,6 +90,8 @@ struct GenerationConfig {
           std::min(seq_len, max_context_len) - num_prompt_tokens,
           max_new_tokens);
     }
+
+    std::cout << "result: " << result << std::endl;
 
     // Ensure result is not negative
     return std::max(0, result);

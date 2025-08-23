@@ -70,8 +70,8 @@ Error MultimodalRunner::load() {
 Error MultimodalRunner::generate(
     const std::vector<MultimodalInput>& inputs,
     const GenerationConfig& config,
-    std::function<void(const std::string&)>& token_callback,
-    std::function<void(const Stats&)>& stats_callback) {
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
   if (inputs.empty()) {
     ET_LOG(Error, "MultimodalInput vector cannot be empty");
     return Error::InvalidArgument;
@@ -113,12 +113,16 @@ Error MultimodalRunner::generate(
     prefill_next_token = ET_UNWRAP(multimodal_prefiller_->prefill(input, pos_));
   }
 
+  std::cout << "Finished prefill, first generated token: " << prefill_next_token << std::endl;
+
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();
   stats_->num_prompt_tokens = pos_;
 
   wrapped_callback(ET_UNWRAP_TOKENIZER(
       tokenizer_->decode(prefill_next_token, prefill_next_token)));
+
+  std::cout << "A" << std::endl;
 
   RUNNER_ET_LOG(
       config.warming,
@@ -128,8 +132,13 @@ Error MultimodalRunner::generate(
   // Resolve max_new_tokens based on config
   int64_t max_context_len =
       metadata_.at(kMaxContextLen) - 0; // No start_pos offset
+  std::cout << "max_context_len: " << max_context_len << std::endl;
+  std::cout << "max_seq_len: " << metadata_.at(kMaxSeqLen) << std::endl;
+  std::cout << "pos_: " << pos_ << std::endl;
   int32_t max_new_tokens = config.resolve_max_new_tokens(max_context_len, pos_);
 
+  std::cout << "B" << std::endl;
+  
   ET_LOG(
       Info,
       "Max new tokens resolved: %d, pos_ %" PRId64 ", max_context_len %" PRId64,
@@ -143,8 +152,11 @@ Error MultimodalRunner::generate(
       "Max new tokens %d is less than or equal to 0",
       max_new_tokens);
 
+  std::cout << "C" << std::endl;
+
   // Generate tokens using the text token generator
   std::vector<uint64_t> prompt_tokens = {prefill_next_token};
+  std::cout << std::endl << "Starting decoder generate()..." << std::endl;
   int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
       /*tokens=*/prompt_tokens,
       /*start_pos=*/pos_,
