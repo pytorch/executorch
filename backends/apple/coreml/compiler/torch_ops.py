@@ -12,6 +12,10 @@ import numpy as np
 import torch as _torch
 from coremltools import _logger
 from coremltools.converters.mil.frontend import _utils
+from coremltools.converters.mil.frontend.torch.dom_order_ops import (
+    _empty_dim_order,
+    _to_dim_order_copy,
+)
 from coremltools.converters.mil.frontend.torch.ops import (
     _get_inputs,
     NUM_TO_NUMPY_DTYPE,
@@ -42,6 +46,20 @@ def unbind_copy(context, node):
 @register_torch_op(override=False)
 def split_copy(context, node):
     split(context, node)
+
+
+# This is a temporary hack to register the alias "dim_order_ops._to_dim_order_copy",
+# which was missed by coremltools
+@register_torch_op(torch_alias=["dim_order_ops._to_dim_order_copy"], override=False)
+def _to_dim_order_copy_TMP_EXECUTORCH_ALIAS_HACK(context, node):
+    return _to_dim_order_copy(context, node)
+
+
+# This is a temporary hack to register the alias "dim_order_ops._empty_dim_order",
+# which was missed by coremltools
+@register_torch_op(torch_alias=["dim_order_ops._empty_dim_order"], override=False)
+def _empty_dim_order_TMP_EXECUTORCH_ALIAS_HACK(context, node):
+    return _empty_dim_order(context, node)
 
 
 # https://github.com/apple/coremltools/pull/2558
