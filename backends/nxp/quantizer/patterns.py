@@ -189,6 +189,47 @@ class AvgPoolPattern(SharedSpecPattern):
         return [torch.ops.aten.avg_pool2d.default]
 
 
+class CatPattern(QuantizationPattern):
+    """
+    Quantizer for the Cat operator. The pattern is designed for the `NeutronAtenQuantizer`.
+
+    The node can have an arbitrary number of inputs, which are all quantized.
+    """
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.cat.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        quantized_input = None
+        for prev_node in node.args[0]:
+            if "quantization_annotation" in prev_node.meta:
+                quantized_input = prev_node
+                break
+
+        if quantized_input is not None:
+            inputs = []
+            for idx, _ in enumerate(node.args[0]):
+                inputs.append((node, (0, idx), SharedQuantizationSpec(quantized_input)))
+            outputs = [(node, SharedQuantizationSpec(quantized_input))]
+
+        else:
+            # No previous node was quantized => we are not able to share q-params. The conversion to IR will have to
+            #  re-quantize the inputs if necessary.
+            inputs = [(node, (0, idx)) for idx in range(len(node.args[0]))]
+            outputs = [(node,)]
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=[],
+            biases=[],
+            output=outputs,
+        )
+
+
 class Conv1dPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.conv1d.default]
