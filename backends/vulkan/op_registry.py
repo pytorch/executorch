@@ -397,14 +397,17 @@ def register_reduce_op():
                 # If we can't get memory layout information, we'll assume the dims aren't packed
                 pass
 
-        keepdim = node.args[2]
-        if isinstance(keepdim, bool) and not keepdim:
+        def try_find_keepdim_arg(node: torch.fx.Node) -> bool:
+            for arg in node.args:
+                if isinstance(arg, bool):
+                    return arg
+
+            # Assume false by default
             return False
 
-        if len(node.args) > 2:
-            keepdim = node.args[2]
-            if isinstance(keepdim, bool) and not keepdim:
-                return False
+        keepdim = try_find_keepdim_arg(node)
+        if isinstance(keepdim, bool) and not keepdim:
+            return False
 
         return True
 
