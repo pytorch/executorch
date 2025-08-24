@@ -55,6 +55,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import (
     SoftmaxConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.tanh_converter import (
+    TanhConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import (
     ViewCopyConverter,
 )
@@ -80,4 +83,5 @@ __all__ = [
     "AdaptiveAvgPool2dConverter",
     "HardTanhConverter",
     "SigmoidConverter",
+    "TanhConverter",
 ]
