@@ -151,6 +151,21 @@
         }
     },
     {
+      "name": "windows",
+      "displayName": "Build ExecuTorch for Windows",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Windows",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/windows.cmake"
+      },
+      "toolset": "ClangCL",
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Windows"
+      }
+    },
+    {
         "name": "zephyr",
         "displayName": "Build ExecuTorch for Zephyr RTOS",
         "inherits": ["common"],
