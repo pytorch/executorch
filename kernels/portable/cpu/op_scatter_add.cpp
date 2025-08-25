@@ -89,7 +89,8 @@ Tensor& scatter_add_out(
 
     if (index.numel() != 0) {
       if (self.dim() == 0) {
-        out_data[0] += nonempty_size(index, 0) * src_data[0];
+        out_data[0] +=
+            static_cast<CTYPE>(nonempty_size(index, 0)) * src_data[0];
       } else {
         scatter_add_helper<CTYPE>(
             src_data, index_data, out_data, src, index, out, dim);
