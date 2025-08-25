@@ -9,13 +9,13 @@
 #pragma once
 
 #include <executorch/backends/xnnpack/runtime/XNNStatus.h>
+#include <executorch/backends/xnnpack/runtime/XNNWorkspace.h>
 #include <executorch/backends/xnnpack/runtime/profiling/XNNProfiler.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 #include <xnnpack.h>
-#include <map>
 #include <memory>
 #include <vector>
 
@@ -35,9 +35,11 @@ class XNNExecutor {
   std::vector<uint32_t> output_ids_;
   std::vector<xnn_external_value> externals_;
   std::vector<std::string> packed_data_names_;
+  std::shared_ptr<XNNWorkspace> workspace_;
 
  public:
-  XNNExecutor() = default;
+  XNNExecutor(std::shared_ptr<XNNWorkspace> workspace)
+      : workspace_(workspace) {}
 
   inline size_t getNumInputs() {
     return input_ids_.size();
@@ -49,6 +51,10 @@ class XNNExecutor {
 
   inline std::vector<std::string> get_packed_data_names() {
     return packed_data_names_;
+  }
+
+  inline XNNWorkspace& get_workspace() {
+    return *workspace_;
   }
 
   /**
