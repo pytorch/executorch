@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Collection, Union
+from typing import Callable, Collection, Union
 
 import torch
 
@@ -287,6 +287,20 @@ class ReLUModule(torch.nn.Module):
 
     def forward(self, x):
         return self.relu(x)
+
+
+class Conv2dWithActivation(torch.nn.Module):
+    def __init__(self, activation: torch.nn.Module | Callable, in_channels: int = 3):
+        super().__init__()
+
+        self.conv = torch.nn.Conv2d(
+            in_channels=in_channels, out_channels=64, kernel_size=(3, 3)
+        )
+        self.activation = activation
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.activation(x)
 
 
 class Conv2dReLUModule(torch.nn.Module):

@@ -36,13 +36,9 @@ set(_common_include_directories
 )
 
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
-set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
-)
-extract_sources(${EXECUTORCH_SRCS_FILE})
-include(${EXECUTORCH_SRCS_FILE})
+executorch_load_build_variables()
 
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
 # etdump, bundled_program.

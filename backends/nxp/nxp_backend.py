@@ -186,7 +186,7 @@ class NeutronBackend(BackendDetails):
 
             # Convert the edge program to TFLite.
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(
-                edge_program
+                edge_program,
             )
 
             neutron_model = NeutronConverterManager().convert(

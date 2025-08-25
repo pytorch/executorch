@@ -131,8 +131,6 @@ build_executorch_runner_cmake() {
   else
       CXXFLAGS=""
   fi
-  # This command uses buck2 to gather source files and buck2 could crash flakily
-  # on MacOS
   CXXFLAGS="$CXXFLAGS" retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
   popd || return
 

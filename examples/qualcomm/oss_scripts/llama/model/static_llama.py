@@ -104,7 +104,7 @@ class LlamaAttention(nn.Module):
 
         self.scale = float(self.head_dim) ** 0.5
 
-        if hasattr(config, "enable_r3") and config.enable_r3:
+        if getattr(config, "enable_r3", False):
             self.register_buffer(
                 "r3_weight",
                 torch.tensor(
@@ -223,18 +223,20 @@ class LlamaAttention(nn.Module):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 q[i] = self.q_norm_fn(q[i])
             q[i] = self.apply_rope_emb(q[i], freqs_cos, freqs_sin)
-            if hasattr(self.config, "enable_r3") and self.config.enable_r3:
-                q[i] = torch.matmul(q[i], self.r3_weight)
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 q[i] = self.q_norm_fn(q[i])
+            if getattr(self.config, "enable_r3", False):
+                q[i] = torch.matmul(q[i], self.r3_weight)
+
         for i in range(len(k)):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 k[i] = self.k_norm_fn(k[i])
-            k[i] = self.apply_rope_emb(k[i], freqs_cos, freqs_sin).transpose(1, 2)
-            if hasattr(self.config, "enable_r3") and self.config.enable_r3:
-                k[i] = torch.matmul(k[i], self.r3_weight)
+            k[i] = self.apply_rope_emb(k[i], freqs_cos, freqs_sin)
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 k[i] = self.k_norm_fn(k[i])
+            if getattr(self.config, "enable_r3", False):
+                k[i] = torch.matmul(k[i], self.r3_weight)
+            k[i] = k[i].transpose(1, 2)
 
         output_y = []
         kh, vh = [], []

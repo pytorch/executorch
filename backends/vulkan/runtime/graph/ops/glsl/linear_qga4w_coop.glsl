@@ -16,7 +16,6 @@
 #define WGS ${WGS}
 
 ${define_required_extensions(DTYPE)}
-${define_required_extensions("uint8")}
 
 layout(std430) buffer;
 

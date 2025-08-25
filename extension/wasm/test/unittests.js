@@ -105,6 +105,13 @@ describe("Module", () => {
         module.delete();
     });
 
+    test("multiple methods", () => {
+        const module = et.Module.load("test.pte");
+        const methods = module.getMethods();
+        expect(methods).toEqual(expect.arrayContaining(["forward", "index", "add_all"]));
+        module.delete();
+    });
+
     test("loadMethod forward", () => {
         const module = et.Module.load("add.pte");
         expect(() => module.loadMethod("forward")).not.toThrow();
@@ -222,6 +229,25 @@ describe("Module", () => {
                 methodMeta.inputTensorMeta.forEach((tensorInfo) => {
                     expect(tensorInfo.nbytes).toEqual(16);
                 });
+                module.delete();
+            });
+
+            test("non-tensor in input", () => {
+                const module = et.Module.load("test.pte");
+                const methodMeta = module.getMethodMeta("add_all");
+                expect(methodMeta.inputTags).toEqual([et.Tag.Tensor, et.Tag.Int]);
+                expect(methodMeta.inputTensorMeta[0]).not.toBeUndefined();
+                expect(methodMeta.inputTensorMeta[1]).toBeUndefined();
+                module.delete();
+            });
+
+            test("non-tensor in output", () => {
+                const module = et.Module.load("test.pte");
+                const methodMeta = module.getMethodMeta("add_all");
+                expect(methodMeta.outputTags).toEqual([et.Tag.Tensor, et.Tag.Int, et.Tag.Tensor]);
+                expect(methodMeta.outputTensorMeta[0]).not.toBeUndefined();
+                expect(methodMeta.outputTensorMeta[1]).toBeUndefined();
+                expect(methodMeta.outputTensorMeta[2]).not.toBeUndefined();
                 module.delete();
             });
         });

@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "PLATFORM_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":log.bzl", "get_et_logging_flags")
 
@@ -73,13 +74,7 @@ def define_common_targets():
             "runtime.h",
             "compat_unistd.h",
         ],
-        srcs = [
-            "abort.cpp",
-            "log.cpp",
-            "platform.cpp",
-            "profiler.cpp",
-            "runtime.cpp",
-        ],
+        srcs = PLATFORM_SRCS,
         exported_preprocessor_flags = get_profiling_flags() + get_et_logging_flags(),
         exported_deps = [
             "//executorch/runtime/platform:pal_interface",

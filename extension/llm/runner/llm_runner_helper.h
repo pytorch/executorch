@@ -22,9 +22,7 @@
 #include <executorch/runtime/platform/compiler.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
-namespace executorch {
-namespace extension {
-namespace llm {
+namespace executorch::extension::llm {
 
 // Forward declarations
 class TextLLMRunner;
@@ -103,6 +101,21 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::optional<const std::string> data_path = std::nullopt,
     float temperature = -1.0f);
 
-} // namespace llm
-} // namespace extension
-} // namespace executorch
+/**
+ * @brief Creates a MultimodalRunner instance with dependency injection
+ *
+ * This factory function creates and initializes a MultimodalRunner with all
+ * necessary components for multimodal text generation.
+ *
+ * @param model_path Path to the model file
+ * @param tokenizer Initialized tokenizer instance
+ * @param data_path Optional path to additional .ptd required by the model
+ * @return std::unique_ptr<MultimodalRunner> Initialized MultimodalRunner
+ * instance, or nullptr on failure
+ */
+ET_EXPERIMENTAL std::unique_ptr<MultimodalRunner> create_multimodal_runner(
+    const std::string& model_path,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    std::optional<const std::string> data_path = std::nullopt);
+
+} // namespace executorch::extension::llm

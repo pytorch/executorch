@@ -102,15 +102,6 @@ def annotate_custom(gm: torch.fx.GraphModule) -> None:
         )
 
 
-def create_device_inputs(example_inputs):
-    input_list = ""
-    for idx, _ in enumerate(example_inputs):
-        input_name = f"input_0_{idx}.raw"
-        input_list += input_name + " "
-    input_list = input_list.strip() + "\n"
-    return input_list
-
-
 def _run(cmd, cwd=None):
     subprocess.run(cmd, stdout=sys.stdout, cwd=cwd, check=True)
 
@@ -204,7 +195,6 @@ def main(args):
     sample_input = (torch.ones(1, 32, 28, 28),)
     workspace = f"/data/local/tmp/executorch/{pte_filename}"
 
-    input_list = create_device_inputs(sample_input)
     soc_info = _soc_info_table[getattr(QcomChipset, args.model)]
 
     op_package_options, op_package_paths = prepare_op_package(
@@ -237,8 +227,7 @@ def main(args):
 
     if args.enable_x86_64:
         input_list_filename = "input_list.txt"
-        input_list = f"{args.artifact}/{input_list}"
-        generate_inputs(args.artifact, input_list_filename, sample_input, input_list)
+        generate_inputs(args.artifact, input_list_filename, sample_input)
         qnn_sdk = os.getenv("QNN_SDK_ROOT")
         assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
         target = "x86_64-linux-clang"
@@ -276,7 +265,7 @@ def main(args):
             host_id=args.host,
             soc_model=args.model,
         )
-        adb.push(inputs=sample_input, input_list=input_list, files=op_package_paths)
+        adb.push(inputs=sample_input, files=op_package_paths)
         adb.execute()
         adb.pull(output_path=args.artifact)
 

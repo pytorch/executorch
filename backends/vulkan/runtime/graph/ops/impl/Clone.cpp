@@ -143,7 +143,11 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (src_storage == utils::kBuffer && dst_storage == utils::kTexture3D) {
     return add_buffer_to_image_node(graph, src, dst);
   }
-  VK_THROW("Buffer to buffer memory layout transition not supported yet!");
+
+  std::vector<ValueRef> extra_args = {};
+  // Buffer to buffer copy
+  return add_view_copy_buffer_node(
+      graph, src, dst, extra_args, resize_clone_node);
 }
 
 // Clone node is not the most efficient implementation for the aten.clone

@@ -16,6 +16,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     AddmmPattern,
     AddTensorPattern,
     AvgPoolPattern,
+    CatPattern,
     Conv1dPattern,
     Conv2dPattern,
     DropoutPattern,
@@ -34,6 +35,8 @@ from executorch.backends.nxp.quantizer.patterns import (
     SharedSpecPattern,
     SigmoidPattern,
     SoftMaxPattern,
+    TanhInPlacePattern,
+    TanhPattern,
     ViewPattern,
 )
 from executorch.backends.nxp.quantizer.utils import (
@@ -205,6 +208,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(AddTensorPattern(), static_qconfig),
                 NeutronAtenQuantizer(AddmmPattern(), static_fc_qconfig),
                 NeutronAtenQuantizer(AvgPoolPattern(), static_qconfig),
+                NeutronAtenQuantizer(CatPattern(), static_qconfig),
                 NeutronAtenQuantizer(Conv1dPattern(), static_qconfig),
                 NeutronAtenQuantizer(Conv2dPattern(), static_qconfig),
                 NeutronAtenQuantizer(DropoutPattern(), static_qconfig),
@@ -221,6 +225,8 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(ReshapePattern(), static_qconfig),
                 NeutronAtenQuantizer(SigmoidPattern(), static_qconfig),
                 NeutronAtenQuantizer(SoftMaxPattern(), static_qconfig),
+                NeutronAtenQuantizer(TanhPattern(), static_qconfig),
+                NeutronAtenQuantizer(TanhInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(ViewPattern(), static_qconfig),
             ]
         )

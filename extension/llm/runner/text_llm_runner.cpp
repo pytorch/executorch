@@ -57,14 +57,7 @@ Error TextLLMRunner::load() {
     return Error::Ok;
   }
   ET_CHECK_OK_OR_RETURN_ERROR(text_prefiller_->load());
-  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
-  auto method_res = module_->method("forward");
-
-  Program& program = *module_->program();
-
-  ET_CHECK_OK_OR_RETURN_ERROR(method_res.error());
-  auto& forward = *(method_res.get());
-  ET_CHECK_OK_OR_RETURN_ERROR(io_manager_->load(program, forward, forward));
+  ET_CHECK_OK_OR_RETURN_ERROR(io_manager_->load());
   ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
   return Error::Ok;
 }

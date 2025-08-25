@@ -1,10 +1,10 @@
 name: Add Open External Contributor PRs and Issues to PyTorch Org Project 136
 
 on:
- # schedule:
-  #  - cron: '0 * * * *'
   workflow_dispatch:
-
+  pull_request: 
+   paths: 
+     .github/workflows/add-unanswered-to-project.yml
 jobs:
   add_to_project:
     runs-on: ubuntu-latest

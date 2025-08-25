@@ -278,6 +278,49 @@ runtime::Error Module::set_output(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
+runtime::Error Module::set_outputs(
+    const std::string& method_name,
+    const std::vector<runtime::EValue>& output_values) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
+  const auto outputs_size = method->outputs_size();
+  ET_CHECK_OR_RETURN_ERROR(
+      output_values.size() == outputs_size,
+      InvalidArgument,
+      "output size: %zu is not equal to method output size: %zu",
+      output_values.size(),
+      outputs_size);
+  for (auto index = 0; index < outputs_size; ++index) {
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        set_output(method_name, output_values[index], index));
+  }
+  return runtime::Error::Ok;
+}
+
+runtime::Result<std::vector<runtime::EValue>> Module::get_outputs(
+    const std::string& method_name) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
+  const auto outputs_size = method->outputs_size();
+  std::vector<runtime::EValue> outputs(outputs_size);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      method->get_outputs(outputs.data(), outputs_size));
+  return outputs;
+}
+
+runtime::Result<runtime::EValue> Module::get_output(
+    const std::string& method_name,
+    size_t output_index) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
+  ET_CHECK_OR_RETURN_ERROR(
+      output_index < method->outputs_size(),
+      InvalidArgument,
+      "output index: %zu is out of range",
+      output_index);
+  return method->get_output(output_index);
+}
+
 } // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch

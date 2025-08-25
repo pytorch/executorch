@@ -48,10 +48,9 @@ from executorch.backends.arm.quantizer import (
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
     get_elf_path,
-    get_output_nodes,
     get_output_quantization_params,
     get_target_board,
-    run_corstone,
+    run_target,
     TosaReferenceModelDispatch,
 )
 
@@ -212,7 +211,7 @@ class Serialize(tester.Serialize):
                 f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
             )
 
-        return run_corstone(
+        return run_target(
             self.executorch_program_manager,
             inputs_flattened,
             intermediate_path,
@@ -484,9 +483,8 @@ class ArmTester(Tester):
             reference_stage = self.stages[StageType.INITIAL_MODEL]
 
         exported_program = self.stages[StageType.EXPORT].artifact
-        output_nodes = get_output_nodes(exported_program)
-
-        output_qparams = get_output_quantization_params(output_nodes)
+        output_node = exported_program.graph_module.graph.output_node()
+        output_qparams = get_output_quantization_params(output_node)
 
         quantization_scales = []
         for node in output_qparams:

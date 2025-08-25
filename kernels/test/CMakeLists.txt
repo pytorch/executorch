@@ -256,6 +256,7 @@ set(all_test_sources
     "op_unbind_copy_test.cpp"
     "op_unsqueeze_copy_test.cpp"
     "op_upsample_bilinear2d_test.cpp"
+    "op_upsample_bilinear2d_aa_test.cpp"
     "op_upsample_nearest2d_test.cpp"
     "op_var_test.cpp"
     "op_view_as_real_copy_test.cpp"

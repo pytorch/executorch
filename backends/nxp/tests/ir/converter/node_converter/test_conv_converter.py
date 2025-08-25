@@ -343,7 +343,7 @@ def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
     [((1, 4, 12, 12), 2, 2), ((2, 3, 8, 15), 3, 6), ((11, 16, 9, 8), 4, 16)],
 )
 def test_conv2d_conversion__separated(
-    input_shape, group, out_channels, stride, dilation
+    input_shape, group, out_channels, stride, dilation, mocker
 ):
     edge_program = to_edge_program(
         Conv2dModule(
@@ -358,32 +358,21 @@ def test_conv2d_conversion__separated(
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
-    # Note: The generic group convolution is not yet supported by Neutron Converter. Once supported, the
-    #  commented out code allows usual testing flow for this test-case.
-
-    # spy = mocker.spy(ModelBuilder, 'finish')
-
-    # The convert_run_compare skips the partitioner call, hence conversion failure indicated by exception
-    # is expected behavior now.
-    with pytest.raises(AssertionError) as e:
-        convert_run_compare(
-            edge_program,
-            input_data,
-            tflite_input_preprocess=ToNHWCPreprocess(),
-            tflite_output_preprocess=ToNCHWPreprocess(),
-            atol=3.0e-7,
-        )
-    assert (
-        "`aten_convolution_default` is not convertible to the intermediate representation"
-        in str(e)
+    spy = mocker.spy(ModelBuilder, "finish")
+    convert_run_compare(
+        edge_program,
+        input_data,
+        tflite_input_preprocess=ToNHWCPreprocess(),
+        tflite_output_preprocess=ToNCHWPreprocess(),
+        atol=3.0e-7,
     )
 
-    # ops = spy.spy_return.sub_graphs[0].operators.vector
-    # assert len(ops) == 1 + group + 1  # Split -> Conv (group times) -> Concat
-    # assert ops[0].builtin_options.operator_type == BuiltinOperator.SPLIT
-    # for op in ops[1:-1]:
-    #     assert op.builtin_options.operator_type == BuiltinOperator.CONV_2D
-    # assert ops[-1].builtin_options.operator_type == BuiltinOperator.CONCATENATION
+    ops = spy.spy_return.sub_graphs[0].operators.vector
+    assert len(ops) == 1 + group + 1  # Split -> Conv (group times) -> Concat
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.SPLIT
+    for op in ops[1:-1]:
+        assert op.builtin_options.operator_type == BuiltinOperator.CONV_2D
+    assert ops[-1].builtin_options.operator_type == BuiltinOperator.CONCATENATION
 
 
 @pytest.mark.parametrize("stride", [1, 2])
@@ -411,6 +400,7 @@ def test_conv2d_conversion__separated__quantized(
             dilation=dilation,
         ),
         tuple(input_shape),
+        target="imxrt700",
     ).exported_program()
 
     # ops = spy.spy_return.sub_graphs[0].operators.vector
@@ -433,7 +423,7 @@ def test_conv2d_conversion__separated__quantized(
     [((1, 4, 12, 12), 2, 2), ((2, 3, 4, 5), 3, 6), ((11, 16, 9, 8), 4, 16)],
 )
 def test_conv2d_conversion__separated__padded(
-    input_shape, group, out_channels, padding
+    input_shape, group, out_channels, padding, mocker
 ):
     edge_program = to_edge_program(
         Conv2dModule(
@@ -447,35 +437,25 @@ def test_conv2d_conversion__separated__padded(
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
-    # Note: The generic group convolution is not yet supported by Neutron Converter. Once supported, the
-    #  commented out code allows usuall testing flow for this test-case.
+    spy = mocker.spy(ModelBuilder, "finish")
 
-    # spy = mocker.spy(ModelBuilder, 'finish')
-
-    # The convert_run_compare skips the partitioner call, hence conversion failure indicated by exception
-    # is expected behavior now.
-    with pytest.raises(AssertionError) as e:
-        convert_run_compare(
-            edge_program,
-            input_data,
-            tflite_input_preprocess=ToNHWCPreprocess(),
-            tflite_output_preprocess=ToNCHWPreprocess(),
-            atol=3.0e-7,
-        )
-    assert (
-        "`aten_convolution_default` is not convertible to the intermediate representation"
-        in str(e)
+    convert_run_compare(
+        edge_program,
+        input_data,
+        tflite_input_preprocess=ToNHWCPreprocess(),
+        tflite_output_preprocess=ToNCHWPreprocess(),
+        atol=3.0e-7,
     )
 
-    # conversion_result = spy.spy_return
-    # ops = conversion_result.sub_graphs[0].operators.vector
-    # assert len(ops) == 1 + 2 * group + 1  # Split -> Pad + Conv (group times) -> Concat
-    # assert ops[0].builtin_options.operator_type == BuiltinOperator.SPLIT
-    # for op in ops[1:-2:2]:
-    #     assert op.builtin_options.operator_type == BuiltinOperator.PAD
-    # for op in ops[2:-1:2]:
-    #     assert op.builtin_options.operator_type == BuiltinOperator.CONV_2D
-    # assert ops[-1].builtin_options.operator_type == BuiltinOperator.CONCATENATION
+    conversion_result = spy.spy_return
+    ops = conversion_result.sub_graphs[0].operators.vector
+    assert len(ops) == 1 + 2 * group + 1  # Split -> Pad + Conv (group times) -> Concat
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.SPLIT
+    for op in ops[1:-2:2]:
+        assert op.builtin_options.operator_type == BuiltinOperator.PAD
+    for op in ops[2:-1:2]:
+        assert op.builtin_options.operator_type == BuiltinOperator.CONV_2D
+    assert ops[-1].builtin_options.operator_type == BuiltinOperator.CONCATENATION
 
 
 @pytest.mark.parametrize("padding", [1, 2])

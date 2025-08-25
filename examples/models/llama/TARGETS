@@ -84,6 +84,7 @@ runtime.python_binary(
     ],
     deps = [
         ":export_library",
+        ":eval_library",
         "//caffe2:torch",
         "//executorch/extension/pybindings:aten_lib",
         "//executorch/extension/llm/export:export_llm_lib",
@@ -116,7 +117,6 @@ runtime.python_library(
         "source_transformation/rope.py",
         "source_transformation/sdpa.py",
         "source_transformation/spin_quant.py",
-        "source_transformation/vulkan_rope.py",
         "source_transformation/attention_sink.py",
     ],
 )

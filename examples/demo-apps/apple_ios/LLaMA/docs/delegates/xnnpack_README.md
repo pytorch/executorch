@@ -127,7 +127,7 @@ Go to Project Navigator, click on LLaMA. `Project --> LLaMA --> Package Dependen
 
 Note: You should only use this step if the prebuilt package doesn't work for your usecase (For example, you require the latest PRs from main, where there are no pre-built package yet)
 
-If you need to manually build the package, run the following command in your terminal
+If you need to manually build the package, run the following command in your terminal:
 ```
 # Install a compatible version of Buck2
 BUCK2_RELEASE_DATE="2024-12-16"

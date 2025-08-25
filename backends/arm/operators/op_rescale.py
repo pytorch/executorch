@@ -23,8 +23,8 @@ from torch.fx import Node
 
 
 @register_node_visitor
-class RescaleVisitor_INT(NodeVisitor):
-    target = "_rescale.default"
+class RescaleVisitor(NodeVisitor):
+    target = "tosa.RESCALE.default"
 
     tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+INT")]
 

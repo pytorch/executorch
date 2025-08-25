@@ -77,15 +77,9 @@ option(EXECUTORCH_DTYPE_SELECTIVE_BUILD "Enable dtype selective build." OFF)
 # ------------------------------- OPTIONS END --------------------------------
 
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
-set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
-)
-
-extract_sources(${EXECUTORCH_SRCS_FILE})
-
-include(${EXECUTORCH_SRCS_FILE})
+executorch_load_build_variables()
 
 #
 # select_build_lib: C++ library to register selected ops in custom kernel

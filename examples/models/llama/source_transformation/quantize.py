@@ -166,6 +166,21 @@ def quantize(  # noqa C901
         model = VkInt4WeightOnlyQuantizer(groupsize=q_group_size).quantize(model)
 
         return model
+    elif qmode == "4w":
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.utils import unwrap_tensor_subclass
+
+        q_group_size = 256 if group_size is None else group_size
+        q_config = IntxWeightOnlyConfig(
+            # pyre-ignore[16]
+            weight_dtype=torch.int4,
+            granularity=PerGroup(q_group_size),
+        )
+        quantize_(model, q_config)
+        model = unwrap_tensor_subclass(model)
+
+        return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
 

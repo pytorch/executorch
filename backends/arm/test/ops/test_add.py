@@ -7,6 +7,7 @@
 
 from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.quantizer import arm_quantizer
 from executorch.backends.arm.test import common, conftest
@@ -187,9 +188,19 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
 
 @common.parametrize("test_data", Add.test_data)
 @common.SkipIfNoModelConverter
+@common.XfailfNoVKMLEmulationLayer
+@pytest.mark.xfail(
+    reason="VGF runtime is not yet fully supported for FP pipeline (MLETORCH-1234)",
+    strict=True,
+)
 def test_add_tensor_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
-        Add(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+        run_on_vulkan_runtime=True,
     )
     pipeline.run()
 

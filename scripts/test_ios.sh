@@ -54,7 +54,7 @@ say "Installing Requirements"
 
 say "Cloning the Demo App"
 
-git clone --depth 1 https://github.com/pytorch-labs/executorch-examples.git
+git clone --depth 1 https://github.com/meta-pytorch/executorch-examples.git
 
 say "Installing CoreML Backend Requirements"
 

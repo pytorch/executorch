@@ -60,16 +60,12 @@ def test_roundtrip_extracts_io_params(builder_method, quantizer_cls, partitioner
     operator_config = get_symmetric_quantization_config(is_qat=True)
     quantizer.set_global(operator_config)
 
-    exported = torch.export.export_for_training(
-        mod, copy.deepcopy(example_inputs), strict=True
-    )
+    exported = torch.export.export(mod, copy.deepcopy(example_inputs), strict=True)
     prepared = prepare_pt2e(exported.module(), quantizer)
     _ = prepared(*example_inputs)
 
     converted = convert_pt2e(prepared)
-    final_export = torch.export.export_for_training(
-        converted, example_inputs, strict=True
-    )
+    final_export = torch.export.export(converted, example_inputs, strict=True)
     partitioner = partitioner_cls(compile_spec)
     edge_prog = to_edge_transform_and_lower(final_export, partitioner=[partitioner])
 

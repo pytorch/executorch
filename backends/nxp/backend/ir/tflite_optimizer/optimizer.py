@@ -23,9 +23,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_acti
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_fully_connected_and_add_operators import (
     FuseFullyConnectedAndAddOperators,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_quanitze_into_preceding_ops import (
-    FuseQuantizeIntoPrecedingOps,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.keep_one_empty_buffer import (
     KeepOneEmptyBuffer,
 )
@@ -35,17 +32,9 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.permute_fully_connected_weights_after_reshape import (
     PermuteFullyConnectedWeightsAfterReshape,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_cast_operators import (
-    FuseCastOperators,
-    RemoveCastOperatorsWithNoEffect,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_quantize_operators import (
     FuseParallelQuantizeOperators,
     PruneQuantizeOperators,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_reshape_operators import (
-    FuseReshapeOperators,
-    RemoveReshapeOperatorsWithNoEffect,
 )
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_transpose_operators import (
     FuseTransposeOperators,
@@ -61,22 +50,15 @@ class Optimization(Enum):
     FUSE_ACTIVATION_FUNCTIONS = 1
     FUSE_FULLY_CONNECTED_AND_ADD = 2
 
-    FUSE_RESHAPE_OPERATORS = 3
-    REMOVE_RESHAPE_OPERATORS_WITH_NO_EFFECT = 4
-
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
 
     PRUNE_QUANTIZE_OPERATORS = 7
     FUSE_PARALLEL_QUANTIZE_OPERATORS = 8
-    FUSE_QUANTIZE_INTO_PRECEDING_OPS = 9
 
     REMOVE_UNUSED_TENSORS = 10
     ELIMINATE_DEAD_BRANCHES = 11
     PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE = 12
-
-    FUSE_CAST_OPERATORS = 13
-    REMOVE_CAST_OPERATORS_WITH_NO_EFFECT = 14
 
     MOVE_ACTIVATION_BEFORE_CONCAT = 15
     COMBINE_HARD_SIGMOID_AND_MUL_INTO_HARD_SWISH = 16
@@ -118,12 +100,6 @@ class Optimizer:
             Optimization.FUSE_FULLY_CONNECTED_AND_ADD: FuseFullyConnectedAndAddOperators(
                 builder, conversion_config
             ),
-            Optimization.FUSE_RESHAPE_OPERATORS: FuseReshapeOperators(
-                builder, conversion_config
-            ),
-            Optimization.REMOVE_RESHAPE_OPERATORS_WITH_NO_EFFECT: RemoveReshapeOperatorsWithNoEffect(
-                builder, conversion_config
-            ),
             Optimization.FUSE_TRANSPOSE_OPERATORS: FuseTransposeOperators(
                 builder, conversion_config
             ),
@@ -136,9 +112,6 @@ class Optimizer:
             Optimization.FUSE_PARALLEL_QUANTIZE_OPERATORS: FuseParallelQuantizeOperators(
                 builder, conversion_config
             ),
-            Optimization.FUSE_QUANTIZE_INTO_PRECEDING_OPS: FuseQuantizeIntoPrecedingOps(
-                builder, conversion_config
-            ),
             Optimization.REMOVE_UNUSED_TENSORS: RemoveUnusedTensorsAndBuffers(
                 builder, conversion_config
             ),
@@ -146,12 +119,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE: PermuteFullyConnectedWeightsAfterReshape(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_CAST_OPERATORS: FuseCastOperators(
-                builder, conversion_config
-            ),
-            Optimization.REMOVE_CAST_OPERATORS_WITH_NO_EFFECT: RemoveCastOperatorsWithNoEffect(
                 builder, conversion_config
             ),
             Optimization.MOVE_ACTIVATION_BEFORE_CONCAT: MoveActivationBeforeConcatenation(
