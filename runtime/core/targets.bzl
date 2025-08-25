@@ -7,6 +7,11 @@ def get_event_tracer_flags():
     event_tracer_flags = []
     if event_tracer_enabled():
         event_tracer_flags += ["-DET_EVENT_TRACER_ENABLED"]
+    elif not runtime.is_oss:
+        event_tracer_flags += select ({
+            "DEFAULT": [],
+            "fbsource//xplat/executorch/tools/buck/constraints:event-tracer-enabled" : ["-DET_EVENT_TRACER_ENABLED"]
+        })
     return event_tracer_flags
 
 def build_sdk():

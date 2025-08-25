@@ -126,12 +126,22 @@ class CompileTimeTypeDispatchPass(ExportPass):
             exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
             exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
         ]:
+            groups = args[6]
+            input_channels = (
+                args[0].to_tensor().shape[1]
+                if op == exir_ops.edge.cadence.quantized_conv_nchw.per_tensor
+                else args[0].to_tensor().shape[-1]
+            )
+            is_depthwise = groups == input_channels
+
             dilation = args[5]
             # pyre-ignore[16]: None has no attribute '__iter__'.
             is_dilated = any(d > 1 for d in dilation)
 
             if is_dilated:
                 type_suffix = f"dilated_{type_suffix}"
+            elif is_depthwise:
+                type_suffix = f"depthwise_{type_suffix}"
 
         typed_op_name = f"{base_name}_{type_suffix}"
 

@@ -70,6 +70,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     EVAL_MODE,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
+    apply_prompt_template,
     graph_module_inference,
     QnnRunnerEvalWrapper,
     shift_pointer_updater,
@@ -116,6 +117,8 @@ sys.setrecursionlimit(4096)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logging.getLogger().setLevel(logging.INFO)
+# Avoid the error message "Could not initialize NNPACK! Reason: Unsupported hardware."
+torch.backends.nnpack.set_flags(False)
 
 
 def next_power_of_two(n):
@@ -219,6 +222,7 @@ class SingleLlama:
         tokenizer,
         custom_annotations=(),
         scales_state_dict=None,
+        chat_template=None,
     ):
         self.quant_dtype = quant_dtype
         quantizer = make_custom_quantizer(
@@ -233,10 +237,16 @@ class SingleLlama:
             ).module()
 
             if quant_dtype == QuantDtype.use_16a4w_block:
+                if args.group_size is None:
+                    raise ValueError(
+                        "Group size is required when use quant_dtype 16a4w_block"
+                    )
                 conv_nodes = [
                     n for n in fx_graph_module.graph.nodes if "conv" in n.name
                 ]
-                block_size_map = {n.name: (1, 64, 1, 1) for n in conv_nodes}
+                block_size_map = {
+                    n.name: (1, args.group_size, 1, 1) for n in conv_nodes
+                }
                 quantizer.set_block_size_map(block_size_map)
 
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
@@ -244,8 +254,31 @@ class SingleLlama:
         logging.info("Quantizing the model...")
 
         # Calibration
+        if args.tasks is not None:
+            graph_module_inference(
+                use_kv_cache=self.llama_meta["get_use_kv_cache"],
+                get_example_inputs=self.get_example_inputs,
+                module=fx_graph_module,
+                tokenizer=tokenizer,
+                ar_len=self.llama_meta["get_ar_len"],
+                max_seq_len=self.llama_meta["get_max_seq_len"],
+                kv_updater=args.kv_updater,
+                tasks=args.tasks,
+                tasks_limit=args.limit,
+                num_fewshot=args.num_fewshot,
+                use_i64_token=args.embedding_quantize is not None,
+                event_name="prepare_pt2e_tasks",
+            )
+
+        # Check user's prompt, helps calibrate special token
+        prompt = (
+            args.prompt[0]
+            if chat_template is None
+            else apply_prompt_template(
+                chat_template, args.prompt[0], args.system_prompt
+            )
+        )
         graph_module_inference(
-            args=args,
             use_kv_cache=self.llama_meta["get_use_kv_cache"],
             get_example_inputs=self.get_example_inputs,
             module=fx_graph_module,
@@ -253,8 +286,9 @@ class SingleLlama:
             ar_len=self.llama_meta["get_ar_len"],
             max_seq_len=self.llama_meta["get_max_seq_len"],
             kv_updater=args.kv_updater,
+            prompt=prompt,
             use_i64_token=args.embedding_quantize is not None,
-            event_name="prepare_pt2e",
+            event_name="prepare_pt2e_prompt",
         )
 
         if scales_state_dict:
@@ -264,11 +298,34 @@ class SingleLlama:
 
         self.llama_graph_module = convert_pt2e(fx_graph_module)
 
-        if args.eval_perplexity:
+        if args.verbose:
             logging.info("Verifying the QDQ model...")
-            # Check qdq cpu results
+            # qdq cpu ppl evaluation is time consuming, only enable when eval_perplexity
+            if args.eval_perplexity:
+                # Check qdq cpu results
+                graph_module_inference(
+                    use_kv_cache=self.llama_meta["get_use_kv_cache"],
+                    get_example_inputs=self.get_example_inputs,
+                    module=self.llama_graph_module,
+                    tokenizer=tokenizer,
+                    ar_len=self.llama_meta["get_ar_len"],
+                    max_seq_len=self.llama_meta["get_max_seq_len"],
+                    kv_updater=args.kv_updater,
+                    tasks=args.tasks,
+                    tasks_limit=args.limit,
+                    num_fewshot=args.num_fewshot,
+                    use_i64_token=args.embedding_quantize is not None,
+                    event_name="convert_pt2e_tasks",
+                )
+            # Check user's prompt
+            prompt = (
+                args.prompt[0]
+                if chat_template is None
+                else apply_prompt_template(
+                    chat_template, args.prompt[0], args.system_prompt
+                )
+            )
             graph_module_inference(
-                args=args,
                 use_kv_cache=self.llama_meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
                 module=self.llama_graph_module,
@@ -276,8 +333,9 @@ class SingleLlama:
                 ar_len=self.llama_meta["get_ar_len"],
                 max_seq_len=self.llama_meta["get_max_seq_len"],
                 kv_updater=args.kv_updater,
+                prompt=prompt,
                 use_i64_token=args.embedding_quantize is not None,
-                event_name="convert_pt2e",
+                event_name="convert_pt2e_prompt",
             )
 
     def lowering_modules(
@@ -344,7 +402,7 @@ class SingleLlama:
         return self.quant_attrs
 
 
-def compile(args, pte_filename, tokenizer):
+def compile(args, pte_filename, tokenizer, chat_template):
     os.makedirs(args.artifact, exist_ok=True)
     start_ts = time.time()
 
@@ -573,6 +631,7 @@ def compile(args, pte_filename, tokenizer):
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), pte_filename
         )
+
         if args.embedding_quantize:
             llama_instance_list[i].passes_job[I64toI32][
                 QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
@@ -584,7 +643,7 @@ def compile(args, pte_filename, tokenizer):
         if args.ptq != "16a8w":
             # 16a8w use 16bit kv io, so skip this custom annotation
             custom_annotations = custom_annotations + (annotate_matmul_16a8w,)
-        if args.decoder_model in {"stories110m", "stories260k"}:
+        if args.decoder_model in {"stories110m", "stories260k", "phi_4_mini"}:
             custom_annotations = custom_annotations + (
                 annotate_linear_16a8w_in_affine_layer,
             )
@@ -596,6 +655,7 @@ def compile(args, pte_filename, tokenizer):
                 tokenizer=tokenizer,
                 custom_annotations=custom_annotations,
                 scales_state_dict=scales_state_dict,
+                chat_template=chat_template,
             )
             # If hybrid and lookahead mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
             if i == 0 and args.model_mode in ["hybrid", "lookahead"]:
@@ -801,12 +861,20 @@ def inference(args, pte_filename, runtime_tokenizer_path, tokenizer):
 
     seq_len = args.max_seq_len
     multi_prompts = " ".join([f'--prompt "{prompt}"' for prompt in args.prompt])
+    lookahead_args = " ".join(
+        [
+            f"--window {args.window}",
+            f"--gcap {args.gcap}",
+            f"--ngram {args.ngram}",
+        ]
+    )
     runner_args = " ".join(
         [
             multi_prompts,
             f"--eval_mode {EVAL_MODE[args.model_mode]}",
             f"--temperature {args.temperature}",
             f"--system_prompt '{args.system_prompt}'",
+            lookahead_args if args.model_mode == "lookahead" else "",
         ]
     )
 
@@ -856,9 +924,6 @@ def inference(args, pte_filename, runtime_tokenizer_path, tokenizer):
                 "--output_path outputs/outputs.txt",
                 f"--performance_output_path {performance_output_path}",
                 f"--kv_updater {'SmartMask' if args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
-                f"--window {args.window}",
-                f"--gcap {args.gcap}",
-                f"--ngram {args.ngram}",
                 runner_args,
             ]
         )
@@ -1123,6 +1188,13 @@ def _build_parser():
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "-G",
+        "--group_size",
+        type=int,
+        default=None,
+        help="group_size used in block quantization for weight quantization.",
+    )
 
     parser.add_argument("-v", "--verbose", action="store_true")
 
@@ -1160,6 +1232,7 @@ def export_llama(args) -> None:
 
     tokenizer = None
     runtime_tokenizer_path = ""
+    chat_template = None
     if args.decoder_model in {"stories110m", "stories260k"}:
         tokenizer = get_tokenizer(args.tokenizer_model)
         assert isinstance(
@@ -1178,6 +1251,7 @@ def export_llama(args) -> None:
     elif args.decoder_model == "phi_4_mini":
         model_id = SUPPORTED_HF_MODELS[args.decoder_model].repo_id
         tokenizer = AutoTokenizer.from_pretrained(model_id)
+        chat_template = getattr(tokenizer, "apply_chat_template", None)
         runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path)
         with open(runtime_tokenizer_path, "r+") as file:
@@ -1191,6 +1265,12 @@ def export_llama(args) -> None:
     elif args.decoder_model in SUPPORTED_HF_MODELS:
         model_id = SUPPORTED_HF_MODELS[args.decoder_model].repo_id
         tokenizer = AutoTokenizer.from_pretrained(model_id)
+        chat_template = (
+            tokenizer.apply_chat_template
+            if hasattr(tokenizer, "apply_chat_template")
+            and SUPPORTED_HF_MODELS[args.decoder_model].instruct_model
+            else None
+        )
         runtime_tokenizer_path = tokenizer.save_pretrained(args.artifact)[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path)
     else:
@@ -1215,7 +1295,7 @@ def export_llama(args) -> None:
         return
 
     if args.compile_only:
-        compile(args, pte_filename, tokenizer)
+        compile(args, pte_filename, tokenizer, chat_template)
 
         if args.ip and args.port != -1:
             pte_path = f"{args.artifact}/{pte_filename}.pte"
@@ -1231,7 +1311,7 @@ def export_llama(args) -> None:
         print(f"Finish compile_only and save to {args.artifact}")
         return
 
-    compile(args, pte_filename, tokenizer)
+    compile(args, pte_filename, tokenizer, chat_template)
     inference(args, pte_filename, runtime_tokenizer_path, tokenizer)
 
 
