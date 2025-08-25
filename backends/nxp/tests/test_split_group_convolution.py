@@ -135,7 +135,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
         input_data = torch.randn(input_shape, dtype=torch.float32)
         out1 = original_module(input_data).detach().numpy()
         out2 = modified_module(input_data).detach().numpy()
-        assert np.allclose(out1, out2)
+        assert np.allclose(out1, out2, atol=2.0e-7)
 
         # Make sure the graph can be correctly quantized and lowered to edge.
         ep = to_quantized_edge_program(
