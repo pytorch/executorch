@@ -1278,7 +1278,7 @@ ET_NODISCARD Error Method::get_outputs(EValue* output_evalues, size_t length) {
       InvalidArgument,
       "The given array is not large enough to hold all outputs.");
   for (size_t i = 0; i < n_output; ++i) {
-    output_evalues[i] = values_[get_output_index(i)];
+    output_evalues[i] = get_output(i);
   }
   for (size_t i = n_output; i < length; ++i) {
     output_evalues[i] = EValue();

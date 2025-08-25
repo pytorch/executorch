@@ -69,18 +69,13 @@ TextDecoderRunner::TextDecoderRunner(Module* module, IOManager* io_manager)
     }
 
     std::vector<runtime::EValue> inputs;
-    auto method_err = module_->method("forward");
-    ET_CHECK_OK_OR_RETURN_ERROR(method_err.error());
-    auto& method = *(method_err.get());
-
-    auto inputs_res =
-        io_manager_->prepare_decode(tokens, start_pos_tensor, method);
+    auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);
     ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
     inputs = inputs_res.get();
     auto outputs_res = module_->forward(inputs);
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
 
-    auto update_err = io_manager_->update_decode(method, outputs_res.get());
+    auto update_err = io_manager_->update_decode(outputs_res.get());
     ET_CHECK_OK_OR_RETURN_ERROR(update_err);
 
     ET_CHECK_MSG(
