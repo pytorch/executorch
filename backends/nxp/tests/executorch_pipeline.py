@@ -4,8 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from torch import nn
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from executorch import exir
 from executorch.backends.nxp.backend.custom_delegation_options import (
@@ -27,6 +25,8 @@ from executorch.exir import (
     ExecutorchProgramManager,
 )
 from executorch.extension.export_util.utils import export_to_edge
+from torch import nn
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
@@ -73,9 +73,7 @@ def to_quantized_edge_program(
     # Make sure the model is in the evaluation mode.
     model.eval()
 
-    exir_program_aten = torch.export.export_for_training(
-        model, example_input, strict=True
-    )
+    exir_program_aten = torch.export.export(model, example_input, strict=True)
 
     exir_program_aten__module_quant = _quantize_model(
         exir_program_aten.module(), calibration_inputs
