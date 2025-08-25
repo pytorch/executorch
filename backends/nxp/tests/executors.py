@@ -57,6 +57,13 @@ class EdgeProgramExecutor:
             return output.detach().numpy()
         elif isinstance(output, tuple) and len(output) == 1:
             return output[0].detach().numpy()
+        elif isinstance(output, tuple):
+            output_names = self.edge_program.graph_signature.user_outputs
+
+            return {
+                name: tensor.detach().numpy()
+                for (name, tensor) in zip(output_names, output)
+            }
 
         raise RuntimeError(
             "Edge program inference with multiple outputs not implemented"
