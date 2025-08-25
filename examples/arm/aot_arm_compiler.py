@@ -42,9 +42,14 @@ from executorch.backends.arm.util.arm_model_evaluator import (
 from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 
 # To use Cortex-M backend
+from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
+    QuantizedOpFusionPass,
+)
+
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
+
 from executorch.devtools import generate_etrecord
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
@@ -755,6 +760,15 @@ def to_edge_TOSA_delegate(
         ),
     )
 
+    gm = edge.exported_program().graph_module
+
+    logging.debug(">>> Lowered GraphModule code <<<")
+    logging.debug(gm.code)  # Python‐style source of the graph
+    logging.debug(">>> Lowered GraphModule nodes <<<")
+    for node in gm.graph.nodes:
+        logging.debug(f"Node: {node.target}, args={node.args}, kwargs={node.kwargs}")
+    logging.debug("==== Graph after quantization ====")
+
     return model_int8, edge
 
 
@@ -790,7 +804,11 @@ def transform_for_cortex_m_backend(edge):
     # Let's make sure we are using optimized Cortex M backend
     # NB: If we can't find and replace ops those are expected to be replaced,
     # bad things will happen at runtime, like "missing operator" errors!
-    edge = edge.transform([ReplaceQuantNodesPass()])
+    # Instantiate the pass
+    replace_quant_pass = ReplaceQuantNodesPass()
+    quantized_op_fusion_pass = QuantizedOpFusionPass()
+    edge = edge.transform([replace_quant_pass, quantized_op_fusion_pass])
+
     return edge
 
 
