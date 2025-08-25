@@ -9,6 +9,7 @@
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/binary_ops.h>
+#include <executorch/kernels/portable/cpu/op_sub.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -190,27 +191,7 @@ Tensor& opt_sub_scalar_out(
           out.numel());
     });
   } else {
-    ET_SWITCH_REALHBF16_TYPES(a_type, ctx, "sub.Scalar_out", CTYPE_A, [&]() {
-      ET_SWITCH_REAL_TYPES(common_type, ctx, "sub.Scalar_out", CTYPE_IN, [&]() {
-        ET_SWITCH_REALHBF16_TYPES(
-            out_type, ctx, "sub.Scalar_out", CTYPE_OUT, [&]() {
-              CTYPE_IN b_casted = utils::scalar_to<CTYPE_IN>(b);
-              CTYPE_IN alpha_val;
-              ET_KERNEL_CHECK(
-                  ctx,
-                  utils::extract_scalar(alpha, &alpha_val),
-                  InvalidArgument, );
-
-              const size_t n = a.numel();
-              const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
-              CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-              for (auto i = 0; i < n; ++i) {
-                out_data[i] = static_cast<CTYPE_OUT>(
-                    static_cast<CTYPE_IN>(a_data[i]) - alpha_val * b_casted);
-              }
-            });
-      });
-    });
+    utils::sub_scalar_out(ctx, a, b, alpha, out);
   }
 
   return out;

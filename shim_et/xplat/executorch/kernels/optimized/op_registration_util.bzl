@@ -151,6 +151,7 @@ OPTIMIZED_ATEN_OPS = (
         deps = [
             ":binary_ops",
             ":add_sub_impl",
+            "//executorch/kernels/portable/cpu:op_add_util",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
@@ -178,6 +179,7 @@ OPTIMIZED_ATEN_OPS = (
         }),
         deps = [
             ":binary_ops",
+            "//executorch/kernels/portable/cpu:op_div_util",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
@@ -224,9 +226,9 @@ OPTIMIZED_ATEN_OPS = (
         name = "op_le",
         deps = [
             ":binary_ops",
+            "//executorch/kernels/portable/cpu:op_le_util",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/pattern:comparison_op",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
@@ -257,6 +259,7 @@ OPTIMIZED_ATEN_OPS = (
         name = "op_mul",
         deps = [
             ":binary_ops",
+            "//executorch/kernels/portable/cpu:op_mul_util",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
@@ -276,6 +279,7 @@ OPTIMIZED_ATEN_OPS = (
         deps = [
             ":binary_ops",
             ":add_sub_impl",
+            "//executorch/kernels/portable/cpu:op_sub_util",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
