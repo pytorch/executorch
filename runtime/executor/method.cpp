@@ -1090,7 +1090,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
 
  if (e.isNone()) {
     // no-op
- } if (e.isTensor()) {
+ } else if (e.isTensor()) {
     const auto& t_dst = e.toTensor();
     const auto& t_src = input_evalue.toTensor();
 
