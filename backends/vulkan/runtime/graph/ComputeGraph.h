@@ -357,6 +357,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().has_buffer_storage();
   }
 
+  inline bool is_texture_storage(const ValueRef idx) const {
+    return !is_buffer_storage(idx);
+  }
+
   /*
    * Checks that the following is true:
    * 1. The value at `idx` is a tensor
@@ -409,6 +413,10 @@ class ComputeGraph final {
 
   inline vkapi::BufferBindInfo sizes_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().sizes_ubo();
+  }
+
+  inline vkapi::BufferBindInfo buffer_meta_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().buffer_meta_ubo();
   }
 
   inline vkapi::BufferBindInfo strides_ubo(const ValueRef idx) {

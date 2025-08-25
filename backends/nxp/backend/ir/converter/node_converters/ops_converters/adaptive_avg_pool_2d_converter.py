@@ -5,7 +5,10 @@
 
 import executorch.backends.nxp.backend.ir.lib.tflite.Padding as tflPadding
 from executorch.backends.nxp.backend.ir.converter.conversion import common
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
+    NodeConverter,
+)
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     average_pool_2d_options,
@@ -19,7 +22,9 @@ class AdaptiveAvgPool2dConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         input_size = node.args[0].meta["val"].shape
         output_size = node.args[1]

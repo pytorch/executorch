@@ -713,6 +713,9 @@ Error Method::resolve_operator(
   }
   TensorMeta* meta = allocator->allocateList<TensorMeta>(n_args);
   if (meta == nullptr) {
+    if (allocator == memory_manager_->temp_allocator()) {
+      memory_manager_->temp_allocator()->reset();
+    }
     return Error::MemoryAllocationFailed;
   }
 
@@ -726,6 +729,9 @@ Error Method::resolve_operator(
       executorch::aten::DimOrderType* dim_order_ptr =
           allocator->allocateList<executorch::aten::DimOrderType>(tensor.dim());
       if (dim_order_ptr == nullptr) {
+        if (allocator == memory_manager_->temp_allocator()) {
+          memory_manager_->temp_allocator()->reset();
+        }
         return Error::MemoryAllocationFailed;
       }
       size_t size = tensor.dim();
@@ -751,9 +757,18 @@ Error Method::resolve_operator(
         "Missing operator: [%" ET_PRIssize_t "] %s",
         static_cast<ssize_t>(op_index),
         operator_name);
+    if (allocator == memory_manager_->temp_allocator()) {
+      memory_manager_->temp_allocator()->reset();
+    }
     return op_function.error();
   }
   kernels[kernel_index] = op_function.get();
+
+  // If we used the temp allocator here, reset it.
+  if (allocator == memory_manager_->temp_allocator()) {
+    memory_manager_->temp_allocator()->reset();
+  }
+
   return Error::Ok;
 }
 
@@ -1263,7 +1278,7 @@ ET_NODISCARD Error Method::get_outputs(EValue* output_evalues, size_t length) {
       InvalidArgument,
       "The given array is not large enough to hold all outputs.");
   for (size_t i = 0; i < n_output; ++i) {
-    output_evalues[i] = values_[get_output_index(i)];
+    output_evalues[i] = get_output(i);
   }
   for (size_t i = n_output; i < length; ++i) {
     output_evalues[i] = EValue();
@@ -1547,6 +1562,9 @@ Error Method::execute() {
         i);
   }
   ET_LOG(Debug, "Executing method: %s.", method_meta().name());
+  if (temp_allocator_ != nullptr) {
+    temp_allocator_->reset();
+  }
 
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.
