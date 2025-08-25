@@ -28,6 +28,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 // ========== Public method implementations =========================
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
@@ -50,8 +51,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     qnn_context_blob.buffer = ctx_bin;
   } else {
     // This buffer will be verified again in QnnBackendCache.
-    QNN_EXECUTORCH_LOG_INFO(
-        "Deserializing processed data using QnnQcirCustomProtocol");
+    QNN_EXECUTORCH_LOG_INFO("Deserializing processed data using Dlc");
     qnn_context_blob.buffer = const_cast<void*>(processed->data());
     qnn_context_blob.nbytes = processed->size();
   }
@@ -116,7 +116,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 Error QnnExecuTorchBackend::execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
-    EValue** args) const {
+    Span<EValue*> args) const {
   ET_CHECK_OR_RETURN_ERROR(
       delegate_map_rev_.count(handle) != 0,
       Internal,

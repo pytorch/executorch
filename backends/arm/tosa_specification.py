@@ -15,6 +15,10 @@ import contextvars
 import re
 from typing import List
 
+from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
+    CompileSpec,
+)
+
 from packaging.version import Version
 
 
@@ -158,6 +162,13 @@ class Tosa_1_00(TosaSpecification):
     def support_float(self):
         return "FP" in self.profiles
 
+    def support_extension(self, extension: str) -> bool:
+        for p in self.profiles:
+            if extension in self.valid_extensions[p] and extension in self.extensions:
+                return True
+
+        return False
+
 
 class TosaLoweringContext:
     """
@@ -188,3 +199,10 @@ def get_context_spec() -> TosaSpecification:
         return TosaLoweringContext.tosa_spec_var.get()
     except LookupError:
         raise RuntimeError("Function must be executed within a TosaLoweringContext")
+
+
+def get_tosa_spec(compile_spec: List[CompileSpec]) -> TosaSpecification:
+    for spec in compile_spec:
+        if spec.key == "tosa_spec":
+            return TosaSpecification.create_from_string(spec.value.decode())
+    raise ValueError("Could not find TOSA version in CompileSpec")

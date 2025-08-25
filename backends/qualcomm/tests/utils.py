@@ -143,30 +143,6 @@ def validate_context_binary(ctx_bin: bytes):
         assert os.path.isfile(f"{tmp_dir}/ctx.json"), print(result.stderr)
 
 
-def validate_qcir(qcir: bytes):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        with open(f"{tmp_dir}/qcir.bin", "wb") as binary_file:
-            binary_file.write(qcir)
-
-        cmds = [
-            "flatc",
-            "-o",
-            tmp_dir,
-            "--raw-binary",
-            "-t",
-            f"{os.path.dirname(__file__)}/../aot/ir/qcir.fbs",
-            "--",
-            f"{tmp_dir}/qcir.bin",
-        ]
-        result = subprocess.run(
-            " ".join(cmds),
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True,
-        )
-        assert os.path.isfile(f"{tmp_dir}/qcir.json"), print(result.stderr)
-
-
 class TestQNN(unittest.TestCase):
     rtol: float = 0
     atol: float = 0
@@ -217,13 +193,6 @@ class TestQNN(unittest.TestCase):
         inputs: Tuple[torch.Tensor],
         dir_name: str,
     ) -> None:
-        # Save the input data list to be executed
-        input_list = ""
-        for idx, _ in enumerate(inputs):
-            input_name = f"input_0_{idx}.raw"
-            input_list += input_name + " "
-        input_list = input_list.strip() + "\n"
-
         ref_output = module(*inputs)
 
         # Save the expected output data to be verified
@@ -240,7 +209,7 @@ class TestQNN(unittest.TestCase):
         with open(pte_fname, "wb") as file:
             file.write(buffer)
 
-        return input_list, ref_outputs, pte_fname
+        return ref_outputs, pte_fname
 
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
@@ -271,7 +240,6 @@ class TestQNN(unittest.TestCase):
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
-                input_list,
                 ref_outputs,
                 pte_fname,
             ) = self._save_model_and_expected_output(
@@ -343,9 +311,7 @@ class TestQNN(unittest.TestCase):
                 )
 
             if self.enable_x86_64:
-                generate_inputs(
-                    tmp_dir, "input_list.txt", [processed_inputs], input_list
-                )
+                generate_inputs(tmp_dir, "input_list.txt", [processed_inputs])
                 make_output_dir(output_dir)
 
                 target = "x86_64-linux-clang"
@@ -458,7 +424,6 @@ class TestQNN(unittest.TestCase):
                 )
                 adb.push(
                     inputs=[processed_inputs],
-                    input_list=input_list,
                     files=op_package_paths,
                 )
                 adb.extra_cmds += extra_cmds

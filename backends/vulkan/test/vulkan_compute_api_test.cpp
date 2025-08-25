@@ -114,7 +114,7 @@ TEST_F(VulkanComputeAPITest, print_shader_executable_properties) {
 std::vector<int64_t> get_reference_strides(
     const std::vector<int64_t>& sizes,
     const utils::GPUMemoryLayout layout,
-    const bool unsqueezed = false) {
+    const bool flip_unsqueezed = false) {
   int64_t C = utils::val_at(-3, sizes);
   int64_t H = utils::val_at(-2, sizes);
   int64_t W = utils::val_at(-1, sizes);
@@ -125,18 +125,20 @@ std::vector<int64_t> get_reference_strides(
     case utils::kWidthPacked:
       switch (sizes.size()) {
         case 1:
-          if (unsqueezed)
-            return {numel, numel, numel, 1};
+          if (flip_unsqueezed)
+            return {1, numel, numel, numel};
           return {1};
         case 2:
-          if (unsqueezed)
-            return {numel, numel, W, 1};
+          if (flip_unsqueezed)
+            return {1, W, numel, numel};
           return {W, 1};
         case 3:
-          if (unsqueezed)
-            return {numel, H * W, W, 1};
+          if (flip_unsqueezed)
+            return {1, W, H * W, numel};
           return {H * W, W, 1};
         case 4:
+          if (flip_unsqueezed)
+            return {1, W, H * W, C * H * W};
           return {C * H * W, H * W, W, 1};
         default:
           return {};
@@ -145,18 +147,21 @@ std::vector<int64_t> get_reference_strides(
     case utils::kHeightPacked:
       switch (sizes.size()) {
         case 1:
-          if (unsqueezed)
-            return {numel, numel, numel, 1};
+          if (flip_unsqueezed)
+            return {1, numel, numel, numel};
           return {1};
         case 2:
-          if (unsqueezed)
-            return {numel, numel, 1, H};
+          if (flip_unsqueezed)
+            return {H, 1, numel, numel};
+          return {1, H};
           return {1, H};
         case 3:
-          if (unsqueezed)
-            return {numel, H * W, 1, H};
+          if (flip_unsqueezed)
+            return {H, 1, H * W, numel};
           return {W * H, 1, H};
         case 4:
+          if (flip_unsqueezed)
+            return {H, 1, W * H, C * W * H};
           return {C * W * H, W * H, 1, H};
         default:
           return {};
@@ -164,18 +169,20 @@ std::vector<int64_t> get_reference_strides(
     case utils::kChannelsPacked:
       switch (sizes.size()) {
         case 1:
-          if (unsqueezed)
-            return {numel, numel, numel, 1};
+          if (flip_unsqueezed)
+            return {1, numel, numel, numel};
           return {1};
         case 2:
-          if (unsqueezed)
-            return {numel, numel, W, 1};
+          if (flip_unsqueezed)
+            return {1, W, numel, numel};
           return {W, 1};
         case 3:
-          if (unsqueezed)
-            return {numel, 1, W * C, C};
+          if (flip_unsqueezed)
+            return {C, W * C, 1, numel};
           return {1, W * C, C};
         case 4:
+          if (flip_unsqueezed)
+            return {C, W * C, 1, H * W * C};
           return {H * W * C, 1, W * C, C};
         default:
           return {};
@@ -184,11 +191,60 @@ std::vector<int64_t> get_reference_strides(
   return {};
 }
 
+/*
+ * Applies the following transformations to a tensor's dim_order vector:
+ *   1. Reverse the order of elements so that the fastest moving dimensions are
+ *      first.
+ *   2. Convert NCHW dimension indices to WHCN indices, so that 0 represents the
+ *      width dimension, 1 represents the height dimension, and 2 represents the
+ *      channels dimension.
+ *   3. Unsqueeze the dim_order vector to the next multiple of 4.
+ */
+std::vector<int64_t> create_whcn_dim_order(
+    const std::vector<int64_t>& dim_order) {
+  size_t ndim = dim_order.size();
+  std::vector<int64_t> whcn_order(ndim);
+
+  // Convert from NCHW to WHCN index, and flip the dim order so that the fastest
+  // moving dimension is first.
+  // example: {     1,     2,        0} -> {       2,     0,      1}
+  //          {height, width, channels} -> {channels, width, height}
+  for (size_t whcn_i = 0, nchw_i = (ndim - 1); whcn_i < ndim;
+       ++whcn_i, --nchw_i) {
+    whcn_order.at(whcn_i) = ndim - 1 - dim_order.at(nchw_i);
+  }
+
+  // Unsqueeze to the next multiple of 4
+  size_t ndim_up4 = utils::align_up_4(ndim);
+  whcn_order.resize(ndim_up4);
+
+  // Append unsqueezed dimensions
+  for (size_t i = ndim; i < ndim_up4; ++i) {
+    whcn_order.at(i) = i;
+  }
+
+  return whcn_order;
+}
+
 TEST_F(VulkanComputeAPITest, empty_init_shader_info_test) {
   vkapi::ShaderInfo empty_shader_info;
   EXPECT_FALSE(empty_shader_info);
   EXPECT_TRUE(empty_shader_info.src_code.bin == nullptr);
   EXPECT_TRUE(empty_shader_info.src_code.size == 0u);
+}
+
+bool compare_vectors(
+    const std::vector<int32_t>& v32,
+    const std::vector<int64_t>& v64) {
+  if (v32.size() != v64.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < v32.size(); ++i) {
+    if (static_cast<int64_t>(v32[i]) != v64[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 TEST_F(VulkanComputeAPITest, calculate_dim_order_test) {
@@ -238,16 +294,26 @@ TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
         std::vector<int64_t> dim_order =
             calculate_dim_order(sizes.size(), packed_dim);
         std::vector<int64_t> strides = calculate_strides(sizes, dim_order);
+        int64_t numel = utils::multiply_integers(sizes);
+
         std::vector<int64_t> ref_strides = get_reference_strides(sizes, layout);
         ASSERT_TRUE(strides == ref_strides);
 
-        int64_t numel = utils::multiply_integers(sizes);
         std::vector<int64_t> unsqueezed_strides =
-            unsqueeze_strides(strides, numel);
+            flip_and_unsqueeze<int64_t>(strides, kTensorStrides, numel);
+
         std::vector<int64_t> ref_unsqueezed_strides =
             get_reference_strides(sizes, layout, true);
 
         ASSERT_TRUE(unsqueezed_strides == ref_unsqueezed_strides);
+
+        std::vector<int64_t> whcn_dim_order =
+            flip_and_unsqueeze<int64_t>(dim_order, kTensorDimOrder, numel);
+
+        std::vector<int64_t> ref_whcn_dim_order =
+            create_whcn_dim_order(dim_order);
+
+        ASSERT_TRUE(whcn_dim_order == ref_whcn_dim_order);
 
         // Create new vTensor and check that the strides are correct
         vTensor new_v_tensor(
@@ -1036,12 +1102,12 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
 
   // Current known size on 64 bit system: 1040 B
   EXPECT_TRUE(sizeof(vTensor) < 1200);
-  // Current known size on 64 bit system: 48 B
-  EXPECT_TRUE(sizeof(Value) < 56);
+  // Current known size on 64 bit system: 80 B
+  EXPECT_TRUE(sizeof(Value) < 100);
   // Current known size on 64 bit system: 120 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
-  // Current known size on 64 bit system: 512 B
-  EXPECT_TRUE(sizeof(ComputeGraph) < 600);
+  // Current known size on 64 bit system: 608 B
+  EXPECT_TRUE(sizeof(ComputeGraph) < 700);
   // Current known size on 64 bit system: 248 B
   EXPECT_TRUE(sizeof(DispatchNode) < 500);
 }
@@ -1176,6 +1242,7 @@ TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   // Run graph
 
@@ -1218,6 +1285,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   // Run graph
 
@@ -1303,6 +1371,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   // Run graph
 
@@ -1361,6 +1430,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   // Run graph
 
@@ -1519,6 +1589,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   EXPECT_EQ(get_vma_allocation_count(), expected_vma_allocation_count);
 
   graph.prepare();
+  graph.prepack();
 
   // +3: shared memory allocations for tensors
   expected_vma_allocation_count += 3;
@@ -1659,6 +1730,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   // Run graph
 
@@ -1725,6 +1797,7 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   auto build_end_time = std::chrono::system_clock::now();
 
@@ -1801,6 +1874,7 @@ void test_clone(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   fill_vtensor(graph, a, 0.0f, /*iota = */ true);
 
@@ -1885,6 +1959,7 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   fill_vtensor(graph, a, 0.0f, /*iota = */ true);
 
@@ -1948,6 +2023,7 @@ TEST(VulkanComputeGraphTest, DISABLED_test_etvk_copy_channel_offset_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   fill_vtensor(graph, a, 0.0f, true);
 
@@ -2038,6 +2114,7 @@ TEST(
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   float a_value = 1.0f;
   float b_value = 2.0f;
@@ -2150,6 +2227,7 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_int_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   fill_vtensor(graph, a, 0, /*iota = */ true);
 
@@ -2213,6 +2291,7 @@ TEST(VulkanComputeGraphTest, DISABLED_test_etvk_copy_channel_offset_int_node) {
   out.staging = graph.set_output_tensor(out.value);
 
   graph.prepare();
+  graph.prepack();
 
   fill_vtensor(graph, a, 0.0f, true);
 
@@ -2272,6 +2351,7 @@ TEST(VulkanComputeGraphTest, test_view_change_packing) {
     out.staging = graph.set_output_tensor(out.value);
 
     graph.prepare();
+    graph.prepack();
 
     fill_vtensor(graph, in, 0.0, true);
 
@@ -2430,6 +2510,7 @@ void compute_graph_round_trip_test(
   ValueRef r_staging_out = graph.set_output_tensor(r_tensor);
 
   graph.prepare();
+  graph.prepack();
 
   std::vector<T> data_in(graph.numel_of(r_tensor));
   for (int i = 0; i < data_in.size(); i++) {
@@ -2620,7 +2701,6 @@ void test_mm(
       B, M, K, N, dtype, storage_type, memory_layout, mat2_data, prepack);
 
   graph.prepare();
-
   graph.prepack();
 
   for (int i = 1; i < 4; i++) {
@@ -2700,7 +2780,6 @@ void test_mm_with_resize_reencode(
       B, M, K, N, dtype, storage_type, memory_layout, mat2_data, false);
 
   graph.prepare();
-
   graph.prepack();
 
   for (int i = 1; i < 4; i++) {
@@ -3122,7 +3201,6 @@ void test_dynamic_dispatch(int M, int N) {
   ComputeGraph graph = build_dynamic_dispatch_test_graph(M, N);
 
   graph.prepare();
-
   graph.prepack();
 
   for (int i = 1; i < 4; i++) {

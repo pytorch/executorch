@@ -25,6 +25,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
@@ -152,7 +153,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
 
     // Copy all inputs from EValue to VkDeviceMemory

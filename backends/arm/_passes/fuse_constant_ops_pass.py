@@ -107,7 +107,11 @@ class FuseConstantArgsPass(ExportPass):
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
-            if node.target == torch.ops.tosa._table.default:
+            if node.target in [
+                exir_ops.backend.tosa.TABLE.default,
+                exir_ops.backend.tosa.RESCALE.default,
+                exir_ops.backend.tosa.TRANSPOSE.default,
+            ]:
                 continue
 
             input_nodes = node.all_input_nodes

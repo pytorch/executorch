@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,15 +9,17 @@ import unittest
 from dataclasses import dataclass
 from typing import Optional
 
-import executorch
 import executorch.backends.cortex_m.ops.operators  # noqa
+
+import executorch.exir
 
 import torch
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export import export, export_for_training
+from executorch.exir.program._program import _transform
+from torch.export import export
 from torch.fx import GraphModule
 from torchao.quantization.pt2e.observer import HistogramObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -125,14 +128,19 @@ class TestReplaceQuantOps(unittest.TestCase):
         example_inputs = (torch.randn(10, 11, 12),)
 
         # Step 1: Export and quantize the model
-        exported_model = export_for_training(
-            model.eval(), example_inputs, strict=True
-        ).module()
+        exported_model = export(model.eval(), example_inputs, strict=True).module()
         prepared_model = prepare_pt2e(exported_model, AddQuantizer())
+        prepared_model(*example_inputs)
         quantized_model = convert_pt2e(prepared_model)
 
         # Step 2: Export to EXIR
         exported = export(quantized_model, example_inputs, strict=True)
+
+        # The pass should raise an Exception if ran before to_edge.
+        with self.assertRaisesRegex(
+            Exception, "An error occurred when running the 'ReplaceQuantNodesPass' pass"
+        ):
+            _transform(exported, ReplaceQuantNodesPass())
 
         # Step 3: Convert to Edge
         edge_program = executorch.exir.to_edge(

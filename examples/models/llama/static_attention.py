@@ -549,7 +549,7 @@ class StaticAttentionIOManager:
                 style=self.style,
                 update_pos=update_pos,
                 update_len=update_len,
-            )
+            ).detach()
         for cache_id, update in v_cache_updates.items():
             self.v_caches[cache_id] = StaticKVCache.apply_update(
                 self.v_caches[cache_id],
@@ -558,7 +558,7 @@ class StaticAttentionIOManager:
                 style=self.style,
                 update_pos=update_pos,
                 update_len=update_len,
-            )
+            ).detach()
         self.pos += update_len
 
     def _get_lookahead_decoding_mask(
@@ -759,7 +759,7 @@ class StaticAttention(Attention):
 
         bsz, seq_len, dim = x.shape
         if self.use_conv2d:
-            x = x.reshape(bsz, seq_len, 1, dim).transpose(1, 3)
+            x = x.reshape(bsz, -1, 1, dim).transpose(1, 3)
 
         new_qs = [wq(x) for wq in self.wqs]
         new_ks = [wk(x) for wk in self.wks]
@@ -768,9 +768,7 @@ class StaticAttention(Attention):
         if self.use_conv2d:
 
             def from_conv2ds(ts):
-                return [
-                    t.reshape(bsz, self.head_dim, seq_len).transpose(1, 2) for t in ts
-                ]
+                return [t.reshape(bsz, self.head_dim, -1).transpose(1, 2) for t in ts]
 
             new_qs = from_conv2ds(new_qs)
             new_ks = from_conv2ds(new_ks)
@@ -800,9 +798,11 @@ class StaticAttention(Attention):
 
         if self.use_conv2d:
             y = (
-                self.wo(y.reshape(bsz, seq_len, 1, -1).transpose(1, 3))
+                self.wo(
+                    y.reshape(bsz, -1, 1, self.n_heads * self.head_dim).transpose(1, 3)
+                )
                 .transpose(1, 3)
-                .reshape(bsz, seq_len, -1)
+                .reshape(bsz, -1, self.dim)
             )
         else:
             y = self.wo(y)

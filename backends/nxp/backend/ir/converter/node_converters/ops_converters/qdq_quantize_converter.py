@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,8 +7,8 @@ import numpy as np
 import torch
 
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
     set_quantization_parameters_to_tensor,
@@ -18,11 +18,12 @@ from torch.nn import Parameter
 
 
 class QDQQuantizeConverter(NodeConverter):
-    supported_targets = [Target.RT700]
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         if "cluster" not in node.meta or node.args[5] != torch.int8:
             return False

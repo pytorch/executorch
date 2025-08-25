@@ -196,6 +196,12 @@ class ComputeGraph final {
   // List of command buffers deferred for submission
   std::vector<vkapi::CommandBuffer> deferred_cmd_list_;
 
+  // Set to track which ValueRefs were updated during inference
+  std::unordered_set<ValueRef> updated_values_;
+
+  // Flag to indicate if re-encoding is required
+  bool requires_reencode_ = false;
+
  protected:
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
@@ -243,6 +249,9 @@ class ComputeGraph final {
   inline GraphConfig& graphconfig() {
     return config_;
   }
+
+  // Check if the ComputeGraph has a value at the specified index
+  bool is_valid_value_idx(const ValueRef idx) const noexcept;
 
   //
   // Value Extraction
@@ -348,6 +357,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().has_buffer_storage();
   }
 
+  inline bool is_texture_storage(const ValueRef idx) const {
+    return !is_buffer_storage(idx);
+  }
+
   /*
    * Checks that the following is true:
    * 1. The value at `idx` is a tensor
@@ -402,6 +415,10 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().sizes_ubo();
   }
 
+  inline vkapi::BufferBindInfo buffer_meta_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().buffer_meta_ubo();
+  }
+
   inline vkapi::BufferBindInfo strides_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().strides_ubo();
   }
@@ -427,31 +444,41 @@ class ComputeGraph final {
   }
 
   inline PushConstantDataInfo sizes_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorSizes);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo dim_order_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorDimOrder);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo strides_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorStrides);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo logical_limits_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorLogicalLimits);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo numel_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorNumel);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   //
@@ -675,6 +702,16 @@ class ComputeGraph final {
       const void* const data);
 
   /*
+   * Add a `TensorRef` value to the graph with the specific properties. A
+   * `TensorRef` is a reference to a `api::vTensor` whose data is stored in a
+   * FreeableBuffer. The TensorRef will take ownership of the FreeableBuffer.
+   */
+  ValueRef add_tensorref(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      executorch::runtime::FreeableBuffer&& buffer);
+
+  /*
    * Add a staging buffer to the graph. Staging buffers are data buffers that
    * use memory that is visible to both the CPU and GPU, and therefore is used
    * as a intermediary when transferring data between the CPU and GPU.
@@ -797,6 +834,13 @@ class ComputeGraph final {
   }
 
   SharedObject& get_shared_object(const int64_t idx);
+
+  /*
+   * Creates a dedicated memory allocation for a vTensor value, and have the
+   * tensor acquire the allocation object. If the tensor is already bound to a
+   * memory allocation, this function will be a no-op.
+   */
+  void create_dedicated_allocation_for(const ValueRef idx);
 
   //
   // Graph Preparation
@@ -947,6 +991,15 @@ class ComputeGraph final {
       const std::vector<int64_t>& new_sizes);
 
   void propagate_resize();
+
+  // Check if a specific ValueRef (or ValueList) was updated, with recursive
+  // handling
+  bool was_value_updated(const ValueRef idx) const noexcept;
+
+  // Set the flag to indicate that re-encoding is required
+  inline void set_requires_reencode() noexcept {
+    requires_reencode_ = true;
+  }
 
   //
   // Miscellaneous Utilities

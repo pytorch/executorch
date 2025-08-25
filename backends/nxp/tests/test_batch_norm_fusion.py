@@ -15,8 +15,11 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     AddMMConverter,
     MMConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import (
+    ViewCopyConverter,
+)
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.executors import OverrideSupportedTargets
+from executorch.backends.nxp.tests.executors import OverrideTargetSupportCheck
 from torch import nn
 
 
@@ -201,14 +204,24 @@ def test_batch_norm_linear_fusing__full_pipeline(bias: bool):
 
     # Don't delegate the Linear node, because there seems to be a bug with the NeutronConverter/NeutronPartitioner.
     #  But that doesn't affect the validity of this test.
-    with OverrideSupportedTargets(AddMMConverter, new_targets=[]):
-        with OverrideSupportedTargets(MMConverter, new_targets=[]):
-            edge_program = to_quantized_edge_program(
-                module, tuple(input_shape)
-            ).exported_program()
-            nodes = list(edge_program.graph.nodes)
+    def unsupported_target(*_):  # Accept all input arguments and return `False`.
+        return False
 
-    assert len(nodes) == 14
+    with OverrideTargetSupportCheck(
+        AddMMConverter, new_target_support_check=unsupported_target
+    ):
+        with OverrideTargetSupportCheck(
+            MMConverter, new_target_support_check=unsupported_target
+        ):
+            with OverrideTargetSupportCheck(
+                ViewCopyConverter, new_target_support_check=unsupported_target
+            ):
+                edge_program = to_quantized_edge_program(
+                    module, tuple(input_shape)
+                ).exported_program()
+                nodes = list(edge_program.graph.nodes)
+
+    assert len(nodes) == 18
     assert not any(
         node.op == "call_function" and "batch_norm" in node.target.__name__
         for node in nodes

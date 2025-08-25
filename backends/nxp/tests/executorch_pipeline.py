@@ -6,8 +6,14 @@
 import torch
 
 from executorch import exir
+from executorch.backends.nxp.backend.custom_delegation_options import (
+    CustomDelegationOptions,
+)
 from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
+)
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
@@ -17,8 +23,8 @@ from executorch.exir import (
     EdgeProgramManager,
     ExecutorchBackendConfig,
     ExecutorchProgramManager,
-    to_edge_transform_and_lower,
 )
+from executorch.extension.export_util.utils import export_to_edge
 from torch import nn
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -45,11 +51,12 @@ def get_random_float_data(input_shapes: tuple[int] | list[tuple[int]]):
 
 def to_quantized_edge_program(
     model: torch.nn.Module,
-    input_shapes: tuple[int] | list[tuple[int]],
+    input_shapes: tuple[int, ...] | list[tuple[int, ...]],
     operators_not_to_delegate: list[str] = None,
     target="imxrt700",
     neutron_converter_flavor="SDK_25_03",
     remove_quant_io_ops=False,
+    custom_delegation_options=CustomDelegationOptions(),  # noqa B008
 ) -> EdgeProgramManager:
     if isinstance(input_shapes, list):
         assert all(isinstance(input_shape, tuple) for input_shape in input_shapes), (
@@ -71,19 +78,22 @@ def to_quantized_edge_program(
         exir_program_aten.module(), calibration_inputs
     )
 
+    edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+    edge_program_manager = export_to_edge(
+        exir_program_aten__module_quant,
+        example_input,
+        edge_compile_config=edge_compile_config,
+    )
+
+    edge_program_manager = NeutronEdgePassManager()(edge_program_manager)
+
     compile_spec = generate_neutron_compile_spec(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
         neutron_converter_flavor=neutron_converter_flavor,
     )
-    partitioner = NeutronPartitioner(compile_spec)
-    edge_program_manager = to_edge_transform_and_lower(
-        torch.export.export(
-            exir_program_aten__module_quant, example_input, strict=True
-        ),
-        partitioner=[partitioner],
-        compile_config=EdgeCompileConfig(_check_ir_validity=False),
-    )
+    partitioner = NeutronPartitioner(compile_spec, custom_delegation_options)
+    edge_program_manager = edge_program_manager.to_backend(partitioner)
 
     if remove_quant_io_ops:
         edge_program_manager = edge_program_manager.transform(
@@ -94,7 +104,7 @@ def to_quantized_edge_program(
 
 
 def to_quantized_executorch_program(
-    model: torch.nn.Module, input_shapes: tuple[int] | list[tuple[int]]
+    model: torch.nn.Module, input_shapes: tuple[int, ...] | list[tuple[int, ...]]
 ) -> ExecutorchProgramManager:
     edge_program_manager = to_quantized_edge_program(model, input_shapes)
 
@@ -104,7 +114,7 @@ def to_quantized_executorch_program(
 
 
 def to_edge_program(
-    model: nn.Module, input_shapes: tuple[int] | list[tuple[int]]
+    model: nn.Module, input_shapes: tuple[int, ...] | list[tuple[int, ...]]
 ) -> EdgeProgramManager:
     if isinstance(input_shapes, list):
         assert all(isinstance(input_shape, tuple) for input_shape in input_shapes), (

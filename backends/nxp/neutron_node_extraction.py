@@ -45,7 +45,8 @@ def extract_artifacts_from_neutron_node(
 
     if sub_graph.OperatorsLength() == 0:
         raise RuntimeError(
-            "Model converted with neutron-converter has `0` operators instead of `1`."
+            "Model converted with neutron-converter has `0` operators instead of `1`.",
+            sub_graph.OperatorsLength(),
         )
     elif sub_graph.OperatorsLength() > 1:
         builtin_operators_map: dict[int, str] = {
@@ -61,7 +62,8 @@ def extract_artifacts_from_neutron_node(
 
         raise RuntimeError(
             f"Model converted with neutron-converter has `{sub_graph.OperatorsLength()}` operators "
-            f'instead of `1`. Operators found: {", ".join(ops_found)}.'
+            f'instead of `1`. Operators found: {", ".join(ops_found)}.',
+            sub_graph.OperatorsLength(),
         )
 
     neutron_node = None

@@ -65,6 +65,7 @@ function help() {
     echo "                                            NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
     echo "  --config=<FILEPATH>                    System configuration file that specifies system configurations (vela.ini)"
     echo "  --memory_mode=<MODE>                   Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
+    echo "  --toolchain=<TOOLCHAIN>                Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
     exit 0
@@ -106,7 +107,7 @@ if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
 elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
 else
-    echo "Error: Invalid toolchain selection, provided: ${tolchain}"
+    echo "Error: Invalid toolchain selection, provided: ${toolchain}"
     echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
     exit 1;
 fi
@@ -184,9 +185,11 @@ fi
 cd $et_root_dir
 devtools_flag=""
 bundleio_flag=""
+etrecord_flag=""
 et_dump_flag=""
 if [ "$build_with_etdump" = true ] ; then
     et_dump_flag="--etdump"
+    etrecord_flag="--etrecord"
 fi
 
 if [ "$bundleio" = true ] ; then
@@ -263,7 +266,7 @@ for i in "${!test_model[@]}"; do
         model_compiler_flags="${model_compiler_flags} --model_input=${model_input}"
     fi
 
-    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag --config=${config}"
+    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${etrecord_flag} --config=${config}"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 

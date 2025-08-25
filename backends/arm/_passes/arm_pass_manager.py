@@ -30,16 +30,18 @@ from executorch.backends.arm._passes import (
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
     DecomposeAddmmPass,
+    DecomposeAsinAndAcosPass,
     DecomposeAsinhPass,
-    DecomposeAsinPass,
     DecomposeAtanhPass,
     DecomposeAtanPass,
     DecomposeAvgPool2d,
     DecomposeBatchNormNoStatsPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
+    DecomposeCumsumPass,
     DecomposeDivPass,
     DecomposeEmbeddingPass,
+    DecomposeExpm1Pass,
     DecomposeGeluPass,
     DecomposeGluPass,
     DecomposeGroupedConv,
@@ -48,6 +50,7 @@ from executorch.backends.arm._passes import (
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeLinearVectorNormPass,
+    DecomposeLogitPass,
     DecomposeMaskedFill,
     DecomposeMaxPool2DPass,
     DecomposeMeanDimPass,
@@ -146,6 +149,7 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
+        self.add_pass(DecomposeCumsumPass(exported_program))
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(SizeAdjustInputPass())
@@ -164,12 +168,14 @@ class ArmPassManager(PassManager):
         return self._transform(exported_program.graph_module)
 
     def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(DecomposeExpm1Pass())
+        self.add_pass(DecomposeLogitPass())
         self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeAcoshPass())
-        self.add_pass(DecomposeAsinPass())
         self.add_pass(DecomposeAsinhPass())
         self.add_pass(DecomposeCoshPass())
+        self.add_pass(DecomposeAsinAndAcosPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeAtanPass())
         self.add_pass(DecomposeAtanhPass())
@@ -223,6 +229,7 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
+        self.add_pass(DecomposeCumsumPass(exported_program))
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(SizeAdjustInputPass())
@@ -255,6 +262,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoundPass())
+        self.add_pass(DecomposeLogitPass())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeAddmmPass())

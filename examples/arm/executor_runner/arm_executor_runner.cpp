@@ -521,8 +521,9 @@ void runner_init(
     ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
 
     /* Move to it's own allocator when MemoryPlanner is in place. */
-    uint8_t* buffer =
-        reinterpret_cast<uint8_t*>(ctx.method_allocator->allocate(buffer_size));
+    /* Ethos-U driver requires 16 bit alignment. */
+    uint8_t* buffer = reinterpret_cast<uint8_t*>(
+        ctx.method_allocator->allocate(buffer_size, 16UL));
     ET_CHECK_MSG(
         buffer != nullptr,
         "Could not allocate memory for memory planned buffer size %zu",
@@ -759,7 +760,7 @@ void write_etdump(RunnerContext& ctx) {
   if (result.buf != nullptr && result.size > 0) {
     // On a device with no file system we can't just write it out
     // to the file-system so we base64 encode it and dump it on the log.
-    int mode = 0;
+    int mode = base64_enc_modifier_padding | base64_dec_modifier_skipspace;
     size_t len = result.size;
     size_t encoded_len = base64_encoded_size(result.size, mode);
     uint8_t* encoded_buf = reinterpret_cast<uint8_t*>(

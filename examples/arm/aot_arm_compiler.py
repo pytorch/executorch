@@ -8,6 +8,7 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
+import copy
 import json
 import logging
 import os
@@ -19,7 +20,6 @@ import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
 from executorch.backends.arm.arm_backend import (
     ArmCompileSpecBuilder,
-    get_tosa_spec,
     is_ethosu,
     is_tosa,
     is_vgf,
@@ -32,7 +32,7 @@ from executorch.backends.arm.quantizer import (
     VgfQuantizer,
 )
 from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
 
 from executorch.backends.arm.util.arm_model_evaluator import (
     GenericModelEvaluator,
@@ -45,6 +45,7 @@ from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
+from executorch.devtools import generate_etrecord
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 
@@ -506,6 +507,13 @@ def get_args():
         help="Flag for producing BundleIO bpte file with input/output test/ref data.",
     )
     parser.add_argument(
+        "--etrecord",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Flag for producing a etrecord file.",
+    )
+    parser.add_argument(
         "-t",
         "--target",
         action="store",
@@ -702,7 +710,7 @@ def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
         args.evaluate_config,
     )
     # Wrap quantized model back into an exported_program
-    exported_program = torch.export.export_for_training(
+    exported_program = torch.export.export(
         model_int8, example_inputs, strict=args.strict_export
     )
 
@@ -795,9 +803,9 @@ if __name__ == "__main__":  # noqa: C901
     )
     model = original_model.eval()
 
-    # export_for_training under the assumption we quantize, the exported form also works
+    # export under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
-    exported_program = torch.export.export_for_training(
+    exported_program = torch.export.export(
         model, example_inputs, strict=args.strict_export
     )
     model = exported_program.module()
@@ -822,6 +830,8 @@ if __name__ == "__main__":  # noqa: C901
 
     dump_delegation_info(edge, args.intermediates)
 
+    edge_program_manager_copy = copy.deepcopy(edge)
+
     try:
         exec_prog = edge.to_executorch(
             config=ExecutorchBackendConfig(extract_delegate_segments=False)
@@ -843,9 +853,9 @@ if __name__ == "__main__":  # noqa: C901
     )
 
     if args.bundleio:
-        output_name = f"{output_name}.bpte"
+        output_file_name = f"{output_name}.bpte"
     else:
-        output_name = f"{output_name}.pte"
+        output_file_name = f"{output_name}.pte"
 
     if args.output is not None:
         if args.output.endswith(".pte") or args.output.endswith(".bpte"):
@@ -858,19 +868,25 @@ if __name__ == "__main__":  # noqa: C901
                 raise RuntimeError(
                     f"When not using --bundleio a .bpte file should not be use as --output {args.output}"
                 )
-            output_name = args.output
+            output_file_name = args.output
         else:
             # --output is a folder
-            output_name = os.path.join(args.output, output_name)
+            output_file_name = os.path.join(args.output, output_file_name)
+
+    if args.bundleio or args.etrecord:
+        etrecord_file_name = os.path.splitext(output_file_name)[0] + "_etrecord.bin"
+        # Generate ETRecord
+        generate_etrecord(etrecord_file_name, edge_program_manager_copy, exec_prog)
+        print(f"ETRecord saved as {etrecord_file_name}")
 
     if args.bundleio:
         # Realize the quantization impact on numerics when generating reference output
         reference_model = original_model if not model_int8 else model_int8
-        save_bpte_program(exec_prog, reference_model, output_name)
-        print(f"Bundle PTE file saved as {output_name}")
+        save_bpte_program(exec_prog, reference_model, output_file_name)
+        print(f"Bundle PTE file saved as {output_file_name}")
     else:
-        save_pte_program(exec_prog, output_name)
-        print(f"PTE file saved as {output_name}")
+        save_pte_program(exec_prog, output_file_name)
+        print(f"PTE file saved as {output_file_name}")
 
     if args.evaluate:
         evaluate_model(

@@ -134,6 +134,13 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_amax_conv(self):
+        sample_input = (torch.randn(2, 3, 64, 64),)  # [batch, channels, height, width]
+        module = AMaxFollowingConv2D(  # noqa: F405
+            in_channels=3, out_channels=16, kernel_size=3, dim=-1, keepdim=False
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_amin(self):
         modules = [AMin(dim=1, keepdim=False), AMin(dim=1, keepdim=True)]  # noqa: F405
         sample_input = (torch.randn(4, 4),)
@@ -1434,6 +1441,14 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_amax_conv(self):
+        sample_input = (torch.randn(2, 3, 64, 64),)  # [batch, channels, height, width]
+        module = AMaxFollowingConv2D(  # noqa: F405
+            in_channels=3, out_channels=16, kernel_size=3, dim=-1, keepdim=False
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_amin(self):
         modules = [AMin(dim=1, keepdim=False), AMin(dim=1, keepdim=True)]  # noqa: F405
@@ -3418,7 +3433,6 @@ class TestQNNFloatingPointUtils(TestQNN):
 
         for compiler_spec in compiler_specs:
             with tempfile.TemporaryDirectory() as tmp_dir:
-
                 edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
                     module, sample_input, compiler_spec
                 ).to_executorch()
@@ -4560,6 +4574,8 @@ class TestExampleLLMScript(TestQNN):
             "wikitext",
             "--limit",
             "1",
+            "--r3",
+            "--enable_masked_softmax",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -4581,14 +4597,14 @@ class TestExampleLLMScript(TestQNN):
                 self.fail(msg["Error"])
             else:
                 inference_speed_ref = {"SM8650": 110, "SM8750": 130}
-                self.assertLessEqual(msg["wiki_ppl"], 25)
+                self.assertLessEqual(msg["wiki_ppl"], 15)
                 self.assertLessEqual(msg["pte_size"], 800000000)  # 800mb
                 if self.model in inference_speed_ref:
                     self.assertGreaterEqual(
                         msg["inference_speed"], inference_speed_ref[self.model]
                     )
 
-    def test_qwen3(self):
+    def test_static_qwen3(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
 
@@ -4611,7 +4627,7 @@ class TestExampleLLMScript(TestQNN):
             "--ptq",
             "16a8w",
             "--decoder_model",
-            "qwen3_0.6b",
+            "qwen3_0_6b",
             "--model_mode",
             "hybrid",
             "--prefill_ar_len",
@@ -4646,6 +4662,64 @@ class TestExampleLLMScript(TestQNN):
                     f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
                 )
                 self.assertGreaterEqual(msg["inference_speed"], 70)  # Lanai
+
+    def test_smollm2(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "My favourite condiment is "
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a8w",
+            "--decoder_model",
+            "smollm2_135m",
+            "--model_mode",
+            "kv",
+            "--temperature",
+            "0",
+            "--prefill_ar_len",
+            "128",
+            "--max_seq_len",
+            "1024",
+            "--eval_perplexity",
+            "--task",
+            "wikitext",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertLessEqual(msg["wiki_ppl"], 25)
+                self.assertGreaterEqual(msg["inference_speed"], 200)
 
 
 class TestExampleOssScript(TestQNN):
