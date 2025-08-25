@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 import torch
+from torch import nn
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from executorch import exir
 from executorch.backends.nxp.backend.custom_delegation_options import (
@@ -28,8 +30,6 @@ from executorch.exir import (
     ExecutorchProgramManager,
 )
 from executorch.extension.export_util.utils import export_to_edge
-from torch import nn
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 @dataclass
@@ -96,6 +96,9 @@ def to_quantized_edge_program(
 
     example_input = calibration_inputs[0]
 
+    # Make sure the model is in the evaluation mode.
+    model.eval()
+
     exir_program_aten = torch.export.export_for_training(
         model, example_input, strict=True
     )
@@ -147,5 +150,9 @@ def to_edge_program(
     calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_spec))
 
     example_input = calibration_inputs[0]
+
+    # Make sure the model is in the evaluation mode.
+    model.eval()
+
     exir_program = torch.export.export(model, example_input)
     return exir.to_edge(exir_program)
