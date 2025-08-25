@@ -279,12 +279,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             event_tracer,
             "+EthosUBackend::execute()handles.input.permute_CHW_to_HWC()");
         // permuted byte copy CHW to HWC
+        int c, h, w;
+        ET_CHECK_OK_OR_RETURN_ERROR(get_chw(tensor_in, &c, &h, &w));
+
         permute_CHW_to_HWC(
-            tensor_in.mutable_data_ptr<char>(),
-            scratch_addr,
-            tensor_in.size(1),
-            tensor_in.size(2),
-            tensor_in.size(3));
+            tensor_in.mutable_data_ptr<char>(), scratch_addr, c, h, w);
       } else if (both_char || both_int || both_short || both_bool) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
@@ -381,13 +380,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             "+EthosUBackend::execute()handles.output.permute_HWC_to_CHW()");
 
         const char* output_address = static_cast<const char*>(output_addr);
+        int c, h, w;
+        ET_CHECK_OK_OR_RETURN_ERROR(get_chw(tensor_out, &c, &h, &w));
 
         permute_HWC_to_CHW(
-            output_address,
-            tensor_out.mutable_data_ptr<char>(),
-            tensor_out.size(1),
-            tensor_out.size(2),
-            tensor_out.size(3));
+            output_address, tensor_out.mutable_data_ptr<char>(), c, h, w);
       } else {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.output.memcpy()");
@@ -421,8 +418,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       *tensor_count = *tensor_count * tensor.size(i);
     }
 
-    // The VelaIO type has a shape of fixed size 4
-    for (int i = 0; i < 4; i++) {
+    // The VelaIO type has a shape of fixed size 6
+    for (int i = 0; i < shapeDim; i++) {
       *io_count = *io_count * io->shape[i];
     }
   }
@@ -438,14 +435,43 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       // special case for NHWC workaround in AOT; as the compilation has
       // permuted to channel last in an undetectable way, we assume here
       // that the application has similarly permuted any input/output tensors.
-      permuted_shape = tensor.size(0) == io->shape[0] &&
-          tensor.size(1) == io->shape[3] && tensor.size(2) == io->shape[1] &&
-          tensor.size(3) == io->shape[2];
+      permuted_shape =
+          tensor.size(0) == io->shape[0] * io->shape[1] * io->shape[2] &&
+          tensor.size(1) == io->shape[5] && tensor.size(2) == io->shape[3] &&
+          tensor.size(3) == io->shape[4];
       if (permuted_shape) {
-        ET_LOG(Debug, "Tensor input/output %d will be permuted", index);
+        ET_LOG(Debug, "4D tensor input/output %d will be permuted", index);
+      }
+    } else if (tensor.dim() == 5) {
+      // tensor has format NNCHW, but the VelaIO is in NNNHWC
+      permuted_shape = io->shape[0] == 1 && tensor.size(0) == io->shape[1] &&
+          tensor.size(1) == io->shape[2] && tensor.size(2) == io->shape[5] &&
+          tensor.size(3) == io->shape[3] && tensor.size(4) == io->shape[4];
+      if (permuted_shape) {
+        ET_LOG(Debug, "5D tensor input/output %d will be permuted", index);
       }
     }
     *is_permuted = permuted_shape;
+    return Error::Ok;
+  }
+
+  Error get_chw(const executorch::aten::Tensor tensor, int* c, int* h, int* w)
+      const {
+    if (tensor.dim() == 4) {
+      *c = tensor.size(1);
+      *h = tensor.size(2);
+      *w = tensor.size(3);
+    } else if (tensor.dim() == 5) {
+      *c = tensor.size(2);
+      *h = tensor.size(3);
+      *w = tensor.size(4);
+    } else {
+      ET_LOG(
+          Error,
+          "Unsupported output tensor dimension %d, expected 4 or 5",
+          tensor.dim());
+      return Error::InvalidProgram;
+    }
     return Error::Ok;
   }
 

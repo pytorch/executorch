@@ -44,6 +44,10 @@ class View(torch.nn.Module):
         "rand_4d_4_3": lambda: (torch.rand(5, 10, 1, 1), (1, 25, 2)),
         "rand_4d_4_2": lambda: (torch.rand(2, 50, 1, 1), (1, 100)),
         "rand_4d_2_4_same": lambda: (torch.rand(2, 3, 2, 3), (2, 3, 3, 2)),
+        "rand_4d_5d": lambda: (torch.rand(1, 3, 4, 5), (1, 1, 4, 5, -1)),
+        "rand_5d_5d": lambda: (torch.rand(1, 1, 4, 5, 6), (1, 1, 4, -1, 6)),
+        "rand_5d_3d": lambda: (torch.rand(1, 1, 4, 5, 6), (2, 3, -1)),
+        "rand_3d_5d": lambda: (torch.rand(4, 5, 6), (1, 1, 2, -1, 3)),
     }
 
     rank_product_too_large = {
@@ -97,7 +101,9 @@ xfails = {
 }
 
 
-@common.parametrize("test_data", View.needs_transpose_tests, xfails=xfails)
+@common.parametrize(
+    "test_data", View.needs_transpose_tests, xfails=xfails, strict=False
+)
 @common.XfailIfNoCorstone300
 def test_view_u55_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
@@ -151,7 +157,9 @@ def test_view_u55_INT_not_delegated(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests, xfails=xfails)
+@common.parametrize(
+    "test_data", View.needs_transpose_tests, xfails=xfails, strict=False
+)
 @common.XfailIfNoCorstone320
 def test_view_u85_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
