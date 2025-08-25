@@ -50,7 +50,7 @@ class AddVisitor_INT(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
             output.tosa_spec,
         )
 
