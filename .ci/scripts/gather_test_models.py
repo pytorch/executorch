@@ -116,19 +116,6 @@ def model_should_run_on_target_os(model: str, target_os: str) -> bool:
     return model not in ["llava"]
 
 
-def _pr_has_label(label: str) -> bool:
-    path = os.getenv("GITHUB_EVENT_PATH")
-    if not path:
-        return False
-    try:
-        with open(path) as file:
-            data = json.load(file)
-        labels = data.get("pull_request", {}).get("labels", [])
-        return any((l.get("name") or "").lower() == label for l in labels)
-    except Exception:
-        return False
-
-
 def export_models_for_ci() -> dict[str, dict]:
     """
     This gathers all the example models that we want to test on GitHub OSS CI
@@ -137,10 +124,8 @@ def export_models_for_ci() -> dict[str, dict]:
     target_os = args.target_os
     event = args.event
 
-    # When a corresponding label is present, treat it as a schedule event
-    if _pr_has_label("ciflow/periodic"):
-        event = "schedule"
-
+    # This is the JSON syntax for configuration matrix used by GitHub
+    # https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs
     models = {"include": []}
 
     # Add MobileNet v3 for BUCK2 E2E validation (linux only)
