@@ -4564,7 +4564,7 @@ class TestExampleLLMScript(TestQNN):
             "--ptq",
             "16a8w",
             "--decoder_model",
-            "qwen2_5",
+            "qwen2_5-0_5b",
             "--model_mode",
             "kv",
             "--max_seq_len",
@@ -4627,13 +4627,18 @@ class TestExampleLLMScript(TestQNN):
             "--ptq",
             "16a8w",
             "--decoder_model",
-            "qwen3_0_6b",
+            "qwen3-0_6b",
             "--model_mode",
-            "hybrid",
-            "--prefill_ar_len",
-            "32",
+            "kv",
             "--max_seq_len",
-            "128",
+            "1024",
+            "--eval_perplexity",
+            "--tasks",
+            "wikitext",
+            "--limit",
+            "1",
+            "--r3",
+            "--enable_masked_softmax",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -4646,8 +4651,6 @@ class TestExampleLLMScript(TestQNN):
         if self.pre_gen_pte:
             cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
-        # Accuracy is bad for now. Just check user's prompt is returned.
-        golden_start_with = "My favourite condiment is "
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -4656,12 +4659,13 @@ class TestExampleLLMScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                model_out = msg["result"][0]
-                self.assertTrue(
-                    model_out.startswith(golden_start_with),
-                    f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
-                )
-                self.assertGreaterEqual(msg["inference_speed"], 70)  # Lanai
+                inference_speed_ref = {"SM8650": 38, "SM8750": 56}
+                self.assertLessEqual(msg["wiki_ppl"], 18)
+                self.assertLessEqual(msg["pte_size"], 950_000_000)  # 950mb
+                if self.model in inference_speed_ref:
+                    self.assertGreaterEqual(
+                        msg["inference_speed"], inference_speed_ref[self.model]
+                    )
 
     def test_smollm2(self):
         if not self.required_envs():
