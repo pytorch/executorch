@@ -73,7 +73,14 @@ def test_cosh_u55_INT(test_data: Tuple):
 
 
 @common.XfailIfNoCorstone320
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    xfails={
+        "ones_4D": "MLBEDSW-11046 - Incorrect output for TABLE followed by RESHAPE"
+    },
+    strict=False,
+)
 def test_cosh_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Cosh(), (test_data,), aten_ops=aten_op, exir_ops=exir_op

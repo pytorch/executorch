@@ -200,15 +200,7 @@ def test_mul_tensor_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite_int32,
-    xfails={
-        # TODO: MLETORCH-1132 Investigate why tests with inputs that require broadcasting fail on u55/u85
-        "op_mul_rank4_randn_mutltiple_broadcasts_int32": "RuntimeError: mean(): could not infer output dtype. Input dtype must be either a floating point or complex dtype. Got: Int",
-        "op_mul_rank4_randn_broadcast_int32": "RuntimeError: mean(): could not infer output dtype. Input dtype must be either a floating point or complex dtype. Got: Int",
-    },
-)
+@common.parametrize("test_data", test_data_suite_int32)
 @common.XfailIfNoCorstone300
 def test_mul_tensor_u55_INT_int32(test_data: torch.Tensor):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -222,15 +214,7 @@ def test_mul_tensor_u55_INT_int32(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite_int32,
-    xfails={
-        # TODO: MLETORCH-1132 Investigate why tests with inputs that require broadcasting fail on u55/u85
-        "op_mul_rank4_randn_mutltiple_broadcasts_int32": "RuntimeError: mean(): could not infer output dtype. Input dtype must be either a floating point or complex dtype. Got: Int",
-        "op_mul_rank4_randn_broadcast_int32": "RuntimeError: mean(): could not infer output dtype. Input dtype must be either a floating point or complex dtype. Got: Int",
-    },
-)
+@common.parametrize("test_data", test_data_suite_int32)
 @common.XfailIfNoCorstone320
 def test_mul_tensor_u85_INT_int32(test_data: torch.Tensor):
     pipeline = EthosU85PipelineINT[input_t1](
