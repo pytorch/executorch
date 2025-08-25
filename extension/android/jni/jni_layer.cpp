@@ -200,6 +200,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
     ss << "Unknown EValue type: [" << static_cast<int>(evalue.tag) << "]";
     jni_helper::throwExecutorchException(
         static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    return {};
   }
 
   static TensorPtr JEValueToTensorImpl(
@@ -219,6 +220,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
     ss << "Unknown EValue typeCode: " << typeCode;
     jni_helper::throwExecutorchException(
         static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    return {};
   }
 };
 
