@@ -1088,9 +1088,9 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     return Error::InvalidArgument;
   }
 
- if (e.isNone()) {
+  if (e.isNone()) {
     // no-op
- } else if (e.isTensor()) {
+  } else if (e.isTensor()) {
     const auto& t_dst = e.toTensor();
     const auto& t_src = input_evalue.toTensor();
 
