@@ -144,7 +144,8 @@ Tensor& opt_div_scalar_out(
   auto error = resize_tensor(out, a.sizes());
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
-  if (a_type == common_type && a_type == out_type) {
+  if (a_type == common_type && a_type == out_type &&
+      a_type != ScalarType::Half && a_type != ScalarType::BFloat16) {
     ET_SWITCH_REAL_TYPES(a_type, ctx, "div.Scalar_out", CTYPE, [&]() {
       ET_SWITCH_REAL_TYPES_AND(
           Bool, b_type, ctx, "div.Scalar_out", CTYPE_B, [&]() {

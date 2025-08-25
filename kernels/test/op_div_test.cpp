@@ -54,7 +54,7 @@ class OpDivOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_div<DTYPE_A, DTYPE_B, ScalarType::dtype>();
 
-    ET_FORALL_FLOAT_TYPES(ENUMERATE_TEST_ENTRY)
+    ET_FORALL_FLOATHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -64,7 +64,7 @@ class OpDivOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_div_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -183,7 +183,7 @@ void OpDivOutTest::test_div_enumerate_a_types() {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_div_enumerate_b_types<ScalarType::dtype>();
 
-  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+  ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
   test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>();
 
@@ -506,9 +506,8 @@ TEST_F(OpDivOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 TEST_F(OpDivOutTest, BroadcastNDTest) {
   // Test 3D tensors
   test_broadcast_3D<ScalarType::Float>();
-  // half and bfloat16 are not supported for div quite yet
-  // test_broadcast_3D<ScalarType::Half>();
-  // test_broadcast_3D<ScalarType::BFloat16>();
+  test_broadcast_3D<ScalarType::Half>();
+  test_broadcast_3D<ScalarType::BFloat16>();
 }
 
 TEST_F(OpDivOutTest, DynamicShapeUnbound) {

@@ -68,10 +68,10 @@ TEST_F(OpLtScalarOutTest, AllRealInputBoolOutputSupport) {
   test_lt_scalar_out<ScalarType::dtype_in, ScalarType::dtype_out>();
 
 #define TEST_FORALL_OUT_TYPES(ctype_in, dtype_in)            \
-  ET_FORALL_REAL_TYPES_WITH2(ctype_in, dtype_in, TEST_ENTRY) \
+  ET_FORALL_REALHBF16_TYPES_WITH2(ctype_in, dtype_in, TEST_ENTRY) \
   test_lt_scalar_out<ScalarType::dtype_in, ScalarType::Bool>();
 
-  ET_FORALL_REAL_TYPES(TEST_FORALL_OUT_TYPES)
+  ET_FORALL_REALHBF16_TYPES(TEST_FORALL_OUT_TYPES)
 
 #undef TEST_FORALL_OUT_TYPES
 #undef TEST_ENTRY
@@ -125,10 +125,10 @@ TEST_F(OpLtTensorOutTest, AllDtypesSupported) {
   test_dtype<ScalarType::dtype_in, ScalarType::dtype_out>();
 
 #define TEST_FORALL_OUT_TYPES(ctype_in, dtype_in)            \
-  ET_FORALL_REAL_TYPES_WITH2(ctype_in, dtype_in, TEST_ENTRY) \
+  ET_FORALL_REALHBF16_TYPES_WITH2(ctype_in, dtype_in, TEST_ENTRY) \
   test_dtype<ScalarType::dtype_in, ScalarType::Bool>();
 
-  ET_FORALL_REAL_TYPES(TEST_FORALL_OUT_TYPES);
+  ET_FORALL_REALHBF16_TYPES(TEST_FORALL_OUT_TYPES);
 
 #undef TEST_FORALL_OUT_TYPES
 #undef TEST_ENTRY
