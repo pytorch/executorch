@@ -1080,6 +1080,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
 
             from executorch.exir.passes.external_constants_pass import (
                 delegate_external_constants_pass_unlifted,
+                external_constants_pass,
             )
 
             assert (
@@ -1088,6 +1089,11 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             delegate_external_constants_pass_unlifted(
                 module=builder_exported.pre_autograd_graph_module,
                 gen_tag_fn=gen_tag_fn,
+            )
+
+            # Also add a pass for 'to_executorch' to tag weights that aren't delegated.
+            additional_passes.append(
+                partial(external_constants_pass, gen_tag_fn=gen_tag_fn)
             )
 
         builder = _to_edge_and_lower_llama_xnnpack(
