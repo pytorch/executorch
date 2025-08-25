@@ -42,6 +42,7 @@ from executorch.backends.arm._passes import (
     DecomposeDivPass,
     DecomposeEmbeddingPass,
     DecomposeExpm1Pass,
+    DecomposeFmodPass,
     DecomposeGeluPass,
     DecomposeGluPass,
     DecomposeGroupedConv,
@@ -185,6 +186,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSinhPass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
+        self.add_pass(DecomposeFmodPass())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
@@ -275,6 +277,12 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeCosineSimilarityPass())
         self.add_pass(DecomposeGluPass())
+
+        if not self.tosa_spec.is_U55_subset:
+            # Uses where which is not supported on Ethos-U55
+            self.add_pass(DecomposeMaskedFill())
+            self.add_pass(DecomposeFmodPass())
+
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeLinearVectorNormPass())
@@ -291,9 +299,5 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertMinMaxPass())
         self.add_pass(ReplaceInfValues())
         self.add_pass(DecomposeSumPass())
-
-        if not self.tosa_spec.is_U55_subset:
-            # Uses where which is not supported on Ethos-U55
-            self.add_pass(DecomposeMaskedFill())
 
         return self._transform(graph_module)
