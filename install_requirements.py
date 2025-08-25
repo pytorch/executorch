@@ -12,58 +12,8 @@ import sys
 
 from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
 
-<<<<<<< HEAD
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_NIGHTLY_URL_BASE = "https://download.pytorch.org/whl/nightly"
-=======
-def python_is_compatible():
-    # Scrape the version range from pyproject.toml, which should be in the current directory.
-    version_specifier = None
-    with open("pyproject.toml", "r") as file:
-        for line in file:
-            if line.startswith("requires-python"):
-                match = re.search(r'"([^"]*)"', line)
-                if match:
-                    version_specifier = match.group(1)
-                    break
-
-    if not version_specifier:
-        print(
-            "WARNING: Skipping python version check: version range not found",
-            file=sys.stderr,
-        )
-        return False
-
-    # Install the packaging module if necessary.
-    try:
-        import packaging
-    except ImportError:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "packaging"], check=True
-        )
-    # Compare the current python version to the range in version_specifier. Exits
-    # with status 1 if the version is not compatible, or with status 0 if the
-    # version is compatible or the logic itself fails.
-    try:
-        import packaging.specifiers
-        import packaging.version
-
-        python_version = packaging.version.parse(platform.python_version())
-        version_range = packaging.specifiers.SpecifierSet(version_specifier)
-        if python_version not in version_range:
-            print(
-                f'ERROR: ExecuTorch does not support python version {python_version}: must satisfy "{version_specifier}"',
-                file=sys.stderr,
-            )
-            return False
-    except Exception as e:
-        print(f"WARNING: Skipping python version check: {e}", file=sys.stderr)
-    return True
-
-
-# The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cu126"
->>>>>>> fe438f9c92 (Add export_add.py)
 
 # Supported CUDA versions - modify this to add/remove supported versions
 # Format: tuple of (major, minor) version numbers
