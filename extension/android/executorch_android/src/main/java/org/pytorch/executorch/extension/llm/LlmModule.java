@@ -213,6 +213,8 @@ public class LlmModule {
   /**
    * Generate tokens from the given prompt, starting from the given position.
    *
+   * <p> This is a deprecated API. Please use {@link #generate(String, int, LlmCallback, boolean)}
+   *
    * @param prompt The text prompt to LLaVA.
    * @param seqLen The total sequence length, including the prompt tokens and new tokens.
    * @param startPos The starting position in KV cache of the input in the LLM.
@@ -220,13 +222,14 @@ public class LlmModule {
    * @param echo indicate whether to echo the input prompt or not.
    * @return The error code.
    */
+  @Deprecated
   public native int generateFromPos(
       String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo);
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
    *
-   * The startPos will be reset to 0.
+   * <p>The startPos will be reset to 0.
    */
   public native int resetContext();
 

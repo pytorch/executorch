@@ -76,8 +76,7 @@ Error LlavaRunner::load() {
   return Error::Ok;
 }
 
-Error LlavaRunner::prefill_images(
-    std::vector<llm::Image>& images) {
+Error LlavaRunner::prefill_images(std::vector<llm::Image>& images) {
   for (auto& image : images) {
     // pos_ is updated inside image prefill.
     ET_UNWRAP(image_prefiller_->prefill(image, pos_));
@@ -85,10 +84,8 @@ Error LlavaRunner::prefill_images(
   return Error::Ok;
 }
 
-Result<uint64_t> LlavaRunner::prefill_prompt(
-    const std::string& prompt,
-    int8_t bos,
-    int8_t eos) {
+Result<uint64_t>
+LlavaRunner::prefill_prompt(const std::string& prompt, int8_t bos, int8_t eos) {
   std::vector<uint64_t> prompt_tokens =
       ET_UNWRAP_TOKENIZER(tokenizer_->encode(prompt, bos, eos));
 

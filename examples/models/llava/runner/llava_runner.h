@@ -67,10 +67,8 @@ class ET_EXPERIMENTAL LlavaRunner {
   ::executorch::runtime::Error prefill_images(
       std::vector<::executorch::extension::llm::Image>& images);
 
-  ::executorch::runtime::Result<uint64_t> prefill_prompt(
-      const std::string& prompt,
-      int8_t bos = 0,
-      int8_t eos = 0);
+  ::executorch::runtime::Result<uint64_t>
+  prefill_prompt(const std::string& prompt, int8_t bos = 0, int8_t eos = 0);
 
   ET_DEPRECATED ::executorch::runtime::Error generate_from_pos(
       const std::string& prompt,

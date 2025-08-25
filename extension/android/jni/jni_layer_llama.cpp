@@ -320,10 +320,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(multi_modal_runner_->generate_from_pos(
+      return static_cast<jint>(multi_modal_runner_->generate(
           prompt->toStdString(),
           seq_len,
-          start_pos,
           [callback](const std::string& result) { callback->onResult(result); },
           [callback](const llm::Stats& stats) { callback->onStats(stats); },
           echo));
