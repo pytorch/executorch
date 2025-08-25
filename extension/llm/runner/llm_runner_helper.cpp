@@ -21,6 +21,7 @@
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 #include <pytorch/tokenizers/sentencepiece.h>
+#include <pytorch/tokenizers/tekken.h>
 #include <pytorch/tokenizers/tiktoken.h>
 
 namespace executorch::extension::llm {
@@ -35,6 +36,18 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
     size_t bos_token_index,
     size_t eos_token_index) {
   runtime::runtime_init();
+  auto tekken_tokenizer = std::make_unique<tokenizers::Tekken>();
+  // Prevent the case where tekken tokenizer accidentally successfully loads a
+  // HuggingFace tokenizer, which is also .json.
+  const std::string tekken_name = "tekken.json";
+  if (tokenizer_path.size() >= tekken_name.size() &&
+      tokenizer_path.rfind(tekken_name) ==
+          tokenizer_path.size() - tekken_name.size()) {
+    if (tekken_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+      ET_LOG(Info, "Loaded tekken tokenizer");
+      return tekken_tokenizer;
+    }
+  }
   auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
   if (json_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
     ET_LOG(Info, "Loaded json tokenizer");
@@ -109,6 +122,18 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
     }
     ET_LOG(Info, "Metadata: %s = %" PRId64, method_name.c_str(), value);
   }
+
+  // If kMaxContextLen method not found but kMaxSeqLen is
+  // available, set kMaxContextLen to the value of kMaxSeqLen.
+  if (!method_names.count(llm::kMaxContextLen) &&
+      method_names.count(llm::kMaxSeqLen)) {
+    metadata[llm::kMaxContextLen] = metadata[llm::kMaxSeqLen];
+    ET_LOG(
+        Info,
+        "Setting kMaxContextLen to kMaxSeqLen value: %" PRId64,
+        metadata[llm::kMaxContextLen]);
+  }
+
   // Set tokenizer-related metadata
   metadata[llm::kBosId] = tokenizer->bos_tok();
   metadata[llm::kVocabSize] = tokenizer->vocab_size();
