@@ -515,6 +515,11 @@ def register_view_ops_with_buffer_meta():
     )
 
 
+@update_features(exir_ops.edge.aten.expand_copy.default)
+def register_expand():
+    return OpFeatures(inputs_storage=utils.ANY_BUFFER, supports_resize=False)
+
+
 # Fully featured transfer operators (i.e. operators that copy data from the input
 # tensor(s) to the output tensor(s)), which have memory layout agnostic implementations
 # for both texture and buffer storage types.
