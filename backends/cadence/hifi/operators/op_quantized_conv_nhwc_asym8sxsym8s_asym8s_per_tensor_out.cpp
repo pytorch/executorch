@@ -153,63 +153,8 @@ void xa_opt_quantized_conv_nhwc_asym8sxsym8s_asym8s(
     return;
   }
 
-  if (groups == input_channels) {
-    WORD32 channels_multiplier = out_channels / input_channels;
-
-    scratch_size = xa_nn_conv2d_depthwise_getsize(
-        input_height,
-        input_width,
-        input_channels,
-        kernel_height,
-        kernel_width,
-        channels_multiplier,
-        x_stride,
-        y_stride,
-        x_padding,
-        y_padding,
-        out_height,
-        out_width,
-        inp_precision,
-        0); // NHWC
-
-    scratch_size = scratch_size < 0 ? 0 : scratch_size;
-
-    ptr_scratch = (WORD32*)kernels::allocate_temp_memory(ctx, scratch_size);
-
-    p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
-
-    for (int _n = 0; _n < batches; _n++) {
-      WORD8* in_batch =
-          p_inp + _n * input_channels * input_height * input_width;
-      WORD8* out_batch = p_out + _n * out_channels * out_height * out_width;
-
-      xa_nn_conv2d_depthwise_per_chan_sym8sxasym8s(
-          out_batch,
-          p_kernel,
-          in_batch,
-          p_bias,
-          input_height,
-          input_width,
-          input_channels,
-          kernel_height,
-          kernel_width,
-          channels_multiplier,
-          x_stride,
-          y_stride,
-          x_padding,
-          y_padding,
-          out_height,
-          out_width,
-          input_zero_bias,
-          out_multiplier32,
-          out_shift32,
-          out_zero_bias,
-          0, // NHWC
-          0, // NHWC
-          p_scratch);
-    }
-    return;
-  }
+  // Depthwise convolutions are now handled by specialized operators
+  ET_CHECK_MSG(groups == 1, "Only groups=1 supported for regular convolution");
 }
 
 void quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_out(
