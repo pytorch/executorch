@@ -50,6 +50,7 @@ class NeutronConverterManager:
 
         cctx = neutron_converter.CompilationContext()
         cctx.targetOpts = neutron_converter.getNeutronTarget(target)
+        cctx.compilationOpts.minNumOpsPerGraph = 1
         model_converted = neutron_converter.convertModel(list(tflite_model), cctx)
 
         return bytes(model_converted)
