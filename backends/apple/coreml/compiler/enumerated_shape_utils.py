@@ -6,7 +6,7 @@ import coremltools as ct
 import torch
 from coremltools.converters.mil.frontend.torch.utils import TORCH_DTYPE_TO_MIL_DTYPE
 
-_IGNORE_RANGE_CONSTRAINTS: bool = True
+_IGNORE_RANGE_CONSTRAINTS: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,8 +134,9 @@ def _create_enumeration_map(ep, enumerated_shapes, *, ignore_range_constraints=F
                 else:
                     # Check eshape is within bound
                     if serialized_shape[i].low is not None:
-                        assert (
-                            eshape[i] >= serialized_shape[i].low
+                        # We add special case for when the low bound is 2.  This is because Torch does not usually allow 1 as a lower bound
+                        assert (eshape[i] >= serialized_shape[i].low) or (
+                            eshape[i] == 1 and serialized_shape[i].low == 2
                         ), f"In {name}, the shape enumeration {eshape} violates the lower range-constraint on the symbolic shape {shape} at index {i}"
                     if serialized_shape[i].high is not None:
                         assert (

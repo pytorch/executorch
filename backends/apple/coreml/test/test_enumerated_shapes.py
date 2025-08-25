@@ -46,13 +46,13 @@ class TestEnumeratedShapes(unittest.TestCase):
 
         model = Model()
         example_inputs = (
-            torch.randn((3, 5, 10)),
-            torch.randn((3, 11)),
+            torch.randn((4, 6, 10)),
+            torch.randn((5, 11)),
         )
-        enumerated_shapes = {"x": [[3, 5, 10], [4, 6, 10]], "y": [[3, 11], [5, 11]]}
+        enumerated_shapes = {"x": [[1, 5, 10], [4, 6, 10]], "y": [[3, 11], [5, 11]]}
         dynamic_shapes = [
             {
-                0: torch.export.Dim.AUTO(min=3, max=4),
+                0: torch.export.Dim.AUTO(min=1, max=4),
                 1: torch.export.Dim.AUTO(min=5, max=6),
             },
             {0: torch.export.Dim.AUTO(min=3, max=5)},
@@ -60,6 +60,7 @@ class TestEnumeratedShapes(unittest.TestCase):
         ep = torch.export.export(
             model.eval(), example_inputs, dynamic_shapes=dynamic_shapes
         )
+        print("EP", ep)
 
         compile_specs = CoreMLBackend.generate_compile_specs(
             minimum_deployment_target=ct.target.iOS18
@@ -78,7 +79,7 @@ class TestEnumeratedShapes(unittest.TestCase):
         et_prog = delegated_program.to_executorch()
 
         good_input1 = (
-            torch.randn((3, 5, 10)),
+            torch.randn((1, 5, 10)),
             torch.randn((3, 11)),
         )
         good_input2 = (
@@ -86,8 +87,12 @@ class TestEnumeratedShapes(unittest.TestCase):
             torch.randn((5, 11)),
         )
         bad_input = (
-            torch.randn((3, 5, 10)),
+            torch.randn((1, 5, 10)),
             torch.randn((5, 11)),
+        )
+        bad_input2 = (
+            torch.randn((2, 7, 12)),
+            torch.randn((3, 11)),
         )
 
         self._compare_outputs(et_prog, model, good_input1)
@@ -95,6 +100,9 @@ class TestEnumeratedShapes(unittest.TestCase):
         if IS_VALID_TEST_RUNTIME:
             self.assertRaises(
                 RuntimeError, lambda: self._compare_outputs(et_prog, model, bad_input)
+            )
+            self.assertRaises(
+                RuntimeError, lambda: self._compare_outputs(et_prog, model, bad_input2)
             )
 
 
