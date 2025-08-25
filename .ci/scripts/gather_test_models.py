@@ -138,7 +138,7 @@ def export_models_for_ci() -> dict[str, dict]:
     event = args.event
 
     # When a corresponding label is present, treat it as a schedule event
-    if event == "pull_request" and _pr_has_label("ciflow/periodic"):
+    if _pr_has_label("ciflow/periodic"):
         event = "schedule"
 
     models = {"include": []}
