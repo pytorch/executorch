@@ -13,6 +13,7 @@
 namespace torch {
 namespace executor {
 namespace native {
+namespace impl {
 
 Tensor& lt_tensor_out(
     KernelRuntimeContext& ctx,
@@ -34,6 +35,43 @@ Tensor& lt_scalar_out(
   return internal::comparison_scalar_out<std::less, op_name>(ctx, a, b, out);
 }
 
+} // namespace impl
+
+Tensor& lt_tensor_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
+  return impl::lt_tensor_out(ctx, a, b, out);
+}
+
+Tensor& lt_scalar_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    Tensor& out) {
+  return impl::lt_scalar_out(ctx, a, b, out);
+}
+
+namespace utils {
+
+Tensor& lt_tensor_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
+  return impl::lt_tensor_out(ctx, a, b, out);
+}
+
+Tensor& lt_scalar_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    Tensor& out) {
+  return impl::lt_scalar_out(ctx, a, b, out);
+}
+
+} // namespace utils
 } // namespace native
 } // namespace executor
 } // namespace torch

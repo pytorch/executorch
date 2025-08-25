@@ -514,6 +514,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:math_util",
             ":scalar_utils",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_elu",
@@ -537,6 +538,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_empty",
@@ -639,6 +641,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_gelu",
@@ -666,6 +669,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_hardtanh",
@@ -716,6 +720,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_leaky_relu",
@@ -815,6 +820,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_masked_fill",
@@ -904,6 +910,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             ":scalar_utils",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_narrow_copy",
@@ -947,6 +954,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_neg",
@@ -1237,6 +1245,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_sum",

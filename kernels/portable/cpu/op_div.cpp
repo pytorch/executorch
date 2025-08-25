@@ -16,6 +16,7 @@
 namespace torch {
 namespace executor {
 namespace native {
+namespace impl {
 
 namespace {
 
@@ -279,6 +280,79 @@ Tensor& div_scalar_mode_out(
   return out;
 }
 
+} // namespace impl
+
+Tensor& div_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
+  return impl::div_out(ctx, a, b, out);
+}
+
+Tensor& div_out_mode(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    std::optional<std::string_view> mode,
+    Tensor& out) {
+  return impl::div_out_mode(ctx, a, b, mode, out);
+}
+
+Tensor& div_scalar_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    Tensor& out) {
+  return impl::div_scalar_out(ctx, a, b, out);
+}
+
+Tensor& div_scalar_mode_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    std::optional<std::string_view> mode,
+    Tensor& out) {
+  return impl::div_scalar_mode_out(ctx, a, b, mode, out);
+}
+
+namespace utils {
+
+Tensor& div_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out) {
+  return impl::div_out(ctx, a, b, out);
+}
+
+Tensor& div_out_mode(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    std::optional<std::string_view> mode,
+    Tensor& out) {
+  return impl::div_out_mode(ctx, a, b, mode, out);
+}
+
+Tensor& div_scalar_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    Tensor& out) {
+  return impl::div_scalar_out(ctx, a, b, out);
+}
+
+Tensor& div_scalar_mode_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    std::optional<std::string_view> mode,
+    Tensor& out) {
+  return impl::div_scalar_mode_out(ctx, a, b, mode, out);
+}
+
+} // namespace utils
 } // namespace native
 } // namespace executor
 } // namespace torch
