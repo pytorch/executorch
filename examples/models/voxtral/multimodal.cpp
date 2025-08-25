@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <iostream>
 #include <fstream>
 #include <cstring>
 
@@ -123,9 +122,6 @@ int32_t main(int32_t argc, char** argv) {
     ET_LOG(Error, "Failed to load tokenizer from: %s", tokenizer_path);
     return 1;
   }
-  
-  std::cout << "Tokenizer loaded" << std::endl;
-  std::cout << tokenizer->is_loaded() << std::endl;
 
   // Create multimodal runner
   std::unique_ptr<::executorch::extension::llm::MultimodalRunner> runner =
@@ -137,17 +133,12 @@ int32_t main(int32_t argc, char** argv) {
     return 1;
   }
 
-  std::cout << "Runner created" << std::endl;
-
   // Load runner
   auto load_error = runner->load();
   if (load_error != ::executorch::runtime::Error::Ok) {
-    // std::cout << load_error << std::endl;
     ET_LOG(Error, "Failed to load multimodal runner");
     return 1;
   }
-
-  std::cout << "Runner loaded" << std::endl;
 
   // Prepare inputs
   std::vector<MultimodalInput> inputs;
@@ -162,18 +153,13 @@ int32_t main(int32_t argc, char** argv) {
   int32_t batch_size = 3;
   int32_t n_bins = 128;
   int32_t n_frames = 3000;
-  std::cout << "Loading audio.bin from path: " << audio_path << std::endl;
   std::ifstream f(audio_path, std::ios::binary);
   std::vector<float> audio_data(batch_size * n_bins * n_frames);
   f.read(reinterpret_cast<char*>(audio_data.data()), audio_data.size() * sizeof(float));
 
   // Verify the first 10 values.
-  std::cout << "First 10 audio values: ";
   for (int i = 0; i < 10; ++i) {
-    std::cout << audio_data[i];
-    if (i < 9) std::cout << ", ";
   }
-  std::cout << std::endl;
 
   auto audio = std::make_unique<::executorch::extension::llm::Audio>();
   audio->batch_size = batch_size;
@@ -188,12 +174,6 @@ int32_t main(int32_t argc, char** argv) {
 
   // Add text input
   inputs.emplace_back(make_text_input(std::string(prompt) + "[/INST]"));
-  // inputs.emplace_back(make_text_input("[/INST]"));
-
-  std::cout << "Inputs:" << std::endl;
-  std::cout << inputs[0].is_text() << std::endl;
-  std::cout << inputs[1].is_audio() << std::endl;
-  std::cout << inputs[2].is_text() << std::endl;
 
   // Set up generation config
   ::executorch::extension::llm::GenerationConfig config;
@@ -211,8 +191,6 @@ int32_t main(int32_t argc, char** argv) {
     }
     runner->reset();
   }
-
-  std::cout << "Starting generation..." << std::endl;
 
   // Generate
   ET_LOG(Info, "Starting generation...");
