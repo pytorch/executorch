@@ -62,4 +62,6 @@ class AotiBackend(BackendDetails):
             shell=True,
         )
 
+        print("so_path", so_path)
+
         return PreprocessResult(so_path.encode("utf-8"))

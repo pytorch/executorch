@@ -24,11 +24,13 @@ from typing import Any, Dict, Tuple
 
 import torch
 from executorch.backends.aoti.aoti_partitioner import AotiPartitioner
-from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.exir import to_edge_transform_and_lower, to_edge
 from torch import nn
 from torch.export import export
 from torchvision import models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
+from torchvision.models.resnet import ResNet18_Weights
 
 
 # Model classes
@@ -39,6 +41,15 @@ class MV2(torch.nn.Module):
 
     def forward(self, x: torch.Tensor):
         return self.mv2(x)
+
+
+class ResNet18(torch.nn.Module):
+    def __init__(self):
+        super(ResNet18, self).__init__()
+        self.resnet18 = models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+
+    def forward(self, x: torch.Tensor):
+        return self.resnet18(x)
 
 
 class Linear(torch.nn.Module):
@@ -88,6 +99,15 @@ class DepthwiseConv(nn.Module):
         return self.conv(x)
 
 
+class BatchNorm(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.bn = nn.BatchNorm2d(num_features=16)
+
+    def forward(self, x):
+        return self.bn(x)
+
+
 # Model registry mapping model names to their configurations
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "mv2": {
@@ -95,6 +115,12 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "input_shapes": [(1, 3, 224, 224)],
         "device": "cuda",
         "description": "MobileNetV2 model",
+    },
+    "resnet18": {
+        "model_class": ResNet18,
+        "input_shapes": [(1, 3, 224, 224)],
+        "device": "cpu",
+        "description": "ResNet18 model",
     },
     "linear": {
         "model_class": Linear,
@@ -119,6 +145,12 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "input_shapes": [(10,), (10,)],
         "device": "cuda",
         "description": "Simple tensor addition model",
+    },
+    "batchnorm": {
+        "model_class": BatchNorm,
+        "input_shapes": [(1, 16, 32, 32)],
+        "device": "cuda",
+        "description": "Single BatchNorm2d layer model",
     },
 }
 
@@ -162,13 +194,21 @@ def export_model_to_et_aoti(model, example_inputs, output_filename="aoti_model.p
     print("Step 1: Converting to ATen dialect...")
     aten_dialect = export(model, example_inputs)
 
+    # print(aten_dialect)
+    # exit(0)
+
     # 2. to_edge: Make optimizations for Edge devices
     # aoti part should be decomposed by the internal torch._inductor.aot_compile
     # we should preserve the lowerable part and waiting for aoti backend handle that
     # Q: maybe need to turn on fallback_random?
+
     edge_program = to_edge_transform_and_lower(
         aten_dialect, partitioner=[AotiPartitioner([])]
     )
+
+    # edge_program = to_edge(aten_dialect)
+
+    print(edge_program.exported_program())
 
     # 3. to_executorch: Convert the graph to an ExecuTorch program
     print("Step 4: Converting to ExecuTorch program...")
