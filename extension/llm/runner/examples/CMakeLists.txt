@@ -52,7 +52,9 @@ else()
   set(CMAKE_TOOLCHAIN_IOS OFF)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC -DET_MIN_LOG_LEVEL=Info -DET_LOG_ENABLED=1)
+set(_common_compile_options -Wno-deprecated-declarations -fPIC
+                            -DET_MIN_LOG_LEVEL=Info -DET_LOG_ENABLED=1
+)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -202,6 +204,8 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   endif()
 endif()
 
-target_include_directories(multimodal_example PUBLIC ${_common_include_directories})
+target_include_directories(
+  multimodal_example PUBLIC ${_common_include_directories}
+)
 target_link_libraries(multimodal_example PUBLIC ${link_libraries})
 target_compile_options(multimodal_example PUBLIC ${_common_compile_options})

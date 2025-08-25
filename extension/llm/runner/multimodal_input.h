@@ -20,8 +20,8 @@
 namespace executorch::extension::llm {
 
 /**
- * A generic class to hold either image, text, or audio data for multimodal inputs.
- * This allows the generate() API to take a std::vector of these objects
+ * A generic class to hold either image, text, or audio data for multimodal
+ * inputs. This allows the generate() API to take a std::vector of these objects
  * instead of separate image, text, and audio parameters.
  */
 class ET_EXPERIMENTAL MultimodalInput {
@@ -36,7 +36,8 @@ class ET_EXPERIMENTAL MultimodalInput {
   explicit MultimodalInput(const Audio& audio) : data_(audio) {}
   explicit MultimodalInput(Audio&& audio) : data_(std::move(audio)) {}
   explicit MultimodalInput(const RawAudio& raw_audio) : data_(raw_audio) {}
-  explicit MultimodalInput(RawAudio&& raw_audio) : data_(std::move(raw_audio)) {}
+  explicit MultimodalInput(RawAudio&& raw_audio)
+      : data_(std::move(raw_audio)) {}
 
   // Copy constructor and assignment
   MultimodalInput(const MultimodalInput& other) = default;
@@ -83,12 +84,16 @@ class ET_EXPERIMENTAL MultimodalInput {
 
   /**
    * Get the type of data stored in this input.
-   * @return Type::TEXT if text data, Type::IMAGE if image data, Type::AUDIO if audio data, Type::RAW_AUDIO if raw audio data.
+   * @return Type::TEXT if text data, Type::IMAGE if image data, Type::AUDIO if
+   * audio data, Type::RAW_AUDIO if raw audio data.
    */
   Type get_type() const noexcept {
-    if (is_text()) return Type::TEXT;
-    if (is_image()) return Type::IMAGE;
-    if (is_audio()) return Type::AUDIO;
+    if (is_text())
+      return Type::TEXT;
+    if (is_image())
+      return Type::IMAGE;
+    if (is_audio())
+      return Type::AUDIO;
     return Type::RAW_AUDIO;
   }
 
@@ -272,7 +277,6 @@ class ET_EXPERIMENTAL MultimodalInput {
     return std::get_if<RawAudio>(&data_);
   }
 
-
  private:
   std::variant<std::string, Image, Audio, RawAudio> data_;
 };
@@ -302,7 +306,8 @@ inline MultimodalInput make_audio_input(Audio&& audio) noexcept {
   return MultimodalInput(std::move(audio));
 }
 
-inline MultimodalInput make_raw_audio_input(const RawAudio& raw_audio) noexcept {
+inline MultimodalInput make_raw_audio_input(
+    const RawAudio& raw_audio) noexcept {
   return MultimodalInput(raw_audio);
 }
 

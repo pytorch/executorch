@@ -63,7 +63,8 @@ set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 
 #
-# voxtral_runner: test binary to run voxtral, with tokenizer and sampler integrated
+# voxtral_runner: test binary to run voxtral, with tokenizer and sampler
+# integrated
 #
 
 # find `executorch` libraries Same as for gflags
@@ -95,12 +96,16 @@ endif()
 executorch_target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-# Add custom LLM ops that are needed for llama::update_cache and llama::custom_sdpa
+# Add custom LLM ops that are needed for llama::update_cache and
+# llama::custom_sdpa
 if(TARGET custom_ops)
   executorch_target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 else()
-  message(WARNING "custom_ops target not found. LLM custom operators may not be available.")
+  message(
+    WARNING
+      "custom_ops target not found. LLM custom operators may not be available."
+  )
 endif()
 
 set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
@@ -184,12 +189,14 @@ if(NOT TARGET extension_llm_runner)
 endif()
 
 # Add the required ExecutorTorch extensions for multimodal LLM runner
-list(APPEND link_libraries 
-    extension_llm_runner 
-    extension_module 
-    extension_data_loader 
-    extension_tensor 
-    extension_flat_tensor
+list(
+  APPEND
+  link_libraries
+  extension_llm_runner
+  extension_module
+  extension_data_loader
+  extension_tensor
+  extension_flat_tensor
 )
 
 # Add tokenizers

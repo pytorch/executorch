@@ -53,7 +53,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     encoder_output = image_encoder_outputs[0];
   } else if (input.is_audio()) {
     Audio audio = input.get_audio();
-    
+
     // Use the original tensor shape as intended
     auto audio_tensor = executorch::extension::from_blob(
         const_cast<float*>(reinterpret_cast<const float*>(audio.data.data())),
@@ -66,20 +66,21 @@ Result<uint64_t> MultimodalPrefiller::prefill(
       for (int i = 0; i < 10 && i < audio_tensor->numel(); ++i) {
       }
     }
-    
+
     // Run audio encoder
-    auto audio_encoder_result = module_->execute(kAudioEncoderMethod, audio_tensor);
+    auto audio_encoder_result =
+        module_->execute(kAudioEncoderMethod, audio_tensor);
     if (audio_encoder_result.error() != ::executorch::runtime::Error::Ok) {
-        return ::executorch::runtime::Error::Internal;
+      return ::executorch::runtime::Error::Internal;
     }
     auto audio_encoder_outputs = audio_encoder_result.get();
-    
+
     // Print some values from audio encoder outputs
     if (audio_encoder_outputs.size() > 0) {
       auto& output_tensor = audio_encoder_outputs[0].toTensor();
       for (int i = 0; i < output_tensor.dim(); ++i) {
       }
-      
+
       // Print first 10 values if tensor has data
       if (output_tensor.numel() > 0) {
         const float* data = output_tensor.const_data_ptr<float>();
@@ -87,7 +88,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
         }
       }
     }
-    
+
     encoder_output = audio_encoder_outputs[0];
   } else if (input.is_text()) {
     // For text input, we don't need to run the image encoder.
@@ -97,9 +98,10 @@ Result<uint64_t> MultimodalPrefiller::prefill(
         ET_UNWRAP_TOKENIZER(tokenizer_->encode(text));
     for (auto token : tokens) {
     }
-    // TODO: since this is not the right tekken.json tokenizer, the special tokens are not getting
-    // encoded properly, so the output of <s>[INST][BEGIN_AUDIO] is 9 tokens instead of 3, resulting it
-    // [1, 9, 3072], not [1, 3, 3072].
+    // TODO: since this is not the right tekken.json tokenizer, the special
+    // tokens are not getting encoded properly, so the output of
+    // <s>[INST][BEGIN_AUDIO] is 9 tokens instead of 3, resulting it [1, 9,
+    // 3072], not [1, 3, 3072].
     auto text_tensor = executorch::extension::from_blob(
         tokens.data(),
         {1, static_cast<aten::SizesType>(tokens.size())},
@@ -121,15 +123,16 @@ Result<uint64_t> MultimodalPrefiller::prefill(
       auto& output_tensor = token_embedding_outputs[0].toTensor();
       for (int i = 0; i < output_tensor.dim(); ++i) {
       }
-      
+
       // Print first few values from each token if tensor has data
       if (output_tensor.numel() > 0) {
-        if (output_tensor.scalar_type() == ::executorch::aten::ScalarType::Float) {
+        if (output_tensor.scalar_type() ==
+            ::executorch::aten::ScalarType::Float) {
           const float* data = output_tensor.const_data_ptr<float>();
           int batch_size = output_tensor.size(0);
           int seq_len = output_tensor.size(1);
           int hidden_dim = output_tensor.size(2);
-          
+
           for (int b = 0; b < batch_size; ++b) {
             for (int s = 0; s < seq_len; ++s) {
               for (int h = 0; h < 10 && h < hidden_dim; ++h) {
@@ -137,12 +140,15 @@ Result<uint64_t> MultimodalPrefiller::prefill(
               }
             }
           }
-        } else if (output_tensor.scalar_type() == ::executorch::aten::ScalarType::Half) {
-          const ::executorch::aten::Half* data = output_tensor.const_data_ptr<::executorch::aten::Half>();
+        } else if (
+            output_tensor.scalar_type() ==
+            ::executorch::aten::ScalarType::Half) {
+          const ::executorch::aten::Half* data =
+              output_tensor.const_data_ptr<::executorch::aten::Half>();
           int batch_size = output_tensor.size(0);
           int seq_len = output_tensor.size(1);
           int hidden_dim = output_tensor.size(2);
-          
+
           for (int b = 0; b < batch_size; ++b) {
             for (int s = 0; s < seq_len; ++s) {
               for (int h = 0; h < 10 && h < hidden_dim; ++h) {
@@ -163,7 +169,9 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   }
 
   // run text model
-  // Make it so that cache_position goes from start_pos to start_pos + encoder_output.size(1). e.g. if start_pos = 2 and encoder_output.size(1) = 5, cache_position_tensor should be [2, 3, 4, 5, 6].
+  // Make it so that cache_position goes from start_pos to start_pos +
+  // encoder_output.size(1). e.g. if start_pos = 2 and encoder_output.size(1) =
+  // 5, cache_position_tensor should be [2, 3, 4, 5, 6].
   int64_t seq_len = encoder_output.toTensor().size(1);
   std::vector<int64_t> cache_positions(seq_len);
   for (int64_t i = 0; i < seq_len; ++i) {
@@ -171,7 +179,8 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   }
   auto cache_position_tensor = ::executorch::extension::from_blob(
       cache_positions.data(), {seq_len}, executorch::aten::ScalarType::Long);
-  auto prefill_result = module_->execute(kTextModelMethod, {cache_position_tensor, encoder_output});
+  auto prefill_result = module_->execute(
+      kTextModelMethod, {cache_position_tensor, encoder_output});
   if (prefill_result.error() != ::executorch::runtime::Error::Ok) {
     return ::executorch::runtime::Error::Internal;
   }
@@ -181,22 +190,22 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   // Print decoder output values
   for (int i = 0; i < outputs_res.dim(); ++i) {
   }
-  
+
   // Print first few values if tensor has data
   if (outputs_res.numel() > 0) {
     if (outputs_res.scalar_type() == ::executorch::aten::ScalarType::Float) {
       const float* data = outputs_res.const_data_ptr<float>();
       for (int i = 0; i < 10 && i < outputs_res.numel(); ++i) {
       }
-    } else if (outputs_res.scalar_type() == ::executorch::aten::ScalarType::Half) {
-      const ::executorch::aten::Half* data = outputs_res.const_data_ptr<::executorch::aten::Half>();
+    } else if (
+        outputs_res.scalar_type() == ::executorch::aten::ScalarType::Half) {
+      const ::executorch::aten::Half* data =
+          outputs_res.const_data_ptr<::executorch::aten::Half>();
       for (int i = 0; i < 10 && i < outputs_res.numel(); ++i) {
       }
     } else {
     }
   }
-
-  
 
   // Update the start_pos, which is only available inside this function.
   // outputs_res can have only one logits.
@@ -221,8 +230,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   std::unordered_set<std::string> methods =
       ET_UNWRAP(module_->method_names(), "Failed to get method names");
   for (const auto& method : methods) {
-   }
-  
+  }
 
   // Load image_encoder method if exists.
   if (methods.find(kImageEncoderMethod) != methods.end()) {

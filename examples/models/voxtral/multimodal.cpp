@@ -6,16 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <fstream>
 #include <cstring>
+#include <fstream>
 
 #include <gflags/gflags.h>
 
-#include <executorch/extension/llm/runner/llm_runner_helper.h>
-#include <executorch/extension/llm/runner/multimodal_runner.h>
-#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/image.h>
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
+#include <executorch/extension/llm/runner/multimodal_runner.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -59,15 +59,16 @@ DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 namespace {
 
 using ::executorch::extension::llm::Image;
-using ::executorch::extension::llm::MultimodalInput;
-using ::executorch::extension::llm::make_text_input;
 using ::executorch::extension::llm::make_image_input;
+using ::executorch::extension::llm::make_text_input;
+using ::executorch::extension::llm::MultimodalInput;
 
 // Simple image loader - this is a placeholder implementation
-// In a real application, you'd use a proper image loading library like OpenCV or similar
+// In a real application, you'd use a proper image loading library like OpenCV
+// or similar
 std::unique_ptr<Image> load_image(const std::string& image_path) {
   ET_LOG(Info, "Loading image from: %s", image_path.c_str());
-  
+
   // This is a placeholder - you would implement actual image loading here
   // For now, create a dummy image with some basic dimensions
   auto image = std::make_unique<Image>();
@@ -76,8 +77,13 @@ std::unique_ptr<Image> load_image(const std::string& image_path) {
   image->channels = 3;
   // Create dummy RGB data (all zeros for simplicity)
   image->data.resize(image->width * image->height * image->channels, 0);
-  
-  ET_LOG(Info, "Created dummy image: %dx%dx%d", image->width, image->height, image->channels);
+
+  ET_LOG(
+      Info,
+      "Created dummy image: %dx%dx%d",
+      image->width,
+      image->height,
+      image->channels);
   return image;
 }
 
@@ -87,7 +93,7 @@ int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   const char* model_path = FLAGS_model_path.c_str();
-  
+
   std::optional<std::string> data_path = std::nullopt;
   if (!FLAGS_data_path.empty()) {
     data_path = FLAGS_data_path.c_str();
@@ -145,7 +151,7 @@ int32_t main(int32_t argc, char** argv) {
 
   // 1. Add start bos-related text inputs and modality start token.
   inputs.emplace_back(make_text_input("<s>[INST][BEGIN_AUDIO]"));
-  
+
   // 2. Add audio input
   // Using a preprocessed audio, saved using:
   // with open("tensor.bin", "wb") as f:
@@ -155,7 +161,9 @@ int32_t main(int32_t argc, char** argv) {
   int32_t n_frames = 3000;
   std::ifstream f(audio_path, std::ios::binary);
   std::vector<float> audio_data(batch_size * n_bins * n_frames);
-  f.read(reinterpret_cast<char*>(audio_data.data()), audio_data.size() * sizeof(float));
+  f.read(
+      reinterpret_cast<char*>(audio_data.data()),
+      audio_data.size() * sizeof(float));
 
   // Verify the first 10 values.
   for (int i = 0; i < 10; ++i) {
@@ -165,12 +173,14 @@ int32_t main(int32_t argc, char** argv) {
   audio->batch_size = batch_size;
   audio->n_bins = n_bins;
   audio->n_frames = n_frames;
-  
+
   // Keep data as floats - convert to uint8_t by copying byte representation
   audio->data.resize(audio_data.size() * sizeof(float));
-  std::memcpy(audio->data.data(), audio_data.data(), audio_data.size() * sizeof(float));
-  
-  inputs.emplace_back(::executorch::extension::llm::make_audio_input(std::move(*audio)));
+  std::memcpy(
+      audio->data.data(), audio_data.data(), audio_data.size() * sizeof(float));
+
+  inputs.emplace_back(
+      ::executorch::extension::llm::make_audio_input(std::move(*audio)));
 
   // Add text input
   inputs.emplace_back(make_text_input(std::string(prompt) + "[/INST]"));
@@ -178,7 +188,11 @@ int32_t main(int32_t argc, char** argv) {
   // Set up generation config
   ::executorch::extension::llm::GenerationConfig config;
   // config.seq_len = seq_len;
-  config.max_new_tokens = 100; // TODO: no tokenizer so it can't automatically end, prompt tokens turn out to be around 1138, so set this for now to be 100, so that it doesn't go 2048 (max context len inferred from export max seq len) - 1138 = around ~1000.
+  config.max_new_tokens =
+      100; // TODO: no tokenizer so it can't automatically end, prompt tokens
+           // turn out to be around 1138, so set this for now to be 100, so that
+           // it doesn't go 2048 (max context len inferred from export max seq
+           // len) - 1138 = around ~1000.
   config.temperature = temperature;
 
   // Run warmup if requested

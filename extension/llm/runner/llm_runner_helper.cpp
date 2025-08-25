@@ -41,7 +41,8 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
   // HuggingFace tokenizer, which is also .json.
   const std::string tekken_name = "tekken.json";
   if (tokenizer_path.size() >= tekken_name.size() &&
-      tokenizer_path.rfind(tekken_name) == tokenizer_path.size() - tekken_name.size()) {
+      tokenizer_path.rfind(tekken_name) ==
+          tokenizer_path.size() - tekken_name.size()) {
     if (tekken_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
       ET_LOG(Info, "Loaded tekken tokenizer");
       return tekken_tokenizer;
@@ -121,14 +122,18 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
     }
     ET_LOG(Info, "Metadata: %s = %" PRId64, method_name.c_str(), value);
   }
-  
-  // Custom rule: if kMaxContextLen method not found but kMaxSeqLen is available, 
-  // set kMaxContextLen to the value of kMaxSeqLen
-  if (!method_names.count(llm::kMaxContextLen) && method_names.count(llm::kMaxSeqLen)) {
+
+  // Custom rule: if kMaxContextLen method not found but kMaxSeqLen is
+  // available, set kMaxContextLen to the value of kMaxSeqLen
+  if (!method_names.count(llm::kMaxContextLen) &&
+      method_names.count(llm::kMaxSeqLen)) {
     metadata[llm::kMaxContextLen] = metadata[llm::kMaxSeqLen];
-    ET_LOG(Info, "Setting kMaxContextLen to kMaxSeqLen value: %" PRId64, metadata[llm::kMaxContextLen]);
+    ET_LOG(
+        Info,
+        "Setting kMaxContextLen to kMaxSeqLen value: %" PRId64,
+        metadata[llm::kMaxContextLen]);
   }
-  
+
   // Set tokenizer-related metadata
   metadata[llm::kBosId] = tokenizer->bos_tok();
   metadata[llm::kVocabSize] = tokenizer->vocab_size();

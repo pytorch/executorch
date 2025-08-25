@@ -29,7 +29,8 @@ struct ET_EXPERIMENTAL RawAudio {
 };
 
 /**
- * Audio inputs as a mel spectrogram, ready to feed directly into an audio encoder.
+ * Audio inputs as a mel spectrogram, ready to feed directly into an audio
+ * encoder.
  */
 struct ET_EXPERIMENTAL Audio {
   std::vector<uint8_t> data;

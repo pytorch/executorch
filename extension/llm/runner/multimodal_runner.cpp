@@ -124,7 +124,7 @@ Error MultimodalRunner::generate(
   int64_t max_context_len =
       metadata_.at(kMaxContextLen) - 0; // No start_pos offset
   int32_t max_new_tokens = config.resolve_max_new_tokens(max_context_len, pos_);
-  
+
   ET_LOG(
       Info,
       "Max new tokens resolved: %d, pos_ %" PRId64 ", max_context_len %" PRId64,

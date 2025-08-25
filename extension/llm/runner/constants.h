@@ -22,7 +22,10 @@ inline constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 // Multimodal method name conventions
 inline constexpr auto kImageEncoderMethod = "image_encoder";
 inline constexpr auto kAudioEncoderMethod = "audio_encoder";
-inline constexpr auto kTokenEmbeddingMethod = "token_embeddings"; // TODO: either revert this or change to token_embedding in optimum.
-inline constexpr auto kTextModelMethod = "decoder";  // TODO: either revert this or change to text_model in optimum.
+inline constexpr auto kTokenEmbeddingMethod =
+    "token_embeddings"; // TODO: either revert this or change to token_embedding
+                        // in optimum.
+inline constexpr auto kTextModelMethod =
+    "decoder"; // TODO: either revert this or change to text_model in optimum.
 
 } // namespace executorch::extension::llm
