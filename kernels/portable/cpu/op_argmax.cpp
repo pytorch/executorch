@@ -58,7 +58,7 @@ Tensor& argmax_out(
                   // the below condition as written is equivalent to
                   // !isnan(accval) && (isnan(v) || v > acc_val). See
                   // argument in op_argmin.cpp.
-                  if (!std::isnan(acc_val) && !(v <= acc_val)) {
+                  if (!std::isnan(static_cast<float>(acc_val)) && !(v <= acc_val)) {
                     acc_val = v;
                     acc_ix = ix;
                   }

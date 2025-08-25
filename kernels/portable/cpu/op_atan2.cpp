@@ -52,7 +52,7 @@ Tensor& atan2_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "atan2.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "atan2.out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_bitensor_elementwise_fn<

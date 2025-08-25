@@ -20,7 +20,7 @@ Tensor& eq_tensor_out(
     const Tensor& b,
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "eq.Tensor_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "eq.Tensor_out";
   return internal::comparison_tensor_out<std::equal_to, op_name>(
       ctx, a, b, out);
 }
@@ -31,7 +31,7 @@ Tensor& eq_scalar_out(
     const Scalar& b,
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "eq.Scalar_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "eq.Scalar_out";
   return internal::comparison_scalar_out<std::equal_to, op_name>(
       ctx, a, b, out);
 }

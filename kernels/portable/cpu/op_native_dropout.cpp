@@ -45,7 +45,8 @@ std::tuple<Tensor&, Tensor&> native_dropout_out(
       prob);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "native_dropout.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "native_dropout.out";
+
   if ((!train.has_value() || train.value()) && prob != 0) {
     {
       std::mt19937 gen((std::random_device())());

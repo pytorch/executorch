@@ -50,7 +50,7 @@ Tensor& pow_Tensor_Tensor_out(
   }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "pow.Tensor_Tensor_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "pow.Tensor_Tensor_out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_bitensor_elementwise_fn<
@@ -102,7 +102,7 @@ Tensor& pow_Tensor_Scalar_out(
   }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "pow.Tensor_Scalar_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "pow.Tensor_Scalar_out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
@@ -157,7 +157,7 @@ Tensor& pow_Scalar_out(
   }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "pow.Scalar_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "pow.Scalar_out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_a = utils::scalar_to<CTYPE_COMPUTE>(a);

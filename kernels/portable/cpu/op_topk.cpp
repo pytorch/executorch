@@ -62,7 +62,7 @@ bool float_less_than(T x, T y) {
   if constexpr (std::is_integral_v<T>) {
     return x < y;
   }
-  return (!std::isnan(x) && std::isnan(y)) || x < y;
+  return (!std::isnan(static_cast<float>(x)) && std::isnan(static_cast<float>(y))) || x < y;
 }
 
 template <typename CTYPE, typename elem_t = std::pair<CTYPE, int64_t>>

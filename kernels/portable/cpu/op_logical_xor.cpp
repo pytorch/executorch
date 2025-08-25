@@ -27,7 +27,7 @@ Tensor& logical_xor_out(
     const Tensor& b,
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "logical_xor.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "logical_xor.out";
   return internal::logical_tensor_out<op_name>(logical_xor, ctx, a, b, out);
 }
 

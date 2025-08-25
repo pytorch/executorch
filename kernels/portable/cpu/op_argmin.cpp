@@ -65,7 +65,7 @@ Tensor& argmin_out(
                   // - false, so the result is true. The result is trivially
                   // - true for the above condition that uses isnan(v) as
                   // - well.
-                  if (!std::isnan(acc_val) && !(v >= acc_val)) {
+                  if (!std::isnan(static_cast<float>(acc_val)) && !(v >= acc_val)) {
                     acc_val = v;
                     acc_ix = ix;
                   }

@@ -20,7 +20,7 @@ Tensor& bitwise_and_Tensor_out(
     const Tensor& b,
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "bitwise_and.Tensor_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "bitwise_and.Tensor_out";
   return internal::bitwise_tensor_out<std::bit_and, op_name>(ctx, a, b, out);
 }
 
@@ -30,7 +30,7 @@ Tensor& bitwise_and_Scalar_out(
     const Scalar& b,
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "bitwise_and.Scalar_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "bitwise_and.Scalar_out";
   return internal::bitwise_scalar_out<std::bit_and, op_name>(ctx, a, b, out);
 }
 

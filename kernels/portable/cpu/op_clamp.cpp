@@ -132,7 +132,7 @@ Tensor& clamp_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "clamp.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "clamp.out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_unitensor_elementwise_fn<
@@ -210,7 +210,7 @@ Tensor& clamp_tensor_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "clamp.Tensor_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "clamp.Tensor_out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_tritensor_elementwise_fn<

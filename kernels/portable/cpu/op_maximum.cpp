@@ -42,7 +42,7 @@ Tensor& maximum_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "maximum.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "maximum.out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_bitensor_elementwise_fn<

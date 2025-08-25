@@ -51,7 +51,7 @@ Tensor& sum_dim_out(
     plan.emplace(in, dim_list);
   }
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "sum.IntList_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "sum.IntList_out";
 
   if (executorch::runtime::isComplexType(in.scalar_type())) {
     ET_KERNEL_CHECK(
