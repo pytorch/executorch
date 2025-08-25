@@ -14,6 +14,7 @@
 namespace torch {
 namespace executor {
 namespace native {
+namespace impl {
 
 Tensor& sub_out(
     KernelRuntimeContext& ctx,
@@ -129,6 +130,47 @@ Tensor& sub_scalar_out(
   return out;
 }
 
+} // namespace impl
+
+Tensor& sub_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    const Scalar& alpha,
+    Tensor& out) {
+  return impl::sub_out(ctx, a, b, alpha, out);
+}
+
+Tensor& sub_scalar_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    const Scalar& alpha,
+    Tensor& out) {
+  return impl::sub_scalar_out(ctx, a, b, alpha, out);
+}
+
+namespace utils {
+
+Tensor& sub_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    const Scalar& alpha,
+    Tensor& out) {
+  return impl::sub_out(ctx, a, b, alpha, out);
+}
+
+Tensor& sub_scalar_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    const Scalar& alpha,
+    Tensor& out) {
+  return impl::sub_scalar_out(ctx, a, b, alpha, out);
+}
+
+} // namespace utils
 } // namespace native
 } // namespace executor
 } // namespace torch
