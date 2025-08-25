@@ -253,7 +253,7 @@ def dump_error_output(
     export_stage = tester.stages.get(StageType.EXPORT, None)
     quantize_stage = tester.stages.get(StageType.QUANTIZE, None)
     if export_stage is not None and quantize_stage is not None:
-        output_node = export_stage.artifact.graph_module.output_node()
+        output_node = export_stage.artifact.graph_module.graph.output_node()
         qp_input = get_input_quantization_params(export_stage.artifact)
         qp_output = get_output_quantization_params(output_node)
         logger.error(f"Input QuantArgs: {qp_input}")
