@@ -88,7 +88,8 @@ Tensor& opt_le_scalar_out(
   ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
-  if (a_type == common_type && a_type == out_type) {
+  if (a_type == common_type && a_type == out_type &&
+      a_type != ScalarType::Half && a_type != ScalarType::BFloat16) {
     ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "le.Scalar_out", CTYPE, [&]() {
       ET_SWITCH_REAL_TYPES_AND(
           Bool, b_type, ctx, "le.Scalar_out", CTYPE_B, [&]() {
