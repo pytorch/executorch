@@ -103,3 +103,5 @@ jobs:
         ./install_requirements.sh > /dev/null
         cmake --preset ${{ matrix.preset }}
         cmake --build cmake-out -j$(( $(nproc) - 1 ))
+
+  # TODO(gjcomer) Re-enable Windows job when functional
