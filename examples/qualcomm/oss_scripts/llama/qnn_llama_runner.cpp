@@ -9,8 +9,8 @@
 /**
  * @file
  *
- * This tool can run Llama2 110M, Llama3.2 1B / 3B, Qwen2.5 0.5B, Qwen3 0.6B
- * / 1.7B, phi4-mini-instruct, Smollm2 135M with Qualcomm AI Engine Direct.
+ * This tool can run Llama2 110M, Llama3.2 1B / 3B, Qwen2.5 0.5B / 1.5B, Qwen3
+ * 0.6B / 1.7B, phi4-mini-instruct, Smollm2 135M with Qualcomm AI Engine Direct.
  *
  */
 
@@ -104,6 +104,17 @@ std::string get_formatted_prompt(
     case example::DecoderModelVersion::kLlama2:
     case example::DecoderModelVersion::kQwen2_5:
       formatted_prompt.append(prompt);
+      break;
+    case example::DecoderModelVersion::kQwen3:
+      formatted_prompt.append("<|im_start|>user\n");
+      formatted_prompt.append(prompt);
+      formatted_prompt.append("<|im_end|>\n");
+      if (!system_prompt.empty()) {
+        formatted_prompt.append("<|im_start|>system\n");
+        formatted_prompt.append(system_prompt);
+        formatted_prompt.append("<|im_end|>\n");
+      }
+      formatted_prompt.append("<|im_start|>assistant");
       break;
     case example::DecoderModelVersion::kPhi4:
       if (!system_prompt.empty()) {
