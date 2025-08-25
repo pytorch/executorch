@@ -1113,6 +1113,17 @@ class LargeTensorLinear(torch.nn.Module):
         return self.linear2(x1)
 
 
+class LayerNormWithoutParams(torch.nn.Module):
+    def __init__(self, hidden_size: int):
+        super().__init__()
+        self.normalized_shape = (hidden_size,)
+
+    def forward(self, x):
+        return torch.nn.functional.layer_norm(
+            x, self.normalized_shape, None, None, eps=1e-5
+        )
+
+
 class LayerNorm(torch.nn.Module):
     def __init__(self, bias=True):
         super().__init__()

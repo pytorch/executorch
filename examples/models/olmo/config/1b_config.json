@@ -1,0 +1,13 @@
+{
+  "attention_qkv_bias": false,
+  "dim": 2048,
+  "hidden_dim": 8192,
+  "n_heads": 16,
+  "n_layers": 16,
+  "n_kv_heads": 16,
+  "norm_type": "olmo",
+  "norm_eps": 1e-05,
+  "use_scaled_rope": false,
+  "rope_theta": 10000.0,
+  "vocab_size": 50304
+}

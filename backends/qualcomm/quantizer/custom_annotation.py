@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+from enum import Enum, unique
 from typing import Sequence
 
 import torch
@@ -29,6 +30,17 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
     SharedQuantizationSpec,
 )
+
+
+@unique
+class StaticLLMQuantConfig(Enum):
+    """
+    Layer namespace configuration for Qualcomm's static LLaMA quantization.
+    """
+
+    wq_sha = "wq_sha"  # Query weight (single head)
+    wk_sha = "wk_sha"  # Key weight (single head)
+    wv_sha = "wv_sha"  # Value weight (single head)
 
 
 def annotate_eurobert(gm: torch.fx.GraphModule):
@@ -166,11 +178,35 @@ def annotate_prefill_kv_output(gm: torch.fx.GraphModule, kv_quant_attrs: dict):
                 )
 
 
-def annotate_wv_sha(gm: torch.fx.GraphModule, quantization_config: QuantizationConfig):
+def annotate_qkv_proj_sha(
+    gm: torch.fx.GraphModule,
+    quantization_config: QuantizationConfig,
+    qkv_tags: set[StaticLLMQuantConfig],
+):
+    """
+    Annotates QKV projection layers in a GraphModule for quantization,
+    specifically layers defined in StaticLLMQuantConfig.
+
+    Args:
+        qkv_tags (set[StaticLLMQuantConfig]): A set of enum tags indicating which QKV layers
+            (e.g., wq, wk, wv) should be annotated for quantization. Only tags defined in
+            StaticLLMQuantConfig are allowed.
+
+    Raises:
+        ValueError: If any tag in `qkv_tags` is not among the allowed enum members.
+    """
+
+    # Get all valid tags from the StaticLLMQuantConfig enum
+    allowed_tags = set(StaticLLMQuantConfig)
+    invalid_tags = qkv_tags - allowed_tags
+    if invalid_tags:
+        raise ValueError(
+            f"Invalid qkv tags: {invalid_tags}. Allowed tags are: {allowed_tags}"
+        )
+
     for node in gm.graph.nodes:
-        if (
-            node.target == torch.ops.aten.conv2d.default
-            and "wv_sha" in node.meta["stack_trace"]
+        if node.target == torch.ops.aten.conv2d.default and any(
+            tag.value in node.meta["stack_trace"] for tag in qkv_tags
         ):
             input_qspec_map = {}
             input_qspec_map[node.args[0]] = quantization_config.input_activation

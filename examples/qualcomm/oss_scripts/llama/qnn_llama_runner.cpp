@@ -103,6 +103,7 @@ std::string get_formatted_prompt(
   switch (decoder_model_version) {
     case example::DecoderModelVersion::kLlama2:
     case example::DecoderModelVersion::kQwen2_5:
+    case example::DecoderModelVersion::kOlmo:
       formatted_prompt.append(prompt);
       break;
     case example::DecoderModelVersion::kQwen3:

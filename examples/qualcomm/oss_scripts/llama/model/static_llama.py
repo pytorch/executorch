@@ -19,6 +19,7 @@ from executorch.examples.models.llama.rope import (
     hf_precompute_freqs_cis,
     precompute_freqs_cis,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.model import NORM_REGISTRY
 
 
 def apply_rotary_emb_single(
@@ -75,8 +76,12 @@ class LlamaAttention(nn.Module):
         if self.use_qk_norm:
             q_norm_dim = self.head_dim
             k_norm_dim = self.head_dim
-            self.q_norm_fn = torch.nn.RMSNorm(q_norm_dim, eps=config.norm_eps)
-            self.k_norm_fn = torch.nn.RMSNorm(k_norm_dim, eps=config.norm_eps)
+            self.q_norm_fn = NORM_REGISTRY.get(config.norm_type, torch.nn.RMSNorm)(
+                q_norm_dim, eps=config.norm_eps
+            )
+            self.k_norm_fn = NORM_REGISTRY.get(config.norm_type, torch.nn.RMSNorm)(
+                k_norm_dim, eps=config.norm_eps
+            )
 
         if config.partial_rotary_factor < 1:
             self.apply_rope_emb = apply_partial_rotary_emb_single
@@ -397,8 +402,12 @@ class LlamaDecoderLayer(nn.Module):
             output_new_cache_only=output_new_cache_only,
         )
         self.feed_forward = FeedForward(config)
-        self.attention_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
-        self.ffn_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+        self.attention_norm = NORM_REGISTRY.get(config.norm_type, torch.nn.RMSNorm)(
+            config.dim, eps=config.norm_eps
+        )
+        self.ffn_norm = NORM_REGISTRY.get(config.norm_type, torch.nn.RMSNorm)(
+            config.dim, eps=config.norm_eps
+        )
 
     def forward(
         self,
@@ -454,7 +463,9 @@ class LlamaModel(nn.Module):
                 for _ in range(config.n_layers)
             ]
         )
-        self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
+        self.norm = NORM_REGISTRY.get(config.norm_type, torch.nn.RMSNorm)(
+            config.dim, eps=config.norm_eps
+        )
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
         if config.use_hf_rope:

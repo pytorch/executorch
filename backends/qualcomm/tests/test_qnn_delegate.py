@@ -832,7 +832,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_layer_norm(self):
-        modules = [LayerNorm(), LayerNorm(bias=False)]  # noqa: F405
+        modules = [
+            LayerNorm(),  # noqa: F405
+            LayerNorm(bias=False),  # noqa: F405
+            LayerNormWithoutParams(768),  # noqa: F405
+        ]
         sample_input = (torch.randn(196, 768),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -2360,7 +2364,11 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_layer_norm(self):
-        modules = [LayerNorm(), LayerNorm(bias=False)]  # noqa: F405
+        modules = [
+            LayerNorm(),  # noqa: F405
+            LayerNorm(bias=False),  # noqa: F405
+            LayerNormWithoutParams(768),  # noqa: F405
+        ]
         sample_input = (torch.randn(196, 768),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -4862,6 +4870,65 @@ class TestExampleLLMScript(TestQNN):
                     self.assertLessEqual(pte_size, 130000000)
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
+
+    def test_static_olmo(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "Simply put, the theory of relativity states that"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--decoder_model",
+            "olmo-1b",
+            "--model_mode",
+            "kv",
+            "--temperature",
+            "0",
+            "--max_seq_len",
+            "1024",
+            "--eval_perplexity",
+            "--task",
+            "wikitext",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                inference_speed_ref = {"SM8650": 35, "SM8750": 60}
+                self.assertLessEqual(msg["wiki_ppl"], 10)
+                self.assertLessEqual(msg["pte_size"], 1_000_000_000)  # 1GB
+                if self.model in inference_speed_ref:
+                    self.assertGreaterEqual(
+                        msg["inference_speed"], inference_speed_ref[self.model]
+                    )
 
     def test_static_phi4(self):
         if not self.required_envs():
