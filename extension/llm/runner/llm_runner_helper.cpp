@@ -123,8 +123,8 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
     ET_LOG(Info, "Metadata: %s = %" PRId64, method_name.c_str(), value);
   }
 
-  // Custom rule: if kMaxContextLen method not found but kMaxSeqLen is
-  // available, set kMaxContextLen to the value of kMaxSeqLen
+  // If kMaxContextLen method not found but kMaxSeqLen is
+  // available, set kMaxContextLen to the value of kMaxSeqLen.
   if (!method_names.count(llm::kMaxContextLen) &&
       method_names.count(llm::kMaxSeqLen)) {
     metadata[llm::kMaxContextLen] = metadata[llm::kMaxSeqLen];

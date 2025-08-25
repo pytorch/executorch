@@ -13,7 +13,6 @@
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <pytorch/tokenizers/tokenizer.h>
-#include <iostream>
 
 namespace executorch {
 namespace extension {
