@@ -29,7 +29,7 @@ template <
     typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
 INT_T floor_divide(INT_T a, INT_T b) {
   const auto quot = a / b;
-  if (std::signbit(a) == std::signbit(b)) {
+  if (std::signbit(static_cast<float>(a)) == std::signbit(static_cast<float>(b))) {
     return quot;
   }
   const auto rem = a % b;

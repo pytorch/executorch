@@ -55,7 +55,7 @@ Tensor& amax_out(
           for (const auto out_ix : c10::irange(begin, end)) {
             out_data[out_ix] = plan.execute<CTYPE>(
                 [](CTYPE v, CTYPE max_v) {
-                  return std::isnan(v) || v > max_v ? v : max_v;
+                  return std::isnan(static_cast<float>(v)) || v > max_v ? v : max_v;
                 },
                 out_ix);
           }

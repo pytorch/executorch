@@ -44,7 +44,7 @@ Tensor& copy_out(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "copy.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "copy.out";
 
   // Use direct copy fast path if broadcast is not needed and tensors are
   // non-empty
@@ -86,7 +86,7 @@ Tensor& copy_(
       ctx, tensors_have_same_dim_order(in, src), InvalidArgument, in);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "copy_";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "copy_";
 
   // Use direct copy fast path if broadcast is not needed and tensors are
   // non-empty

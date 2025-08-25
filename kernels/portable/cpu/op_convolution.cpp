@@ -410,7 +410,7 @@ Tensor& convolution_out(
   }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char name[] = "convolution.out";
+  static ET_OP_NAME_SPECIFIER const char name[] = "convolution.out";
 
   ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     const auto load_bias = bias.has_value()

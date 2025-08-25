@@ -55,7 +55,7 @@ Tensor& div_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "div.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "div.out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_bitensor_elementwise_fn<
@@ -116,7 +116,7 @@ Tensor& div_out_mode(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "div.out_mode";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "div.out_mode";
 
   const bool mode_is_trunc = mode_val == "trunc";
   bool div_by_zero_error = false;
@@ -187,7 +187,7 @@ Tensor& div_scalar_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "div.Scalar_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "div.Scalar_out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
@@ -255,7 +255,7 @@ Tensor& div_scalar_mode_out(
   const bool mode_is_trunc = mode_val == "trunc";
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "div.Scalar_mode_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "div.Scalar_mode_out";
 
   ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
