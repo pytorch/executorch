@@ -1055,7 +1055,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
 
   const auto& e = get_value(get_input_index(input_idx));
 
-  if (!e.isTensor() && !e.isScalar()) {
+  if (!(e.isNone() || e.isTensor() || e.isScalar() || e.isString())) {
 #if ET_LOG_ENABLED
     std::array<char, kTagNameBufferSize> tag_name;
     tag_to_string(e.tag, tag_name.data(), tag_name.size());
@@ -1088,7 +1088,9 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     return Error::InvalidArgument;
   }
 
-  if (e.isTensor()) {
+  if (e.isNone()) {
+    // no-op
+  } else if (e.isTensor()) {
     const auto& t_dst = e.toTensor();
     const auto& t_src = input_evalue.toTensor();
 
