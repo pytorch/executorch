@@ -35,21 +35,11 @@ class CloneDimOrderSupport(SupportedTOSAOperatorCheck):
     ) -> bool:
         assert node.target in self.targets
 
-        supported_dtypes = {torch.bool, torch.int8, torch.int16, torch.int32}
-        if tosa_spec.support_float():
-            supported_dtypes |= {torch.bfloat16, torch.float16, torch.float32}
-
         # Check input type
         assert len(node.all_input_nodes) == 1
         input_val = node.all_input_nodes[0].meta["val"]
         assert isinstance(input_val, torch._subclasses.FakeTensor)
         input_dtype = input_val.dtype
-        if input_dtype not in supported_dtypes:
-            self.reporter.report_reject(
-                node,
-                f"Input dtype {input_val.dtype} is not supported in {node.target}.",
-            )
-            return False
 
         # Check output type
         output_val = node.meta["val"]
@@ -60,6 +50,16 @@ class CloneDimOrderSupport(SupportedTOSAOperatorCheck):
                 f"Input dtype {input_val.dtype} does not match {output_val.dtype}.",
             )
             return False
+
+        # Check memory format
+        if "memory_format" in node.kwargs:
+            if node.kwargs["memory_format"] in (torch.preserve_format,):
+                self.reporter.report_reject(
+                    node,
+                    f"Argument 'memory_format' is not supported for "
+                    f"{node.target} right now.",
+                )
+                return False
 
         # Check dim_order
         if "dim_order" in node.kwargs:
