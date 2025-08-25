@@ -14,11 +14,7 @@ class RemoveClonePass(ExportPass):
     """Remove all clones from graph_module"""
 
     def call_operator(self, op, args, kwargs, meta):
-        clone_ops = (
-            exir_ops.edge.aten.clone.default,
-            exir_ops.edge.dim_order_ops._clone_dim_order.default,
-        )
-        if op not in clone_ops:
+        if op != exir_ops.edge.dim_order_ops._clone_dim_order.default:
             return super().call_operator(op, args, kwargs, meta)
 
         if len(args) != 1:
