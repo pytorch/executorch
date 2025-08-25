@@ -637,7 +637,7 @@ def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffl
     # prepare input data
     inputs, targets = [], []
     data_loader = get_data_loader()
-    for _, data in enumerate(data_loader):
+    for data in data_loader:
         if len(inputs) >= data_size:
             break
         input_ids = data[0]
@@ -729,9 +729,9 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
             dataset, batch_size=1, shuffle=shuffle, collate_fn=collator
         )
 
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     data_loader = get_data_loader(max_hidden_seq_length)
-    for idx, batch in enumerate(data_loader):
+    for batch in data_loader:
         if len(inputs) >= data_size:
             break
         input_ids = batch["input_ids"]
@@ -750,9 +750,8 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
             )
         )
         targets.append(labels)
-        input_list += f"input_{idx}_0.raw input_{idx}_1.raw input_{idx}_2.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def setup_common_args_and_variables():
