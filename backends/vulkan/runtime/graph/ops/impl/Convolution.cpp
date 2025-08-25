@@ -280,9 +280,6 @@ Conv2dMethod get_conv2d_method(
   if (!transposed && weight_sizes.at(0) == groups && weight_sizes.at(1) == 1) {
     return Conv2dMethod::Depthwise;
   }
-  if (groups > 1) {
-    VK_THROW("aten.convolution.default: groups > 1 is not supported yet!");
-  }
   if (transposed) {
     return Conv2dMethod::Transposed;
   }
@@ -601,7 +598,7 @@ void add_conv2d_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      {utils::safe_downcast<int32_t>(groups_val)},
       // Resize Args
       {weight_data, stride, padding, dilation, transposed, output_padding},
       // Resizing Logic
