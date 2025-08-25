@@ -1,0 +1,10 @@
+expand_buffer:
+  parameter_names_with_default_values:
+    DTYPE: float
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+      - VALUE: int32
+  shader_variants:
+    - NAME: expand_buffer
