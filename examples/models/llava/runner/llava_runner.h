@@ -65,16 +65,14 @@ class ET_EXPERIMENTAL LlavaRunner {
       bool echo = true);
 
   ::executorch::runtime::Error prefill_images(
-      std::vector<::executorch::extension::llm::Image>& images,
-      int64_t& start_pos);
+      std::vector<::executorch::extension::llm::Image>& images);
 
   ::executorch::runtime::Result<uint64_t> prefill_prompt(
       const std::string& prompt,
-      int64_t& start_pos,
       int8_t bos = 0,
       int8_t eos = 0);
 
-  ::executorch::runtime::Error generate_from_pos(
+  ET_DEPRECATED ::executorch::runtime::Error generate_from_pos(
       const std::string& prompt,
       int32_t seq_len = 1024,
       int64_t start_pos = 0,
@@ -88,7 +86,7 @@ class ET_EXPERIMENTAL LlavaRunner {
   }
 
   inline void reset() {
-    // TODO: Manage context in class, not in generate_from_pos.
+    pos_ = 0;
   }
 
  private:
@@ -108,6 +106,9 @@ class ET_EXPERIMENTAL LlavaRunner {
 
   // stats
   Stats stats_;
+
+  // The position in KV cache of the input, starting from 0.
+  int64_t pos_ = 0;
 
   inline static const char* kPresetPrompt =
       "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: ";
