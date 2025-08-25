@@ -71,7 +71,7 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cu126"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250811"
+NIGHTLY_VERSION = "dev20250825"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -90,6 +90,7 @@ def install_requirements(use_pytorch_nightly):
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
         f"torch==2.9.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
+        # f"torchao==0.13.0{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
     ]
 
     # Install the requirements for core ExecuTorch package.
