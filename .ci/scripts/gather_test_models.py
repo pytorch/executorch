@@ -95,11 +95,16 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     """
     if event == "pull_request":
         return model in ["mv3", "vit"]
-    elif event == "push":
-        # These are super slow. Only run it periodically
-        return model not in ["dl3", "edsr", "emformer_predict"]
-    else:
-        return True
+
+    if event == "push":
+        ref = os.getenv("GITHUB_REF", "")
+        if ref.startswith("refs/tags/ciflow/periodic/"):
+            return True
+        else:
+            # These are super slow. Only run it periodically
+            return model not in ["dl3", "edsr", "emformer_predict"]
+
+    return True
 
 
 def model_should_run_on_target_os(model: str, target_os: str) -> bool:
