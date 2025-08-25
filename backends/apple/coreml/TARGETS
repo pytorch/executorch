@@ -18,7 +18,6 @@ runtime.python_library(
     srcs = glob([
         "compiler/*.py",
         "logging.py",
-        "enumerated_shape_utils.py",
     ]),
     visibility = [
         "@EXECUTORCH_CLIENTS",

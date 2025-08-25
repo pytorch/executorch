@@ -52,10 +52,10 @@ class TestEnumeratedShapes(unittest.TestCase):
         enumerated_shapes = {"x": [[3, 5, 10], [4, 6, 10]], "y": [[3, 11], [5, 11]]}
         dynamic_shapes = [
             {
-                0: torch.export.Dim(name="i1", min=1, max=50),
-                1: torch.export.Dim("i2", min=1, max=10),
+                0: torch.export.Dim.AUTO(min=3, max=4),
+                1: torch.export.Dim.AUTO(min=5, max=6),
             },
-            {0: torch.export.Dim(name="i1", min=1, max=50)},
+            {0: torch.export.Dim.AUTO(min=3, max=5)},
         ]
         ep = torch.export.export(
             model.eval(), example_inputs, dynamic_shapes=dynamic_shapes

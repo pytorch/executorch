@@ -17,7 +17,7 @@ from typing import Any, Dict, final, List, Optional, Tuple
 import coremltools as ct
 import coremltools.optimize as cto
 from executorch.backends.apple.coreml import executorchcoreml
-from executorch.backends.apple.coreml.enumerated_shape_utils import (
+from executorch.backends.apple.coreml.compiler.enumerated_shape_utils import (
     _get_ct_inputs,
     _SymbolicShapeToEnumeratedShapeMap,
 )
