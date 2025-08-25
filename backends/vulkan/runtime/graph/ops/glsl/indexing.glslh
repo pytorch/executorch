@@ -98,6 +98,15 @@ uint idx_at(const TensorIndex tidx, const int dim) {
   return tidx.data[div_4(dim)][mod_4(dim)];
 }
 
+void permute(inout TensorIndex tidx, const ivec4 permute_order[DIMLIMIT_DIV4]) {
+  TensorIndex new_tidx = tidx;
+  for (int d = 0; d < DIMLIMIT; ++d) {
+    int src_dim = permute_order[div_4(d)][mod_4(d)];
+    new_tidx.data[div_4(d)][mod_4(d)] = idx_at(tidx, src_dim);
+  }
+  tidx = new_tidx;
+}
+
 //
 // Index Conversions
 //
