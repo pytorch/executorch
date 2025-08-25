@@ -102,6 +102,24 @@ class AMax(torch.nn.Module):
         return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
 
 
+class AMaxFollowingConv2D(torch.nn.Module):
+    def __init__(
+        self, in_channels, out_channels, kernel_size=3, dim=None, keepdim=False
+    ):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels, out_channels, kernel_size, padding=kernel_size // 2
+        )
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        x = self.conv(
+            x
+        )  # Apply convolution (output shape: [batch, out_channels, H, W])
+        return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
+
+
 class AMin(torch.nn.Module):
     def __init__(self, dim=None, keepdim=False):
         super().__init__()
