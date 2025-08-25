@@ -101,9 +101,19 @@ def _iterate_over_fake_user_inputs(ep):
 
 def _create_enumeration_map(ep, enumerated_shapes, *, ignore_range_constraints=False):
     # Each input should have the same number of enumerations
-    assert (
-        len({len(v) for v in enumerated_shapes.values()}) == 1
-    ), "Each input with enumerated shapes must have the same number of enumerated shapes"
+    assert len(enumerated_shapes) > 0, "No enumerated shapes provided"
+    num_enumerations = None
+    for name, eshapes in enumerated_shapes.items():
+        if num_enumerations is None:
+            num_enumerations = len(eshapes)
+        else:
+            assert (
+                len(eshapes) > 1
+            ), f"Input {name} only has {len(eshapes)} enumerated shapes provided.  You should not specify enumerated shapes for inputs with only 1 input."
+            assert (
+                len(eshapes) == num_enumerations
+            ), f"Input {name} has {len(eshapes)} enumerated shape provided, but other inputs have {num_enumerations} enumerated shapes"
+
     symbolic_shape_to_enumerations = {}
     for name, fake_input in _iterate_over_fake_user_inputs(ep):
         shape = fake_input.shape
