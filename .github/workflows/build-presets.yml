@@ -109,7 +109,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [windows] # TODO (gjcomer) Re-enable pybind once functional
+        preset: [pybind, windows]
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -127,7 +127,7 @@ jobs:
           conda activate et
 
           python install_requirements.py
-          cmake --preset ${{ matrix.preset }}
+          cmake --preset ${{ matrix.preset }} -T ClangCL
           if (\$LASTEXITCODE -ne 0) {
             Write-Host "CMake configuration was unsuccessful. Exit code: \$LASTEXITCODE."
             exit \$LASTEXITCODE
