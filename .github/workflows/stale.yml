@@ -93,31 +93,31 @@ jobs:
               if (labels.includes("Stale")) {
                 core.info(`[${pull.number}] Closing PR.`);
                 numAPIRequests += 1;
-                  //await github.rest.issues.update({
-                  //owner: "pytorch",
-                  //repo: "executorch",
-                  //issue_number: pull.number,
-                  //state: "closed",
-                  //});
+                  await github.rest.issues.update({
+                  owner: "pytorch",
+                  repo: "executorch",
+                  issue_number: pull.number,
+                  state: "closed",
+                  });
               } else {
                 // For PRs not labeled stale, label them stale.
                 core.info(`[${pull.number}] Labeling PR as stale.`);
 
                 numAPIRequests += 1;
-                  //await github.rest.issues.createComment({
-                  //owner: "pytorch",
-                  //repo: "executorch",
-                  //issue_number: pull.number,
-                  //body: STALE_MESSAGE,
-                //});
+                  await github.rest.issues.createComment({
+                  owner: "pytorch",
+                  repo: "executorch",
+                  issue_number: pull.number,
+                  body: STALE_MESSAGE,
+                });
 
                 numAPIRequests += 1;
-                  //await github.rest.issues.addLabels({
-                  //owner: "pytorch",
-                  //repo: "executorch",
-                  //issue_number: pull.number,
-                  //labels: ["Stale"],
-                //});
+                  await github.rest.issues.addLabels({
+                  owner: "pytorch",
+                  repo: "executorch",
+                  issue_number: pull.number,
+                  labels: ["Stale"],
+                });
               }
             }
 
