@@ -91,7 +91,7 @@ Tensor& glu_out_tensor(
       ? self.scalar_type()
       : ScalarType::Float;
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "glu.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "glu.out";
   ET_SWITCH_FLOATHBF16_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_bitensor_elementwise_fn<
         CTYPE_COMPUTE,

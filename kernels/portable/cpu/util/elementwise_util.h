@@ -531,7 +531,7 @@ inline void apply_tritensor_elementwise_fn(
  * can't pass a string literal for op_name. Instead, you should do the
  * following:
  *
- * static constexpr const char op_name[] = "my_op";
+ * static ET_OP_NAME_SPECIFIER const char op_name[] = "my_op";
  * apply_ternary_elementwise_fn<CTYPE_COMPUTE, op_name>.
  *
  * See [NOTE: Generic lambdas] if you want to pass a generic lambda for

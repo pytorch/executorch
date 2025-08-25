@@ -33,7 +33,7 @@ Tensor& elu_out(
 
   ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
 
-  static constexpr const char op_name[] = "elu.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "elu.out";
   ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&]() {
     using MathT = std::
         conditional_t<c10::is_reduced_floating_point_v<CTYPE>, float, CTYPE>;
