@@ -9,7 +9,7 @@
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/binary_ops.h>
-#include <executorch/kernels/portable/cpu/pattern/comparison_op.h>
+#include <executorch/kernels/portable/cpu/op_le.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -61,10 +61,7 @@ Tensor& opt_le_tensor_out(
           ctx, le_lambda, a, b, out, selected_optimized_path);
     });
   } else {
-    // @lint-ignore CLANGTIDY facebook-hte-CArray
-    static constexpr const char op_name[] = "le.Tensor_out";
-    return internal::comparison_tensor_out<std::less_equal, op_name>(
-        ctx, a, b, out);
+    utils::le_tensor_out(ctx, a, b, out);
   }
 
   return out;
@@ -107,34 +104,7 @@ Tensor& opt_le_scalar_out(
           });
     });
   } else {
-    ET_SWITCH_REAL_TYPES_AND(
-        Bool, a_type, ctx, "le.Scalar_out", CTYPE_A, [&]() {
-          ET_SWITCH_REAL_TYPES_AND(
-              Bool, b_type, ctx, "le.Scalar_out", CTYPE_B, [&]() {
-                ET_SWITCH_REAL_TYPES_AND(
-                    Bool, common_type, ctx, "le.Scalar_out", CTYPE_IN, [&]() {
-                      ET_SWITCH_REAL_TYPES_AND(
-                          Bool,
-                          out_type,
-                          ctx,
-                          "le.Scalar_out",
-                          CTYPE_OUT,
-                          [&]() {
-                            CTYPE_B b_val = 0;
-                            ET_EXTRACT_SCALAR(b, b_val);
-                            CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-                            const size_t n = a.numel();
-                            const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
-                            CTYPE_OUT* out_data =
-                                out.mutable_data_ptr<CTYPE_OUT>();
-                            for (auto i = 0; i < n; ++i) {
-                              out_data[i] = static_cast<CTYPE_OUT>(
-                                  static_cast<CTYPE_IN>(a_data[i]) <= b_casted);
-                            }
-                          });
-                    });
-              });
-        });
+    utils::le_scalar_out(ctx, a, b, out);
   }
 
   return out;

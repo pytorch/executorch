@@ -28,6 +28,8 @@ def define_common_targets():
         visibility = ["//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS",],
         exported_deps = [
             "//executorch/runtime/core:core",
+            "//executorch/kernels/portable/cpu:op_add_util",
+            "//executorch/kernels/portable/cpu:op_sub_util",
             "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
         ],
     )
