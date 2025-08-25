@@ -333,9 +333,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           .seq_len = seq_len,
           .temperature = temperature_,
       };
-      return static_cast<jint>(runner_->generate_from_pos(
+      return static_cast<jint>(runner_->generate(
           prompt->toStdString(),
-          start_pos,
           config,
           [callback](std::string result) { callback->onResult(result); },
           [callback](const llm::Stats& stats) { callback->onStats(stats); }));
@@ -349,6 +348,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       runner_->stop();
     }
+  }
+
+  void reset_context() {
+    runner_->reset();
   }
 
   jint load() {
@@ -372,6 +375,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
         makeNativeMethod(
             "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
+        makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
 };

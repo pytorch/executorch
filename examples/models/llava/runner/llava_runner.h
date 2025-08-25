@@ -87,6 +87,10 @@ class ET_EXPERIMENTAL LlavaRunner {
     text_token_generator_->stop();
   }
 
+  inline void reset() {
+    // TODO: Manage context in class, not in generate_from_pos.
+  }
+
  private:
   // metadata
   float temperature_;

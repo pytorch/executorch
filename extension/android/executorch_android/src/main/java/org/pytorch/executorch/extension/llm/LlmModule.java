@@ -223,6 +223,13 @@ public class LlmModule {
   public native int generateFromPos(
       String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo);
 
+  /**
+   * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
+   *
+   * The startPos will be reset to 0.
+   */
+  public native int resetContext();
+
   /** Stop current generate() before it finishes. */
   @DoNotStrip
   public native void stop();

@@ -401,7 +401,7 @@ TEST_F(RunnerTest, GenerateFromPosErrorsWithNegativeMaxNewTokens) {
   // max_context_len = 10
   // start_pos = 8, this should fail because 10 - 8 > 3, even though
   // config.max_new_tokens = 5 > 3, it's still a failure.
-  Error err = runner.generate_from_pos("test prompt", 8, config);
+  Error err = runner.generate("test prompt", config);
 
   // Verify that an InvalidArgument error is returned
   EXPECT_EQ(err, Error::InvalidArgument);
