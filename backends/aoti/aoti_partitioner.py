@@ -191,13 +191,13 @@ inductor_fallback_ops: Set[str] = {
 
 class AOTISupportedOperators(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        supported = node.op == "call_function" and (
-            node.target == operator.getitem
-            or node.target._op not in inductor_fallback_ops
-            or node.target._op in supported_fallback_operators
-        )
-        if supported and node.target != operator.getitem:
-            print(f"op {node.target._op} is supported: {supported}")
+        # supported = node.op == "call_function" and (
+        #     node.target == operator.getitem
+        #     or str(node.target._op) not in inductor_fallback_ops
+        #     or str(node.target._op) in supported_fallback_operators
+        # )
+
+        supported = node.op == "call_function"
 
         return supported
 
