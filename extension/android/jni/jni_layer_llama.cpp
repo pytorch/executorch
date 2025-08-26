@@ -251,42 +251,24 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
-  // Returns a tuple of (error, start_pos)
-  // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-  facebook::jni::local_ref<jlongArray>
+  jint
   prefill_prompt(facebook::jni::alias_ref<jstring> prompt, jint bos, jint eos) {
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
-      return tuple_result;
+      return static_cast<jint>(Error::NotSupported);
     }
 
     auto&& result =
         multi_modal_runner_->prefill_prompt(prompt->toStdString(), bos, eos);
-    tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
-    if (result.ok()) {
-      tuple_result->pin()[1] = static_cast<jlong>(start_pos);
-    }
-    return tuple_result;
+    return static_cast<jint>(result.error());
   }
 
-  // Returns a tuple of (error, start_pos)
-  // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-
-  facebook::jni::local_ref<jlongArray> prefill_images(
+  jint prefill_images(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
       jint channels) {
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
-
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
-      return tuple_result;
+      return static_cast<jint>(Error::NotSupported);
     }
 
     auto image_size = image->size();
@@ -301,12 +283,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       llm::Image image_runner{image_data, width, height, channels};
       images.push_back(image_runner);
     }
-    // TODO(hsz): make  start_pos a reference and update it here
     jint result =
         static_cast<jint>(multi_modal_runner_->prefill_images(images));
-    tuple_result->pin()[0] = result;
-    tuple_result->pin()[1] = static_cast<jlong>(start_pos);
-    return tuple_result;
+    return result;
   }
 
   jint generate_from_pos(

@@ -173,7 +173,8 @@ public class LlmModule {
    * @param height Input image height
    * @param channels Input image number of channels
    * @param startPos The starting position in KV cache of the input in the LLM.
-   * @return The updated starting position in KV cache of the input in the LLM.
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   * exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Deprecated
@@ -181,15 +182,14 @@ public class LlmModule {
     if (startPos == 0) {
       resetContext();
     }
-    long[] nativeResult = prefillImagesNative(image, width, height, channels);
-    if (nativeResult[0] != 0) {
+    int nativeResult = prefillImagesNative(image, width, height, channels);
+    if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
     }
-    return nativeResult[1];
+    return 0;
   }
 
-  // returns a tuple of (status, updated startPos)
-  private native long[] prefillImagesNative(int[] image, int width, int height, int channels);
+  private native int prefillImagesNative(int[] image, int width, int height, int channels);
 
   /**
    * Prefill an LLaVA Module with the given text input.
@@ -199,7 +199,8 @@ public class LlmModule {
    *     reference and will be updated inside this function.
    * @param bos The number of BOS (begin of sequence) token.
    * @param eos The number of EOS (end of sequence) token.
-   * @return The updated starting position in KV cache of the input in the LLM.
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   * exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Deprecated
@@ -207,15 +208,15 @@ public class LlmModule {
     if (startPos == 0) {
       resetContext();
     }
-    long[] nativeResult = prefillPromptNative(prompt, bos, eos);
-    if (nativeResult[0] != 0) {
+    int nativeResult = prefillPromptNative(prompt, bos, eos);
+    if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
     }
-    return nativeResult[1];
+    return 0;
   }
 
   // returns a tuple of (status, updated startPos)
-  private native long[] prefillPromptNative(String prompt, int bos, int eos);
+  private native int prefillPromptNative(String prompt, int bos, int eos);
 
   /**
    * Generate tokens from the given prompt, starting from the given position.
@@ -238,7 +239,7 @@ public class LlmModule {
    *
    * <p>The startPos will be reset to 0.
    */
-  public native int resetContext();
+  public native void resetContext();
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip
