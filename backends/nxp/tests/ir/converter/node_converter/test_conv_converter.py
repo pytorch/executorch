@@ -326,7 +326,7 @@ def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
 
     ops = spy.spy_return.sub_graphs[0].operators.vector
     assert len(ops) == 2
-    assert ops[0].builtin_options.operator_type == BuiltinOperator.PAD
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.PADV2
     assert ops[1].builtin_options.operator_type == BuiltinOperator.DEPTHWISE_CONV_2D
 
     nodes = list(edge_program.graph.nodes)
@@ -334,6 +334,12 @@ def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
         len(nodes) == 7
     )  # input, Quant, lowered_module, delegate_call, getitem, Deq, output
     assert nodes[2].target == "lowered_module_0"
+
+    # Make sure the padding used the `zero-point`.
+    assert (
+        ops[0].tmp_inputs[2].tmp_buffer.data.item()
+        == ops[0].tmp_outputs[0].quantization.zero_point[0]
+    )
 
 
 @pytest.mark.parametrize("stride", [1, 2])
