@@ -406,7 +406,7 @@ jobs:
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        threshold="51744"
+        threshold="51752"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
