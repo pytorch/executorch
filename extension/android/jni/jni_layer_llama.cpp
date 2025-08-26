@@ -254,11 +254,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   // Returns a tuple of (error, start_pos)
   // Contract is valid within an AAR (JNI + corresponding Java code)
   // If the first element is not Error::Ok, the other element is undefined.
-  facebook::jni::local_ref<jlongArray> prefill_prompt(
-      facebook::jni::alias_ref<jstring> prompt,
-      jlong start_pos,
-      jint bos,
-      jint eos) {
+  facebook::jni::local_ref<jlongArray>
+  prefill_prompt(facebook::jni::alias_ref<jstring> prompt, jint bos, jint eos) {
     facebook::jni::local_ref<jlongArray> tuple_result =
         facebook::jni::make_long_array(2);
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
@@ -266,8 +263,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       return tuple_result;
     }
 
-    auto&& result = multi_modal_runner_->prefill_prompt(
-        prompt->toStdString(), start_pos, bos, eos);
+    auto&& result =
+        multi_modal_runner_->prefill_prompt(prompt->toStdString(), bos, eos);
     tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
     if (result.ok()) {
       tuple_result->pin()[1] = static_cast<jlong>(start_pos);
@@ -283,8 +280,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
-      jint channels,
-      jlong start_pos) {
+      jint channels) {
     facebook::jni::local_ref<jlongArray> tuple_result =
         facebook::jni::make_long_array(2);
 
@@ -306,8 +302,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       images.push_back(image_runner);
     }
     // TODO(hsz): make  start_pos a reference and update it here
-    jint result = static_cast<jint>(
-        multi_modal_runner_->prefill_images(images, start_pos));
+    jint result =
+        static_cast<jint>(multi_modal_runner_->prefill_images(images));
     tuple_result->pin()[0] = result;
     tuple_result->pin()[1] = static_cast<jlong>(start_pos);
     return tuple_result;

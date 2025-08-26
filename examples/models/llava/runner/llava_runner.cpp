@@ -106,7 +106,7 @@ Error LlavaRunner::generate_from_pos(
   }
 
   uint64_t prefill_next_token =
-      ET_UNWRAP(prefill_prompt(prompt, start_pos, /*bos=*/0, /*eos*/ 0));
+      ET_UNWRAP(prefill_prompt(prompt, /*bos=*/0, /*eos*/ 0));
   stats_.first_token_ms = llm::time_in_ms();
   stats_.prompt_eval_end_ms = llm::time_in_ms();
   stats_.num_prompt_tokens = start_pos;
@@ -157,10 +157,10 @@ Error LlavaRunner::generate(
   stats_.inference_start_ms = llm::time_in_ms();
 
   // prefill preset prompt
-  prefill_prompt(kPresetPrompt, pos_, /*bos=*/1, /*eos*/ 0);
+  prefill_prompt(kPresetPrompt, /*bos=*/1, /*eos*/ 0);
 
   // prefill images
-  prefill_images(images, pos_);
+  prefill_images(images);
 
   ET_LOG(
       Info,
