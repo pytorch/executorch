@@ -1697,8 +1697,17 @@ class EdgeProgramManager:
             after it has been transformed to the ExecuTorch backend.
         """
         config = config if config else ExecutorchBackendConfig()
+
+        def exported_program_to_device(exported_program, device):
+            for _, param in exported_program.named_parameters():
+                param.data = param.data.to(device)
+            for _, buffer in exported_program.named_buffers():
+                buffer.data = buffer.data.to(device)
+            return exported_program
+
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
+            program = exported_program_to_device(program, "cpu")
             if config.do_quant_fusion_and_const_prop:
                 if program.graph_signature.backward_signature is not None:
                     raise Exception(

@@ -24,8 +24,9 @@ from typing import Any, Dict, Tuple
 
 import torch
 from executorch.backends.aoti.aoti_partitioner import AotiPartitioner
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.exir import to_edge_transform_and_lower, to_edge
+
+# from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.exir import to_edge, to_edge_transform_and_lower
 from torch import nn
 from torch.export import export
 from torchvision import models
@@ -119,7 +120,7 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "resnet18": {
         "model_class": ResNet18,
         "input_shapes": [(1, 3, 224, 224)],
-        "device": "cpu",
+        "device": "cuda",
         "description": "ResNet18 model",
     },
     "linear": {
@@ -247,7 +248,7 @@ def export_model_to_pure_aoti(model, example_inputs):
         "aot_inductor.output_path": output_path,
         "aot_inductor.debug_compile": True,
         "aot_inductor.repro_level": 3,
-        "aot_inductor.debug_intermediate_value_printer": "3",
+        "aot_inductor.debug_intermediate_value_printer": "2",
         "max_autotune": True,
         "max_autotune_gemm_backends": "TRITON",
         "max_autotune_conv_backends": "TRITON",
