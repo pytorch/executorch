@@ -791,8 +791,10 @@ def get_quantizer_and_quant_params(llm_config):
         quantizers.append(qnn_quantizer)
     if llm_config.backend.openvino.enabled and llm_config.quantization.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack and openvino"
+        group_size = llm_config.quantization.group_size
+        group_size = group_size if group_size else 32 
         ov_quantizer = get_ov_quantizer(
-            llm_config.quantization.pt2e_quantize.value, llm_config.quantization.group_size
+            llm_config.quantization.pt2e_quantize.value, 
         )
         quantizers.append(ov_quantizer)
     if llm_config.backend.coreml.enabled and llm_config.quantization.pt2e_quantize:
@@ -904,6 +906,7 @@ def _to_edge_and_lower_llama_xnnpack(
 def _to_edge_and_lower_llama_openvino(
     builder_exported,
     modelname,
+    quantizers,
     additional_passes,
     openvino_device: str = "CPU",
     nncf_compression: bool = False,
@@ -935,7 +938,6 @@ def _to_edge_and_lower_llama_openvino(
 
         def transform_fn(prompts: str, tokenizer):
             tokenized_text = tokenizer.encode(prompts, bos=False, eos=False)
-            logging.error(tokenized_text)
 
             inputs = ()
             inputs = (
@@ -971,7 +973,7 @@ def _to_edge_and_lower_llama_openvino(
             sensitivity_metric=nncf.SensitivityMetric.HESSIAN_INPUT_ACTIVATION,
         )
 
-    builder = builder_exported.to_edge_transform_and_lower(partitioners)
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(partitioners)
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
@@ -1214,6 +1216,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         builder = _to_edge_and_lower_llama_openvino(
             builder_exported,
             modelname,
+            quantizers,
             additional_passes,
             openvino_device=llm_config.backend.openvino.device,
             nncf_compression=llm_config.backend.openvino.nncf_compression,

@@ -12,6 +12,7 @@ from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Type
 
 import nncf  # type: ignore[import-untyped]
 import nncf.common.quantization as quantization  # type: ignore[import-untyped]
+from nncf.common.scopes import should_consider_scope  # type: ignore[import-untyped]
 import nncf.experimental.torch.fx as nncf_fx  # type: ignore[import-untyped]
 
 import torch.fx
@@ -176,8 +177,12 @@ class OpenVINOQuantizer(Quantizer):
         """
         self._algo.set_backend_entity(model)
         nodes_to_compress = self._algo.get_nodes_to_compress(nncf_graph)
+        ignored_names = self._algo.get_ignored_node_names(nncf_graph)
 
         for node in nodes_to_compress:
+            is_target_node = should_consider_scope(node.node_name, ignored_names)
+            if not is_target_node:
+                continue
             target_node = nncf_fx.node_utils.get_graph_node_by_name(
                 graph, node.node_name
             )
@@ -442,9 +447,9 @@ class OpenVINOQuantizer(Quantizer):
                 else MappingType.ASYMMETRIC
             )
             if qmode in [QuantizationMode.INT4WO_SYM, QuantizationMode.INT4WO_SYM]:
+                extra_args["group_size"] = group_size
                 extra_args["mapping_type"] = mapping_type
                 extra_args["target_dtype"] = torch.int8
-                extra_args["group_size"] = group_size
                 observer = INT4WeightObserver
                 quant_min = -8 if mapping_type == MappingType.SYMMETRIC else 0
                 quant_max = 7 if mapping_type == MappingType.SYMMETRIC else 15
@@ -454,7 +459,7 @@ class OpenVINOQuantizer(Quantizer):
             else:
                 observer = INT8WeightObserver
                 quant_min = -128 if mapping_type == MappingType.SYMMETRIC else 0
-                quant_max = 1277 if mapping_type == MappingType.SYMMETRIC else 255
+                quant_max = 127 if mapping_type == MappingType.SYMMETRIC else 255
                 dtype = torch.int8
                 channel_axis = 0
                 torch_qscheme = (
@@ -462,7 +467,6 @@ class OpenVINOQuantizer(Quantizer):
                     if qmode == QuantizationMode.INT8WO_SYM
                     else torch.per_channel_affine
                 )
-
             return QuantizationSpec(
                 dtype=dtype,
                 observer_or_fake_quant_ctr=observer.with_args(**extra_args),
