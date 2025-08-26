@@ -977,9 +977,8 @@ else()
 endif()
 target_link_libraries(executorch_kernels INTERFACE ${_executorch_kernels})
 
-install(
-  TARGETS executorch_backends executorch_extensions executorch_kernels
-  EXPORT ExecuTorchTargets
+install(TARGETS executorch_backends executorch_extensions executorch_kernels
+        EXPORT ExecuTorchTargets
 )
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)

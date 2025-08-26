@@ -79,7 +79,7 @@ endif()
 
 # Install OpenVINO backend library to the lib directory
 install(
-  TARGETS openvino_backend 
+  TARGETS openvino_backend
   EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
