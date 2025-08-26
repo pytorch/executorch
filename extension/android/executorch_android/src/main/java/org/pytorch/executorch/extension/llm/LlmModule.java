@@ -184,7 +184,7 @@ public class LlmModule {
     }
     int nativeResult = prefillImagesNative(image, width, height, channels);
     if (nativeResult != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
@@ -210,7 +210,7 @@ public class LlmModule {
     }
     int nativeResult = prefillPromptNative(prompt, bos, eos);
     if (nativeResult != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
