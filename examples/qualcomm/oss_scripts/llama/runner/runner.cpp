@@ -338,7 +338,7 @@ Error Runner<T>::generate_from_pos(
 }
 
 template <typename T>
-Error Runner<T>::reset() {
+void Runner<T>::reset() {
   // TODO: currently only support start_pos == 0
 }
 
