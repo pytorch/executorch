@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import executorch.backends.samsung.python.PyEnnWrapperAdaptor as PyEnnWrapper
 
 import torch
-from executorch.backends.samsung.enn_preprocess import EnnBackend
+from executorch.backends.samsung.enn_preprocess import ExynosBackend
 
 from executorch.backends.samsung.utils.utils import get_compile_spec
 from executorch.exir.backend.backend_details import CompileSpec
@@ -60,7 +60,7 @@ class EnnOperatorSupport(OperatorSupportBase):
 class EnnPartitioner(Partitioner):
     def __init__(self, compile_specs: List[CompileSpec]):
         # TODO(anyone): Add meaningful initialize
-        self.delegation_spec = DelegationSpec(EnnBackend.__name__, compile_specs)
+        self.delegation_spec = DelegationSpec(ExynosBackend.__name__, compile_specs)
         self.partition_tags: Dict[str, DelegationSpec] = {}
         self.compile_specs = compile_specs
 

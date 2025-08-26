@@ -28,7 +28,7 @@ from torch.export.exported_program import ExportedProgram
 
 
 @final
-class EnnBackend(BackendDetails):
+class ExynosBackend(BackendDetails):
     @staticmethod
     def preprocess(
         edge_program: ExportedProgram,
