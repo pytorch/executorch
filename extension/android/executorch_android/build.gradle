@@ -6,13 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-def qnnVersion = System.properties['qnnVersion']
 
 plugins {
     id "com.android.library" version "8.9.0"
     id "com.vanniktech.maven.publish" version "0.31.0"
     alias(libs.plugins.jetbrains.kotlin.android)
 }
+
+def qnnVersion = System.properties['qnnVersion']
 
 android {
     namespace = "org.pytorch.executorch"
