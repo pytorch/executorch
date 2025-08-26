@@ -105,15 +105,7 @@ def test_cat_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-x_fails = {
-    "cat_rand_two_tensors_dim_0": "MLETORCH-630: AssertionError: Output 0 does not match reference output.",
-    "cat_rand_two_tensors_dim_0": "MLETORCH-630: AssertionError: Output 0 does not match reference output.",
-    "cat_rand_two_tensors_dim_3": "MLETORCH-630: AssertionError: Output 0 does not match reference output.",
-    "cat_rand_large": "MLETORCH-630: AssertionError: Output 0 does not match reference output.",
-}
-
-
-@common.parametrize("test_data", Cat.test_parameters, x_fails)
+@common.parametrize("test_data", Cat.test_parameters)
 @common.XfailIfNoCorstone300
 def test_cat_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -126,7 +118,7 @@ def test_cat_u55_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Cat.test_parameters, x_fails)
+@common.parametrize("test_data", Cat.test_parameters)
 @common.XfailIfNoCorstone320
 def test_cat_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](

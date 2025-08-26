@@ -1777,20 +1777,6 @@ class TestVulkanBackend(unittest.TestCase):
             (torch.rand(size=[1, 5, 2, 3]),),
         )
 
-    def test_vulkan_backend_high_dim_tensors_fail(self):
-        class UnsqueezeHigherDim(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                return torch.unsqueeze(x, 2)
-
-        self.lower_module_and_test_output(
-            UnsqueezeHigherDim(),
-            (torch.ones(size=[5, 4, 1, 2, 6]),),
-            expect_no_delegates=True,
-        )
-
     def test_vulkan_backend_large_linear_layer(self):
         class LinearModel(torch.nn.Module):
             def __init__(self, large_out_channels: int) -> None:
@@ -2297,6 +2283,28 @@ class TestVulkanBackend(unittest.TestCase):
             dynamic_shapes=dynamic_shapes,
             test_inputs=test_inputs,
         )
+
+    def test_vulkan_backend_high_dimensional_tensors(self):
+        class HighDimTensorModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                # Unsqueeze inputs twice to create 5-dim tensors
+                x_5d = torch.unsqueeze(torch.unsqueeze(x, 0), 0)
+                y_5d = torch.unsqueeze(torch.unsqueeze(y, 0), 0)
+                # Add tensors together
+                result = x_5d + y_5d
+                return result
+
+        high_dim_module = HighDimTensorModule()
+        # Create 2 4-dim inputs
+        sample_inputs = (
+            torch.rand(size=(2, 3, 4, 5), dtype=torch.float32),
+            torch.rand(size=(2, 3, 4, 5), dtype=torch.float32),
+        )
+
+        self.lower_module_and_test_output(high_dim_module, sample_inputs)
 
     def test_vulkan_backend_torchao_wo_quantized_linear(self):
         in_features = 1024

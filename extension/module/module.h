@@ -534,6 +534,56 @@ class Module {
   }
 
   /**
+   * Retrieve all current output values of a specific method without executing
+   * it. Loads the program and method before retrieval if needed.
+   *
+   * @param[in] method_name The name of the method.
+   *
+   * @returns A Result containing the vector of output values, or an error.
+   */
+  ET_NODISCARD
+  runtime::Result<std::vector<runtime::EValue>> get_outputs(
+      const std::string& method_name);
+
+  /**
+   * Retrieve all current output values of the "forward" method without
+   * executing it. Loads the program and method before retrieval if needed.
+   *
+   * @returns A Result containing the vector of output values, or an error.
+   */
+  ET_NODISCARD
+  inline runtime::Result<std::vector<runtime::EValue>> get_outputs() {
+    return get_outputs("forward");
+  }
+
+  /**
+   * Retrieve a single current output value of a specific method without
+   * executing it. Loads the program and method before retrieval if needed.
+   *
+   * @param[in] method_name The name of the method.
+   * @param[in] output_index Zero-based index of the output to retrieve.
+   *
+   * @returns A Result containing the requested output value, or an error.
+   */
+  ET_NODISCARD
+  runtime::Result<runtime::EValue> get_output(
+      const std::string& method_name,
+      size_t output_index = 0);
+
+  /**
+   * Retrieve a single current output value of the "forward" method without
+   * executing it. Loads the program and method before retrieval if needed.
+   *
+   * @param[in] output_index Zero-based index of the output to retrieve.
+   *
+   * @returns A Result containing the requested output value, or an error.
+   */
+  ET_NODISCARD
+  inline runtime::Result<runtime::EValue> get_output(size_t output_index = 0) {
+    return get_output("forward", output_index);
+  }
+
+  /**
    * Retrieves the EventTracer instance being used by the Module.
    * EventTracer is used for tracking and logging events during the execution
    * of methods.

@@ -56,7 +56,7 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
         exported_deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
