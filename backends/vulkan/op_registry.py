@@ -490,7 +490,6 @@ def register_rotary_emb_op():
 @update_features(
     [
         exir_ops.edge.aten.permute.default,
-        exir_ops.edge.aten.permute_copy.default,
     ]
 )
 def register_view_ops():
@@ -506,6 +505,7 @@ def register_view_ops():
         exir_ops.edge.aten.squeeze_copy.dims,
         exir_ops.edge.aten.unsqueeze_copy.default,
         exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.permute_copy.default,
     ]
 )
 def register_view_ops_with_buffer_meta():
