@@ -739,7 +739,7 @@ struct PyModule final {
         static_cast<uint32_t>(method_result.error()));
 
     auto* method = method_result.get();
-        const auto num_outputs = method->outputs_size();
+    const auto num_outputs = method->outputs_size();
     // Skip if we already have the right number of storages.
     if (output_storages_.size() == num_outputs) {
       return;
