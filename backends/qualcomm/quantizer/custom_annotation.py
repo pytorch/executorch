@@ -317,6 +317,7 @@ def annotate_matmul_16a8w(  # noqa: C901
                 torch.ops.aten.transpose.int,
                 torch.ops.aten.view.default,
                 torch.ops.aten.reshape.default,
+                torch.ops.aten.slice.Tensor,
             ]:
                 annotate_single_in_single_out(node, quantization_config_8a8w)
                 node = node.args[0]
@@ -340,7 +341,11 @@ def annotate_matmul_16a8w(  # noqa: C901
                     node, quantization_config=quantization_config_8a4w_per_channel
                 )
                 break
-            elif node.target in [torch.ops.aten.add.Tensor, torch.ops.aten.sub.Tensor]:
+            elif node.target in [
+                torch.ops.aten.add.Tensor,
+                torch.ops.aten.sub.Tensor,
+                torch.ops.aten.matmul.default,
+            ]:
                 break
             else:
                 print(f"The node ({node}) is not expected in the input1 of the matmul")
@@ -356,7 +361,12 @@ def annotate_matmul_16a8w(  # noqa: C901
         )
 
     for node in gm.graph.nodes:
-        if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
+        if (
+            node.op == "call_function"
+            and node.target == torch.ops.aten.matmul.default
+            and all(arg.op == "call_function" for arg in node.args)
+        ):
+            # Only apply custom annotation on Q @ K^T @ V
             annotate_matmul(node, quantization_config_16a8w)
             annotate_matmul_input1(node.args[1], is_qat=is_qat)
 
