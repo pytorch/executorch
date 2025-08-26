@@ -242,6 +242,9 @@ def get_symmetric_a16w8_add_quantizer(u55_config=False, per_channel_quantization
 
 
 @common.parametrize("test_data", Add.test_data)
+@pytest.mark.xfail(
+    reason="missing int16 add ops support; fails at TOSA reference model with Unsupported operation type or rank"
+)
 def test_add_tensor_16a8w_tosa_INT(test_data: input_t1):
     """Test add operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
