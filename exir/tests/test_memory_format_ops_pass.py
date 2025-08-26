@@ -27,7 +27,10 @@ from executorch.exir.tests.test_memory_format_ops_pass_utils import (
     AmbiguousDimOrderError,
     MemoryFormatOpsPassTestUtils,
     MemoryFormatTestSet,
+    PropagateToCloneChannelsLastModule,
     PropagateToCopyChannalsLastModule,
+    SimpleCloneChannelsLastModule,
+    SimpleCloneContiguousModule,
     SimpleEmptyChannelLastModule,
     SimpleEmptyContiguoustModule,
     SimpleToCopyChannelsLastModule,
@@ -91,6 +94,36 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ),
         )
 
+    def test_op_clone_replacement_contiguous(self) -> None:
+        model = SimpleCloneContiguousModule()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                op=torch.ops.aten.clone.default,
+                sample_input=(
+                    torch.randn((3, 4, 5, 6)).to(memory_format=torch.channels_last),
+                ),
+                target_memory_format=torch.contiguous_format,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+        )
+
+    def test_op_clone_replacement_channels_last(self) -> None:
+        model = SimpleCloneChannelsLastModule()
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=model.eval(),
+                op=torch.ops.aten.clone.default,
+                sample_input=(
+                    torch.randn((3, 4, 5, 6)).to(memory_format=torch.contiguous_format),
+                ),
+                target_memory_format=torch.channels_last,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+        )
+
     def test_op_dim_order_update(self) -> None:
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
@@ -115,6 +148,25 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             MemoryFormatTestSet(
                 module=PropagateToCopyChannalsLastModule().eval(),
                 op=torch.ops.aten._to_copy.default,
+                sample_input=(
+                    torch.rand_like(
+                        torch.zeros([2, 2, 2, 2]),
+                        dtype=torch.float32,
+                        memory_format=torch.contiguous_format,
+                    ),
+                ),
+                target_memory_format=torch.channels_last,
+                _load_for_executorch_from_buffer=_load_for_executorch_from_buffer,
+            ),
+            check_unambiguous_dim_order=True,
+        )
+
+    def test_op_clone_dim_order_propagation(self) -> None:
+        MemoryFormatOpsPassTestUtils.memory_format_test_runner(
+            self,
+            MemoryFormatTestSet(
+                module=PropagateToCloneChannelsLastModule().eval(),
+                op=torch.ops.aten.clone.default,
                 sample_input=(
                     torch.rand_like(
                         torch.zeros([2, 2, 2, 2]),
