@@ -8,9 +8,13 @@
 
 #pragma once
 
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+
 #if defined(ET_USE_PYTORCH_HEADERS) && ET_USE_PYTORCH_HEADERS
 #include <ATen/cpu/vec/vec.h>
 #endif
+
+#include <type_traits>
 
 namespace torch {
 namespace executor {
@@ -29,7 +33,8 @@ template <
     typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
 INT_T floor_divide(INT_T a, INT_T b) {
   const auto quot = a / b;
-  if (std::signbit(a) == std::signbit(b)) {
+  // MSVC does not like signbit on integral types.
+  if ((a < 0) == (b < 0)) {
     return quot;
   }
   const auto rem = a % b;
@@ -50,6 +55,20 @@ FLOAT_T floor_divide(FLOAT_T a, FLOAT_T b) {
     return div - 1;
   }
   return div;
+}
+
+/**
+ * A wrapper around std::isnan that works with MSVC. When building with MSVC,
+ * std::isnan calls with integer inputs fail to compile due to ambiguous
+ * overload resolution.
+ */
+template <typename T>
+bool isnan_override(T a) {
+  if constexpr (!std::is_integral_v<T>) {
+    return std::isnan(a);
+  } else {
+    return false;
+  }
 }
 
 /**

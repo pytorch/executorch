@@ -10,6 +10,7 @@
 #include <cmath>
 #include <tuple>
 
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -88,8 +89,8 @@ std::tuple<Tensor&, Tensor&> max_out(
               for (const auto out_ix : c10::irange(begin, end)) {
                 std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
                     [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
-                      if (!std::isnan(acc_val) &&
-                          (std::isnan(v) || v > acc_val)) {
+                      if (!utils::isnan_override(acc_val) &&
+                          (utils::isnan_override(v) || v > acc_val)) {
                         acc_val = v;
                         acc_ix = ix;
                       }
@@ -132,7 +133,7 @@ max_unary_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       data_out[0] = lower_bound<CTYPE_OUT>();
       for (const auto i : c10::irange(in.numel())) {
         CTYPE_OUT val = static_cast<CTYPE_OUT>(data_in[i]);
-        if (std::isnan(val)) {
+        if (utils::isnan_override(val)) {
           data_out[0] = val;
           break;
         }
