@@ -55,6 +55,78 @@ using ::executorch::extension::llm::make_image_input;
 using ::executorch::extension::llm::make_text_input;
 using ::executorch::extension::llm::MultimodalInput;
 
+bool ends_with(const std::string& str, const std::string& suffix) {
+  return str.size() >= suffix.size() &&
+      str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+/**
+ * @brief Loads preprocessed audio data from a binary file
+ *
+ * Reads mel spectrogram features that have been pre-computed and saved as a
+ * binary file. The audio data is expected to be stored as float values in
+ * binary format, typically saved using:
+ *   with open("tensor.bin", "wb") as f:
+ *       f.write(t.numpy().tobytes())
+ *
+ * @param audio_path Path to the binary audio file (.bin)
+ * @return MultimodalInput containing the loaded audio data
+ */
+MultimodalInput loadPreprocessedAudio(const std::string& audio_path) {
+  std::ifstream f(audio_path, std::ios::binary | std::ios::ate);
+  int32_t n_bins = 128;
+  int32_t n_frames = 3000;
+  std::size_t n_floats =
+      f.tellg() / sizeof(float); // Number of floats in the audio file.
+  f.seekg(0, std::ios::beg);
+  int32_t batch_size = ceil(
+      n_floats /
+      (n_bins * n_frames)); // Batch in increments of n_frames, rounding up.
+  std::vector<float> audio_data(batch_size * n_bins * n_frames);
+  f.read(
+      reinterpret_cast<char*>(audio_data.data()),
+      audio_data.size() * sizeof(float));
+
+  ET_LOG(Info, "audio_data len = %d", audio_data.size());
+
+  auto audio = std::make_unique<::executorch::extension::llm::Audio>();
+  audio->batch_size = batch_size;
+  audio->n_bins = n_bins;
+  audio->n_frames = n_frames;
+  audio->data.resize(audio_data.size() * sizeof(float));
+  std::memcpy(
+      audio->data.data(), audio_data.data(), audio_data.size() * sizeof(float));
+  return ::executorch::extension::llm::make_audio_input(std::move(*audio));
+}
+
+/**
+ * @brief Processes audio files for multimodal input
+ *
+ * Dispatches audio file processing based on file extension:
+ * - .bin files: Loads preprocessed mel spectrogram features directly
+ * - .wav/.mp3 files: Currently unsupported, throws runtime_error
+ *
+ * This function provides a interface for different audio input formats
+ * and can be extended to support raw audio processing in the future.
+ *
+ * @param audio_path Path to the audio file
+ * @return MultimodalInput containing the processed audio data
+ * @throws std::runtime_error if file format is unsupported or processing fails
+ */
+MultimodalInput processAudioFile(const std::string& audio_path) {
+  if (ends_with(audio_path, ".bin")) {
+    // Current behavior - load preprocessed audio stored as a binary file.
+    return loadPreprocessedAudio(audio_path);
+  } else if (ends_with(audio_path, ".wav") || ends_with(audio_path, ".mp3")) {
+    // New: Process raw audio files - unsupported for now
+    ET_LOG(Error, "Raw audio file processing (.wav/.mp3) is not yet supported");
+    throw std::runtime_error("Raw audio file processing not supported");
+  } else {
+    ET_LOG(Error, "Unsupported audio file format: %s", audio_path.c_str());
+    throw std::runtime_error("Unsupported audio file format");
+  }
+}
+
 } // namespace
 
 int32_t main(int32_t argc, char** argv) {
@@ -112,36 +184,9 @@ int32_t main(int32_t argc, char** argv) {
   inputs.emplace_back(make_text_input("<s>[INST][BEGIN_AUDIO]"));
 
   // 2. Add audio input
-  // Using a preprocessed audio, saved using:
-  // with open("tensor.bin", "wb") as f:
-  //     f.write(t.numpy().tobytes())
-  std::ifstream f(audio_path, std::ios::binary | std::ios::ate);
-  int32_t n_bins = 128;
-  int32_t n_frames = 3000;
-  std::size_t n_floats =
-      f.tellg() / sizeof(float); // Number of floats in the audio file.
-  f.seekg(0, std::ios::beg);
-  int32_t batch_size = ceil(
-      n_floats /
-      (n_bins * n_frames)); // Batch in increments of n_frames, rounding up.
-  std::vector<float> audio_data(batch_size * n_bins * n_frames);
-  f.read(
-      reinterpret_cast<char*>(audio_data.data()),
-      audio_data.size() * sizeof(float));
+  inputs.emplace_back(processAudioFile(audio_path));
 
-  ET_LOG(Info, "audio_data len = %d", audio_data.size());
-
-  auto audio = std::make_unique<::executorch::extension::llm::Audio>();
-  audio->batch_size = batch_size;
-  audio->n_bins = n_bins;
-  audio->n_frames = n_frames;
-  audio->data.resize(audio_data.size() * sizeof(float));
-  std::memcpy(
-      audio->data.data(), audio_data.data(), audio_data.size() * sizeof(float));
-  inputs.emplace_back(
-      ::executorch::extension::llm::make_audio_input(std::move(*audio)));
-
-  // 3. Add text input
+  // 3. Add text input (the actual user-submitted prompt)
   inputs.emplace_back(make_text_input(std::string(prompt) + "[/INST]"));
 
   ::executorch::extension::llm::GenerationConfig config;
