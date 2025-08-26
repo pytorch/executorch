@@ -17,6 +17,7 @@
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
@@ -86,9 +87,8 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
   return nullptr;
 }
 
-std::unordered_map<std::string, int64_t> get_llm_metadata(
-    tokenizers::Tokenizer* tokenizer,
-    Module* module) {
+::executorch::runtime::Result<std::unordered_map<std::string, int64_t>>
+get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
   // Initialize metadata with default values
   std::unordered_map<std::string, int64_t> metadata({
       {llm::kEnableDynamicShape, false},
@@ -102,9 +102,19 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
   auto method_names_result = module->method_names();
   if (method_names_result.error() != Error::Ok) {
     ET_LOG(Error, "Failed reading method names");
-    return metadata;
+    return ::executorch::runtime::Error::InvalidArgument;
   }
   const auto& method_names = method_names_result.get();
+
+  // Error out if the max seq len metadata method is not present, since
+  // it is hard to figure out from just the .pte itself.
+  if (!method_names.count(llm::kMaxSeqLen)) {
+    ET_LOG(
+        Error,
+        "Required metadata method %s not found in model",
+        llm::kMaxSeqLen);
+    return ::executorch::runtime::Error::InvalidArgument;
+  }
 
   for (auto& pair : metadata) {
     const auto& method_name = pair.first;
@@ -190,7 +200,12 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 
   // Get metadata from Module
   ET_LOG(Info, "Reading metadata from model");
-  auto metadata = llm::get_llm_metadata(tokenizer.get(), module.get());
+  auto metadata_result = llm::get_llm_metadata(tokenizer.get(), module.get());
+  if (metadata_result.error() != Error::Ok) {
+    ET_LOG(Error, "Failed to get metadata from model");
+    return nullptr;
+  }
+  auto metadata = metadata_result.get();
 
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
       llm::get_eos_ids(tokenizer.get(), module.get()));
@@ -253,7 +268,12 @@ std::unique_ptr<MultimodalRunner> create_multimodal_runner(
 
   // Get metadata from Module
   ET_LOG(Info, "Reading metadata from model");
-  auto metadata = get_llm_metadata(tokenizer.get(), module.get());
+  auto metadata_result = get_llm_metadata(tokenizer.get(), module.get());
+  if (metadata_result.error() != Error::Ok) {
+    ET_LOG(Error, "Failed to get metadata from model");
+    return nullptr;
+  }
+  auto metadata = metadata_result.get();
 
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
       get_eos_ids(tokenizer.get(), module.get()));

@@ -41,9 +41,6 @@ list(
   link_libraries
   optimized_native_cpu_ops_lib
   quantized_ops_lib
-  portable_kernels
-  optimized_kernels
-  quantized_kernels
   custom_ops
   cpublas
   eigen_blas
