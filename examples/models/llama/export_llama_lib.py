@@ -50,6 +50,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
+    get_ov_quantizer,
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
@@ -205,6 +206,8 @@ def build_args_parser() -> argparse.ArgumentParser:
         choices=[
             "xnnpack_dynamic",
             "xnnpack_dynamic_qc4",
+            "openvino_8da4w",
+            "openvino_8da8w",
             "qnn_8a8w",
             "qnn_16a16w",
             "qnn_16a4w",
@@ -786,6 +789,12 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.quantization.pt2e_quantize.value, llm_config.quantization.qmode
         )
         quantizers.append(qnn_quantizer)
+    if llm_config.backend.openvino.enabled and llm_config.quantization.pt2e_quantize:
+        assert len(quantizers) == 0, "Should not enable both xnnpack and openvino"
+        ov_quantizer = get_ov_quantizer(
+            llm_config.quantization.pt2e_quantize.value, llm_config.quantization.group_size
+        )
+        quantizers.append(ov_quantizer)
     if llm_config.backend.coreml.enabled and llm_config.quantization.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
         coreml_quantizer = get_coreml_quantizer(

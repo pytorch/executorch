@@ -207,12 +207,48 @@ def get_qnn_quantizer(
             f"No support for quant type {quant_config}. Support 8a8w, 16a16w and 16a4w."
         )
 
-    assert (
+    assert (get_qnn_quantizer
         quantization_mode is None
     ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
 
     return qnn_quantizer, quant_dtype
+
+
+def get_ov_quantizer(
+    pt2e_quantize: str,
+    group_size: int = 32,
+):
+    try:
+        from executorch.backends.openvino.quantizer import OpenVINOQuantizer, QuantizationMode
+
+    except ImportError:
+        raise ImportError(
+            "Please install nncf via backends/openvino/requirements.txt"
+        )
+    
+    backend, quant_config = pt2e_quantize.split("_")
+    assert (
+        backend == "openvino"
+    ), f"The quantization config is for backend {backend} instead of openvino."
+    ov_quantizer = OpenVINOQuantizer()
+    # Manually ignore MP layers.
+    # ov_quantizer.set_ignored_scope()
+
+    extra_quantizer_options = {"group_size": group_size}
+    if quant_config == "8da4w":
+        mode = QuantizationMode.INT4WO_SYM
+
+    elif quant_config == "8da8w":
+        mode = QuantizationMode.INT8WO_SYM
+    else:
+        raise AssertionError(
+            f"No support for quant type {quant_config}. Support 8a4w, 8a8w only."
+        )
+    
+    ov_quantizer = OpenVINOQuantizer(mode=mode, **extra_quantizer_options)
+
+    return ov_quantizer
 
 
 def get_coreml_quantizer(pt2e_quantize: str):
