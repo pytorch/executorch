@@ -325,6 +325,13 @@ class SingleLlama:
                     chat_template, args.prompt[0], args.system_prompt
                 )
             )
+
+            # Gemma may produce unexpected output if the prompt contains an extra <bos> token.
+            # This can happen after applying a prompt template, which might inject <bos> unintentionally.
+            # To prevent decoding issues, we explicitly remove <bos> token
+            if chat_template and args.decoder_model in {"gemma-2b", "gemma3-1b"}:
+                prompt = prompt.replace("<bos>", "")
+
             graph_module_inference(
                 use_kv_cache=self.llama_meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
@@ -538,14 +545,13 @@ def compile(
         state_dict = torch.load(
             checkpoint, weights_only=True, map_location="cpu", mmap=True
         )
-        if args.decoder_model == "gemma3-1b":
+        if args.decoder_model in {"gemma-2b", "gemma3-1b"}:
             for k, v in state_dict.items():
                 if "norm" not in k:
                     continue
                 # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
                 # See https://github.com/huggingface/transformers/pull/29402
                 state_dict[k] = v.float() + torch.ones(v.shape, dtype=torch.float32)
-
     else:
         state_dict = torch.load(
             args.checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -1284,7 +1290,11 @@ def export_llama(args) -> None:
         )
         tokenizer_artifacts = tokenizer.save_pretrained(args.artifact)
         tokenizer_config = tokenizer_artifacts[0]
-        runtime_tokenizer_path = tokenizer_artifacts[-1]
+        if args.decoder_model == "gemma-2b":
+            # For Gemma, use tokenizer.model as it doesn't provide pre_tokenizer in tokenizer.json.
+            runtime_tokenizer_path = tokenizer_artifacts[-3]
+        else:
+            runtime_tokenizer_path = tokenizer_artifacts[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path, tokenizer_config)
 
     # TODO: Remove this once error is resolved.
