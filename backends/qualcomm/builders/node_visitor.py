@@ -162,7 +162,7 @@ class NodeVisitor:
         for ch in range(num_channels):
             max_scale = scales[ch].reshape(1, -1).amax(dim=-1) / num_steps
             q_scales = torch.clamp(
-                input=scales[ch] / max_scale,
+                input=torch.round(input=scales[ch] / max_scale),
                 min=1,
                 max=2**bitwidth_of_scale,
             ).to(quant_scales_dtype)
