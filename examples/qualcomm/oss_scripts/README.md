@@ -122,7 +122,7 @@ If you want to export the model without running it, please add `--compile_only` 
       python ssd300_vgg16.py -m ${SOC_MODEL} -b path/to/build-android/ -s ${DEVICE_SERIAL} --oss_repo path/to/a-PyTorch-Tutorial-to-Object-Detection -p path/to/pretrained_weight 
 
 9. `llama`:
-    For llama, please check [README](examples/qualcomm/oss_scripts/llama/README.md) under llama folder for more details.
+    For llama, please check [README](llama/README.md) under llama folder for more details.
 
 10. `efficientSAM`:
     For efficientSAM, please get access to efficientSAM folder.
