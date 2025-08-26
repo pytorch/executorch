@@ -24,9 +24,9 @@
 
 namespace example {
 
-class Runner {
+class WhisperRunner {
  public:
-  explicit Runner(
+  explicit WhisperRunner(
       const std::string& model_path,
       const std::string& tokenizer_json_path);
 
