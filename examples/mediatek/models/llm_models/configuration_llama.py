@@ -83,6 +83,7 @@ class LlamaConfig(BaseConfig):
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
         self.unk_token_id = unk_token_id
+        self.head_dim = kwargs.pop("head_dim", self.hidden_size // self.num_attention_heads)
 
         if position_embedding not in ["rope", "alibi"]:
             raise ValueError("Positional embedding must be one of: rope, alibi")
@@ -115,6 +116,7 @@ class LlamaConfig(BaseConfig):
             print(f"Num layers:           {self.num_hidden_layers}")
             print(f"Num attention heads:  {self.num_attention_heads}")
             print(f"Num KV heads:         {self.num_key_value_heads}")
+            print(f"Head Dim:             {self.head_dim}")
             print(f"Positional embedding: {self.position_embedding}")
             if self.position_embedding == "rope":
                 print(f"Max pos emb:          {self.max_position_embeddings}")

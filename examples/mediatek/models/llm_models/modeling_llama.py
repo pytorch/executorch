@@ -34,8 +34,15 @@ class LlamaMLP(MLP):
 
 
 class LlamaAttention(Attention):
-    def __init__(self, config: LlamaConfig):
-        super().__init__(config)
+    def __init__(
+        self, 
+        config: LlamaConfig,
+        jit_trace=False,
+        ):
+        super().__init__(
+            config, 
+            jit_trace,
+        )
 
 
 class LlamaDecoderLayer(DecoderLayer):

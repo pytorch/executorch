@@ -24,6 +24,7 @@ class BaseConfig(ABC):
         self.use_stable_embedding = False
         self.tie_word_embeddings = False
         self.combine_qkv = False
+        self.use_qk_norm = False
 
         self.tokenizer = "default"
 

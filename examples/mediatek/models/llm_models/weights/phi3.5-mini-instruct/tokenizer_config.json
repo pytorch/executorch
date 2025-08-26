@@ -1,0 +1,130 @@
+{
+    "add_bos_token": false,
+    "add_eos_token": false,
+    "added_tokens_decoder": {
+        "0": {
+            "content": "<unk>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false,
+            "special": true
+        },
+        "1": {
+            "content": "<s>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false,
+            "special": true
+        },
+        "2": {
+            "content": "</s>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": false
+        },
+        "32000": {
+            "content": "<|endoftext|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": false,
+            "single_word": false,
+            "special": true
+        },
+        "32001": {
+            "content": "<|assistant|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": true
+        },
+        "32002": {
+            "content": "<|placeholder1|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": true
+        },
+        "32003": {
+            "content": "<|placeholder2|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": true
+        },
+        "32004": {
+            "content": "<|placeholder3|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": true
+        },
+        "32005": {
+            "content": "<|placeholder4|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": true
+        },
+        "32006": {
+            "content": "<|system|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": true
+        },
+        "32007": {
+            "content": "<|end|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": true
+        },
+        "32008": {
+            "content": "<|placeholder5|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": true
+        },
+        "32009": {
+            "content": "<|placeholder6|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": true
+        },
+        "32010": {
+            "content": "<|user|>",
+            "lstrip": false,
+            "normalized": false,
+            "rstrip": true,
+            "single_word": false,
+            "special": true
+        }
+    },
+    "bos_token": "<s>",
+    "chat_template": "{% for message in messages %}{% if message['role'] == 'system' and message['content'] %}{{'<|system|>\n' + message['content'] + '<|end|>\n'}}{% elif message['role'] == 'user' %}{{'<|user|>\n' + message['content'] + '<|end|>\n'}}{% elif message['role'] == 'assistant' %}{{'<|assistant|>\n' + message['content'] + '<|end|>\n'}}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '<|assistant|>\n' }}{% else %}{{ eos_token }}{% endif %}",
+    "clean_up_tokenization_spaces": false,
+    "eos_token": "<|endoftext|>",
+    "legacy": false,
+    "model_max_length": 131072,
+    "pad_token": "<|endoftext|>",
+    "padding_side": "left",
+    "sp_model_kwargs": {},
+    "tokenizer_class": "LlamaTokenizer",
+    "unk_token": "<unk>",
+    "use_default_system_prompt": false
+}

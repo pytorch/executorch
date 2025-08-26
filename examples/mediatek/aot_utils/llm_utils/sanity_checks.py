@@ -127,7 +127,13 @@ def check_supported_model(config):
         "qwen",
         "qwen1.5",
         "qwen2",
+        "qwen3",
         "milm",
+        "phi3",
+        "gemma1",
+        "gemma2",
+        "gemma3",
+        "whisper"
     ]
     if not isinstance(config, BaseConfig):
         raise RuntimeError(
