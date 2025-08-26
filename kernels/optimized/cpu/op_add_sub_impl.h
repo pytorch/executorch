@@ -116,10 +116,9 @@ Tensor& opt_add_sub_out_impl(
 
   if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     // Resize for dynamic shape
-    auto error = resize_tensor(out, a.sizes());
     ET_KERNEL_CHECK_MSG(
         ctx,
-        error == Error::Ok,
+        resize_to_broadcast_target_size(a, b, out) == Error::Ok,
         InvalidArgument,
         out,
         "Failed to resize output tensor.");
