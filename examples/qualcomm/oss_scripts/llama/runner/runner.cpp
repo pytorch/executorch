@@ -129,8 +129,12 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kPhi4;
   } else if (decoder_model_version == "qwen2_5") {
     decoder_model_version_ = DecoderModelVersion::kQwen2_5;
+  } else if (decoder_model_version == "qwen3") {
+    decoder_model_version_ = DecoderModelVersion::kQwen3;
   } else if (decoder_model_version == "smollm2_135m") {
     decoder_model_version_ = DecoderModelVersion::kSmollm2_135m;
+  } else if (decoder_model_version == "smollm3") {
+    decoder_model_version_ = DecoderModelVersion::kSmollm3;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -193,7 +197,8 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
   } else if (
       decoder_model_version_ == DecoderModelVersion::kQwen3 ||
-      decoder_model_version_ == DecoderModelVersion::kSmollm2_135m) {
+      decoder_model_version_ == DecoderModelVersion::kSmollm2_135m ||
+      decoder_model_version_ == DecoderModelVersion::kSmollm3) {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kGemma3) {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);

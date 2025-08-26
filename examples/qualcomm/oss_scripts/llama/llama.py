@@ -291,7 +291,6 @@ class SingleLlama:
             use_i64_token=args.embedding_quantize is not None,
             event_name="prepare_pt2e_prompt",
         )
-
         if scales_state_dict:
             set_scales(
                 fx_graph_module, scales_state_dict, self.llama_graph_module.head_dim
@@ -445,6 +444,13 @@ def compile(
             kv_config.enable_masked_softmax = False
         else:
             kv_config.enable_masked_softmax = True
+
+    if args.decoder_model == "smollm3-3b":
+        from transformers import AutoConfig
+
+        kv_config.apply_rope_layers = AutoConfig.from_pretrained(
+            decoder_model_config.repo_id
+        ).no_rope_layers
 
     prefill_config = copy.copy(kv_config)
     prefill_config.use_kv_cache = (
