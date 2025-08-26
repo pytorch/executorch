@@ -576,6 +576,10 @@ if(EXECUTORCH_BUILD_QNN)
   list(APPEND _executorch_backends qnn_executorch_backend)
 endif()
 
+if(EXECUTORCH_BUILD_SAMSUNG)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/samsung)
+endif()
+
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
   list(APPEND _executorch_backends xnnpack_backend)
