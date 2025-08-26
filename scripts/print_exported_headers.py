@@ -22,7 +22,11 @@ BUCK_CWD: str = os.path.dirname(os.path.realpath(__file__))
 
 def run(command: List[str]) -> str:
     """Run subprocess and return its output."""
-    result = subprocess.run(command, capture_output=True, check=True, cwd=BUCK_CWD)
+    try:
+        result = subprocess.run(command, capture_output=True, check=True, cwd=BUCK_CWD)
+    except CalledProcessError as ex:
+        print(f"Subprocess failed. stdout: {ex.stdout}\nstderr: {ex.stderr}")
+        raise
     return result.stdout.decode()
 
 
