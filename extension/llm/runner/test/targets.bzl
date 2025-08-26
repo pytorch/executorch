@@ -44,3 +44,13 @@ def define_common_targets():
             "//executorch/extension/llm/runner:multimodal_runner_lib",
         ],
     )
+
+    runtime.cxx_test(
+        name = "test_multimodal_prefiller",
+        srcs = ["test_multimodal_prefiller.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:multimodal_runner_lib",
+            "//executorch/extension/llm/runner/io_manager:io_manager",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+        ],
+    )
