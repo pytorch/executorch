@@ -38,7 +38,7 @@ add_library(openvino_backend STATIC .)
 target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
 
 # Include Executorch directories
-target_include_directories(openvino_backend PUBLIC ${COMMON_INCLUDE_DIRS})
+target_include_directories(openvino_backend PRIVATE ${COMMON_INCLUDE_DIRS})
 
 # Link OpenVINO and ExecuteTorch core libraries
 target_link_libraries(
