@@ -45,7 +45,9 @@ Tensor& relu_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "relu.out", CTYPE, [&]() {
     apply_unary_map_fn(
         [](const CTYPE val_in) {
-          return (std::isnan(static_cast<float>(val_in)) || val_in >= CTYPE(0)) ? val_in : CTYPE(0);
+          return (std::isnan(static_cast<float>(val_in)) || val_in >= CTYPE(0))
+              ? val_in
+              : CTYPE(0);
         },
         in.const_data_ptr<CTYPE>(),
         out.mutable_data_ptr<CTYPE>(),

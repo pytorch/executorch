@@ -10,6 +10,7 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <executorch/runtime/platform/compiler.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -18,7 +19,6 @@
 #include <numeric>
 #include <ostream>
 #include <type_traits>
-#include <executorch/runtime/platform/compiler.h>
 /**
  * @file
  * This header defines common, low-level operations that can often be
