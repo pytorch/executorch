@@ -47,24 +47,48 @@ def split_copy(context, node):
     split(context, node)
 
 
-@register_torch_op(
-    torch_alias=[
-        "dim_order_ops::_to_dim_order_copy",
-        "dim_order_ops._to_dim_order_copy",
-    ],
-    override=False,
-)
-def _to_dim_order_copy(context, node):
-    dim_order = _get_kwinputs(context, node, "dim_order", default=[None])[0]
-    node.kwinputs.pop("dim_order")
+def is_fbcode():
+    return not hasattr(_torch.version, "git_version")
 
-    # In CoreML, dim_order.val will be an ndarray, so we convert it to a list
-    dim_order = [int(d) for d in dim_order.val]
-    memory_format = get_memory_format(dim_order)
-    assert (
-        memory_format == _torch.contiguous_format
-    ), "Only contiguous memory format is supported in CoreML"
-    to(context, node)
+
+if not is_fbcode():
+    from coremltools.converters.mil.frontend.torch.dim_order_ops import (
+        _empty_dim_order,
+        _to_dim_order_copy,
+    )
+
+    # This is a temporary hack to register the alias "dim_order_ops._to_dim_order_copy",
+    # which was missed by coremltools
+    @register_torch_op(torch_alias=["dim_order_ops._to_dim_order_copy"], override=False)
+    def _to_dim_order_copy_TMP_EXECUTORCH_ALIAS_HACK(context, node):
+        _to_dim_order_copy(context, node)
+
+    # This is a temporary hack to register the alias "dim_order_ops._empty_dim_order",
+    # which was missed by coremltools
+    @register_torch_op(torch_alias=["dim_order_ops._empty_dim_order"], override=False)
+    def _empty_dim_order_TMP_EXECUTORCH_ALIAS_HACK(context, node):
+        _empty_dim_order(context, node)
+
+else:
+    # TODO: remove this case when fbcode updates to coremltools 9.0
+    @register_torch_op(
+        torch_alias=[
+            "dim_order_ops::_to_dim_order_copy",
+            "dim_order_ops._to_dim_order_copy",
+        ],
+        override=False,
+    )
+    def _to_dim_order_copy(context, node):
+        dim_order = _get_kwinputs(context, node, "dim_order", default=[None])[0]
+        node.kwinputs.pop("dim_order")
+
+        # In CoreML, dim_order.val will be an ndarray, so we convert it to a list
+        dim_order = [int(d) for d in dim_order.val]
+        memory_format = get_memory_format(dim_order)
+        assert (
+            memory_format == _torch.contiguous_format
+        ), "Only contiguous memory format is supported in CoreML"
+        to(context, node)
 
 
 # https://github.com/apple/coremltools/pull/2558
