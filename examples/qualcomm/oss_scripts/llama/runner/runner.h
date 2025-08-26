@@ -75,6 +75,7 @@ class Runner : public executorch::extension::llm::IRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const executorch::llm::Stats&)> stats_callback = {})
       override;
+  void reset() override;
   executorch::runtime::Error generate_from_prompt_or_file(
       const std::string& prompt,
       bool tokenized_prompt,

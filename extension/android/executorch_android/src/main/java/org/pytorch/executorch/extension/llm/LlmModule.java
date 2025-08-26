@@ -213,7 +213,7 @@ public class LlmModule {
   /**
    * Generate tokens from the given prompt, starting from the given position.
    *
-   * <p> This is a deprecated API. Please use {@link #generate(String, int, LlmCallback, boolean)}
+   * <p>This is a deprecated API. Please use {@link #generate(String, int, LlmCallback, boolean)}
    *
    * @param prompt The text prompt to LLaVA.
    * @param seqLen The total sequence length, including the prompt tokens and new tokens.
