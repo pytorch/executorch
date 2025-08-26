@@ -47,11 +47,3 @@ set_target_properties(
   extension_llm_apple PROPERTIES XCODE_ATTRIBUTE_BUILD_LIBRARY_FOR_DISTRIBUTION
                                  YES
 )
-
-install(
-  TARGETS extension_llm_apple
-  EXPORT ExecuTorchTargets
-  DESTINATION lib
-  INCLUDES
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
