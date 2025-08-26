@@ -55,8 +55,27 @@
  */
 
 #define ET_NORETURN [[noreturn]]
+
+#ifdef _MSC_VER
+#define ET_NOINLINE __declspec(noinline)
+#else
 #define ET_NOINLINE __attribute__((noinline))
+#endif
+
 #define ET_INLINE __attribute__((always_inline)) inline
+
+#ifdef _MSC_VER
+#define ET_ALWAYS_INLINE __forceinline
+#else
+#define ET_ALWAYS_INLINE inline __attribute__((always_inline))
+#endif
+
+#ifdef _MSC_VER
+#define ET_RESTRICT __restrict
+#else
+#define ET_RESTRICT __restrict__
+#endif
+
 #define ET_INLINE_ATTRIBUTE __attribute__((always_inline))
 
 #if defined(__GNUC__)
@@ -171,6 +190,14 @@
 #else
 #include <stddef.h>
 using ssize_t = ptrdiff_t;
+#endif
+
+#ifdef _MSC_VER
+// MSVC has issues passing static constexpr const char names as template
+// parameter
+#define ET_OP_NAME_SPECIFIER
+#else
+#define ET_OP_NAME_SPECIFIER constexpr
 #endif
 
 #ifdef __EXCEPTIONS
