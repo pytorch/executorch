@@ -24,7 +24,7 @@ def run(command: List[str]) -> str:
     """Run subprocess and return its output."""
     try:
         result = subprocess.run(command, capture_output=True, check=True, cwd=BUCK_CWD)
-    except CalledProcessError as ex:
+    except subprocess.CalledProcessError as ex:
         print(f"Subprocess failed. stdout: {ex.stdout}\nstderr: {ex.stderr}")
         raise
     return result.stdout.decode()
