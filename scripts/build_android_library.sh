@@ -64,6 +64,11 @@ build_android_native_library() {
   mkdir -p ${SO_STAGE_DIR}
   cp "${CMAKE_OUT}"/extension/android/*.so "${SO_STAGE_DIR}/libexecutorch.so"
 
+  # Copy QNN related so library
+  if [ -n "$QNN_SDK_ROOT" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
+    cp "${CMAKE_OUT}"/lib/libqnn_executorch_backend.so ${SO_STAGE_DIR}
+  fi
+
   # Copy MTK related so library
   if [ -n "$NEURON_BUFFER_ALLOCATOR_LIB" ] && [ -n "$NEURON_USDK_ADAPTER_LIB" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
     cp "${CMAKE_OUT}"/backends/mediatek/libneuron_backend.so ${SO_STAGE_DIR}
