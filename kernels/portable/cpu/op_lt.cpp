@@ -20,7 +20,7 @@ Tensor& lt_tensor_out(
     const Tensor& b,
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "lt.Tensor_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "lt.Tensor_out";
   return internal::comparison_tensor_out<std::less, op_name>(ctx, a, b, out);
 }
 
@@ -30,7 +30,7 @@ Tensor& lt_scalar_out(
     const Scalar& b,
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "lt.Scalar_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "lt.Scalar_out";
   return internal::comparison_scalar_out<std::less, op_name>(ctx, a, b, out);
 }
 

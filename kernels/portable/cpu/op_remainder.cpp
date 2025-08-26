@@ -48,7 +48,7 @@ Tensor& remainder_Tensor_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "remainder.Tensor_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "remainder.Tensor_out";
 
   bool div_by_zero_error = false;
 
@@ -125,7 +125,7 @@ Tensor& remainder_Scalar_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "remainder.Scalar_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "remainder.Scalar_out";
 
   ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);

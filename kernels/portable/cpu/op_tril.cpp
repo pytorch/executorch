@@ -38,8 +38,8 @@ Tensor& clear_out(Tensor& out) {
  */
 template <typename CTYPE>
 void apply_tril(
-    CTYPE* __restrict__ self,
-    CTYPE* __restrict__ out,
+    CTYPE* ET_RESTRICT self,
+    CTYPE* ET_RESTRICT out,
     int64_t diagonal,
     int64_t num_rows,
     int64_t num_cols,
@@ -104,8 +104,8 @@ void tril_kernel(
   int64_t col_stride = strides_ref[ndim - 1];
 
   for (const auto i : c10::irange(batch_size)) {
-    CTYPE* __restrict__ data_self_ptr = &data_self[i * self_stride];
-    CTYPE* __restrict__ data_out_ptr = &data_out[i * self_stride];
+    CTYPE* ET_RESTRICT data_self_ptr = &data_self[i * self_stride];
+    CTYPE* ET_RESTRICT data_out_ptr = &data_out[i * self_stride];
 
     apply_tril<CTYPE>(
         data_self_ptr,

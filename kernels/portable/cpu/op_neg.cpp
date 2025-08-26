@@ -33,7 +33,7 @@ Tensor& neg_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  static constexpr const char op_name[] = "neg.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "neg.out";
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
     utils::internal::apply_unitensor_elementwise_fn<
         CTYPE,
