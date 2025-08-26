@@ -35,12 +35,12 @@ endif()
 
 # Example ExecuTorch demo for bare metal Cortex-M based systems
 set(ET_DIR_PATH
-    "../../.."
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../.."
     CACHE PATH "Path to ExecuTorch dir"
 )
 set(ET_BUILD_DIR_PATH
-    "${ET_DIR_PATH}/cmake-out"
-    CACHE PATH "Path to ExecuTorch build dir"
+    "${ET_DIR_PATH}/cmake-out-arm"
+    CACHE PATH "Path to ExecuTorch build/install dir"
 )
 set(ET_INCLUDE_PATH
     "${ET_DIR_PATH}/.."
@@ -82,14 +82,6 @@ set(MEMORY_MODE
 message(STATUS "SYSTEM_CONFIG is ${SYSTEM_CONFIG}")
 message(STATUS "MEMORY_MODE is ${MEMORY_MODE}")
 message(STATUS "ET_NUM_INFERENCES is ${ET_NUM_INFERENCES}")
-
-get_filename_component(ET_BUILD_DIR_PATH ${ET_BUILD_DIR_PATH} REALPATH)
-get_filename_component(ET_DIR_PATH ${ET_DIR_PATH} REALPATH)
-get_filename_component(ET_INCLUDE_PATH ${ET_INCLUDE_PATH} REALPATH)
-get_filename_component(ETHOS_SDK_PATH ${ETHOS_SDK_PATH} REALPATH)
-if(NOT ${SEMIHOSTING})
-  get_filename_component(ET_PTE_FILE_PATH ${ET_PTE_FILE_PATH} REALPATH)
-endif()
 
 # By default, use 2MB of temporary scratch buffer For Dedicated_Sram, use 64MB
 # for the temporary scratch buffer and 384KB for the fast scratch buffer(the
