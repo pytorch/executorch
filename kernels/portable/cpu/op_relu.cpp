@@ -9,7 +9,6 @@
 #include <cmath>
 
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
-#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -46,9 +45,7 @@ Tensor& relu_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "relu.out", CTYPE, [&]() {
     apply_unary_map_fn(
         [](const CTYPE val_in) {
-          return (utils::isnan_override(val_in) || val_in >= CTYPE(0))
-              ? val_in
-              : CTYPE(0);
+          return (std::isnan(val_in) || val_in >= CTYPE(0)) ? val_in : CTYPE(0);
         },
         in.const_data_ptr<CTYPE>(),
         out.mutable_data_ptr<CTYPE>(),
