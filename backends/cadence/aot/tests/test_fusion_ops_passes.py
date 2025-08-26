@@ -40,7 +40,29 @@ class TestFusionPassesBase(unittest.TestCase):
         self.assertTrue(op_counts_match(graph_module, expected_op_counts))
 
 
-class TestFusionPasses(TestFusionPassesBase):
+class TestFuseMMWithAddPass(TestFusionPassesBase):
+    def test_no_fuse_for_3d_bias(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 3, dtype=torch.float32))
+        y = builder.placeholder("y", torch.randn(3, 5, dtype=torch.float32))
+        z = builder.placeholder("z", torch.randn(1, 4, 5, dtype=torch.float32))
+        mm = builder.call_operator(
+            op=exir_ops.edge.aten.mm.default,
+            args=(x, y),
+        )
+        output = builder.call_operator(op=exir_ops.edge.aten.add.Tensor, args=(mm, z))
+        builder.output([output])
+        original_graph = builder.get_graph_module()
+
+        p = FuseMMWithAdd()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
+        converted_graph.graph.eliminate_dead_code()
+        self.assertEqual(
+            count_node(converted_graph, exir_ops.edge.aten.addmm.default), 0
+        )
+        self.assertEqual(count_node(converted_graph, exir_ops.edge.aten.mm.default), 1)
+        self.assertEqual(count_node(converted_graph, exir_ops.edge.aten.add.Tensor), 1)
+
     def test_fuse_mm_with_add(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(3, 5, dtype=torch.float32))
@@ -176,6 +198,8 @@ class TestFusionPasses(TestFusionPassesBase):
         self.assertEqual(count_node(converted_graph, exir_ops.edge.aten.mm.default), 1)
         self.assertEqual(count_node(converted_graph, exir_ops.edge.aten.add.Tensor), 3)
 
+
+class TestFusionPasses(TestFusionPassesBase):
     def test_permute_transpose_fusion(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(3, 1, 3, 1, 4, dtype=torch.float32))
