@@ -174,7 +174,7 @@ public class LlmModule {
    * @param channels Input image number of channels
    * @param startPos The starting position in KV cache of the input in the LLM.
    * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   * exposed to user.
+   *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Deprecated
@@ -200,7 +200,7 @@ public class LlmModule {
    * @param bos The number of BOS (begin of sequence) token.
    * @param eos The number of EOS (end of sequence) token.
    * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
-   * exposed to user.
+   *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Deprecated
