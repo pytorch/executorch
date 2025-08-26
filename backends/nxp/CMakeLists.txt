@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+g# Copyright 2024 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,4 +14,9 @@ set(_neutron_sources ${CMAKE_CURRENT_SOURCE_DIR}/runtime/NeutronBackend.cpp)
 add_library(executorch_delegate_neutron STATIC ${_neutron_sources})
 target_include_directories(
   executorch_delegate_neutron PUBLIC ${_common_include_directories}
+)
+install(
+  TARGETS executorch_delegate_neutron
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
 )
