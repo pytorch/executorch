@@ -8,7 +8,10 @@ import numpy as np
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     torch_type_to_numpy_type,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
+    NodeConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
     set_quantization_parameters_to_tensor,
 )
@@ -20,7 +23,9 @@ class QDQDequantizeConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         zero_point_type = torch_type_to_numpy_type(node.args[5])
         if "cluster" not in node.meta or zero_point_type not in [np.int8, np.int32]:
