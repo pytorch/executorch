@@ -60,7 +60,6 @@ class TestEnumeratedShapes(unittest.TestCase):
         ep = torch.export.export(
             model.eval(), example_inputs, dynamic_shapes=dynamic_shapes
         )
-        print("EP", ep)
 
         compile_specs = CoreMLBackend.generate_compile_specs(
             minimum_deployment_target=ct.target.iOS18
@@ -71,7 +70,9 @@ class TestEnumeratedShapes(unittest.TestCase):
                 enumerated_shapes,
             )
         )
-        partitioner = CoreMLPartitioner(compile_specs=compile_specs)
+        partitioner = CoreMLPartitioner(
+            compile_specs=compile_specs, lower_full_graph=True
+        )
         delegated_program = executorch.exir.to_edge_transform_and_lower(
             ep,
             partitioner=[partitioner],
