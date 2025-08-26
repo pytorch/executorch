@@ -595,13 +595,22 @@ if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   if(NOT WIN32)
     set(data_loader_exclude_pattern "*mman_windows.h")
   endif()
-  install(
-    DIRECTORY extension/data_loader/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/data_loader
-    FILES_MATCHING
-    PATTERN "*.h"
-    PATTERN ${data_loader_exclude_pattern} EXCLUDE
-  )
+  if (DEFINED data_loader_exclude_pattern)
+    install(
+      DIRECTORY extension/data_loader/
+      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/data_loader
+      FILES_MATCHING
+      PATTERN "*.h"
+      PATTERN ${data_loader_exclude_pattern} EXCLUDE
+    )
+  else()
+    install(
+      DIRECTORY extension/data_loader/
+      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/data_loader
+      FILES_MATCHING
+      PATTERN "*.h"
+    )
+  endif()
   list(APPEND _executorch_extensions extension_data_loader)
 endif()
 
