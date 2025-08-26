@@ -35,9 +35,11 @@ def test_remove_clone_tosa_INT():
         module.get_inputs(),
         quantize=True,
         ops_before_pass={
-            "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
         },
-        ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten_clone_default"],
+        ops_not_after_pass=[
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
+        ],
         pass_list=[RemoveClonePass],
     )
     pipeline.run()
