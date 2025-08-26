@@ -161,7 +161,8 @@ Error copy_tensor_data(
     const torch::executor::Tensor& t_dst,
     const torch::executor::Tensor& t_src) {
   ET_CHECK_OR_RETURN_ERROR(
-      t_dst.const_data_ptr() != nullptr,
+      t_dst.const_data_ptr() != nullptr ||
+          (t_dst.nbytes() == 0 && t_src.nbytes() == 0),
       InvalidArgument,
       "ExecutionPlan input supposed to preallocated but has nullptr for data");
   // inputs with a size 0 dimension can be nullptr
