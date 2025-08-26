@@ -611,9 +611,7 @@ def export_llama(
         elif model_name == "phi_4_mini":
             from executorch.examples.models.phi_4_mini import convert_weights
         elif model_name == "smollm2":
-            from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.smollm2 import convert_weights
         else:
             raise ValueError(
                 f"Converting weights to meta format for {model_name} is not yet supported"

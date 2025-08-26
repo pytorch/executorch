@@ -47,7 +47,7 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
         deps = [
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
@@ -100,7 +100,7 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -115,7 +115,7 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
         exported_deps = [
             ":broadcast_indexes_range",
@@ -142,7 +142,7 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
         deps = [
             ":broadcast_util",
@@ -161,7 +161,7 @@ def define_common_targets():
         
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
 exported_deps = [
             ":broadcast_util",
@@ -180,7 +180,7 @@ exported_deps = [
         ],
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -196,7 +196,7 @@ exported_deps = [
         ],
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -212,7 +212,7 @@ exported_deps = [
         ],
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
         deps = [
             ":broadcast_util",
@@ -229,7 +229,7 @@ exported_deps = [
         ],
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -245,7 +245,7 @@ exported_deps = [
         ],
         compiler_flags = select({
             "DEFAULT":["-Wno-missing-prototypes"],
-            "ovr_config//compiler:msvc": [],
+            "ovr_config//os:windows": [],
         }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",

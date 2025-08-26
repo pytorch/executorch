@@ -12,7 +12,10 @@ from executorch.backends.nxp.backend.edge_helper import (
 )
 from executorch.backends.nxp.backend.ir.converter import quantization_utils
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
+    NodeConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reshape_transposition import (
     ensure_reshape_transposition,
 )
@@ -27,7 +30,9 @@ class ViewCopyConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         x = input_tensor(node, 0)
         y = output_tensor(node)

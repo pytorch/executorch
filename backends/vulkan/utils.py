@@ -599,9 +599,9 @@ def make_filtered_tensor_repset(
         if extents_are_valid(extents, texture_limits):
             valid_texture_layouts.add(memory_layout)
 
-    # High dimensional tensors are currently not supported
+    # High dimensional tensors require buffer storage
     if len(tensor_val.shape) > 4:
-        return NO_STORAGE
+        return TensorRepSet(tensor_repset.valid_buffer_layouts, set())
 
     # Bool tensors are currently not supported
     if tensor_val.dtype == torch.bool:
@@ -1059,6 +1059,8 @@ def get_node_val_str(node: torch.fx.Node) -> str:
         assert isinstance(node.meta["val"], (list, tuple))
         return f"[{', '.join(get_tensor_val_str(t) for t in node.meta['val'])}]"
     else:
+        if "val" not in node.meta:
+            return str(node)
         return str(node.meta["val"])
 
 
