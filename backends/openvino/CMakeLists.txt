@@ -78,4 +78,10 @@ if(EXECUTORCH_BUILD_OPENVINO_EXECUTOR_RUNNER)
 endif()
 
 # Install OpenVINO backend library to the lib directory
-install(TARGETS openvino_backend DESTINATION lib)
+install(
+  TARGETS openvino_backend 
+  EXPORT ExecuTorchTargets
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
