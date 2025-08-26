@@ -351,18 +351,21 @@ class VulkanPartitioner(Partitioner):
         if operator_allowlist is not None:
             self.operator_allowlist = set()
             for entry in operator_allowlist:
+                assert self.operator_allowlist is not None
                 self.operator_allowlist.add(entry)
 
         self.nn_module_blocklist: Optional[Set[str]] = None
         if nn_module_blocklist is not None:
             self.nn_module_blocklist = set()
             for entry in nn_module_blocklist or []:
+                assert self.nn_module_blocklist is not None
                 self.nn_module_blocklist.add(entry)
 
         self.nn_module_allowlist: Optional[Set[str]] = None
         if nn_module_allowlist is not None:
             self.nn_module_allowlist = set()
             for entry in nn_module_allowlist:
+                assert self.nn_module_allowlist is not None
                 self.nn_module_allowlist.add(entry)
 
     def ops_to_not_decompose(

@@ -14,6 +14,9 @@ from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
 )
 from executorch.backends.nxp.backend.ir.converter.conversion import aten_translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    tf_lite_type_to_numpy,
+)
 from executorch.backends.nxp.backend.ir.converter.tensor_utils import tensor_has_data
 from executorch.backends.nxp.backend.ir.lib.tflite.Padding import Padding
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
@@ -289,9 +292,17 @@ def build_input_tensor_padding(
 
     tfl_padding, explicit_padding = aten_translator.convert_padding(conv_params.padding)
     if explicit_padding is not None:
-        # Must add extra 'Pad' operator
+        # Must add extra 'Pad' operator, which adds 0s (or `zero_point` for the quantized case).
+        input_quantization = t_op.tmp_inputs[0].quantization
+        pad_value = (
+            None
+            if input_quantization is None
+            else np.array(input_quantization.zero_point[0]).astype(
+                tf_lite_type_to_numpy(t_op.tmp_inputs[0].type)
+            )
+        )
         return tfl_padding, builder.create_pad_operator_before(
-            t_op, input_idx, explicit_padding
+            t_op, input_idx, explicit_padding, pad_value
         )
 
     return tfl_padding, None
