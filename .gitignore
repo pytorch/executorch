@@ -40,6 +40,7 @@ tokenizer.json
 *kernel.cpp
 *wrapper_metadata.json
 *wrapper.cpp
+aoti_intermediate_output.txt
 
 # Editor temporaries
 *.idea

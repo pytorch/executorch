@@ -3,14 +3,19 @@
 # Script to export and run AOTI with different modes
 # Usage:
 #   ./export_and_run_aoti.sh <model_arg> [mode]
-#   ./export_and_run_aoti.sh <model_arg> --mode=<mode>
+#   ./export_and_run_aoti.sh <model_arg> --mode=<mode> [--debug] [--dump]
 #
 # Examples:
-#   ./export_and_run_aoti.sh conv2d                    # Uses default mode (reinstall_all)
-#   ./export_and_run_aoti.sh conv2d inference          # Uses inference mode
-#   ./export_and_run_aoti.sh conv2d --mode=inference   # Alternative syntax
+#   ./export_and_run_aoti.sh conv2d                         # Uses default mode (reinstall_all)
+#   ./export_and_run_aoti.sh conv2d inference               # Uses inference mode
+#   ./export_and_run_aoti.sh conv2d --mode=inference        # Alternative syntax
+#   ./export_and_run_aoti.sh conv2d --mode=inference --dump # With AOTI intermediate output dumping
+#   ./export_and_run_aoti.sh conv2d --mode=inference --debug --dump # With both debug and dump
 #
 # Available modes: reinstall_all (default), reinstall_aot, reinstall_runtime, inference, export_aoti_only
+# Flags:
+#   --debug: Enable debug mode with extensive logging
+#   --dump:  Enable AOTI intermediate output dumping to aoti_intermediate_output.txt
 # model_arg: argument to pass to export_aoti.py
 
 set -e  # Exit on any error
@@ -19,6 +24,7 @@ set -e  # Exit on any error
 MODE="reinstall_all"
 MODEL_ARG="$1"
 DEBUG_MODE=false
+DUMP_MODE=false
 
 # Parse arguments for mode and debug flag
 for arg in "$@"; do
@@ -29,6 +35,10 @@ for arg in "$@"; do
             ;;
         --debug)
             DEBUG_MODE=true
+            shift
+            ;;
+        --dump)
+            DUMP_MODE=true
             shift
             ;;
         reinstall_all|reinstall_aot|reinstall_runtime|inference|export_aoti_only)
@@ -87,6 +97,7 @@ cleanup_temp_files() {
     rm -f *kernel.cpp
     rm -f *wrapper_metadata.json
     rm -f *wrapper.cpp
+    rm -f aoti_intermediate_output.txt
 
     echo "Cleanup completed."
 }
@@ -121,12 +132,25 @@ build_runtime() {
     rm -rf cmake-out
     mkdir -p cmake-out
     cd cmake-out
-    cmake -DEXECUTORCH_BUILD_AOTI=ON \
-          -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-          -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
-          -DEXECUTORCH_LOG_LEVEL=Debug \
-          -DCMAKE_BUILD_TYPE=Debug \
-          ..
+
+    if [[ "$DEBUG_MODE" == true ]]; then
+        echo "Building with debug configuration..."
+        cmake -DEXECUTORCH_BUILD_AOTI=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+              -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
+              -DEXECUTORCH_LOG_LEVEL=Debug \
+              -DCMAKE_BUILD_TYPE=Debug \
+              ..
+    else
+        echo "Building with release configuration..."
+        cmake -DEXECUTORCH_BUILD_AOTI=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+              -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
+              -DEXECUTORCH_LOG_LEVEL=Info \
+              -DCMAKE_BUILD_TYPE=Release \
+              ..
+    fi
+
     cd ..
     cmake --build cmake-out -j9
 }
@@ -136,18 +160,32 @@ run_inference() {
     ./cmake-out/executor_runner --model_path aoti_model.pte
 }
 
-# Set up environment variables based on debug flag
+# Set up environment variables based on debug and dump flags
 if [[ "$DEBUG_MODE" == true ]]; then
     echo "Setting debug environment variables..."
     export AOT_INDUCTOR_DEBUG_COMPILE="1"
     export AOTINDUCTOR_REPRO_LEVEL=3
-    export AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER="2"
+
+    # Set intermediate value printer based on dump flag
+    if [[ "$DUMP_MODE" == true ]]; then
+        export AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER="2"
+        echo "AOTI intermediate output dumping enabled (AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER=2)"
+    else
+        export AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER="3"
+    fi
+
     echo "Debug variables set:"
     echo "  AOT_INDUCTOR_DEBUG_COMPILE=$AOT_INDUCTOR_DEBUG_COMPILE"
     echo "  AOTINDUCTOR_REPRO_LEVEL=$AOTINDUCTOR_REPRO_LEVEL"
     echo "  AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER=$AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER"
+elif [[ "$DUMP_MODE" == true ]]; then
+    # Only dump mode enabled (without debug)
+    echo "Setting AOTI intermediate output dumping..."
+    export AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER="2"
+    echo "AOTI intermediate output dumping enabled (AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER=2)"
+    echo "  AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER=$AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER"
 else
-    # Ensure debug variables are unset for non-debug modes
+    # Ensure debug variables are unset for non-debug/non-dump modes
     unset AOT_INDUCTOR_DEBUG_COMPILE
     unset AOTINDUCTOR_REPRO_LEVEL
     unset AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER

@@ -322,67 +322,106 @@ AOTITorchError aoti_torch_copy_(
   auto self_sizes = self->sizes();
   auto src_sizes = src->sizes();
 
-  // contiguous or channel-last layouts allowed in ettensor
+  // Check if tensors have the same tensor schema (sizes, strides, dtype)
+  bool same_schema = true;
+
+  // Check sizes match
+  for (int i = 0; i < self->dim(); i++) {
+    if (self_sizes[i] != src_sizes[i]) {
+      same_schema = false;
+      break;
+    }
+  }
+
+  // Check strides match (only if sizes match)
+  if (same_schema) {
+    for (int i = 0; i < self->dim(); i++) {
+      if (self_strides[i] != src_strides[i]) {
+        same_schema = false;
+        break;
+      }
+    }
+  }
+
+  // Declare layout variables for both cases
   bool self_is_contiguous = true;
   bool src_is_contiguous = true;
   bool self_is_channels_last = false;
   bool src_is_channels_last = false;
 
-  // Check if contiguous (strides decrease from left to right)
-  int64_t expected_stride = 1;
-  for (int i = self->dim() - 1; i >= 0; i--) {
-    if (self_strides[i] != expected_stride) {
-      self_is_contiguous = false;
-    }
-    expected_stride *= self_sizes[i];
-  }
+  if (same_schema) {
+    std::cout << "Same tensor schema detected - enabling naive copy"
+              << std::endl;
+    // For same schema, we don't need to check memory formats - just use direct
+    // copy
+  } else {
+    // Different strides: check memory format and only support contiguous <->
+    // channels-last conversion
+    std::cout
+        << "Different tensor schemas - checking memory format compatibility"
+        << std::endl;
 
-  expected_stride = 1;
-  for (int i = src->dim() - 1; i >= 0; i--) {
-    if (src_strides[i] != expected_stride) {
-      src_is_contiguous = false;
+    // Check if contiguous (strides decrease from left to right)
+    int64_t expected_stride = 1;
+    for (int i = self->dim() - 1; i >= 0; i--) {
+      if (self_strides[i] != expected_stride) {
+        self_is_contiguous = false;
+      }
+      expected_stride *= self_sizes[i];
     }
-    expected_stride *= src_sizes[i];
-  }
 
-  // Check if channels-last (4D: NHWC, strides in order [H*W*C, 1, W*C, C])
-  if (self->dim() == 4 && !self_is_contiguous) {
-    int64_t N = self_sizes[0], H = self_sizes[1], W = self_sizes[2],
-            C = self_sizes[3];
-    if ((self_strides[0] == H * W * C || N <= 1) && (self_strides[1] == W * C || H <= 1) &&
-        (self_strides[2] == C || W == 1) && (self_strides[3] == 1 || C == 1)) {
-      self_is_channels_last = true;
+    expected_stride = 1;
+    for (int i = src->dim() - 1; i >= 0; i--) {
+      if (src_strides[i] != expected_stride) {
+        src_is_contiguous = false;
+      }
+      expected_stride *= src_sizes[i];
     }
-  }
 
-  if (src->dim() == 4 && !src_is_contiguous) {
-    int64_t N = src_sizes[0], H = src_sizes[1], W = src_sizes[2],
-            C = src_sizes[3];
-    if ((src_strides[0] == H * W * C || N <= 1) &&( src_strides[1] == W * C || H <= 1) &&
-        (src_strides[2] == C || W <= 1) && (src_strides[3] == 1 || C <= 1)) {
-      src_is_channels_last = true;
+    // Check if channels-last (4D: NHWC, strides in order [H*W*C, 1, W*C, C])
+    if (self->dim() == 4 && !self_is_contiguous) {
+      int64_t N = self_sizes[0], H = self_sizes[1], W = self_sizes[2],
+              C = self_sizes[3];
+      if ((self_strides[0] == H * W * C || N <= 1) &&
+          (self_strides[1] == W * C || H <= 1) &&
+          (self_strides[2] == C || W == 1) &&
+          (self_strides[3] == 1 || C == 1)) {
+        self_is_channels_last = true;
+      }
     }
-  }
 
-  // Validate layout assumptions
-  if (!self_is_contiguous && !self_is_channels_last) {
-    std::cout << "Error: self tensor must be contiguous or channels-last. "
-              << "Got strides: [";
-    for (int i = 0; i < self->dim(); i++) {
-      std::cout << self_strides[i] << (i < self->dim() - 1 ? ", " : "");
+    if (src->dim() == 4 && !src_is_contiguous) {
+      int64_t N = src_sizes[0], H = src_sizes[1], W = src_sizes[2],
+              C = src_sizes[3];
+      if ((src_strides[0] == H * W * C || N <= 1) &&
+          (src_strides[1] == W * C || H <= 1) &&
+          (src_strides[2] == C || W <= 1) && (src_strides[3] == 1 || C <= 1)) {
+        src_is_channels_last = true;
+      }
     }
-    std::cout << "]" << std::endl;
-    return Error::InvalidArgument;
-  }
 
-  if (!src_is_contiguous && !src_is_channels_last) {
-    std::cout << "Error: src tensor must be contiguous or channels-last. "
-              << "Got strides: [";
-    for (int i = 0; i < src->dim(); i++) {
-      std::cout << src_strides[i] << (i < src->dim() - 1 ? ", " : "");
+    // Validate layout assumptions only when schemas differ
+    if (!self_is_contiguous && !self_is_channels_last) {
+      std::cout
+          << "Error: self tensor must be contiguous or channels-last for stride conversion. "
+          << "Got strides: [";
+      for (int i = 0; i < self->dim(); i++) {
+        std::cout << self_strides[i] << (i < self->dim() - 1 ? ", " : "");
+      }
+      std::cout << "]" << std::endl;
+      return Error::InvalidArgument;
     }
-    std::cout << "]" << std::endl;
-    return Error::InvalidArgument;
+
+    if (!src_is_contiguous && !src_is_channels_last) {
+      std::cout
+          << "Error: src tensor must be contiguous or channels-last for stride conversion. "
+          << "Got strides: [";
+      for (int i = 0; i < src->dim(); i++) {
+        std::cout << src_strides[i] << (i < src->dim() - 1 ? ", " : "");
+      }
+      std::cout << "]" << std::endl;
+      return Error::InvalidArgument;
+    }
   }
 
   // Determine device locations
@@ -406,11 +445,7 @@ AOTITorchError aoti_torch_copy_(
 
   size_t total_bytes = src->nbytes();
 
-  // Check if we can do a simple memcpy (same layout)
-  bool same_layout = (self_is_contiguous && src_is_contiguous) ||
-      (self_is_channels_last && src_is_channels_last);
-
-  if (same_layout) {
+  if (same_schema) {
     std::cout << "Same layout - doing direct copy of " << total_bytes
               << " bytes" << std::endl;
 

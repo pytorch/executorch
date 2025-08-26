@@ -29,6 +29,7 @@
 #include "aoti_model_container.h"
 #include "shims/memory.h"
 #include "shims/tensor_attribute.h"
+#include "shims/utils.h"
 
 // Include CUDA AOTI shims
 #include <torch/csrc/inductor/aoti_torch/generated/c_shim_cuda.h>
@@ -374,6 +375,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
     free(handle);
     cleanup_memory();
     cleanup_tensor_metadata();
+    cleanup_aoti_tensor_output();
     ET_LOG(Debug, "AOTIBackend handle %p destroy", handle_);
   }
 };

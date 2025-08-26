@@ -8,11 +8,13 @@ def define_common_targets():
             "aoti_model_container.cpp",
             "shims/memory.cpp",
             "shims/tensor_attribute.cpp",
+            "shims/utils.cpp",
         ],
         headers = [
             "aoti_model_container.h",
             "shims/memory.h",
             "shims/tensor_attribute.h",
+            "shims/utils.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
