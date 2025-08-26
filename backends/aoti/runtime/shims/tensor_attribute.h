@@ -56,6 +56,14 @@ AOTITorchError aoti_torch_get_storage_size(
     AOTITensorHandle tensor,
     int64_t* ret_size);
 
+AOTITorchError aoti_torch_get_device_type(
+    AOTITensorHandle tensor,
+    int32_t* ret_device_type);
+
+AOTITorchError aoti_torch_get_device_index(
+    AOTITensorHandle tensor,
+    int32_t* ret_device_index);
+
 // Utility functions for device and layout information
 int32_t aoti_torch_device_type_cpu();
 int32_t aoti_torch_device_type_cuda();

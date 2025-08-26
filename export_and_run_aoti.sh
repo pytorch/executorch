@@ -18,12 +18,17 @@ set -e  # Exit on any error
 # Parse command line arguments
 MODE="reinstall_all"
 MODEL_ARG="$1"
+DEBUG_MODE=false
 
-# Parse arguments for mode
+# Parse arguments for mode and debug flag
 for arg in "$@"; do
     case $arg in
         --mode=*)
             MODE="${arg#*=}"
+            shift
+            ;;
+        --debug)
+            DEBUG_MODE=true
             shift
             ;;
         reinstall_all|reinstall_aot|reinstall_runtime|inference|export_aoti_only)
@@ -49,6 +54,7 @@ case "$MODE" in
         echo "  ./export_and_run_aoti.sh conv2d inference               # Positional mode"
         echo "  ./export_and_run_aoti.sh conv2d --mode=inference        # GNU-style mode"
         echo "  ./export_and_run_aoti.sh conv2d export_aoti_only        # Export AOTI only (no runtime)"
+        echo "  ./export_and_run_aoti.sh conv2d --mode=inference --debug # With debug options enabled"
         exit 1
         ;;
 esac
@@ -130,10 +136,30 @@ run_inference() {
     ./cmake-out/executor_runner --model_path aoti_model.pte
 }
 
+# Set up environment variables based on debug flag
+if [[ "$DEBUG_MODE" == true ]]; then
+    echo "Setting debug environment variables..."
+    export AOT_INDUCTOR_DEBUG_COMPILE="1"
+    export AOTINDUCTOR_REPRO_LEVEL=3
+    export AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER="2"
+    echo "Debug variables set:"
+    echo "  AOT_INDUCTOR_DEBUG_COMPILE=$AOT_INDUCTOR_DEBUG_COMPILE"
+    echo "  AOTINDUCTOR_REPRO_LEVEL=$AOTINDUCTOR_REPRO_LEVEL"
+    echo "  AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER=$AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER"
+else
+    # Ensure debug variables are unset for non-debug modes
+    unset AOT_INDUCTOR_DEBUG_COMPILE
+    unset AOTINDUCTOR_REPRO_LEVEL
+    unset AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER
+fi
+
 # Execute based on mode
 case "$MODE" in
     "reinstall_all")
-        echo "Mode: reinstall_all - Full reinstall and run"
+        echo "Mode: $MODE - Full reinstall and run"
+        if [[ "$DEBUG_MODE" == true ]]; then
+            echo "Debug options enabled with AOT Inductor debug settings"
+        fi
         install_executorch
         export_aoti_model
         clean_install_executorch
@@ -142,23 +168,35 @@ case "$MODE" in
         ;;
     "reinstall_aot")
         echo "Mode: reinstall_aot - Reinstall AOT components and run e2e"
+        if [[ "$DEBUG_MODE" == true ]]; then
+            echo "Debug options enabled with AOT Inductor debug settings"
+        fi
         install_executorch
         export_aoti_model
         run_inference
         ;;
     "reinstall_runtime")
         echo "Mode: reinstall_runtime - Rebuild runtime and run e2e"
+        if [[ "$DEBUG_MODE" == true ]]; then
+            echo "Debug options enabled with AOT Inductor debug settings"
+        fi
         export_aoti_model
         build_runtime
         run_inference
         ;;
     "inference")
         echo "Mode: inference - Export model and run inference only"
+        if [[ "$DEBUG_MODE" == true ]]; then
+            echo "Debug options enabled with AOT Inductor debug settings"
+        fi
         export_aoti_model
         run_inference
         ;;
     "export_aoti_only")
         echo "Mode: export_aoti_only - Export model using pure AOTI only (no runtime or installation)"
+        if [[ "$DEBUG_MODE" == true ]]; then
+            echo "Debug options enabled with AOT Inductor debug settings"
+        fi
         export_aoti_model "--aoti_only"
         ;;
     *)

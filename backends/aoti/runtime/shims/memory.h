@@ -92,6 +92,14 @@ AOTITorchError aoti_torch_create_cuda_stream_guard(
 
 AOTITorchError aoti_torch_delete_cuda_stream_guard(CUDAStreamGuardHandle guard);
 
+AOTITorchError aoti_torch__reinterpret_tensor(
+    AOTITensorHandle self,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int64_t storage_offset,
+    AOTITensorHandle* ret_new_tensor);
+
 // Utility functions
 void checkCudaError(cudaError_t err, const char* msg);
 void cleanup_memory();
