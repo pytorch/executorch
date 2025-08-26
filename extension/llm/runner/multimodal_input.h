@@ -30,7 +30,7 @@ class ET_EXPERIMENTAL MultimodalInput {
   enum class Type {
     TEXT, ///< Text string input
     IMAGE, ///< Processed image input
-    AUDIO, ///< Processed audio input (post-mel spectrogram processing)
+    AUDIO, ///< Processed audio input
     RAW_AUDIO, ///< Raw unprocessed audio input (straight from audio file)
     UNSUPPORTED ///< Unsupported input type
   };
