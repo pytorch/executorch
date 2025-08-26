@@ -89,10 +89,44 @@ void xa_opt_quantized_conv_nhwc_asym8uxsym8u_asym8u(
 
   WORD32 scratch_size = 0;
 
-  if (groups == 1) {
-    WORD32 out_data_format = 1;
+  ET_CHECK_MSG(groups == 1, "Only groups=1 supported for regular convolution");
+  WORD32 out_data_format = 1;
 
-    scratch_size = xa_nn_conv2d_getsize(
+  scratch_size = xa_nn_conv2d_getsize(
+      input_height,
+      input_width,
+      input_channels,
+      kernel_height,
+      kernel_width,
+      kernel_channels,
+      dilation_height,
+      dilation_width,
+      y_stride,
+      y_padding,
+      x_stride,
+      x_padding,
+      out_height,
+      out_width,
+      out_channels,
+      inp_precision,
+      kernel_precision,
+      out_data_format);
+
+  scratch_size = scratch_size < 0 ? 0 : scratch_size;
+
+  ptr_scratch = (WORD32*)kernels::allocate_temp_memory(ctx, scratch_size);
+
+  p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
+
+  for (int _n = 0; _n < batches; _n++) {
+    UWORD8* in_batch = p_inp + _n * input_channels * input_height * input_width;
+    UWORD8* out_batch = p_out + _n * out_channels * out_height * out_width;
+
+    xa_nn_conv2d_per_chan_sym8sxasym8s(
+        (WORD8*)out_batch,
+        (WORD8*)in_batch,
+        (WORD8*)p_kernel,
+        p_bias,
         input_height,
         input_width,
         input_channels,
@@ -101,60 +135,20 @@ void xa_opt_quantized_conv_nhwc_asym8uxsym8u_asym8u(
         kernel_channels,
         dilation_height,
         dilation_width,
-        y_stride,
-        y_padding,
+        out_channels,
         x_stride,
+        y_stride,
         x_padding,
+        y_padding,
         out_height,
         out_width,
-        out_channels,
-        inp_precision,
-        kernel_precision,
-        out_data_format);
-
-    scratch_size = scratch_size < 0 ? 0 : scratch_size;
-
-    ptr_scratch = (WORD32*)kernels::allocate_temp_memory(ctx, scratch_size);
-
-    p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
-
-    for (int _n = 0; _n < batches; _n++) {
-      UWORD8* in_batch =
-          p_inp + _n * input_channels * input_height * input_width;
-      UWORD8* out_batch = p_out + _n * out_channels * out_height * out_width;
-
-      xa_nn_conv2d_per_chan_sym8sxasym8s(
-          (WORD8*)out_batch,
-          (WORD8*)in_batch,
-          (WORD8*)p_kernel,
-          p_bias,
-          input_height,
-          input_width,
-          input_channels,
-          kernel_height,
-          kernel_width,
-          kernel_channels,
-          dilation_height,
-          dilation_width,
-          out_channels,
-          x_stride,
-          y_stride,
-          x_padding,
-          y_padding,
-          out_height,
-          out_width,
-          input_zero_bias,
-          out_multiplier32,
-          out_shift32,
-          out_zero_bias,
-          out_data_format,
-          p_scratch);
-    }
-    return;
+        input_zero_bias,
+        out_multiplier32,
+        out_shift32,
+        out_zero_bias,
+        out_data_format,
+        p_scratch);
   }
-
-  // Depthwise convolutions are now handled by specialized operators
-  ET_CHECK_MSG(groups == 1, "Only groups=1 supported for regular convolution");
 }
 
 void quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor_out(
