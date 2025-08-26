@@ -15,9 +15,11 @@ from . import (
     op_arange,
     op_argmax,
     op_argmin,
+    op_asin,
     op_atan,
     op_avg_pool2d,
     op_batch_norm,
+    op_binary,
     op_bmm,
     op_cat,
     op_ceil,
@@ -79,6 +81,7 @@ from . import (
     op_scalar_tensor,
     op_select_copy,
     op_sigmoid,
+    op_sign,
     op_sin,
     op_skip_ops,
     op_slice_copy,
@@ -99,6 +102,7 @@ from . import (
     op_upsample_bilinear2d,
     op_upsample_nearest2d,
     op_where,
+    op_xor,
 )
 
 __all__ = [
@@ -112,9 +116,11 @@ __all__ = [
     op_arange,
     op_argmax,
     op_argmin,
+    op_asin,
     op_atan,
     op_avg_pool2d,
     op_batch_norm,
+    op_binary,
     op_bmm,
     op_cat,
     op_ceil,
@@ -176,6 +182,7 @@ __all__ = [
     op_scalar_tensor,
     op_select_copy,
     op_sigmoid,
+    op_sign,
     op_sin,
     op_skip_ops,
     op_slice_copy,
@@ -196,4 +203,5 @@ __all__ = [
     op_upsample_bilinear2d,
     op_upsample_nearest2d,
     op_where,
+    op_xor,
 ]

@@ -183,6 +183,14 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         return squeeze_out, conv_out
 
 
+class Asin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.asin(x)
+
+
 class Atan(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -794,6 +802,23 @@ class Floor(torch.nn.Module):
         return torch.floor(x)
 
 
+class FloorDiv(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.floor_divide(x, y)
+
+
+class FloorDivConstantFloat(torch.nn.Module):
+    def __init__(self, constant=2.0):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return torch.floor(x / self.constant)
+
+
 class Fold(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1398,6 +1423,15 @@ class Relu(torch.nn.Module):
         return self.relu(x)
 
 
+class Relu6(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.relu6 = torch.nn.ReLU6()
+
+    def forward(self, x):
+        return self.relu6(x)
+
+
 class Repeat(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1580,6 +1614,14 @@ class Sigmoid(torch.nn.Module):
 
     def forward(self, x):
         return torch.sigmoid(x)
+
+
+class Sign(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sign(x)
 
 
 class Sin(torch.nn.Module):
@@ -1869,6 +1911,28 @@ class WhereConstantInf(torch.nn.Module):
         return torch.nn.functional.softmax(
             torch.where(x >= 0, 0.1, float("-inf")), dim=-1
         )
+
+
+class XorBitWise(torch.nn.Module):
+    def __init__(self, pos, neg):
+        super().__init__()
+        self.pos = pos
+        self.neg = neg
+
+    def forward(self, x, y):
+        bitwise_xor = torch.bitwise_xor(x, y).bool()
+        return torch.where(bitwise_xor, self.pos, self.neg)
+
+
+class XorOperator(torch.nn.Module):
+    def __init__(self, pos, neg):
+        super().__init__()
+        self.pos = pos
+        self.neg = neg
+
+    def forward(self, x, y):
+        operator_xor = x.to(torch.bool) ^ y.to(torch.bool)
+        return torch.where(operator_xor, self.pos, self.neg)
 
 
 # Mimi Decoder has 0D tensor which QNN cannot handle.
