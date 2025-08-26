@@ -95,6 +95,10 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   // e.g. if start_pos = 2 and encoder_output.size(1) = 5,
   // cache_position_tensor should be [2, 3, 4, 5, 6].
   int64_t seq_len = encoder_output.toTensor().size(1);
+  if (seq_len == 0) {
+    ET_LOG(Error, "The encoder returned an empty output.");
+    return ::executorch::runtime::Error::InvalidState;
+  }
   std::vector<int64_t> cache_positions(seq_len);
   for (int64_t i = 0; i < seq_len; ++i) {
     cache_positions[i] = start_pos + i;
@@ -106,11 +110,18 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   if (prefill_result.error() != ::executorch::runtime::Error::Ok) {
     return prefill_result.error();
   }
+  // Check if prefill_outputs is empty, if it is return error and log that the
+  // specified encoder returned empty results when used to prefill decoder.
   auto prefill_outputs = prefill_result.get();
+  if (prefill_outputs.empty()) {
+    ET_LOG(
+        Error, "Encoder returned empty results when used to prefill decoder");
+    return ::executorch::runtime::Error::InvalidState;
+  }
   auto outputs_res = prefill_outputs[0].toTensor();
 
   // Update start_pos, tracking the current cache position.
-  start_pos += encoder_output.toTensor().size(1);
+  start_pos += seq_len;
 
   return static_cast<uint64_t>(
       text_decoder_runner_->logits_to_token(outputs_res));

@@ -26,7 +26,14 @@ namespace executorch::extension::llm {
  */
 class ET_EXPERIMENTAL MultimodalInput {
  public:
-  enum class Type { TEXT, IMAGE, AUDIO, RAW_AUDIO };
+  /// Type of multimodal input data
+  enum class Type {
+    TEXT, ///< Text string input
+    IMAGE, ///< Processed image input
+    AUDIO, ///< Processed audio input (post-mel spectrogram processing)
+    RAW_AUDIO, ///< Raw unprocessed audio input (straight from audio file)
+    UNSUPPORTED ///< Unsupported input type
+  };
 
   // Constructors
   explicit MultimodalInput(const std::string& text) : data_(text) {}
@@ -94,7 +101,9 @@ class ET_EXPERIMENTAL MultimodalInput {
       return Type::IMAGE;
     if (is_audio())
       return Type::AUDIO;
-    return Type::RAW_AUDIO;
+    if (is_raw_audio())
+      return Type::RAW_AUDIO;
+    return Type::UNSUPPORTED;
   }
 
   /**
