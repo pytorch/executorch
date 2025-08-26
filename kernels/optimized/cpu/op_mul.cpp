@@ -148,13 +148,13 @@ Tensor& opt_mul_out(
 
       ET_SWITCH_COMPLEXH_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
         auto mul_lambda = [](auto x, auto y) { return x * y; };
-        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+        torch::executor::handle_broadcast_elementwise<CTYPE>(
             ctx, mul_lambda, a, b, out, selected_optimized_path);
       });
     } else {
       ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
         auto mul_lambda = [](auto x, auto y) { return x * y; };
-        return torch::executor::handle_broadcast_elementwise<CTYPE>(
+        torch::executor::handle_broadcast_elementwise<CTYPE>(
             ctx, mul_lambda, a, b, out, selected_optimized_path);
       });
     }

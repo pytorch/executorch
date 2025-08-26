@@ -204,7 +204,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
     def log_skip(self, node: torch.fx.Node, reason: str) -> None:
         if node.op == "call_function":
             logger.info(
-                f"[Vulkan Partitioner] Due to [{reason}], skipping {node.format_node()}"
+                f"[Vulkan Partitioner] Due to [{reason}], skipping {utils.node_io_str(node)}"
             )
 
     def is_node_supported(

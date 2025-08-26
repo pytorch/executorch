@@ -86,9 +86,7 @@ Tensor& mm_out(
             ctx, m * sizeof(FLOAT32));
 
     // Initialize bias to zero since mm operation has no bias
-    for (int i = 0; i < m; i++) {
-      p_bias_zero[i] = 0.0f;
-    }
+    memset(p_bias_zero, 0, m * sizeof(FLOAT32));
 
     WORD32 p_inp_shape[2];
     p_inp_shape[0] = n;
