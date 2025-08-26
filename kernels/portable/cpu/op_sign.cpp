@@ -42,7 +42,7 @@ Tensor& sign_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
     ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "sign.out", CTYPE, [&] {
       apply_unary_map_fn(
           [](const CTYPE val_in) {
-            if (std::isnan(val_in)) {
+            if (std::isnan(static_cast<float>(val_in))) {
               return val_in;
             } else {
               return static_cast<CTYPE>((val_in > 0) - (val_in < 0));

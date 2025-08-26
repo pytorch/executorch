@@ -42,7 +42,7 @@ Tensor& mul_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "mul.out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "mul.out";
 
   ET_KERNEL_CHECK(
       ctx,
@@ -108,7 +108,7 @@ Tensor& mul_scalar_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "mul.Scalar_out";
+  static ET_OP_NAME_SPECIFIER const char op_name[] = "mul.Scalar_out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
