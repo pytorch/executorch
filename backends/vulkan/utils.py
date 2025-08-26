@@ -621,6 +621,7 @@ WIDTH_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_WIDTH_PACKED})
 CHANNELS_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_CHANNELS_PACKED})
 
 ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
+ANY_BUFFER = TensorRepSet(all_memory_layouts, set())
 
 ANY_STORAGE = TensorRepSet(all_memory_layouts, all_memory_layouts)
 NO_STORAGE = TensorRepSet(set(), set())
