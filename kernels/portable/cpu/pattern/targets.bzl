@@ -54,7 +54,10 @@ def define_common_targets():
         exported_headers = [
             "pattern.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT":["-Wno-missing-prototypes"],
+            "ovr_config//os:windows": [],
+        }),
         exported_deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
