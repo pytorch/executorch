@@ -62,7 +62,7 @@ endforeach()
 if(${CMAKE_HOST_SYSTEM_NAME} STREQUAL "Windows")
   set(MV_COMMAND
       powershell -Command
-      "Move-Item -Path ${_xnnpack_flatbuffer__outputs} -Destination ${_xnnpack_schema__outputs}"
+      "Move-Item -Path ${_xnnpack_flatbuffer__outputs} -Destination ${_xnnpack_schema__outputs} -Force"
   )
 else()
   set(MV_COMMAND mv ${_xnnpack_flatbuffer__outputs} ${_xnnpack_schema__outputs})
