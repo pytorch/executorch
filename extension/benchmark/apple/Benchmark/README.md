@@ -35,6 +35,15 @@ The Benchmark App is configured to use a Swift PM package that provides the preb
 
 By default, the app relies on the package referencing locally built binaries. To ensure it functions correctly, you must first build the frameworks by following the [guide](https://pytorch.org/executorch/main/using-executorch-ios#building-from-source), starting from the steps after the code cloning (that you've just done already).
 
+#### MLState
+The prebuilt frameworks do not work with CoreML models that use MLState, which is used in LLM models exported for iOS18.  When executing the *.pte file, you will see an error like:
+
+```
+The input feature for X must be an MLState, but it was not.
+```
+
+If you encounter this issue, build the frameworks locally (option 2) using **XCode 16.0** or higher.
+
 ## Adding Models and Resources
 
 Place your exported model files (`.pte`) and any other resources (e.g., `tokenizer.bin`) into the `extension/benchmark/apple/Benchmark/Resources` directory:
