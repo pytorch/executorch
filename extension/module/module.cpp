@@ -235,8 +235,46 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
   for (auto index = 0; index < input_values.size(); ++index) {
     ET_CHECK_OK_OR_RETURN_ERROR(method->set_input(input_values[index], index));
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
+
+  // Set up output storage for non-memory-planned outputs.
   const auto outputs_size = method->outputs_size();
+  auto& method_holder = methods_.at(method_name);
+  auto& output_storages = method_holder.output_storages;
+  output_storages.clear();
+  output_storages.reserve(outputs_size);
+  auto meta = method->method_meta();
+  for (size_t i = 0; i < outputs_size; ++i) {
+    auto output_type = meta.output_tag(i);
+    if (!output_type.ok()) {
+      ET_LOG(Error, "Failed to get output type for output %zu", i);
+      return output_type.error();
+    }
+    if (output_type.get() != executorch::runtime::Tag::Tensor) {
+      // Skip allocating storage for non-tensor outputs.
+      output_storages.emplace_back();
+      continue;
+    }
+    const auto& output_tensor_meta = meta.output_tensor_meta(i);
+    if (!output_tensor_meta.ok()) {
+      ET_LOG(Error, "Failed to get output tensor meta for output %zu", i);
+      return output_tensor_meta.error();
+    }
+    if (output_tensor_meta.get().is_memory_planned()) {
+      // Skip allocating storage for planned memory outputs.
+      output_storages.emplace_back();
+      continue;
+    }
+    // Allocate storage for non memory planned output tensor.
+    const size_t output_size = output_tensor_meta.get().nbytes();
+    output_storages.emplace_back(output_size);
+    auto output_status = method->set_output_data_ptr(
+        output_storages[i].data(), output_storages[i].size(), i);
+    if (output_status != executorch::runtime::Error::Ok) {
+      ET_LOG(Error, "Failed to set output data ptr for output %zu", i);
+      return output_status;
+    }
+  }
+  ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
   std::vector<runtime::EValue> outputs(outputs_size);
   ET_CHECK_OK_OR_RETURN_ERROR(
       method->get_outputs(outputs.data(), outputs_size));

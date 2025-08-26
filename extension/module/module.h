@@ -607,6 +607,9 @@ class Module {
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
+    // Keep output storages alive until they can be retrieved.
+    // Used when output storages are not memory planned.
+    std::vector<std::vector<uint8_t>> output_storages;
   };
 
   std::string file_path_;
