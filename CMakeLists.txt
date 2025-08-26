@@ -977,6 +977,11 @@ else()
 endif()
 target_link_libraries(executorch_kernels INTERFACE ${_executorch_kernels})
 
+install(
+  TARGETS executorch_backends executorch_extensions executorch_kernels
+  EXPORT ExecuTorchTargets
+)
+
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch extension_evalue_util
