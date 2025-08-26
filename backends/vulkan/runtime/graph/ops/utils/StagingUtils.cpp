@@ -44,9 +44,6 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
 
   if (dst_storage_type == utils::kBuffer) {
     kernel_name = "nchw_to_buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
     add_dtype_suffix(kernel_name, dst_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
   }
@@ -85,9 +82,6 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
 
   if (src_storage_type == utils::kBuffer) {
     kernel_name = "buffer_to_nchw";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
     add_dtype_suffix(kernel_name, src_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
   }

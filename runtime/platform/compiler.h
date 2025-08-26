@@ -193,7 +193,8 @@ using ssize_t = ptrdiff_t;
 #endif
 
 #ifdef _MSC_VER
-// MSVC has issues passing static constexpr const char names as template parameter
+// MSVC has issues passing static constexpr const char names as template 
+// parameter
 #define ET_OP_NAME_SPECIFIER
 #else
 #define ET_OP_NAME_SPECIFIER constexpr
