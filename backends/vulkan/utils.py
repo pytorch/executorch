@@ -250,6 +250,31 @@ def get_primary_arg_idx(self, node: torch.fx.Node) -> Optional[int]:
     return primary_arg_idx
 
 
+def node_comes_from_any_nn_module_in_set(
+    node,
+    nn_module_typenames: Set[str],
+) -> bool:
+    if isinstance(node, (list, tuple)):
+        return all(
+            node_comes_from_any_nn_module_in_set(n, nn_module_typenames) for n in node
+        )
+
+    if not isinstance(node, torch.fx.Node):
+        return False
+
+    nn_module_stack = node.meta.get("nn_module_stack", None)
+    if nn_module_stack is None:
+        return False
+
+    for _, packed in nn_module_stack.items():
+        _, typename = packed
+        for partial_name in nn_module_typenames:
+            if partial_name in typename:
+                return True
+
+    return False
+
+
 ##
 ## Memory Layout, Storage Type Determination
 ##
