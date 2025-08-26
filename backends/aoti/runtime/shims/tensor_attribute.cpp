@@ -123,6 +123,13 @@ AOTITorchError aoti_torch_get_device_index(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_get_dim(AOTITensorHandle tensor, int64_t* ret_dim) {
+  *ret_dim = tensor->dim();
+  std::cout << "getting dim from tensor " << tensor << " = " << *ret_dim
+            << std::endl;
+  return Error::Ok;
+}
+
 int32_t aoti_torch_device_type_cpu() {
   // Let's say cpu is 0 for ET as well
   return 0;
