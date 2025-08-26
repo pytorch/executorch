@@ -104,7 +104,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   auto prefill_result = module_->execute(
       kTextModelMethod, {cache_position_tensor, encoder_output});
   if (prefill_result.error() != ::executorch::runtime::Error::Ok) {
-    return ::executorch::runtime::Error::Internal;
+    return prefill_result.error();
   }
   auto prefill_outputs = prefill_result.get();
   auto outputs_res = prefill_outputs[0].toTensor();
