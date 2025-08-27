@@ -1880,6 +1880,48 @@ def get_flip_inputs():
     return test_suite
 
 
+@register_test_suite("aten.expand_copy.default")
+def get_expand_inputs():
+    test_suite = VkTestSuite(
+        [
+            # Basic expansion cases
+            ((1,), [5]),
+            ((1, 1), [3, 4]),
+            ((1, 3), [2, 3]),
+            ((3, 1), [3, 4]),
+            ((1, 1, 1), [2, 3, 4]),
+            # Expand with same size (no-op)
+            ((3, 4), [3, 4]),
+            ((2, 3, 4), [2, 3, 4]),
+            # Expand with additional dimensions
+            ((3,), [2, 3]),
+            ((3, 4), [2, 3, 4]),
+            ((2, 3), [1, 2, 3]),
+            # Mixed expansion cases
+            ((1, 3, 1, 4), [2, 3, 5, 4]),
+            ((1, 1, 3, 1), [2, 4, 3, 5]),
+            # Larger tensor cases
+            ((1, S1), [M, S1]),
+            ((S2, 1), [S2, M1]),
+            ((1, 1, S), [S1, S2, S]),
+            ((1, S1, 1, S2), [M, S1, M1, S2]),
+        ]
+    )
+    test_suite.storage_types = [
+        "utils::kBuffer",
+    ]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.dtypes = [
+        "at::kFloat",
+        "at::kHalf",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
 @register_test_suite("aten.where.self")
 def get_where_inputs():
     Test = namedtuple("Where", ["condition", "self", "other"])

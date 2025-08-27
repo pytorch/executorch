@@ -7,6 +7,7 @@
 from typing import List, Optional, Tuple, Union
 
 import torch
+
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
@@ -242,8 +243,13 @@ class NeutronQuantizer(ComposableQuantizer):
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
-        pass_runner = NeutronAtenPassManager()
-        return pass_runner(model).graph_module
+        model.graph.eliminate_dead_code()  # Remove dead code to simplify the graph for the passes.
+
+        model = NeutronAtenPassManager()(model).graph_module
+
+        model.graph.eliminate_dead_code()  # Remove dead code again, in case it was created by the passes.
+
+        return model
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         self._annotate_inputs(model)

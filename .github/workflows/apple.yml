@@ -156,6 +156,7 @@ jobs:
           "kernels_llm"
           "kernels_optimized"
           "kernels_quantized"
+          "kernels_torchao"
           "threadpool"
         )
 
