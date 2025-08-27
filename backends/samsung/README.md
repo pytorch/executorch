@@ -1,9 +1,9 @@
 # ExecuTorch Samsung Exynos Delegate
 
-The subtree contains Exynos delegation implementation for ExecuTorch. The target of delegation
-is deploying torch model run with exynos NPU/DSP.
+The subtree contains Exynos delegate implementation for ExecuTorch. The target of delegation
+is deploying torch model to run with exynos NPU/DSP.
 
-This backend is implemented on the top of [EXYNOS_LITECORE](https://soc-developer.semiconductor.samsung.com/global/development/light-core)
+This backend is implemented on the top of [EXYNOS_LITECORE](https://soc-developer.semiconductor.samsung.com/global/development/ai-litecore)
 Please prepare the SDK before you start, it is important to code compilation and runtime.
 
 ## Delegate Options
@@ -33,26 +33,26 @@ examples
 ```
 
 ## How to build
-Please download Exynos AI LiteCore, and set the root path of SDK directory to `EXYNOS_AI_LITECORE_PATH`.</br>
+Please download Exynos AI LiteCore, and set the root path of SDK directory to `EXYNOS_AI_LITECORE_ROOT`.</br>
 Please navigate to [Android NDK](https://developer.android.com/ndk) and download a version of NDK.
 `ANDROID_NDK` refers the root path of NDK directory.</br>
 
 ### Set up environment variables
 ```bash
-export LD_LIBRARY_PATH=${EXYNOS_AI_LITECORE_PATH}/lib64
+export LD_LIBRARY_PATH=${EXYNOS_AI_LITECORE_ROOT}/lib/x86_64-linux/
 ```
 
 ### Build AOT Targets
-Generated python artifacts allow user call `Compile` interface to lower a model to ENN backend in python script.
+Generates python artifacts that allow user call `Compile` interface to lower a model to Exynos backend in python script.
 ```bash
 ./backends/samsung/build.sh -b x86_64
 ```
 
-### Build ENN Runtime
+### Build ENN Executor Runner
 ```bash
 ./backends/samsung/build.sh -b android --ndk ${ANDROID_NDK}
 ```
-ANDROID_ABI=arm64-v8a is default, necessary runtime executable generate in `build_exynos_android` directory.
+ANDROID_ABI=arm64-v8a is default, necessary runtime executable generated in `build_exynos_android` directory.
 
 ### Build Anroid Extension
 This is later exposed Java app. Please turn on CMake option `EXECUTORCH_BUILD_ENN`, and ENN runtime will be added.
@@ -67,5 +67,6 @@ cmake --build cmake-android-out/extension/android -j8
 ```
 
 ## Examples
+python -m executorch.examples.samsung.aot_compiler --chipset e9955 -m ic3
 
 Please see this [README.md](../../examples/samsung/README.md).

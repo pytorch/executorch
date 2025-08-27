@@ -25,15 +25,17 @@ Check the chip's version, when lower the model, set the corresponding chip versi
 ## Lowering
 
 Before running an example, please copy python artifacts to target directory `PYTHON_TARGET_DIR`.
+If you use `build.sh` script to compile samsung backend, please skip the copy step.
+
 Set up `PYTHON_TARGET_DIR` to `${EXECUTORCH_ROOT}/backends/samsung/python`.
 ```bash
 cp -rf ${EXECUTORCH_ROOT}/build_x86_64/backends/samsung/Py*.so ${PYTHON_TARGET_DIR}
 cp -rf ${EXYNOS_AI_LITECORE_PATH}/python/snc_py_api*.so ${PYTHON_TARGET_DIR}
 ```
 
-Take `EXECUTORCH_ROOT` as work directory and here is an example for mul.
+Take `EXECUTORCH_ROOT` as work directory and here is an example for ic3.
 ```bash
-python -m executorch.examples.samsung.aot_compiler -m mul
+python -m executorch.examples.samsung.aot_compiler --chipset E9955 -m ic3 --output_dir ic3_artifact
 ```
 
 ## Execution
@@ -45,15 +47,14 @@ After lowering, we could get a pte model and then run it on mobile phone.
 DEVICE_DIR=/data/local/tmp/executorch
 adb shell mkdir ${DEVICE_DIR}
 adb push ${EXECUTORCH_ROOT}/cmake-android-out/backends/samsung/enn_executor_runner ${DEVICE_DIR}
-adb push ${EXYNOS_AI_LITECORE_PATH}/enn_api/libenn* ${DEVICE_DIR}
 ```
 
 #### Step 2: Indicate dynamic linkers and execute model
 ```bash
-adb push ./mul_exynos_fp32.pte ${DEVICE_DIR}
+adb push ./ic3_exynos_fp32.pte ${DEVICE_DIR}
 adb shell "cd ${DEVICE_DIR} \
            && export LD_LIBRARY_PATH=${DEVICE_DIR} \
-           && ./enn_executor_runner -model ./mul_exynos_fp32.pte"
+           && ./enn_executor_runner -model ./ic3_exynos_fp32.pte -input ./ic3_input_0.bin --output_path ."
 ```
 
 `enn_executor_runner` has more usages, please refer to the help message.
