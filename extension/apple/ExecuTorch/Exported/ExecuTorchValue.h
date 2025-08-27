@@ -22,12 +22,6 @@ typedef NS_ENUM(uint32_t, ExecuTorchValueTag) {
   ExecuTorchValueTagDouble,
   ExecuTorchValueTagInteger,
   ExecuTorchValueTagBoolean,
-  ExecuTorchValueTagBooleanList,
-  ExecuTorchValueTagDoubleList,
-  ExecuTorchValueTagIntegerList,
-  ExecuTorchValueTagTensorList,
-  ExecuTorchValueTagScalarList,
-  ExecuTorchValueTagOptionalTensorList,
 } NS_SWIFT_NAME(ValueTag);
 
 typedef NSNumber *ExecuTorchScalarValue
@@ -107,7 +101,7 @@ __attribute__((objc_subclassing_restricted))
  *
  * @return An float representing the float value.
  */
- @property(nonatomic, readonly) ExecuTorchFloatValue floatValue NS_SWIFT_NAME(float);
+@property(nonatomic, readonly) ExecuTorchFloatValue floatValue NS_SWIFT_NAME(float);
 
 /**
  * Returns YES if the value is of type None.
@@ -166,7 +160,7 @@ __attribute__((objc_subclassing_restricted))
  *
  * @return A BOOL indicating whether the value is a float.
  */
- @property(nonatomic, readonly) BOOL isFloat;
+@property(nonatomic, readonly) BOOL isFloat;
 
 /**
  * Creates an instance encapsulating a Tensor.

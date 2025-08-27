@@ -490,7 +490,6 @@ def register_rotary_emb_op():
 @update_features(
     [
         exir_ops.edge.aten.permute.default,
-        exir_ops.edge.aten.permute_copy.default,
     ]
 )
 def register_view_ops():
@@ -506,6 +505,7 @@ def register_view_ops():
         exir_ops.edge.aten.squeeze_copy.dims,
         exir_ops.edge.aten.unsqueeze_copy.default,
         exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.permute_copy.default,
     ]
 )
 def register_view_ops_with_buffer_meta():
@@ -513,6 +513,11 @@ def register_view_ops_with_buffer_meta():
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
     )
+
+
+@update_features(exir_ops.edge.aten.expand_copy.default)
+def register_expand():
+    return OpFeatures(inputs_storage=utils.ANY_BUFFER, supports_resize=False)
 
 
 # Fully featured transfer operators (i.e. operators that copy data from the input

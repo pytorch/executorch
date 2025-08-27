@@ -3,20 +3,29 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
-
+import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
+from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
-from .qnn_constants import OpElementWiseNotEqual, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpElementWiseBinary, QNN_OP_PACKAGE_NAME_QTI_AISW
+
+
+# Refer to QnnOpDef.h for the value.
+QNN_BINARY_OPERATOR = {
+    exir_ops.edge.aten.floor_divide.default: 4,
+}
 
 
 @register_node_visitor
-class NotEqual(NodeVisitor):
-    target = ["aten.ne.Tensor"]
+class Binary(NodeVisitor):
+    target = ["aten.floor_divide.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -34,9 +43,9 @@ class NotEqual(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        output_tensors = [output_tensor_wrapper]
+        binary_output_tensors = [output_tensor_wrapper]
 
-        input_tensors = []
+        binary_input_tensors = []
         for index in range(2):
             input_node = self.get_node(node.args[index])
             input_tensor = self.get_tensor(input_node, node)
@@ -49,14 +58,27 @@ class NotEqual(NodeVisitor):
                 tensor_type,
                 nodes_to_wrappers,
             )
-            input_tensors.append(input_tensor_wrapper)
+            binary_input_tensors.append(input_tensor_wrapper)
 
-        ne_op = PyQnnWrapper.PyQnnOpWrapper(
+        binary_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpElementWiseNotEqual.op_name,
+            OpElementWiseBinary.op_name,
         )
-        ne_op.AddInputTensors(input_tensors)
-        ne_op.AddOutputTensors(output_tensors)
+        binary_op.AddInputTensors(binary_input_tensors)
+        binary_op.AddOutputTensors(binary_output_tensors)
 
-        return ne_op
+        if node.target not in QNN_BINARY_OPERATOR:
+            warnings.warn(
+                "[QNN Delegate Op Builder]: This binary operator is not yet supported.",
+                stacklevel=1,
+            )
+            return None
+
+        binary_op.AddScalarParam(
+            OpElementWiseBinary.param_operation,
+            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            {QCOM_DATA: np.uint32(QNN_BINARY_OPERATOR[node.target])},
+        )
+
+        return binary_op
