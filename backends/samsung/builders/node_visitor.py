@@ -13,6 +13,7 @@ from executorch.backends.samsung.builders.utils import (
     get_tensor_type,
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
+from executorch.backends.transforms.utils import is_param_node
 from torch.export import ExportedProgram
 
 
@@ -52,6 +53,10 @@ class NodeVisitor:
         data_type = get_map_dtype(tensor.dtype)
 
         const_data = None
+        if is_param_node(self.exported_program, node):
+            if swap_nc_for_weights:
+                tensor = torch.swapdims(tensor, 0, 1)
+            const_data = tensor.contiguous().detach().numpy()
 
         dims = [1] if len(tensor.size()) == 0 else list(tensor.size())
 

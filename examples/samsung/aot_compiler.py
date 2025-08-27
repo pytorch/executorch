@@ -5,7 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import collections
 import logging
+import os
+
+import torch
 
 from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
@@ -22,7 +26,23 @@ from ..models.model_factory import EagerModelFactory
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-SUPPORT_MODEL_NAMES = []
+SUPPORT_MODEL_NAMES = ["mv2", "ic3", "resnet18", "resnet50"]
+
+
+def save_tensors(tensors, prefix, artifact_dir):
+    if isinstance(tensors, tuple):
+        for index, output in enumerate(tensors):
+            save_path = prefix + "_" + str(index) + ".bin"
+            output.detach().numpy().tofile(os.path.join(artifact_dir, save_path))
+    elif isinstance(tensors, torch.Tensor):
+        tensors.detach().numpy().tofile(os.path.join(artifact_dir, prefix + ".bin"))
+    elif isinstance(tensors, collections.OrderedDict):
+        for index, output in enumerate(tensors.values()):
+            save_path = prefix + "_" + str(index) + ".bin"
+            output.detach().numpy().tofile(os.path.join(artifact_dir, save_path))
+    else:
+        logging.warning("Unsupported type (", type(tensors), ") skip saving tensor. ")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -44,11 +64,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.model_name not in SUPPORT_MODEL_NAMES and args.quantize:
+    if args.model_name not in SUPPORT_MODEL_NAMES:
         raise RuntimeError(
-            f"Model {args.model_name} is not a valid name. or not quantizable right now, "
-            "please contact executorch team if you want to learn why or how to support "
-            "quantization for the requested model"
+            f"Model {args.model_name} is not a valid name. or not support yet. "
+            "In the near future, more example models will be supported. Currently, "
             f"Available models are {SUPPORT_MODEL_NAMES}."
         )
 
@@ -60,25 +79,19 @@ if __name__ == "__main__":
     ), "enn backend doesn't support dynamic shapes currently."
 
     model = model.eval()
+    outputs = model(*example_inputs)
 
-    if args.quantize:
-        raise NotImplementedError("Quantizer is under developing...")
-    else:
-        # TODO(anyone) Remove the judgement after quantizer work fine or judge it in other ways
-        # raise AssertionError("Only support s8/fp16/s16")
-        pass
-
-    # logging.info(f"Exported graph:\n{edge.exported_program().graph}")
     compile_specs = [gen_samsung_backend_compile_spec(args.chipset)]
     edge = to_edge_transform_and_lower_to_enn(
         model, example_inputs, compile_specs=compile_specs
     )
 
-    # Save
     exec_prog = edge.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=True)
     )
 
-    quant_tag = "q8" if args.quantize else "fp32"
-    model_name = f"{args.model_name}_exynos_{quant_tag}"
+    model_name = f"{args.model_name}_exynos_fp32"
     save_pte_program(exec_prog, model_name, args.output_dir)
+
+    save_tensors(example_inputs, f"{args.model_name}_input", args.output_dir)
+    save_tensors(outputs, f"{args.model_name}_output", args.output_dir)

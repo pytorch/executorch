@@ -63,7 +63,7 @@ class EnnBackend(BackendDetails):
         vals_to_ids: Dict[torch.fx.Node, int] = {}
         for node in pass_result.graph_module.graph.nodes:
             if node.op == "call_function":
-                logging.warning(f"Visiting: {node}, {node.target.__name__}")
+                logging.info(f"Visiting: {node}, {node.target.__name__}")
                 if node.target.__name__ in node_visitors:
                     node_visitors[node.target.__name__].define_node(
                         node, enn_graph, vals_to_ids
