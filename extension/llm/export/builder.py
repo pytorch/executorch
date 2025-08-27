@@ -96,6 +96,7 @@ class LLMEdgeManager:
         metadata: Optional[dict] = None,
         dynamic_shapes: Optional[Any] = None,
         save_exported_program: bool = False,
+        generate_etrecord: bool = False,
     ):
         # Store necessary constructor arguments.
         self.model = model
@@ -116,6 +117,7 @@ class LLMEdgeManager:
         self.metadata = metadata
         self.dynamic_shapes = dynamic_shapes
         self.save_exported_program = save_exported_program
+        self.generate_etrecord = generate_etrecord
 
         # Note: treat this as the source of truth for the result of
         # torch.export'ing a model. If the overall ExportedProgram is needed,
@@ -481,6 +483,7 @@ class LLMEdgeManager:
             partitioner=partitioners,
             compile_config=edge_config,
             constant_methods=self.metadata,
+            generate_etrecord=self.generate_etrecord,
         )
         if self.verbose:
             logging.info(f"Exported graph:\n{self.edge_manager.exported_program()}")
