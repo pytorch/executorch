@@ -71,7 +71,7 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250725"
+NIGHTLY_VERSION = "dev20250811"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -112,8 +112,13 @@ def install_requirements(use_pytorch_nightly):
 
     LOCAL_REQUIREMENTS = [
         "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
-        "extension/llm/tokenizers",  # TODO(larryliu0820): Setup a pypi package for this.
-    ]
+    ] + (
+        [
+            "extension/llm/tokenizers",  # TODO(larryliu0820): Setup a pypi package for this.
+        ]
+        if sys.platform != "win32"
+        else []
+    )  # TODO(gjcomer): Re-enable when buildable on Windows.
 
     # Install packages directly from local copy instead of pypi.
     # This is usually not recommended.

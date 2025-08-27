@@ -7,7 +7,6 @@
 from . import arm_pass_utils  # noqa
 from .arm_pass import ArmPass  # noqa  # usort: skip
 from .add_bias_pass import AddBiasPass  # noqa
-from .annotate_channels_last_dim_order_pass import AnnotateChannelsLastDimOrder  # noqa
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .cast_bool_to_int8_pass import CastBoolToInt8Pass  # noqa
@@ -33,6 +32,7 @@ from .decompose_avg_pool2d import DecomposeAvgPool2d  # noqa
 from .decompose_batch_norm_no_stats import DecomposeBatchNormNoStatsPass  # noqa
 from .decompose_cosh_pass import DecomposeCoshPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
+from .decompose_cumsum_pass import DecomposeCumsumPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
@@ -84,6 +84,7 @@ from .replace_scalar_with_tensor_pass import (  # noqa
 )
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_input_pass import SizeAdjustInputPass  # noqa
+from .to_tosa_memory_format_pass import ToTosaMemoryFormatPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
 from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass  # noqa
 from .replace_inf_values_pass import ReplaceInfValues  # noqa  # usort: skip

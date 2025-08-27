@@ -4,8 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
     BuiltinOperator,
@@ -15,18 +15,12 @@ from torch.nn import Parameter
 
 
 class SigmoidConverter(NodeConverter):
-    @staticmethod
-    def _is_supported_on_target(target: Target) -> bool:
-        match target:
-            case Target.RT700:
-                return True
-
-            case _:
-                return False
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         return True
 

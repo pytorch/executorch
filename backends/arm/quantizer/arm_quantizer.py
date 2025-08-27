@@ -101,17 +101,19 @@ def get_symmetric_quantization_config(
     weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
         MinMaxObserver
     )
+
     # Determine the right observer/fake-quant constructor
     if is_qat:
-        # Set plain fake-quant with true min/max
-        weight_observer_or_fake_quant_ctr = FakeQuantize
+        if is_per_channel:
+            weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+        else:
+            # Set plain fake-quant with true min/max
+            weight_observer_or_fake_quant_ctr = FakeQuantize
     else:
         # PTQ: set min/max observer
         weight_observer_or_fake_quant_ctr = (
             PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
         )
-
-    extra_args = {"eps": 2**-12}
 
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
