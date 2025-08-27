@@ -1,0 +1,30 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_COMMON_GLSLH
+#define LINEAR_COMMON_GLSLH
+
+/*
+ * Defines common functions and structs to be used across matrix multiplication
+ * operators.
+ */
+
+#define div_up_4(x) (((x) + 3) >> 2)
+
+#define mul_4(x) ((x) << 2)
+#define div_4(x) ((x) >> 2)
+
+#define mod_4(x) ((x) & 3)
+
+// Represents floating point parameter tensors where each element is associated
+// with an output channel, such as weight scales, biases, etc.
+struct FPPerOutChannelParams {
+  VEC4_T data[TILE_N4];
+};
+
+#endif // LINEAR_COMMON_GLSLH

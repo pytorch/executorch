@@ -1,0 +1,70 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_FP_IM2COL_BLOCK
+#define CONV2D_FP_IM2COL_BLOCK
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "common.glslh"
+#include "conv2d_common.glslh"
+
+struct Im2ColTensorIdx {
+  int row;
+  int col;
+};
+
+void unwrap_m(out TensorIndex4D out_tidx_base, const int m) {
+  out_tidx_base.data[3] = m / (output_sizes.y * output_sizes.x);
+  out_tidx_base.data[1] = (m / output_sizes.x) % output_sizes.y;
+  out_tidx_base.data[0] = m % output_sizes.x;
+
+  // Initialize channels to 0; assume it will be set later on
+  out_tidx_base.data[2] = 0;
+}
+
+void im2col_tidx_to_output_tidx(
+    out TensorIndex4D output_tidx,
+    const Im2ColTensorIdx im2col_tidx) {
+  unwrap_m(output_tidx, im2col_tidx.row);
+  // Set channels
+  output_tidx.data.z = im2col_tidx.col;
+}
+
+void im2col_tidx_to_input_tidx(
+    out TensorIndex4D input_tidx,
+    const Im2ColTensorIdx im2col_tidx) {
+  // Use utility function to unwrap m index
+  TensorIndex4D output_tidx;
+  unwrap_m(output_tidx, im2col_tidx.row);
+
+  // Extract kernel position and channel from k index
+  // k is structured as: kernel_y * (kernel_width * channels) + kernel_x *
+  // channels + channel
+  const int input_channels = input_sizes.z;
+  const int channel_idx = im2col_tidx.col % input_channels;
+  const int kernel_x =
+      (im2col_tidx.col / input_channels) % conv2d_params.kernel_size.x;
+  const int kernel_y =
+      im2col_tidx.col / (input_channels * conv2d_params.kernel_size.x);
+
+  // Calculate input coordinates
+  const int input_y = int(output_tidx.data.y * conv2d_params.stride.y) -
+      int(conv2d_params.padding.y) + int(kernel_y * conv2d_params.dilation.y);
+  const int input_x = int(output_tidx.data.x * conv2d_params.stride.x) -
+      int(conv2d_params.padding.x) + int(kernel_x * conv2d_params.dilation.x);
+
+  input_tidx.data = ivec4(input_x, input_y, channel_idx, output_tidx.data.w);
+}
+
+// 4x4 block of the im2col matrix
+struct FPIm2ColBlock {
+  VEC4_T data[4];
+};
+
+#endif // CONV2D_FP_IM2COL_BLOCK

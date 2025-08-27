@@ -1,0 +1,36 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef COMMON_GLSLH
+#define COMMON_GLSLH
+
+#define div_up_4(x) (((x) + 3) >> 2)
+
+#define mul_4(x) ((x) << 2)
+#define div_4(x) ((x) >> 2)
+
+#define mod_4(x) ((x) & 3)
+
+struct TensorIndex4D {
+  ivec4 data;
+};
+
+#ifdef DEBUG_MODE
+
+void printTensorIndex4D(const TensorIndex4D index) {
+  debugPrintfEXT(
+      "tensor_idx: %d, %d, %d, %d\\n",
+      index.data.x,
+      index.data.y,
+      index.data.z,
+      index.data.w);
+}
+
+#endif // DEBUG_MODE
+
+#endif // COMMON_GLSLH

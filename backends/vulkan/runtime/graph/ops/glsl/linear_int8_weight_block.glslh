@@ -1,0 +1,122 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_INT8_WEIGHT_BLOCK_GLSLH
+#define LINEAR_INT8_WEIGHT_BLOCK_GLSLH
+
+/*
+ * This file defines utilties to perform weight prepacking of quantized int8
+ * matrix multiplation weights. It also defines utilities to load source
+ * weight data from inputbuffer, and write out a packed weight block to output
+ * texture/buffer.
+ *
+ * Requires:
+ * - t_qmat2 to be defined in shader layout (output texture/buffer)
+ * - t_input to be defined in shader layout (input buffer)
+ *
+ * Settings:
+ * - USING_BUFFER to indicate if output resource is a buffer. Otherwise texture
+ *   is assumed.
+ */
+
+#extension GL_EXT_control_flow_attributes : require
+
+// Represents source data for a 4x4 block of the weight matrix read from the
+// input buffer.
+struct Int8WeightBlockSourceData {
+  uint data[4];
+};
+
+// Represents data for a packed 4x4 block of the weight matrix to be written out
+// to output texture/buffer.
+struct Int8WeightBlockPacked {
+  ivec4 data;
+};
+
+void load_block_source_data(
+    out Int8WeightBlockSourceData src_data,
+    const uint n4,
+    const uint k,
+    const uint ntexels_N) {
+  [[unroll]] for (int row = 0; row < 4; ++row) {
+    src_data.data[row] = t_input[(k + row) * ntexels_N + n4];
+  }
+}
+
+int extract_8bit_from_packed_uint_le(const uint packed, const uint i) {
+  // account for little endian
+  int byte = int(packed >> (8 * i) & 255);
+  return byte;
+}
+
+int pack_4x8bit_signed_into_int(
+    const int val0,
+    const int val1,
+    const int val2,
+    const int val3) {
+  return int(
+      ((val0 & 0xFF) << 24) | ((val1 & 0xFF) << 16) | ((val2 & 0xFF) << 8) |
+      ((val3 & 0xFF)));
+}
+
+void create_packed_block(
+    out Int8WeightBlockPacked block,
+    const Int8WeightBlockSourceData src_data) {
+  [[unroll]] for (int col = 0; col < 4; ++col) {
+    block.data[col] = pack_4x8bit_signed_into_int(
+        extract_8bit_from_packed_uint_le(src_data.data[0], col),
+        extract_8bit_from_packed_uint_le(src_data.data[1], col),
+        extract_8bit_from_packed_uint_le(src_data.data[2], col),
+        extract_8bit_from_packed_uint_le(src_data.data[3], col));
+  }
+}
+
+#ifdef USING_BUFFER
+
+void write_packed_block(
+    const Int8WeightBlockPacked block,
+    const uint block_x,
+    const uint block_y,
+    const uint nblocks_x) {
+  t_qmat2[block_y * nblocks_x + block_x] = block.data;
+}
+
+#else // USING_TEXTURE
+
+void write_packed_block(
+    const Int8WeightBlockPacked block,
+    const uint block_x,
+    const uint block_y,
+    const uint nblocks_w) {
+  imageStore(t_qmat2, ivec2(block_x, block_y), block.data);
+}
+
+#endif // USING_BUFFER
+
+#ifdef DEBUG_MODE
+
+void printInt8WeightBlockSourceData(const Int8WeightBlockSourceData src_data) {
+  debugPrintfEXT("int8_weight_block_source_data: \\n");
+  [[unroll]] for (int row = 0; row < 4; ++row) {
+    debugPrintfEXT("row %i: %u \\n", row, src_data.data[row]);
+  }
+}
+
+void printInt8WeightBlockPacked(const Int8WeightBlockPacked block) {
+  debugPrintfEXT("int8_weight_block_packed: \\n");
+  debugPrintfEXT(
+      "%i %i %i %i \\n",
+      block.data[0],
+      block.data[1],
+      block.data[2],
+      block.data[3]);
+}
+
+#endif // DEBUG_MODE
+
+#endif // LINEAR_INT8_WEIGHT_BLOCK_GLSLH

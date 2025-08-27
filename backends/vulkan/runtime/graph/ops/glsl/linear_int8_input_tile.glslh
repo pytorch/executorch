@@ -1,0 +1,27 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Defines the Int8InputTile struct, which is used to represent a tile of the
+ * quantized int8 input matrix of a quantized matrix multiplication operation.
+ *
+ * Settings:
+ * - TILE_M4: number of (groups of 4) rows in the tile
+ * - TILE_K4: number of (groups of 4) columns in the tile
+ */
+
+#ifndef LINEAR_INT8_INPUT_TILE_GLSLH
+#define LINEAR_INT8_INPUT_TILE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+struct Int8InputTile {
+  ivec4 data[TILE_M4][TILE_K4];
+};
+
+#endif // LINEAR_INT8_INPUT_TILE_GLSLH

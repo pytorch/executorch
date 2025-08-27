@@ -1,0 +1,128 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#version 450 core
+
+#extension GL_EXT_debug_printf : enable
+#define DEBUG_MODE
+
+#define PRECISION ${PRECISION}
+#define VEC4_T ${texel_load_type(DTYPE, OUTPUT_STORAGE)}
+#define T ${texel_load_component_type(DTYPE, OUTPUT_STORAGE)}
+
+$if OUTPUT_STORAGE == "buffer":
+  #define OUTPUT_BUFFER
+$if INPUT_STORAGE == "buffer":
+  #define INPUT_BUFFER
+$if WEIGHT_STORAGE == "buffer":
+  #define WEIGHT_BUFFER
+
+#define TILE_M4 ${TILE_M4}
+#define TILE_N4 ${TILE_N4}
+#define TILE_K4 ${TILE_K4}
+
+#define TILE_M ${TILE_M4 * 4}
+#define TILE_N ${TILE_N4 * 4}
+#define TILE_K ${TILE_K4 * 4}
+
+${define_required_extensions(DTYPE)}
+
+#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_integer_dot_product : require
+
+layout(std430) buffer;
+
+#include "conv2d_common.glslh"
+
+${layout_declare_tensor(B, "w", "t_output", DTYPE, OUTPUT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_input", "int", INPUT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_qmat2", "int", WEIGHT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_weight_sums", "float", "buffer", is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
+
+${layout_declare_ubo(B, "ivec4", "output_sizes")}
+${layout_declare_ubo(B, "ivec4", "input_sizes")}
+${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
+
+layout(push_constant) uniform restrict Block {
+  float input_scale;
+  int input_zp;
+};
+
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+#include "linear_int8_input_tile_load.glslh"
+#include "linear_int8_weight_tile_load.glslh"
+#include "linear_fp_output_tile_int8_compute.glslh"
+#include "linear_scales_load.glslh"
+#include "linear_weight_sums_load.glslh"
+#include "linear_bias_load.glslh"
+#include "conv2d_fp_im2col_block_store.glslh"
+
+void main() {
+  // Each thread writes out a 4 wide x 4 high tile of output values
+  const uint out_tile_x = gl_GlobalInvocationID.x;
+  const uint out_tile_y = gl_GlobalInvocationID.y;
+
+  const int n = int(out_tile_x * TILE_N);
+  const int m = int(out_tile_y * TILE_M);
+
+  const int n4 = div_4(n);
+  const int m4 = div_4(m);
+
+  bool should_print = n4 == 0 && m4 == 61;
+
+  // M = flattened output width, height, batches dims
+  const int M = output_sizes.x * output_sizes.y * output_sizes.w;
+  // K = flattened input_channels, kernel_height, kernel_width
+  const int K = input_sizes.z * conv2d_params.kernel_size.x *
+      conv2d_params.kernel_size.y;
+  // N = output channels
+  const int N = output_sizes.z;
+
+  if (should_print) {
+    printConv2DParams(conv2d_params);
+    debugPrintfEXT("M: %i, K: %i, N: %i\\n", M, K, N);
+  }
+
+  if (n >= N || m >= M) {
+    return;
+  }
+
+  const int K4 = div_up_4(K);
+  const int N4 = div_up_4(N);
+
+  Int8OutAccum out_accum;
+  initialize(out_accum);
+
+  Int8InputTile in_tile;
+  Int8WeightTile weight_tile;
+
+  for (int k4 = 0; k4 < K4; k4++) {
+    load_input_tile(in_tile, k4, m4, K4);
+    load_weight_tile(weight_tile, n4, k4, N4);
+
+    accumulate(out_accum, in_tile, weight_tile);
+  }
+
+  FPPerOutChannelParams scales_tile;
+  load_scales_tile(scales_tile, n4);
+
+  FPPerOutChannelParams sums_tile;
+  load_sums_tile(sums_tile, n4);
+
+  FPOutTile out_tile;
+  compute(out_tile, out_accum, sums_tile, scales_tile);
+
+  if (should_print) {
+    printFPOutputTile(out_tile);
+  }
+
+  write_im2col_tile_as_image(out_tile, n4, m);
+}
