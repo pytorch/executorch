@@ -58,6 +58,9 @@ ExternalProject_Add(
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
   ${_executorch_external_project_additional_args}
+  LOG_CONFIGURE TRUE
+  LOG_MERGED_STDOUTERR TRUE
+  LOG_OUTPUT_ON_FAILURE TRUE
 )
 ExternalProject_Get_Property(flatbuffers_external_project INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
