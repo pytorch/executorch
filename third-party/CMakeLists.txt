@@ -37,6 +37,8 @@ else()
   set(_executorch_external_project_extra_cmake_args -DCMAKE_TOOLCHAIN_FILE=)
 endif()
 
+message(STATUS "Extra CMake args: ${_executorch_external_project_extra_cmake_args}")
+
 # We use ExternalProject to build flatc from source to force it target the host.
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
 ExternalProject_Add(
@@ -48,12 +50,12 @@ ExternalProject_Add(
              -DFLATBUFFERS_BUILD_FLATHASH=OFF
              -DFLATBUFFERS_BUILD_FLATLIB=OFF
              -DFLATBUFFERS_BUILD_TESTS=OFF
+             ${_executorch_external_project_extra_cmake_args}
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}"
              # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
-             ${_executorch_external_project_extra_cmake_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
   ${_executorch_external_project_additional_args}
 )
