@@ -667,7 +667,6 @@ def run_tosa_graph(
 ) -> list[torch.Tensor]:
     """Runs the TOSA reference model with inputs and returns the result."""
     inputs_np = [input.numpy() for input in inputs]
-    transpose_data_format(inputs_np, to="NHWC")
 
     if isinstance(tosa_version, Tosa_1_00):
         import tosa_reference_model as reference_model
@@ -689,22 +688,7 @@ def run_tosa_graph(
         status == reference_model.GraphStatus.TOSA_VALID
     ), "Non-valid TOSA given to reference model."
 
-    transpose_data_format(outputs_np, to="NCHW")
     return [torch.from_numpy(output) for output in outputs_np]
-
-
-def transpose_data_format(data: list[np.ndarray], to: Literal["NHWC", "NCHW"]):
-    for i in range(len(data)):
-        if hasattr(data[i], "shape") and data[i].ndim in (4, 5):
-            match to:
-                case "NCHW":
-                    dim_order = (0, 3, 1, 2) if data[i].ndim == 4 else (0, 1, 4, 2, 3)
-                case "NHWC":
-                    dim_order = (0, 2, 3, 1) if data[i].ndim == 4 else (0, 1, 3, 4, 2)
-                case _:
-                    raise NotImplementedError(f"Cant transpose to dim order {to}")
-            # Copy is needed to force actual data conversion, not setting stride.
-            data[i] = np.transpose(data[i], dim_order).copy()
 
 
 def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
