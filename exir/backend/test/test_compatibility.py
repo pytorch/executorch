@@ -115,4 +115,4 @@ class TestCompatibility(unittest.TestCase):
             RuntimeError,
             "Failed to get method forward, error: 0x30",
         ):
-            result = executorch_module.run_method("forward")
+            executorch_module.run_method("forward")
