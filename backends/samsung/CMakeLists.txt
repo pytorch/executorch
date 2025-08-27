@@ -54,7 +54,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     )
     add_library(PyEnnWrapperAdaptor MODULE)
 
-    find_library(GG_API_LIB NAMES graphgen_api HINTS ${EXYNOS_AI_LITECORE_ROOT}/lib64/)
+    find_library(GG_API_LIB NAMES graphgen_api HINTS ${EXYNOS_AI_LITECORE_ROOT}/lib/x86_64-linux)
     add_library(graphgen_api SHARED IMPORTED GLOBAL)
     set_target_properties(graphgen_api PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${EXYNOS_AI_LITECORE_ROOT}/include"
@@ -100,7 +100,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     # PyGraphWrapperAdaptor
     add_library(PyGraphWrapperAdaptor MODULE)
     #
-    find_library(GRAPH_WRAPPER_LIB NAMES graph_wrapper HINTS ${EXYNOS_AI_LITECORE_ROOT}/lib64/)
+    find_library(GRAPH_WRAPPER_LIB NAMES graph_wrapper HINTS ${EXYNOS_AI_LITECORE_ROOT}/lib/x86_64-linux)
     add_library(graph_wrapper SHARED IMPORTED GLOBAL)
     set_target_properties(graph_wrapper PROPERTIES
             INTERFACE_INCLUDE_DIRECTORIES "${EXYNOS_AI_LITECORE_ROOT}/include"
@@ -123,11 +123,12 @@ if(${ANDROID})
     target_link_libraries(enn_logging PRIVATE ${android_log})
     add_library(enn_backend STATIC)
     target_link_libraries(enn_backend PRIVATE enn_logging)
-    target_link_options_shared_lib(enn_backend)
+    executorch_target_link_options_shared_lib(enn_backend)
     target_compile_options(enn_backend PRIVATE -Wno-deprecated-declarations)
 
     set(__enn_executor_runner_srcs ${EXECUTORCH_SOURCE_DIR}/examples/samsung/executor_runner/enn_executor_runner.cpp)
     add_executable(enn_executor_runner ${__enn_executor_runner_srcs})
+    add_dependencies(enn_executor_runner enn_backend)
     target_link_libraries(enn_executor_runner PRIVATE
             enn_logging
             enn_backend
@@ -139,6 +140,7 @@ if(${ANDROID})
     set_target_properties(enn_executor_runner PROPERTIES CXX_VISIBILITY_PRESET hidden)
     install(
         TARGETS enn_backend enn_logging
+        EXPORT ExecuTorchTargets
         DESTINATION lib
     )
 endif()
