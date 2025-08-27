@@ -23,7 +23,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 aten_op = "torch.ops.aten.clone.default"
-exir_op = "executorch_exir_dialects_edge__ops_aten_clone_default"
+exir_op = "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
 
 input_t = Tuple[torch.Tensor]
 
@@ -106,6 +106,9 @@ def test_clone_u85_INT(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(
+    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
+)
 def test_clone_vgf_FP(test_data):
     pipeline = VgfPipeline[input_t](
         Clone(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
@@ -115,6 +118,9 @@ def test_clone_vgf_FP(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(
+    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
+)
 def test_clone_vgf_INT(test_data):
     pipeline = VgfPipeline[input_t](
         Clone(),

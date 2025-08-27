@@ -46,9 +46,6 @@ void dequantize_per_tensor_out(
       input.scalar_type() == ScalarType::UInt16) {
     const uint16_t* input_data = input.const_data_ptr<uint16_t>();
     dequantize<uint16_t>(out_data, input_data, scale, zero_point, numel);
-  } else if (input.scalar_type() == ScalarType::Int) {
-    const int32_t* input_data = input.const_data_ptr<int32_t>();
-    dequantize<int32_t>(out_data, input_data, scale, zero_point, numel);
   } else {
     ET_CHECK_MSG(
         false,
