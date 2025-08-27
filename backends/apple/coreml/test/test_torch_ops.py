@@ -158,10 +158,6 @@ class TestTorchOps(unittest.TestCase):
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
 
-    @unittest.skipIf(
-        not hasattr(torch.version, "git_version"),
-        "Enable in fbcode once D79658061 lands",
-    )
     def test_dequantize_codebook_linear(self):
         model, example_inputs = self._get_test_model()
         quantize_(
@@ -189,10 +185,6 @@ class TestTorchOps(unittest.TestCase):
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
 
-    @unittest.skipIf(
-        not hasattr(torch.version, "git_version"),
-        "Enable in fbcode once D79658061 lands",
-    )
     def test_dequantize_codebook_embedding(self):
         model, example_inputs = self._get_test_model()
         quantize_(

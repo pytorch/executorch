@@ -1,3 +1,9 @@
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -49,7 +55,10 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
         derived_zero = torch.zeros(derived_scale.size()).to(torch.int32)
         if isinstance(weight_obs_or_fq, PerBlockParamObserver):
             # keep maximum scale of each channel for bias
-            derived_scale = derived_scale.view(derived_scale.size(0), -1).amax(dim=-1)
+            derived_scale = (
+                derived_scale.view(derived_scale.size(0), -1).amax(dim=-1)
+                / weight_obs_or_fq.num_steps
+            )
             derived_zero = derived_zero.view(derived_zero.size(0), -1).amax(dim=-1)
         return (derived_scale, derived_zero)
 
