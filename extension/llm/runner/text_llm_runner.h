@@ -119,8 +119,8 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       const std::string& prompt,
       ET_UNUSED int64_t start_pos,
       const GenerationConfig& config,
-      std::function<void(const std::string&)> token_callback,
-      std::function<void(const Stats&)> stats_callback) override {
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const Stats&)> stats_callback = {}) override {
     return generate(prompt, config, token_callback, stats_callback);
   }
 
