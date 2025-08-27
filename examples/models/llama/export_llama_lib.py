@@ -855,15 +855,15 @@ def _to_edge_and_lower_llama_xnnpack(
 
     # TODO: Enable generating ETRecord with XNNPack and to_edge_transform_and_lower().
     if generate_etrecord:
-        raise NotImplementedError(
-            "export_llama does not support XNNPack and generating ETRecord at the moment."
-        )
+        builder_exported.generate_etrecord = True
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
     )
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    # we need builder.export_program
 
     return builder.to_executorch(passes=additional_passes)
 
@@ -1078,6 +1078,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
 
             from executorch.exir.passes.external_constants_pass import (
                 delegate_external_constants_pass_unlifted,
+                external_constants_pass,
             )
 
             assert (
@@ -1086,6 +1087,11 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             delegate_external_constants_pass_unlifted(
                 module=builder_exported.pre_autograd_graph_module,
                 gen_tag_fn=gen_tag_fn,
+            )
+
+            # Also add a pass for 'to_executorch' to tag weights that aren't delegated.
+            additional_passes.append(
+                partial(external_constants_pass, gen_tag_fn=gen_tag_fn)
             )
 
         builder = _to_edge_and_lower_llama_xnnpack(
