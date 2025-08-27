@@ -30,7 +30,7 @@ if(WIN32)
   # CMAKE_C_SIMULATE_ID is set to MSVC, but CMAKE_CXX_SIMULATE_ID is not set.
   # To make sure the external project is configured correctly, set it explicitly
   # here.
-  set(_executorch_external_project_extra_cmake_args -DCMAKE_CXX_SIMULATE_ID=MSVC -DCMAKE_CXX_COMPILER="clang-cl")
+  set(_executorch_external_project_extra_cmake_args -DCMAKE_CXX_SIMULATE_ID=MSVC -DCMAKE_CXX_COMPILER="clang-cl.exe")
 else()
   set(_executorch_external_project_extra_cmake_args)
 endif()
