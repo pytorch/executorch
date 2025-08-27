@@ -855,15 +855,15 @@ def _to_edge_and_lower_llama_xnnpack(
 
     # TODO: Enable generating ETRecord with XNNPack and to_edge_transform_and_lower().
     if generate_etrecord:
-        raise NotImplementedError(
-            "export_llama does not support XNNPack and generating ETRecord at the moment."
-        )
+        builder_exported.generate_etrecord = True
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
     )
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    # we need builder.export_program
 
     return builder.to_executorch(passes=additional_passes)
 
