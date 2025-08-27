@@ -54,6 +54,7 @@ SCALAR_OPS = {
     aten.where.ScalarOther: TensorOpInfo(aten.where.self, False, True),
     aten.where.Scalar: TensorOpInfo(aten.where.self, False, True),
     aten.masked_fill.Scalar: TensorOpInfo(aten.masked_fill.Tensor, False, False),
+    aten.bitwise_xor.Scalar: TensorOpInfo(aten.bitwise_xor.Tensor, False, False),
 }
 
 
@@ -64,6 +65,7 @@ SKIP_LIFT_OPS = {
     aten.arange.default,
     aten.scalar_tensor.default,
     aten.elu.default,
+    aten.hardtanh.default,
 }
 
 
