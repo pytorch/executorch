@@ -18,7 +18,7 @@ function usage() {
     <command>           <argument>                 <description>
 
     --sdk                                      The path of downloaded ENN SDK, which is required for building.
-                                               Or export EXYNOS_AI_LITECORE_ROOT=/path/to/enn_sdk_xxx
+                                               Or export EXYNOS_AI_LITECORE_ROOT=/path/to/xxx
     --ndk                                      The path of Android NDK, or export ANDROID_NDK_ROOT=/path/to/ndk.
 
     --build, -b     [x86_64, android, all]     Default is all, x86_64 target to offline compilation,
@@ -34,14 +34,16 @@ function build_x86_64() {
     exit 1
   fi
 
-  echo EXYNOS_AI_LITECORE_ROOT: ${EXYNOS_AI_LITECORE_ROOT}
-  echo ANDROID_NDK_ROOT: ${ANDROID_NDK_ROOT}
+  echo "EXYNOS_AI_LITECORE_ROOT: ${EXYNOS_AI_LITECORE_ROOT}"
+  echo "ANDROID_NDK_ROOT: ${ANDROID_NDK_ROOT}"
 
   cmake \
         -DCMAKE_INSTALL_PREFIX=${X86_64_BUILD_DIR} \
         -DEXYNOS_AI_LITECORE_ROOT=${EXYNOS_AI_LITECORE_ROOT} \
-        -DEXECUTORCH_BUILD_ENN=ON \
+        -DEXECUTORCH_BUILD_SAMSUNG=ON \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+	      -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -S ${PROJECT_DIR} \
@@ -70,12 +72,15 @@ function build_android() {
         -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake" \
         -DANDROID_ABI="${ANDROID_ABI}" \
         -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_ENN=ON \
+        -DEXECUTORCH_BUILD_SAMSUNG=ON \
         -DEXYNOS_AI_LITECORE_ROOT=${EXYNOS_AI_LITECORE_ROOT} \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+	      -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_LOGGING=1 \
+        -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+        -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -S ${PROJECT_DIR} \
         -B ${ANDROID_BUILD_DIR}
 

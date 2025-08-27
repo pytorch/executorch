@@ -11,8 +11,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 get_filename_component(EXECUTORCH_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 
-if(NOT DEFINED EXYNOS_AI_LITECORE_PATH)
-	message(FATAL_ERROR "Please define EXYNOS_AI_LIRECORE_PATH by adding cmake parameter -DEXYNOS_AI_LITECORE_PATH=<...>")
+if(NOT DEFINED EXYNOS_AI_LITECORE_ROOT)
+	message(FATAL_ERROR "Please define EXYNOS_AI_LIRECORE_PATH by adding cmake parameter -DEXYNOS_AI_LITECORE_ROOT=<...>")
 endif()
 if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
 	message(FATAL_ERROR "IOS is not supported on Exynos.")
@@ -32,8 +32,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_definitions(-DNDEBUG)
 endif()
 
-include_directories(${EXECUTORCH_SOURCE_DIR}/..)
-include_directories(${EXYNOS_AI_LITECORE_PATH})
+include_directories(
+    ${EXECUTORCH_SOURCE_DIR}/..
+    ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
+    ${EXYNOS_AI_LITECORE_ROOT}
+)
+add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
 if(${ANDROID})
     find_library(android_log log)
@@ -50,10 +54,10 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     )
     add_library(PyEnnWrapperAdaptor MODULE)
 
-    find_library(GG_API_LIB NAMES graphgen_api HINTS ${EXYNOS_AI_LITECORE_PATH}/lib64/)
+    find_library(GG_API_LIB NAMES graphgen_api HINTS ${EXYNOS_AI_LITECORE_ROOT}/lib64/)
     add_library(graphgen_api SHARED IMPORTED GLOBAL)
     set_target_properties(graphgen_api PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${EXYNOS_AI_LITECORE_PATH}/include"
+        INTERFACE_INCLUDE_DIRECTORIES "${EXYNOS_AI_LITECORE_ROOT}/include"
         IMPORTED_LOCATION "${GG_API_LIB}"
     )
 
@@ -96,10 +100,10 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     # PyGraphWrapperAdaptor
     add_library(PyGraphWrapperAdaptor MODULE)
     #
-    find_library(GRAPH_WRAPPER_LIB NAMES graph_wrapper HINTS ${EXYNOS_AI_LITECORE_PATH}/lib64/)
+    find_library(GRAPH_WRAPPER_LIB NAMES graph_wrapper HINTS ${EXYNOS_AI_LITECORE_ROOT}/lib64/)
     add_library(graph_wrapper SHARED IMPORTED GLOBAL)
     set_target_properties(graph_wrapper PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES "${EXYNOS_AI_LITECORE_PATH}/include"
+            INTERFACE_INCLUDE_DIRECTORIES "${EXYNOS_AI_LITECORE_ROOT}/include"
             IMPORTED_LOCATION "${GRAPH_WRAPPER_LIB}"
     )
     set_target_properties(PyGraphWrapperAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden)
@@ -120,6 +124,7 @@ if(${ANDROID})
     add_library(enn_backend STATIC)
     target_link_libraries(enn_backend PRIVATE enn_logging)
     target_link_options_shared_lib(enn_backend)
+    target_compile_options(enn_backend PRIVATE -Wno-deprecated-declarations)
 
     set(__enn_executor_runner_srcs ${EXECUTORCH_SOURCE_DIR}/examples/samsung/executor_runner/enn_executor_runner.cpp)
     add_executable(enn_executor_runner ${__enn_executor_runner_srcs})

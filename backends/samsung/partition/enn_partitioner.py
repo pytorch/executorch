@@ -3,15 +3,18 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
+
+import executorch.backends.samsung.builders.node_visitor as node_visitor
 
 import executorch.backends.samsung.python.PyEnnWrapperAdaptor as PyEnnWrapper
 
 import torch
 from executorch.backends.samsung.enn_preprocess import EnnBackend
-
+from executorch.backends.samsung.serialization.compile_options import (
+    ENN_COMPILE_OPTION_TITLE,
+)
 from executorch.backends.samsung.utils.utils import get_compile_spec
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -23,8 +26,14 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data
+
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
+
+SUPPORTED_OPS = [
+    exir_ops.edge.aten.addmm.default,
+]
 
 
 class EnnOperatorSupport(OperatorSupportBase):
@@ -36,7 +45,10 @@ class EnnOperatorSupport(OperatorSupportBase):
     ):
         self.edge_program = edge_program
         self.enn_wrapper = PyEnnWrapper.EnnWrapper()
-        option_spec = get_compile_spec(compile_specs, "Exynos compile", required=True)
+        self.node_visitors = node_visitor.get_node_visitors(edge_program)
+        option_spec = get_compile_spec(
+            compile_specs, ENN_COMPILE_OPTION_TITLE, required=True
+        )
         self.enn_wrapper.Init(option_spec.value)
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
@@ -49,6 +61,9 @@ class EnnOperatorSupport(OperatorSupportBase):
             "output",
         ]:
             return False
+
+        if node.target in SUPPORTED_OPS or node.target.__name__ in self.node_visitors:
+            return True
 
         supported = self.enn_wrapper.IsNodeSupportedByBackend()
         return supported
@@ -67,7 +82,7 @@ class EnnPartitioner(Partitioner):
     def generate_partitions(
         self, edge_program: torch.export.ExportedProgram
     ) -> List[Any]:
-
+        self.op_support_checker = EnnOperatorSupport(edge_program, self.compile_specs)
         return generate_partitions_from_list_of_nodes(
             edge_program.graph_module,
             op_support=self.op_support_checker,

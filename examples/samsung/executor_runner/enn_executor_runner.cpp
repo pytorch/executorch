@@ -1,6 +1,7 @@
 /*
- *  Copyright (c) 2025 Samsung Electronics Co. LTD
- *  All rights reserved
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * Copyright (c) 2025 Samsung Electronics Co. LTD
+ * All rights reserved
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -265,9 +266,11 @@ int main(int argc, char** argv) {
   status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
 
-  for (size_t output_index = 0; output_index < method->outputs_size(); ++output_index) {
-	  // Save the results to given directory in order.
-       saveOutput(output_tensor, output_index);
+  for (size_t output_index = 0; output_index < method->outputs_size();
+       ++output_index) {
+    auto output_tensor = outputs[output_index].toTensor();
+    // Save the results to given directory in order.
+    saveOutput(output_tensor, output_index);
   }
 
   return 0;

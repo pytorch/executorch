@@ -15,6 +15,12 @@ from executorch.backends.samsung.serialization.compile_options import (
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 from executorch.backends.samsung.utils.utils import get_compile_spec
+from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
+from executorch.backends.transforms.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConvPass,
+)
+
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -40,12 +46,17 @@ class EnnBackend(BackendDetails):
         )
         enn_wrapper.Init(option_spec.value)
 
-        enn_preprocess_passes = PassManager(passes=[])
+        enn_preprocess_passes = PassManager(
+            passes=[
+                FuseBatchNormWithConvPass(edge_program),
+                AddmmToLinearTransform(),
+                RemoveGetItemPass(),
+            ]
+        )
         pass_result = enn_preprocess_passes(edge_program.graph_module)
         assert pass_result is not None
 
         enn_graph = EnnGraph()
-        enn_graph.init("UnknownName", "")
         # node visitors
         node_visitors = get_node_visitors(edge_program)
 
@@ -71,7 +82,6 @@ class EnnBackend(BackendDetails):
                 raise RuntimeError(f"{node.op}" " is not supported in ENN Delegate")
 
         # Compile Graph
-        enn_wrapper.Destroy()
         enn_graph.finish()
         ser_buf = enn_graph.serialize()
         enn_context_binary = enn_wrapper.Compile(ser_buf)
