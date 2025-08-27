@@ -22,20 +22,35 @@ from torch.export import Dim, export, ExportedProgram
 
 
 class WhisperAudioProcessor(nn.Module):
-    """
+    r"""
     Computes Mel spectrograms from mono audio input.
     Same as HuggingFace WhisperFeatureExtractor, but implemented in PyTorch
+
+    Args:
+        feature_size (`int`, defaults to 80):
+            The feature dimension of the extracted features.
+        sampling_rate (`int`, defaults to 16000):
+            The sampling rate at which the audio files should be digitalized expressed in hertz (Hz).
+        hop_length (`int`, defaults to 160):
+            Length of the overlaping windows for the STFT used to obtain the Mel Frequency coefficients.
+        chunk_length (`int`, defaults to 30):
+            The maximum number of chuncks of `sampling_rate` samples used to trim and pad longer or shorter audio
+            sequences.
+        n_fft (`int`, defaults to 400):
+            Size of the Fourier transform.
+        padding_value (`float`, *optional*, defaults to 0.0):
+            Padding value used to pad the audio. Should correspond to silences.
     """
 
     def __init__(
         self,
-        feature_size=80,
-        sampling_rate=16000,
-        hop_length=160,
-        chunk_length=30,
-        n_fft=400,
-        padding_value=0.0,
-    ):
+        feature_size: int = 80,
+        sampling_rate: int = 16000,
+        hop_length: int = 160,
+        chunk_length: int = 30,
+        n_fft: int = 400,
+        padding_value: float = 0.0,
+    ) -> None:
         super().__init__()
         self.feature_size = feature_size
         self.sampling_rate = sampling_rate
@@ -51,7 +66,9 @@ class WhisperAudioProcessor(nn.Module):
             sampling_rate, n_fft, n_mels=feature_size
         )
 
-    def get_mel_filters(self, sr, n_fft, n_mels=128, dtype=torch.float32):
+    def get_mel_filters(
+        self, sr: int, n_fft: int, n_mels: int = 128, dtype: torch.dtype = torch.float32
+    ) -> torch.Tensor:
         # Initialize the weights
         n_mels = int(n_mels)
         weights = torch.zeros((n_mels, int(1 + n_fft // 2)), dtype=dtype)
@@ -97,18 +114,32 @@ class WhisperAudioProcessor(nn.Module):
             )
 
         # Slaney-style mel is scaled to be approx constant energy per channel
-        enorm = 2.0 / (mel_f[2 : n_mels + 2] - mel_f[:n_mels])
-        weights *= enorm[:, None]
+        enorm = 2.0 / (mel_f[2 : n_mels + 2] - mel_f[:n_mels])  # pyre-ignore[58]
+        weights *= enorm[:, None]  # pyre-ignore[16]
 
         return weights
 
-    def forward(self, waveform):
+    def forward(self, waveform: torch.Tensor) -> torch.Tensor:
+        r"""
+        Args:
+            waveform (`torch.Tensor`): Mono waveform input, tensor of (dynamic) shape [num_samples],
+
+        Returns:
+            torch.Tensor: Output of shape [1, feature_size, nb_max_frames * n_chunks]
+            n_chunks is the number of chunks of `sampling_rate` samples in the input waveform.
+            [1, 80, 3000] with default options and 1 chunk
+        """
+        n_chunks = (waveform.shape[0] - 1) // self.n_samples + 1
         waveform = F.pad(
             waveform,
-            (0, self.n_samples - waveform.shape[0] - 1),
+            (0, self.n_samples * n_chunks - waveform.shape[0]),
             mode="constant",
-            value=0,
+            value=self.padding_value,
         )
+        # Ideally we should do:
+        # window = torch.hann_window(self.n_fft)
+        # but this is not currently supported when lowering.
+        # torch.hann_window has slightly better numerics (worst discrepancy is <1e-5 instead of 1e-4)
         window = 0.5 * (
             1
             - torch.cos(
@@ -118,10 +149,6 @@ class WhisperAudioProcessor(nn.Module):
                 / self.n_fft
             )
         )
-        # Ideally we should do instead
-        # window = torch.hann_window(self.n_fft)
-        # but this is not currently supported when lowering
-        # torch.hann_window has slightly better numerics (worst discrepancy is <1e-5 instead of 1e-4)
         stft = torch.stft(
             waveform,
             n_fft=self.n_fft,
@@ -130,7 +157,7 @@ class WhisperAudioProcessor(nn.Module):
             center=True,
             return_complex=True,
         )
-        magnitudes = torch.abs(stft) ** 2
+        magnitudes = torch.abs(stft)[..., :-1] ** 2  # pyre-ignore[58]
 
         mel_spec = self.mel_filters @ magnitudes
 
@@ -146,8 +173,7 @@ def export_processor():
     audio_tensor = torch.randn(480000)
     chunk_tensor = audio_tensor[:93680]
     with torch.no_grad():
-        # export. What is the min of waveforms?
-        dim = Dim("waveform", min=1600, max=audio_tensor.size(0))
+        dim = Dim("waveform", min=1600, max=audio_tensor.size(0) * 10)  # 10 chunks max
         ep: ExportedProgram = export(
             model, (chunk_tensor,), dynamic_shapes={"waveform": {0: dim}}, strict=True
         )

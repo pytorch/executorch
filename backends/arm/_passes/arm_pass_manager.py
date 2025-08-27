@@ -10,7 +10,6 @@
 import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AddBiasPass,
-    AnnotateChannelsLastDimOrder,
     AnnotateDecomposedMatmulPass,
     BroadcastArgsPass,
     CastBoolToInt8Pass,
@@ -84,6 +83,7 @@ from executorch.backends.arm._passes import (
     RetraceFoldedDtypesPass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
+    ToTosaMemoryFormatPass,
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
@@ -162,7 +162,7 @@ class ArmPassManager(PassManager):
 
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
-        self.add_pass(AnnotateChannelsLastDimOrder())
+        self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(InsertRescalePass())
 
         return self._transform(exported_program.graph_module)
@@ -241,7 +241,7 @@ class ArmPassManager(PassManager):
         self.add_pass(AddBiasPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
-        self.add_pass(AnnotateChannelsLastDimOrder())
+        self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(InsertRescalePass())
 
         return self._transform(exported_program.graph_module)
