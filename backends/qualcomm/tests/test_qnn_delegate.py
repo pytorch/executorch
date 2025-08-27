@@ -5552,13 +5552,13 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 50)
                 self.assertGreaterEqual(msg["top_5"], 85)
 
-    def test_mobilevit1(self):
+    def test_mobilevit_v1(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
 
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/mobilevit1.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/mobilevit_v1.py",
             "--dataset",
             self.image_dataset,
             "--artifact",
