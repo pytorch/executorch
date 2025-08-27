@@ -221,7 +221,7 @@ def get_ov_quantizer(
 ):
     try:
         from executorch.backends.openvino.quantizer import OpenVINOQuantizer, QuantizationMode
-
+        import nncf
     except ImportError:
         raise ImportError(
             "Please install nncf via backends/openvino/requirements.txt"
@@ -234,8 +234,7 @@ def get_ov_quantizer(
     assert group_size != None, "Group Size None is Not Supported. It should be set to -1 for per-channel."
 
     # Manually ignore MP layers.
-    fp_node_names = linear_list = [
-        "embedding", # First embedding is kept in Full precision
+    fp_node_names = [
         "linear_14",
         "linear_15",
         "linear_35",
@@ -262,8 +261,7 @@ def get_ov_quantizer(
         "linear_105",
         "linear_106",
         "linear_109",
-        "linear_110",
-        "linear_112",]
+        "linear_110",]
 
     if quant_config == "8da4w":
         mode = QuantizationMode.INT4WO_SYM

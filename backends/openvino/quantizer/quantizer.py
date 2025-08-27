@@ -116,8 +116,14 @@ class OpenVINOQuantizer(Quantizer):
                 ),  # Mode value has to match NNCF CompressWeightsMode
                 **kwargs,
             )
+            subset_size = 1 # Doesn't really matter in this case since it is data-free. Should just be +ve
+            dataset = None # Only Data Free Quantization is Supported in OVQuantizer
+            compression_format = nncf.CompressionFormat.DQ
+            nncf.quantization.algorithms.weight_compression.algorithm.check_user_compression_configuration(
+                subset_size=subset_size, dataset=dataset, compression_format=compression_format, **weight_compression_configuration
+                )
             self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
-                subset_size=None, **weight_compression_configuration
+                subset_size=subset_size, **weight_compression_configuration
             )
 
     def set_ignored_scope(
@@ -176,21 +182,20 @@ class OpenVINOQuantizer(Quantizer):
         :return: Updated mapping of FX nodes with weight compression annotations.
         """
         self._algo.set_backend_entity(model)
-        nodes_to_compress = self._algo.get_nodes_to_compress(nncf_graph)
-        ignored_names = self._algo.get_ignored_node_names(nncf_graph)
+        all_wc_params, _ = self._algo.get_processed_weight_compression_parameters(model, nncf_graph)
 
-        for node in nodes_to_compress:
-            is_target_node = should_consider_scope(node.node_name, ignored_names)
-            if not is_target_node:
-                continue
+        for wc_param in all_wc_params:
+            wc_config = wc_param.compression_config
+            node_with_weight = wc_param.node_with_weight
             target_node = nncf_fx.node_utils.get_graph_node_by_name(
-                graph, node.node_name
+                graph, node_with_weight.node_name
             )
             annotation = node_vs_torch_annotation[target_node]
             edge_or_node = OpenVINOQuantizer._get_weight_edge(target_node, nncf_graph)
-            group_size = getattr(self._algo, "_group_size", -1)
+            group_size = wc_config.group_size
+            qmode = wc_config.mode
             qspec = self._get_torch_ao_qspec_from_nncf_config(
-                qp=None, group_size=group_size, qmode=self.mode, weights_only=True
+                qp=None, group_size=group_size, qmode=qmode, weights_only=True
             )
             self._fill_torch_ao_annotation(edge_or_node, qspec, annotation)
 
