@@ -463,6 +463,11 @@ def annotate_sin(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.floor_divide.default])
+def annotate_floor_divide(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.scalar_tensor.default])
 def annotate_scalar_tensor(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
@@ -626,6 +631,11 @@ def annotate_softmax(node: Node, quantization_config: QuantizationConfig) -> Non
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.asin.default])
+def annotate_asin(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.linalg_vector_norm.default])
 def annotate_linalg_vector_norm(
     node: Node, quantization_config: QuantizationConfig
@@ -655,6 +665,11 @@ def annotate_reshape(node: Node, quantization_config: QuantizationConfig) -> Non
 
 @register_annotator([torch.ops.aten.select.int])
 def annotate_select(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.sign.default])
+def annotate_sign(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
@@ -799,6 +814,11 @@ def annotate_and(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.bitwise_or.Tensor, torch.ops.aten.__or__.Tensor])
 def annotate_bitwise_or(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.bitwise_xor.Tensor, torch.ops.aten.__xor__.Tensor])
+def annotate_xor(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 

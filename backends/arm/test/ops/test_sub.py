@@ -31,8 +31,6 @@ sub_test_data = {
     "zeros": lambda: (torch.zeros(10),),
 }
 
-fvp_sub_xfails = {"rand_4D_2x3x4x5": "MLETORCH-517 : Multiple batches not supported"}
-
 # Two-input subtraction (x - y)
 sub2_test_data = {
     "rand_2D_4x4": lambda: (torch.rand(4, 4), torch.rand(4, 4)),
@@ -46,7 +44,6 @@ sub2_test_data = {
     "rand_3d_rand_Scalar": lambda: (torch.rand(1, 6, 2), torch.rand(1)),
     "rand_3d_Scalar": lambda: (torch.rand(1, 6, 2), 1),
 }
-fvp_sub2_xfails = {"rand_4D_2x2x4x4": "MLETORCH-517 : Multiple batches not supported"}
 
 
 class Sub(torch.nn.Module):
@@ -111,7 +108,7 @@ def test_sub_tensor_tosa_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub_test_data, fvp_sub_xfails)
+@common.parametrize("test_data", sub_test_data)
 @common.XfailIfNoCorstone300
 def test_sub_tensor_u55_INT(test_data):
     """Test Subtraction on Ethos-U55 (FVP Mode)"""
@@ -125,7 +122,7 @@ def test_sub_tensor_u55_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub2_test_data, fvp_sub2_xfails)
+@common.parametrize("test_data", sub2_test_data)
 @common.XfailIfNoCorstone300
 def test_sub_tensor_u55_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction on Ethos-U55 (FVP Mode)"""
@@ -139,7 +136,7 @@ def test_sub_tensor_u55_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub_test_data, fvp_sub_xfails)
+@common.parametrize("test_data", sub_test_data)
 @common.XfailIfNoCorstone320
 def test_sub_tensor_u85_INT_2(test_data):
     """Test Subtraction on Ethos-U85 (FVP Mode)"""
@@ -153,7 +150,7 @@ def test_sub_tensor_u85_INT_2(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", sub2_test_data, fvp_sub2_xfails)
+@common.parametrize("test_data", sub2_test_data)
 @common.XfailIfNoCorstone320
 def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction on Ethos-U85 (FVP Mode)"""
