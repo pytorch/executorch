@@ -578,6 +578,7 @@ endif()
 
 if(EXECUTORCH_BUILD_SAMSUNG)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/samsung)
+  list(APPEND _executorch_backends enn_backend)
 endif()
 
 if(EXECUTORCH_BUILD_XNNPACK)
