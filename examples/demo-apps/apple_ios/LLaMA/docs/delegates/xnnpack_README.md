@@ -51,7 +51,7 @@ In this demo app, we support text-only inference with up-to-date Llama models an
 Meta has released prequantized INT4 SpinQuant Llama 3.2 models that ExecuTorch supports on the XNNPACK backend.
 * Export Llama model and generate .pte file as below:
 ```
-python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -d fp32 --xnnpack-extended-ops --preq_mode 8da4w_output_8da8w --preq_group_size 32 --max_seq_length 2048 --max_context_length 2048 --preq_embedding_quantize 8,0 --use_spin_quant native --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name "llama3_2_spinquant.pte"
+python -m extension.llm.export.export_llm base.model_class="llama3_2" base.checkpoint=<path-to-your-checkpoint.pth> base.params=<path-to-your-params.json> model.use_kv_cache=True model.use_sdpa_with_kv_cache=True backend.xnnpack.enabled=True model.dtype_override="fp32" backend.xnnpack.extended_ops=True base.preq_mode="preq_8da4w_out_8da8w" base.preq_group_size=32 export.max_seq_length=2048 export.max_context_length=2048 base.preq_embedding_quantize=\'8,0\' quantization.use_spin_quant="native" base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="llama3_2_spinquant.pte"
 ```
 For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
 
@@ -59,7 +59,7 @@ For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co
 Meta has released prequantized INT4 QAT+LoRA Llama 3.2 models that ExecuTorch supports on the XNNPACK backend.
 * Export Llama model and generate .pte file as below:
 ```
-python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -qat -lora 16 -kv --use_sdpa_with_kv_cache -X -d fp32 --xnnpack-extended-ops --preq_mode 8da4w_output_8da8w --preq_group_size 32 --max_seq_length 2048 --max_context_length 2048 --preq_embedding_quantize 8,0 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name "llama3_2_qat_lora.pte"
+python -m extension.llm.export.export_llm base.model_class="llama3_2" base.checkpoint=<path-to-your-checkpoint.pth> base.params=<path-to-your-params.json> quantization.use_qat=True base.use_lora=16 model.use_kv_cache=True model.use_sdpa_with_kv_cache=True backend.xnnpack.enabled=True model.dtype_override="fp32" backend.xnnpack.extended_ops=True base.preq_mode="preq_8da4w_out_8da8w" base.preq_group_size=32 export.max_seq_length=2048 export.max_context_length=2048 base.preq_embedding_quantize=\'8,0\' base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="llama3_2_qat_lora.pte"
 ```
 For convenience, an [exported ExecuTorch QAT+LoRA model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb).
 
@@ -69,7 +69,7 @@ We have supported BF16 as a data type on the XNNPACK backend for Llama 3.2 1B/3B
 * Export Llama model and generate .pte file as below:
 
 ```
-python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -d bf16 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama3_2_bf16.pte"
+python -m extension.llm.export.export_llm base.model_class="llama3_2" base.checkpoint=<path-to-your-checkpoint.pth> base.params=<path-to-your-params.json> model.use_kv_cache=True model.use_sdpa_with_kv_cache=True backend.xnnpack.enabled=True model.dtype_override="bf16" base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="llama3_2_bf16.pte"
 ```
 For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
 
@@ -79,13 +79,13 @@ For more detail using Llama 3.2 lightweight models including prompt template, pl
 
 Export the model
 ```
-python -m examples.models.llama.export_llama --checkpoint <path-to-your-checkpoint.pth> -p <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
+python -m extension.llm.export.export_llm base.checkpoint=<path-to-your-checkpoint.pth> base.params=<path-to-your-params.json> model.use_kv_cache=True model.use_sdpa_with_kv_cache=True backend.xnnpack.enabled=True quantization.qmode="8da4w" quantization.group_size=128 model.dtype_override="fp32" base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' quantization.embedding_quantize=\'4,32\' export.output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
 ```
 
 ### For LLaVA model
 * For the Llava 1.5 model, you can get it from Huggingface [here](https://huggingface.co/llava-hf/llava-1.5-7b-hf).
 * Run `examples/models/llava/install_requirements.sh` to install dependencies.
-* Run the following command to generate llava.pte, tokenizer.bin and an image tensor (serialized in TorchScript) image.pt.
+* Run the following command to generate llava.pte, tokenizer.bin and download an image basketball.jpg.
 
 ```
 python -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts
@@ -127,7 +127,7 @@ Go to Project Navigator, click on LLaMA. `Project --> LLaMA --> Package Dependen
 
 Note: You should only use this step if the prebuilt package doesn't work for your usecase (For example, you require the latest PRs from main, where there are no pre-built package yet)
 
-If you need to manually build the package, run the following command in your terminal
+If you need to manually build the package, run the following command in your terminal:
 ```
 # Install a compatible version of Buck2
 BUCK2_RELEASE_DATE="2024-12-16"
@@ -138,7 +138,7 @@ curl -LO "https://github.com/facebook/buck2/releases/download/${BUCK2_RELEASE_DA
 zstd -cdq "$BUCK2_ARCHIVE" > "$BUCK2" && chmod +x "$BUCK2"
 rm "$BUCK2_ARCHIVE"
 
-./scripts/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --coreml --custom --mps --optimized --portable --quantized --xnnpack
+./scripts/build_apple_frameworks.sh
 ```
 
  After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory. Copy them to your project and link them against your targets.
@@ -147,7 +147,7 @@ The following packages should be linked in your app target `LLaMA` (left side, L
 - backend_coreml
 - backend_mps
 - backend_xnnpack
-- kernels_custom
+- kernels_llm
 - kernels_optimized
 - kernels_portable
 - kernels_quantized

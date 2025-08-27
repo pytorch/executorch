@@ -22,24 +22,19 @@ typedef NS_ENUM(uint32_t, ExecuTorchValueTag) {
   ExecuTorchValueTagDouble,
   ExecuTorchValueTagInteger,
   ExecuTorchValueTagBoolean,
-  ExecuTorchValueTagBooleanList,
-  ExecuTorchValueTagDoubleList,
-  ExecuTorchValueTagIntegerList,
-  ExecuTorchValueTagTensorList,
-  ExecuTorchValueTagScalarList,
-  ExecuTorchValueTagOptionalTensorList,
 } NS_SWIFT_NAME(ValueTag);
 
 typedef NSNumber *ExecuTorchScalarValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(ScalarValue);
 typedef NSString *ExecuTorchStringValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(StringValue);
-typedef BOOL ExecuTorchBooleanValue
-    NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(BoolValue);
+typedef BOOL ExecuTorchBooleanValue NS_SWIFT_NAME(BoolValue);
 typedef NSInteger ExecuTorchIntegerValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(IntegerValue);
 typedef double ExecuTorchDoubleValue
     NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(DoubleValue);
+typedef float ExecuTorchFloatValue
+    NS_SWIFT_BRIDGED_TYPEDEF NS_SWIFT_NAME(FloatValue);
 
 /**
  * A dynamic value type used by ExecuTorch.
@@ -49,7 +44,8 @@ typedef double ExecuTorchDoubleValue
  */
 NS_SWIFT_NAME(Value)
 __attribute__((deprecated("This API is experimental.")))
-@interface ExecuTorchValue : NSObject
+__attribute__((objc_subclassing_restricted))
+@interface ExecuTorchValue : NSObject <NSCopying>
 
 /**
  * The tag that indicates the dynamic type of the value.
@@ -63,7 +59,7 @@ __attribute__((deprecated("This API is experimental.")))
  *
  * @return A Tensor instance or nil.
  */
-@property(nullable, nonatomic, readonly) ExecuTorchTensor *tensorValue NS_SWIFT_NAME(tensor);
+@property(nullable, nonatomic, readonly) ExecuTorchTensor *tensorValue NS_REFINED_FOR_SWIFT;
 
 /**
  * The string value if the tag is ExecuTorchValueTagString.
@@ -99,6 +95,13 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A double representing the double value.
  */
 @property(nonatomic, readonly) ExecuTorchDoubleValue doubleValue NS_SWIFT_NAME(double);
+
+/**
+ * The float value if the tag is ExecuTorchValueTagDouble.
+ *
+ * @return An float representing the float value.
+ */
+@property(nonatomic, readonly) ExecuTorchFloatValue floatValue NS_SWIFT_NAME(float);
 
 /**
  * Returns YES if the value is of type None.
@@ -150,12 +153,24 @@ __attribute__((deprecated("This API is experimental.")))
 @property(nonatomic, readonly) BOOL isDouble;
 
 /**
+ * Returns YES if the value's tag is Double.
+ *
+ * Note: Since float values are stored with a Double tag, this property will
+ * also be YES for values created from floats.
+ *
+ * @return A BOOL indicating whether the value is a float.
+ */
+@property(nonatomic, readonly) BOOL isFloat;
+
+/**
  * Creates an instance encapsulating a Tensor.
  *
  * @param value An ExecuTorchTensor instance.
  * @return A new ExecuTorchValue instance with a tag of ExecuTorchValueTagTensor.
  */
-+ (instancetype)valueWithTensor:(ExecuTorchTensor *)value NS_SWIFT_NAME(init(_:));
++ (instancetype)valueWithTensor:(ExecuTorchTensor *)value
+    NS_SWIFT_NAME(init(_:))
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates an instance encapsulating a string.
@@ -164,7 +179,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A new ExecuTorchValue instance with a tag of ExecuTorchValueTagString.
  */
 + (instancetype)valueWithString:(ExecuTorchStringValue)value
-    NS_SWIFT_NAME(init(_:));
+    NS_SWIFT_NAME(init(_:))
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates an instance encapsulating a boolean.
@@ -173,7 +189,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A new ExecuTorchValue instance with a tag of ExecuTorchValueTagBoolean.
  */
 + (instancetype)valueWithBoolean:(ExecuTorchBooleanValue)value
-    NS_SWIFT_NAME(init(_:));
+    NS_SWIFT_NAME(init(_:))
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates an instance encapsulating an integer.
@@ -182,7 +199,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A new ExecuTorchValue instance with a tag of ExecuTorchValueTagInteger.
  */
 + (instancetype)valueWithInteger:(ExecuTorchIntegerValue)value
-    NS_SWIFT_NAME(init(_:));
+    NS_SWIFT_NAME(init(_:))
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates an instance encapsulating a double value.
@@ -191,8 +209,40 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A new ExecuTorchValue instance with a tag of ExecuTorchValueTagDouble.
  */
 + (instancetype)valueWithDouble:(ExecuTorchDoubleValue)value
-    NS_SWIFT_NAME(init(_:));
+    NS_SWIFT_NAME(init(_:))
+    NS_RETURNS_RETAINED;
 
+/**
+ * Creates an instance encapsulating a float value.
+ *
+ * Note: The underlying value will be stored with a tag of
+ * ExecuTorchValueTagDouble, as there is no distinct float tag.
+ *
+ * @param value A float value.
+ * @return A new ExecuTorchValue instance with a tag of ExecuTorchValueTagDouble.
+ */
+ + (instancetype)valueWithFloat:(ExecuTorchFloatValue)value
+     NS_SWIFT_NAME(init(_:))
+     NS_RETURNS_RETAINED;
+
+/**
+ * Creates an instance encapsulating a scalar value.
+ *
+ * The value's tag will be set according to the type encoding of the ExecuTorchScalarValue.
+ *
+ * @param value An ExecuTorchScalarValue.
+ * @return A new ExecuTorchValue instance with the appropriate tag.
+ */
++ (instancetype)valueWithScalar:(ExecuTorchScalarValue)value
+    NS_SWIFT_NAME(init(_:))
+    NS_RETURNS_RETAINED;
+
+/**
+ * Returns a copy of the value.
+ *
+ * @return A new ExecuTorchValue instance that is a duplicate of the current value.
+ */
+ - (instancetype)copy;
 
 /**
  * Determines whether the current Value is equal to another Value.

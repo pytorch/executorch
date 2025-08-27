@@ -20,8 +20,8 @@ from executorch.exir.passes.quantize_io_pass import (
     QuantizeOutputs,
 )
 from executorch.exir.tensor import get_scalar_type
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.testing import FileCheck
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 op_str = {
     "q": "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",

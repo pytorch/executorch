@@ -10,8 +10,8 @@ package org.pytorch.executorch.extension.llm;
 
 import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
-import com.facebook.soloader.nativeloader.NativeLoader;
-import com.facebook.soloader.nativeloader.SystemDelegate;
+import java.io.File;
+import org.pytorch.executorch.ExecuTorchRuntime;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -26,13 +26,6 @@ public class LlmModule {
   public static final int MODEL_TYPE_TEXT = 1;
   public static final int MODEL_TYPE_TEXT_VISION = 2;
 
-  static {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
-    }
-    NativeLoader.loadLibrary("executorch");
-  }
-
   private final HybridData mHybridData;
   private static final int DEFAULT_SEQ_LEN = 128;
   private static final boolean DEFAULT_ECHO = true;
@@ -41,9 +34,28 @@ public class LlmModule {
   private static native HybridData initHybrid(
       int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath);
 
+  /**
+   * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
+   * data path.
+   */
+  public LlmModule(
+      int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
+    ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
+
+    File modelFile = new File(modulePath);
+    if (!modelFile.canRead() || !modelFile.isFile()) {
+      throw new RuntimeException("Cannot load model path " + modulePath);
+    }
+    File tokenizerFile = new File(tokenizerPath);
+    if (!tokenizerFile.canRead() || !tokenizerFile.isFile()) {
+      throw new RuntimeException("Cannot load tokenizer path " + tokenizerPath);
+    }
+    mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, dataPath);
+  }
+
   /** Constructs a LLM Module for a model with given model path, tokenizer, temperature. */
   public LlmModule(String modulePath, String tokenizerPath, float temperature) {
-    mHybridData = initHybrid(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, null);
+    this(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, null);
   }
 
   /**
@@ -51,23 +63,22 @@ public class LlmModule {
    * path.
    */
   public LlmModule(String modulePath, String tokenizerPath, float temperature, String dataPath) {
-    mHybridData = initHybrid(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, dataPath);
+    this(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature, dataPath);
   }
 
   /** Constructs a LLM Module for a model with given path, tokenizer, and temperature. */
   public LlmModule(int modelType, String modulePath, String tokenizerPath, float temperature) {
-    mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, null);
+    this(modelType, modulePath, tokenizerPath, temperature, null);
   }
 
   /** Constructs a LLM Module for a model with the given LlmModuleConfig */
   public LlmModule(LlmModuleConfig config) {
-    mHybridData =
-        initHybrid(
-            config.getModelType(),
-            config.getModulePath(),
-            config.getTokenizerPath(),
-            config.getTemperature(),
-            config.getDataPath());
+    this(
+        config.getModelType(),
+        config.getModulePath(),
+        config.getTokenizerPath(),
+        config.getTemperature(),
+        config.getDataPath());
   }
 
   public void resetNative() {

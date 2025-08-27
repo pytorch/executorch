@@ -10,29 +10,50 @@
 // processing logic.
 #pragma once
 
+#include <executorch/examples/models/llava/runner/llava_image_prefiller.h>
+#include <executorch/extension/llm/runner/image.h>
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
+#include <executorch/extension/llm/runner/irunner.h>
+#include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/runner/text_decoder_runner.h>
+#include <executorch/extension/llm/runner/text_prefiller.h>
+#include <executorch/extension/llm/runner/text_token_generator.h>
+#include <executorch/extension/module/module.h>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
-#include <type_traits>
-#include <unordered_map>
-
-#include <executorch/extension/llm/runner/multimodal_runner.h>
 
 namespace example {
 
-class ET_EXPERIMENTAL LlavaRunner
-    : public ::executorch::extension::llm::MultimodalRunner {
+using executorch::extension::Module;
+using executorch::extension::llm::ImagePrefiller;
+using executorch::extension::llm::IOManager;
+using executorch::extension::llm::Stats;
+using executorch::extension::llm::TextDecoderRunner;
+using executorch::extension::llm::TextPrefiller;
+using executorch::extension::llm::TextTokenGenerator;
+
+class ET_EXPERIMENTAL LlavaRunner {
  public:
   explicit LlavaRunner(
       const std::string& model_path,
       const std::string& tokenizer_path,
       const float temperature = 0.8f)
-      : MultimodalRunner(model_path, tokenizer_path, temperature){};
+      : temperature_(temperature),
+        module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
+        io_manager_(std::make_unique<IOManager>(*module_)),
+        tokenizer_path_(tokenizer_path) {
+    ET_LOG(
+        Info,
+        "Creating Llava runner: model_path=%s, tokenizer_path=%s",
+        model_path.c_str(),
+        tokenizer_path.c_str());
+  }
 
-  bool is_loaded() override;
+  bool is_loaded();
 
-  ::executorch::runtime::Error load() override;
+  ::executorch::runtime::Error load();
 
   ::executorch::runtime::Error generate(
       std::vector<::executorch::extension::llm::Image> images,
@@ -41,17 +62,17 @@ class ET_EXPERIMENTAL LlavaRunner
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const ::executorch::extension::llm::Stats&)>
           stats_callback = {},
-      bool echo = true) override;
+      bool echo = true);
 
   ::executorch::runtime::Error prefill_images(
       std::vector<::executorch::extension::llm::Image>& images,
-      int64_t& start_pos) override;
+      int64_t& start_pos);
 
   ::executorch::runtime::Result<uint64_t> prefill_prompt(
       const std::string& prompt,
       int64_t& start_pos,
       int8_t bos = 0,
-      int8_t eos = 0) override;
+      int8_t eos = 0);
 
   ::executorch::runtime::Error generate_from_pos(
       const std::string& prompt,
@@ -60,10 +81,31 @@ class ET_EXPERIMENTAL LlavaRunner
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const ::executorch::extension::llm::Stats&)>
           stats_callback = {},
-      bool echo = true) override;
+      bool echo = true);
+
+  inline void stop() {
+    text_token_generator_->stop();
+  }
 
  private:
-  inline static const std::string kPresetPrompt =
+  // metadata
+  float temperature_;
+
+  // model
+  std::unordered_set<std::string> model_methods_;
+  std::unique_ptr<Module> module_;
+  std::unique_ptr<TextDecoderRunner> text_decoder_runner_;
+  std::unique_ptr<TextPrefiller> text_prefiller_;
+  std::unique_ptr<LlavaImagePrefiller> image_prefiller_;
+  std::unique_ptr<IOManager> io_manager_;
+  std::unique_ptr<TextTokenGenerator> text_token_generator_;
+  std::string tokenizer_path_;
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
+
+  // stats
+  Stats stats_;
+
+  inline static const char* kPresetPrompt =
       "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: ";
 };
 

@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import logging
 import os
 import re
 from multiprocessing.connection import Client
@@ -55,12 +56,6 @@ class SrDataset(Dataset):
     def _resize_img(self, file: str, scale: int):
         with Image.open(file) as img:
             return to_tensor(img.resize(tuple(self.input_size * scale))).unsqueeze(0)
-
-    def get_input_list(self):
-        input_list = ""
-        for i in range(len(self.lr)):
-            input_list += f"input_{i}_0.raw\n"
-        return input_list
 
 
 def get_b100(
@@ -113,14 +108,17 @@ def main(args):
         )
 
     instance = EdsrModel()
-    if args.compile_only:
+    if args.ci:
         inputs = instance.get_example_inputs()
+        logging.warning(
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
+        )
     else:
         dataset = get_dataset(
             args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
         )
 
-        inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
+        inputs, targets = dataset.lr, dataset.hr
 
     pte_filename = "edsr_qnn_q8"
     build_executorch_binary(
@@ -148,7 +146,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data

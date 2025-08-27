@@ -12,9 +12,6 @@ import torch
 
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
-from executorch.backends.xnnpack._passes.tag_implicit_q_dq_pass import (
-    TagImplicitQDqPass,
-)
 from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
@@ -136,7 +133,6 @@ class XnnpackBackend(BackendDetails):
         for spec in compile_specs:
             if spec.key == "dqlinear_partitioner":
                 passes.append(ConvertToLinearPass)
-                passes.append(TagImplicitQDqPass)
 
         passes = passes if len(passes) > 0 else None
         # XNNPACK Delegate Specific Passes
@@ -144,9 +140,6 @@ class XnnpackBackend(BackendDetails):
         graph_module = ep.graph_module
 
         node_to_external_map = generate_node_to_external_map(ep, graph_module)
-
-        # Make sure all inputs are contiguous_format or NCHW or default dim order
-        assert_default_dim_order(graph_module)
 
         # TODO retrace the graph module to lift the new params may have
         # been added to the graph in passes

@@ -15,9 +15,9 @@
 
 #include <gtest/gtest.h>
 
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 

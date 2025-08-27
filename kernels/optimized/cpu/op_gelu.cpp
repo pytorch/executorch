@@ -8,7 +8,6 @@
 
 #ifdef __aarch64__
 #include <arm_neon.h>
-#include <sleef.h>
 #endif
 
 #include <cmath>
@@ -24,7 +23,7 @@ namespace native {
 
 using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
-using string_view = executorch::aten::string_view;
+using string_view = std::string_view;
 
 namespace {
 

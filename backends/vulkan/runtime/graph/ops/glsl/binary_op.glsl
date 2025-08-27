@@ -10,28 +10,46 @@
 
 #define PRECISION ${PRECISION}
 
+// Binary comparison ops require that the output is boolean and not the same as input.
+$IS_COMPARISON_OP = (any([name in VARIANT_NAME for name in ["binary_eq",  "binary_lt", "binary_le", "binary_gt", "binary_ge"]]))
+
+#define NAME ${VARIANT_NAME}
+
 #define VEC4_T ${texel_type(DTYPE)}
-#define T ${buffer_scalar_type(DTYPE)}
+$if IS_COMPARISON_OP:
+  #define T ${buffer_scalar_type("uint8")}
+  #define VEC4_OUT_T ${texel_type("uint8")}
+$else:
+  #define T ${buffer_scalar_type(DTYPE)}
+  #define VEC4_OUT_T VEC4_T
 
 #define op(X, Y, A) ${OPERATOR}
 
 ${define_active_storage_type(STORAGE)}
 ${define_required_extensions(DTYPE)}
 
+
+$if IS_COMPARISON_OP:
+  ${define_required_extensions("uint8")}
+
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+#include "indexing.glslh"
+
+$if IS_COMPARISON_OP:
+  ${layout_declare_tensor(B, "w", "t_out", "uint8", STORAGE)}
+$else:
+  ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_other", DTYPE, STORAGE)}
 
 $if STORAGE == "buffer":
+  ${layout_declare_ubo(B, "BufferMetadata", "outp")}
+  ${layout_declare_ubo(B, "BufferMetadata", "inp")}
+  ${layout_declare_ubo(B, "BufferMetadata", "other")}
+
   layout(push_constant) uniform restrict Block {
-    ivec4 in_sizes;
-    ivec4 other_sizes;
-    ivec4 out_strides;
-    ivec4 in_strides;
-    ivec4 other_strides;
-    int out_numel;
     float alpha;
   };
 $else:
@@ -48,43 +66,47 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
+
 $if STORAGE == "buffer":
-  ${layout_declare_spec_const(C, "int", "out_packed_dim", "DEFAULT_LAYOUT")}
-  ${layout_declare_spec_const(C, "int", "in_packed_dim", "DEFAULT_LAYOUT")}
-  ${layout_declare_spec_const(C, "int", "other_packed_dim", "DEFAULT_LAYOUT")}
+  const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
 $else:
-  ${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
   const lowp ivec4 out_axis_map = unhash_axis_map(out_layout);
   const lowp int packed_dim = unhash_packed_dim(out_layout);
 
-  ${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
   const lowp ivec4 in_axis_map = unhash_axis_map(in_layout);
 
-  ${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
   const lowp ivec4 other_axis_map = unhash_axis_map(other_layout);
 
 #ifdef USING_BUFFER
 
 void main() {
-  const int out_bufi = ivec3(gl_GlobalInvocationID).x;
-  if (out_bufi >= out_numel) {
+  const uint out_bufi = gl_GlobalInvocationID.x;
+  if (out_bufi >= numel(outp)) {
     return;
   }
 
   // Simple case; no broadcasting
-  if (in_sizes == other_sizes) {
+  if (are_equal(inp, other)) {
     t_out[out_bufi] = T(op(t_in[out_bufi], t_other[out_bufi], T(alpha)));
     return;
   }
 
-  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_packed_dim);
-  const ivec4 in_tidx = min(out_tidx, in_sizes - 1);
-  const ivec4 other_tidx = min(out_tidx, other_sizes - 1);
+  TensorIndex outp_tidx;
+  linear_idx_to_tensor_idx(outp, out_bufi, outp_tidx);
 
-  const int in_bufi = tidx_to_bufi(in_tidx, in_strides);
-  const int other_bufi = tidx_to_bufi(other_tidx, other_strides);
+  TensorIndex inp_tidx = outp_tidx;
+  clamp_tensor_idx(inp, inp_tidx);
 
-  t_out[out_bufi] = T(op(t_in[in_bufi], t_other[other_bufi], T(alpha)));
+  TensorIndex other_tidx = outp_tidx;
+  clamp_tensor_idx(other, other_tidx);
+
+  uint inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
+  uint other_bufi = tensor_idx_to_linear_idx(other, other_tidx);
+
+  t_out[out_bufi] = T(op(t_in[inp_bufi], t_other[other_bufi], T(alpha)));
 }
 
 #else // USING_TEXTURE
@@ -122,7 +144,7 @@ void main() {
   write_texel_lpos(
     t_out,
     lpos,
-    VEC4_T(op(in_texel, other_texel, alpha)),
+    VEC4_OUT_T(op(in_texel, other_texel, alpha)),
     out_axis_map);
 }
 

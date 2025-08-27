@@ -28,12 +28,12 @@ class Clone(torch.nn.Module):
         return (torch.rand(3, 1),)
 
 
-def test_remove_clone_tosa_BI():
+def test_remove_clone_tosa_INT():
     module = Clone()
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+BI",
+        quantize=True,
         ops_before_pass={
             "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
         },

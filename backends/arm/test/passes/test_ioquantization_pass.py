@@ -4,61 +4,45 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from typing import Tuple
+
 import torch
 
 from executorch.backends.arm.test import common
 
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test.tester.test_pipeline import EthosU55PipelineINT
 from executorch.exir.passes.quantize_io_pass import QuantizeInputs, QuantizeOutputs
 
 
+input_t = Tuple[torch.Tensor]
+
+
 class SimpleModel(torch.nn.Module):
+    test_data = {
+        "rand_rand": (torch.rand(1, 2, 2, 1), torch.rand(1, 2, 2, 1)),
+    }
+
     def forward(self, x, y):
         return x + y
 
-    def get_inputs(self):
-        a = torch.rand(1, 2, 2, 1)
-        b = torch.rand(1, 2, 2, 1)
-        return (a, b)
 
-
-def test_ioquantisation_pass_u55_BI():
+@common.parametrize("test_data", SimpleModel.test_data)
+def test_ioquantisation_pass_u55_INT(test_data: input_t):
     """
     Test the executorch/exir/passes/quanize_io_pass pass works(meaning we don't get Q/DQ nodes) on a simple model
     """
     model = SimpleModel()
-    tester = (
-        ArmTester(
-            model,
-            example_inputs=model.get_inputs(),
-            compile_spec=common.get_u55_compile_spec(),
-        )
-        .quantize()
-        .export()
-        .to_edge()
-        .check_count(
-            {
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3
-            }
-        )
-        .check_count(
-            {
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3
-            }
-        )
-        .partition()
-        .check_count(
-            {
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2
-            }
-        )
-        .check_count(
-            {
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 1
-            }
-        )
+    pipeline = EthosU55PipelineINT(
+        model,
+        test_data,
+        aten_ops=[],
+        exir_ops=[],
+        use_to_edge_transform_and_lower=False,
+        run_on_fvp=False,
     )
-    edge = tester.get_artifact()
+    pipeline.pop_stage(-1)
+    pipeline.run()
+    edge = pipeline.tester.get_artifact()
     edge.transform(passes=[QuantizeInputs(edge, [0, 1]), QuantizeOutputs(edge, [0])])
-    tester.check_not(["edge__ops_quantized_decomposed_quantize_per_tensor"])
-    tester.check_not(["edge__ops_quantized_decomposed_dequantize_per_tensor"])
+    pipeline.tester.check_not(["edge__ops_quantized_decomposed_quantize_per_tensor"])
+    pipeline.tester.check_not(["edge__ops_quantized_decomposed_dequantize_per_tensor"])

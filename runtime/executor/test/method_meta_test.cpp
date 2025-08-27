@@ -9,11 +9,13 @@
 #include <executorch/runtime/executor/method_meta.h>
 
 #include <cstdlib>
-#include <filesystem>
+#include <limits>
+#include <vector>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/program.h>
+#include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
 using namespace ::testing;
@@ -21,8 +23,34 @@ using executorch::runtime::Error;
 using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
 using torch::executor::util::FileDataLoader;
+
+namespace executorch {
+namespace runtime {
+namespace testing {
+// Provides access to private TensorInfo methods.
+class TensorInfoTestFriend final {
+ public:
+  ET_NODISCARD static TensorInfo get(
+      Span<const int32_t> sizes,
+      Span<const uint8_t> dim_order,
+      executorch::aten::ScalarType scalar_type,
+      const bool is_memory_planned,
+      executorch::aten::string_view name) {
+    return TensorInfo::create(
+               Span<const int32_t>(sizes.data(), sizes.size()),
+               Span<const uint8_t>(dim_order.data(), dim_order.size()),
+               scalar_type,
+               is_memory_planned,
+               name)
+        .get();
+  }
+};
+} // namespace testing
+} // namespace runtime
+} // namespace executorch
 
 class MethodMetaTest : public ::testing::Test {
  protected:
@@ -162,4 +190,27 @@ TEST_F(MethodMetaTest, MethodMetaAttribute) {
 
   auto bad_access = method_meta->attribute_tensor_meta(1);
   ASSERT_EQ(bad_access.error(), Error::InvalidArgument);
+}
+
+TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
+  // Create sizes that will cause overflow when multiplied
+  std::vector<int32_t> overflow_sizes = {
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::max(),
+      std::numeric_limits<int32_t>::max(),
+  };
+
+  // Create a minimal dim_order
+  std::vector<uint8_t> dim_order = {0, 1, 2, 3};
+
+  // Create a TensorInfo with the overflow sizes and expect it to fail.
+  ET_EXPECT_DEATH(
+      executorch::runtime::testing::TensorInfoTestFriend::get(
+          Span<const int32_t>(overflow_sizes.data(), overflow_sizes.size()),
+          Span<const uint8_t>(dim_order.data(), dim_order.size()),
+          executorch::aten::ScalarType::Float,
+          false, // is_memory_planned
+          executorch::aten::string_view{nullptr, 0}),
+      "");
 }

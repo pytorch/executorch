@@ -17,5 +17,8 @@ class RemoveClonePass(ExportPass):
         if op != exir_ops.edge.aten.clone.default:
             return super().call_operator(op, args, kwargs, meta)
 
-        assert len(args) == 1
+        if len(args) != 1:
+            raise ValueError(
+                f"clone operator expects exactly one argument, got {len(args)}"
+            )
         return args[0]

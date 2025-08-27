@@ -15,110 +15,107 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <unordered_map>
 
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/io_manager.h>
-#include <executorch/extension/llm/sampler/sampler.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.h>
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/token_generator.h>
+#include <executorch/extension/llm/runner/irunner.h>
+#include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
 namespace example {
 
-class Runner {
- public:
-  explicit Runner(
-      const std::vector<std::string>& models_path,
-      const std::string& tokenizer_path,
-      const std::string& performance_output_path_,
-      const float logits_scale,
-      const int32_t logits_offset,
-      const float temperature,
-      const int eval_mode,
-      const std::string& kv_updater,
-      const int num_iters);
-
-  struct Stats {
-    // Scaling factor for timestamps - in this case, we use ms.
-    const long SCALING_FACTOR_UNITS_PER_SECOND = 1000;
-    // Time stamps for the different stages of the execution
-    // model_load_start_ms: Start of model loading.
-    long model_load_start_ms;
-    // model_load_end_ms: End of model loading.
-    long model_load_end_ms;
-    // inference_start_ms: Immediately after the model is loaded (or we check
-    // for model load), measure the inference time.
-    long inference_start_ms;
-    // prompt_eval_end_ms: Prompt array allocation and tokenization. Ends right
-    // before the inference loop starts
-    long prompt_eval_end_ms;
-    // first_token: Timestamp when the first generated token is emitted
-    long first_token_ms;
-    // inference_end_ms: End of inference/generation.
-    long inference_end_ms;
-    // Keep a running total of the time spent in sampling.
-    long aggregate_sampling_time_ms;
-    // Token count from prompt
-    int64_t num_prompt_tokens;
-    // Token count from generated (total - prompt)
-    int64_t num_generated_tokens;
-  };
-
-  bool is_loaded() const;
-  executorch::runtime::Error load();
-  executorch::runtime::Error generate(
-      int32_t seq_len,
-      const std::string& prompt,
-      const std::string& system_prompt,
-      std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {});
-  void stop();
-  std::vector<executorch::runtime::Result<executorch::runtime::MethodMeta>>
-  get_methods_meta(std::string& method_name);
-
- private:
-  enum LlamaVersion {
-    kLlama2 = 0,
-    kLlama3,
-  };
-  template <typename T>
-  T getMetadataHelper(std::string method_name, T default_val);
-  int32_t logitsToToken(
-      const executorch::aten::Tensor& logits_tensor,
-      int64_t pos);
-  void run_model_step(
-      const std::string& method_name,
-      std::vector<std::vector<executorch::runtime::EValue>>& inputs);
-  std::string prompt_;
-
-  // metadata
-  int32_t context_len_{0};
-  int32_t prefill_ar_len_{0};
-  int32_t prefill_cache_len_{0};
-  int32_t kv_ar_len_{0};
-  int32_t kv_cache_len_{0};
-  int32_t vocab_size_;
-  int32_t bos_id_;
-  std::unordered_set<uint64_t> eos_id_;
-  const int32_t n_bos_;
-  const int32_t n_eos_;
-  std::vector<std::shared_ptr<executorch::extension::Module>> modules_;
-  std::string tokenizer_path_;
-  std::string performance_output_path_;
-  float logits_scale_;
-  int32_t logits_offset_;
-  float temperature_;
-  std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
-  std::unique_ptr<executorch::extension::llm::Sampler> sampler_;
-  Stats stats_;
-  std::unique_ptr<IoMgrBase> io_mgr_;
-  EvalMode eval_mode_;
-  bool use_int64_token_{false};
-  std::string prefill_forward_name_;
-  std::string kv_forward_name_;
-  std::vector<std::string> method_names_;
-  LlamaVersion llama_version_;
-  std::string kv_updater_;
-  int num_iters_;
+enum DecoderModelVersion {
+  kLlama2 = 0,
+  kLlama3,
+  kQwen2_5,
+  kQwen3,
+  kPhi4,
+  kSmollm2_135m
 };
 
+enum KvBitWidth {
+  kWidth8 = 8,
+  kWidth16 = 16,
+};
+
+template <typename T>
+class Runner : public executorch::extension::llm::IRunner {
+ public:
+  explicit Runner(
+      std::unique_ptr<executorch::extension::Module> module,
+      const std::string& decoder_model,
+      const std::string& model_path,
+      const std::string& tokenizer_path,
+      const std::string& performance_output_path,
+      const std::string& dump_logits_path,
+      const float temperature = 0.8f,
+      const int eval_mode = EvalMode::kHybrid,
+      const std::string& kv_updater = "SmartMask",
+      const int ngram = 0,
+      const int window = 0,
+      const int gcap = 0,
+      std::unique_ptr<tokenizers::Tokenizer> tokenizer = nullptr);
+
+  bool is_loaded() const override;
+  executorch::runtime::Error load() override;
+  // TODO: Support echo and warming
+  executorch::runtime::Error generate(
+      const std::string& prompt,
+      const executorch::extension::llm::GenerationConfig& config,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const executorch::llm::Stats&)> stats_callback = {})
+      override;
+  executorch::runtime::Error generate_from_pos(
+      const std::string& prompt,
+      int64_t start_pos,
+      const executorch::extension::llm::GenerationConfig& config,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const executorch::llm::Stats&)> stats_callback = {})
+      override;
+  executorch::runtime::Error generate_from_prompt_or_file(
+      const std::string& prompt,
+      bool tokenized_prompt,
+      const executorch::extension::llm::GenerationConfig& config,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const executorch::llm::Stats&)> stats_callback = {});
+  void stop() override {};
+  executorch::runtime::Result<DecoderModelVersion> get_decoder_model_version();
+
+ private:
+  enum EvalMode {
+    kKVCached = 0,
+    kHybrid,
+    kLookaheadDecoding,
+    kUnsupported,
+  };
+
+  std::unique_ptr<executorch::extension::Module> module_;
+  int32_t context_len_{0};
+
+  int ngram_{0};
+  int window_{0};
+  int gcap_{0};
+  int64_t cur_pos_{0};
+
+  std::string tokenizer_path_;
+  std::string performance_output_path_;
+  std::string dump_logits_path_;
+  float temperature_;
+  EvalMode eval_mode_;
+  DecoderModelVersion decoder_model_version_;
+  KVManagerMode kv_updater_;
+  std::unique_ptr<IMemAlloc> buffer_manager_;
+  std::unique_ptr<KVManager<T>> kv_manager_;
+  std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
+  std::unique_ptr<DecoderRunner> decoder_runner_;
+  std::unique_ptr<PromptProcessor<T>> prompt_processor_;
+  std::unique_ptr<TokenGenerator<T>> token_generator_;
+
+  // stats
+  executorch::llm::Stats stats_;
+};
 } // namespace example

@@ -66,5 +66,42 @@ Result<const char*> get_backend_name(size_t index) {
   return registered_backends[index].name;
 }
 
+Error set_option(
+    const char* backend_name,
+    const executorch::runtime::Span<executorch::runtime::BackendOption>
+        backend_options) {
+  auto backend_class = get_backend_class(backend_name);
+  if (!backend_class) {
+    return Error::NotFound;
+  }
+
+  BackendOptionContext backend_option_context;
+  Error result =
+      backend_class->set_option(backend_option_context, backend_options);
+  if (result != Error::Ok) {
+    return result;
+  }
+  return Error::Ok;
+}
+
+Error get_option(
+    const char* backend_name,
+    executorch::runtime::Span<executorch::runtime::BackendOption>
+        backend_options) {
+  auto backend_class = get_backend_class(backend_name);
+  if (!backend_class) {
+    return Error::NotFound;
+  }
+  BackendOptionContext backend_option_context;
+  executorch::runtime::Span<BackendOption> backend_options_ref(
+      backend_options.data(), backend_options.size());
+  auto result =
+      backend_class->get_option(backend_option_context, backend_options_ref);
+  if (result != Error::Ok) {
+    return result;
+  }
+  return Error::Ok;
+}
+
 } // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

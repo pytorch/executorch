@@ -5,7 +5,7 @@ def get_compiler_optimization_flags():
     # App size regressons requires this to be baktraced until I have a better solution
     return []
 
-def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False, _aten_mode_deps = []):
+def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False, _aten_mode_deps = [], exposed_as_util = False):
     """Registers an implementation of an operator overload group.
 
     An operator overload group is a set of operator overloads with a common
@@ -45,6 +45,8 @@ def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = Fals
             from third-party optimization libraries.
         _aten_mode_deps: List of deps to add to the cxx_library() when building
             for ATen mode.
+        exposed_as_util: If True, this op has a utils namespace that should be exposed
+            as a separate library target for reuse by other operators.
     """
 
     # Note that this doesn't actually define the target, but helps register
@@ -55,6 +57,7 @@ def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = Fals
         "name": name,
         "_allow_third_party_deps": _allow_third_party_deps,
         "_aten_mode_deps": _aten_mode_deps,
+        "exposed_as_util": exposed_as_util,
     }
 
 def _enforce_deps(deps, name, allow_third_party_deps):
@@ -154,7 +157,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         link_whole = True,
     )
 
-def define_op_target(name, deps, android_deps, is_aten_op, is_et_op = True, _allow_third_party_deps = False, _aten_mode_deps = []):
+def define_op_target(name, deps, android_deps, is_aten_op, is_et_op = True, _allow_third_party_deps = False, _aten_mode_deps = [], exposed_as_util = False):
     """Possibly defines cxx_library targets for the named operator group.
 
     Args:
@@ -166,7 +169,36 @@ def define_op_target(name, deps, android_deps, is_aten_op, is_et_op = True, _all
         _allow_third_party_deps: If True, the op is allowed to depend on
             third-party deps outside of //executorch. Should only be used by
             targets under //executorch/kernels/optimized.
+        exposed_as_util: If True, this op has a utils namespace that should be exposed
+            as a separate library target for reuse by other operators.
     """
+
+    # If this op has utils, create a separate utils library target
+    if exposed_as_util:
+        utils_name = name + "_util"
+        runtime.cxx_library(
+            name = utils_name,
+            srcs = ["{}.cpp".format(name)],
+            exported_headers = ["{}.h".format(name)],
+            visibility = [
+                "//executorch/kernels/portable/...",
+                "//executorch/kernels/quantized/...",
+                "//executorch/kernels/optimized/...",
+                "//executorch/kernels/test/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            fbandroid_platform_deps = android_deps,
+            compiler_flags = select({
+                    "DEFAULT": ["-Wno-missing-prototypes"],
+                    "ovr_config//os:windows": [],
+                }) + (
+                ["-fvisibility=hidden"] if is_xplat() else []
+            ) + get_compiler_optimization_flags(),
+            deps = [
+                "//executorch/runtime/kernel:kernel_includes",
+            ] + deps,
+            force_static = True,
+        )
 
     # If this is a custom op, define a target that builds it with at::Tensor
     # so that it can be imported into a host PyTorch environment for authoring.
@@ -226,6 +258,7 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             ":scalar_utils",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_addmm",
@@ -246,6 +279,7 @@ ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -255,6 +289,7 @@ ATEN_OPS = (
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -268,6 +303,7 @@ ATEN_OPS = (
     op_target(
         name = "op_arange",
         deps = [
+            "//executorch/kernels/portable/cpu/util:arange_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
@@ -277,12 +313,14 @@ ATEN_OPS = (
     op_target(
         name = "op_argmax",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
         name = "op_argmin",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -618,6 +656,7 @@ ATEN_OPS = (
         name = "op_glu",
         deps = [
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -811,6 +850,7 @@ ATEN_OPS = (
     op_target(
         name = "op_max",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -848,6 +888,7 @@ ATEN_OPS = (
     op_target(
         name = "op_min",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -891,6 +932,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_native_dropout",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+        ],
+    ),
+    op_target(
         name = "op_native_group_norm",
         deps = [
             ":vec_ops",
@@ -917,7 +964,7 @@ ATEN_OPS = (
     op_target(
         name = "op_neg",
         deps = [
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     ),
     op_target(
@@ -975,6 +1022,22 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_rand",
+        deps = [
+            ":scalar_utils",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ]
+    ),
+    op_target(
+        name = "op_randn",
+        deps = [
+            ":scalar_utils",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ]
+    ),
+    op_target(
         name = "op_reciprocal",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
@@ -1002,6 +1065,7 @@ ATEN_OPS = (
         name = "op_relu",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
@@ -1112,6 +1176,7 @@ ATEN_OPS = (
         name = "op_sign",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
@@ -1177,6 +1242,7 @@ ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
+        exposed_as_util = True,
     ),
     op_target(
         name = "op_sub",
@@ -1219,6 +1285,9 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_topk",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
+        ]
     ),
     op_target(
         name = "op_transpose_copy",
@@ -1256,6 +1325,12 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_upsample_bilinear2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:upsample_util",
+        ],
+    ),
+    op_target(
+        name = "op_upsample_bilinear2d_aa",
         deps = [
             "//executorch/kernels/portable/cpu/util:upsample_util",
         ],
@@ -1308,6 +1383,14 @@ ATEN_OPS = (
         name = "op__to_dim_order_copy",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op__clone_dim_order",
+        deps = [
+            ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
@@ -1334,7 +1417,3 @@ CUSTOM_OPS = (
 def portable_source_list():
     """All the source file names from //executorch/kernels/portable/cpu/"""
     return [op["name"] + ".cpp" for op in ATEN_OPS + CUSTOM_OPS]
-
-def portable_header_list():
-    """All the header file names from //executorch/kernels/portable/cpu/"""
-    return ["selective_build.h", "scalar_utils.h", "math_constants.h", "vec_ops.h"]

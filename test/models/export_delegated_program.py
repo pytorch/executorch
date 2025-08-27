@@ -11,7 +11,6 @@ import inspect
 import os
 import sys
 
-from functools import partial
 from typing import Dict, final, Optional, Sequence, Type
 
 import executorch.exir as exir
@@ -20,11 +19,15 @@ import torch
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (  # noqa: F401
+    ExecutorBackend,
+)
 from executorch.exir.passes.external_constants_pass import (
-    delegate_external_constants_pass,
+    delegate_external_constants_pass_unlifted,
 )
 from executorch.exir.program import ExecutorchProgramManager
 from torch import nn
@@ -150,13 +153,18 @@ def export_module_to_program(
         def forward(self, *args, **kwargs):
             return getattr(self.fn, self.method_name)(*args, **kwargs)
 
-    exported_program = export(WrapperModule(eager_module), args=inputs, strict=True)
+    if method_name != "forward":
+        # Only require wrapper module if we're exporting a specific method other than forward.
+        exported_program = export(WrapperModule(eager_module), args=inputs, strict=True)
+    else:
+        exported_program = export(eager_module, args=inputs, strict=True)
 
     edge_config = EdgeCompileConfig(_check_ir_validity=False)
     et_config = exir.ExecutorchBackendConfig(
         extract_delegate_segments=extract_delegate_segments,
         constant_tensor_alignment=constant_tensor_alignment,
         delegate_alignment=delegate_alignment,
+        external_constants=external_constants,
     )
 
     if backend_id == "XnnpackBackend":
@@ -164,24 +172,25 @@ def export_module_to_program(
             XnnpackPartitioner,
         )
 
-        transform_passes = []
         if external_constants:
-            partial_function = partial(
-                delegate_external_constants_pass,
-                ep=exported_program,
+            tagged_module = exported_program.module()
+            delegate_external_constants_pass_unlifted(
+                module=tagged_module,
                 gen_tag_fn=lambda x: module_class.__name__,
             )
-            transform_passes.append(partial_function)
+            exported_program = export(tagged_module, args=inputs, strict=True)
         executorch_program = to_edge_transform_and_lower(
             exported_program,
-            transform_passes=transform_passes,
             compile_config=edge_config,
             partitioner=[XnnpackPartitioner()],
         ).to_executorch(config=et_config)
     else:
         edge: exir.EdgeProgramManager = to_edge(exported_program)
         lowered_module = to_backend(  # type: ignore[call-arg]
-            backend_id, edge.exported_program(), compile_specs=[]
+            backend_id,
+            edge.exported_program(),
+            # Just for the demo executor_backend.
+            compile_specs=[CompileSpec(key="external_constants", value=b"")],
         )
 
         class CompositeModule(nn.Module):

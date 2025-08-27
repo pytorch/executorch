@@ -23,10 +23,10 @@ executorch::aten::Tensor op_scaled_dot_product_attention(
     const executorch::aten::Tensor& query,
     const executorch::aten::Tensor& key,
     const executorch::aten::Tensor& value,
-    const executorch::aten::optional<executorch::aten::Tensor>& attn_mask,
+    const std::optional<executorch::aten::Tensor>& attn_mask,
     double dropout_p,
     bool is_causal,
-    executorch::aten::optional<double> scale,
+    std::optional<double> scale,
     executorch::aten::Tensor& out) {
   executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::native::flash_attention_kernel_out(
@@ -94,10 +94,10 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_105) {
        0.7338,
        0.2203,
        0.6971});
-  executorch::aten::optional<executorch::aten::Tensor> attn_mask;
+  std::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0;
   bool is_causal = false;
-  executorch::aten::optional<double> scale;
+  std::optional<double> scale;
   executorch::aten::Tensor ret_expected = tfFloat.make(
       {1, 1, 4, 4},
       {0.4473,
@@ -135,12 +135,12 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_11) {
   executorch::aten::Tensor value = tfFloat.make(
       {1, 1, 1, 8},
       {99.375, 80.125, -81.0, 8.5, -70.375, -54.25, -80.25, 34.125});
-  executorch::aten::optional<executorch::aten::Tensor> attn_mask =
-      executorch::aten::optional<executorch::aten::Tensor>(
+  std::optional<executorch::aten::Tensor> attn_mask =
+      std::optional<executorch::aten::Tensor>(
           tfFloat.full({1, 1}, std::numeric_limits<float>::infinity()));
   double dropout_p = 0.0;
   bool is_causal = false;
-  executorch::aten::optional<double> scale;
+  std::optional<double> scale;
   std::vector<int32_t> out_size(query.sizes().begin(), query.sizes().end());
   executorch::aten::Tensor out = tfFloat.zeros(out_size);
   // Pytorch says these should be NAN
@@ -167,10 +167,10 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_13) {
       {65.0,   81.125,  8.125,  68.375, -54.25, -1.125, -73.25, -54.0,
        -28.75, -23.875, 49.0,   63.5,   96.375, 16.625, 79.5,   33.125,
        32.875, -73.75,  69.125, 7.25,   -35.0,  94.0,   6.75,   65.75});
-  executorch::aten::optional<executorch::aten::Tensor> attn_mask;
+  std::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0.0;
   bool is_causal = true;
-  executorch::aten::optional<double> scale;
+  std::optional<double> scale;
   std::vector<int32_t> out_size(query.sizes().begin(), query.sizes().end());
   executorch::aten::Tensor out = tfFloat.zeros(out_size);
   executorch::aten::Tensor ret_expected = tfFloat.make(
@@ -235,10 +235,10 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_17) {
        -23.625, 85.875,  -25.875, 57.625,  50.75,   76.625,  -72.5,   26.0,
        65.875,  13.125,  -19.625, 7.5,     -25.5,   40.25,   75.25,   -48.0,
        8.25,    5.125,   42.375,  23.75,   65.25,   -77.0,   35.625,  -12.0});
-  executorch::aten::optional<executorch::aten::Tensor> attn_mask;
+  std::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0.0;
   bool is_causal = false;
-  executorch::aten::optional<double> scale;
+  std::optional<double> scale;
   executorch::aten::Tensor ret_expected = tfFloat.make(
       {3, 2, 2, 6},
       {-26.375, -65.0,   55.5,    37.0,    90.0,    54.25,   83.75,   -33.75,
@@ -311,11 +311,10 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_18) {
        -27.875, 59.5,   15.5,    -90.0,   39.5,    -15.75,  -16.375, -96.875,
        -96.125, -47.0,  0.75,    -45.875, 74.625,  46.0,    20.5,    -42.875,
        -55.0,   30.375, -27.375, 99.375,  18.375,  0.375,   54.25,   -57.75});
-  executorch::aten::optional<executorch::aten::Tensor> attn_mask;
+  std::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0.0;
   bool is_causal = false;
-  executorch::aten::optional<double> scale =
-      executorch::aten::optional<double>(-INFINITY);
+  std::optional<double> scale = std::optional<double>(-INFINITY);
   executorch::aten::Tensor ret_expected = tfFloat.make(
       {3, 2, 2, 6},
       {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN,
@@ -388,8 +387,8 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_19) {
        15.25,   53.75,   44.625,  -22.0,   -84.0,   -7.25,   22.0,    25.875,
        17.625,  -86.875, 22.75,   -74.0,   -79.875, -68.0,   -71.125, -81.625,
        -4.125,  65.875,  1.875,   76.125,  -43.75,  -15.25,  -4.625,  -66.125});
-  executorch::aten::optional<executorch::aten::Tensor> attn_mask =
-      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
+  std::optional<executorch::aten::Tensor> attn_mask =
+      std::optional<executorch::aten::Tensor>(tfFloat.make(
           {3, 1, 2, 2, 4},
           {39.0,  49.375,  -87.125, -99.125, 49.375,  -41.125, 26.25,   79.75,
            91.0,  -3.125,  65.75,   63.5,    -48.375, 43.375,  22.5,    -53.625,
@@ -399,7 +398,7 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_19) {
            2.25,  81.375,  -87.125, 35.125,  -39.125, 43.5,    52.875,  39.5}));
   double dropout_p = 0.0;
   bool is_causal = false;
-  executorch::aten::optional<double> scale;
+  std::optional<double> scale;
   executorch::aten::Tensor ret_expected = tfFloat.make(
       {3, 1, 2, 2, 6},
       {37.0,
@@ -494,15 +493,15 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_51) {
   executorch::aten::Tensor value = tfFloat.make(
       {1, 1, 3, 3},
       {70.375, 30.875, 72.125, 53.0, 39.125, -4.625, 26.5, 79.5, 88.625});
-  executorch::aten::optional<executorch::aten::Tensor> attn_mask =
-      executorch::aten::optional<executorch::aten::Tensor>(tfFloat.make(
+  std::optional<executorch::aten::Tensor> attn_mask =
+      std::optional<executorch::aten::Tensor>(tfFloat.make(
           {8, 3},
           {-59.25, -26.25, -3.0,  -24.125, 47.75,  92.375,  87.5,    21.5,
            64.5,   45.0,   -54.0, 17.375,  -67.75, 14.625,  88.75,   36.0,
            88.375, 25.75,  42.5,  -13.375, -82.75, -59.625, -21.125, 6.5}));
   double dropout_p = 0.0;
   bool is_causal = false;
-  executorch::aten::optional<double> scale;
+  std::optional<double> scale;
   executorch::aten::Tensor ret_expected = tfFloat.make(
       {1, 1, 8, 3},
       {70.375, 30.875, 72.125, 70.375, 30.875, 72.125, 70.375, 30.875,

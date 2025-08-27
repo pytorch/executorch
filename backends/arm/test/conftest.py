@@ -6,17 +6,10 @@
 import logging
 import os
 import random
-import shutil
 import sys
 from typing import Any
 
 import pytest
-
-try:
-    import tosa_tools.v0_80.tosa_reference_model as tosa_reference_model
-except ImportError:
-    logging.warning("tosa_reference_model not found, can't run reference model tests")
-    tosa_reference_model = None
 
 """
 This file contains the pytest hooks, fixtures etc. for the Arm test suite.
@@ -28,20 +21,6 @@ This file contains the pytest hooks, fixtures etc. for the Arm test suite.
 
 def pytest_configure(config):
     pytest._test_options = {}  # type: ignore[attr-defined]
-    pytest._test_options["corstone_fvp"] = False  # type: ignore[attr-defined]
-
-    if (
-        getattr(config.option, "arm_run_corstoneFVP", False)
-        and config.option.arm_run_corstoneFVP
-    ):
-        corstone300_exists = shutil.which("FVP_Corstone_SSE-300_Ethos-U55")
-        corstone320_exists = shutil.which("FVP_Corstone_SSE-320")
-        if not (corstone300_exists and corstone320_exists):
-            raise RuntimeError(
-                "Tests are run with --arm_run_corstoneFVP but corstone FVP is not installed."
-            )
-        # Only enable if we also have the TOSA reference model available.
-        pytest._test_options["corstone_fvp"] = True  # type: ignore[attr-defined]
 
     if getattr(config.option, "llama_inputs", False) and config.option.llama_inputs:
         pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
@@ -50,10 +29,10 @@ def pytest_configure(config):
     if getattr(config.option, "fast_fvp", False):
         pytest._test_options["fast_fvp"] = config.option.fast_fvp  # type: ignore[attr-defined]
 
-    # TODO: remove this flag once we have a way to run the reference model tests with Buck
-    pytest._test_options["tosa_ref_model"] = False  # type: ignore[attr-defined]
-    if tosa_reference_model is not None:
-        pytest._test_options["tosa_ref_model"] = True  # type: ignore[attr-defined]
+    pytest._test_options["tosa_version"] = "1.0"  # type: ignore[attr-defined]
+    if config.option.arm_run_tosa_version:
+        pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
+
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
@@ -76,6 +55,7 @@ def pytest_addoption(parser):
         nargs="+",
         help="List of two files. Firstly .pt file. Secondly .json",
     )
+    try_addoption("--arm_run_tosa_version", action="store", default="1.0")
 
 
 def pytest_sessionstart(session):
@@ -127,18 +107,6 @@ def set_random_seed():
 
 
 # ==== End of Pytest fixtures =====
-
-
-# ==== Custom Pytest decorators =====
-
-
-def expectedFailureOnFVP(test_item):
-    if is_option_enabled("corstone_fvp"):
-        test_item.__unittest_expecting_failure__ = True
-    return test_item
-
-
-# ==== End of Custom Pytest decorators =====
 
 
 def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:

@@ -10,7 +10,10 @@ import torch
 from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
     FuseEqualPlaceholdersPass,
 )
-from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.test.tester.test_pipeline import (
+    PassPipeline,
+    TosaPipelineFP,
+)
 
 input_t = Tuple[torch.Tensor]  # Input x
 
@@ -54,13 +57,32 @@ class FuseWeightsStateDict(torch.nn.Module):
         return self.fc1(x) + self.fc2(x)
 
 
-def test_fuse_equal_placeholders_constants_tosa_MI():
+class NotFuseTensorWithDifferentType(torch.nn.Module):
+
+    ops_before_pass = {}
+    ops_after_pass = {}
+    ops_not_after_pass = []
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        """
+        Args:
+            x: A float tensor (dtype=torch.float32)
+            y: An int tensor (dtype=torch.int32)
+        """
+        a = torch.tensor(1.0, dtype=torch.float32)
+        b = torch.tensor(1, dtype=torch.int32)
+        m = x < a
+        n = y > b
+        return m, n
+
+
+def test_fuse_equal_placeholders_constants_tosa_FP():
     module = FuseWeightsConstants()
     data = (torch.rand(1, 2, 8),)
     pipeline = PassPipeline[input_t](
         module,
         data,
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseEqualPlaceholdersPass],
@@ -75,13 +97,13 @@ def test_fuse_equal_placeholders_constants_tosa_MI():
     assert "_common" in constant_keys[1], "FuseEqualPlaceholders constants failed"
 
 
-def test_fuse_equal_placeholders_state_dict_tosa_MI():
+def test_fuse_equal_placeholders_state_dict_tosa_FP():
     module = FuseWeightsStateDict()
     data = (torch.rand(1, 2, 8),)
     pipeline = PassPipeline[input_t](
         module,
         data,
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseEqualPlaceholdersPass],
@@ -94,3 +116,24 @@ def test_fuse_equal_placeholders_state_dict_tosa_MI():
     assert len(state_dict_keys) == 2, "FuseEqualPlaceholders state_dict failed"
     assert "_common" in state_dict_keys[0], "FuseEqualPlaceholders state_dict failed"
     assert "_common" in state_dict_keys[1], "FuseEqualPlaceholders state_dict failed"
+
+
+def test_not_fuse_tensor_with_different_type_FP():
+    module = NotFuseTensorWithDifferentType()
+    data = (
+        torch.rand(
+            1,
+        ),
+        torch.randint(
+            0,
+            10,
+            (1,),
+            dtype=torch.int,
+        ),
+    )
+    pipeline = TosaPipelineFP[input_t](
+        module,
+        data,
+        aten_op=[],
+    )
+    pipeline.run()

@@ -21,13 +21,13 @@ cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a"
   clean_executorch_install_folders
   update_tokenizers_git_submodule
-  CXXFLAGS="-g" retry cmake -DBUCK2="$BUCK2" \
+  CXXFLAGS="-g" retry cmake \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=MinSizeRel \
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
           -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-          -DOPTIMIZE_SIZE=ON \
+          -DEXECUTORCH_OPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
   cmake --build cmake-out -j9 --target install --config MinSizeRel
@@ -41,12 +41,15 @@ test_cmake_size_test() {
 
     echo 'ExecuTorch with no ops binary size, unstripped:'
     ls -al cmake-out/test/size_test
+    size cmake-out/test/size_test
 
     echo 'ExecuTorch with portable ops binary size, unstripped:'
     ls -al cmake-out/test/size_test_all_ops
+    size cmake-out/test/size_test_all_ops
 
     echo 'ExecuTorch with optimized ops binary size, unstripped:'
     ls -al cmake-out/test/size_test_all_optimized_ops
+    size cmake-out/test/size_test_all_optimized_ops
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]]; then

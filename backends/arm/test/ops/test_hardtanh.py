@@ -1,143 +1,111 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
 
 from typing import Tuple
 
-import pytest
-
 import torch
 
-from executorch.backends.arm.quantizer import (
-    EthosUQuantizer,
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.xnnpack.test.tester.tester import Quantize
-from parameterized import parameterized
-
-
-test_data_suite = [
+test_data_suite = {
     # (test_name, test_data)
-    ("zeros", torch.zeros(1, 10, 10, 10)),
-    ("ones", torch.ones(10, 10, 10)),
-    ("rand", torch.rand(10, 10) - 0.5),
-    ("randn_pos", torch.randn(10) + 10),
-    ("randn_neg", torch.randn(10) - 10),
-    ("ramp", torch.arange(-16, 16, 0.2)),
-]
+    "zeros": lambda: (torch.zeros(1, 10, 10, 10)),
+    "ones": lambda: (torch.ones(10, 10, 10)),
+    "rand": lambda: (torch.rand(10, 10) - 0.5),
+    "randn_pos": lambda: (torch.randn(10) + 10),
+    "randn_neg": lambda: (torch.randn(10) - 10),
+    "ramp": lambda: (torch.arange(-16, 16, 0.2)),
+}
+
+aten_op = "torch.ops.aten.hardtanh.default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_hardtanh_default"
+
+input_t = Tuple[torch.Tensor]
 
 
-class TestHardTanh(unittest.TestCase):
-    """Tests HardTanh Operator."""
+class HardTanh(torch.nn.Module):
 
-    class HardTanh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
 
-        def __init__(self):
-            super().__init__()
+        self.hardTanh = torch.nn.Hardtanh()
 
-            self.hardTanh = torch.nn.Hardtanh()
+    def forward(self, x):
+        return self.hardTanh(x)
 
-        def forward(self, x):
-            return self.hardTanh(x)
 
-    def _test_hardtanh_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check(["torch.ops.aten.hardtanh.default"])
-            .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_hardtanh_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_hardtanh_tosa_FP(test_data: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t](HardTanh(), (test_data(),), aten_op, exir_op)
+    pipeline.run()
 
-    def _test_hardtanh_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
-    ):
-        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
-        compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
-        (
-            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.hardtanh.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_hardtanh_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
 
-    def _test_hardtanh_tosa_ethosu_BI_pipeline(
-        self, compile_spec, module: torch.nn.Module, test_data: Tuple[torch.tensor]
-    ):
-        quantizer = EthosUQuantizer(compile_spec).set_io(
-            get_symmetric_quantization_config()
-        )
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.hardtanh.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_hardtanh_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
+@common.parametrize("test_data", test_data_suite)
+def test_hardtanh_tosa_INT(test_data: torch.Tensor):
+    pipeline = TosaPipelineINT[input_t](
+        HardTanh(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    def test_hardtanh_tosa_MI(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-    ):
-        self._test_hardtanh_tosa_MI_pipeline(self.HardTanh(), (test_data,))
 
-    @parameterized.expand(test_data_suite)
-    def test_hardtanh_tosa_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_hardtanh_tosa_BI_pipeline(self.HardTanh(), (test_data,))
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_hardtanh_u55_INT(test_data: torch.Tensor):
+    pipeline = EthosU55PipelineINT[input_t](
+        HardTanh(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    @pytest.mark.corstone_fvp
-    def test_hardtanh_tosa_u55_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_hardtanh_tosa_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(), self.HardTanh(), (test_data,)
-        )
 
-    @parameterized.expand(test_data_suite)
-    @pytest.mark.corstone_fvp
-    def test_hardtanh_tosa_u85_BI(self, test_name: str, test_data: torch.Tensor):
-        self._test_hardtanh_tosa_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(), self.HardTanh(), (test_data,)
-        )
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_hardtanh_u85_INT(test_data: torch.Tensor):
+    pipeline = EthosU85PipelineINT[input_t](
+        HardTanh(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_hardtanh_vgf_FP(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t](
+        HardTanh(), (test_data(),), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_hardtanh_vgf_INT(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t](
+        HardTanh(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

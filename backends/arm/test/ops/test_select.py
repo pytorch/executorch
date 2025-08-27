@@ -1,182 +1,215 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
+
+from typing import Tuple
 
 import torch
 
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    OpNotSupportedPipeline,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
 
-test_data_t = tuple[torch.Tensor, int, int]
+input_t1 = Tuple[torch.Tensor, int, int]
 
-test_data_suite: list[tuple[test_data_t]] = [
+test_data_suite = {
     # (test_data, dim, index)
-    ((torch.zeros(5, 3, 20), -1, 0),),
-    ((torch.rand(5, 3, 20), 0, -1),),
-    ((torch.zeros(5, 3, 20), 0, 4),),
-    ((torch.ones(10, 10, 10), 0, 2),),
-    ((torch.rand(5, 3, 20, 2), 0, 2),),
-    ((torch.rand(10, 10) - 0.5, 0, 0),),
-    ((torch.randn(10) + 10, 0, 1),),
-    ((torch.randn(10) - 10, 0, 2),),
-    ((torch.arange(-16, 16, 0.2), 0, 1),),
-]
+    "select3d_neg_1_dim_0_index": lambda: (torch.zeros(5, 3, 20), -1, 0),
+    "select3d_0_dim_neg_1_index": lambda: (torch.rand(5, 3, 20), 0, -1),
+    "select3d_0_dim_4_index": lambda: (torch.zeros(5, 3, 20), 0, 4),
+    "select3d_0_dim_2_index": lambda: (torch.ones(10, 10, 10), 0, 2),
+    "select4d_0_dim_2_index": lambda: (torch.rand(5, 3, 20, 2), 0, 2),
+    "select2d_0_dim_0_index": lambda: (torch.rand(10, 10) - 0.5, 0, 0),
+    "select1d_0_dim_1_index": lambda: (torch.randn(10) + 10, 0, 1),
+    "select1d_0_dim_0_index": lambda: (torch.randn(10) - 10, 0, 2),
+    "select3d_0_dim_1_index": lambda: (torch.arange(-16, 16, 0.2), 0, 1),
+}
+
+test_data_not_delegated = {
+    "select3d_large_after_squeeze": lambda: (torch.rand(3, 64, 3, 49, 32), 0, 0),
+}
+
+aten_op_copy = "torch.ops.aten.select_copy.int"
+aten_op_int = "torch.ops.aten.select.int"
 
 
-class TestSelect(unittest.TestCase):
-    class SelectCopy(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
+class SelectCopy(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
 
-        def forward(self, x, dim: int, index: int):
-            return torch.select_copy(x, dim=dim, index=index)
+    def forward(self, x, dim: int, index: int):
+        return torch.select_copy(x, dim=dim, index=index)
 
-    class SelectInt(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
 
-        def forward(self, x, dim: int, index: int):
-            return torch.select(x, dim=dim, index=index)
+class SelectInt(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
 
-    def _test_select_tosa_MI_pipeline(
-        self,
-        module: torch.nn.Module,
-        test_data: test_data_t,
-        export_target: str,
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check([export_target])
-            .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+    def forward(self, x, dim: int, index: int):
+        return torch.select(x, dim=dim, index=index)
 
-    def _test_select_tosa_BI_pipeline(
-        self,
-        module: torch.nn.Module,
-        test_data: test_data_t,
-        export_target: str,
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .check([export_target])
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
 
-    def _test_select_ethos_BI_pipeline(
-        self,
-        compile_spec: list[CompileSpec],
-        module: torch.nn.Module,
-        test_data: test_data_t,
-        export_target: str,
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .check([export_target])
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_select_int_tosa_FP_copy(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
+        SelectCopy(),
+        test_data(),
+        aten_op=aten_op_copy,
+        exir_op=[],
+    )
+    pipeline.run()
 
-    def _test_select_tosa_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: test_data_t, export_target: str
-    ):
-        self._test_select_ethos_BI_pipeline(
-            common.get_u55_compile_spec(),
-            module,
-            test_data,
-            export_target,
-        )
 
-    def _test_select_tosa_u85_BI_pipeline(
-        self, module: torch.nn.Module, test_data: test_data_t, export_target: str
-    ):
-        self._test_select_ethos_BI_pipeline(
-            common.get_u85_compile_spec(),
-            module,
-            test_data,
-            export_target,
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_select_int_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
+        SelectInt(),
+        test_data(),
+        aten_op=aten_op_int,
+        exir_op=[],
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    def test_select_copy_tosa_MI(self, test_data: test_data_t):
-        self._test_select_tosa_MI_pipeline(
-            self.SelectCopy(), test_data, export_target="torch.ops.aten.select_copy.int"
-        )
 
-    @parameterized.expand(test_data_suite)
-    def test_select_int_tosa_MI(self, test_data: test_data_t):
-        self._test_select_tosa_MI_pipeline(
-            self.SelectInt(), test_data, export_target="torch.ops.aten.select.int"
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_select_int_tosa_INT_copy(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
+        SelectCopy(),
+        test_data(),
+        aten_op=aten_op_copy,
+        exir_op=[],
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    def test_select_copy_tosa_BI(self, test_data: test_data_t):
-        self._test_select_tosa_BI_pipeline(
-            self.SelectCopy(), test_data, export_target="torch.ops.aten.select_copy.int"
-        )
 
-    @parameterized.expand(test_data_suite)
-    def test_select_int_tosa_BI(self, test_data: test_data_t):
-        self._test_select_tosa_BI_pipeline(
-            self.SelectInt(), test_data, export_target="torch.ops.aten.select.int"
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_select_int_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
+        SelectInt(),
+        test_data(),
+        aten_op=aten_op_int,
+        exir_op=[],
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    def test_select_copy_tosa_u55_BI(self, test_data: test_data_t):
-        self._test_select_tosa_u55_BI_pipeline(
-            self.SelectCopy(), test_data, export_target="torch.ops.aten.select_copy.int"
-        )
 
-    @parameterized.expand(test_data_suite)
-    def test_select_int_tosa_u55_BI(self, test_data: test_data_t):
-        self._test_select_tosa_u55_BI_pipeline(
-            self.SelectInt(), test_data, export_target="torch.ops.aten.select.int"
-        )
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_select_int_u55_INT_copy(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
+        SelectCopy(),
+        test_data(),
+        aten_op_copy,
+        exir_ops=[],
+        run_on_fvp=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    def test_select_copy_tosa_u85_BI(self, test_data: test_data_t):
-        self._test_select_tosa_u85_BI_pipeline(
-            self.SelectCopy(), test_data, export_target="torch.ops.aten.select_copy.int"
-        )
 
-    @parameterized.expand(test_data_suite)
-    def test_select_int_tosa_u85_BI(self, test_data: test_data_t):
-        self._test_select_tosa_u85_BI_pipeline(
-            self.SelectInt(), test_data, export_target="torch.ops.aten.select.int"
-        )
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_select_int_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
+        SelectInt(),
+        test_data(),
+        aten_op_int,
+        exir_ops=[],
+        run_on_fvp=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_not_delegated)
+def test_select_int_u55_INT_not_delegated(test_data: Tuple):
+    pipeline = OpNotSupportedPipeline[input_t1](
+        SelectInt(),
+        test_data(),
+        {aten_op_copy: 0},
+        n_expected_delegates=0,
+        quantize=True,
+        u55_subset=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_select_int_u85_INT_copy(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
+        SelectCopy(),
+        test_data(),
+        aten_op_copy,
+        exir_ops=[],
+        run_on_fvp=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_select_int_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
+        SelectInt(),
+        test_data(),
+        aten_op_int,
+        exir_ops=[],
+        run_on_fvp=True,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_select_int_vgf_FP_copy(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SelectCopy(), test_data(), aten_op_copy, [], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_select_int_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SelectInt(), test_data(), aten_op_int, [], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_select_int_vgf_INT_copy(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SelectCopy(),
+        test_data(),
+        aten_op_copy,
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_select_int_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SelectInt(),
+        test_data(),
+        aten_op_int,
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

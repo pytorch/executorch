@@ -28,9 +28,10 @@ class OpGluOutTest : public OperatorTest {
     return torch::executor::aten::glu_outf(context_, self, dim, out);
   }
 
-  template <ScalarType DTYPE>
+  template <ScalarType DTYPE, ScalarType OUT_DTYPE>
   void expect_tensor_close(Tensor actual, Tensor expected) {
-    if (DTYPE == ScalarType::Half || DTYPE == ScalarType::BFloat16) {
+    if (DTYPE == ScalarType::Half || DTYPE == ScalarType::BFloat16 ||
+        OUT_DTYPE == ScalarType::Half || OUT_DTYPE == ScalarType::BFloat16) {
       EXPECT_TENSOR_CLOSE_WITH_TOL(
           actual,
           expected,
@@ -51,20 +52,20 @@ class OpGluOutTest : public OperatorTest {
     const std::vector<int32_t> out_sizes_1 = {2, 2};
 
     // Valid input should give the expected output
-    Tensor in = tf.ones(sizes);
+    Tensor in = tf.make(sizes, {0, 1, 2, 3, 4, 5, 6, 7});
     Tensor out = tf_out.zeros(out_sizes_1);
     op_glu_out(in, 0, out);
-    expect_tensor_close<DTYPE>(
+    expect_tensor_close<DTYPE, OUT_DTYPE>(
         out,
         tf_out.make(
-            out_sizes_1, /*data=*/{0.731059, 0.731059, 0.731059, 0.731059}));
+            out_sizes_1, /*data=*/{0, 0.99330717, 1.99505484, 2.99726701}));
     const std::vector<int32_t> out_sizes_2 = {4, 1};
     out = tf_out.zeros(out_sizes_2);
     op_glu_out(in, 1, out);
-    expect_tensor_close<DTYPE>(
+    expect_tensor_close<DTYPE, OUT_DTYPE>(
         out,
         tf_out.make(
-            out_sizes_2, /*data=*/{0.731059, 0.731059, 0.731059, 0.731059}));
+            out_sizes_2, /*data=*/{0, 1.90514827, 3.97322869, 5.99453402}));
   }
 
   // Mismatched shape tests.

@@ -1,6 +1,6 @@
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
-    "ANDROID",
+    "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
@@ -31,7 +31,6 @@ def define_common_targets():
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
             "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
@@ -65,7 +64,6 @@ def define_common_targets():
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
             "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
@@ -88,12 +86,12 @@ def define_common_targets():
         exported_headers = glob([
             "*.h",
         ]),
+        platforms = (CXX),
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
             "fbsource//third-party/pybind11:pybind11",
             "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),

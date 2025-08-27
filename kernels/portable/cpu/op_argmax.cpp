@@ -10,6 +10,7 @@
 #include <cmath>
 #include <tuple>
 
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -18,8 +19,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using executorch::aten::optional;
 using executorch::aten::Tensor;
+using std::optional;
 
 Tensor& argmax_out(
     KernelRuntimeContext& ctx,
@@ -44,7 +45,10 @@ Tensor& argmax_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "argmax.out", CTYPE, [&] {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "argmax.out";
+
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
     long* out_data = out.mutable_data_ptr<long>();
 
     const bool success = parallel_for_each_reduce_over_dim_output_index(
@@ -55,7 +59,7 @@ Tensor& argmax_out(
                   // the below condition as written is equivalent to
                   // !isnan(accval) && (isnan(v) || v > acc_val). See
                   // argument in op_argmin.cpp.
-                  if (!std::isnan(acc_val) && !(v <= acc_val)) {
+                  if (!utils::isnan_override(acc_val) && !(v <= acc_val)) {
                     acc_val = v;
                     acc_ix = ix;
                   }

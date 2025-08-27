@@ -17,8 +17,8 @@
 
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
-using executorch::aten::string_view;
 using executorch::aten::Tensor;
+using std::string_view;
 using torch::executor::testing::TensorFactory;
 
 class OpEluTest : public OperatorTest {

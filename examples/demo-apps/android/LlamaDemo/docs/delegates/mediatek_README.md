@@ -54,7 +54,6 @@ zstd -cdq "<downloaded_buck2_file>.zst" > "<path_to_store_buck2>/buck2" && chmod
 
 ### Set Environment Variables
 ```
-export BUCK2=path_to_buck/buck2 # Download BUCK2 and create BUCK2 executable
 export ANDROID_NDK=path_to_android_ndk
 export NEURON_BUFFER_ALLOCATOR_LIB=path_to_buffer_allocator/libneuron_buffer_allocator.so
 export NEURON_USDK_ADAPTER_LIB=path_to_usdk_adapter/libneuronusdk_adapter.mtk.so

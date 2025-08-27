@@ -19,7 +19,8 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpRmsNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -36,7 +37,7 @@ class RmsNormVisitor(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         # args of node : ['input', 'normalized_shape', 'weight', 'eps']
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
@@ -60,7 +61,7 @@ class RmsNormVisitor(NodeVisitor):
         axes = [node.args[0].meta["val"].dim() - 1]
         axes_shape = [len(axes)]
 
-        weight_node = node.args[2]
+        weight_node = self.get_node(node.args[2])
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
@@ -71,7 +72,7 @@ class RmsNormVisitor(NodeVisitor):
         )
 
         # Fake node, nn module seems to be inconsistent with document
-        bias_tensor = torch.zeros(weight_tensor.shape)
+        bias_tensor = torch.zeros(weight_tensor.shape, dtype=weight_tensor.dtype)
         bias_node = torch.fx.Node(
             node.graph,
             node.name + "_runtime_bias",

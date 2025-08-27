@@ -30,12 +30,12 @@ class Expand(torch.nn.Module):
         return (torch.rand(3, 1),)
 
 
-def test_expand_to_repeat_tosa_BI():
+def test_expand_to_repeat_tosa_INT():
     module = Expand()
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+BI",
+        quantize=True,
         ops_before_pass={
             "executorch_exir_dialects_edge__ops_aten_expand_copy_default": 1,
         },

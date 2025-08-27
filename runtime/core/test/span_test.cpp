@@ -61,3 +61,19 @@ TEST(SpanTest, TriviallyCopyable) {
   EXPECT_EQ(span.size(), span_copy.size());
   EXPECT_TRUE(std::is_trivially_copyable<Span<int64_t>>::value);
 }
+
+TEST(SpanTest, SingleElementConstructor) {
+  int64_t single_value = 42;
+  Span<int64_t> span = single_value;
+
+  EXPECT_EQ(span.size(), 1);
+  EXPECT_EQ(span.data(), &single_value);
+  EXPECT_EQ(span[0], 42);
+  EXPECT_EQ(*span.begin(), 42);
+  EXPECT_EQ(span.end(), span.begin() + 1);
+
+  // Test that modifying through span affects original value
+  span[0] = 100;
+  EXPECT_EQ(single_value, 100);
+  EXPECT_EQ(span[0], 100);
+}

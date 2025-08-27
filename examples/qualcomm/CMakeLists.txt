@@ -23,7 +23,7 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
@@ -34,17 +34,10 @@ find_package(gflags REQUIRED)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
-# Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include)
-
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
-set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
-)
-extract_sources(${EXECUTORCH_SRCS_FILE})
-include(${EXECUTORCH_SRCS_FILE})
+executorch_load_build_variables()
 
 get_filename_component(
   EXECUTORCH_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
@@ -62,36 +55,27 @@ gen_operators_lib(
 target_compile_options(
   full_portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED
 )
-target_include_directories(
-  full_portable_ops_lib
-  PUBLIC
-    ${_common_include_directories}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/json/single_include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/llama.cpp-unicode/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/llama.cpp-unicode/src
-)
 
-# find RE2 for tokenizer
-set(ABSL_ENABLE_INSTALL ON)
-set(ABSL_PROPAGATE_CXX_STD ON)
-set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/abseil-cpp
-  ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/..
+    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include
 )
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/tokenizers/third-party/re2
-  ${CMAKE_CURRENT_BINARY_DIR}/re2
-)
-set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
 # build qnn_executor_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/executor_runner)
 
 # build qnn_llama_runner for llama
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama)
+
+# build qnn_mimi_decoder_runner
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/moshi)
+
+# build qnn_t5_runner for t5
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/t5)
+
+# build qnn_whisper_runner for whisper
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/whisper)
 
 # build qaihub_llama2_7b_runner and qaihub_llama3_8b_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama)

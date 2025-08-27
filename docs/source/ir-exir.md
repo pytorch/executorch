@@ -104,7 +104,7 @@ class MyModule(torch.nn.Module):
 a = MyModule()
 tracing_inputs = (torch.rand(2, 2),)
 aten_dialect_program = torch.export.export(a, tracing_inputs)
-edge_dialect_program: exir.EdgeProgramManager = exir.to_edge(aten_dialect)
+edge_dialect_program: exir.EdgeProgramManager = exir.to_edge(aten_dialect_program)
 print(edge_dialect_program.exported_program)
 ```
 

@@ -4,12 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import torch
+
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.backends.qualcomm.builders.utils import get_parameter, is_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
-
-from .utils import dq_ops
 
 
 class RecomposeRmsNorm(ExportPass):

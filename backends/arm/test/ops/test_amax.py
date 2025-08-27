@@ -10,10 +10,11 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -30,11 +31,11 @@ class Amax(torch.nn.Module):
         return torch.amax(x, self.dim, self.keep_dims)
 
     test_data: Dict[str, input_t] = {
-        "rank_1_dim_0": ((torch.rand([10]),), 0, False),
-        "rank_2_dim_1_keep_dims": ((torch.rand([2, 2]),), (1,), True),
-        "rank_4_all_dim": ((torch.rand([1, 2, 5, 5]),), (0, 1, 2, 3), False),
-        "rank_4_0,3_keep_dims": ((torch.rand([1, 2, 2, 2]),), (0, 3), True),
-        "rank_4_mult_batches": ((torch.rand([2, 2, 2, 2]),), (0), True),
+        "rank_1_dim_0": lambda: ((torch.rand([10]),), 0, False),
+        "rank_2_dim_1_keep_dims": lambda: ((torch.rand([2, 2]),), (1,), True),
+        "rank_4_all_dim": lambda: ((torch.rand([1, 2, 5, 5]),), (0, 1, 2, 3), False),
+        "rank_4_0,3_keep_dims": lambda: ((torch.rand([1, 2, 2, 2]),), (0, 3), True),
+        "rank_4_mult_batches": lambda: ((torch.rand([2, 2, 2, 2]),), (0), True),
     }
 
 
@@ -51,10 +52,10 @@ class Max(torch.nn.Module):
         return x[0]
 
     test_data: Dict[str, input_t] = {
-        "rank_1_dim_0": ((torch.rand([10]),), 0),
-        "rank_2_dim_1": ((torch.rand([2, 2]),), 1),
-        "rank_4_dim_2": ((torch.rand([2, 2, 2, 2]),), 2),
-        "rank_4_dim_3": ((torch.rand([2, 2, 2, 2]),), 3),
+        "rank_1_dim_0": lambda: ((torch.rand([10]),), 0),
+        "rank_2_dim_1": lambda: ((torch.rand([2, 2]),), 1),
+        "rank_4_dim_2": lambda: ((torch.rand([2, 2, 2, 2]),), 2),
+        "rank_4_dim_3": lambda: ((torch.rand([2, 2, 2, 2]),), 3),
     }
 
 
@@ -69,97 +70,123 @@ class MaxWithIndex(torch.nn.Module):
 
 
 @common.parametrize("test_data", Amax.test_data)
-def test_amax_tosa_MI(test_data: Amax.input_t):
-    data, dim, keep_dims = test_data
-    pipeline = TosaPipelineMI[Amax.input_t](
-        Amax(dim, keep_dims),
-        data,
-        Amax.aten_op,
-    )
+def test_amax_tosa_FP(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    pipeline = TosaPipelineFP[Amax.input_t](Amax(dim, keep_dims), data, Amax.aten_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", Amax.test_data)
-def test_amax_tosa_BI(test_data: Amax.input_t):
-    data, dim, keep_dims = test_data
-    pipeline = TosaPipelineBI[Amax.input_t](
-        Amax(dim, keep_dims),
-        data,
-        Amax.aten_op,
-    )
+def test_amax_tosa_INT(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    pipeline = TosaPipelineINT[Amax.input_t](Amax(dim, keep_dims), data, Amax.aten_op)
     pipeline.run()
 
 
-def test_amax_u55_BI_not_delegated():
-    data, dim, keep_dims = Amax.test_data["rank_4_all_dim"]
+def test_amax_u55_INT_not_delegated():
+    data, dim, keep_dims = Amax.test_data["rank_4_all_dim"]()
     pipeline = OpNotSupportedPipeline[Amax.input_t](
         Amax(dim, keep_dims),
         data,
-        "TOSA-0.80+BI+u55",
         {" executorch_exir_dialects_edge__ops_aten_amax_default": 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Amax.test_data)
-def test_amax_u85_BI(test_data: Amax.input_t):
-    data, dim, keep_dims = test_data
-    pipeline = EthosU85PipelineBI[Amax.input_t](
+@common.XfailIfNoCorstone320
+def test_amax_u85_INT(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    pipeline = EthosU85PipelineINT[Amax.input_t](
         Amax(dim, keep_dims),
         data,
         Amax.aten_op,
-    )
-    pipeline.run()
-
-
-fvp_xfails = {"rank_4_mult_batches": "MLETORCH-517 : Multiple batches not supported"}
-
-
-@common.parametrize("test_data", Amax.test_data, fvp_xfails)
-@common.SkipIfNoCorstone320
-def test_amax_u85_BI_on_fvp(test_data: Amax.input_t):
-    data, dim, keep_dims = test_data
-    pipeline = EthosU85PipelineBI[Amax.input_t](
-        Amax(dim, keep_dims), data, Amax.aten_op, run_on_fvp=True
+        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Max.test_data)
-def test_max_to_amax_MI(test_data: Max.input_t):
-    data, dim = test_data
-    pipeline = TosaPipelineMI[Max.input_t](
-        Max(dim),
-        data,
-        "torch.ops.aten.max",
-    )
+def test_max_dim_tosa_FP_to_amax(test_data: Max.input_t):
+    data, dim = test_data()
+    pipeline = TosaPipelineFP[Max.input_t](Max(dim), data, "torch.ops.aten.max")
     pipeline.run()
 
 
 @common.parametrize("test_data", Max.test_data)
-def test_max_to_amax_BI(test_data: Max.input_t):
-    data, dim = test_data
+def test_max_dim_tosa_INT_to_amax(test_data: Max.input_t):
+    data, dim = test_data()
     module = Max(dim)
-    pipeline = TosaPipelineBI[Max.input_t](
-        module,
-        data,
-        "torch.ops.aten.amax",
-    )
+    pipeline = TosaPipelineINT[Max.input_t](module, data, "torch.ops.aten.amax")
     pipeline.run()
 
 
 @pytest.mark.xfail(reason="MLETORCH-718 : Quantization of indices in arm_quantizer")
-def test_max_index_not_delegated_BI():
-    data, dim = Max.test_data["rank_4_dim_3"]
+def test_max_dim_tosa_INT_not_delegated():
+    data, dim = Max.test_data()["rank_4_dim_3"]()
     pipeline = OpNotSupportedPipeline[Max.input_t](
-        MaxWithIndex(dim), data, "TOSA-0.80+BI", {}
+        MaxWithIndex(dim), data, {}, quantize=True
     )
     pipeline.run()
 
 
-def test_max_index_not_delegated_MI():
-    data, dim = Max.test_data["rank_4_dim_3"]
-    pipeline = OpNotSupportedPipeline[Max.input_t](
-        MaxWithIndex(dim), data, "TOSA-0.80+MI", {}
+def test_max_dim_tosa_FP_not_delegated():
+    data, dim = Max.test_data["rank_4_dim_3"]()
+    pipeline = OpNotSupportedPipeline[Max.input_t](MaxWithIndex(dim), data, {})
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amax.test_data)
+@common.SkipIfNoModelConverter
+def test_amax_vgf_FP(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    module = Amax(dim, keep_dims)
+    pipeline = VgfPipeline[Amax.input_t](
+        module,
+        data,
+        Amax.aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amax.test_data)
+@common.SkipIfNoModelConverter
+def test_amax_vgf_INT(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    module = Amax(dim, keep_dims)
+    pipeline = VgfPipeline[Amax.input_t](
+        module,
+        data,
+        Amax.aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Max.test_data)
+@common.SkipIfNoModelConverter
+def test_max_dim_vgf_FP_to_amax(test_data: Max.input_t):
+    data, dim = test_data()
+    pipeline = VgfPipeline[Max.input_t](
+        Max(dim),
+        data,
+        "torch.ops.aten.max",
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Max.test_data)
+@common.SkipIfNoModelConverter
+def test_max_dim_vgf_INT_to_amax(test_data: Max.input_t):
+    data, dim = test_data()
+    pipeline = VgfPipeline[Max.input_t](
+        Max(dim),
+        data,
+        "torch.ops.aten.amax",
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

@@ -1,57 +1,47 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
+from typing import Tuple
 
 import torch
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test.tester.test_pipeline import (
+    TosaPipelineFP,
+    TosaPipelineINT,
+)
 
 
-class TestMultipleDelegates(unittest.TestCase):
-    class MultipleDelegatesModule(torch.nn.Module):
-        inputs = (torch.randn(10, 4, 5), torch.randn(10, 4, 5))
+input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
-        def get_inputs(self):
-            return self.inputs
 
-        def forward(self, x: torch.Tensor, y: torch.Tensor):
-            z = x + y
-            s = torch.tan(z)
-            return s * z
+class MultipleDelegatesModule(torch.nn.Module):
+    inputs = {
+        "randn": (torch.randn(10, 4, 5), torch.randn(10, 4, 5)),
+    }
 
-    def test_tosa_MI(self):
-        module = self.MultipleDelegatesModule()
-        inputs = module.get_inputs()
-        (
-            ArmTester(
-                module,
-                example_inputs=inputs,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 2})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=inputs)
-        )
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        z = x + y
+        s = torch.tan(z)
+        return s * z
 
-    def test_tosa_BI(self):
-        module = self.MultipleDelegatesModule()
-        inputs = module.get_inputs()
-        (
-            ArmTester(
-                module,
-                example_inputs=inputs,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 2})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=inputs, qtol=1.0)
-        )
+
+@common.parametrize("test_data", MultipleDelegatesModule.inputs)
+def test_tosa_FP_pipeline(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](MultipleDelegatesModule(), test_data, [], [])
+    pipeline.change_args(
+        "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MultipleDelegatesModule.inputs)
+def test_tosa_INT_pipeline(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        MultipleDelegatesModule(), test_data, [], [], qtol=1
+    )
+    pipeline.change_args(
+        "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
+    )
+    pipeline.run()

@@ -12,7 +12,7 @@ SCRIPT_DIR_PATH="$(
 
 # TODO(jathu): remove the need to fetch coremltools to build deps for coreml_executor_runner.
 # Keep this version in sync with: pyproject.toml
-COREMLTOOLS_VERSION="8.3"
+COREMLTOOLS_VERSION="9.0b1"
 
 red=`tput setaf 1`
 green=`tput setaf 2`
@@ -48,14 +48,6 @@ fi
 mkdir "$COREMLTOOLS_DIR_PATH/build"
 cmake -S "$COREMLTOOLS_DIR_PATH" -B "$COREMLTOOLS_DIR_PATH/build"
 cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel --target mlmodel
-
-echo "${green}ExecuTorch: Cloning nlohmann."
-git clone https://github.com/nlohmann/json.git "$COREML_DIR_PATH/third-party/nlohmann_json"
-STATUS=$?
-if [ $STATUS -ne 0 ]; then
-    echo "${red}ExecuTorch: Failed to clone nlohmann."
-    exit 1
-fi
 
 echo "${green}ExecuTorch: Copying protobuf files."
 mkdir -p "$COREML_DIR_PATH/runtime/sdk/format/"

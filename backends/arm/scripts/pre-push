@@ -4,11 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-RESET='\e[0m'
-RED='\e[31m'
-GREEN='\e[32m'
-YELLOW='\e[33m'
-BLUE='\e[34m'
+# Calling this script with one argument is equal to launching it in
+# non-interactive mode. "$#" gives the number of positional arguments.
+[ "$#" -eq 1 ] && is_script_interactive=1 || is_script_interactive=0
+
+if [ $is_script_interactive -eq 1 ]; then
+    RESET='\e[0m'
+    RED='\e[31m'
+    GREEN='\e[32m'
+    YELLOW='\e[33m'
+    BLUE='\e[34m'
+fi
 
 INFO="${BLUE}[INFO]${RESET}"
 WARNING="${YELLOW}[WARNING]${RESET}"
@@ -31,8 +37,10 @@ VERBS="Add|Fix|Update|Refactor|Improve|Remove|Change|Implement|Create|Modify|"\
 
 # Remote branch
 REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
-
-if [ -z "$REMOTE" ]; then
+if [ $is_script_interactive -eq 0 ]; then
+    # Just use the one commit
+    COMMITS=$(git rev-list HEAD -n 1)
+elif [ -z "$REMOTE" ]; then
     echo -e "${WARNING} Could not find upstream branch to compare to."
     echo "Please specify the number of commits you are pushing."
     echo -n "Enter number of commits to check (default 1): " > /dev/tty
@@ -68,7 +76,7 @@ for COMMIT in ${COMMITS}; do
 
     # lintrunner on latest patches.
     echo -e "${INFO} Lintrunner"
-    lintrunner --revision ${COMMIT}
+    MYPYPATH=./src/ lintrunner --revision ${COMMIT}^1
     if [[ $? != 0 ]]; then
         echo -e "${ERROR} Failed linting"
         FAILED=1
@@ -155,45 +163,23 @@ for COMMIT in ${COMMITS}; do
     if [[ ! "$SUBJECT" =~ ^"Arm backend":\ (${VERBS}) ]]; then
         echo -e "${WARNING} Subject should start with 'Arm backend: '"\
             "followed by an imperative verb." >&2
-        echo -n "There are warnings in your commit message. Do you want to"\
-            "ignore the warning (y/N): " > /dev/tty
 
-        read USER_INPUT < /dev/tty
+        if [ $is_script_interactive -eq 1 ]; then
+            echo -n "There are warnings in your commit message. Do you want to"\
+                "ignore the warning (y/N): " > /dev/tty
 
-        # Check user input for warnings
-        if [[ ! "$USER_INPUT" =~ ^[Yy]$ ]]; then
-            FAILED=1
+            read USER_INPUT < /dev/tty
+
+            # Check user input for warnings
+            if [[ ! "$USER_INPUT" =~ ^[Yy]$ ]]; then
+                FAILED=1
+            fi
         fi
     fi
 
     # Op test checks
     op_test_files=$(echo $commit_files | grep -oE 'backends/arm/test/ops/\S+')
     if [ "$op_test_files" ]; then
-
-        # TODO: These checks can be removed when all unittests are refactored.
-        if grep -icq "SkipIfNoCorstone" $op_test_files; then
-            echo -e "${ERROR} @SkipIfNoCorstone300/320 is deprecated;"\
-                "please use XfailIfNoCorstone300/320 instead." >&2
-            FAILED=1
-        fi
-
-        if grep -icq "conftest.expectedFailureOnFVP" $op_test_files; then
-            echo -e "${ERROR} @conftest.expectedFailureOnFVP is deprecated;"\
-                "please use XfailIfCorstone300/320 instead." >&2
-            FAILED=1
-        fi
-
-        if grep -icq "unittest.TestCase" $op_test_files; then
-            echo -e "${ERROR} Use of the Unittest test framework is deprecated;"\
-            "please use Pytest instead." >&2
-            FAILED=1
-        fi
-
-        if grep -icq "on_fvp(" $op_test_files; then
-            echo -e "${ERROR} All unittests should run on FVP if relevant,"\
-            "on_fvp suffix can be excluded." >&2
-            FAILED=1
-        fi
 
         # Check that the tested op and target is parsed correctly from the test name
         test_names=$(grep -h "def test_" $op_test_files | cut -d"(" -f1 | cut -d" " -f2)

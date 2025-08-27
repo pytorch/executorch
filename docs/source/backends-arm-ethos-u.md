@@ -23,7 +23,7 @@ The example below demonstrates the lowering processs of a MobileNet V2 model fro
 ```python
 import torch
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
-from executorch.backends.arm.ethosu_partitioner import EthosUPartitioner
+from executorch.backends.arm.ethosu import EthosUPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -33,17 +33,14 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchvision.models import mobilenetv2
+import executorch.kernels.quantized
 
 mobilenet_v2 = mobilenetv2.mobilenet_v2(
     weights=mobilenetv2.MobileNet_V2_Weights.DEFAULT
 ).eval()
 example_inputs = (torch.randn(1, 3, 224, 224),)
-# .so suffix is .dylib on MacOS.
-torch.ops.load_library(
-    "cmake-out-aot-lib/kernels/quantized/libquantized_ops_aot_lib.so"
-)
 
 compile_spec = ArmCompileSpecBuilder().ethosu_compile_spec(
         "ethos-u55-128",
@@ -53,14 +50,14 @@ compile_spec = ArmCompileSpecBuilder().ethosu_compile_spec(
     ).build()
 
 # Post training quantization
-graph_module = torch.export.export_for_training(mobilenet_v2, example_inputs).module()
+graph_module = torch.export.export(mobilenet_v2, example_inputs).module()
 quantizer = EthosUQuantizer(compile_spec)
 operator_config = get_symmetric_quantization_config(is_per_channel=False)
 quantizer.set_global(operator_config)
 graph_module = prepare_pt2e(graph_module, quantizer)
 graph_module(*example_inputs)
 graph_module = convert_pt2e(graph_module)
-exported_program = torch.export.export_for_training(graph_module, example_inputs)
+exported_program = torch.export.export(graph_module, example_inputs)
 
 # Lower the exported program to the Ethos-U backend and save pte file.
 edge_program_manager = to_edge_transform_and_lower(
@@ -98,4 +95,4 @@ Finally, run the elf file on FVP using the script
 `executorch/backends/arm/scripts/run_fvp.sh --elf=executorch/mv2_arm_ethos_u55/cmake-out/arm_executor_runner --target=ethos-u55-128`.
 
 ## See Also
-- [Arm Ethos-U Backend Tutorial](tutorial-arm-ethos-u.md)
+- [Arm Ethos-U Backend Tutorial](tutorial-arm.md)

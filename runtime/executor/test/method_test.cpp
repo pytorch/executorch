@@ -78,15 +78,15 @@ class MethodTest : public ::testing::Test {
     load_program(std::getenv("ET_MODULE_INDEX_PATH"), "index");
     load_program(
         std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"), "cat");
-    load_program(std::getenv("ET_MODULE_LINEAR_PATH"), "linear");
+    load_program(std::getenv("ET_MODULE_ADD_MUL_PATH"), "add_mul");
     load_program(std::getenv("ET_MODULE_STATEFUL_PATH"), "stateful");
     load_program(
         std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH"),
         "linear_constant_buffer");
 
     load_program(
-        std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH"), "linear_program");
-    load_data_map(std::getenv("ET_MODULE_LINEAR_DATA_PATH"), "linear_data");
+        std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH"), "add_mul_program");
+    load_data_map(std::getenv("ET_MODULE_ADD_MUL_DATA_PATH"), "add_mul_data");
   }
 
  private:
@@ -104,9 +104,13 @@ TEST_F(MethodTest, MoveTest) {
   Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
-  // Can execute the method.
+  // Set dummy inputs.
   auto input_cleanup = prepare_input_tensors(*method);
   ASSERT_EQ(input_cleanup.error(), Error::Ok);
+  auto input_err = method->set_input(executorch::runtime::EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  // Can execute the method.
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
 
@@ -309,8 +313,23 @@ TEST_F(MethodTest, ConstantSegmentTest) {
   // Execute model with constants stored in segment.
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method =
-      programs_["linear"]->load_method("forward", &mmm.get());
+      programs_["add_mul"]->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
+
+  // Set a dummy input.
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
 
   // Can execute the method.
   Error err = method->execute();
@@ -324,6 +343,21 @@ TEST_F(MethodTest, ConstantBufferTest) {
       programs_["linear_constant_buffer"]->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
+  // Set a dummy input.
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
+
   // Can execute the method.
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
@@ -331,9 +365,24 @@ TEST_F(MethodTest, ConstantBufferTest) {
 
 TEST_F(MethodTest, ProgramDataSeparationTest) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Result<Method> method = programs_["linear_program"]->load_method(
-      "forward", &mmm.get(), nullptr, data_maps_["linear_data"].get());
+  Result<Method> method = programs_["add_mul_program"]->load_method(
+      "forward", &mmm.get(), nullptr, data_maps_["add_mul_data"].get());
   ASSERT_EQ(method.error(), Error::Ok);
+
+  // Set a dummy input.
+  int32_t sizes[2] = {2, 2};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {2, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
 
   // Can execute the method.
   Error err = method->execute();
@@ -356,6 +405,21 @@ TEST_F(MethodTest, MethodGetAttributeTest) {
 
   // expect data to be set
   EXPECT_EQ(res->const_data_ptr(), &data);
+
+  // Set a dummy input.
+  int32_t sizes[1] = {1};
+  uint8_t dim_order[1] = {0};
+  int32_t strides[1] = {1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      1,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
 
   // Can execute the method.
   Error err = method->execute();

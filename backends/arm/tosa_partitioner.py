@@ -9,8 +9,8 @@ import logging
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.arm_backend import (
-    get_tosa_spec,
     is_tosa,
 )  # usort: skip
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
@@ -18,6 +18,7 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa_backend import TOSABackend
+from executorch.backends.arm.tosa_specification import get_tosa_spec
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -25,29 +26,12 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 
 logger = logging.getLogger(__name__)
-
-
-def is_quant_node(node: torch.fx.node.Node) -> bool:
-    return node.target in {
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-    }
-
-
-def is_dequant_node(node: torch.fx.node.Node) -> bool:
-    return node.target in {
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-    }
 
 
 class TOSAPartitioner(Partitioner):
@@ -96,18 +80,22 @@ class TOSAPartitioner(Partitioner):
 
             # De-tag outmost q-nodes upwards and dq-nodes downwards.
             # De-tag if at least one input/ output is not part of partition.
-            for node in partition.nodes:
-                if is_quant_node(node):
+            for node in exported_program.graph_module.graph.nodes:
+                if not is_partitioned(node):
+                    continue
+                if node.target in Q_OPS:
                     for input in node.all_input_nodes:
                         if not is_partitioned(input):
                             del node.meta["delegation_tag"]
                             break
+                    continue
 
-                if is_dequant_node(node):
+                if node.target in DQ_OPS:
                     for user in node.users:
                         if not is_partitioned(user):
                             del node.meta["delegation_tag"]
                             break
+                    continue
 
                 if tosa_spec.support_float():
                     continue
@@ -170,10 +158,19 @@ class TOSAPartitioner(Partitioner):
 
         ops_to_not_decompose = [
             torch.ops.aten.linear.default,
-            torch.ops.aten.upsample_bilinear2d.vec,
-            torch.ops.aten.upsample_nearest2d.vec,
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.logit.default,
         ] + ops_to_not_decompose_if_quant_op
+
+        tosa_spec = get_tosa_spec(self.delegation_spec.compile_specs)
+        if not tosa_spec.is_U55_subset:
+            # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d
+            # and upsample_nearest2d decompose into that it will not be possible to
+            # delegate those operators on U55. If we have said here to not decompose
+            # them there will be an error saying the operator was not decomposed. It
+            # will not be possible for it to end up on either CPU or NPU.
+            ops_to_not_decompose.append(torch.ops.aten.upsample_nearest2d.vec)
+            ops_to_not_decompose.append(torch.ops.aten.upsample_bilinear2d.vec)
 
         return (ops_to_not_decompose, filter_fn)

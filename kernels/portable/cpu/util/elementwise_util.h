@@ -9,11 +9,18 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/kernels/portable/cpu/selective_build.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
+#include <executorch/kernels/portable/cpu/util/vectorized_math.h> // Make vectorization support easy for clients.
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
+
+#if defined(ET_USE_PYTORCH_HEADERS) && ET_USE_PYTORCH_HEADERS
+#include <ATen/cpu/vec/vec.h>
+#endif // ET_USE_PYTORCH_HEADERS
 
 #include <array>
 #include <utility>
@@ -22,38 +29,52 @@ namespace torch {
 namespace executor {
 namespace native {
 namespace utils {
-
-/*
- * Convert Scalar to C++ type
- */
-
-template <typename T>
-T scalar_to(const Scalar& s) {
-  if (s.isBoolean()) {
-    return static_cast<T>(s.to<bool>());
-  } else if (s.isFloatingPoint()) {
-    return static_cast<T>(s.to<double>());
-  } else {
-    return static_cast<T>(s.to<int64_t>());
-  }
-}
-
-template <>
-inline double scalar_to<double>(const Scalar& s) {
-  return s.isFloatingPoint() ? s.to<double>()
-                             : static_cast<double>(s.to<int64_t>());
-}
-
-template <>
-inline int64_t scalar_to<int64_t>(const Scalar& s) {
-  return s.isFloatingPoint() ? static_cast<int64_t>(s.to<double>())
-                             : s.to<int64_t>();
-}
-
 namespace internal {
+/**
+ * Causes these utility functions to make sure to respect Tensor
+ * strides; normally, this is not strictly necessary because ExecuTorch
+ * Tensors are contiguous.
+ */
+struct SupportNoncontiguousInputTensors {
+  explicit SupportNoncontiguousInputTensors() = default;
+};
+
+template <typename Ignore, typename T>
+using ignore_first_yield_second = T;
+
+#if defined(ET_USE_PYTORCH_HEADERS) && ET_USE_PYTORCH_HEADERS
+// Can I call a function of type Op with sizeof...(Args) arguments of type
+// at::vec::Vectorized<CTYPE_COMPUTE>?
+//
+// See [NOTE: Generic lambdas] below for requirements on Op.
+template <typename CTYPE_COMPUTE, typename Op, typename... Args>
+constexpr bool can_use_vectorized() {
+  using Vec = at::vec::Vectorized<CTYPE_COMPUTE>;
+  // NOTE: if we start building optimized kernels on platforms that
+  // ATen Vectorized doesn't support well, we will want to add a way
+  // to check that Vectorized actually does something on our target
+  // platform. For now, I see no concrete need for that.
+  if constexpr (std::is_invocable_v<
+                    Op,
+                    ignore_first_yield_second<Args, Vec>...>) {
+    // For bool, we will get a false positive if we rely on only the
+    // is_invocable_v check above because at::vec::Vectorized is
+    // implicitly convertible to a pointer, which makes it implicitly
+    // convertible to bool (which was 15 minutes of fun to debug). Also
+    // just seems like good hygiene to make sure we get the Vectorized
+    // we're expecting.
+    return std::is_same_v<
+        std::invoke_result_t<Op, ignore_first_yield_second<Args, Vec>...>,
+        Vec>;
+  }
+  return false;
+}
+#endif // ET_USE_PYTORCH_HEADERS
+
 template <
     typename CTYPE_COMPUTE,
     typename CTYPE_OUT,
+    bool support_noncontiguous_tensors,
     typename Op,
     typename... Args>
 inline void dtype_specialized_elementwise_fn_impl(
@@ -61,8 +82,90 @@ inline void dtype_specialized_elementwise_fn_impl(
     KernelRuntimeContext& ctx,
     const Tensor& out,
     Args... inputs) {
+  static_assert(
+      (std::is_same_v<Args, std::pair<const Tensor*, SupportedTensorDtypes>> &&
+       ...));
   constexpr auto kNumInputs = sizeof...(inputs);
-  ET_DCHECK(((inputs.first->element_size() == sizeof(CTYPE_COMPUTE)) && ...));
+  // All inputs must be of type CTYPE_COMPUTE.
+  ET_DCHECK(
+      ((inputs.first->scalar_type() ==
+        CppTypeToScalarType<CTYPE_COMPUTE>::value) &&
+       ...));
+
+#if defined(ET_USE_PYTORCH_HEADERS) && ET_USE_PYTORCH_HEADERS
+  if constexpr (can_use_vectorized<CTYPE_COMPUTE, Op, Args...>()) {
+    const bool any_is_broadcasted =
+        !(torch::executor::internal::sizes_match_ignoring_leading_1s(
+              inputs.first->sizes(), out.sizes()) &&
+          ...);
+    if (!any_is_broadcasted) {
+      using Vec = at::vec::Vectorized<CTYPE_COMPUTE>;
+      ::executorch::extension::parallel_for(
+          0,
+          out.numel(),
+          ::executorch::extension::internal::GRAIN_SIZE,
+          [&](const auto begin, const auto end) {
+            std::array<const CTYPE_COMPUTE*, kNumInputs> inputs_data_ptrs = {
+                inputs.first->template const_data_ptr<CTYPE_COMPUTE>()...};
+
+            CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
+
+            const auto vectorized_begin =
+                begin + (Vec::size() - begin % Vec::size()) % Vec::size();
+            const auto vectorized_end = end - (end % Vec::size());
+            // Scalar prologue.
+            for (const auto idx : c10::irange(begin, vectorized_begin)) {
+          // In debug mode, always use Vectorized so that even
+          // small-sized tests will test whether using Vectorized broke our
+          // lambda.
+#ifndef NDEBUG
+              std::array<Vec, kNumInputs> loaded_inputs{};
+#else // NDEBUG
+              std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
+#endif // NDEBUG
+              for (const auto input_idx : c10::irange(kNumInputs)) {
+                loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
+              }
+#ifndef NDEBUG
+              std::apply(compute_fun, loaded_inputs).store(&data_out[idx], 1);
+#else // NDEBUG
+              data_out[idx] = std::apply(compute_fun, loaded_inputs);
+#endif // NDEBUG
+            }
+
+            // Main vectorized loop.
+            for (auto idx = vectorized_begin; idx < vectorized_end;
+                 idx += Vec::size()) {
+              std::array<Vec, kNumInputs> loaded_vec_inputs{};
+              for (const auto input_idx : c10::irange(kNumInputs)) {
+                loaded_vec_inputs[input_idx] =
+                    Vec::loadu(&inputs_data_ptrs[input_idx][idx]);
+              }
+              auto result_vec = std::apply(compute_fun, loaded_vec_inputs);
+              result_vec.store(&data_out[idx]);
+            }
+
+            // Scalar epilogue.
+            for (const auto idx : c10::irange(vectorized_end, end)) {
+#ifndef NDEBUG
+              std::array<Vec, kNumInputs> loaded_inputs{};
+#else // NDEBUG
+              std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
+#endif // NDEBUG
+              for (const auto input_idx : c10::irange(kNumInputs)) {
+                loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
+              }
+#ifndef NDEBUG
+              std::apply(compute_fun, loaded_inputs).store(&data_out[idx], 1);
+#else // NDEBUG
+              data_out[idx] = std::apply(compute_fun, loaded_inputs);
+#endif // NDEBUG
+            }
+          });
+      return;
+    }
+  }
+#endif // ET_USE_PYTORCH_HEADERS
 
   ::executorch::extension::parallel_for(
       0,
@@ -75,12 +178,13 @@ inline void dtype_specialized_elementwise_fn_impl(
         CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
         const auto range =
-            BroadcastIndexesRange<kNumInputs>(out, (*inputs.first)...);
+            BroadcastIndexesRange<kNumInputs, support_noncontiguous_tensors>(
+                out, (*inputs.first)...);
         auto begin_it = range.begin();
         begin_it += begin;
         for (; (*begin_it)[0] < end; ++begin_it) {
           const auto& indexes = *begin_it;
-          std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs;
+          std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
           for (const auto idx : c10::irange(kNumInputs)) {
             loaded_inputs[idx] = inputs_data_ptrs[idx][indexes[idx + 1]];
           }
@@ -89,9 +193,8 @@ inline void dtype_specialized_elementwise_fn_impl(
       });
 }
 
-template <typename CTYPE_COMPUTE, typename Op, typename... Args>
+template <typename CTYPE_COMPUTE, typename... Args>
 inline bool validate_elementwise_fn_inputs(
-    const Op& compute_fun,
     KernelRuntimeContext& ctx,
     const Tensor& out,
     SupportedTensorDtypes out_dtypes,
@@ -117,6 +220,7 @@ inline bool validate_elementwise_fn_inputs(
 template <
     typename CTYPE_COMPUTE,
     const char* op_name,
+    bool support_noncontiguous_tensors,
     typename Op,
     typename... Args>
 inline void apply_elementwise_fn_generic_impl(
@@ -134,14 +238,14 @@ inline void apply_elementwise_fn_generic_impl(
   };
   std::array<InputInfo, kNumInputs> inputs_info = {(InputInfo{
       internal::get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
-          *inputs.first, inputs.second),
+          ctx, *inputs.first, inputs.second),
       reinterpret_cast<const char*>(inputs.first->const_data_ptr()),
       inputs.first->element_size(),
   })...};
 
   const auto store_compute_to_out =
       internal::get_store_compute_to_tensor_fn<CTYPE_COMPUTE, op_name>(
-          out, out_dtypes);
+          ctx, out, out_dtypes);
   char* const data_out = reinterpret_cast<char*>(out.mutable_data_ptr());
   const auto out_element_size = out.element_size();
 
@@ -151,12 +255,13 @@ inline void apply_elementwise_fn_generic_impl(
       ::executorch::extension::internal::GRAIN_SIZE,
       [&](const auto begin, const auto end) {
         const auto range =
-            BroadcastIndexesRange<kNumInputs>(out, (*inputs.first)...);
+            BroadcastIndexesRange<kNumInputs, support_noncontiguous_tensors>(
+                out, (*inputs.first)...);
         auto begin_it = range.begin();
         begin_it += begin;
         for (; (*begin_it)[0] < end; ++begin_it) {
           const auto& indexes = *begin_it;
-          std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs;
+          std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
           for (const auto idx : c10::irange(kNumInputs)) {
             const auto& input_info = inputs_info[idx];
             loaded_inputs[idx] = input_info.load_to_compute(
@@ -182,12 +287,15 @@ inline void apply_elementwise_fn_runtime_out_dtypes(
     SupportedTensorDtypes out_dtypes,
     Args... inputs) {
   const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMPUTE>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
+      ctx, out, out_dtypes, inputs...);
   if (!inputs_valid) {
     return;
   }
 
-  apply_elementwise_fn_generic_impl<CTYPE_COMPUTE, op_name>(
+  apply_elementwise_fn_generic_impl<
+      CTYPE_COMPUTE,
+      op_name,
+      /*support_noncontiguous_tensors*/ false>(
       compute_fun, ctx, out, out_dtypes, inputs...);
 }
 
@@ -195,6 +303,7 @@ template <
     typename CTYPE_COMPUTE,
     const char* op_name,
     SupportedTensorDtypes out_dtypes,
+    bool support_noncontiguous_tensors,
     typename Op,
     typename... Args>
 inline void apply_elementwise_fn(
@@ -203,27 +312,35 @@ inline void apply_elementwise_fn(
     const Tensor& out,
     Args... inputs) {
   const bool inputs_valid = validate_elementwise_fn_inputs<CTYPE_COMPUTE>(
-      compute_fun, ctx, out, out_dtypes, inputs...);
+      ctx, out, out_dtypes, inputs...);
   if (!inputs_valid) {
     return;
   }
 
   constexpr auto compute_type = CppTypeToScalarType<CTYPE_COMPUTE>::value;
-  const bool all_inputs_compute_dtype =
-      ((inputs.first->scalar_type() == compute_type) && ...);
-
   constexpr ScalarType out_specialized_scalar_type =
       specialized_output_scalar_type<CTYPE_COMPUTE>(out_dtypes);
-  if (all_inputs_compute_dtype &&
-      out.scalar_type() == out_specialized_scalar_type) {
-    using CTYPE_OUT =
-        typename ScalarTypeToCppType<out_specialized_scalar_type>::type;
-    dtype_specialized_elementwise_fn_impl<CTYPE_COMPUTE, CTYPE_OUT>(
-        compute_fun, ctx, out, inputs...);
-    return;
+  if constexpr (should_include_kernel_dtype(
+                    op_name, out_specialized_scalar_type)) {
+    const bool all_inputs_compute_dtype =
+        ((inputs.first->scalar_type() == compute_type) && ...);
+
+    if (all_inputs_compute_dtype &&
+        out.scalar_type() == out_specialized_scalar_type) {
+      using CTYPE_OUT =
+          typename ScalarTypeToCppType<out_specialized_scalar_type>::type;
+      dtype_specialized_elementwise_fn_impl<
+          CTYPE_COMPUTE,
+          CTYPE_OUT,
+          support_noncontiguous_tensors>(compute_fun, ctx, out, inputs...);
+      return;
+    }
   }
 
-  apply_elementwise_fn_generic_impl<CTYPE_COMPUTE, op_name>(
+  apply_elementwise_fn_generic_impl<
+      CTYPE_COMPUTE,
+      op_name,
+      support_noncontiguous_tensors>(
       compute_fun, ctx, out, out_dtypes, inputs...);
 }
 
@@ -240,6 +357,19 @@ inline void apply_unitensor_elementwise_fn(
       compute_fun, ctx, out, out_dtypes, std::make_pair(&a, a_dtypes));
 }
 
+/**
+ * Useful for unary elementwise operators. For each element of the
+ * input, call Op and write to the corresponding element of the
+ * output. Tensor broadcasting is applied wherever it is required.
+ *
+ * [NOTE: Generic lambdas]: If Op is a *generic* lambda (i.e., one with `auto`
+ * parameters; normal lambdas are fine), it must fulfill one of the
+ * following conditions. Either:
+ * 1) It must in fact compile when passed at::vec::Vectorized<CTYPE_COMPUTE>, or
+ * 2) It must be actively SFINAE-friendly, as per the C++17 examples in
+ * https://stackoverflow.com/questions/76525790/detecting-if-a-generic-lambda-with-certain-arguments-is-invocable
+ * .
+ */
 template <
     typename CTYPE_COMPUTE,
     const char* op_name,
@@ -251,7 +381,31 @@ inline void apply_unitensor_elementwise_fn(
     const Tensor& a,
     SupportedTensorDtypes a_dtypes,
     const Tensor& out) {
-  internal::apply_elementwise_fn<CTYPE_COMPUTE, op_name, out_dtypes>(
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ false>(
+      compute_fun, ctx, out, std::make_pair(&a, a_dtypes));
+}
+
+template <
+    typename CTYPE_COMPUTE,
+    const char* op_name,
+    SupportedTensorDtypes out_dtypes,
+    typename Op>
+inline void apply_unitensor_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& out,
+    SupportNoncontiguousInputTensors) {
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ true>(
       compute_fun, ctx, out, std::make_pair(&a, a_dtypes));
 }
 
@@ -281,6 +435,8 @@ inline void apply_bitensor_elementwise_fn(
  * Useful for bi-tensor elementwise operators. For each element of the inputs,
  * perform a computation and write to the corresponding element of the output.
  * Tensor broadcasting is applied wherever it is required.
+ * See [NOTE: Generic lambdas] if you want to pass a generic lambda for
+ * compute_fun.
  */
 template <
     typename CTYPE_COMPUTE,
@@ -295,7 +451,37 @@ inline void apply_bitensor_elementwise_fn(
     const Tensor& b,
     SupportedTensorDtypes b_dtypes,
     const Tensor& out) {
-  internal::apply_elementwise_fn<CTYPE_COMPUTE, op_name, out_dtypes>(
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ false>(
+      compute_fun,
+      ctx,
+      out,
+      std::make_pair(&a, a_dtypes),
+      std::make_pair(&b, b_dtypes));
+}
+
+template <
+    typename CTYPE_COMPUTE,
+    const char* op_name,
+    SupportedTensorDtypes out_dtypes,
+    typename Op>
+inline void apply_bitensor_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& b,
+    SupportedTensorDtypes b_dtypes,
+    const Tensor& out,
+    SupportNoncontiguousInputTensors) {
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ true>(
       compute_fun,
       ctx,
       out,
@@ -347,6 +533,9 @@ inline void apply_tritensor_elementwise_fn(
  *
  * static constexpr const char op_name[] = "my_op";
  * apply_ternary_elementwise_fn<CTYPE_COMPUTE, op_name>.
+ *
+ * See [NOTE: Generic lambdas] if you want to pass a generic lambda for
+ * compute_fun.
  */
 template <
     typename CTYPE_COMPUTE,
@@ -363,7 +552,40 @@ inline void apply_tritensor_elementwise_fn(
     const Tensor& c,
     SupportedTensorDtypes c_dtypes,
     const Tensor& out) {
-  internal::apply_elementwise_fn<CTYPE_COMPUTE, op_name, out_dtypes>(
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ false>(
+      compute_fun,
+      ctx,
+      out,
+      std::make_pair(&a, a_dtypes),
+      std::make_pair(&b, b_dtypes),
+      std::make_pair(&c, c_dtypes));
+}
+
+template <
+    typename CTYPE_COMPUTE,
+    const char* op_name,
+    SupportedTensorDtypes out_dtypes,
+    typename Op>
+inline void apply_tritensor_elementwise_fn(
+    const Op& compute_fun,
+    KernelRuntimeContext& ctx,
+    const Tensor& a,
+    SupportedTensorDtypes a_dtypes,
+    const Tensor& b,
+    SupportedTensorDtypes b_dtypes,
+    const Tensor& c,
+    SupportedTensorDtypes c_dtypes,
+    const Tensor& out,
+    SupportNoncontiguousInputTensors) {
+  internal::apply_elementwise_fn<
+      CTYPE_COMPUTE,
+      op_name,
+      out_dtypes,
+      /*support_noncontiguous_tensors*/ true>(
       compute_fun,
       ctx,
       out,

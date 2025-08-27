@@ -21,6 +21,10 @@ struct ExecutionPlan;
 
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
+namespace testing {
+// Provides test access to private Program methods.
+class TensorInfoTestFriend;
+} // namespace testing
 
 /**
  * Metadata about a specific tensor of an ExecuTorch Program.
@@ -66,18 +70,38 @@ class TensorInfo final {
    * Returns the fully qualified name of the Tensor might be empty if the tensor
    * is nameless.
    */
-  executorch::aten::string_view name() const;
+  std::string_view name() const;
 
  private:
   // Let MethodMeta create TensorInfo.
   friend class MethodMeta;
+  friend class testing::TensorInfoTestFriend;
+
+  /**
+   * Create a TensorInfo instance.
+   *
+   * @param[in] sizes The sizes of the tensor.
+   * @param[in] dim_order The dim order of the tensor.
+   * @param[in] scalar_type The scalar type of the tensor.
+   * @param[in] is_memory_planned Whether the tensor's memory was planned.
+   * @param[in] name The fully qualified name of the tensor.
+   * @returns A Result containing the TensorInfo on success, or an error on
+   * failure.
+   */
+  static Result<TensorInfo> create(
+      Span<const int32_t> sizes,
+      Span<const uint8_t> dim_order,
+      executorch::aten::ScalarType scalar_type,
+      const bool is_memory_planned,
+      std::string_view name);
 
   TensorInfo(
       Span<const int32_t> sizes,
       Span<const uint8_t> dim_order,
       executorch::aten::ScalarType scalar_type,
       const bool is_memory_planned,
-      executorch::aten::string_view name);
+      std::string_view name,
+      size_t nbytes);
 
   /**
    * The sizes of the tensor.
@@ -96,7 +120,7 @@ class TensorInfo final {
   Span<const uint8_t> dim_order_;
 
   /// The fully qualified name of the Tensor.
-  executorch::aten::string_view name_;
+  std::string_view name_;
 
   /// The scalar type of the tensor.
   executorch::aten::ScalarType scalar_type_;

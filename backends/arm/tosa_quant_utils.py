@@ -8,27 +8,24 @@
 # Utiliy functions for TOSA quantized lowerings
 
 import math
-from typing import cast, List, NamedTuple, Tuple
 
+from typing import Any, Tuple
+
+import serializer.tosa_serializer as ts  # type: ignore
 import torch.fx
 import torch.fx.node
 
-import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-import tosa_tools.v0_80.tosa.Op as TosaOp  # type: ignore
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.exir.dialects._ops import ops as exir_ops
-from torch import Tensor
 from torch.fx import Node
-
-
-q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
-dq_q_ops = (q_op, dq_op)
+from tosa.RoundingMode import RoundingMode  # type: ignore
 
 
 def insert_rescale_ops_to_int32(
-    tosa_graph: ts.TosaSerializer, inputs: list[TosaArg], node: Node
-) -> tuple[list[ts.TosaSerializerTensor], float]:
+    tosa_graph: Any,
+    inputs: list[TosaArg],
+    node: Node,
+    tosa_spec=None,
+) -> tuple[list[Any], float]:
     """Rescales all 'nodes' to int32, adding suitable RESCALE ops to 'tosa_graph'.
     The scales are adjusted using the smallest scale of all 'nodes'.
 
@@ -56,27 +53,25 @@ def insert_rescale_ops_to_int32(
 
     # Scale the int8 quantized input to a common scale in the integer
     # domain
-    min_scale = min([qarg.scale for qarg in qargs])
-    scales = [qarg.scale / min_scale for qarg in qargs]
+    min_scale = min([qarg.get_scale_per_tensor() for qarg in qargs])
+    scales = [qarg.get_scale_per_tensor() / min_scale for qarg in qargs]
 
-    rescaled_nodes: list[ts.TosaSerializerTensor] = []
+    rescaled_nodes: list[Any] = []
     for tensor, qarg, scale in zip(tensors, qargs, scales):
         rescaled_nodes.append(
             build_rescale_to_int32(
-                tosa_graph,
-                tensor,
-                qarg.zp,
-                [scale],
+                tosa_graph, tensor, qarg.get_zp_per_tensor(), scale, tosa_spec=tosa_spec
             )
         )
     return rescaled_nodes, min_scale
 
 
 def insert_rescale_op_to_int8(
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: Any,
     last_tensor: TosaArg,
     scale: float,
     node: Node,
+    tosa_spec=None,
 ) -> None:
     """Rescales the node back to int8, adding a suitable RESCALE op to 'tosa_graph'.
     Parameters:
@@ -97,55 +92,17 @@ def insert_rescale_op_to_int8(
     assert len(output_qparams) == 1, "More than one output not supported"
 
     qargs_out = output_qparams[0]
-    output_rescale_scale = scale / qargs_out.scale
+    output_rescale_scale = scale / qargs_out.get_scale_per_tensor()
 
     # Rescale Back to INT8
     build_rescale_from_int32(
         tosa_graph,
-        last_tensor.name,
+        last_tensor,
         node.name,
-        qargs_out.zp,
-        [output_rescale_scale],
+        qargs_out.get_zp_per_tensor(),
+        output_rescale_scale,
+        tosa_spec=tosa_spec,
     )
-
-
-class QuantArgs(NamedTuple):
-    scale: float
-    zp: int
-    qmin: int
-    qmax: int
-    dtype: torch.dtype
-
-    def quantize_value(self, x: torch.Tensor | float) -> Tensor:
-        if not isinstance(x, torch.Tensor):
-            x = torch.Tensor([x])
-        return torch.clip(
-            torch.round(x / self.scale) + self.zp,
-            self.qmin,
-            self.qmax,
-        ).to(self.dtype)
-
-    def dequantize_value(self, qx: torch.Tensor) -> torch.Tensor:
-        return (qx.to(torch.int64) - self.zp) * self.scale
-
-    @classmethod
-    def from_operator(cls, op, args):
-        if op in dq_q_ops:
-            return cls(
-                scale=cast(float, args[1]),
-                zp=cast(int, args[2]),
-                qmin=cast(int, args[3]),
-                qmax=cast(int, args[4]),
-                dtype=cast(torch.dtype, args[5]),
-            )
-        else:
-            # We're only handling per tensor quantization
-            raise NotImplementedError
-
-
-# Check if scale32 mode is used for given output element type
-def is_scale32(type: int) -> ts.DType:
-    return type == ts.DType.INT8
 
 
 # TOSA uses the RESCALE operation to scale between values with differing precision.
@@ -195,101 +152,139 @@ def compute_multiplier_and_shift(
     return multipliers, shifts
 
 
+# For TOSA spec v1.0 RESCALE operator requires multipler, shifts, input_zp and output_zp to be
+# const inputs. Create constant operators from the data already initialized.
+def create_const_ops_for_rescale(
+    tosa_fb,
+    scale_32,
+    input_dtype,
+    node_name,
+    multipliers,
+    shifts,
+    input_zp,
+    output_zp,
+    output_dtype,
+    ts,
+):
+
+    multipliers = tosa_fb.addConst(
+        (len(multipliers),),
+        ts.DType.INT32 if scale_32 else ts.DType.INT16,
+        multipliers,
+        name=node_name + "_multipliers",
+    )
+    shifts = tosa_fb.addConst(
+        (len(shifts),), ts.DType.INT8, shifts, name=node_name + "_shifts"
+    )
+    input_zp = tosa_fb.addConst(
+        [1], input_dtype, input_zp, name=node_name + "_input_zp"
+    )
+    output_zp = tosa_fb.addConst(
+        [1], output_dtype, output_zp, name=node_name + "_output_zp"
+    )
+
+    return [multipliers.name, shifts.name, input_zp.name, output_zp.name]
+
+
 def build_rescale(
-    tosa_fb: ts.TosaSerializer,
+    tosa_fb: Any,
     scale: list[float],
-    input_node: ts.TosaSerializerTensor,
+    input_node: Any,
     output_name: str,
-    output_type: ts.DType,
-    output_shape: List[int],
-    input_zp: int,
-    output_zp: int,
-    is_double_round: bool = False,
+    output_type: Any,
+    input_zp: list[int],
+    output_zp: list[int],
+    rounding_mode: RoundingMode,
     per_channel=False,
 ):
-    scale_width = 32 if is_scale32(output_type) else 16
-    multipliers, shifts = compute_multiplier_and_shift(scale, scale_width)
+    import serializer.tosa_serializer as ts  # type: ignore
+    import tosa.Op as TosaOp  # type: ignore
 
+    scaleWidth = 32
+    is_scale32 = True
+    multipliers, shifts = compute_multiplier_and_shift(scale, scaleWidth)
+    rescale_inputs = create_const_ops_for_rescale(
+        tosa_fb,
+        is_scale32,
+        input_node.dtype,
+        output_name,
+        multipliers,
+        shifts,
+        input_zp,
+        output_zp,
+        output_type,
+        ts,
+    )
     attr_rescale = ts.TosaSerializerAttribute()
     attr_rescale.RescaleAttribute(
-        input_zp=input_zp,
-        output_zp=output_zp,
-        multiplier=multipliers,
-        shift=shifts,
-        scale32=is_scale32(output_type),
-        double_round=is_double_round,
+        scale32=is_scale32,
+        rounding_mode=rounding_mode,
         per_channel=per_channel,
         input_unsigned=False,
         output_unsigned=False,
     )
 
     tosa_fb.addOperator(
-        TosaOp.Op().RESCALE, [input_node.name], [output_name], attr_rescale
+        TosaOp.Op().RESCALE,
+        [input_node.name, *rescale_inputs],
+        [output_name],
+        attr_rescale,
     )
 
     return
 
 
 def build_rescale_to_int32(
-    tosa_fb: ts.TosaSerializer,
+    tosa_fb: Any,
     input_arg: TosaArg,
     input_zp: int,
-    rescale_scale: list[float],
+    rescale_scale: float,
     is_scale32: bool = True,
     is_double_round: bool = False,
     per_channel: bool = False,
-) -> ts.TosaSerializerTensor:
-    multipliers, shifts = compute_multiplier_and_shift(rescale_scale)
-    attr_rescale = ts.TosaSerializerAttribute()
-    attr_rescale.RescaleAttribute(
-        input_zp=input_zp,
-        output_zp=0,
-        multiplier=multipliers,
-        shift=shifts,
-        scale32=is_scale32,
-        double_round=is_double_round,
-        per_channel=per_channel,
-        input_unsigned=False,
-        output_unsigned=False,
-    )
+    tosa_spec=None,
+) -> Any:
+    input_A_rescaled_to_int32 = None
+
     input_A_rescaled_to_int32 = tosa_fb.addIntermediate(input_arg.shape, ts.DType.INT32)
-    tosa_fb.addOperator(
-        TosaOp.Op().RESCALE,
-        [input_arg.name],
-        [input_A_rescaled_to_int32.name],
-        attr_rescale,
-    )
+
+    build_rescale(
+        tosa_fb,
+        [rescale_scale],
+        input_arg,
+        input_A_rescaled_to_int32.name,
+        ts.DType.INT32,
+        [input_zp],
+        [0],
+        rounding_mode=RoundingMode.SINGLE_ROUND,
+    )  # type: ignore[call-arg]
 
     return input_A_rescaled_to_int32
 
 
 def build_rescale_from_int32(
-    tosa_fb: ts.TosaSerializer,
-    input_name: str,
+    tosa_fb: Any,
+    input_node: TosaArg,
     output_name: str,
     output_zp: int,
-    rescale_scale: list[float],
+    rescale_scale: float,
     is_scale32: bool = True,
     is_double_round: bool = False,
     per_channel: bool = False,
+    tosa_spec=None,
 ) -> None:
-    multipliers, shifts = compute_multiplier_and_shift(rescale_scale)
-    attr_rescale_output = ts.TosaSerializerAttribute()
-    attr_rescale_output.RescaleAttribute(
-        input_zp=0,
-        output_zp=output_zp,
-        multiplier=multipliers,
-        shift=shifts,
-        scale32=is_scale32,
-        double_round=is_double_round,
-        per_channel=per_channel,
-        input_unsigned=False,
-        output_unsigned=False,
-    )
-
-    tosa_fb.addOperator(
-        TosaOp.Op().RESCALE, [input_name], [output_name], attr_rescale_output
-    )
+    # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
+    # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
+    build_rescale(
+        tosa_fb,
+        [rescale_scale],
+        input_node,
+        output_name=output_name,
+        output_type=ts.DType.INT8,
+        input_zp=[0],
+        output_zp=[output_zp],
+        rounding_mode=RoundingMode.SINGLE_ROUND,
+    )  # type: ignore[call-arg]
 
     return
 
@@ -298,31 +293,32 @@ def build_rescale_from_int32(
 
 
 def build_rescale_conv_output(
-    tosa_fb: ts.TosaSerializer,
-    op: ts.TosaSerializerTensor,
+    tosa_fb: Any,
+    op: Any,
     output_name: str,
-    output_type: ts.DType,
+    output_type: Any,
     input_scale: list[float],
     weight_scale: list[float],
     output_scale: list[float],
-    output_zp: int,
+    output_zp: list[int],
+    tosa_spec=None,
 ):
     # TODO add check to verify if this is a Per-channel quantization.
     post_conv2d_scale = [
         (inp * w) / out for inp, w, out in zip(input_scale, weight_scale, output_scale)
     ]
 
-    # Since we assume the input tensor that is being rescaled is int32 date type, zero point must be 0.
+    # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
+    # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
     build_rescale(
-        tosa_fb,
-        post_conv2d_scale,
-        op,
-        output_name,
-        output_type,
-        op.shape,
-        0,
-        output_zp,
-        False,
-        isinstance(weight_scale, torch.Tensor),
-    )
+        tosa_fb=tosa_fb,
+        scale=post_conv2d_scale,
+        input_node=op,
+        output_name=output_name,
+        output_type=output_type,
+        input_zp=[0],
+        output_zp=output_zp,
+        rounding_mode=RoundingMode.SINGLE_ROUND,
+        per_channel=isinstance(weight_scale, torch.Tensor),
+    )  # type: ignore[call-arg]
     return

@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
+#include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
@@ -19,6 +19,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 
 namespace executorch {
 namespace backends {
@@ -34,6 +35,16 @@ bool CompareExportedInput(
   int numA = std::stoi(a->GetName().substr(a->GetName().find('_') + 1));
   int numB = std::stoi(b->GetName().substr(b->GetName().find('_') + 1));
   return numA < numB;
+}
+
+int ExtractMutableBufferNumber(const std::string& name) {
+  std::string prefix = "mutbuf_";
+  size_t startPos = name.find(prefix);
+  if (startPos != std::string::npos) {
+    startPos += prefix.length();
+    return std::stoi(name.substr(startPos));
+  }
+  return -1;
 }
 
 QnnManager::~QnnManager() {
@@ -53,20 +64,25 @@ QnnManager::QnnManager(
       options->backend_options()->backend_type();
   std::string library_path = options->library_path()->str();
 
-  if (options->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+  if (get_option(options_->log_level()) >=
+      QnnExecuTorchLogLevel::kLogLevelInfo) {
     QNN_EXECUTORCH_LOG_INFO(
         "soc_model in soc_info: %s",
         EnumNameQcomChipset(options_->soc_info()->soc_model()));
     QNN_EXECUTORCH_LOG_INFO(
         "backend_type: %s", EnumNameQnnExecuTorchBackendType(backend_type));
-    QNN_EXECUTORCH_LOG_INFO("graph_name: %s", options_->graph_name()->c_str());
+    for (auto name : *options_->graph_name()) {
+      QNN_EXECUTORCH_LOG_INFO("graph_name: %s", name->c_str());
+    }
     QNN_EXECUTORCH_LOG_INFO("library_path: %s", library_path.c_str());
     QNN_EXECUTORCH_LOG_INFO("dump intermediate outputs: %s", IsTensorDump());
     QNN_EXECUTORCH_LOG_INFO(
-        "log_level: %s", EnumNameQnnExecuTorchLogLevel(options_->log_level()));
+        "log_level: %s",
+        EnumNameQnnExecuTorchLogLevel(get_option(options_->log_level())));
     QNN_EXECUTORCH_LOG_INFO(
         "profile_level: %s",
-        EnumNameQnnExecuTorchProfileLevel(options_->profile_level()));
+        EnumNameQnnExecuTorchProfileLevel(
+            get_option(options_->profile_level())));
     QNN_EXECUTORCH_LOG_INFO(
         "the size of qnn context binary: %d",
         qnn_executorch_context_binary.nbytes);
@@ -74,6 +90,9 @@ QnnManager::QnnManager(
         "Is on-device graph construction: %d", options->online_prepare());
     QNN_EXECUTORCH_LOG_INFO(
         "Enable shared buffer: %d", options->shared_buffer());
+    QNN_EXECUTORCH_LOG_INFO(
+        "The number of op packages: %d",
+        options_->op_package_options()->op_package_infos()->size());
   }
 
   if (library_path.empty()) {
@@ -187,7 +206,8 @@ Error QnnManager::RegisterIonMem(
     return Error::Internal;
   } else if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
                  tensor_wrapper->GetMemHandle(), data_ptr)) {
-    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
+    if (get_option(options_->log_level()) >=
+        QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
           tensor_wrapper->GetName().c_str());
@@ -216,7 +236,8 @@ Error QnnManager::RegisterCustomMem(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
   if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
           tensor_wrapper->GetMemHandle(), data_ptr)) {
-    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
+    if (get_option(options_->log_level()) >=
+        QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
           tensor_wrapper->GetName().c_str());
@@ -236,7 +257,8 @@ Error QnnManager::RegisterCustomMem(
   Qnn_MemHandle_t pre_registered_handle =
       backend_params_ptr_->qnn_mem_manager_ptr_->GetPreRegisteredHandle(info);
   if (pre_registered_handle != nullptr) {
-    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+    if (get_option(options_->log_level()) >=
+        QnnExecuTorchLogLevel::kLogLevelInfo) {
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s found a pre-registered memHandle.",
           tensor_wrapper->GetName().c_str());
@@ -269,7 +291,8 @@ Error QnnManager::RegisterCustomMem(
           data_ptr,
           unaligned_custom_mem_base,
           total_custom_mem_size,
-          tensor_offset) == Error::Ok,
+          tensor_offset,
+          info) == Error::Ok,
       Internal,
       "Fail to register to shared memory.");
 
@@ -280,7 +303,11 @@ Error QnnManager::Init() {
   ET_CHECK_OR_RETURN_ERROR(
       LoadQnnLibrary() == Error::Ok, Internal, "Fail to load Qnn library");
   logger_ = std::make_unique<QnnLogger>(
-      qnn_loaded_backend_, LoggingCallback, options_->log_level());
+      qnn_loaded_backend_, LoggingCallback, get_option(options_->log_level()));
+  std::vector<std::string> graph_names;
+  for (auto name : *options_->graph_name()) {
+    graph_names.emplace_back(name->str());
+  }
   if (backend_params_ptr_->backend_init_state_ ==
       BackendInitializeState::UNINITIALIZED) {
     QNN_EXECUTORCH_LOG_INFO(
@@ -298,11 +325,13 @@ Error QnnManager::Init() {
         Internal,
         "Failed to load Qnn backend.");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_backend_cache_ptr_->Configure() == Error::Ok,
+        backend_params_ptr_->qnn_backend_cache_ptr_->Configure(graph_names) ==
+            Error::Ok,
         Internal,
         "Fail to configure Qnn backend cache");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
+        backend_params_ptr_->qnn_backend_ptr_->Configure(
+            options_->op_package_options()) == Error::Ok,
         Internal,
         "Fail to configure Qnn backend");
     ET_CHECK_OR_RETURN_ERROR(
@@ -353,9 +382,21 @@ Error QnnManager::AllocateTensor(const std::string& graph_name) {
   std::vector<Qnn_Tensor_t> output_tensors =
       backend_params_ptr_->qnn_context_ptr_->GetGraphOutputs(graph_name);
 
+  // Mapping memory address for the input and output of mutable buffer
+  std::unordered_map<int, const void*> mutable_buffer_id_to_memory_map;
+
   for (auto& tensor : input_tensors) {
     std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(tensor);
     tensor_wrapper->UpdateQnnTensorMeta(tensor);
+
+    int mutable_buffer_id =
+        ExtractMutableBufferNumber(tensor_wrapper->GetName());
+    if (mutable_buffer_id != -1) {
+      // Delegate maintains the memory for mutable buffer
+      tensor_wrapper->AllocateDataBuffer();
+      mutable_buffer_id_to_memory_map[mutable_buffer_id] =
+          tensor_wrapper->GetStaticTensorData();
+    }
     input_tensors_[graph_name].emplace_back(std::move(tensor_wrapper));
   }
   if (!options_->is_from_context_binary()) {
@@ -377,6 +418,16 @@ Error QnnManager::AllocateTensor(const std::string& graph_name) {
     }
     if (IsTensorDump()) {
       tensor_wrapper->AllocateDataBuffer();
+    }
+    int mutable_buffer_id =
+        ExtractMutableBufferNumber(tensor_wrapper->GetName());
+    if (mutable_buffer_id != -1 &&
+        mutable_buffer_id_to_memory_map.find(mutable_buffer_id) !=
+            mutable_buffer_id_to_memory_map.end()) {
+      // Fill the same memory for I/O of mutable buffer
+      tensor_wrapper->FillDataBuffer(
+          mutable_buffer_id_to_memory_map[mutable_buffer_id],
+          false /* copy_data */);
     }
     output_tensors_[graph_name].emplace_back(std::move(tensor_wrapper));
   }
@@ -449,7 +500,8 @@ Error QnnManager::ProfileExecuteData(
     const std::string& graph_name,
     executorch::runtime::EventTracer* event_tracer) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-  if (options_->profile_level() != QnnExecuTorchProfileLevel::kProfileOff) {
+  if (get_option(options_->profile_level()) !=
+      QnnExecuTorchProfileLevel::kProfileOff) {
     error = backend_params_ptr_->qnn_graph_ptr_->ProfileExecuteData(
         graph_name, event_tracer);
     if (error != QNN_SUCCESS) {
@@ -560,126 +612,6 @@ Error QnnManager::CompileDlc() {
         Internal,
         "Fail to allocate tensor for Dlc with graph_name: %s",
         graphInfo.graphName);
-  }
-
-  return Error::Ok;
-}
-
-Error QnnManager::CompileQcir() {
-  QnnQcirCustomProtocol qnn_qcir_custom_protocol;
-  auto [status, qcir_fbs_size, tensor_size, qcir_fbs_ptr, tensor_ptr] =
-      qnn_qcir_custom_protocol.DeserializeQcirCustomBuffer(
-          qnn_context_blob_.buffer);
-
-  if (status != Error::Ok) {
-    QNN_EXECUTORCH_LOG_ERROR("Failed to verify QnnQcirCustomProtocol");
-    return Error::Internal;
-  }
-
-  auto context = qcir::GetContext(qcir_fbs_ptr);
-  for (const auto& graph : *context->graphs()) {
-    // qcir tensors to TensorWrapper
-    std::vector<std::shared_ptr<TensorWrapper>> graph_inputs, graph_outputs,
-        tensors;
-    for (const auto& tensor : *graph->tensors()) {
-      tensors.emplace_back(CreateTensorWrapper(ToTensor(
-          tensor, static_cast<uint8_t*>(tensor_ptr) + tensor->offset())));
-      if (tensor->type() == qcir::TensorType::WRITE) {
-        graph_inputs.push_back(tensors.back());
-      } else if (tensor->type() == qcir::TensorType::READ) {
-        graph_outputs.push_back(tensors.back());
-      }
-    }
-    std::vector<std::shared_ptr<OpWrapper>> op_wrappers;
-    // qcir graph node to OpWrapper
-    for (const auto& node : *graph->nodes()) {
-      std::shared_ptr<OpWrapper> op = std::make_shared<OpWrapper>(
-          node->name()->str(),
-          node->package_name()->str(),
-          node->type_name()->str());
-
-      // qcir input tensors to OpWrapper input tensors
-      std::vector<std::shared_ptr<TensorWrapper>> inputs;
-      for (uint32_t index : *node->inputs()) {
-        inputs.push_back(tensors[index]);
-      }
-      op->AddInputTensors(inputs);
-
-      // qcir output tensors to OpWrapper output tensors
-      std::vector<std::shared_ptr<TensorWrapper>> outputs;
-      for (uint32_t index : *node->outputs()) {
-        outputs.push_back(tensors[index]);
-      }
-      op->AddOutputTensors(outputs);
-
-      // qcir operator param to OpWrapper param
-      for (uint32_t index : *node->params()) {
-        const auto& tensor = graph->tensors()->Get(index);
-        std::string name = tensor->name()->str();
-        Qnn_DataType_t dtype = ToDataType(tensor->dtype());
-        const uint8_t* data_ptr =
-            static_cast<uint8_t*>(tensor_ptr) + tensor->offset();
-        if (tensor->shape()->size() != 0) {
-          // add tensor param
-          op->AddTensorParam(
-              name,
-              dtype,
-              tensor->shape()->size(),
-              tensor->shape()->data(),
-              data_ptr);
-        } else {
-          // add scalar param
-          switch (dtype) {
-            case Qnn_DataType_t::QNN_DATATYPE_INT_32:
-              op->AddScalarParam(
-                  name, dtype, *reinterpret_cast<const int32_t*>(data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_INT_16:
-              op->AddScalarParam(
-                  name, dtype, *reinterpret_cast<const int16_t*>(data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_INT_8:
-              op->AddScalarParam(name, dtype, static_cast<int8_t>(*data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_UINT_32:
-              op->AddScalarParam(
-                  name, dtype, *reinterpret_cast<const uint32_t*>(data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_UINT_16:
-              op->AddScalarParam(
-                  name, dtype, *reinterpret_cast<const uint16_t*>(data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_UINT_8:
-              op->AddScalarParam(name, dtype, *data_ptr);
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_FLOAT_32:
-            case Qnn_DataType_t::QNN_DATATYPE_FLOAT_16:
-              op->AddScalarParam(
-                  name, dtype, *reinterpret_cast<const float*>(data_ptr));
-              break;
-            case Qnn_DataType_t::QNN_DATATYPE_BOOL_8:
-              op->AddScalarParam(name, dtype, *data_ptr);
-              break;
-            default:
-              QNN_EXECUTORCH_LOG_ERROR(
-                  "Invalid scalar type: %s", tensor->name()->c_str());
-              break;
-          }
-        }
-      }
-      op_wrappers.emplace_back(std::move(op));
-    }
-    ET_CHECK_OR_RETURN_ERROR(
-        Compile(graph->name()->str(), op_wrappers) == Error::Ok,
-        Internal,
-        "Fail to compile graph from qcir with graph_name: %s",
-        graph->name()->str().c_str());
-    ET_CHECK_OR_RETURN_ERROR(
-        AllocateTensor(graph->name()->str(), graph_inputs, graph_outputs) ==
-            Error::Ok,
-        Internal,
-        "Fail to allocate tensor for qcir with graph_name: %s",
-        graph->name()->str().c_str());
   }
 
   return Error::Ok;

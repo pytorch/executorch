@@ -47,19 +47,25 @@ Error QnnMemManager::RegisterIonMem(
   }
   tensor_wrapper->SetMemHandle(handle);
   registered_map_.insert({handle, mem_ptr});
-  QNN_EXECUTORCH_LOG_INFO(
-      "Tensor %s is successfully registered to ION shared memory.",
-      tensor_wrapper->GetName().c_str());
+  if (log_level_ >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+    QNN_EXECUTORCH_LOG_INFO(
+        "Tensor %s is successfully registered to ION shared memory.",
+        tensor_wrapper->GetName().c_str());
+  }
+
   return Error::Ok;
 }
 
+// TODO: Find a better way to unify RegisterCustomMem and
+// PreRegisterCustomMemHandle
 Error QnnMemManager::RegisterCustomMem(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper,
     int32_t mem_fd,
     void* mem_ptr,
     void* unaligned_custom_mem_base,
     size_t total_custom_mem_size,
-    size_t tensor_offset) {
+    size_t tensor_offset,
+    const CustomMemTensorInfo& info) {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_MemDescriptor_t descriptor = {
       {tensor_wrapper->GetRank(), tensor_wrapper->GetDims(), nullptr},
@@ -91,10 +97,13 @@ Error QnnMemManager::RegisterCustomMem(
     return Error::Internal;
   }
   tensor_wrapper->SetMemHandle(handle);
+  pre_registered_handles_.insert({info, handle});
   registered_map_.insert({handle, mem_ptr});
-  QNN_EXECUTORCH_LOG_INFO(
-      "Tensor %s is successfully registered to custom shared memory.",
-      tensor_wrapper->GetName().c_str());
+  if (log_level_ >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+    QNN_EXECUTORCH_LOG_INFO(
+        "Tensor %s is successfully registered to custom shared memory.",
+        tensor_wrapper->GetName().c_str());
+  }
   return Error::Ok;
 }
 

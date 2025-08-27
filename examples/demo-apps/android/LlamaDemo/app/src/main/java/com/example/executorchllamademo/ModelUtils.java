@@ -21,6 +21,9 @@ public class ModelUtils {
   // MediaTek
   static final int MEDIATEK_TEXT_MODEL = 3;
 
+  // QNN static llama
+  static final int QNN_TEXT_MODEL = 4;
+
   public static int getModelCategory(ModelType modelType, BackendType backendType) {
     if (backendType.equals(BackendType.XNNPACK)) {
       switch (modelType) {
@@ -29,11 +32,14 @@ public class ModelUtils {
         case LLAMA_3:
         case LLAMA_3_1:
         case LLAMA_3_2:
+        case QWEN_3:
         default:
           return TEXT_MODEL;
       }
     } else if (backendType.equals(BackendType.MEDIATEK)) {
       return MEDIATEK_TEXT_MODEL;
+    } else if (backendType.equals(BackendType.QUALCOMM)) {
+      return QNN_TEXT_MODEL;
     }
 
     return TEXT_MODEL; // default

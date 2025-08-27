@@ -32,6 +32,8 @@ What quantization schemes does this backend support? Consider including the foll
 - Symmetric vs asymmetric weights?
 - Per-tensor, per-chanel, group/blockwise?
 
+If using a PT2E quantizer, document how to initialize the quantizer and all relevant configs and options.
+
 Include a code snippet demonstrating how to perform quantization for this backend. Document, or link to, a description of the parameters that the user can specify.
 
 ## Runtime Integration

@@ -15,7 +15,7 @@ python_library(
         ":types",
         "//caffe2:torch",
         "//executorch/exir/operator:convert",
-        "//executorch/exir/operator::util",
+        "//executorch/exir/operator:util",
         "//executorch/extension/pytree:pylib",
     ],
 )
@@ -275,5 +275,13 @@ python_library(
     srcs = ["_warnings.py"],
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+    ],
+)
+
+python_library(
+    name = "debug_handle_utils",
+    srcs = ["debug_handle_utils.py"],
+    deps = [
+        "//caffe2:torch",
     ],
 )

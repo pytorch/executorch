@@ -18,7 +18,6 @@ import torch
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
     draw_graph,
-    ExecutorchBackendConfig,
     from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -26,6 +25,7 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.examples.qualcomm.qaihub_scripts.utils.utils import preprocess_binary
 from executorch.examples.qualcomm.utils import make_output_dir, SimpleADB
+from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 
 
@@ -126,9 +126,8 @@ def get_tensor(io_info, tensors, logger, checking_output=False):
         return [get_ones_tensor(t, logger) for t in io_info]
 
     # list of tensors to be returned
-    ret_tensors, ret_list = [], []
+    ret_tensors = []
     for i, info in enumerate(io_info):
-        ret_list.append(f"input_0_{i}.raw")
         if list(tensors[i].shape) != info["shape"]:
             logger.error(
                 f"tensor '{info['name']}' shape mismatch: "
@@ -145,7 +144,7 @@ def get_tensor(io_info, tensors, logger, checking_output=False):
             # try quant / dequant for given tensor if possible
             ret_tensors.append(get_tensor_with_encoding(tensors[i], info, logger))
         )
-    return [ret_tensors], " ".join(ret_list)
+    return [ret_tensors]
 
 
 def to_context_binary(
@@ -297,7 +296,7 @@ def execute(args):
 
     # check if inputs are valid, fallback to ones tensor if any
     logger.info("generating input data")
-    inputs, input_list = get_tensor(graph_info["inputs"], user_inputs, logger)
+    inputs = get_tensor(graph_info["inputs"], user_inputs, logger)
 
     logger.info("preparing ADB connection")
     # leverage SimpleADB for e2e inference
@@ -313,7 +312,7 @@ def execute(args):
     )
 
     logger.info("pushing QNN libraries & other artifacts")
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
 
     logger.info("starting inference")
     adb.execute()

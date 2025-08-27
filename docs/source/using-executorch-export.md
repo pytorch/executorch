@@ -1,6 +1,6 @@
 # Model Export and Lowering
 
-The section describes the process of taking a PyTorch model and converting to the runtime format used by ExecuTorch. This process is commonly known as "exporting", as it uses the PyTorch export functionality to convert a PyTorch model into a format suitable for on-device execution. This process yields a .pte file which is optimized for on-device execution using a particular backend.
+The section describes the process of taking a PyTorch model and converting to the runtime format used by ExecuTorch. This process is commonly known as "exporting", as it uses the PyTorch export functionality to convert a PyTorch model into a format suitable for on-device execution. This process yields a .pte file which is optimized for on-device execution using a particular backend. If using program-data separation, it also yields a corresponding .ptd file containing only the weights/constants from the model.
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ As part of the .pte file creation process, ExecuTorch identifies portions of the
 
 ### Available Backends
 
-Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to `to_edge_transform_and_lower`. See the appropriate backend documentation and the [Export and Lowering](#export-and-lowering) section below for more information. 
+Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to `to_edge_transform_and_lower`. See the appropriate backend documentation and the [Export and Lowering](#export-and-lowering) section below for more information.
 
 - [XNNPACK (Mobile CPU)](backends-xnnpack.md)
 - [Core ML (iOS)](backends-coreml.md)
@@ -61,7 +61,7 @@ class Model(torch.nn.Module):
             torch.nn.AdaptiveAvgPool2d((1,1))
        )
         self.linear = torch.nn.Linear(16, 10)
-    
+
     def forward(self, x):
         y = self.seq(x)
         y = torch.flatten(y, 1)
@@ -97,7 +97,7 @@ class Model(torch.nn.Module):
             torch.nn.AdaptiveAvgPool2d((1,1))
         )
         self.linear = torch.nn.Linear(16, 10)
-    
+
     def forward(self, x):
         y = self.seq(x)
         y = torch.flatten(y, 1)
@@ -124,6 +124,33 @@ with open("model.pte", "wb") as file:
 ```
 
 This yields a `model.pte` file which can be run on mobile devices.
+
+To generate a `model.pte`, `model.ptd` pair with the weights inside `model.ptd`, add the following transform function to tag constants as external:
+
+```python
+from executorch.exir.passes.external_constants_pass import (
+    delegate_external_constants_pass_unlifted,
+)
+# Tag the unlifted ep.module().
+tagged_module = exported_program.module()
+delegate_external_constants_pass_unlifted(
+    module=tagged_module,
+    gen_tag_fn=lambda x: "model", # This is the filename the weights will be saved to. In this case, weights will be saved as "model.ptd"
+)
+# Re-export to get the EP.
+exported_program = export(tagged_module, inputs, dynamic_shapes=dynamic_shapes)
+executorch_program = to_edge_transform_and_lower(
+    exported_program,
+    transform_passes = [partial_function],
+    partitioner = [XnnpackPartitioner()]
+).to_executorch()
+```
+
+To save the PTD file:
+```
+executorch_program.write_tensor_data_to_file(output_directory)
+```
+It will be saved to the file `model.ptd`, with the file name coming from `gen_tag_fn` in the transform pass.
 
 ### Supporting Varying Input Sizes (Dynamic Shapes)
 
@@ -167,7 +194,79 @@ method = program.load_method("forward")
 outputs = method.execute([input_tensor])
 ```
 
+Pybindings currently does not support loading program and data. To run a model with PTE and PTD components, please use the [Extension Module](extension-module.md). There is also an E2E demo in [executorch-examples](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation).
+
 For more information, see [Runtime API Reference](executorch-runtime-api-reference.md).
+
+## Advanced Topics
+
+While many models will "just work" following the steps above, some more complex models may require additional work to export. These include models with state and models with complex control flow or auto-regressive generation.
+See the [Llama model](https://github.com/pytorch/executorch/tree/main/examples/models/llama) for example use of these techniques.
+
+### State Management
+
+Some types of models maintain internal state, such as KV caches in transformers. There are two ways to manage state within ExecuTorch. The first is to bring the state out as model inputs and outputs, effectively making the core model stateless. This is sometimes referred to as managing the state as IO.
+
+The second approach is to leverage mutable buffers within the model directly. A mutable buffer can be registered using the PyTorch [register_buffer](https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.register_buffer) API on `nn.Module`. Storage for the buffer is managed by the framework, and any mutations to the buffer within the model are written back at the end of method execution.
+
+Mutable buffers have several limitations:
+- Export of mutability can be fragile.
+    - Consider explicitly calling `detach()` on tensors before assigning to a buffer if you encounter export-time errors related to gradients.
+    - Ensure that any operations done on a mutable buffer are done with in-place operations (typipcally ending in `_`).
+    - Do not reassign the buffer variable. Instead, use `copy_` to update the entire buffer content.
+- Mutable buffers are not shared between multiple methods within a .pte.
+- In-place operations are replaced with non-in place variants, and the resulting tensor is written back at the end of the method execution. This can be a performance bottleneck when using `index_put_`.
+- Buffer mutations are not supported on all backends and may cause graph breaks and memory transfers back to CPU.
+
+Support for mutation is expiremental and may change in the future.
+
+### Dynamic Control Flow
+
+Control flow is considered dynamic if the path taken is not fixed at export-time. This is commonly the case when if or loop conditions depend on the value of a Tensor, such as a generator loop that terminates when an
+end-of-sequence token is generated. Shape-dependent control flow can also be dynamic if the tensor shape depends on the input.
+
+To make dynamic if statements exportable, they can be written using [torch.cond](https://docs.pytorch.org/docs/stable/generated/torch.cond.html). Dynamic loops are not currently supported on ExecuTorch. The general approach to
+enable this type of model is to export the body of the loop as a method, and then handle loop logic from the application code. This is common for handling generator loops in auto-regressive models, such as transformer incremental
+decoding.
+
+### Multi-method Models
+
+ExecuTorch allows for bundling of multiple methods with a single .pte file. This can be useful for more complex model architectures, such as encoder-decoder models.
+
+The include multiple methods in a .pte, each method must be exported individually with `torch.export.export`, yielding one `ExportedProgram` per method. These can be passed as a dictionary into `to_edge_transform_and_lower`:
+```python
+encode_ep = torch.export.export(...)
+decode_ep = torch.export.export(...)
+lowered = to_edge_transform_and_lower({
+    "encode": encode_ep,
+    "decode": decode_ep,
+}).to_executorch()
+```
+
+At runtime, the method name can be passed to `load_method` and `execute` on the `Module` class.
+
+Multi-method .ptes have several caveats:
+- Methods are individually memory-planned. Activation memory is not current re-used between methods. For advanced use cases, a [custom memory plan](compiler-memory-planning.md) or [custom memory allocators](https://docs.pytorch.org/executorch/stable/runtime-overview.html#operating-system-considerations) can be used to overlap the allocations.
+- Mutable buffers are not shared between methods.
+- PyTorch export does not currently allow for exporting methods on a module other than `forward`. To work around this, it is common to create wrapper `nn.Modules` for each method.
+
+```python
+
+class EncodeWrapper(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, *args, **kwargs):
+        return self.model.encode(*args, **kwargs)
+
+class DecodeWrapper(torch.nn.Module):
+    # ...
+
+encode_ep = torch.export.export(EncodeWrapper(model), ...)
+decode_ep = torch.export.export(DecodeWrapper(model), ...)
+# ...
+```
 
 ## Next Steps
 

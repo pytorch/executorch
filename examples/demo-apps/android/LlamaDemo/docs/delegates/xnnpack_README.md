@@ -55,7 +55,7 @@ In this demo app, we support text-only inference with up-to-date Llama models an
 Meta has released prequantized INT4 SpinQuant Llama 3.2 models that ExecuTorch supports on the XNNPACK backend.
 * Export Llama model and generate .pte file as below:
 ```
-python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -d fp32 --xnnpack-extended-ops --preq_mode 8da4w_output_8da8w --preq_group_size 32 --max_seq_length 2048 --max_context_length 2048 --preq_embedding_quantize 8,0 --use_spin_quant native --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name "llama3_2_spinquant.pte"
+python -m extension.llm.export.export_llm base.model_class="llama3_2" base.checkpoint=<path-to-your-checkpoint.pth> base.params=<path-to-your-params.json> model.use_kv_cache=True model.use_sdpa_with_kv_cache=True backend.xnnpack.enabled=True model.dtype_override="fp32" backend.xnnpack.extended_ops=True base.preq_mode="preq_8da4w_out_8da8w" base.preq_group_size=32 export.max_seq_length=2048 export.max_context_length=2048 base.preq_embedding_quantize=\'8,0\' quantization.use_spin_quant="native" base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="llama3_2_spinquant.pte"
 ```
 For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
 
@@ -63,7 +63,7 @@ For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co
 Meta has released prequantized INT4 QAT+LoRA Llama 3.2 models that ExecuTorch supports on the XNNPACK backend.
 * Export Llama model and generate .pte file as below:
 ```
-python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -qat -lora 16 -kv --use_sdpa_with_kv_cache -X -d fp32 --xnnpack-extended-ops --preq_mode 8da4w_output_8da8w --preq_group_size 32 --max_seq_length 2048 --max_context_length 2048--preq_embedding_quantize 8,0 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name "llama3_2_qat_lora.pte"
+python -m extension.llm.export.export_llm base.model_class="llama3_2" base.checkpoint=<path-to-your-checkpoint.pth> base.params=<path-to-your-params.json> quantization.use_qat=True base.use_lora=16 model.use_kv_cache=True model.use_sdpa_with_kv_cache=True backend.xnnpack.enabled=True model.dtype_override="fp32" backend.xnnpack.extended_ops=True base.preq_mode="preq_8da4w_out_8da8w" base.preq_group_size=32 export.max_seq_length=2048 export.max_context_length=2048 base.preq_embedding_quantize=\'8,0\' base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="llama3_2_qat_lora.pte"
 ```
 For convenience, an [exported ExecuTorch QAT+LoRA model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb).
 
@@ -74,7 +74,7 @@ We have supported BF16 as a data type on the XNNPACK backend for Llama 3.2 1B/3B
 * Export Llama model and generate .pte file as below:
 
 ```
-python -m examples.models.llama.export_llama --model "llama3_2" --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -d bf16 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama3_2_bf16.pte"
+python -m extension.llm.export.export_llm base.model_class="llama3_2" base.checkpoint=<path-to-your-checkpoint.pth> base.params=<path-to-your-params.json> model.use_kv_cache=True model.use_sdpa_with_kv_cache=True backend.xnnpack.enabled=True model.dtype_override="bf16" base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="llama3_2_bf16.pte"
 ```
 For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
 
@@ -90,7 +90,7 @@ To safeguard your application, you can use our Llama Guard models for prompt cla
 * We prepared this model using the following command
 
 ```
-python -m examples.models.llama.export_llama --checkpoint <path-to-pruned-llama-guard-1b-checkpoint.pth> --params <path-to-your-params.json> -d fp32 -kv --use_sdpa_with_kv_cache --quantization_mode 8da4w --group_size 256 --xnnpack --max_seq_length 8193 --max_context_length 8193 --embedding-quantize 4,32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_prune_map <path-to-your-llama_guard-pruned-layers-map.json> --output_name="llama_guard_3_1b_pruned_xnnpack.pte"
+python -m extension.llm.export.export_llm base.checkpoint=<path-to-pruned-llama-guard-1b-checkpoint.pth> base.params=<path-to-your-params.json> model.dtype_override="fp32" model.use_kv_cache=True model.use_sdpa_with_kv_cache=True quantization.qmode="8da4w" quantization.group_size=256 backend.xnnpack.enabled=True export.max_seq_length=8193 export.max_context_length=8193 quantization.embedding_quantize=\'4,32\' base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' base.output_prune_map=<path-to-your-llama_guard-pruned-layers-map.json> export.output_name="llama_guard_3_1b_pruned_xnnpack.pte"
 ```
 
 
@@ -100,7 +100,7 @@ python -m examples.models.llama.export_llama --checkpoint <path-to-pruned-llama-
 * Export Llama model and generate .pte file as below:
 
 ```
-python -m examples.models.llama.export_llama --checkpoint <path-to-your-checkpoint.pth> --params <path-to-your-params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --output_name="llama.pte"
+python -m extension.llm.export.export_llm base.checkpoint=<path-to-your-checkpoint.pth> base.params=<path-to-your-params.json> model.use_kv_cache=True model.use_sdpa_with_kv_cache=True backend.xnnpack.enabled=True quantization.qmode="8da4w" quantization.group_size=128 model.dtype_override="fp32" base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' export.output_name="llama.pte"
 ```
 
 You may wonder what the ‘--metadata’ flag is doing. This flag helps export the model with proper special tokens added that the runner can detect EOS tokens easily.
@@ -113,7 +113,7 @@ python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokeniz
 ### For LLaVA model
 * For the Llava 1.5 model, you can get it from Huggingface [here](https://huggingface.co/llava-hf/llava-1.5-7b-hf).
 * Run `examples/models/llava/install_requirements.sh` to install dependencies.
-* Run the following command to generate llava.pte, tokenizer.bin and an image tensor (serialized in TorchScript) image.pt.
+* Run the following command to generate llava.pte, tokenizer.bin and download an image basketball.jpg.
 
 ```
 python -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts
@@ -172,7 +172,7 @@ This is running the shell script which configures the required core ExecuTorch, 
 ```
 bash examples/demo-apps/android/LlamaDemo/download_prebuilt_lib.sh
 ```
-The prebuilt AAR library contains the Java library and the JNI binding for NativePeer.java and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, and Quantized kernels. It comes with two ABI variants, arm64-v8a and x86_64.
+The prebuilt AAR library contains the Java library and the JNI binding for Module.java and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, and Quantized kernels. It comes with two ABI variants, arm64-v8a and x86_64.
 If you need to use other dependencies (like tokenizer), please build from the local machine option.
 
 ## Run the Android Demo App
@@ -183,6 +183,7 @@ If you need to use other dependencies (like tokenizer), please build from the lo
 ### Alternative 2: Command line
 Without Android Studio UI, we can run gradle directly to build the app. We need to set up the Android SDK path and invoke gradle.
 ```
+export ANDROID_SDK=<path_to_android_sdk_home>
 export ANDROID_HOME=<path_to_android_sdk_home>
 pushd examples/demo-apps/android/LlamaDemo
 ./gradlew :app:installDebug

@@ -8,10 +8,12 @@
 
 #include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 #include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
+#include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
-
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -26,6 +28,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 // ========== Public method implementations =========================
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
@@ -48,8 +51,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     qnn_context_blob.buffer = ctx_bin;
   } else {
     // This buffer will be verified again in QnnBackendCache.
-    QNN_EXECUTORCH_LOG_INFO(
-        "Deserializing processed data using QnnQcirCustomProtocol");
+    QNN_EXECUTORCH_LOG_INFO("Deserializing processed data using Dlc");
     qnn_context_blob.buffer = const_cast<void*>(processed->data());
     qnn_context_blob.nbytes = processed->size();
   }
@@ -114,7 +116,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 Error QnnExecuTorchBackend::execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
-    EValue** args) const {
+    Span<EValue*> args) const {
   ET_CHECK_OR_RETURN_ERROR(
       delegate_map_rev_.count(handle) != 0,
       Internal,
@@ -129,33 +131,37 @@ Error QnnExecuTorchBackend::execute(
   std::vector<Qnn_Tensor_t> input_tensor_structs;
   std::vector<Qnn_Tensor_t> output_tensor_structs;
 
+  int args_index = 0;
   input_tensor_structs.reserve(input_tensors.size());
-  for (int i = 0; i < input_tensors.size(); ++i) {
-    if (qnn_manager->RegisterMem(
-            args[i]->toTensor().mutable_data_ptr(), input_tensors[i]) !=
-        Error::Ok) {
-      // update data ptr only should be fine
-      input_tensors[i]->FillDataBuffer(
-          args[i]->toTensor().const_data_ptr(), false /* copy_data */);
+  for (const auto& input_tensor : input_tensors) {
+    if (input_tensor->GetName().find("mutbuf_") == std::string::npos) {
+      if (qnn_manager->RegisterMem(
+              args[args_index]->toTensor().mutable_data_ptr(), input_tensor) !=
+          Error::Ok) {
+        // update data ptr only should be fine
+        input_tensor->FillDataBuffer(
+            args[args_index]->toTensor().const_data_ptr(),
+            false /* copy_data */);
+        // use the real input shape instead of nominal one to make sure
+        // dynamic shape is functional
+        auto dims = args[args_index]->toTensor().sizes();
+        input_tensor->SetDims(dims.data(), dims.size());
+      }
+      args_index++;
     }
-    // use the real input shape instead of nominal one to make sure
-    // dynamic shape is functional
-    auto dims = args[i]->toTensor().sizes();
-    input_tensors[i]->SetDims(dims.data(), dims.size());
-    input_tensor_structs.emplace_back(input_tensors[i]->CloneTensorStruct());
+    input_tensor_structs.emplace_back(input_tensor->CloneTensorStruct());
   }
 
-  int output_index = input_tensors.size();
   for (const auto& output_tensor : output_tensors) {
     // pos=0 limits the search to the prefix
-    if (output_tensor->GetName().rfind("output_", 0) == 0) {
-      void* mutable_data_ptr =
-          args[output_index]->toTensor().mutable_data_ptr();
+    if (output_tensor->GetName().rfind("output_", 0) == 0 &&
+        output_tensor->GetName().find("mutbuf_") == std::string::npos) {
+      void* mutable_data_ptr = args[args_index]->toTensor().mutable_data_ptr();
       if (qnn_manager->RegisterMem(mutable_data_ptr, output_tensor) !=
           Error::Ok) {
         output_tensor->FillDataBuffer(mutable_data_ptr, false /* copy_data */);
       }
-      output_index++;
+      args_index++;
     }
     output_tensor_structs.push_back(output_tensor->CloneTensorStruct());
   }
@@ -185,6 +191,77 @@ void QnnExecuTorchBackend::destroy(DelegateHandle* handle) const {
   }
 }
 
+executorch::runtime::Error QnnExecuTorchBackend::set_option(
+    executorch::runtime::BackendOptionContext& context,
+    const executorch::runtime::Span<executorch::runtime::BackendOption>&
+        backend_options) {
+  std::lock_guard<std::mutex> guard(runtime_option_mutex_);
+  size_t matches = backend_options.size();
+  for (const auto& option : backend_options) {
+    if (strcmp(option.key, QNN_RUNTIME_LOG_LEVEL) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_log_level_.value = *val;
+        qnn_runtime_log_level_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_HTP_PERFORMANCE_MODE) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_performance_mode_.value = *val;
+        qnn_runtime_performance_mode_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_PROFILE_LEVEL) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_profile_level_.value = *val;
+        qnn_runtime_profile_level_.is_set = true;
+      }
+    } else {
+      ET_LOG(
+          Error,
+          "Unable to set the following runtime option for QnnExecuTorchBackend: %s.",
+          option.key);
+      matches--;
+    }
+  }
+
+  ET_CHECK_OR_RETURN_ERROR(
+      matches == backend_options.size(),
+      Internal,
+      "Some set options are not supported by QnnExecuTorchBackend. %zu options provided but only %zu is supported.",
+      backend_options.size(),
+      matches);
+
+  return Error::Ok;
+}
+
+executorch::runtime::Error QnnExecuTorchBackend::get_option(
+    executorch::runtime::BackendOptionContext& context,
+    executorch::runtime::Span<executorch::runtime::BackendOption>&
+        backend_options) {
+  size_t matches = backend_options.size();
+  for (size_t i = 0; i < backend_options.size(); ++i) {
+    // Set the value to what was stored by set_option
+    if (strcmp(backend_options[i].key, QNN_RUNTIME_LOG_LEVEL) == 0 &&
+        qnn_runtime_log_level_.is_set) {
+      backend_options[i].value = qnn_runtime_log_level_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_HTP_PERFORMANCE_MODE) == 0 &&
+        qnn_runtime_performance_mode_.is_set) {
+      backend_options[i].value = qnn_runtime_performance_mode_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_PROFILE_LEVEL) == 0 &&
+        qnn_runtime_profile_level_.is_set) {
+      backend_options[i].value = qnn_runtime_profile_level_.value;
+    } else {
+      // either runtime never called set_option or key does not exist
+      matches--;
+    }
+  }
+
+  if (matches != backend_options.size()) {
+    return Error::Internal;
+  }
+  return Error::Ok;
+}
+
 bool QnnExecuTorchBackend::is_available() const {
   return true;
 }
@@ -210,7 +287,7 @@ void QnnExecuTorchBackend::erase_cached_delegate(
 
 namespace {
 auto cls = QnnExecuTorchBackend();
-executorch::runtime::Backend backend{"QnnBackend", &cls};
+executorch::runtime::Backend backend{QNN_BACKEND, &cls};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
 } // namespace qnn

@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -14,8 +15,6 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
 #include <gtest/gtest.h>
-
-#include <iostream>
 
 using namespace ::testing;
 using executorch::aten::Scalar;
@@ -88,6 +87,45 @@ class OpAddOutKernelTest : public OperatorTest {
     ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
+  }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_add_complex_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    // Both inputs have the same shape
+    Tensor x_0 = tf.make({2}, {CTYPE(1, 2.1), CTYPE(3.1, 4)});
+    Tensor y_0 = tf.make({2}, {CTYPE(5.2, 6.3), CTYPE(7, 8.9)});
+    // Destination for the sum.
+    Tensor out = tf.full({2}, CTYPE{0, 0});
+    // Add two tensors.
+    op_add_out(
+        x_0,
+        y_0,
+        /*alpha=*/1,
+        out);
+    Tensor expected_0 = tf.make({2}, {CTYPE(6.2, 8.4), CTYPE(10.1, 12.9)});
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_EQ(out, expected_0);
+
+    // Other tensor has numel() = 1
+    Tensor y_1 = tf.make({1}, {CTYPE(2, 3)});
+    // Add two tensors.
+    op_add_out(
+        x_0,
+        y_1,
+        /*alpha=*/2,
+        out);
+    Tensor expected_1 = tf.make({2}, {CTYPE(5, 8.1), CTYPE(7.1, 10)});
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_EQ(out, expected_1);
+  }
+
+  void test_add_enumerate_complex_types() {
+#define RUN_COMPLEX_TEST(ctype, dtype) \
+  test_add_complex_dtype<ctype, ScalarType::dtype>();
+    ET_FORALL_COMPLEXH_TYPES(RUN_COMPLEX_TEST);
+#undef RUN_COMPLEX_TEST
   }
 
   // Common testing for adding two floating point Tensors.
@@ -231,6 +269,27 @@ class OpAddOutKernelTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
     EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
   }
+
+  template <ScalarType DTYPE>
+  void expect_bad_alpha_value_dies(const Scalar& bad_value) {
+    TensorFactory<DTYPE> tf;
+    Tensor a = tf.ones({2, 2});
+    Tensor b = tf.ones({2, 2});
+    Tensor out = tf.zeros({2, 2});
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_add_out(a, b, bad_value, out));
+  }
+
+  // The GENERATE_SCALAR_OVERFLOW_TESTS macro used to generate scalar overflow
+  // test cases requires a method called expect_bad_scalar_value_dies. However,
+  // for add operation, these checks only apply to the alpha argument.
+  // We are being explicit about this by naming the above function
+  // expect_bad_alpha_value_dies, and creating this wrapper in order to use the
+  // macro.
+  template <ScalarType DTYPE>
+  void expect_bad_scalar_value_dies(const Scalar& bad_value) {
+    expect_bad_alpha_value_dies<DTYPE>(bad_value);
+  }
 };
 
 class OpAddScalarOutKernelTest : public OperatorTest {
@@ -242,6 +301,27 @@ class OpAddScalarOutKernelTest : public OperatorTest {
       Tensor& out) {
     return torch::executor::aten::add_outf(context_, self, other, alpha, out);
   }
+
+  template <ScalarType DTYPE>
+  void expect_bad_alpha_value_dies(const Scalar& bad_value) {
+    TensorFactory<DTYPE> tf;
+    Tensor a = tf.ones({2, 2});
+    Scalar b = 1;
+    Tensor out = tf.zeros({2, 2});
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_add_scalar_out(a, b, bad_value, out));
+  }
+
+  // The GENERATE_SCALAR_OVERFLOW_TESTS macro used to generate scalar overflow
+  // test cases requires a method called expect_bad_scalar_value_dies. However,
+  // for the add operation, these checks only apply to the alpha argument.
+  // We are being explicit about this by naming the above function
+  // expect_bad_alpha_value_dies, and creating this wrapper in order to use the
+  // macro.
+  template <ScalarType DTYPE>
+  void expect_bad_scalar_value_dies(const Scalar& bad_value) {
+    expect_bad_alpha_value_dies<DTYPE>(bad_value);
+  }
 };
 
 /**
@@ -250,6 +330,10 @@ class OpAddScalarOutKernelTest : public OperatorTest {
  */
 TEST_F(OpAddOutKernelTest, AllRealDtypesSupported) {
   test_add_enumerate_a_types();
+}
+
+TEST_F(OpAddOutKernelTest, ComplexTensors) {
+  test_add_enumerate_complex_types();
 }
 
 TEST_F(OpAddOutKernelTest, FloatTensors) {
@@ -505,6 +589,18 @@ TEST_F(OpAddOutKernelTest, BroadcastNDTest) {
   test_broadcast_last_dim<ScalarType::Float>();
   test_broadcast_last_dim<ScalarType::Half>();
   test_broadcast_last_dim<ScalarType::BFloat16>();
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastBToA) {
+  TensorFactory<ScalarType::Float> tf_a;
+  Tensor a = tf_a.make({1, 3}, /*data=*/{1, 2, 3});
+  Tensor b = tf_a.make({1, 1, 3}, /*data=*/{3.2, 1.3, 5.5});
+  // Destination for output of add.
+  Tensor out = tf_a.zeros({1, 1, 3});
+
+  // Check that it matches the expected output.
+  Tensor expected = tf_a.make({1, 1, 3}, /*data=*/{4.2, 3.3, 8.5});
+  EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
 }
 
 //
@@ -794,3 +890,26 @@ TEST_F(OpAddScalarOutKernelTest, DtypeTest_float16_bool_int_float16) {
   op_add_scalar_out(self, other, alpha, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
+
+TEST_F(OpAddOutKernelTest, ByteTensorFloatingPointAlphaDies) {
+  // Cannot be represented by a uint8_t.
+  expect_bad_alpha_value_dies<ScalarType::Byte>(2.2);
+}
+
+TEST_F(OpAddOutKernelTest, IntTensorFloatingPointAlphaDies) {
+  // Cannot be represented by a uint32_t.
+  expect_bad_alpha_value_dies<ScalarType::Int>(2.2);
+}
+
+TEST_F(OpAddScalarOutKernelTest, ByteTensorFloatingPointAlphaDies) {
+  // Cannot be represented by a uint8_t.
+  expect_bad_alpha_value_dies<ScalarType::Byte>(2.2);
+}
+
+TEST_F(OpAddScalarOutKernelTest, IntTensorFloatingPointAlphaDies) {
+  // Cannot be represented by a uint32_t.
+  expect_bad_alpha_value_dies<ScalarType::Int>(2.2);
+}
+
+GENERATE_SCALAR_OVERFLOW_TESTS(OpAddOutKernelTest)
+GENERATE_SCALAR_OVERFLOW_TESTS(OpAddScalarOutKernelTest)

@@ -23,12 +23,21 @@ class RemoveMixedTypeOperators(ExportPass):
         promotion_type_allow_list = {
             torch.ops.aten.add.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.mul.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
-            torch.ops.aten.div.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            torch.ops.aten.sub.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            # The correct promotion for div depends on the mode! If there is no mode,
+            # it's INT_TO_FLOAT, otherwise it's default.
+            torch.ops.aten.div.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT,
+            torch.ops.aten.div.Tensor_mode: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.minimum.default: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
         }
 
         if op in promotion_type_allow_list:
             promotion_kind = promotion_type_allow_list[op]
+            if (
+                op == torch.ops.aten.div.Tensor_mode
+                and kwargs.get("rounding_mode") is None
+            ):
+                promotion_kind = ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT
         else:
             # Not in allow list, do nothing
             return super().call_operator(op, args, kwargs, meta)

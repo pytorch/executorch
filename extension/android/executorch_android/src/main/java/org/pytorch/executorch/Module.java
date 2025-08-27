@@ -9,8 +9,13 @@
 package org.pytorch.executorch;
 
 import android.util.Log;
+import com.facebook.jni.HybridData;
+import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
+import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import org.pytorch.executorch.annotations.Experimental;
@@ -22,6 +27,14 @@ import org.pytorch.executorch.annotations.Experimental;
  */
 @Experimental
 public class Module {
+
+  static {
+    if (!NativeLoader.isInitialized()) {
+      NativeLoader.init(new SystemDelegate());
+    }
+    // Loads libexecutorch.so from jniLibs
+    NativeLoader.loadLibrary("executorch");
+  }
 
   /** Load mode for the module. Load the whole file as a buffer. */
   public static final int LOAD_MODE_FILE = 0;
@@ -35,10 +48,34 @@ public class Module {
   /** Load mode for the module. Use memory locking and ignore errors. */
   public static final int LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS = 3;
 
-  /** Reference to the NativePeer object of this module. */
-  private NativePeer mNativePeer;
+  private final HybridData mHybridData;
 
-  /** Lock protecting the non-thread safe methods in NativePeer. */
+  private final Map<String, MethodMetadata> mMethodMetadata;
+
+  @DoNotStrip
+  private static native HybridData initHybrid(
+      String moduleAbsolutePath, int loadMode, int initHybrid);
+
+  private Module(String moduleAbsolutePath, int loadMode, int numThreads) {
+    ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
+
+    mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads);
+
+    mMethodMetadata = populateMethodMeta();
+  }
+
+  Map<String, MethodMetadata> populateMethodMeta() {
+    String[] methods = getMethods();
+    Map<String, MethodMetadata> metadata = new HashMap<String, MethodMetadata>();
+    for (int i = 0; i < methods.length; i++) {
+      String name = methods[i];
+      metadata.put(name, new MethodMetadata().setName(name));
+    }
+
+    return metadata;
+  }
+
+  /** Lock protecting the non-thread safe methods in mHybridData. */
   private Lock mLock = new ReentrantLock();
 
   /**
@@ -49,10 +86,24 @@ public class Module {
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
   public static Module load(final String modelPath, int loadMode) {
-    if (!NativeLoader.isInitialized()) {
-      NativeLoader.init(new SystemDelegate());
+    return load(modelPath, loadMode, 0);
+  }
+
+  /**
+   * Loads a serialized ExecuTorch module from the specified path on the disk.
+   *
+   * @param modelPath path to file that contains the serialized ExecuTorch module.
+   * @param loadMode load mode for the module. See constants in {@link Module}.
+   * @param numThreads the number of threads to use for inference. A value of 0 defaults to a
+   *     hardware-specific default.
+   * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
+   */
+  public static Module load(final String modelPath, int loadMode, int numThreads) {
+    File modelFile = new File(modelPath);
+    if (!modelFile.canRead() || !modelFile.isFile()) {
+      throw new RuntimeException("Cannot load model path " + modelPath);
     }
-    return new Module(new NativePeer(modelPath, loadMode));
+    return new Module(modelPath, loadMode, numThreads);
   }
 
   /**
@@ -65,10 +116,6 @@ public class Module {
     return load(modelPath, LOAD_MODE_FILE);
   }
 
-  Module(NativePeer nativePeer) {
-    this.mNativePeer = nativePeer;
-  }
-
   /**
    * Runs the 'forward' method of this module with the specified arguments.
    *
@@ -78,16 +125,7 @@ public class Module {
    * @return return value from the 'forward' method.
    */
   public EValue[] forward(EValue... inputs) {
-    try {
-      mLock.lock();
-      if (mNativePeer == null) {
-        Log.e("ExecuTorch", "Attempt to use a destroyed module");
-        return new EValue[0];
-      }
-      return mNativePeer.forward(inputs);
-    } finally {
-      mLock.unlock();
-    }
+    return execute("forward", inputs);
   }
 
   /**
@@ -100,15 +138,18 @@ public class Module {
   public EValue[] execute(String methodName, EValue... inputs) {
     try {
       mLock.lock();
-      if (mNativePeer == null) {
+      if (!mHybridData.isValid()) {
         Log.e("ExecuTorch", "Attempt to use a destroyed module");
         return new EValue[0];
       }
-      return mNativePeer.execute(methodName, inputs);
+      return executeNative(methodName, inputs);
     } finally {
       mLock.unlock();
     }
   }
+
+  @DoNotStrip
+  private native EValue[] executeNative(String methodName, EValue... inputs);
 
   /**
    * Load a method on this module. This might help with the first time inference performance,
@@ -122,23 +163,70 @@ public class Module {
   public int loadMethod(String methodName) {
     try {
       mLock.lock();
-      if (mNativePeer == null) {
+      if (!mHybridData.isValid()) {
         Log.e("ExecuTorch", "Attempt to use a destroyed module");
         return 0x2; // InvalidState
       }
-      return mNativePeer.loadMethod(methodName);
+      return loadMethodNative(methodName);
     } finally {
       mLock.unlock();
     }
   }
 
-  /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
-  public String[] readLogBuffer() {
-    return mNativePeer.readLogBuffer();
-  }
+  @DoNotStrip
+  private native int loadMethodNative(String methodName);
 
   /**
-   * Explicitly destroys the native torch::jit::Module. Calling this method is not required, as the
+   * Returns the names of the backends in a certain method.
+   *
+   * @param methodName method name to query
+   * @return an array of backend name
+   */
+  @DoNotStrip
+  private native String[] getUsedBackends(String methodName);
+
+  /**
+   * Returns the names of methods.
+   *
+   * @return name of methods in this Module
+   */
+  @DoNotStrip
+  public native String[] getMethods();
+
+  /**
+   * Get the corresponding @MethodMetadata for a method
+   *
+   * @param name method name
+   * @return @MethodMetadata for this method
+   */
+  public MethodMetadata getMethodMetadata(String name) {
+    if (!mMethodMetadata.containsKey(name)) {
+      throw new RuntimeException("method " + name + "does not exist for this module");
+    }
+    return mMethodMetadata.get(name);
+  }
+
+  /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
+  public String[] readLogBuffer() {
+    return readLogBufferNative();
+  }
+
+  @DoNotStrip
+  private native String[] readLogBufferNative();
+
+  /**
+   * Dump the ExecuTorch ETRecord file to /data/local/tmp/result.etdump.
+   *
+   * <p>Currently for internal (minibench) use only.
+   *
+   * @return true if the etdump was successfully written, false otherwise.
+   */
+  @Experimental
+  @DoNotStrip
+  public native boolean etdump();
+
+  /**
+   * Explicitly destroys the native Module object. Calling this method is not required, as the
    * native object will be destroyed when this object is garbage-collected. However, the timing of
    * garbage collection is not guaranteed, so proactively calling {@code destroy} can free memory
    * more quickly. See {@link com.facebook.jni.HybridData#resetNative}.
@@ -146,13 +234,11 @@ public class Module {
   public void destroy() {
     if (mLock.tryLock()) {
       try {
-        mNativePeer.resetNative();
+        mHybridData.resetNative();
       } finally {
-        mNativePeer = null;
         mLock.unlock();
       }
     } else {
-      mNativePeer = null;
       Log.w(
           "ExecuTorch",
           "Destroy was called while the module was in use. Resources will not be immediately"

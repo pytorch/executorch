@@ -7,6 +7,6 @@ copy_packed_dim_offset:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int
+      - VALUE: int32
   shader_variants:
     - NAME: copy_packed_dim_offset

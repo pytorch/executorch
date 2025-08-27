@@ -11,6 +11,7 @@
 
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <executorch/kernels/portable/cpu/util/delinearize_index.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 using exec_aten::ArrayRef;

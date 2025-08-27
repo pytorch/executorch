@@ -49,14 +49,24 @@ prepare_artifacts_upload() {
 }
 
 build_cmake_executor_runner() {
+  local backend_string_select="${1:-}"
   echo "Building executor_runner"
   rm -rf ${CMAKE_OUTPUT_DIR}
-  cmake -DCMAKE_BUILD_TYPE=Debug \
-      -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-      -B${CMAKE_OUTPUT_DIR} .
-
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
+  mkdir ${CMAKE_OUTPUT_DIR}
+  if [[ "$backend_string_select" == "XNNPACK" ]]; then
+    echo "Backend $backend_string_select selected"
+    (cd ${CMAKE_OUTPUT_DIR} \
+      && cmake -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  else
+    cmake -DCMAKE_BUILD_TYPE=Debug \
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -B${CMAKE_OUTPUT_DIR} .
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4 --config Debug
+  fi
 }
 
 run_portable_executor_runner() {
@@ -76,8 +86,8 @@ test_model() {
   if [[ "${MODEL_NAME}" == "llama2" ]]; then
     # Install requirements for export_llama
     bash examples/models/llama/install_requirements.sh
-    # Test export_llama script: python3 -m examples.models.llama.export_llama
-    "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -c examples/models/llama/params/demo_rand_params.pth -p examples/models/llama/params/demo_config.json
+    # Test export_llm script: python3 -m extension.llm.export.export_llm
+    "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.checkpoint=examples/models/llama/params/demo_rand_params.pth base.params=examples/models/llama/params/demo_config.json
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi
@@ -87,24 +97,20 @@ test_model() {
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
   fi
-  if [[ "$MODEL_NAME" == "llama3_2_vision_encoder" || "$MODEL_NAME" == "llama3_2_text_decoder" ]]; then
-    # Install requirements for llama vision.
-    bash examples/models/llama3_2_vision/install_requirements.sh
-  fi
   if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
-      # Test export_llama script: python3 -m examples.models.llama.export_llama.
+      # Test export_llm script: python3 -m extension.llm.export.export_llm.
       # Use Llama random checkpoint with Qwen 2.5 1.5b model configuration.
-      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -p examples/models/qwen2_5/1_5b_config.json
+      "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.params=examples/models/qwen2_5/config/1_5b_config.json
       rm "./${MODEL_NAME}.pte"
       return  # Skip running with portable executor runnner since portable doesn't support Qwen's biased linears.
   fi
   if [[ "${MODEL_NAME}" == "phi_4_mini" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
-      # Test export_llama script: python3 -m examples.models.llama.export_llama.
-      "${PYTHON_EXECUTABLE}" -m examples.models.llama.export_llama --model "${MODEL_NAME}" -p examples/models/phi_4_mini/config.json
+      # Test export_llm script: python3 -m extension.llm.export.export_llm.
+      "${PYTHON_EXECUTABLE}" -m extension.llm.export.export_llm base.model_class="${MODEL_NAME}" base.params=examples/models/phi_4_mini/config/config.json
       run_portable_executor_runner
       rm "./${MODEL_NAME}.pte"
       return
@@ -113,19 +119,6 @@ test_model() {
   # Export a basic .pte and run the model.
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
   run_portable_executor_runner
-}
-
-build_cmake_xnn_executor_runner() {
-  echo "Building xnn_executor_runner"
-
-  (rm -rf ${CMAKE_OUTPUT_DIR} \
-    && mkdir ${CMAKE_OUTPUT_DIR} \
-    && cd ${CMAKE_OUTPUT_DIR} \
-    && retry cmake -DCMAKE_BUILD_TYPE=Release \
-      -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
-
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4
 }
 
 test_model_with_xnnpack() {
@@ -152,12 +145,11 @@ test_model_with_xnnpack() {
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+    # TODO eventually buck should also use consolidated executor runners
     buck2 run //examples/xnnpack:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-    if [[ ! -f ${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner ]]; then
-      build_cmake_xnn_executor_runner
-    fi
-    ./${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner --model_path "${OUTPUT_MODEL_PATH}"
+    build_cmake_executor_runner "XNNPACK"
+    ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "${OUTPUT_MODEL_PATH}"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
@@ -174,28 +166,63 @@ test_model_with_qnn() {
   export PYTHONPATH=$EXECUTORCH_ROOT/..
 
   EXTRA_FLAGS=""
+  # Ordered by the folder name, then alphabetically by the model name
+  # Following models are inside examples/qualcomm/scripts folder
   if [[ "${MODEL_NAME}" == "dl3" ]]; then
     EXPORT_SCRIPT=deeplab_v3
-  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
-    EXPORT_SCRIPT=mobilenet_v3
-  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
-    EXPORT_SCRIPT=mobilenet_v2
-  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
-    EXPORT_SCRIPT=inception_v4
+  elif [[ "${MODEL_NAME}" == "edsr" ]]; then
+    EXPORT_SCRIPT=edsr
+    # Additional deps for edsr
+    pip install piq
   elif [[ "${MODEL_NAME}" == "ic3" ]]; then
     EXPORT_SCRIPT=inception_v3
-  elif [[ "${MODEL_NAME}" == "vit" ]]; then
-    EXPORT_SCRIPT=torchvision_vit
+  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
+    EXPORT_SCRIPT=inception_v4
   elif [[ "${MODEL_NAME}" == "mb" ]]; then
     EXPORT_SCRIPT=mobilebert_fine_tune
     EXTRA_FLAGS="--num_epochs 1"
     pip install scikit-learn
+  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
+    EXPORT_SCRIPT=mobilenet_v2
+  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
+    EXPORT_SCRIPT=mobilenet_v3
+  elif [[ "${MODEL_NAME}" == "vit" ]]; then
+    EXPORT_SCRIPT=torchvision_vit
   elif [[ "${MODEL_NAME}" == "w2l" ]]; then
     EXPORT_SCRIPT=wav2letter
   elif [[ "${MODEL_NAME}" == "edsr" ]]; then
     EXPORT_SCRIPT=edsr
     # Additional deps for edsr
     pip install piq
+  # Following models are inside examples/qualcomm/oss_scripts folder
+  elif [[ "${MODEL_NAME}" == "albert" ]]; then
+    EXPORT_SCRIPT=albert
+  elif [[ "${MODEL_NAME}" == "bert" ]]; then
+    EXPORT_SCRIPT=bert
+  elif [[ "${MODEL_NAME}" == "conv_former" ]]; then
+    EXPORT_SCRIPT=conv_former
+  elif [[ "${MODEL_NAME}" == "cvt" ]]; then
+    EXPORT_SCRIPT=cvt
+  elif [[ "${MODEL_NAME}" == "distilbert" ]]; then
+    EXPORT_SCRIPT=distilbert
+  elif [[ "${MODEL_NAME}" == "dit" ]]; then
+    EXPORT_SCRIPT=dit
+  elif [[ "${MODEL_NAME}" == "efficientnet" ]]; then
+    EXPORT_SCRIPT=efficientnet
+  elif [[ "${MODEL_NAME}" == "eurobert" ]]; then
+    EXPORT_SCRIPT=eurobert
+  elif [[ "${MODEL_NAME}" == "focalnet" ]]; then
+    EXPORT_SCRIPT=focalnet
+  elif [[ "${MODEL_NAME}" == "mobilevit_v1" ]]; then
+    EXPORT_SCRIPT=mobilevit_v1
+  elif [[ "${MODEL_NAME}" == "mobilevit_v2" ]]; then
+    EXPORT_SCRIPT=mobilevit_v2
+  elif [[ "${MODEL_NAME}" == "pvt" ]]; then
+    EXPORT_SCRIPT=pvt
+  elif [[ "${MODEL_NAME}" == "roberta" ]]; then
+    EXPORT_SCRIPT=roberta
+  elif [[ "${MODEL_NAME}" == "swin" ]]; then
+    EXPORT_SCRIPT=swin_transformer
   else
     echo "Unsupported model $MODEL_NAME"
     exit 1
@@ -205,7 +232,28 @@ test_model_with_qnn() {
   # TODO(guangyang): Make QNN chipset matches the target device
   QNN_CHIPSET=SM8450
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --compile_only $EXTRA_FLAGS
+  SCRIPT_FOLDER=""
+  case "${MODEL_NAME}" in
+    "dl3"|"mv3"|"mv2"|"ic4"|"ic3"|"vit"|"mb"|"w2l")
+        SCRIPT_FOLDER=scripts
+        ;;
+    "cvt"|"dit"|"focalnet"|"mobilevit_v2"|"pvt"|"swin")
+        SCRIPT_FOLDER=oss_scripts
+        ;;
+    "albert"|"bert"|"conv_former"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")
+        pip install evaluate
+        SCRIPT_FOLDER=oss_scripts
+        # 16bit models will encounter op validation fail on some operations,
+        # which requires CHIPSET >= SM8550.
+        QNN_CHIPSET=SM8550
+        ;;
+    *)
+        echo "Unsupported model $MODEL_NAME"
+        exit 1
+        ;;
+  esac
+
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.${SCRIPT_FOLDER}.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
@@ -214,21 +262,24 @@ test_model_with_qnn() {
 # @param should_test If true, build and test the model using the coreml_executor_runner.
 test_model_with_coreml() {
   local should_test="$1"
+  local test_with_pybindings="$2"
+  local dtype="$3"
 
   if [[ "${BUILD_TOOL}" != "cmake" ]]; then
     echo "coreml only supports cmake."
     exit 1
   fi
 
-  DTYPE=float16
+  RUN_WITH_PYBINDINGS=""
+  if [[ "${test_with_pybindings}" == true ]]; then
+    echo \"Running with pybindings\"
+    export RUN_WITH_PYBINDINGS="--run_with_pybindings"
+  fi
 
-  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision "${DTYPE}" --use_partitioner
+  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}" --compute_precision ${dtype} --use_partitioner ${RUN_WITH_PYBINDINGS}
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 
   if [ -n "$EXPORTED_MODEL" ]; then
-    EXPORTED_MODEL_WITH_DTYPE="${EXPORTED_MODEL%.pte}_${DTYPE}.pte"
-    mv "$EXPORTED_MODEL" "$EXPORTED_MODEL_WITH_DTYPE"
-    EXPORTED_MODEL="$EXPORTED_MODEL_WITH_DTYPE"
     echo "OK exported model: $EXPORTED_MODEL"
   else
     echo "[error] failed to export model: no .pte file found"
@@ -252,6 +303,24 @@ test_model_with_mps() {
   EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
+test_model_with_mediatek() {
+  if [[ "${MODEL_NAME}" == "dl3" ]]; then
+    EXPORT_SCRIPT=deeplab_v3
+  elif [[ "${MODEL_NAME}" == "mv3" ]]; then
+    EXPORT_SCRIPT=mobilenet_v3
+  elif [[ "${MODEL_NAME}" == "mv2" ]]; then
+    EXPORT_SCRIPT=mobilenet_v2
+  elif [[ "${MODEL_NAME}" == "ic4" ]]; then
+    EXPORT_SCRIPT=inception_v4
+  elif [[ "${MODEL_NAME}" == "ic3" ]]; then
+    EXPORT_SCRIPT=inception_v3
+  fi
+
+  PYTHONPATH=examples/mediatek/ "${PYTHON_EXECUTABLE}" -m examples.mediatek.model_export_scripts.${EXPORT_SCRIPT} -d /tmp/neuropilot/train -a ${EXPORT_SCRIPT}
+  EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "*.pte" -print -quit)
+}
+
+
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
@@ -267,7 +336,15 @@ elif [[ "${BACKEND}" == *"coreml"* ]]; then
   if [[ "${BACKEND}" == *"test"* ]]; then
     should_test_coreml=true
   fi
-  test_model_with_coreml "${should_test_coreml}"
+  test_with_pybindings=false
+  if [[ "${BACKEND}" == *"pybind"* ]]; then
+    test_with_pybindings=true
+  fi
+  dtype=float16
+  if [[ "${BACKEND}" == *"float32"* ]]; then
+    dtype=float32
+  fi
+  test_model_with_coreml "${should_test_coreml}" "${test_with_pybindings}" "${dtype}"
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
@@ -286,6 +363,12 @@ elif [[ "${BACKEND}" == *"xnnpack"* ]]; then
     WITH_QUANTIZATION=false
   fi
   test_model_with_xnnpack "${WITH_QUANTIZATION}" "${WITH_DELEGATION}"
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "mediatek" ]]; then
+  echo "Testing ${MODEL_NAME} with mediatek..."
+  test_model_with_mediatek
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi

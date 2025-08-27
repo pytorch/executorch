@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -33,12 +33,17 @@ Tensor& neg_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "neg.out", CTYPE, [&] {
-    apply_unary_map_fn(
-        [](const CTYPE val_in) { return static_cast<CTYPE>(-val_in); },
-        in.const_data_ptr<CTYPE>(),
-        out.mutable_data_ptr<CTYPE>(),
-        in.numel());
+  static constexpr const char op_name[] = "neg.out";
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
+    utils::internal::apply_unitensor_elementwise_fn<
+        CTYPE,
+        op_name,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON>(
+        [](const auto val_in) { return -val_in; },
+        ctx,
+        in,
+        utils::SupportedTensorDtypes::REALHBF16,
+        out);
   });
 
   return out;

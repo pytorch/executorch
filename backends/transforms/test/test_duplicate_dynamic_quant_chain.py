@@ -15,7 +15,6 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 # TODO: Move away from using torch's internal testing utils
 from torch.testing._internal.common_quantization import (
@@ -23,6 +22,7 @@ from torch.testing._internal.common_quantization import (
     QuantizationTestCase,
     TestHelperModules,
 )
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class MyTestHelperModules:

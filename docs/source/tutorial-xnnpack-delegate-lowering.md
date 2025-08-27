@@ -85,7 +85,7 @@ sample_inputs = (torch.randn(1, 3, 224, 224), )
 
 mobilenet_v2 = export_for_training(mobilenet_v2, sample_inputs).module() # 2-stage export for quantization path
 
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
@@ -141,7 +141,7 @@ Note in the example above,
 The generated model file will be named `[model_name]_xnnpack_[qs8/fp32].pte` depending on the arguments supplied.
 
 ## Running the XNNPACK Model with CMake
-After exporting the XNNPACK Delegated model, we can now try running it with example inputs using CMake. We can build and use the xnn_executor_runner, which is a sample wrapper for the ExecuTorch Runtime and XNNPACK Backend. We first begin by configuring the CMake build like such:
+After exporting the XNNPACK Delegated model, we can now try running it with example inputs using CMake. We can build and use the executor_runner, which is a sample wrapper for the ExecuTorch Runtime. The XNNPACK Backend is enabled via the compilation flag `-DEXECUTORCH_BUILD_XNNPACK=ON`. We first begin by configuring the CMake build like such:
 ```bash
 # cd to the root of executorch repo
 cd executorch
@@ -154,6 +154,7 @@ mkdir cmake-out
 cmake \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
@@ -168,15 +169,15 @@ Then you can build the runtime componenets with
 cmake --build cmake-out -j9 --target install --config Release
 ```
 
-Now you should be able to find the executable built at `./cmake-out/backends/xnnpack/xnn_executor_runner` you can run the executable with the model you generated as such
+Now you should be able to find the executable built at `./cmake-out/executor_runner` you can run the executable with the model you generated as such
 ```bash
-./cmake-out/backends/xnnpack/xnn_executor_runner --model_path=./mv2_xnnpack_fp32.pte
+./cmake-out/executor_runner --model_path=./mv2_xnnpack_fp32.pte
 # or to run the quantized variant
-./cmake-out/backends/xnnpack/xnn_executor_runner --model_path=./mv2_xnnpack_q8.pte
+./cmake-out/executor_runner --model_path=./mv2_xnnpack_q8.pte
 ```
 
 ## Building and Linking with the XNNPACK Backend
 You can build the XNNPACK backend [CMake target](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt#L83), and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this [resource](using-executorch-android.md) next.
 
 ## Profiling
-To enable profiling in the `xnn_executor_runner` pass the flags `-DEXECUTORCH_ENABLE_EVENT_TRACER=ON` and `-DEXECUTORCH_BUILD_DEVTOOLS=ON` to the build command (add `-DENABLE_XNNPACK_PROFILING=ON` for additional details). This will enable ETDump generation when running the inference and enables command line flags for profiling (see `xnn_executor_runner --help` for details).
+To enable profiling in the `executor_runner` pass the flags `-DEXECUTORCH_ENABLE_EVENT_TRACER=ON` and `-DEXECUTORCH_BUILD_DEVTOOLS=ON` to the build command (add `-DENABLE_XNNPACK_PROFILING=ON` for additional details). This will enable ETDump generation when running the inference and enables command line flags for profiling (see `executor_runner --help` for details).

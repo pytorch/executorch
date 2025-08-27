@@ -5,14 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from copy import deepcopy
-from typing import Any, Set
+import operator
+
+from typing import Any
 
 import executorch.backends.vulkan.utils as utils
 
 import torch
 
-from executorch.backends.vulkan.op_registry import get_op_features, has_impl
+from executorch.backends.vulkan.op_registry import get_op_features, has_impl, OpFeatures
 
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
@@ -22,28 +23,22 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.tensor import TensorSpec
 
 logger: logging.Logger = logging.getLogger("")
 logger.setLevel(logging.INFO)
-
-
-def set_memory_metadata(
-    node: torch.fx.Node, storage: VkStorageType, layout: VkMemoryLayout
-) -> None:
-    utils.set_node_spec_attr(node, "vk_storage_type", storage)
-    utils.set_node_spec_attr(node, "vk_memory_layout", layout)
 
 
 def insert_transition_node(
     graph_module: torch.fx.GraphModule,
     node: torch.fx.Node,
     arg: torch.fx.Node,
-    storage: VkStorageType,
-    layout: VkMemoryLayout,
+    arg_node_repr: utils.TensorRepr,
 ) -> None:
     """
-    Insert a clone node to copy the original tensor to a tensor with the desired storage
-    type and memory layout.
+    Insert a clone node to transition the tensor associated with `arg` to a tensor with
+    the requested representation `arg_node_repr`, and use the cloned node as an argument
+    to `node` instead of `arg`.
     """
     with graph_module.graph.inserting_before(node):
         clone_node = graph_module.graph.create_node(
@@ -52,32 +47,82 @@ def insert_transition_node(
             (arg,),
         )
         clone_node.meta["val"] = arg.meta["val"]
-        clone_node.meta["spec"] = deepcopy(arg.meta["spec"])
+        clone_node.meta["spec"] = TensorSpec.from_tensor(clone_node.meta["val"])
         clone_node.meta["spec"].const = False
-        set_memory_metadata(clone_node, storage, layout)
+        utils.set_node_repr(clone_node, arg_node_repr)
         arg.replace_all_uses_with(clone_node, lambda x, y=node: x == y)
+
+
+def set_arg_node_repr_or_transition(
+    graph_module: torch.fx.GraphModule,
+    op_node: torch.fx.Node,
+    arg_i: int,
+    arg_node_repr: utils.TensorRepr,
+    dirty: bool,
+) -> bool:
+    """
+    Does one of following:
+    1. Sets the `node_repr` of the argument at `arg_i` of `op_node` if the argument node
+       does not currently have a `node_repr`
+    2. No-op if the current `node_repr` is already the same as the requested represetnation.
+    3. Insert a transition node to create a copy of the argument with the desired `node_repr`
+       if the current `node_repr` is different than what is needed.
+    """
+    arg_node = op_node.args[arg_i]
+
+    def single_node_impl(node: torch.fx.Node) -> bool:
+        # Case where the arg node has not been touched yet; in this case, simply set it and
+        # return.
+        if not utils.has_node_repr(node):
+            utils.set_node_repr(node, arg_node_repr)
+            return False
+
+        # Case where the current node representation is the same as the new one.
+        cur_node_repr = utils.get_node_repr(node)
+        assert isinstance(cur_node_repr, utils.TensorRepr)
+
+        if cur_node_repr == arg_node_repr:
+            return False
+
+        if not dirty:
+            logger.info(
+                f"[Vulkan Delegate] Inserting transition(s) for {op_node.format_node()}:"
+            )
+
+        # Existing node representation is different; insert a transition node
+        # Currently, the transition node insertion logic can only handle single tensor nodes
+        assert utils.is_single_tensor_node(node)
+        insert_transition_node(graph_module, op_node, node, arg_node_repr)
+
+        logger.info(f"   arg {arg_i} ({node}): ({cur_node_repr}) -> ({arg_node_repr})")
+
+        return True
+
+    if isinstance(arg_node, torch.fx.Node):
+        return single_node_impl(arg_node)
+    elif isinstance(arg_node, (list, tuple)):
+        ret: bool = False
+        for n in arg_node:
+            assert isinstance(n, torch.fx.Node)
+            assert utils.is_single_tensor_node(n)
+            ret = single_node_impl(n) or ret
+
+        return ret
+
+    raise NotImplementedError(f"Unhandled node type {arg_node}")
 
 
 class TagMemoryMetaPass(ExportPass):
     """
-    There are a variety of ways that tensors can be represented in Vulkan. The two main
-    descriptors for how a tensor is laid out in memory is:
+    Operator implementations in the Vulkan delegate may require that input and output
+    tensors use a specific representation. Representation in this case refers to a
+    combination of storage type (buffer or texture) and memory layout (width, height, or
+    channels packed).
 
-    1. Storage Type (buffer or texture)
-    2. Memory Layout (which dim is packed along a texel / has a stride of 1, etc.)
-
-    Due to the differences between buffers and textures, and the differences between
-    different memory layouts, an implementation for an operator may only support a
-    specific set of (storage type, memory layout) combinations.
-
-    Furthermore, if an operator implementation supports multiple (storage type, memory
-    layout) combinations, there may be a "preferred" setting which results in optimal
-    performance.
-
-    This pass is responsible for ensuring that all tensors participating in an operator
-    call have a valid/optimal (storage type, memory layout) setting, and insert
-    transition operators to transfer input tensors to the correct memory settings when
-    necessary.
+    The tag memory metadata pass is responsible for marking each tensor in the graph
+    with the appropriate representation to use. It is also responsible for inserting
+    operators to transition argument tensors to a required/compatible representation if
+    a mismatch has been detected.
     """
 
     def __init__(
@@ -91,219 +136,331 @@ class TagMemoryMetaPass(ExportPass):
         self.default_layout: VkMemoryLayout = default_memory_layout
         self.texture_limits = texture_limits
 
-    def propose_node_storage(
-        self,
-        node: torch.fx.Node,
-    ) -> VkStorageType:
+        # Magic number to limit "lookahead" when tracing through users of an operator
+        # to constrain the representation of its arguments/outputs.
+        self.max_trace_search_depth = 20
+
+    def is_valid_op_node(self, node: Any) -> bool:
         """
-        Uses the operator registry to determine the storage type that should be used for
-        a given node. The storage type is determined with the following priorities:
-        1. In some cases, a tensor involved in the computation may be too large to be
-           represented as a texture. If this is the case, the node is "opinionated" and
-           buffer representation must be used.
-        1. If the operator called by the node indicates an optimal storage type, or only
-           supports a single storage type, use that storage type. If either is true,
-           then the node is considered to be opinionated as well. If multiple storage
-           and no preferred storage type is indicated, then the node is not opinionated;
-           go to the next step.
-        2. If the node's arguments already have memory metadata annotations, then
-           preserve the settings of the first argument. Otherwise, proceed to the next
-           step.
-        3. Recursively search the node's uses to see if any subsequent uses are
-           opinionated; inherit the settings of the first opinionated node. If no
-           opinionated user can be found, then proceed to the last step.
-        4. Use the default storage type setting.
+        Fails the check for:
+        * nodes that are not associated with a tensor
+        * nodes that are associated with a constant tensor
+        * nodes that are not associated with a supported operator
         """
-        # The node may have an input/output tensor that is too big to be stored in a
-        # texture. In this case, buffer storage must be used. Note that the partitioner
-        # has already checked for the fact that buffer storage is supported by the
-        # operator.
-        if len(utils.possible_node_memory_layouts(node, self.texture_limits)) == 0:
-            return VkStorageType.BUFFER
+        if not isinstance(node, torch.fx.Node) or not utils.is_tensor_node(node):
+            return False
+        if node.meta.get("etvk_tensorref", False):
+            return False
+        if not has_impl(node.target):
+            return False
 
-        valid_storage_types: Set[VkStorageType] = utils.all_storage_types
+        return True
 
-        # pyre-ignore
-        if has_impl(node.target):
-            # pyre-ignore
-            features = get_op_features(node.target)
-            valid_storage_types = features.supported_storage_types()
-            storage = features.propose_storage_type()
-            if storage is not None:
-                return storage
-
-        for arg in node.args:
-            if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
-                storage = utils.get_node_storage_type(arg)
-                if storage is not None and storage in valid_storage_types:
-                    return storage
-
-        # If no storage type has been resolved yet, assume the optimal storage type of
-        # the first opinionated user. This search is recursive.
-        for user in node.users:
-            optimal_storage = self.propose_node_storage(user)
-            if optimal_storage is not None:
-                return optimal_storage
-
-        if self.default_storage in valid_storage_types:
-            return self.default_storage
-        else:
-            return next(iter(valid_storage_types))
-
-    def propose_node_layout(
-        self,
-        node: torch.fx.Node,
-        storage: VkStorageType,
-    ) -> VkMemoryLayout:
+    def is_non_constant_tensor_node(self, node: Any) -> bool:
         """
-        Performs the same steps as propose_node_storage, but detects the memory layout
-        that should be used for the specific storage type. The same prioritization logic
-        is applied.
+        Fails the check for:
+        * Nodes that are not associated with tensor values
+        * Nodes associated with constant tensors
+        *
         """
-        valid_layouts: Set[VkMemoryLayout] = utils.all_memory_layouts
-        # pyre-ignore
-        if has_impl(node.target):
-            # pyre-ignore
-            features = get_op_features(node.target)
-            valid_layouts = features.supported_memory_layouts(storage)
-            layout = features.propose_memory_layout(storage)
-            if layout is not None:
-                return layout
-
-        for arg in node.args:
-            if isinstance(arg, torch.fx.Node) and utils.is_tensor_node(arg):
-                layout = utils.get_node_memory_layout(arg)
-                if layout is not None and layout in valid_layouts:
-                    return layout
-
-        # If no storage type has been resolved yet, assume the optimal storage type of
-        # the first opinionated user. This search is recursive.
-        for user in node.users:
-            optimal_storage = self.propose_node_layout(user, storage)
-            if optimal_storage is not None:
-                return optimal_storage
-
-        # As a last resort, return the default storage type that should be used.
-        if self.default_layout in valid_layouts:
-            return self.default_layout
-        else:
-            return next(iter(valid_layouts))
-
-    def should_annotate(self, node) -> bool:
         if isinstance(node, torch.fx.Node):
             if not utils.is_tensor_node(node):
                 return False
-
-            # Storage type and memory layout for tensorref will be determined at runtime
-            # so there's no use in setting those attributes ahead of time.
-            if node.meta.get("vkdg_tensorref", False):
+            if node.meta.get("etvk_tensorref", False):
                 return False
+            return True
 
-            # Skip annotating output node. The output tensors should be annotated by the
-            # time the output node is observed.
-            if node.op == "output":
-                return False
-        elif isinstance(node, (list, tuple)):
-            return all(
-                isinstance(n, torch.fx.Node) and self.should_annotate(n) for n in node
-            )
+        if isinstance(node, (tuple, list)):
+            for n in node:
+                if not isinstance(n, torch.fx.Node):
+                    return False
+                if not self.is_non_constant_tensor_node(n):
+                    return False
+
+            return True
+
+        # Return false by default
+        return False
+
+    def get_node_cached_repsets(self, op_node: torch.fx.Node) -> utils.OpRepSets:
+        """
+        Implements a cache layer for getting the OpRepSets for a given operator node.
+        """
+        assert self.is_valid_op_node(op_node)
+
+        if "etvk_node_repsets" in op_node.meta:
+            op_repsets = op_node.meta["etvk_node_repsets"]
+            assert isinstance(op_repsets, utils.OpRepSets)
+            return op_repsets
         else:
-            return False
+            # Special case for getitem - set the input and output to the repset of the
+            # tensor value being extracted
+            if op_node.target == operator.getitem:
+                src_node = op_node.args[0]
+                assert isinstance(src_node, torch.fx.Node)
+                idx = op_node.args[1]
+                assert isinstance(idx, int)
 
-        return True
+                arg_node_repsets = self.get_node_cached_repsets(src_node)
+                out_tensor_repset = arg_node_repsets.get_out_repset(idx)
 
-    def should_delay_annotation(self, node: torch.fx.Node) -> bool:
-        # For prepack nodes, delay setting the storage type and memory layout as long as
-        # possible. This is to minimize the number of transitions, since it can be
-        # difficult to predict what storage type and memory layout should be used at the
-        # time the prepack node is observed.
-        return node.target == exir_ops.edge.et_vk.prepack.default
+                op_repsets = utils.OpRepSets(
+                    utils.TensorRepSetList(out_tensor_repset),
+                    utils.TensorRepSetList(out_tensor_repset),
+                    op_node,
+                    self.texture_limits,
+                )
+            else:
+                features: OpFeatures = get_op_features(op_node.target)  # noqa
+                op_repsets = features.make_op_repsets(op_node, self.texture_limits)
 
-    def set_or_transition_arg_node(
+            op_node.meta["etvk_node_repsets"] = op_repsets
+            return op_repsets
+
+    def get_arg_tensor_source_repset(
+        self, op_node: torch.fx.Node, arg_i: int
+    ) -> utils.TensorRepSet:
+        """
+        Get the "source RepSet" for the tensor argument at index `arg_i` of `op_node`.
+        The source repset is obtained in one of two ways:
+
+        1. If the tensor argument already has a representation determined for it, return
+           a repset that contains that representation.
+        2. Otherwise, return the output repset of the operator that produces the tensor
+        """
+        arg_node = op_node.args[arg_i]
+
+        # Special case for cat - use the first tensor in the list as representative
+        if isinstance(arg_node, list):
+            arg_node = arg_node[0]
+
+        if utils.has_node_repr(arg_node):
+            arg_node_repr = utils.get_node_repr(arg_node)
+            assert isinstance(arg_node_repr, utils.TensorRepr)
+            return utils.make_tensor_repset(arg_node_repr)
+        elif self.is_valid_op_node(arg_node):
+            # Special case for getitem - propagate the node representation of the original node
+            if op_node.target == operator.getitem:
+                src_node = op_node.args[0]
+                assert isinstance(src_node, torch.fx.Node)
+                idx = op_node.args[1]
+                assert isinstance(idx, int)
+
+                src_node_repsets = self.get_node_cached_repsets(src_node)
+                return src_node_repsets.get_out_repset(idx)
+
+            src_node_repsets = self.get_node_cached_repsets(arg_node)
+            return src_node_repsets.get_out_repset(0)
+
+        # default return
+        return utils.ANY_STORAGE
+
+    def constrain_repset_with_user(
         self,
-        i: int,
-        arg: torch.fx.Node,
-        node: torch.fx.Node,
-        graph_module: torch.fx.GraphModule,
-        dirty: bool,
-    ) -> bool:
-        assert isinstance(arg, torch.fx.Node)
+        current_node: torch.fx.Node,
+        arg_i: int,
+        arg_repset: utils.TensorRepSet,
+        search_depth: int = 0,
+    ) -> utils.TensorRepSet:
+        """
+        Attempts to constrain `arg_repset` based on the required repset of the argument
+        at index `arg_i` of `current_node`. This tries to find a representation for the
+        argument that can be used for as long as possible without needing a transition.
+        """
+        # The repset is already constrained; return it
+        if arg_repset.is_constrained():
+            return arg_repset
 
-        storage = utils.get_node_storage_type(node)
-        assert storage is not None
-        layout = utils.get_node_memory_layout(node)
-        assert layout is not None
+        # The current node is not a valid op node, so no OpRepSets object can be created
+        # for it.
+        if not self.is_valid_op_node(current_node):
+            return arg_repset
 
-        arg_storage = utils.get_node_storage_type(arg)
-        arg_layout = utils.get_node_memory_layout(arg)
+        cur_node_repsets = self.get_node_cached_repsets(current_node)
 
-        if arg_storage is None:
-            utils.set_node_spec_attr(arg, "vk_storage_type", storage)
-            arg_storage = storage
-        if arg_layout is None:
-            utils.set_node_spec_attr(arg, "vk_memory_layout", layout)
-            arg_layout = layout
+        # Intersect with the repset required by the current operator; otherwise, return
+        # since a transition will be required anyways
+        req_arg_repset = cur_node_repsets.get_arg_repset(arg_i)
+        if req_arg_repset.any_in_common(arg_repset):
+            arg_repset = arg_repset.make_intersect(req_arg_repset)
+        else:
+            return arg_repset
 
-        if arg_storage == storage and arg_layout == layout:
-            return False
-
-        if not dirty:
-            logger.info(
-                f"[Vulkan Delegate] Inserting transition(s) for {node.format_node()}:"
-            )
-
-        insert_transition_node(graph_module, node, arg, storage, layout)
-
-        logger.info(
-            f"   args {i} ({arg}): ({arg_storage}, {arg_layout}) -> ({storage}, {layout})"
+        # Check if the argument at `arg_i` will influence the output representation of
+        # the current operator.
+        repset_propagates_to_output = cur_node_repsets.sync_primary_io_repr and (
+            cur_node_repsets.sync_args_repr or arg_i == cur_node_repsets.primary_arg_idx
         )
 
-        return True
+        # If not, then no point in continuing to trace the users of the current node
+        if not repset_propagates_to_output:
+            return arg_repset
 
-    def set_or_transition_arg(
+        return self.trace_node_users_to_constrain_repset(
+            current_node, arg_repset, search_depth
+        )
+
+    def trace_node_users_to_constrain_repset(
         self,
-        i: int,
-        arg: Any,
-        node: torch.fx.Node,
-        graph_module: torch.fx.GraphModule,
-        dirty: bool,
-    ) -> bool:
-        if isinstance(arg, torch.fx.Node):
-            return self.set_or_transition_arg_node(i, arg, node, graph_module, dirty)
-        elif isinstance(arg, (list, tuple)):
-            need_transition = False
-            for arg_node in arg:
-                need_transition = (
-                    self.set_or_transition_arg_node(
-                        i, arg_node, node, graph_module, need_transition
-                    )
-                    or need_transition
-                )
-            return need_transition
-        else:
-            return False
+        origin_node: torch.fx.Node,
+        repset: utils.TensorRepSet,
+        search_depth: int = 0,
+    ) -> utils.TensorRepSet:
+        """
+        For an ambiguous repset, try to constrain the repset by tracing the required
+        repsets of the users of `origin_node`. The idea is to try to find a representation
+        that can be used the longest without needing user nodes to insert a transition
+        for its arguments.
+        """
+        # Optionally limit the search depth to improve export time
+        if self.max_trace_search_depth is not None:
+            if search_depth > self.max_trace_search_depth:
+                return repset
 
-    # noqa
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        for node in graph_module.graph.nodes:
-            if not self.should_annotate(node) or self.should_delay_annotation(node):
+        users_to_trace = origin_node.users
+
+        sync_outs_repr = True
+        if self.is_valid_op_node(origin_node):
+            sync_outs_repr = self.get_node_cached_repsets(origin_node).sync_outs_repr
+
+        if utils.num_tensors_in_node(origin_node) > 1 and not sync_outs_repr:
+            users_to_trace = []
+            for usage_node in origin_node.users:
+                if usage_node.target == operator.getitem and usage_node.args[1] == 1:
+                    users_to_trace.append(usage_node)
+
+        for usage_node in users_to_trace:
+            arg_i_in_user = None
+            for i in range(len(usage_node.args)):
+                if origin_node == usage_node.args[i]:
+                    arg_i_in_user = i
+                    break
+
+            if arg_i_in_user is not None:
+                repset = self.constrain_repset_with_user(
+                    usage_node, arg_i_in_user, repset, search_depth + 1
+                )
+
+            if repset.is_constrained():
+                return repset
+
+        return repset
+
+    def constrain_op_arg_repset(self, arg_i: int, op_repsets: utils.OpRepSets) -> None:
+        """
+        Attempts to constrain the repset of the argument at index `arg_i` of the op
+        associated with `op_repsets`. Does this with two stages:
+
+        1. First, account for any existing representation that has already been determined
+           for the argument. If no existing representation has been determined, then use
+           the output repset of the operator that produces the argument.
+        2. Then, try to trace through the users of the argument to find a representation
+           that can be used for as long as possible without needing a transition.
+        """
+        arg_source_repset = self.get_arg_tensor_source_repset(op_repsets.op_node, arg_i)
+        op_repsets.try_constrain_with_arg_repset(arg_i, arg_source_repset)
+
+        arg_repset = op_repsets.get_arg_repset(arg_i)
+        if arg_repset.is_constrained():
+            return arg_repset
+
+        arg_node = op_repsets.op_node.args[arg_i]
+
+        if isinstance(arg_node, list):
+            arg_node = arg_node[0]
+
+        arg_repset = self.trace_node_users_to_constrain_repset(arg_node, arg_repset)
+        op_repsets.try_constrain_with_arg_repset(arg_i, arg_repset)
+
+    def constrain_op_repsets(self, op_repsets: utils.OpRepSets) -> None:
+        # For most ops, constraining the argument repsets will also contrain the output
+        # repset due to OpRepSets maintaining synchronization rules.
+        for i in range(len(op_repsets.op_node.args)):
+            if utils.is_tensor_arg_node(op_repsets.op_node.args[i]):
+                self.constrain_op_arg_repset(i, op_repsets)
+
+        # TODO(ssjia): For most ops, inputs and outputs must be synchronized, so there
+        # is no need to constrain output repsets explicitly. Currently, the exceptions
+        # (i.e. choose qparams) already define constrined repsets for the output, so
+        # there is again no need to explicitly constrain the outputs. If an operator
+        # appears later on that does not sync input and output representations, and
+        # defines ambiguous repsets for the output tensor(s), then we will need to add
+        # additional logic to this function to constrain the output repsets separately
+        # from the input repsets.
+
+    def set_op_node_tensor_reprs(
+        self, graph_module: torch.fx.GraphModule, op_node: torch.fx.Node
+    ) -> None:
+        """
+        For an operator representated by `op_node`, get the OpRepSets associated with
+        the operation and try to constrain the repsets by accounting for existing
+        representations and tracing through the users of the operator.
+
+        Then, determine a tensor representation for all tensors participating in the
+        operation and mark it in the node metadata. If the requested representation is
+        different than an already determined representation, then insert a transition
+        node to create a copy of the tensor with the desired representation.
+        """
+        if not self.is_valid_op_node(op_node):
+            return
+
+        # Special case for getitem - propagate the node representation of the original node
+        if op_node.target == operator.getitem:
+            src_node = op_node.args[0]
+            assert isinstance(src_node, torch.fx.Node)
+            idx = op_node.args[1]
+            assert isinstance(idx, int)
+
+            arg_node_repr = utils.get_node_repr(src_node)
+            assert isinstance(arg_node_repr, list)
+            utils.set_node_repr(op_node, arg_node_repr[idx])
+            return
+
+        # Get a "fresh" OpRepSets object instead of using the cache. Do this because this
+        # class instance will go through the constraining process which may modify it.
+        features: OpFeatures = get_op_features(op_node.target)
+        op_repsets = features.make_op_repsets(op_node, self.texture_limits)
+
+        self.constrain_op_repsets(op_repsets)
+
+        args_repr_list, outs_repr_list = op_repsets.pick_representations()
+
+        if len(outs_repr_list) == 1:
+            utils.set_node_repr(op_node, outs_repr_list[0])
+        else:
+            utils.set_node_repr(op_node, outs_repr_list)
+
+        transitions_inserted = False
+        for i, arg_node in enumerate(op_node.args):
+            if not self.is_non_constant_tensor_node(arg_node):
                 continue
 
-            storage = self.propose_node_storage(node)
-            layout = self.propose_node_layout(node, storage)
+            arg_node_repr = args_repr_list[i]
 
-            set_memory_metadata(node, storage, layout)
-
-            need_transition = False
-            for i, arg in enumerate(node.args):
-                if not self.should_annotate(arg):
-                    continue
-
-                need_transition = (
-                    self.set_or_transition_arg(
-                        i, arg, node, graph_module, need_transition
+            if isinstance(arg_node, torch.fx.Node):
+                transitions_inserted = (
+                    set_arg_node_repr_or_transition(
+                        graph_module, op_node, i, arg_node_repr, transitions_inserted
                     )
-                    or need_transition
+                    or transitions_inserted
                 )
+            elif isinstance(arg_node, (list, tuple)):
+                for n in arg_node:
+                    assert isinstance(n, torch.fx.Node)
+                    assert utils.is_single_tensor_node(n)
+                    transitions_inserted = (
+                        set_arg_node_repr_or_transition(
+                            graph_module,
+                            op_node,
+                            i,
+                            arg_node_repr,
+                            transitions_inserted,
+                        )
+                        or transitions_inserted
+                    )
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        for node in graph_module.graph.nodes:
+            self.set_op_node_tensor_reprs(graph_module, node)
 
         return PassResult(graph_module, True)

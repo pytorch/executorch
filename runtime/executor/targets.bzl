@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "PROGRAM_NO_PRIM_OPS_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def _program_preprocessor_flags():
@@ -70,6 +71,16 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
+            name = "merged_data_map" + aten_suffix,
+            exported_headers = [
+                "merged_data_map.h",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:named_data_map" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
             name = "program" + aten_suffix,
             exported_deps = [
                 ":program_no_prim_ops" + aten_suffix,
@@ -83,11 +94,7 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "program_no_prim_ops" + aten_suffix,
-            srcs = [
-                "method.cpp",
-                "method_meta.cpp",
-                "program.cpp",
-                "tensor_parser_exec_aten.cpp",
+            srcs = PROGRAM_NO_PRIM_OPS_SRCS + [
                 "tensor_parser{}.cpp".format(aten_suffix if aten_mode else "_portable"),
             ],
             headers = [
@@ -107,6 +114,7 @@ def define_common_targets():
             exported_deps = [
                 ":memory_manager",
                 ":pte_data_map" + aten_suffix,
+                ":merged_data_map" + aten_suffix,
                 "//executorch/runtime/backend:interface" + aten_suffix,
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:named_data_map" + aten_suffix,
@@ -122,6 +130,7 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/schema:program",
+                "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit"
             ],
             visibility = [
                 "//executorch/runtime/executor/...",

@@ -24,13 +24,13 @@ class ModuleTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     model_path_ = std::getenv("ET_MODULE_ADD_PATH");
-    linear_path_ = std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH");
-    linear_data_path_ = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
+    add_mul_path_ = std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH");
+    add_mul_data_path_ = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
   }
 
   static inline std::string model_path_;
-  static inline std::string linear_path_;
-  static inline std::string linear_data_path_;
+  static inline std::string add_mul_path_;
+  static inline std::string add_mul_data_path_;
 };
 
 TEST_F(ModuleTest, TestLoad) {
@@ -87,6 +87,25 @@ TEST_F(ModuleTest, TestLoadMethod) {
   EXPECT_FALSE(module.is_method_loaded("forward"));
   const auto error = module.load_method("forward");
   EXPECT_EQ(error, Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+  EXPECT_TRUE(module.is_loaded());
+}
+
+TEST_F(ModuleTest, TestUnloadMethod) {
+  Module module(model_path_);
+
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  const auto errorLoad = module.load_method("forward");
+  EXPECT_EQ(errorLoad, Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+  // Unload method
+  EXPECT_TRUE(module.unload_method("forward"));
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  // Try unload method again
+  EXPECT_FALSE(module.unload_method("forward"));
+  // Load method again
+  const auto errorReload = module.load_method("forward");
+  EXPECT_EQ(errorReload, Error::Ok);
   EXPECT_TRUE(module.is_method_loaded("forward"));
   EXPECT_TRUE(module.is_loaded());
 }
@@ -216,6 +235,16 @@ TEST_F(ModuleTest, TestExecuteOnCurrupted) {
   EXPECT_NE(result.error(), Error::Ok);
 }
 
+TEST_F(ModuleTest, TestExecuteWithTooManyInputs) {
+  Module module(model_path_);
+
+  auto tensor = make_tensor_ptr({2, 2}, {1.f, 2.f, 3.f, 4.f});
+
+  const auto result = module.execute("forward", {tensor, tensor, 1.0, 1.0});
+
+  EXPECT_NE(result.error(), Error::Ok);
+}
+
 TEST_F(ModuleTest, TestGet) {
   Module module(model_path_);
 
@@ -238,7 +267,7 @@ TEST_F(ModuleTest, TestForward) {
   EXPECT_TENSOR_CLOSE(result->at(0).toTensor(), *expected.get());
 
   auto tensor2 = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 5.f});
-  const auto result2 = module->forward({tensor2, tensor2});
+  const auto result2 = module->forward({tensor2, tensor2, 1.0});
   EXPECT_EQ(result2.error(), Error::Ok);
 
   const auto expected2 = make_tensor_ptr({2, 2}, {4.f, 6.f, 8.f, 10.f});
@@ -448,8 +477,53 @@ TEST_F(ModuleTest, TestSetOutputInvalidType) {
   EXPECT_NE(module.set_output(EValue()), Error::Ok);
 }
 
+TEST_F(ModuleTest, TestSetOutputsCountMismatch) {
+  Module module(model_path_);
+
+  EXPECT_NE(module.set_outputs(std::vector<EValue>{}), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSetOutputsInvalidType) {
+  Module module(model_path_);
+
+  EXPECT_NE(module.set_outputs({EValue()}), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSetOutputsMemoryPlanned) {
+  Module module(model_path_);
+
+  EXPECT_NE(module.set_outputs({empty({1})}), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestGetOutputAndGetOutputs) {
+  Module module(model_path_);
+
+  auto tensor = make_tensor_ptr({2, 2}, {1.f, 2.f, 3.f, 4.f});
+
+  ASSERT_EQ(module.forward({tensor, tensor, 1.0}).error(), Error::Ok);
+
+  const auto single = module.get_output();
+  EXPECT_EQ(single.error(), Error::Ok);
+  const auto expected = make_tensor_ptr({2, 2}, {2.f, 4.f, 6.f, 8.f});
+  EXPECT_TENSOR_CLOSE(single->toTensor(), *expected.get());
+
+  const auto all = module.get_outputs();
+  EXPECT_EQ(all.error(), Error::Ok);
+  ASSERT_EQ(all->size(), 1);
+  EXPECT_TENSOR_CLOSE(all->at(0).toTensor(), *expected.get());
+}
+
+TEST_F(ModuleTest, TestGetOutputInvalidIndex) {
+  Module module(model_path_);
+
+  ASSERT_EQ(module.load_method("forward"), Error::Ok);
+
+  const auto bad = module.get_output("forward", 99);
+  EXPECT_NE(bad.error(), Error::Ok);
+}
+
 TEST_F(ModuleTest, TestPTD) {
-  Module module(linear_path_, linear_data_path_);
+  Module module(add_mul_path_, add_mul_data_path_);
 
   ASSERT_EQ(module.load_method("forward"), Error::Ok);
 

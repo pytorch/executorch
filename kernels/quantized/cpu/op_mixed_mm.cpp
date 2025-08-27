@@ -19,7 +19,7 @@ bool check_quantized_mixed_mm_args(
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 2));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, 2));
@@ -52,20 +52,29 @@ bool check_quantized_mixed_mm_args(
 }
 
 Tensor& quantized_mixed_mm_out(
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     Tensor& out) {
-  ET_CHECK(check_quantized_mixed_mm_args(
-      in, weight, weight_scales, opt_weight_zero_points, out));
+  ET_KERNEL_CHECK(
+      ctx,
+      check_quantized_mixed_mm_args(
+          in, weight, weight_scales, opt_weight_zero_points, out),
+      InvalidArgument,
+      out);
 
   size_t output_ndim = 2;
   executorch::aten::SizesType output_sizes[kTensorDimensionLimit];
   output_sizes[0] = in.size(0);
   output_sizes[1] = weight.size(1);
 
-  ET_CHECK(resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok,
+      InvalidArgument,
+      out);
 
   constexpr auto name = "quantized_decomposed::mixed_mm.out";
 
@@ -88,16 +97,17 @@ Tensor& quantized_mixed_mm_out(
 }
 
 Tensor& quantized_mixed_mm_out(
-    KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     Tensor& out) {
   // TODO(mcandales): Remove the need for this wrapper
-  (void)ctx;
-  return quantized_mixed_mm_out(
-      in, weight, weight_scales, opt_weight_zero_points, out);
+  KernelRuntimeContext context;
+  auto& res = quantized_mixed_mm_out(
+      context, in, weight, weight_scales, opt_weight_zero_points, out);
+  ET_CHECK(context.failure_state() == Error::Ok);
+  return res;
 }
 
 } // namespace native

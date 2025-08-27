@@ -4,16 +4,17 @@ ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTor
 
 ## Integration
 
-The ExecuTorch Runtime for iOS and macOS is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
+The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
 
-* `executorch` - Main Runtime components
+* `executorch` - Core runtime components
+* `executorch_llm` - LLM-specific runtime components
 * `backend_coreml` - Core ML backend
 * `backend_mps` - MPS backend
 * `backend_xnnpack` - XNNPACK backend
-* `kernels_custom` - Custom kernels for LLMs
-* `kernels_optimized` - Optimized kernels
-* `kernels_portable` - Portable kernels (naive implementation used as a reference)
+* `kernels_llm` - Custom kernels for LLMs
+* `kernels_optimized` - Accelerated generic CPU kernels
 * `kernels_quantized` - Quantized kernels
+* `kernels_torchao` - Quantized CPU kernels from torchao
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
 
@@ -25,7 +26,7 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.6.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.7.0-20250401") for a [nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-0.7.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-0.8.0-20250801") for a [nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -51,14 +52,14 @@ let package = Package(
   name: "YourPackageName",
   platforms: [
     .iOS(.v17),
-    .macOS(.v10_15),
+    .macOS(.v12),
   ],
   products: [
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
   ],
   dependencies: [
     // Use "swiftpm-<version>.<year_month_day>" branch name for a nightly build.
-    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-0.6.0")
+    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-0.7.0")
   ],
   targets: [
     .target(
@@ -66,7 +67,7 @@ let package = Package(
       dependencies: [
         .product(name: "executorch", package: "executorch"),
         .product(name: "backend_xnnpack", package: "executorch"),
-        .product(name: "kernels_portable", package: "executorch"),
+        .product(name: "kernels_optimized", package: "executorch"),
         // Add other backends and kernels as needed.
       ]),
   ]
@@ -113,9 +114,6 @@ python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 
 # CoreML-only requirements:
 ./backends/apple/coreml/scripts/install_requirements.sh
-
-# MPS-only requirements:
-./backends/apple/mps/install_requirements.sh
 ```
 
 5. Install [CMake](https://cmake.org):
@@ -128,14 +126,10 @@ sudo /Applications/CMake.app/Contents/bin/cmake-gui --install
 
 6. Use the provided script to build .xcframeworks:
 
-```bash
-./scripts/build_apple_frameworks.sh --help
-```
-
-For example, the following command will build the ExecuTorch Runtime along with all available kernels and backends for the Apple platform in both Release and Debug modes:
+The following command will build the ExecuTorch runtime components along with all available kernels and backends for the Apple platform in both Release and Debug modes:
 
 ```bash
-./scripts/build_apple_frameworks.sh --Release --Debug --coreml --mps --xnnpack --custom --optimized --portable --quantized
+./scripts/build_apple_frameworks.sh
 ```
 
 After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory.
@@ -224,7 +218,7 @@ ExecuTorchTensor *inputTensor = [[ExecuTorchTensor alloc] initWithBytesNoCopy:im
 NSArray<ExecuTorchValue *> *outputs = [module forwardWithTensor:inputTensor error:&error];
 
 // Get the first output value assuming it's a tensor.
-ExecuTorchTensor *outputTensor = outputs.firstObject.tensor;
+ExecuTorchTensor *outputTensor = outputs.firstObject.tensorValue;
 
 // Access the output tensor data.
 [outputTensor bytesWithHandler:^(const void *pointer, NSInteger count, ExecuTorchDataType dataType) {
@@ -247,74 +241,112 @@ try module.load("forward")
 let imageBuffer: UnsafeMutableRawPointer = ... // Existing image buffer
 
 // Create an input tensor referencing the buffer and assuming the given shape and data type.
-let inputTensor = Tensor(
-  bytesNoCopy: imageBuffer,
-  shape: [1, 3, 224, 224],
-  dataType: .float
-)
+let inputTensor = Tensor<Float>(&imageBuffer, shape: [1, 3, 224, 224])
 
-// Execute the 'forward' method with the given input tensor and get output values back.
-let outputs = try module.forward(inputTensor)
+// Execute the 'forward' method with the given input tensor and get an output tensor back.
+let outputTensor = try Tensor<Float>(module.forward(inputTensor))
 
-// Get the first output value assuming it's a tensor.
-if let outputTensor = outputs.first?.tensor {
-  // Access the output tensor data.
-  outputTensor.bytes { pointer, count, dataType in
-    // Copy the tensor data into logits array for easier access.
-    let logits = Array(UnsafeBufferPointer(
-      start: pointer.assumingMemoryBound(to: Float.self),
-      count: count
-    ))
-    // Use logits...
-  }
-}
+// Copy the tensor data into logits array for easier access.
+let logits = outputTensor.scalars()
+
+// Use logits...
 ```
 
 ### Tensor
 
-The `Tensor` class (exposed as `ExecuTorchTensor` in Objective-C) represents a multi-dimensional array of elements (such as floats or ints) and includes metadata like shape (dimensions) and data type. Tensors are used to feed inputs to a model and retrieve outputs, or for any computation you need to do on raw data. You can create tensors from simple arrays of numbers, inspect their properties, read or modify their contents, and even reshape or copy them.
+A tensor is a multi-dimensional array of elements (such as floats or integers) and includes metadata like shape (dimensions) and data type. Tensors are used to feed inputs to a model and retrieve outputs, or for any computation you need to do on raw data. You can create tensors from simple arrays of numbers, inspect their properties, read or modify their contents, and even reshape or copy them.
+
+ExecuTorch offers `ExecuTorchTensor` class in Objective-C and two tensor types in Swift:
+
+- `AnyTensor`: A type-erased tensor, bridged from `ExecuTorchTensor` in Objective-C. You might use it when the tensor's data type is only known at runtime, for example, when converting from an untyped `Value` object before casting it to a generic `Tensor<T>`.
+
+- `Tensor<T: Scalar>`: A generic, type-safe wrapper around AnyTensor. This is the recommended type for most use cases in Swift. It ensures the element type (e.g., `Float`, `Int`) is known at compile time, providing type-safe access to tensor data and catching type mismatches early.
+
+You can convert between them using `tensor.anyTensor` (to get the underlying `AnyTensor`) and `anyTensor.asTensor()` (to convert to a typed `Tensor<T>` if the data types match).
 
 #### Key Properties:
 
-- dataType: The element type (e.g., `.float`, `.int`, `.byte`).
-- shape: An array of `NSNumber` describing the size of each dimension.
-- count: The total number of elements.
-- strides: The jump in memory needed to advance one element along each dimension.
-- dimensionOrder: The order of dimensions in memory.
-- shapeDynamism: Indicates if the tensor shape can change (`.static`, `.dynamicBound`, `.dynamicUnbound`).
+- `dataType`: The element type (e.g., `.float`, `.int`, `.byte`). In `Tensor<T>`, this is determined by `T`.
+- `shape`: An array of `Int` describing the size of each dimension.
+- `count`: The total number of elements.
+- `strides`: The jump in memory needed to advance one element along each dimension.
+- `dimensionOrder`: The order of dimensions in memory.
+- `shapeDynamism`: Indicates if the tensor shape can change (`.static`, `.dynamicBound`, `.dynamicUnbound`).
 
 #### Initialization:
 
-You can create tensors in various ways:
+You can create a new tensor from an existing one, either as a view (which shares the same underlying data) or as a copy (which gets its own unique data).
 
-From existing memory buffers:
-- `init(bytesNoCopy:shape:dataType:...)`: Creates a tensor that references an existing memory buffer without copying. The buffer's lifetime must exceed the tensor's.
-- `init(bytes:shape:dataType:...)`: Creates a tensor by copying data from a memory buffer.
+- View: `init(_:)` creates a new tensor instance that points to the same memory as the original. Modifying the data through one tensor will affect the other.
 
-From `NSData` / `Data`:
-- `init(data:shape:dataType:...)`: Creates a tensor using an `NSData` object, referencing its bytes without copying.
-
-From scalar arrays:
-- `init(_:shape:dataType:...)`: Creates a tensor from an array of `NSNumber` scalars. Convenience initializers exist to infer shape or data type.
-
-From single scalars:
-- `init(_:)`, `init(_:dataType:)`, `init(float:)`, `init(int:)`, etc.: Create 0-dimensional tensors (scalars).
+- Copy: `copy()` creates a completely independent duplicate of the tensor, including its own copy of the data.
 
 Objective-C:
-
 ```objectivec
-#import <ExecuTorch/ExecuTorch.h>
+// Create a view.
+ExecuTorchTensor *tensorView = [[ExecuTorchTensor alloc] initWithTensor:originalTensor];
 
-// Create from copying bytes.
+// Create a copy.
+ExecuTorchTensor *tensorCopy = [originalTensor copy];
+```
+
+Swift:
+```swift
+// Create a view.
+let tensorView = Tensor(originalTensor)
+
+// Create a copy.
+let tensorCopy = originalTensor.copy()
+```
+Tensors can be initialized directly from memory pointers or `Data` objects.
+
+- `init(bytesNoCopy:...)`: Creates a tensor that references an existing memory buffer without copying. The buffer's lifetime must be managed manually and must exceed the tensor's.
+
+- `init(bytes:...)`: Creates a tensor by copying data from a memory buffer.
+
+- `init(data:...)`: Creates a tensor using an `NSData` (Objective-C) or `Data` (Swift) object, referencing its bytes without copying.
+
+Objective-C:
+```objectivec
+// Create by copying bytes.
 float data[] = {1.0f, 2.0f, 3.0f, 4.0f};
 NSArray<NSNumber *> *shape = @[@2, @2];
 ExecuTorchTensor *tensorFromBytes = [[ExecuTorchTensor alloc] initWithBytes:data
                                                                       shape:shape
                                                                    dataType:ExecuTorchDataTypeFloat];
 
-// Create from scalars.
+// Create from NSData (no copy).
+NSData *nsData = [NSData dataWithBytes:data length:sizeof(data)];
+ExecuTorchTensor *tensorFromNSData = [[ExecuTorchTensor alloc] initWithData:nsData
+                                                                      shape:shape
+                                                                   dataType:ExecuTorchDataTypeFloat];
+```
+
+Swift:
+```swift
+// Create from a buffer without copying (unsafe).
+var mutableData: [Float] = [1.0, 2.0, 3.0, 4.0]
+let tensorNoCopy = mutableData.withUnsafeMutableBytes { pointer in
+  Tensor<Float>(
+    bytesNoCopy: pointer.baseAddress!,
+    shape: [2, 2]
+  )
+}
+
+// Create from Data (no copy).
+let data = Data(bytes: &mutableData, count: mutableData.count * MemoryLayout<Float>.size)
+let tensorFromData = Tensor<Float>(data: data, shape: [2, 2])
+```
+
+The most convenient way to create tensors is from Swift arrays or single scalar values. The `Tensor<T>` API uses type inference to determine the `dataType` automatically.
+
+objective-c:
+```objectivec
+// Create from an array of scalars.
 NSArray<NSNumber *> *scalars = @[@(1), @(2), @(3)];
+NSArray<NSNumber *> *shape = @[@3];
 ExecuTorchTensor *tensorFromScalars = [[ExecuTorchTensor alloc] initWithScalars:scalars
+                                                                          shape:shape
                                                                        dataType:ExecuTorchDataTypeInt];
 
 // Create a float scalar tensor.
@@ -323,71 +355,150 @@ ExecuTorchTensor *scalarTensor = [[ExecuTorchTensor alloc] initWithFloat:3.14f];
 
 Swift:
 ```swift
-import ExecuTorch
+// Create from an array of scalars (infers shape and copies data).
+let tensor = Tensor([1.0, 2.0, 3.0, 4.0]) // Creates a Tensor<Double> with shape [4]
 
-// Create from existing buffer without copying.
-var mutableData: [Float] = [1.0, 2.0, 3.0, 4.0]
-let tensorNoCopy = mutableData.withUnsafeMutableBytes { bufferPointer in
-  Tensor(
-    bytesNoCopy: bufferPointer.baseAddress!,
-    shape: [2, 2],
-    dataType: .float
-  )
-}
+// Specify shape.
+let tensorWithShape = Tensor([1, 2, 3, 4, 5, 6], shape: [2, 3]) // Creates Tensor<Int>
 
-// Create from Data (no copy).
-let data = Data(bytes: mutableData, count: mutableData.count * MemoryLayout<Float>.size)
-let tensorFromData = Tensor(data: data, shape: [2, 2], dataType: .float)
-
-// Create from scalars (infers float type).
-let tensorFromScalars = Tensor([1.0, 2.0, 3.0, 4.0], shape: [4])
+// Create without copying from an `inout` array.
+var liveData: [Int32] = [10, 20, 30]
+let tensorNoCopy = Tensor(&liveData) // Modifying `liveData` affects `tensorNoCopy`
 
 // Create an Int scalar tensor.
-let scalarTensor = Tensor(42) // Infers Int as .long data type (64-bit integer)
+let scalarTensor = Tensor(42) // Infers Tensor<Int> with shape []
+```
+
+#### Factory Methods:
+
+ExecuTorch provides a rich set of factory methods to create tensors with pre-filled or random data.
+
+- `empty`: Creates a tensor with uninitialized data.
+
+- `full`: Creates a tensor filled with a specified scalar value.
+
+- `ones`: Creates a tensor filled with ones.
+
+- `zeros`: Creates a tensor filled with zeros.
+
+- `rand`: Creates a tensor with random values uniformly distributed in `[0, 1)`.
+
+- `randn`: Creates a tensor with random values from a normal distribution (mean 0, variance 1).
+
+- `randint`: Creates a tensor with random integers in a specified range `[low, high)`.
+
+Each method has a `like:` variant that creates a new tensor with the same shape and properties as an existing one.
+
+Objective-C:
+```objectivec
+// Create a 2x2 tensor filled with zeros.
+ExecuTorchTensor *zeros = [ExecuTorchTensor zerosTensorWithShape:@[@2, @2]
+                                                        dataType:ExecuTorchDataTypeFloat];
+
+// Create a tensor of ones with the same shape as `zeros`.
+ExecuTorchTensor *ones = [ExecuTorchTensor onesTensorLikeTensor:zeros];
+```
+
+Swift:
+```swift
+// Create a 2x2 tensor filled with the value 7.
+let fullTensor = Tensor<Int32>.full(shape: [2, 2], scalar: 7)
+
+// Create a 3x3 tensor of ones.
+let onesTensor = Tensor<Float>.ones(shape: [3, 3])
+
+// Create a tensor of zeros with the same shape as onesTensor.
+let zerosTensor = Tensor<Float>.zeros(like: onesTensor)
+
+// Create a tensor with random integers between 10 (inclusive) and 20 (exclusive).
+let randomInts = Tensor<Int>.randint(low: 10, high: 20, shape: [5])
+
+// Create a 2x2 type-erased tensor filled with zeros and explicit data type.
+let anyZeros = AnyTensor.zeros(shape: [2, 2], dataType: .float)
+
+// Create a 2x3 type-erased tensor filled with random values and explicit data type.
+let anyRand = AnyTensor.rand(shape: [2, 3], dataType: .double)
 ```
 
 #### Accessing Data:
 
-Use `bytes(_:)` for immutable access and `mutableBytes(_:)` for mutable access to the tensor's underlying data buffer.
+Reading data:
+
+- `scalars()`: Returns a copy of the tensor's elements as a new `[T]` array.
+
+- `withUnsafeBytes(_:)`: Provides a type-safe, immutable buffer pointer (`UnsafeBufferPointer<T>`) for efficient, direct memory access without creating a new array.
+
+- `bytesWithHandler:`: The Objective-C and `AnyTensor` approach, which uses a callback with a raw `void *` pointer and requires manual type casting.
 
 Objective-C:
-
 ```objectivec
 [tensor bytesWithHandler:^(const void *pointer, NSInteger count, ExecuTorchDataType dataType) {
   if (dataType == ExecuTorchDataTypeFloat) {
-    const float *floatPtr = (const float *)pointer;
-    NSLog(@"First float element: %f", floatPtr[0]);
-  }
-}];
-
-[tensor mutableBytesWithHandler:^(void *pointer, NSInteger count, ExecuTorchDataType dataType) {
-  if (dataType == ExecuTorchDataTypeFloat) {
-    float *floatPtr = (float *)pointer;
-    floatPtr[0] = 100.0f; // Modify the original mutableData buffer.
+    const float *floatPointer = (const float *)pointer;
+    NSLog(@"First float element: %f", floatPointer[0]);
   }
 }];
 ```
 
 Swift:
 ```swift
-tensor.bytes { pointer, count, dataType in
-  if dataType == .float {
-    let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)
-    print("First float element: \(buffer.first ?? 0.0)")
-  }
+let tensor = Tensor<Float>([1.0, 2.0, 3.0, 4.0], shape: [2, 2])
+
+// Get data copy as a Swift array.
+let scalars = tensor.scalars()
+print("All scalars: \(scalars)") // [1.0, 2.0, 3.0, 4.0]
+
+// Access data via a buffer pointer.
+tensor.withUnsafeBytes { buffer in
+  print("First float element: \(buffer.first ?? 0.0)")
 }
 
-tensor.mutableBytes { pointer, count, dataType in
+anyTensor.bytes { pointer, count, dataType in
+  // Must check data type and manually cast the pointer for type-erased tensor.
+  if dataType == .float {
+    let buffer = UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)
+    print("First float element from AnyTensor: \(buffer.first ?? 0.0)")
+  }
+}
+```
+
+Modifying Data:
+
+- `withUnsafeMutableBytes(_:)`: The preferred Swift method. Provides a type-safe, mutable buffer pointer (`UnsafeMutableBufferPointer<T>`) for in-place modification.
+
+- `mutableBytesWithHandler:`: The Objective-C and `AnyTensor` equivalent.
+
+Objective-C:
+```objectivec
+[tensor mutableBytesWithHandler:^(void *pointer, NSInteger count, ExecuTorchDataType dataType) {
+  if (dataType == ExecuTorchDataTypeFloat) {
+    float *floatPointer = (float *)pointer;
+    floatPointer[0] = 100.0f; // Modify the tensor's data.
+  }
+}];
+```
+
+Swift:
+```swift
+let tensor = Tensor<Float>([1.0, 2.0, 3.0, 4.0], shape: [2, 2])
+
+// Modify the tensor's data in place.
+tensor.withUnsafeMutableBytes { buffer in
+  buffer[1] = 200.0
+}
+// tensor's data is now [1.0, 200.0, 3.0, 4.0]
+
+anyTensor.mutableBytes { pointer, count, dataType in
   if dataType == .float {
     let buffer = UnsafeMutableBufferPointer(start: pointer.assumingMemoryBound(to: Float.self), count: count)
-    buffer[1] = 200.0 // Modify the original mutableData buffer.
+    buffer[0] = 100.0 // Modify the AnyTensor's data
   }
 }
 ```
 
 #### Resizing:
 
-Tensors can be resized if their underlying memory allocation allows it (typically requires ShapeDynamism other than Static or sufficient capacity).
+Tensors can be resized if their shape dynamism is not `.static`. Resizing only changes the tensor's metadata (shape and strides) and does not reallocate or change the underlying data, so the new shape must have the same total number of elements.
 
 Objective-C:
 
@@ -410,6 +521,14 @@ do {
   print("Resize failed: \(error)")
 }
 ```
+
+#### Equality:
+
+You can check if two tensors are equal using the `==` operator. It compares their data type, shape, strides, dimension order, and all underlying element data. The `shapeDynamism` property is disregarded in this comparison.
+
+#### Printing:
+
+Tensors conform to `CustomStringConvertible` in Swift and implement `-description` in Objective-C, so you can print them directly to the console for easy debugging.
 
 ### Value
 
@@ -453,13 +572,29 @@ let boolValue = Value(false)
 let doubleValue = Value(2.718)
 ```
 
+Also, in Swift, all the types that `Value` can hold conform to the `ValueConvertible` protocol, so you can create `Value` objects directly from them without explicitly wrapping them in `Value` constructors:
+
+```swift
+func processValue(_ value: ValueConvertible) {
+  // ...
+}
+
+processValue(1) // Value<Int>
+processValue(1.0) // Value<Double>
+processValue("hello") // Value<String>
+processValue(true) // Value<Bool>
+processValue(Tensor(1.0)) // Value<Tensor>
+```
+
 ### Module
 
-The `Module` class (exposed as `ExecuTorchModule` in Objective-C) represents a loaded ExecuTorch model (`.pte` file). It provides methods to load the model program and execute its internal methods (like `forward`).
+The `Module` class (exposed as `ExecuTorchModule` in Objective-C) represents a loaded ExecuTorch model (`.pte` file). It provides methods to load the model program, inspect its methods, and execute them for inference.
+
+Note: `Module` and its methods are not thread-safe. If you need to do concurrent inferences from multiple threads, create one `Module` per thread.
 
 #### Initialization:
 
-Create a `Module` instance by providing the file path to the `.pte` model. Initialization itself is lightweight and doesn't load the program data immediately.
+Create a `Module` instance by providing the file path to the `.pte` model. Initialization itself is lightweight and doesn't load the program data immediately. You can also specify a `ModuleLoadMode` to control how the file is loaded, such as using memory mapping for efficiency.
 
 Objective-C:
 
@@ -468,26 +603,28 @@ Objective-C:
 
 NSString *modelPath = [[NSBundle mainBundle] pathForResource:@"model" ofType:@"pte"];
 ExecuTorchModule *module = [[ExecuTorchModule alloc] initWithFilePath:modelPath];
+
 // Optional: specify load mode, e.g., memory mapping.
-// ExecuTorchModule *moduleMmap = [[ExecuTorchModule alloc] initWithFilePath:modelPath
-//                                                                   loadMode:ExecuTorchModuleLoadModeMmap];
+ExecuTorchModule *moduleMmap = [[ExecuTorchModule alloc] initWithFilePath:modelPath
+                                                                 loadMode:ExecuTorchModuleLoadModeMmap];
 ```
 
 Swift:
 ```swift
 import ExecuTorch
 
-let modelPath = Bundle.main.path(forResource: "model", ofType: "pte")
-let module = Module(filePath: modelPath!)
+let modelPath = Bundle.main.path(forResource: "model", ofType: "pte")!
+let module = Module(filePath: modelPath)
+
 // Optional: specify load mode, e.g., memory mapping.
-// let moduleMmap = Module(filePath: modelPath, loadMode: .mmap)
+let moduleMmap = Module(filePath: modelPath, loadMode: .mmap)
 ```
 
 #### Loading:
 
-Model loading is deferred until explicitly requested or needed for execution. While execution calls can trigger loading automatically, it's often more efficient to load methods explicitly beforehand.
+Model loading is deferred until explicitly requested or needed. You can load the entire program or individual methods. While execution calls can trigger loading automatically, it's often more efficient to load methods explicitly beforehand.
 
-- `load()`: Loads the basic program structure. Minimal verification is used by default.
+- `load()`: Loads the basic program structure. You can specify a `ModuleVerification` level, though minimal verification is used by default.
 - `load(_:)`: Loads the program structure and prepares a specific method (e.g., "forward") for execution. This performs necessary setup like backend delegation and is recommended if you know which method you'll run.
 - `isLoaded()` / `isLoaded(_:)`: Check loading status.
 
@@ -516,19 +653,69 @@ do {
 }
 ```
 
+#### Inspecting Method Metadata
+
+You can programmatically inspect a method's contract—its input/output types, tensor shapes, data types, and more—by retrieving its MethodMetadata. This is incredibly useful for building dynamic applications that can adapt to different models without hardcoding dimensions.
+
+Objective-c:
+```objectivec
+NSError *error;
+ExecuTorchMethodMetadata *metadata = [module methodMetadata:@"forward" error:&error];
+
+if (metadata) {
+  // Check if the first input is a tensor.
+  ExecuTorchValueTag firstInputTag = [metadata.inputValueTags[0] unsignedIntValue];
+  if (firstInputTag == ExecuTorchValueTagTensor) {
+    // Get the metadata for the first input tensor.
+    ExecuTorchTensorMetadata *tensorMeta = metadata.inputTensorMetadata[@0];
+    if (tensorMeta) {
+      NSLog(@"Expected input shape: %@", tensorMeta.shape);
+      NSLog(@"Expected input data type: %ld", (long)tensorMeta.dataType);
+      // You can now dynamically create a matching input tensor.
+    }
+  }
+}
+```
+
+Swift:
+```swift
+do {
+  // Easily inspect the "forward" method at runtime.
+  let metadata = try module.methodMetadata("forward")
+
+  // Check if the first input is a tensor and get its metadata.
+  if metadata.inputValueTags.first == .tensor,
+    let tensorMeta = metadata.inputTensorMetadata[0] {
+
+    print("Expected input shape: \(tensorMeta.shape)")
+    print("Expected input data type: \(tensorMeta.dataType)")
+
+    // Dynamically create a random tensor that matches the model's input specs.
+    let input = AnyTensor.rand(shape: tensorMeta.shape, dataType: tensorMeta.dataType)
+
+    // Use the dynamically created tensor for inference.
+    let outputs = try module.forward(input)
+    print("Successfully ran inference with dynamic input.")
+  }
+} catch {
+  print("Failed to get metadata or run inference: \(error)")
+}
+```
+
 #### Execution:
 
-The `Module` class offers flexible ways to execute methods within the loaded program.
+The Module class offers flexible ways to execute methods.
+Inputs can be any type conforming to `ValueConvertible` (like `Tensor`, `Int`, `Float`, `Bool`, etc.).
 
-- Named Execution: You can execute any available method by name using `execute(methodName:inputs:)`.
-- Forward Shortcut: For the common case of running the primary inference method, use the `forward(inputs:)` shortcut, which is equivalent to calling execute with the method name "forward".
-- Input Flexibility: Inputs can be provided in several ways:
-  - As an array of `Value` objects. This is the most general form.
-  - As an array of `Tensor` objects. This is a convenience where tensors are automatically wrapped into `Value` objects.
-  - As a single `Value` or `Tensor` object if the method expects only one input.
-  - With no inputs if the method takes none.
+- `execute(_:_:)`: Execute any available method by name with one or more inputs.
 
-Outputs are always returned as an array of `Value`.
+- `forward(_:)`: A convenient shortcut for executing the common "forward" method.
+
+The API provides overloads for single inputs, multiple inputs, or no inputs.
+
+Outputs are returned in two ways:
+- As an array of `Value`s, letting you inspect and cast results yourself.
+- As your expected type. The generic overloads decode the result directly into your desired Swift type (such as a single `Tensor<Float>`, an array, or any custom type conforming to the `ValueSequenceConstructible` protocol). If the output doesn’t match the expected type (e.g. multiple Values returned when a single object is expected, or a tensor data type mismatch), an invalid type error is thrown.
 
 Objective-C:
 
@@ -549,9 +736,9 @@ if (outputs1) {
 // Execute "forward" with a single Tensor input.
 NSArray<ExecuTorchValue *> *outputs2 = [module forwardWithTensor:singleInputTensor error:&error];
 if (outputs2) {
-    NSLog(@"Forward single input output count: %lu", (unsigned long)outputs2.count);
+  NSLog(@"Forward single input output count: %lu", (unsigned long)outputs2.count);
 } else {
-    NSLog(@"Execution failed: %@", error);
+  NSLog(@"Execution failed: %@", error);
 }
 
 // Execute a potentially different method by name.
@@ -572,9 +759,9 @@ if (outputs1) {
 Swift:
 
 ```swift
-let inputTensor1 = Tensor([1.0, 2.0], dataType: .float)
-let inputTensor2 = Tensor([3.0, 4.0], dataType: .float)
-let singleInputTensor = Tensor([5.0], dataType: .float)
+let inputTensor1 = Tensor<Float>([1.0, 2.0])
+let inputTensor2 = Tensor<Float>([3.0, 4.0])
+let singleInputTensor = Tensor<Float>([5.0])
 
 do {
   // Execute "forward" using the shortcut with an array of Tensors.
@@ -586,14 +773,18 @@ do {
   print("Forward single input output count: \(outputs2.count)")
 
   // Execute a potentially different method by name.
-  let outputs3 = try module.execute("another_method", inputs: [Value(inputTensor1)])
+  let outputs3 = try module.execute("another_method", [inputTensor1])
 
-  // Process outputs (assuming first output is a tensor).
-  if let resultTensor = outputs1.first?.tensor {
-    resultTensor.bytes { ptr, count, dtype in
-      // Access result data.
-    }
+  // Process outputs by converting the first output Value to a typed Tensor<Float>.
+  if let outputTensor: Tensor<Float> = outputs1.first?.tensor() {
+    // Now you have a type-safe tensor and can access its data easily.
+    let logits = try outputTensor.scalars()
+    print("First 5 logits: \(logits.prefix(5))")
   }
+
+  // Try casting the outputs to a single typed object.
+  let tensorOutput = try Tensor<Float>(module.forward(inputTensor1, inputTensor2))
+  let logits = tensorOutput.scalars()
 } catch {
   print("Execution failed: \(error)")
 }
