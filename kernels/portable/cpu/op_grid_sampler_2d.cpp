@@ -18,12 +18,14 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 using SizesType = executorch::aten::SizesType;
+using Tensor = exec_aten::Tensor;
+
+namespace {
 
 // Transform normalized coordinates to pixel space
-inline float unnormalize_coord(float coord, int64_t size, bool align_corners) {
+float unnormalize_coord(float coord, int64_t size, bool align_corners) {
   if (align_corners) {
     // -1 and 1 correspond to the centers of the first and last pixels
     return ((coord + 1.0f) / 2.0f) * (size - 1);
@@ -34,7 +36,7 @@ inline float unnormalize_coord(float coord, int64_t size, bool align_corners) {
 }
 
 // Compute source index and interpolation weight
-inline std::pair<int64_t, float>
+std::pair<int64_t, float>
 compute_source_index_and_weight(float coord, int64_t size, bool align_corners) {
   float real_coord = unnormalize_coord(coord, size, align_corners);
   int64_t index = std::floor(real_coord);
@@ -43,13 +45,15 @@ compute_source_index_and_weight(float coord, int64_t size, bool align_corners) {
 }
 
 // Apply reflective padding to handle out-of-bounds coordinates
-inline int64_t reflect_coord(int64_t coord, int64_t size) {
-  if (size <= 1)
+int64_t reflect_coord(int64_t coord, int64_t size) {
+  if (size <= 1) {
     return 0;
+  }
 
   int64_t double_size = 2 * size - 2;
-  if (double_size <= 0)
+  if (double_size <= 0) {
     return 0;
+  }
 
   // Handle negative coordinates
   int64_t abs_coord = std::abs(coord);
@@ -198,56 +202,86 @@ void grid_sampler_2d_impl(
   }
 }
 
-// Main grid_sampler_2d function that validates inputs and dispatches to
-// implementation
-Tensor& grid_sampler_2d_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& input,
+bool check_grid_sampler_2d_args(
+    const Tensor& in,
     const Tensor& grid,
     int64_t interpolation_mode,
     int64_t padding_mode,
     bool align_corners,
     Tensor& out) {
-  const int64_t N = input.size(0);
-  const int64_t C = input.size(1);
-  const int64_t out_H = grid.size(1);
-  const int64_t out_W = grid.size(2);
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 4));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(grid, 4));
+  ET_CHECK_OR_RETURN_FALSE(grid.size(3) == 2, "Grid must have 2 channels");
+  ET_CHECK_OR_RETURN_FALSE(
+      grid.scalar_type() == ScalarType::Float, "Grid must be float");
+  ET_CHECK_OR_RETURN_FALSE(
+      interpolation_mode >= 0 && interpolation_mode <= 2,
+      "Invalid interpolation mode %" PRId64
+      ". Must be 0=bilinear, 1=nearest or 2=bicubic.",
+      interpolation_mode);
+  ET_CHECK_OR_RETURN_FALSE(
+      padding_mode >= 0 && padding_mode <= 2,
+      "Invalid padding mode %" PRId64
+      ". Must be 0=zeros, 1=border or 2=reflection.",
+      padding_mode);
+  ET_CHECK_OR_RETURN_FALSE(
+      interpolation_mode != 2, "Bicubic interpolation is not implemented.");
+  return true;
+}
 
-  // Check for 4D input and grid
-  ET_KERNEL_CHECK(ctx, (input.dim() == 4), InvalidArgument, out);
-  ET_KERNEL_CHECK(ctx, (grid.dim() == 4), InvalidArgument, out);
-  ET_KERNEL_CHECK(ctx, (grid.size(3) == 2), InvalidArgument, out);
+void get_grid_sampler_2d_target_size(
+    const Tensor& in,
+    const Tensor& grid,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = 4;
+  out_sizes[0] = in.size(0);
+  out_sizes[1] = in.size(1);
+  out_sizes[2] = grid.size(1);
+  out_sizes[3] = grid.size(2);
+}
 
-  // Check that grid is float type
+} // namespace
+
+Tensor& grid_sampler_2d_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    const Tensor& grid,
+    int64_t interpolation_mode,
+    int64_t padding_mode,
+    bool align_corners,
+    Tensor& out) {
   ET_KERNEL_CHECK(
-      ctx, (grid.scalar_type() == ScalarType::Float), InvalidArgument, out);
+      ctx, tensors_have_same_dim_order(in, grid, out), InvalidArgument, out);
 
-  // Check interpolation mode is valid (0=bilinear, 1=nearest, 2=bicubic)
-  // 2=bicubic unavailable
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   ET_KERNEL_CHECK(
       ctx,
-      (interpolation_mode >= 0 && interpolation_mode < 2),
+      check_grid_sampler_2d_args(
+          in, grid, interpolation_mode, padding_mode, align_corners, out),
       InvalidArgument,
       out);
 
-  // Check padding mode is valid (0=zeros, 1=border, 2=reflection)
-  ET_KERNEL_CHECK(
-      ctx, (padding_mode >= 0 && padding_mode <= 2), InvalidArgument, out);
+  Tensor::SizesType expected_out_size[kTensorDimensionLimit];
+  size_t expected_out_dim = 0;
+  get_grid_sampler_2d_target_size(
+      in, grid, expected_out_size, &expected_out_dim);
 
-  // Check for output shape
   ET_KERNEL_CHECK(
       ctx,
-      (out.size(0) == N && out.size(1) == C && out.size(2) == out_H &&
-       out.size(3) == out_W),
+      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
       InvalidArgument,
       out);
 
-  // Dispatch based on input scalar type
-  ET_SWITCH_REAL_TYPES(
-      input.scalar_type(), ctx, "grid_sampler_2d.out", T, [&]() {
-        grid_sampler_2d_impl<T>(
-            input, grid, interpolation_mode, padding_mode, align_corners, out);
-      });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "grid_sampler_2d.out";
+
+  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&]() {
+    grid_sampler_2d_impl<CTYPE>(
+        in, grid, interpolation_mode, padding_mode, align_corners, out);
+  });
 
   return out;
 }
