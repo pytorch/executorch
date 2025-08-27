@@ -21,9 +21,9 @@
 namespace torch {
 namespace executor {
 
-class ExynosBackend final : public PyTorchBackendInterface {
+class EnnBackend final : public PyTorchBackendInterface {
  public:
-  ~ExynosBackend() = default;
+  ~EnnBackend() = default;
 
   bool is_available() const override {
     return true;
@@ -88,8 +88,8 @@ class ExynosBackend final : public PyTorchBackendInterface {
 }; // namespace executor
 
 namespace {
-auto cls = ExynosBackend();
-Backend backend{"ExynosBackend", &cls};
+auto cls = EnnBackend();
+Backend backend{"EnnBackend", &cls};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
 
