@@ -30,6 +30,13 @@ from executorch.extension.pytree import tree_flatten
 from torch.export import export, export_for_training
 
 
+def random_uniform_tensor(shape, low=0.0, high=1.0, device=None, dtype=None):
+    if dtype is None:
+        dtype = torch.float32
+
+    return torch.empty(shape, device=device, dtype=dtype).uniform_(low, high)
+
+
 def export_model_to_vulkan(
     model,
     sample_inputs,
@@ -108,6 +115,74 @@ def export_model_to_xnnpack(model, sample_inputs, dynamic_shapes=None):
     return executorch_program
 
 
+def print_tensor_comparison_errors(
+    tensor1, tensor2, atol=1e-03, rtol=1e-03, max_errors=10
+):
+    """
+    Print the first max_errors tensor indexes that exceed the absolute/relative tolerance
+    and the error at each of those locations.
+
+    Args:
+        tensor1: First tensor to compare
+        tensor2: Second tensor to compare
+        atol: Absolute tolerance
+        rtol: Relative tolerance
+        max_errors: Maximum number of errors to print (default: 10)
+    """
+    # Handle lists/tuples of tensors
+    if isinstance(tensor1, (list, tuple)) and isinstance(tensor2, (list, tuple)):
+        if len(tensor1) != len(tensor2):
+            print(f"Tensor count mismatch: {len(tensor1)} vs {len(tensor2)}")
+            return
+
+        for i, (t1, t2) in enumerate(zip(tensor1, tensor2)):
+            print(f"\n=== Tensor {i} comparison ===")
+            print_tensor_comparison_errors(t1, t2, atol, rtol, max_errors)
+        return
+
+    # Handle single tensor comparison
+    if not isinstance(tensor1, torch.Tensor) or not isinstance(tensor2, torch.Tensor):
+        print("Error: Both inputs must be torch.Tensor objects")
+        return
+
+    if tensor1.shape != tensor2.shape:
+        print(f"Shape mismatch: {tensor1.shape} vs {tensor2.shape}")
+        return
+
+    # Calculate absolute and relative errors
+    abs_diff = torch.abs(tensor1 - tensor2)
+    rel_diff = abs_diff / (
+        torch.abs(tensor2) + 1e-8
+    )  # Add small epsilon to avoid division by zero
+
+    # Find locations where tolerance is exceeded
+    tolerance_mask = (abs_diff > atol) & (rel_diff > rtol)
+
+    if not tolerance_mask.any():
+        print("All values are within tolerance")
+        return
+
+    # Get indices where tolerance is exceeded
+    error_indices = torch.nonzero(tolerance_mask, as_tuple=False)
+    total_errors = error_indices.shape[0]
+
+    print(f"Found {total_errors} values exceeding tolerance (atol={atol}, rtol={rtol})")
+    print(f"Showing first {min(max_errors, total_errors)} errors:")
+    print("Index -> tensor1_value, tensor2_value, abs_error, rel_error")
+
+    # Print first max_errors locations
+    for i in range(min(max_errors, total_errors)):
+        idx = tuple(error_indices[i].tolist())
+        val1 = tensor1[idx].item()
+        val2 = tensor2[idx].item()
+        abs_err = abs_diff[idx].item()
+        rel_err = rel_diff[idx].item()
+
+        print(
+            f"{idx} -> {val1:.6f}, {val2:.6f}, abs_err={abs_err:.6f}, rel_err={rel_err:.6f}"
+        )
+
+
 def check_outputs_equal(
     model_output, ref_output, atol=1e-03, rtol=1e-03, first_output_only=False
 ):
@@ -123,19 +198,34 @@ def check_outputs_equal(
     if isinstance(ref_output, tuple) or isinstance(ref_output, list):
         # Multiple outputs executor always returns tuple, even if there is one output
         if len(ref_output) != len(model_output):
+            print_tensor_comparison_errors(model_output, ref_output, atol, rtol)
             return False
         if first_output_only:
-            return torch.allclose(model_output[0], ref_output[0], atol=atol, rtol=rtol)
+            result = torch.allclose(
+                model_output[0], ref_output[0], atol=atol, rtol=rtol
+            )
+            if not result:
+                print_tensor_comparison_errors(
+                    model_output[0], ref_output[0], atol, rtol
+                )
+            return result
         else:
             for i in range(len(ref_output)):
                 if not torch.allclose(
                     model_output[i], ref_output[i], atol=atol, rtol=rtol
                 ):
+                    print(f"\n=== Output {i} comparison failed ===")
+                    print_tensor_comparison_errors(
+                        model_output[i], ref_output[i], atol, rtol
+                    )
                     return False
             return True
     else:
         # If one output, eager returns tensor while executor tuple of size 1
-        return torch.allclose(model_output[0], ref_output, atol=atol, rtol=rtol)
+        result = torch.allclose(model_output[0], ref_output, atol=atol, rtol=rtol)
+        if not result:
+            print_tensor_comparison_errors(model_output[0], ref_output, atol, rtol)
+        return result
 
 
 def run_and_check_output(
