@@ -18,12 +18,21 @@ endif()
 
 # MARK: - flatbuffers
 
-if(CMAKE_HOST_CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
-  # Use Clang CL for Windows builds.
-  set(_executorch_external_project_additional_args -T ClangCL)
+if(WIN32)
+  set(_executorch_external_project_additional_args)
 else()
   # Always use Make to avoid needing to codesign flatc if the project is using Xcode.
   set(_executorch_external_project_additional_args CMAKE_GENERATOR "Unix Makefiles")
+endif()
+
+if(WIN32)
+  # For some reason, when configuring the external project during build
+  # CMAKE_C_SIMULATE_ID is set to MSVC, but CMAKE_CXX_SIMULATE_ID is not set.
+  # To make sure the external project is configured correctly, set it explicitly
+  # here.
+  set(_executorch_external_project_extra_cmake_args -DCMAKE_CXX_SIMULATE_ID=MSVC)
+else()
+  set(_executorch_external_project_extra_cmake_args)
 endif()
 
 # We use ExternalProject to build flatc from source to force it target the host.
@@ -44,6 +53,7 @@ ExternalProject_Add(
              # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
+             ${_executorch_external_project_extra_cmake_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
   ${_executorch_external_project_additional_args}
 )
@@ -67,16 +77,6 @@ endif()
 
 # MARK: - flatcc
 
-if(WIN32)
-  # For some reason, when configuring the external project during build
-  # CMAKE_C_SIMULATE_ID is set to MSVC, but CMAKE_CXX_SIMULATE_ID is not set.
-  # To make sure the external project is configured correctly, set it explicitly
-  # here.
-  set(_flatcc_extra_cmake_args -DCMAKE_CXX_SIMULATE_ID=MSVC)
-else()
-  set(_flatcc_extra_cmake_args)
-endif()
-
 # Similar to flatbuffers, we want to build flatcc for the host. See inline comments
 # in the flatbuffers ExternalProject_Add for more details.
 ExternalProject_Add(
@@ -91,10 +91,10 @@ ExternalProject_Add(
              -DCMAKE_POLICY_VERSION_MINIMUM=3.5
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-             -DCMAKE_TOOLCHAIN_FILE=${_host_toolchain}
+             -DCMAKE_TOOLCHAIN_FILE=
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
-             ${_flatcc_extra_cmake_args}
+             ${_executorch_external_project_extra_cmake_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
   {_executorch_external_project_additional_args}
 )
