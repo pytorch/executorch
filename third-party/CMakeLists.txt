@@ -32,7 +32,8 @@ if(WIN32)
   # here.
   set(_executorch_external_project_extra_cmake_args -DCMAKE_CXX_SIMULATE_ID=MSVC -DCMAKE_CXX_COMPILER="clang-cl.exe")
 else()
-  set(_executorch_external_project_extra_cmake_args)
+    # Unset the toolchain to build for the host instead of the toolchain set for the project.
+  set(_executorch_external_project_extra_cmake_args -DCMAKE_TOOLCHAIN_FILE=)
 endif()
 
 # We use ExternalProject to build flatc from source to force it target the host.
@@ -48,8 +49,6 @@ ExternalProject_Add(
              -DFLATBUFFERS_BUILD_TESTS=OFF
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}"
-             # Unset the toolchain to build for the host instead of the toolchain set for the project.
-             -DCMAKE_TOOLCHAIN_FILE=
              # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
@@ -91,7 +90,6 @@ ExternalProject_Add(
              -DCMAKE_POLICY_VERSION_MINIMUM=3.5
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-             -DCMAKE_TOOLCHAIN_FILE=
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
              ${_executorch_external_project_extra_cmake_args}
