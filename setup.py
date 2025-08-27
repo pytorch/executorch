@@ -698,6 +698,7 @@ class CustomBuild(build):
                     "pybind",
                     "-B",
                     cmake_cache_dir,
+                    "--trace",
                 ],
                 check=True,
             )
@@ -708,12 +709,12 @@ class CustomBuild(build):
         cmake_build_args = [
             # Default build parallelism based on number of cores, but allow
             # overriding through the environment.
-            "-j1", # DEBUG
-            #"-j{parallelism}".format(
+            "-j1",  # DEBUG
+            # "-j{parallelism}".format(
             #    parallelism=os.environ.get(
             #        "CMAKE_BUILD_PARALLEL_LEVEL", os.cpu_count() - 1
             #    )
-            #),
+            # ),
             # CMAKE_BUILD_TYPE variable specifies the build type (configuration) for
             # single-configuration generators (e.g., Makefile Generators or Ninja).
             # For multi-config generators (like Visual Studio), CMAKE_BUILD_TYPE
@@ -748,7 +749,7 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
-        
+
         cmake_build_args += ["--verbose"]
 
         # Set PYTHONPATH to the location of the pip package.

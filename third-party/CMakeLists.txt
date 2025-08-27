@@ -31,11 +31,7 @@ if(WIN32)
   # To make sure the external project is configured correctly, set it explicitly
   # here.
   message(STATUS "CXX Compiler: ${CMAKE_CXX_COMPILER}.")
-  set(_executorch_external_project_extra_cmake_args
-    -DCMAKE_CXX_SIMULATE_ID=MSVC
-    -DCMAKE_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
-    -DCMAKE_C_COMPILER="${CMAKE_C_COMPILER}"
-  )
+  set(_executorch_external_project_extra_cmake_args -DCMAKE_CXX_SIMULATE_ID=MSVC -DCMAKE_CXX_COMPILER="${CMAKE_CXX_COMPILER}" -DCMAKE_C_COMPILER="${CMAKE_C_COMPILER}")
 else()
     # Unset the toolchain to build for the host instead of the toolchain set for the project.
   set(_executorch_external_project_extra_cmake_args -DCMAKE_TOOLCHAIN_FILE=)
