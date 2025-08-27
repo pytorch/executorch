@@ -51,7 +51,7 @@ class EnnBackend final : public PyTorchBackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     auto executor = static_cast<enn::EnnExecutor*>(handle);
 
     std::vector<enn::DataBuffer> inputs;
