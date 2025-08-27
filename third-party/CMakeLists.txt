@@ -42,7 +42,7 @@ ExternalProject_Add(
              -DFLATBUFFERS_BUILD_TESTS=OFF
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}"
-             -DCMAKE_TOOLCHAIN_FILE="${_host_toolchain}"
+             -DCMAKE_TOOLCHAIN_FILE=${_host_toolchain}
              # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
@@ -93,7 +93,7 @@ ExternalProject_Add(
              -DCMAKE_POLICY_VERSION_MINIMUM=3.5
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-             -DCMAKE_TOOLCHAIN_FILE="${_host_toolchain}"
+             -DCMAKE_TOOLCHAIN_FILE=${_host_toolchain}
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
              ${_flatcc_extra_cmake_args}
