@@ -14,6 +14,4 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
-
-# Below options are not yet buildable on Windows, but should be.
-# set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
+set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
