@@ -721,8 +721,6 @@ class CustomBuild(build):
             # During the build step, --config specifies the configuration to build
             # for multi-config generators.
             f"--config={cmake_build_type}",
-            "--",
-            "/verbosity:diagnostic",
         ]
 
         # Allow adding extra build args through the environment. Used by some
@@ -750,6 +748,8 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
+        
+        cmake_build_args += ["--verbose"]
 
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (
