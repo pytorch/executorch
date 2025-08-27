@@ -24,9 +24,11 @@ from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
 from nncf.quantization.quantize_model import (  # type: ignore[import-untyped]
     get_weight_compression_configuration,
 )
+from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
+    WeightCompressionParameters,
+)
 from torchao.quantization.pt2e import (
     HistogramObserver,
-    MappingType,
     PerChannelMinMaxObserver,
     UniformQuantizationObserverBase,
 )
@@ -112,16 +114,11 @@ class OpenVINOQuantizer(Quantizer):
         else:
             weight_compression_configuration = get_weight_compression_configuration(
                 mode.value.replace(
-                    "_wc", ""
+                    "wo", ""
                 ),  # Mode value has to match NNCF CompressWeightsMode
                 **kwargs,
             )
             subset_size = 1 # Doesn't really matter in this case since it is data-free. Should just be +ve
-            dataset = None # Only Data Free Quantization is Supported in OVQuantizer
-            compression_format = nncf.CompressionFormat.DQ
-            nncf.quantization.algorithms.weight_compression.algorithm.check_user_compression_configuration(
-                subset_size=subset_size, dataset=dataset, compression_format=compression_format, **weight_compression_configuration
-                )
             self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
                 subset_size=subset_size, **weight_compression_configuration
             )
@@ -185,17 +182,14 @@ class OpenVINOQuantizer(Quantizer):
         all_wc_params, _ = self._algo.get_processed_weight_compression_parameters(model, nncf_graph)
 
         for wc_param in all_wc_params:
-            wc_config = wc_param.compression_config
             node_with_weight = wc_param.node_with_weight
             target_node = nncf_fx.node_utils.get_graph_node_by_name(
                 graph, node_with_weight.node_name
             )
             annotation = node_vs_torch_annotation[target_node]
             edge_or_node = OpenVINOQuantizer._get_weight_edge(target_node, nncf_graph)
-            group_size = wc_config.group_size
-            qmode = wc_config.mode
             qspec = self._get_torch_ao_qspec_from_nncf_config(
-                qp=None, group_size=group_size, qmode=qmode, weights_only=True
+                qp=None, wc_param=wc_param
             )
             self._fill_torch_ao_annotation(edge_or_node, qspec, annotation)
 
@@ -425,19 +419,16 @@ class OpenVINOQuantizer(Quantizer):
     @staticmethod
     def _get_torch_ao_qspec_from_nncf_config(
         qp: quantization.quantizer_setup.QuantizationPointBase,
-        group_size: int = -1,
-        qmode: Optional[QuantizationMode] = None,
-        weights_only: bool = False,
+        wc_param: WeightCompressionParameters = None,
     ) -> QuantizationSpec:
         """
         Returns a TorchAO QuantizationSpec based on NNCF quantization config and other arguments.
-        For weight-only quantization (e.g., INT4/INT8 compression), uses `qmode`, `group_size`,
-        and `weights_only`. For post-training quantization, only `qp` is required.
+        For weight-only quantization (e.g., INT4/INT8 compression), uses `wc_param` which carries 
+        weight only quantization info such as group_size, reduction_axes etc. For post-training 
+        quantization, only `qp` is required.
 
         :param qp: Quantization point from NNCF.
-        :param group_size: Group size for INT4 group-wise quantization.
-        :param qmode: Quantization mode for weight compression.
-        :param weights_only: If True, applies weight-only quantization logic.
+        :param wc_param: NNCF Weight compression parameters for the node.
         :return: A TorchAO QuantizationSpec.
         """
         observer: Type[UniformQuantizationObserverBase]
@@ -445,26 +436,21 @@ class OpenVINOQuantizer(Quantizer):
         # Eps value is copied from nncf/torch/quantization/layers.py
         extra_args: Dict[str, Any] = {"eps": 1e-16}
 
-        if weights_only:
-            mapping_type = (
-                MappingType.SYMMETRIC
-                if qmode == QuantizationMode.INT4WO_SYM
-                else MappingType.ASYMMETRIC
-            )
-            if qmode in [QuantizationMode.INT4WO_SYM, QuantizationMode.INT4WO_SYM]:
-                extra_args["group_size"] = group_size
-                extra_args["mapping_type"] = mapping_type
-                extra_args["target_dtype"] = torch.int8
+        if wc_param:
+            qmode = wc_param.compression_config.mode
+            if qmode in [nncf.CompressWeightsMode.INT4_ASYM, nncf.CompressWeightsMode.INT4_SYM]:
+                extra_args["wc_param"] = wc_param
                 observer = INT4WeightObserver
-                quant_min = -8 if mapping_type == MappingType.SYMMETRIC else 0
-                quant_max = 7 if mapping_type == MappingType.SYMMETRIC else 15
+                quant_min = -8 if not wc_param.compression_config.is_asym_mode else 0
+                quant_max = 7 if not wc_param.compression_config.is_asym_mode else 15
                 dtype = torch.int8
                 channel_axis = 0
                 torch_qscheme = None
             else:
+                extra_args["wc_param"] = wc_param
                 observer = INT8WeightObserver
-                quant_min = -128 if mapping_type == MappingType.SYMMETRIC else 0
-                quant_max = 127 if mapping_type == MappingType.SYMMETRIC else 255
+                quant_min = -128 if not wc_param.compression_config.is_asym_mode else 0
+                quant_max = 127 if not wc_param.compression_config.is_asym_mode else 255
                 dtype = torch.int8
                 channel_axis = 0
                 torch_qscheme = (
