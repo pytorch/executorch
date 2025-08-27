@@ -24,15 +24,6 @@ Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
   ET_CHECK_OR_RETURN_ERROR(
       ret == ENN_RET_SUCCESS, Internal, "Enn initialize failed.");
 
-  enn_api_inst->EnnSetPreferencePerfMode(ENN_PREF_MODE_BOOST);
-  uint32_t boost = 0;
-  enn_api_inst->EnnGetPreferencePerfMode(&boost);
-  if (ENN_PREF_MODE_BOOST != boost) {
-    ENN_LOG_INFO(
-        "Failed to set EnnSetPreferencePerfMode to: ENN_PREF_MODE_BOOST");
-  } else {
-    ENN_LOG_INFO("Successfully set EnnSetPreferencePerfMode");
-  }
   ET_LOG(Info, "Start to open model %p, %ld", binary_buf_addr, buf_size);
   ret = enn_api_inst->EnnOpenModelFromMemory(
       binary_buf_addr, buf_size, &model_id_);

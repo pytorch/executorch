@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import executorch.backends.samsung.python.PyGraphWrapperAdaptor as PyGraphWrapper
 
@@ -13,14 +13,11 @@ import numpy as np
 
 import torch
 
+
 class EnnGraph:
     def __init__(self):
         # default
         self.version = "0.6.0"
-
-    def init(self, name: str, soc_name):
-        self.name = name
-        self.soc_name = soc_name
         self.graph = PyGraphWrapper.PyEnnGraphWrapper()
         self.graph.Init()
 
@@ -49,19 +46,17 @@ class EnnGraph:
                     py_param_wrapper.SetScalarValue(params[key])
                 else:
                     logging.error("Unsupported param type.")
-                # Set
                 op.AddOpParam(py_param_wrapper)
 
         self.graph.DefineOpNode(op)
 
-    def define_tensor(  # noqa: C901
+    def define_tensor(
         self,
         name: str,
         shape: List,
         data_type: str,
         tensor_type: str,
         data: Optional[Union[np.ndarray, torch.Tensor]] = None,
-        quant_param: Optional[Dict[str, Any]] = None,
     ) -> int:
         layout = "NCHW" if len(shape) == 4 else "UNDEFINED"
 
@@ -88,20 +83,3 @@ class EnnGraph:
 
     def serialize(self):
         return self.graph.Serialize()
-
-    @staticmethod
-    def _affine_meta_param(param: Any) -> str:
-        type_str_affine_table = {
-            torch.int32: "FLOAT32",  # INT32 just used for HW quant.
-        }
-        if isinstance(param, str):
-            return param
-        if isinstance(param, (float, int)):
-            return [param]
-        if hasattr(param, "tolist"):
-            return param.tolist()
-        if isinstance(param, torch.dtype):
-            # Convenient for debugging
-            param = type_str_affine_table.get(param, "")
-
-        return param

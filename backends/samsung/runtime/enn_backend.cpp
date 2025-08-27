@@ -33,8 +33,9 @@ class ExynosBackend final : public PyTorchBackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    auto executor = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        context.get_runtime_allocator(), enn::EnnExecutor);
+    MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
+    auto executor = runtime_allocator->allocateInstance<enn::EnnExecutor>();
+
     const char* binary_buf_addr =
         reinterpret_cast<const char*>(processed->data());
     size_t buf_size = processed->size();
@@ -74,6 +75,7 @@ class ExynosBackend final : public PyTorchBackendInterface {
         outputs.push_back(data_buffer);
       }
     }
+    Error err = executor->eval(inputs, outputs);
     return err;
   }
 

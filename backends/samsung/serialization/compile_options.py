@@ -10,7 +10,6 @@ import tempfile
 
 from dataclasses import dataclass
 from enum import IntEnum, unique
-from typing import Dict, List, Optional
 
 import pkg_resources
 from executorch.exir._serialize._dataclass import _DataclassEncoder
@@ -25,15 +24,8 @@ class SamsungChipset(IntEnum):
 
 
 @dataclass
-class DebugOption:
-    name: str  # option name as a key
-    value: str
-
-
-@dataclass
 class EnnExecuTorchOptions:
     chipset: SamsungChipset = SamsungChipset.UNDEFINED_CHIP_V
-    debug_options: Optional[List[DebugOption]] = None
 
 
 ENN_COMPILE_OPTION_TITLE = "enn_compile_options"
@@ -63,7 +55,7 @@ def gen_samsung_backend_compile_spec_core(options: EnnExecuTorchOptions) -> Comp
 
 
 def gen_samsung_backend_compile_spec(
-    chipset: str, debug_options: Optional[Dict[str, str]] = None
+    chipset: str,
 ):
     """
     A function to generate an ExecuTorch binary for Samsung Backend.
@@ -74,14 +66,8 @@ def gen_samsung_backend_compile_spec(
     Returns:
         CompileSpec: key is COMPILE_OPTION_SCHEMA_NAME, value is serialization binary of fb schema
     """
-    pass_debug_options = []
-    if debug_options is not None:
-        for key, value in debug_options.items():
-            pass_debug_options.append(DebugOption(key, value))
-
     option = EnnExecuTorchOptions(
         getattr(SamsungChipset, chipset.upper()),
-        pass_debug_options,
     )
 
     return gen_samsung_backend_compile_spec_core(option)

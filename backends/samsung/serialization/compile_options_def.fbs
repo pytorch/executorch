@@ -14,17 +14,10 @@ file_identifier "EETO";
 // Extension of written files.
 file_extension "eeto";
 
-table DebugOption {
-  name: string;
-  value: string;
-}
 
 table EnnExecuTorchOptions {
   // The version of chipset. Specify the soc to compile and execute model.
   chipset: int;
-
-  // Debug options controlling behavior of compilation.
-  debug_options: [DebugOption];
 }
 
 root_type EnnExecuTorchOptions;

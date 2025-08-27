@@ -7,7 +7,7 @@
  *
  */
 #pragma once
-#include <enn_api/include/enn_api-type.h>
+#include <executorch/backends/samsung/runtime/enn_type.h>
 #include <executorch/runtime/core/error.h>
 
 #include <atomic>

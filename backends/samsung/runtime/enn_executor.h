@@ -8,8 +8,8 @@
  */
 #pragma once
 
-#include <enn_api/include/enn_api-type.h>
 #include <executorch/backends/samsung/runtime/enn_api_implementation.h>
+#include <executorch/backends/samsung/runtime/enn_type.h>
 
 #include <vector>
 
