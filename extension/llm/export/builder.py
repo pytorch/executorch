@@ -144,6 +144,7 @@ class LLMEdgeManager:
                     f"Metadata 'get_max_seq_len' is being updated to match torch.export's dynamic shape max: {token_dim.max}"
                 )
             self.metadata["get_max_seq_len"] = token_dim.max
+            print("__post_init__", self.metadata)
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
@@ -478,6 +479,7 @@ class LLMEdgeManager:
         exported_module = self._export(self.pre_autograd_graph_module)
 
         edge_config = self._get_edge_config()
+        print("to_edge_transform_and_lower, metadata", self.metadata)
         self.edge_manager = to_edge_transform_and_lower(
             exported_module,
             partitioner=partitioners,
