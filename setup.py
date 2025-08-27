@@ -708,11 +708,12 @@ class CustomBuild(build):
         cmake_build_args = [
             # Default build parallelism based on number of cores, but allow
             # overriding through the environment.
-            "-j{parallelism}".format(
-                parallelism=os.environ.get(
-                    "CMAKE_BUILD_PARALLEL_LEVEL", os.cpu_count() - 1
-                )
-            ),
+            "-j1", # DEBUG
+            #"-j{parallelism}".format(
+            #    parallelism=os.environ.get(
+            #        "CMAKE_BUILD_PARALLEL_LEVEL", os.cpu_count() - 1
+            #    )
+            #),
             # CMAKE_BUILD_TYPE variable specifies the build type (configuration) for
             # single-configuration generators (e.g., Makefile Generators or Ninja).
             # For multi-config generators (like Visual Studio), CMAKE_BUILD_TYPE
@@ -720,6 +721,8 @@ class CustomBuild(build):
             # During the build step, --config specifies the configuration to build
             # for multi-config generators.
             f"--config={cmake_build_type}",
+            "--",
+            "/verbosity:diagnostic",
         ]
 
         # Allow adding extra build args through the environment. Used by some
