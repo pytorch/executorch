@@ -16,6 +16,7 @@ on:
         options:
           - "xnnpack"
           - "vulkan+xnnpack"
+          - "qnn"
   schedule:
     - cron: 0 10 * * *
 
@@ -83,15 +84,27 @@ jobs:
 
         echo -n "$SECRET_EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS" | base64 -d > /tmp/secring.gpg
 
+        GRADLE_ARGS=""
+
         # Update the version name in build.gradle in case of maven publish
         VERSION="${{ inputs.version }}"
         if [ ! -z "$VERSION" ]; then
-          sed -i "s/\(coordinates(\"org.pytorch\", \"executorch-android\", \"\)\([0-9]\+.[0-9]\+.[0-9]\+\)\(\")\)/\1$VERSION\3/" extension/android/executorch_android/build.gradle
+          GRADLE_ARGS+=" -DexecuTorchVersion=${VERSION}"
         fi
 
         FLAVOR="${{ inputs.flavor }}"
         if [[ "$FLAVOR" == "vulkan+xnnpack" ]]; then
           export EXECUTORCH_BUILD_VULKAN=ON
+        fi
+
+        if [[ "$FLAVOR" == "qnn" ]]; then
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+          PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+          export EXECUTORCH_BUILD_QNN=ON
+          source backends/qualcomm/scripts/qnn_config.sh
+          export QNN_SDK_ROOT="/tmp/qnn/${QNN_VERSION}"
+          export ANDROID_ABIS=arm64-v8a
+          GRADLE_ARGS+=" -DqnnVersion=2.28.0"
         fi
 
         # Build AAR Package
@@ -106,7 +119,7 @@ jobs:
         # Publish to maven staging
         UPLOAD_TO_MAVEN="${{ inputs.upload_to_maven }}"
         if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
-          (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:publishToMavenCentral)
+          (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew  ${GRADLE_ARGS} :executorch_android:publishToMavenCentral)
         fi
 
   upload-release-aar:
