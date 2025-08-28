@@ -56,7 +56,14 @@ import sys
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
 import setuptools  # noqa: F401 # usort: skip
+import os
+import platform
 import subprocess
+import sys
+import tarfile
+import tempfile
+import urllib.request
+import zipfile
 
 from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
@@ -67,6 +74,7 @@ from setuptools import Extension, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
+from setuptools.command.install import install
 
 try:
     from tools.cmake.cmake_cache import CMakeCache
@@ -454,6 +462,71 @@ class InstallerBuildExt(build_ext):
         # will also trigger `build_ext` command, only run this once.
         if self._ran_build:
             return
+
+        try:
+            from backends.qualcomm.scripts.download_qnn_sdk import (
+                _download_qnn_sdk,
+                SDK_DIR,
+            )
+
+            print(
+                "SDK_DIR: ",
+                SDK_DIR,
+                "type: ",
+                type(SDK_DIR),
+                "exists: ",
+                os.path.exists(SDK_DIR),
+            )
+            _download_qnn_sdk()
+
+            sdk_path = Path(SDK_DIR).resolve()  # full absolute path
+        except ImportError:
+            print("Import error: ", sys.exc_info()[0])
+            sdk_path = None
+
+        print(
+            "SDK_DIR: ",
+            SDK_DIR,
+            "type: ",
+            type(SDK_DIR),
+            "exists: ",
+            os.path.exists(SDK_DIR),
+        )
+        _download_qnn_sdk()
+
+        sdk_path = Path(SDK_DIR).resolve()  # full absolute path
+        print("sdk_path: ", sdk_path)
+        if not sdk_path:
+            raise RuntimeError("Qualcomm SDK not found, cannot build backend")
+
+        # Determine paths
+        prj_root = Path(__file__).parent.resolve()
+        build_sh = prj_root / "backends/qualcomm/scripts/build.sh"
+        build_root = prj_root / "build-x86"
+
+        if not build_sh.exists():
+            raise FileNotFoundError(f"{build_sh} not found")
+
+        # Run build.sh with SDK path exported
+        env = dict(**os.environ)
+        print("str(sdk_path): ", str(sdk_path))
+        env["QNN_SDK_ROOT"] = str(sdk_path)
+        subprocess.check_call([str(build_sh)], env=env)
+
+        # Copy the main .so into the wheel package
+        so_src = build_root / "backends/qualcomm/libqnn_executorch_backend.so"
+        so_dst = Path(self.get_ext_fullpath("executorch.backends.qualcomm.qnn_backend"))
+        self.mkpath(so_dst.parent)  # ensure destination exists
+        self.copy_file(str(so_src), str(so_dst))
+        print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
+
+        # Remove Qualcomm SDK .so so they don’t get packaged
+        if os.path.exists(SDK_DIR):
+            for root, dirs, files in os.walk(SDK_DIR):
+                for f in files:
+                    if f.endswith(".so"):
+                        os.remove(os.path.join(root, f))
+                        print(f"Removed SDK .so from wheel package: {f}")
 
         if self.editable_mode:
             self._ran_build = True
