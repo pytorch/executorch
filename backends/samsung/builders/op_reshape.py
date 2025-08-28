@@ -1,4 +1,3 @@
-
 # Copyright (c) 2024 Samsung Electronics Co. LTD
 # All rights reserved
 from typing import Dict

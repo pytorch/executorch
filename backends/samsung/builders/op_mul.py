@@ -30,6 +30,4 @@ class MulVisitor(NodeVisitor):
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        enn_graph.define_op(
-            node.name, "ELTMUL", [input_id_1, input_id_2], [output_id]
-        )
+        enn_graph.define_op(node.name, "ELTMUL", [input_id_1, input_id_2], [output_id])

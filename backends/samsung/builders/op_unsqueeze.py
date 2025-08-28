@@ -12,6 +12,7 @@ from executorch.backends.samsung.builders.node_visitor import (
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
+
 @register_node_visitor
 class UnsqueezeVisitor(NodeVisitor):
     target = "aten.unsqueeze_copy.default"

@@ -61,7 +61,9 @@ class AvgPool2dVisitor(NodeVisitor):
 
         if len(node.args) > 6:
             divisor_override = cast(int, node.args[6])
-            assert divisor_override == kernel_size[0] * kernel_size[1], "Not supported divisor_override which is not equal to pooling region."
+            assert (
+                divisor_override == kernel_size[0] * kernel_size[1]
+            ), "Not supported divisor_override which is not equal to pooling region."
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 

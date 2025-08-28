@@ -31,10 +31,7 @@ class HardTanhVisitor(NodeVisitor):
 
         output_min = cast(float, node.args[1]) if len(node.args) > 1 else -1
         output_max = cast(float, node.args[2]) if len(node.args) > 2 else 1
-        params = {
-            "minimum": output_min,
-            "maximum": output_max
-        }
+        params = {"minimum": output_min, "maximum": output_max}
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 

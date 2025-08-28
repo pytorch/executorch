@@ -19,6 +19,7 @@ class OpGetItemVisitor(NodeVisitor):
     """
     do nothing if node is getitem
     """
+
     def __init__(self, *args) -> None:
         super().__init__(*args)
 

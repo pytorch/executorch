@@ -5,11 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 target_sources(
-    PyEnnWrapperAdaptor PUBLIC PyEnnWrapperAdaptor.cpp
-        PyEnnWrapperAdaptor.h
+  PyEnnWrapperAdaptor PUBLIC PyEnnWrapperAdaptor.cpp PyEnnWrapperAdaptor.h
 )
 target_sources(
-        PyGraphWrapperAdaptor PUBLIC PyGraphWrapperAdaptor.cpp
-        PyGraphWrapperAdaptor.h wrappers/op_param_wrapper.h
-        wrappers/op_wrapper.h wrappers/tensor_wrapper.h
+  PyGraphWrapperAdaptor
+  PUBLIC PyGraphWrapperAdaptor.cpp PyGraphWrapperAdaptor.h
+         wrappers/op_param_wrapper.h wrappers/op_wrapper.h
+         wrappers/tensor_wrapper.h
 )

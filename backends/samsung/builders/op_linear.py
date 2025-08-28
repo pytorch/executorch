@@ -42,10 +42,7 @@ class LinearVisitor(NodeVisitor):
             all_input_tensors.append(bias_id)
 
         weight_shape = get_shape(weight_node)
-        params = {
-            "in_channels": weight_shape[1],
-            "out_channels": weight_shape[0]
-        }
+        params = {"in_channels": weight_shape[1], "out_channels": weight_shape[0]}
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
