@@ -46,6 +46,7 @@ set(_cortex_m_kernels__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_add.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
 )
 
 # Generate C++ bindings to register kernels into Executorch (for runtime)

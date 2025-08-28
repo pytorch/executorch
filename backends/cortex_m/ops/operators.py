@@ -223,3 +223,149 @@ def quantized_add_out_impl(
     out.copy_(result_quantized)
 
     return out
+
+# ===================================================================
+# QUANTIZED LINEAR OPERATION DEFINITION
+# ===================================================================
+
+# Define the quantized_linear operator schema
+lib.define(
+    "quantized_linear.out("
+    "Tensor input, Scalar input_zero_point, Scalar input_multiplier, Scalar input_shift, "
+    "Tensor weights, Tensor kernel_sums, Scalar weight_zero_point, Scalar weight_multiplier, Scalar weight_shift, "
+    "Tensor? bias, Scalar bias_multiplier, Scalar bias_shift, "
+    "Tensor(a!) scratch_buffer, Scalar output_zero_point, Scalar in_features, Scalar out_features, "
+    "*, Tensor(b!) out) -> Tensor(b!)"
+)
+
+# Define functional variant (non-out version)
+lib.define(
+    "quantized_linear("
+    "Tensor input, Scalar input_zero_point, Scalar input_multiplier, Scalar input_shift, "
+    "Tensor weights, Tensor kernel_sums, Scalar weight_zero_point, Scalar weight_multiplier, Scalar weight_shift, "
+    "Tensor? bias, Scalar bias_multiplier, Scalar bias_shift, "
+    "Tensor scratch_buffer, Scalar output_zero_point, Scalar in_features, Scalar out_features"
+    ") -> Tensor"
+)
+
+# Fake meta function for shape inference
+@register_fake("cortex_m::quantized_linear.out")
+def quantized_linear_out_meta(
+    input: torch.Tensor,
+    input_zero_point: int,
+    input_multiplier: int,
+    input_shift: int,
+    weights: torch.Tensor,
+    kernel_sums: torch.Tensor,
+    weight_zero_point: int,
+    weight_multiplier: int,
+    weight_shift: int,
+    bias: torch.Tensor,
+    bias_multiplier: int,
+    bias_shift: int,
+    scratch_buffer: torch.Tensor,
+    output_zero_point: int,
+    in_features: int,
+    out_features: int,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    # Validate shapes
+    batch_size = input.shape[0]
+    expected_shape = (batch_size, out_features)
+    assert out.shape == expected_shape, f"Output shape {out.shape} must be {expected_shape}"
+    return out
+
+@register_fake("cortex_m::quantized_linear")
+def quantized_linear_meta(
+    input: torch.Tensor,
+    input_zero_point: int,
+    input_multiplier: int,
+    input_shift: int,
+    weights: torch.Tensor,
+    kernel_sums: torch.Tensor,
+    weight_zero_point: int,
+    weight_multiplier: int,
+    weight_shift: int,
+    bias: torch.Tensor,
+    bias_multiplier: int,
+    bias_shift: int,
+    scratch_buffer: torch.Tensor,
+    output_zero_point: int,
+    in_features: int,
+    out_features: int,
+) -> torch.Tensor:
+    # Calculate output shape for functional variant
+    batch_size = input.shape[0]
+    output_shape = (batch_size, out_features)
+    return torch.empty(output_shape, dtype=input.dtype, device=input.device)
+
+# Implementation for compilation/testing (fallback)
+@impl(lib, "quantized_linear.out", "CompositeExplicitAutograd")
+def quantized_linear_out_impl(
+    input: torch.Tensor,
+    input_zero_point: int,
+    input_multiplier: int,
+    input_shift: int,
+    weights: torch.Tensor,
+    kernel_sums: torch.Tensor,
+    weight_zero_point: int,
+    weight_multiplier: int,
+    weight_shift: int,
+    bias: torch.Tensor,
+    bias_multiplier: int,
+    bias_shift: int,
+    scratch_buffer: torch.Tensor,
+    output_zero_point: int,
+    in_features: int,
+    out_features: int,
+    *,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    # Fallback implementation for meta/testing
+    # Note: This won't be called at runtime, only during compilation
+    input_fp = dequantize_per_tensor_cmsis(input, input_zero_point, input_multiplier, input_shift)
+    weights_fp = dequantize_per_tensor_cmsis(weights.T, weight_zero_point, weight_multiplier, weight_shift)
+
+    # Perform linear operation
+    if bias is not None:
+        bias_fp = bias.float()  # Bias is already in the right scale
+        result_fp = torch.nn.functional.linear(input_fp, weights_fp, bias_fp)
+    else:
+        result_fp = torch.nn.functional.linear(input_fp, weights_fp)
+
+    # Quantize result
+    result_quantized = quantize_per_tensor_cmsis(result_fp, output_zero_point, 1, 0)
+
+    out.copy_(result_quantized)
+    return out
+
+@impl(lib, "quantized_linear", "CompositeExplicitAutograd")
+def quantized_linear_impl(
+    input: torch.Tensor,
+    input_zero_point: int,
+    input_multiplier: int,
+    input_shift: int,
+    weights: torch.Tensor,
+    kernel_sums: torch.Tensor,
+    weight_zero_point: int,
+    weight_multiplier: int,
+    weight_shift: int,
+    bias: torch.Tensor,
+    bias_multiplier: int,
+    bias_shift: int,
+    scratch_buffer: torch.Tensor,
+    output_zero_point: int,
+    in_features: int,
+    out_features: int,
+) -> torch.Tensor:
+    # Create output tensor
+    batch_size = input.shape[0]
+    output = torch.empty((batch_size, out_features), dtype=input.dtype, device=input.device)
+
+    # Call out variant
+    return quantized_linear_out_impl(
+        input, input_zero_point, input_multiplier, input_shift,
+        weights, kernel_sums, weight_zero_point, weight_multiplier, weight_shift,
+        bias, bias_multiplier, bias_shift, scratch_buffer,
+        output_zero_point, in_features, out_features, out=output
+    )
