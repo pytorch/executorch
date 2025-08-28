@@ -25,22 +25,9 @@ else()
   set(_executorch_external_project_additional_args CMAKE_GENERATOR "Unix Makefiles")
 endif()
 
-if(WIN32)
-  # For some reason, when configuring the external project during build
-  # CMAKE_C_SIMULATE_ID is set to MSVC, but CMAKE_CXX_SIMULATE_ID is not set.
-  # To make sure the external project is configured correctly, set it explicitly
-  # here.
-  message(STATUS "CXX Compiler: ${CMAKE_CXX_COMPILER}.")
-  set(_executorch_external_project_extra_cmake_args -DCMAKE_CXX_SIMULATE_ID=MSVC -DCMAKE_CXX_COMPILER="${CMAKE_CXX_COMPILER}" -DCMAKE_C_COMPILER="${CMAKE_C_COMPILER}")
-else()
-    # Unset the toolchain to build for the host instead of the toolchain set for the project.
-  set(_executorch_external_project_extra_cmake_args -DCMAKE_TOOLCHAIN_FILE=)
-endif()
-
-message(STATUS "Extra CMake args: ${_executorch_external_project_extra_cmake_args}")
-
 # We use ExternalProject to build flatc from source to force it target the host.
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
+if(NOT WIN32)
 ExternalProject_Add(
   flatbuffers_external_project
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_external_project
@@ -50,18 +37,32 @@ ExternalProject_Add(
              -DFLATBUFFERS_BUILD_FLATHASH=OFF
              -DFLATBUFFERS_BUILD_FLATLIB=OFF
              -DFLATBUFFERS_BUILD_TESTS=OFF
-             ${_executorch_external_project_extra_cmake_args}
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}"
+             # Unset the toolchain to build for the host instead of the toolchain set for the project.
+             -DCMAKE_TOOLCHAIN_FILE=
              # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
   ${_executorch_external_project_additional_args}
-  LOG_CONFIGURE TRUE
-  LOG_MERGED_STDOUTERR TRUE
-  LOG_OUTPUT_ON_FAILURE TRUE
 )
+else() # WIN32
+  ExternalProject_Add(
+    flatbuffers_external_project
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_external_project
+    SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
+    CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
+               -DFLATBUFFERS_INSTALL=ON
+               -DFLATBUFFERS_BUILD_FLATHASH=OFF
+               -DFLATBUFFERS_BUILD_FLATLIB=OFF
+               -DFLATBUFFERS_BUILD_TESTS=OFF
+               -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+               -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}"
+    BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
+    ${_executorch_external_project_additional_args}
+  )
+endif()
 ExternalProject_Get_Property(flatbuffers_external_project INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
 add_dependencies(flatc flatbuffers_external_project)
@@ -82,6 +83,16 @@ endif()
 
 # MARK: - flatcc
 
+if(WIN32)
+  # For some reason, when configuring the external project during build
+  # CMAKE_C_SIMULATE_ID is set to MSVC, but CMAKE_CXX_SIMULATE_ID is not set.
+  # To make sure the external project is configured correctly, set it explicitly
+  # here.
+  set(_flatcc_extra_cmake_args -DCMAKE_CXX_SIMULATE_ID=MSVC)
+else()
+  set(_flatcc_extra_cmake_args)
+endif()
+
 # Similar to flatbuffers, we want to build flatcc for the host. See inline comments
 # in the flatbuffers ExternalProject_Add for more details.
 ExternalProject_Add(
@@ -96,9 +107,10 @@ ExternalProject_Add(
              -DCMAKE_POLICY_VERSION_MINIMUM=3.5
              -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
              -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+             -DCMAKE_TOOLCHAIN_FILE=
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
-             ${_executorch_external_project_extra_cmake_args}
+             ${_flatcc_extra_cmake_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
   {_executorch_external_project_additional_args}
 )
