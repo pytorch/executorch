@@ -63,7 +63,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
   private ImageButton mCameraButton;
   private ListView mMessagesView;
   private MessageAdapter mMessageAdapter;
-  private LlmModule mModule = null;
+  private List<LlmModule> mLoadedModules = new ArrayList<>();
+  private LlmModule mActiveModule = null;
   private Message mResultMessage = null;
   private ImageButton mSettingsButton;
   private TextView mMemoryView;
@@ -132,21 +133,23 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
           mMessageAdapter.add(modelLoadingMessage);
           mMessageAdapter.notifyDataSetChanged();
         });
-    if (mModule != null) {
+    if (mActiveModule != null) {
       ETLogging.getInstance().log("Start deallocating existing module instance");
-      mModule.resetNative();
-      mModule = null;
+      mActiveModule.resetNative();
+      mLoadedModules.remove(mActiveModule);
+      mActiveModule = null;
       ETLogging.getInstance().log("Completed deallocating existing module instance");
     }
     long runStartTime = System.currentTimeMillis();
-    mModule =
+    mActiveModule =
         new LlmModule(
             ModelUtils.getModelCategory(
                 mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
             modelPath,
             tokenizerPath,
             temperature);
-    int loadResult = mModule.load();
+    int loadResult = mActiveModule.load();
+    mLoadedModules.add(mActiveModule);
     long loadDuration = System.currentTimeMillis() - runStartTime;
     String modelLoadError = "";
     String modelInfo = "";
@@ -178,7 +181,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
 
       if (mCurrentSettingsFields.getModelType() == ModelType.LLAVA_1_5) {
         ETLogging.getInstance().log("Llava start prefill prompt");
-        startPos = mModule.prefillPrompt(PromptFormat.getLlavaPresetPrompt(), 0, 1, 0);
+        startPos = mActiveModule.prefillPrompt(PromptFormat.getLlavaPresetPrompt(), 0, 1, 0);
         ETLogging.getInstance().log("Llava completes prefill prompt");
       }
     }
@@ -646,7 +649,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
               ETImage img = processedImageList.get(0);
               ETLogging.getInstance().log("Llava start prefill image");
               startPos =
-                  mModule.prefillImages(
+                  mActiveModule.prefillImages(
                       img.getInts(),
                       img.getWidth(),
                       img.getHeight(),
@@ -721,7 +724,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
     mSendButton.setImageResource(R.drawable.baseline_stop_24);
     mSendButton.setOnClickListener(
         view -> {
-          mModule.stop();
+          mActiveModule.stop();
         });
   }
 
@@ -778,7 +781,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
                           mCurrentSettingsFields.getModelType(),
                           mCurrentSettingsFields.getBackendType())
                       == ModelUtils.VISION_MODEL) {
-                    mModule.generateFromPos(
+                    mActiveModule.generateFromPos(
                         finalPrompt,
                         ModelUtils.VISION_MODEL_SEQ_LEN,
                         startPos,
@@ -789,14 +792,14 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
                         PromptFormat.getFormattedLlamaGuardPrompt(rawPrompt);
                     ETLogging.getInstance()
                         .log("Running inference.. prompt=" + llamaGuardPromptForClassification);
-                    mModule.generate(
+                    mActiveModule.generate(
                         llamaGuardPromptForClassification,
                         llamaGuardPromptForClassification.length() + 64,
                         MainActivity.this,
                         false);
                   } else {
                     ETLogging.getInstance().log("Running inference.. prompt=" + finalPrompt);
-                    mModule.generate(
+                    mActiveModule.generate(
                         finalPrompt,
                         (int) (finalPrompt.length() * 0.75) + 64,
                         MainActivity.this,
