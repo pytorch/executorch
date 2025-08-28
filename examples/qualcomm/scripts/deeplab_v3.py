@@ -50,16 +50,15 @@ def get_dataset(data_size, dataset_dir, download):
 
     # prepare input data
     random.shuffle(dataset)
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     for index, data in enumerate(dataset):
         if index >= data_size:
             break
         image, target = data
         inputs.append((image.unsqueeze(0),))
         targets.append(np.array(target.resize(input_size)))
-        input_list += f"input_{index}_0.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def main(args):
@@ -81,7 +80,7 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_dataset(
+        inputs, targets = get_dataset(
             data_size=data_num, dataset_dir=args.artifact, download=args.download
         )
 
@@ -113,7 +112,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data

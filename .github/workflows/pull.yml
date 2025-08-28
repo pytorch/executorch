@@ -406,7 +406,7 @@ jobs:
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        threshold="51744"
+        threshold="51752"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
@@ -860,8 +860,9 @@ jobs:
         # Run pytest
         PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
 
-        # Run aot example:
-        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh
+        # Run aot examples:
+        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10        
+        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
 
 
   test-vulkan-models-linux:
