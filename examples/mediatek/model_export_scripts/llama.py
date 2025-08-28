@@ -42,7 +42,10 @@ from executorch.backends.mediatek import (
     NeuropilotQuantizer,
     Precision,
 )
-from executorch.exir.backend.backend_api import to_backend, MethodProgramsPartitionerSpec
+from executorch.exir.backend.backend_api import (
+    MethodProgramsPartitionerSpec,
+    to_backend,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from tqdm import tqdm
@@ -334,20 +337,22 @@ def export_to_et_ir(
 
     method_to_edge_program = {}
     method_to_partitioner = {}
-    edge_compile_config=exir.EdgeCompileConfig(_check_ir_validity=False)
+    edge_compile_config = exir.EdgeCompileConfig(_check_ir_validity=False)
 
-    model_shared_key_name = f'{exp_name}_{chunk_idx}'
+    model_shared_key_name = f"{exp_name}_{chunk_idx}"
 
     # Fixed Shape Export Here
     for shape, ntok_and_cache in export_shapes.items():
-        model_fname = f'{exp_name}_{shape}_{chunk_idx}'
+        model_fname = f"{exp_name}_{shape}_{chunk_idx}"
         example_inputs = model.get_example_inputs(*ntok_and_cache)
         print(f"Getting ATen Dialect Graph for {exp_name} {shape} chunk {chunk_idx}")
         aten_dialect: exir.ExportedProgram = torch.export.export(
             converted_graph, example_inputs, strict=True
         )
 
-        method_to_edge_program[f'{model_fname}'] = exir.to_edge(aten_dialect).exported_program()
+        method_to_edge_program[f"{model_fname}"] = exir.to_edge(
+            aten_dialect
+        ).exported_program()
         del aten_dialect
 
         compile_spec = [
@@ -357,19 +362,15 @@ def export_to_et_ir(
             CompileSpec("ImportForever", struct.pack("?", True)),
             CompileSpec("ExtractSharedBlobKey", model_shared_key_name.encode()),
         ]
-        method_to_partitioner[f'{model_fname}'] = NeuropilotPartitioner(compile_spec)
+        method_to_partitioner[f"{model_fname}"] = NeuropilotPartitioner(compile_spec)
 
     print("Delegating Edge Program to Neuropilot Backend")
     delegated_program = to_backend(
-        MethodProgramsPartitionerSpec(
-            method_to_edge_program,
-            method_to_partitioner
-        )
+        MethodProgramsPartitionerSpec(method_to_edge_program, method_to_partitioner)
     )
 
     edge_manager = exir.EdgeProgramManager(
-        delegated_program,
-        compile_config=edge_compile_config
+        delegated_program, compile_config=edge_compile_config
     )
     del delegated_program
 
@@ -384,7 +385,7 @@ def export_to_et_ir(
         )
     )
     del edge_manager
-    print(f'\n Model Size: {len(executorch_program.buffer)}')
+    print(f"\n Model Size: {len(executorch_program.buffer)}")
 
     dest_path = get_dest_path(output_folder, exp_name, None, chunk_idx)
     print(f"{exp_name} ET Model chunk {chunk_idx} Dest: {dest_path}\n")

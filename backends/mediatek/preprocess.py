@@ -8,7 +8,7 @@ import collections
 import contextlib
 import struct
 
-from typing import final, Dict, List
+from typing import Dict, final, List
 
 import mtk_converter
 import mtk_neuron
@@ -22,7 +22,7 @@ from executorch.exir.backend.backend_details import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 SKIP_COMPILE_SPEC_KEYS = {"ImportForever"}
-EXTRACT_SHARED_BLOB_KEY = 'ExtractSharedBlobKey'
+EXTRACT_SHARED_BLOB_KEY = "ExtractSharedBlobKey"
 HEADER_SIZE = 13
 HEADER_VERSION = 1
 
@@ -45,14 +45,16 @@ def assert_default_dim_order(edge_graph_module: torch.fx.GraphModule) -> None:
 
 
 def _pack_header(num_inputs, num_outputs, model_bytes_size):
-    header_bytes = struct.pack("<BIII", HEADER_VERSION, num_inputs, num_outputs, model_bytes_size)
+    header_bytes = struct.pack(
+        "<BIII", HEADER_VERSION, num_inputs, num_outputs, model_bytes_size
+    )
     assert len(header_bytes) == HEADER_SIZE
     return header_bytes
 
 
 def _unpack_header(header_bytes):
     assert len(header_bytes) == HEADER_SIZE
-    version, num_inputs, num_outputs, buffer_size = struct.unpack('<BIII', header_bytes)
+    version, num_inputs, num_outputs, buffer_size = struct.unpack("<BIII", header_bytes)
     assert version == HEADER_VERSION
     return num_inputs, num_outputs, buffer_size
 
@@ -89,7 +91,7 @@ class NeuropilotBackend(BackendDetails):
             if spec.key in SKIP_COMPILE_SPEC_KEYS:
                 continue
             if spec.key == EXTRACT_SHARED_BLOB_KEY:
-                compile_options.append('--dla-opt=0')
+                compile_options.append("--dla-opt=0")
                 continue
 
             # General compile spec handling
@@ -151,7 +153,7 @@ class NeuropilotBackend(BackendDetails):
                 shared_blob_key = None
                 for spec in compile_specs[method_name][idx]:
                     if spec.key == EXTRACT_SHARED_BLOB_KEY:
-                        shared_blob_key = spec.value.decode('utf-8')
+                        shared_blob_key = spec.value.decode("utf-8")
 
                 if shared_blob_key is None:
                     continue
@@ -164,20 +166,26 @@ class NeuropilotBackend(BackendDetails):
                 models_dict[shared_blob_key].append(model_bytes)
                 result_dict[shared_blob_key].append(result)
 
-        data_store_output_dict = dict()
+        data_store_output_dict = {}
         for key, models in models_dict.items():
             ndm = NamedDataStore()
-            blob, new_models = mtk_neuron.extract_shared_data(models, options='-e union')
+            blob, new_models = mtk_neuron.extract_shared_data(
+                models, options="-e union"
+            )
             ndm.add_named_data(key, bytes(blob))
             data_store_output_dict[key] = ndm.get_named_data_store_output()
             models.clear()
             models.extend(new_models)
 
         for key, data_store_output in data_store_output_dict.items():
-            for idx, (model_info, model_bytes) in enumerate(zip(infos_dict[key], models_dict[key])):
+            for idx, (model_info, model_bytes) in enumerate(
+                zip(infos_dict[key], models_dict[key])
+            ):
                 num_inputs, num_outputs = model_info
                 header_bytes = _pack_header(num_inputs, num_outputs, len(model_bytes))
                 result_dict[key][idx].data_store_output = data_store_output
-                result_dict[key][idx].processed_bytes = bytes(header_bytes + model_bytes)
+                result_dict[key][idx].processed_bytes = bytes(
+                    header_bytes + model_bytes
+                )
 
         return preprocess_results
