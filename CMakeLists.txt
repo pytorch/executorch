@@ -582,7 +582,6 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
-  list(APPEND _executorch_extensions apple_extension)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
@@ -649,7 +648,6 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
-  list(APPEND _executorch_extensions extension_llm_apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -967,6 +965,10 @@ else()
   endif()
 endif()
 target_link_libraries(executorch_kernels INTERFACE ${_executorch_kernels})
+
+install(TARGETS executorch_backends executorch_extensions executorch_kernels
+        EXPORT ExecuTorchTargets
+)
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
