@@ -12,7 +12,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 install_domains() {
   echo "Install torchvision and torchaudio"
-  pip_install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip_install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@1eba300d0191ab339e7e17e27550ea27b8026f86"
   pip_install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
@@ -32,7 +32,7 @@ install_pytorch_and_domains() {
   pip_install "$(echo dist/*.whl)"
 
   # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  TORCHAUDIO_VERSION="1eba300d0191ab339e7e17e27550ea27b8026f86"
   export TORCHAUDIO_VERSION
   TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
   export TORCHVISION_VERSION
