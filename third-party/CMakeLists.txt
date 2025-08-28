@@ -44,8 +44,12 @@ ExternalProject_Add(
              # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
+             --verbose
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
   ${_executorch_external_project_additional_args}
+  LOG_CONFIGURE TRUE
+  LOG_MERGED_STDOUTERR TRUE
+  LOG_OUTPUT_ON_FAILURE TRUE
 )
 else() # WIN32
   ExternalProject_Add(

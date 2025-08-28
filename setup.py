@@ -698,7 +698,6 @@ class CustomBuild(build):
                     "pybind",
                     "-B",
                     cmake_cache_dir,
-                    "--trace",
                 ],
                 check=True,
             )
@@ -749,8 +748,6 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
             cmake_build_args += ["--target", "custom_ops_aot_lib"]
             cmake_build_args += ["--target", "quantized_ops_aot_lib"]
-
-        cmake_build_args += ["--verbose"]
 
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (
