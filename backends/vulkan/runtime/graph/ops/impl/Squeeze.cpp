@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Clone.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Permute.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -55,8 +56,49 @@ void add_squeeze_copy_dims_node(
   }
 }
 
+void resize_squeeze_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+  const ValueRef dims_ref = extra_args.at(0);
+
+  const IntListPtr dims = graph->get_int_list(dims_ref);
+
+  std::vector<int64_t> out_sizes = graph->sizes_of(in);
+
+  // Remove the dimensions specified in dims if their size is 1
+  for (int64_t dim : *dims) {
+    if (dim >= 0 && dim < static_cast<int64_t>(out_sizes.size()) &&
+        out_sizes[dim] == 1) {
+      out_sizes.erase(out_sizes.begin() + dim);
+      // After erasing, all subsequent dims shift left by one
+      // So we need to decrement all subsequent dims in dims
+      for (auto& d : *dims) {
+        if (d > dim) {
+          --d;
+        }
+      }
+    }
+  }
+
+  graph->virtual_resize(out, out_sizes);
+}
+
 void squeeze_copy_dims(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  return add_squeeze_copy_dims_node(graph, args[0], args[1], args[2]);
+  int idx = 0;
+  const ValueRef in = args.at(idx++);
+  const ValueRef dims = args.at(idx++);
+  const ValueRef out = args.at(idx++);
+
+  std::vector<ValueRef> resize_args = {dims};
+
+  if (graph.is_buffer_storage(in)) {
+    return add_view_copy_buffer_node(
+        graph, in, out, resize_args, resize_squeeze_node);
+  }
+  return add_squeeze_copy_dims_node(graph, in, dims, out);
 }
 
 REGISTER_OPERATORS {
