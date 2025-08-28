@@ -79,24 +79,24 @@ Tensor& scatter_add_out(
 
   ScalarType self_type = self.scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, self_type, ctx, "scatter_add.out", CTYPE, [&]() {
-        const CTYPE* self_data = self.const_data_ptr<CTYPE>();
-        const long* index_data = index.const_data_ptr<long>();
-        const CTYPE* src_data = src.const_data_ptr<CTYPE>();
-        CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+  ET_SWITCH_REALHBBF16_TYPES(self_type, ctx, "scatter_add.out", CTYPE, [&]() {
+    const CTYPE* self_data = self.const_data_ptr<CTYPE>();
+    const long* index_data = index.const_data_ptr<long>();
+    const CTYPE* src_data = src.const_data_ptr<CTYPE>();
+    CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
-        memcpy(out_data, self_data, self.nbytes());
+    memcpy(out_data, self_data, self.nbytes());
 
-        if (index.numel() != 0) {
-          if (self.dim() == 0) {
-            out_data[0] += nonempty_size(index, 0) * src_data[0];
-          } else {
-            scatter_add_helper<CTYPE>(
-                src_data, index_data, out_data, src, index, out, dim);
-          }
-        }
-      });
+    if (index.numel() != 0) {
+      if (self.dim() == 0) {
+        out_data[0] +=
+            static_cast<CTYPE>(nonempty_size(index, 0)) * src_data[0];
+      } else {
+        scatter_add_helper<CTYPE>(
+            src_data, index_data, out_data, src, index, out, dim);
+      }
+    }
+  });
 
   return out;
 }

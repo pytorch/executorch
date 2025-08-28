@@ -281,7 +281,7 @@ class OpScatterAddOutTest : public OperatorTest {
 
 TEST_F(OpScatterAddOutTest, AllValidInputOutputSupport) {
 #define TEST_ENTRY(CTYPE, DTYPE) test_scatter_add_out<ScalarType::DTYPE>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
