@@ -33,7 +33,7 @@
 	url = https://gitlab.com/libeigen/eigen.git
 [submodule "third-party/flatbuffers"]
 	path = third-party/flatbuffers
-	url = https://github.com/gregorycomer/flatbuffers.git
+	url = https://github.com/google/flatbuffers.git
 [submodule "third-party/flatcc"]
 	path = third-party/flatcc
 	url = https://github.com/dvidelabs/flatcc.git
