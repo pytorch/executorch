@@ -35,7 +35,7 @@ class TestTorchOps(unittest.TestCase):
 
     def _get_test_model(self):
         model = torch.nn.Sequential(
-            torch.nn.Embedding(64, 128), torch.nn.Linear(128, 128), torch.nn.ReLU()
+            torch.nn.Embedding(64, 128), torch.nn.Linear(128, 256), torch.nn.ReLU()
         )
         example_inputs = (torch.LongTensor([0]),)
         return model, example_inputs
