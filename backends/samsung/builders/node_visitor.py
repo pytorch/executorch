@@ -1,3 +1,4 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
 # Copyright (c) 2025 Samsung Electronics Co. LTD
 # All rights reserved
 #
