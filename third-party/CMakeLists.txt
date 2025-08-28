@@ -27,10 +27,9 @@ endif()
 
 # We use ExternalProject to build flatc from source to force it target the host.
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
-if(NOT WIN32)
 ExternalProject_Add(
-  fb_ep
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/fb_ep
+  flatbuffers_ep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_ep
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
   CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
              -DFLATBUFFERS_INSTALL=ON
@@ -44,33 +43,12 @@ ExternalProject_Add(
              # If building for iOS, "unset" these variables to rely on the host (macOS) defaults.
              $<$<AND:$<BOOL:${APPLE}>,$<BOOL:$<FILTER:${PLATFORM},EXCLUDE,^MAC>>>:-DCMAKE_OSX_SYSROOT=>
              -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
-             -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-             --verbose
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
   ${_executorch_external_project_additional_args}
 )
-else() # WIN32
-  ExternalProject_Add(
-    fb_ep
-    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/fp_ep
-    SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
-    CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
-               -DFLATBUFFERS_INSTALL=ON
-               -DFLATBUFFERS_BUILD_FLATHASH=OFF
-               -DFLATBUFFERS_BUILD_FLATLIB=OFF
-               -DFLATBUFFERS_BUILD_TESTS=OFF
-               -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
-               -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}"
-               -DCMAKE_CXX_SIMULATE_ID=MSVC
-                -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-    BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
-    CMAKE_GENERATOR ${CMAKE_GENERATOR}
-    ${_executorch_external_project_additional_args}
-  )
-endif()
-ExternalProject_Get_Property(fb_ep INSTALL_DIR)
+ExternalProject_Get_Property(flatbuffers_ep INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
-add_dependencies(flatc fb_ep)
+add_dependencies(flatc flatbuffers_ep)
 if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
   # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
   # config, but from CMake's perspective the build type is always Debug.
@@ -101,8 +79,8 @@ endif()
 # Similar to flatbuffers, we want to build flatcc for the host. See inline comments
 # in the flatbuffers ExternalProject_Add for more details.
 ExternalProject_Add(
-  flatcc_external_project
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_external_project
+  flatcc_ep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc
   CMAKE_ARGS -DFLATCC_RTONLY=OFF
              -DFLATCC_TEST=OFF
@@ -120,9 +98,9 @@ ExternalProject_Add(
   {_executorch_external_project_additional_args}
 )
 file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
-ExternalProject_Get_Property(flatcc_external_project INSTALL_DIR)
+ExternalProject_Get_Property(flatcc_ep INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
-add_dependencies(flatcc_cli flatcc_external_project)
+add_dependencies(flatcc_cli flatcc_ep)
 if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
   set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc.exe)
 else()
