@@ -676,11 +676,6 @@ class CustomBuild(build):
         if _is_windows():
             cmake_configuration_args += ["-T ClangCL"]
 
-
-        # Use ClangCL on Windows.
-        if _is_windows():
-            cmake_configuration_args += ["-T ClangCL"]
-
         # Allow adding extra cmake args through the environment. Used by some
         # tests and demos to expand the set of targets included in the pip
         # package.
