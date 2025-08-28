@@ -671,6 +671,11 @@ class CustomBuild(build):
             f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}",
             f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
         ]
+        
+        # Use ClangCL on Windows.
+        if _is_windows():
+            cmake_configuration_args += ["-T ClangCL"]
+
 
         # Use ClangCL on Windows.
         if _is_windows():

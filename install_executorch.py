@@ -194,9 +194,6 @@ def main(args):
         clean()
         return
 
-    cmake_args = [os.getenv("CMAKE_ARGS", "")]
-    os.environ["CMAKE_ARGS"] = " ".join(cmake_args)
-
     check_and_update_submodules()
     # This option is used in CI to make sure that PyTorch build from the pinned commit
     # is used instead of nightly. CI jobs wouldn't be able to catch regression from the

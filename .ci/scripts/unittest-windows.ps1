@@ -13,7 +13,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # Run pytest with coverage
 # pytest -n auto --cov=./ --cov-report=xml
-pytest
+pytest -n auto --continue-on-collection-errors
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Pytest invocation was unsuccessful. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE

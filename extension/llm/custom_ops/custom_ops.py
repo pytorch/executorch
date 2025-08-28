@@ -33,7 +33,7 @@ except:
     package_path = Path(__file__).parent.resolve()
     logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
 
-    libs = list(package_path.glob("**/libcustom_ops_aot_lib.*"))
+    libs = list(package_path.glob("**/*custom_ops_aot_lib.*"))
 
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
