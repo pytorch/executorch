@@ -22,7 +22,7 @@ inline constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 // Multimodal method name conventions
 inline constexpr auto kImageEncoderMethod = "image_encoder";
 inline constexpr auto kAudioEncoderMethod = "audio_encoder";
-inline constexpr auto kTokenEmbeddingMethod = "token_embeddings";
-inline constexpr auto kTextModelMethod = "decoder";
+inline constexpr auto kTokenEmbeddingMethod = "token_embedding";
+inline constexpr auto kTextModelMethod = "text_decoder";
 
 } // namespace executorch::extension::llm
