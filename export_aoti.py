@@ -34,6 +34,12 @@ from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from torchvision.models.resnet import ResNet18_Weights
 
 
+# for maintaing precision of 32-bit float as much as possible
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
+torch.backends.cudnn.conv.fp32_precision = "fp32"
+
+
 # Model classes
 class MV2(torch.nn.Module):
     def __init__(self):
@@ -109,6 +115,56 @@ class BatchNorm(nn.Module):
         return self.bn(x)
 
 
+class SingleResNetBlock(nn.Module):
+    def __init__(self, in_channels=64, out_channels=64, stride=1):
+        super().__init__()
+        self.conv1 = nn.Conv2d(
+            in_channels,
+            out_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            bias=False,
+        )
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(
+            out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False
+        )
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+        # Skip connection - identity mapping if same channels, 1x1 conv if different
+        self.skip_connection = None
+        if stride != 1 or in_channels != out_channels:
+            self.skip_connection = nn.Sequential(
+                nn.Conv2d(
+                    in_channels, out_channels, kernel_size=1, stride=stride, bias=False
+                ),
+                nn.BatchNorm2d(out_channels),
+            )
+
+    def forward(self, x):
+        identity = x
+
+        # First conv block
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        # Second conv block
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        # Skip connection
+        if self.skip_connection is not None:
+            identity = self.skip_connection(x)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
+
+
 # Model registry mapping model names to their configurations
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "mv2": {
@@ -153,6 +209,12 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "device": "cuda",
         "description": "Single BatchNorm2d layer model",
     },
+    "single_resnet_block": {
+        "model_class": SingleResNetBlock,
+        "input_shapes": [(1, 64, 8, 8)],
+        "device": "cuda",
+        "description": "Single ResNet block with skip connection",
+    },
 }
 
 
@@ -187,7 +249,25 @@ def export_model_to_et_aoti(model, example_inputs, output_filename="aoti_model.p
         torch.ones_like(example_input) for example_input in example_inputs
     )
 
-    print("label", model(*all_one_input))
+    label_output = model(*all_one_input)
+    print("label", label_output)
+
+    # Create directory if it doesn't exist
+    os.makedirs("aoti_debug_data", exist_ok=True)
+
+    # Dump label to file
+    with open("aoti_debug_data/label_output.txt", "w") as f:
+        if isinstance(label_output, tuple):
+            # Multiple outputs
+            all_elements = []
+            for tensor in label_output:
+                if tensor.numel() > 0:
+                    all_elements.extend(tensor.flatten().tolist())
+            f.write(",".join(map(str, all_elements)))
+        else:
+            # Single output
+            if label_output.numel() > 0:
+                f.write(",".join(map(str, label_output.flatten().tolist())))
 
     print(f"Starting export process...")
 

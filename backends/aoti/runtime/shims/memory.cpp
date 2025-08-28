@@ -26,6 +26,79 @@ namespace aoti {
 using executorch::runtime::Error;
 using executorch::runtime::etensor::Tensor;
 
+namespace { // Internal namespace for utility functions
+
+// Version 1: For use with int64_t sizes (e.g., from blob creation functions)
+// Check if tensor is in contiguous memory format (NCHW for 4D tensors)
+// Contiguous format means strides decrease from left to right:
+// For NCHW: strides = [C*H*W, H*W, W, 1]
+bool is_tensor_contiguous(
+    int64_t ndim,
+    const int64_t* sizes,
+    const int64_t* strides) {
+  int64_t expected_stride = 1;
+  for (int i = ndim - 1; i >= 0; i--) {
+    if (strides[i] != expected_stride) {
+      return false;
+    }
+    expected_stride *= sizes[i];
+  }
+  return true;
+}
+
+// Check if tensor is in channels-last format (NHWC for 4D tensors)
+// Channels-last format for 4D: strides = [H*W*C, 1, W*C, C]
+bool is_tensor_channels_last(
+    int64_t ndim,
+    const int64_t* sizes,
+    const int64_t* strides) {
+  if (ndim != 4) {
+    return false; // Channels-last only defined for 4D tensors
+  }
+
+  int64_t N = sizes[0], C = sizes[1], H = sizes[2], W = sizes[3];
+
+  // Check NHWC format: strides = [H*W*C, 1, W*C, C]
+  // Handle edge cases where dimensions might be 1
+  return (strides[0] == H * W * C || N <= 1) && (strides[1] == 1 || C <= 1) &&
+      (strides[2] == W * C || H <= 1) && (strides[3] == C || W <= 1);
+}
+
+// Version 2: For use with ExecutorTorch tensors (int32_t sizes)
+// Check if tensor is in contiguous memory format (NCHW for 4D tensors)
+bool is_tensor_contiguous(
+    int64_t ndim,
+    const int32_t* sizes,
+    const int64_t* strides) {
+  int64_t expected_stride = 1;
+  for (int i = ndim - 1; i >= 0; i--) {
+    if (strides[i] != expected_stride) {
+      return false;
+    }
+    expected_stride *= sizes[i];
+  }
+  return true;
+}
+
+// Check if tensor is in channels-last format (NHWC for 4D tensors)
+bool is_tensor_channels_last(
+    int64_t ndim,
+    const int32_t* sizes,
+    const int64_t* strides) {
+  if (ndim != 4) {
+    return false; // Channels-last only defined for 4D tensors
+  }
+
+  int64_t N = sizes[0], C = sizes[1], H = sizes[2], W = sizes[3];
+
+  // Check NHWC format: strides = [H*W*C, 1, W*C, C]
+  // Handle edge cases where dimensions might be 1
+  return (strides[0] == H * W * C || N <= 1) && (strides[1] == 1 || C <= 1) &&
+      (strides[2] == W * C || H <= 1) && (strides[3] == C || W <= 1);
+}
+
+} // anonymous namespace
+
 // Global storage for tensors and their metadata
 std::unordered_set<std::shared_ptr<Tensor>> tensors;
 std::unordered_map<Tensor*, bool> is_tensor_own_memory;
@@ -47,7 +120,21 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     int64_t opaque_metadata_size) {
   std::cout << "Creating tensor from data blob " << data << " - ndim: " << ndim
             << ", dtype: " << dtype << ", device_type: " << device_type
-            << std::endl;
+            << ", storage_offset: " << storage_offset << std::endl;
+
+  // Only float32 tensors are supported
+  if (dtype != 6) { // 6 = float32
+    std::cout << "ERROR: Only float32 tensors are supported. Got dtype: "
+              << dtype << " (expected: 6 for float32)" << std::endl;
+    return Error::InvalidArgument;
+  }
+
+  // Storage offset must always be 0
+  if (storage_offset != 0) {
+    std::cout << "ERROR: Storage offset must be 0. Got storage_offset: "
+              << storage_offset << std::endl;
+    return Error::InvalidArgument;
+  }
 
   // Convert sizes to the format expected by ExecutorTorch
   std::vector<int32_t> sizes(ndim);
@@ -58,31 +145,15 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
 
   // check the tensor format
   // Only support contiguous format for now
-  int64_t expected_stride = 1;
-  for (int i = ndim - 1; i >= 0; --i) {
-    if (strides_ptr[i] != expected_stride) {
-      std::cout
-          << "aoti_torch_create_tensor_from_blob_v2 failed since input stride is not in contiguous format. Return with Error"
-          << std::endl;
-      return Error::InvalidArgument;
-    }
-    expected_stride *= sizes_ptr[i];
+  if (!is_tensor_contiguous(ndim, sizes_ptr, strides_ptr)) {
+    std::cout
+        << "aoti_torch_create_tensor_from_blob_v2 failed since input stride is not in contiguous format. Return with Error"
+        << std::endl;
+    return Error::InvalidArgument;
   }
 
-  // Adjust data pointer by storage_offset if needed
+  // Since storage_offset is guaranteed to be 0, use data pointer directly
   void* adjusted_data = data;
-  if (storage_offset > 0) {
-    // Calculate byte offset based on dtype size
-    size_t dtype_size =
-        4; // Assuming float32 for now, you may need to handle other dtypes
-    if (dtype == 6) { // float32
-      dtype_size = 4;
-    } else {
-      std::cout << "Error: Unhandled dtype " << dtype << std::endl;
-      return Error::NotImplemented;
-    }
-    adjusted_data = static_cast<char*>(data) + (storage_offset * dtype_size);
-  }
 
   // Create ExecutorTorch tensor that wraps the existing memory
   // Note: We're NOT copying the data, just wrapping it
@@ -362,42 +433,21 @@ AOTITorchError aoti_torch_copy_(
         << std::endl;
 
     // Check if contiguous (strides decrease from left to right)
-    int64_t expected_stride = 1;
-    for (int i = self->dim() - 1; i >= 0; i--) {
-      if (self_strides[i] != expected_stride) {
-        self_is_contiguous = false;
-      }
-      expected_stride *= self_sizes[i];
+    self_is_contiguous =
+        is_tensor_contiguous(self->dim(), self_sizes.data(), self_strides);
+
+    src_is_contiguous =
+        is_tensor_contiguous(src->dim(), src_sizes.data(), src_strides);
+
+    // Check if channels-last (4D: NHWC format)
+    if (!self_is_contiguous) {
+      self_is_channels_last =
+          is_tensor_channels_last(self->dim(), self_sizes.data(), self_strides);
     }
 
-    expected_stride = 1;
-    for (int i = src->dim() - 1; i >= 0; i--) {
-      if (src_strides[i] != expected_stride) {
-        src_is_contiguous = false;
-      }
-      expected_stride *= src_sizes[i];
-    }
-
-    // Check if channels-last (4D: NHWC, strides in order [H*W*C, 1, W*C, C])
-    if (self->dim() == 4 && !self_is_contiguous) {
-      int64_t N = self_sizes[0], H = self_sizes[1], W = self_sizes[2],
-              C = self_sizes[3];
-      if ((self_strides[0] == H * W * C || N <= 1) &&
-          (self_strides[1] == W * C || H <= 1) &&
-          (self_strides[2] == C || W == 1) &&
-          (self_strides[3] == 1 || C == 1)) {
-        self_is_channels_last = true;
-      }
-    }
-
-    if (src->dim() == 4 && !src_is_contiguous) {
-      int64_t N = src_sizes[0], H = src_sizes[1], W = src_sizes[2],
-              C = src_sizes[3];
-      if ((src_strides[0] == H * W * C || N <= 1) &&
-          (src_strides[1] == W * C || H <= 1) &&
-          (src_strides[2] == C || W <= 1) && (src_strides[3] == 1 || C <= 1)) {
-        src_is_channels_last = true;
-      }
+    if (!src_is_contiguous) {
+      src_is_channels_last =
+          is_tensor_channels_last(src->dim(), src_sizes.data(), src_strides);
     }
 
     // Validate layout assumptions only when schemas differ
@@ -409,15 +459,25 @@ AOTITorchError aoti_torch_copy_(
         std::cout << self_strides[i] << (i < self->dim() - 1 ? ", " : "");
       }
       std::cout << "]" << std::endl;
+      std::cout << "self_sizes: [";
+      for (int i = 0; i < self->dim(); i++) {
+        std::cout << self_sizes[i] << (i < self->dim() - 1 ? ", " : "");
+      }
+      std::cout << "]" << std::endl;
       return Error::InvalidArgument;
     }
 
     if (!src_is_contiguous && !src_is_channels_last) {
       std::cout
-          << "Error: src tensor must be contiguous or channels-last for stride conversion. "
+          << "Error: src tensor must be contiguous or channels-last for stride conversion. \n"
           << "Got strides: [";
       for (int i = 0; i < src->dim(); i++) {
         std::cout << src_strides[i] << (i < src->dim() - 1 ? ", " : "");
+      }
+      std::cout << "]" << std::endl;
+      std::cout << "src_sizes: [";
+      for (int i = 0; i < self->dim(); i++) {
+        std::cout << src_sizes[i] << (i < self->dim() - 1 ? ", " : "");
       }
       std::cout << "]" << std::endl;
       return Error::InvalidArgument;
@@ -665,6 +725,13 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   if (dtype_err != Error::Ok) {
     std::cout << "Error: failed to get dtype from input tensor" << std::endl;
     return dtype_err;
+  }
+
+  if (dtype != 6) { // 6 = float32
+    std::cout
+        << "ERROR: Only float32 tensors are supported in reinterpret_tensor. Got dtype: "
+        << dtype << " (expected: 6 for float32)" << std::endl;
+    return Error::InvalidArgument;
   }
 
   int32_t device_type;

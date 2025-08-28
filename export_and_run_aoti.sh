@@ -160,6 +160,11 @@ run_inference() {
     ./cmake-out/executor_runner --model_path aoti_model.pte
 }
 
+compare_outputs() {
+    echo "Comparing runtime outputs with label outputs..."
+    python compare_outputs.py
+}
+
 # Set up environment variables based on debug and dump flags
 if [[ "$DEBUG_MODE" == true ]]; then
     echo "Setting debug environment variables..."
@@ -169,7 +174,10 @@ if [[ "$DEBUG_MODE" == true ]]; then
     # Set intermediate value printer based on dump flag
     if [[ "$DUMP_MODE" == true ]]; then
         export AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER="2"
+        export INDUCTOR_PROVENANCE=1
+        export TORCH_TRACE="/home/gasoonjia/executorch/aoti_debug_data"
         echo "AOTI intermediate output dumping enabled (AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER=2)"
+        echo "Eager-AOTI relationship extration enabled (INDUCTOR_PROVENANCE=1), output to $TORCH_TRACE"
     else
         export AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER="3"
     fi
@@ -182,13 +190,18 @@ elif [[ "$DUMP_MODE" == true ]]; then
     # Only dump mode enabled (without debug)
     echo "Setting AOTI intermediate output dumping..."
     export AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER="2"
+    export INDUCTOR_PROVENANCE=1
+    export TORCH_TRACE="/home/gasoonjia/executorch/aoti_debug_data"
     echo "AOTI intermediate output dumping enabled (AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER=2)"
     echo "  AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER=$AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER"
+    echo "Eager-AOTI relationship extration enabled (INDUCTOR_PROVENANCE=1), output to $TORCH_TRACE"
 else
     # Ensure debug variables are unset for non-debug/non-dump modes
     unset AOT_INDUCTOR_DEBUG_COMPILE
     unset AOTINDUCTOR_REPRO_LEVEL
     unset AOT_INDUCTOR_DEBUG_INTERMEDIATE_VALUE_PRINTER
+    unset INDUCTOR_PROVENANCE
+    unset TORCH_TRACE
 fi
 
 # Execute based on mode
@@ -203,6 +216,7 @@ case "$MODE" in
         clean_install_executorch
         build_runtime
         run_inference
+        compare_outputs
         ;;
     "reinstall_aot")
         echo "Mode: reinstall_aot - Reinstall AOT components and run e2e"
@@ -212,6 +226,7 @@ case "$MODE" in
         install_executorch
         export_aoti_model
         run_inference
+        compare_outputs
         ;;
     "reinstall_runtime")
         echo "Mode: reinstall_runtime - Rebuild runtime and run e2e"
@@ -221,6 +236,7 @@ case "$MODE" in
         export_aoti_model
         build_runtime
         run_inference
+        compare_outputs
         ;;
     "inference")
         echo "Mode: inference - Export model and run inference only"
@@ -229,6 +245,7 @@ case "$MODE" in
         fi
         export_aoti_model
         run_inference
+        compare_outputs
         ;;
     "export_aoti_only")
         echo "Mode: export_aoti_only - Export model using pure AOTI only (no runtime or installation)"

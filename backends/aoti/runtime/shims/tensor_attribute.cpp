@@ -45,6 +45,14 @@ AOTITorchError aoti_torch_get_storage_offset(
     int64_t* ret_storage_offset) {
   // Storage offset is always 0 in ET
   *ret_storage_offset = 0;
+
+  // ASSERTION: Storage offset must always be 0
+  if (*ret_storage_offset != 0) {
+    std::cout << "ERROR: Storage offset must be 0. Got storage_offset: "
+              << *ret_storage_offset << std::endl;
+    return Error::InvalidArgument;
+  }
+
   return Error::Ok;
 }
 
@@ -73,6 +81,14 @@ AOTITorchError aoti_torch_get_dtype(
     AOTITensorHandle tensor,
     int32_t* ret_dtype) {
   *ret_dtype = static_cast<int32_t>(tensor->scalar_type());
+
+  // ASSERTION: Only float32 tensors are supported
+  if (*ret_dtype != 6) { // 6 = float32
+    std::cout << "ERROR: Only float32 tensors are supported. Got dtype: "
+              << *ret_dtype << " (expected: 6 for float32)" << std::endl;
+    return Error::InvalidArgument;
+  }
+
   return Error::Ok;
 }
 

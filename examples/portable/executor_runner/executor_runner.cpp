@@ -18,6 +18,7 @@
  * all fp32 tensors.
  */
 
+#include <fstream>
 #include <iostream>
 #include <memory>
 
@@ -294,11 +295,45 @@ int main(int argc, char** argv) {
   std::vector<EValue> outputs(method->outputs_size());
   ET_LOG(Info, "%zu outputs: ", outputs.size());
   Error status = method->get_outputs(outputs.data(), outputs.size());
+
   ET_CHECK(status == Error::Ok);
+
+  // Open file to dump outputs
+  std::ofstream output_file("aoti_debug_data/final_runtime_output.txt");
+  if (!output_file.is_open()) {
+    ET_LOG(Error, "Failed to open output file for dumping");
+  }
+
   // Print the first and last 100 elements of long lists of scalars.
   std::cout << executorch::extension::evalue_edge_items(100);
   for (int i = 0; i < outputs.size(); ++i) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
+
+    // Also dump to file - extract tensor data and write comma-separated values
+    if (output_file.is_open() && outputs[i].isTensor()) {
+      auto tensor = outputs[i].toTensor();
+      const void* data_ptr = tensor.const_data_ptr();
+
+      // assert output is in float different tensor types
+      const float* float_data = static_cast<const float*>(data_ptr);
+      size_t num_elements = tensor.numel();
+
+      for (size_t j = 0; j < num_elements; ++j) {
+        if (j > 0)
+          output_file << ",";
+        output_file << float_data[j];
+      }
+
+      if (i < outputs.size() - 1)
+        output_file << ",";
+    }
+  }
+
+  if (output_file.is_open()) {
+    output_file.close();
+    ET_LOG(
+        Info,
+        "Runtime outputs dumped to aoti_debug_data/final_runtime_output.txt");
   }
 
   if (tracer.get_event_tracer()) {
