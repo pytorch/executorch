@@ -120,8 +120,6 @@ echo "COREML option ${COREML}"
 if [[ "${MODE}" =~ .*qnn.* ]]; then
   QNN=ON
 
-  # Source QNN configuration
-  source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/qnn_config.sh"
   # Download QNN_SDK. If already downloaded, export environment path
   source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_qnn_sdk.sh"
   install_qnn
