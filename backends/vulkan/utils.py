@@ -250,6 +250,31 @@ def get_primary_arg_idx(self, node: torch.fx.Node) -> Optional[int]:
     return primary_arg_idx
 
 
+def node_comes_from_any_nn_module_in_set(
+    node,
+    nn_module_typenames: Set[str],
+) -> bool:
+    if isinstance(node, (list, tuple)):
+        return all(
+            node_comes_from_any_nn_module_in_set(n, nn_module_typenames) for n in node
+        )
+
+    if not isinstance(node, torch.fx.Node):
+        return False
+
+    nn_module_stack = node.meta.get("nn_module_stack", None)
+    if nn_module_stack is None:
+        return False
+
+    for _, packed in nn_module_stack.items():
+        _, typename = packed
+        for partial_name in nn_module_typenames:
+            if partial_name in typename:
+                return True
+
+    return False
+
+
 ##
 ## Memory Layout, Storage Type Determination
 ##
@@ -599,9 +624,9 @@ def make_filtered_tensor_repset(
         if extents_are_valid(extents, texture_limits):
             valid_texture_layouts.add(memory_layout)
 
-    # High dimensional tensors are currently not supported
+    # High dimensional tensors require buffer storage
     if len(tensor_val.shape) > 4:
-        return NO_STORAGE
+        return TensorRepSet(tensor_repset.valid_buffer_layouts, set())
 
     # Bool tensors are currently not supported
     if tensor_val.dtype == torch.bool:
@@ -621,6 +646,7 @@ WIDTH_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_WIDTH_PACKED})
 CHANNELS_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_CHANNELS_PACKED})
 
 ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
+ANY_BUFFER = TensorRepSet(all_memory_layouts, set())
 
 ANY_STORAGE = TensorRepSet(all_memory_layouts, all_memory_layouts)
 NO_STORAGE = TensorRepSet(set(), set())
@@ -1059,6 +1085,8 @@ def get_node_val_str(node: torch.fx.Node) -> str:
         assert isinstance(node.meta["val"], (list, tuple))
         return f"[{', '.join(get_tensor_val_str(t) for t in node.meta['val'])}]"
     else:
+        if "val" not in node.meta:
+            return str(node)
         return str(node.meta["val"])
 
 

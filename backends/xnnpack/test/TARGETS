@@ -100,6 +100,10 @@ runtime.python_test(
     srcs = glob([
         "recipes/*.py",
     ]),
+    env = {
+        "HTTP_PROXY": "http://fwdproxy:8080",
+        "HTTPS_PROXY": "http://fwdproxy:8080",
+    },
     deps = [
         "//executorch/backends/xnnpack:xnnpack_delegate",
         "//executorch/export:lib",

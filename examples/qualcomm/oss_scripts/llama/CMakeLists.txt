@@ -42,6 +42,8 @@ list(
   ${CMAKE_CURRENT_LIST_DIR}/runner/rpc_mem.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/kv_manager.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/kv_manager.h
+  ${EXECUTORCH_SOURCE_DIR}/examples/models/llama/runner/runner.cpp
+  ${EXECUTORCH_SOURCE_DIR}/examples/models/llama/runner/runner.h
 )
 
 list(APPEND _llama_runner__srcs)

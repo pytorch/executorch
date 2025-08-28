@@ -67,58 +67,6 @@ function(target_link_options_gc_sections target_name)
   endif()
 endfunction()
 
-# Extract source files based on toml config. This is useful to keep buck2 and
-# cmake aligned. Do not regenerate if file exists.
-function(extract_sources sources_file)
-  if(EXISTS "${sources_file}")
-    message(STATUS "executorch: Using source file list ${sources_file}")
-  else()
-    # A file wasn't generated. Run a script to extract the source lists from the
-    # buck2 build system and write them to a file we can include.
-    #
-    # NOTE: This will only happen once during cmake setup, so it will not re-run
-    # if the buck2 targets change.
-    message(STATUS "executorch: Generating source file list ${sources_file}")
-    if(EXECUTORCH_ROOT)
-      set(executorch_root ${EXECUTORCH_ROOT})
-    else()
-      set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
-    endif()
-
-    if(ANDROID_ABI)
-      if("${ANDROID_ABI}" STREQUAL "arm64-v8a")
-        set(target_platforms_arg "--target-platforms=shim_et//:android-arm64")
-      elseif("${ANDROID_ABI}" STREQUAL "x86_64")
-        set(target_platforms_arg "--target-platforms=shim_et//:android-x86_64")
-      else()
-        message(
-          FATAL_ERROR
-            "Unsupported ANDROID_ABI setting ${ANDROID_ABI}. Please add it here!"
-        )
-      endif()
-    endif()
-    execute_process(
-      COMMAND
-        ${PYTHON_EXECUTABLE} ${executorch_root}/tools/cmake/extract_sources.py
-        --config=${executorch_root}/tools/cmake/cmake_deps.toml
-        --out=${sources_file} --buck2=${BUCK2} ${target_platforms_arg}
-      OUTPUT_VARIABLE gen_srcs_output
-      ERROR_VARIABLE gen_srcs_error
-      RESULT_VARIABLE gen_srcs_exit_code
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-
-    if(NOT gen_srcs_exit_code EQUAL 0)
-      message("Error while generating ${sources_file}. "
-              "Exit code: ${gen_srcs_exit_code}"
-      )
-      message("Output:\n${gen_srcs_output}")
-      message("Error:\n${gen_srcs_error}")
-      message(FATAL_ERROR "executorch: source list generation failed")
-    endif()
-  endif()
-endfunction()
-
 # Sets the value of the PYTHON_EXECUTABLE variable to 'python' if in an active
 # (non-base) conda environment, and 'python3' otherwise. This maintains
 # backwards compatibility for non-conda users and avoids conda users needing to
