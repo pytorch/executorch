@@ -59,7 +59,7 @@ def python_is_compatible():
 
 
 # The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
+TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cu126"
 
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
@@ -90,6 +90,7 @@ def install_requirements(use_pytorch_nightly):
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
         f"torch==2.9.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
+        # f"torchao==0.13.0{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
     ]
 
     # Install the requirements for core ExecuTorch package.
