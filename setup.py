@@ -671,7 +671,7 @@ class CustomBuild(build):
             f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}",
             f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
         ]
-        
+
         # Use ClangCL on Windows.
         if _is_windows():
             cmake_configuration_args += ["-T ClangCL"]
@@ -708,7 +708,7 @@ class CustomBuild(build):
         cmake_build_args = [
             # Default build parallelism based on number of cores, but allow
             # overriding through the environment.
-             "-j{parallelism}".format(
+            "-j{parallelism}".format(
                 parallelism=os.environ.get(
                     "CMAKE_BUILD_PARALLEL_LEVEL", os.cpu_count() - 1
                 )
