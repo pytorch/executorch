@@ -29,8 +29,8 @@ endif()
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
 if(NOT WIN32)
 ExternalProject_Add(
-  flatbuffers_external_project
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_external_project
+  fb_ep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/fb_ep
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
   CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
              -DFLATBUFFERS_INSTALL=ON
@@ -51,8 +51,8 @@ ExternalProject_Add(
 )
 else() # WIN32
   ExternalProject_Add(
-    flatbuffers_external_project
-    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_external_project
+    fb_ep
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/fp_ep
     SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
     CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
                -DFLATBUFFERS_INSTALL=ON
@@ -68,9 +68,9 @@ else() # WIN32
     ${_executorch_external_project_additional_args}
   )
 endif()
-ExternalProject_Get_Property(flatbuffers_external_project INSTALL_DIR)
+ExternalProject_Get_Property(fb_ep INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
-add_dependencies(flatc flatbuffers_external_project)
+add_dependencies(flatc fb_ep)
 if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
   # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces Release
   # config, but from CMake's perspective the build type is always Debug.
