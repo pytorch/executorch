@@ -5,14 +5,14 @@ $PSNativeCommandUseErrorActionPreference = $true
 conda create --yes --quiet -n et python=3.12
 conda activate et
 
-ls -Path "C:\Program Files (x86)\Microsoft Visual Studio\2022\"
-ls -Path "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\"
+#ls -Path "C:\Program Files (x86)\Microsoft Visual Studio\2022\"
+#ls -Path "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\"
 
 # Activate the VS environment - this is required for Dynamo to work, as
 # it uses the MSVC compiler.
-$vsInstallPath = "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\"
-Import-Module (Join-Path $vsInstallPath "Common7\Tools\vsdevshell\Microsoft.VisualStudio.DevShell.dll")
-Enter-VsDevShell -VsInstallPath $vsInstallPath -DevCmdArguments "-arch=x64" -SkipAutomaticLocation
+#$vsInstallPath = "C:\Program Files (x86)\Microsoft Visual Studio\2022\Enterprise\"
+#Import-Module (Join-Path $vsInstallPath "Common7\Tools\vsdevshell\Microsoft.VisualStudio.DevShell.dll")
+#Enter-VsDevShell -VsInstallPath $vsInstallPath -DevCmdArguments "-arch=x64" -SkipAutomaticLocation
 
 install_executorch.bat
 if ($LASTEXITCODE -ne 0) {
