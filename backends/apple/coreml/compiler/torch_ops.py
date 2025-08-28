@@ -179,13 +179,17 @@ def dequantize_codebook(context, node):
         codebook.shape[1] == 1
     ), "Only grouped_channel granularity is supported"
     if codebook.shape[0] == 1:
+        # LUT is per column group
         n_luts = codebook.shape[1]
+        assert (
+            codes.shape[1] % n_luts == 0
+        ), "codes.shape[1] must be divisible by codebook.shape[1]"
     else:
+        # LUT is per row group
         n_luts = codebook.shape[0]
-
-    assert (
-        codes.shape[1] % n_luts == 0
-    ), "codes.shape[1] must be divisible by codebook.shape[1]"
+        assert (
+            codes.shape[0] % n_luts == 0
+        ), "codes.shape[0] must be divisible by codebook.shape[0]"
 
     assert codebook.shape[2] == 2**nbits
     assert codebook.shape[3] == 1, "Only scalar look up values are supported"
