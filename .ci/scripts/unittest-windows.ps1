@@ -7,8 +7,7 @@ conda activate et
 
 # Activate the VS environment - this is required for Dynamo to work, as
 # it uses the MSVC compiler.
-$vsInstallPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationpath
-echo "VS Install Path: $vsInstallPath"
+$vsInstallPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\"
 Import-Module (Join-Path $vsInstallPath "Common7\Tools\vsdevshell\Microsoft.VisualStudio.DevShell.dll")
 Enter-VsDevShell -VsInstallPath $vsInstallPath -DevCmdArguments "-arch=x64" -SkipAutomaticLocation
 
