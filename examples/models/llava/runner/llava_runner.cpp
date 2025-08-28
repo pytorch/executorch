@@ -95,7 +95,7 @@ LlavaRunner::prefill_prompt(const std::string& prompt, int8_t bos, int8_t eos) {
 Error LlavaRunner::generate_from_pos(
     const std::string& prompt,
     int32_t seq_len,
-    int64_t start_pos,
+    ET_UNUSED int64_t start_pos,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const ::executorch::extension::llm::Stats&)>
         stats_callback,
@@ -109,13 +109,13 @@ Error LlavaRunner::generate_from_pos(
       ET_UNWRAP(prefill_prompt(prompt, /*bos=*/0, /*eos*/ 0));
   stats_.first_token_ms = llm::time_in_ms();
   stats_.prompt_eval_end_ms = llm::time_in_ms();
-  stats_.num_prompt_tokens = start_pos;
+  stats_.num_prompt_tokens = pos_;
 
   // Generate tokens
   int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
       /*tokens=*/{prefill_next_token},
-      /*start_pos=*/start_pos,
-      /*max_new_tokens=*/seq_len - start_pos + 1,
+      /*start_pos=*/pos_,
+      /*max_new_tokens=*/seq_len - pos_ + 1,
       /*temperature=*/temperature_,
       /*token_callback=*/token_callback));
 
@@ -143,6 +143,9 @@ Error LlavaRunner::generate(
       Info,
       "RSS after loading model: %f MiB (0 if unsupported)",
       llm::get_rss_bytes() / 1024.0 / 1024.0);
+
+  // Reset the context
+  reset();
 
   // Wrap the token_callback with print function
   std::function<void(const std::string&)> wrapped_callback =
