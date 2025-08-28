@@ -47,7 +47,7 @@ ExternalProject_Add(
              -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
              --verbose
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
-  ${_executorch_external_project_additional_args} LOG_CONFIGURE TRUE LOG_MERGED_STDOUTERR TRUE LOG_OUTPUT_ON_FAILURE TRUE
+  ${_executorch_external_project_additional_args}
 )
 else() # WIN32
   ExternalProject_Add(
@@ -62,7 +62,7 @@ else() # WIN32
                -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
                -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}"
                -DCMAKE_CXX_SIMULATE_ID=MSVC
-               -T ClangCL
+                -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
     BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
     CMAKE_GENERATOR ${CMAKE_GENERATOR}
     ${_executorch_external_project_additional_args}
