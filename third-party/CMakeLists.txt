@@ -60,8 +60,8 @@ else() # WIN32
                -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
                -DCMAKE_CXX_FLAGS="-DFLATBUFFERS_MAX_ALIGNMENT=${EXECUTORCH_FLATBUFFERS_MAX_ALIGNMENT}"
                -DCMAKE_CXX_SIMULATE_ID=MSVC
-               -DCMAKE_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
     BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
+    CMAKE_GENERATOR ${CMAKE_GENERATOR}
     ${_executorch_external_project_additional_args}
   )
 endif()
