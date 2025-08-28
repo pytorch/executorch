@@ -165,7 +165,10 @@ class WhisperAudioProcessor(nn.Module):
         log_spec = torch.maximum(log_spec, log_spec.max() - 8.0)
         log_spec = (log_spec + 4.0) / 4.0
 
-        return log_spec.unsqueeze(0)
+        log_spec = log_spec.reshape(self.feature_size, -1, self.nb_max_frames)
+        log_spec = log_spec.transpose(0, 1)
+
+        return log_spec
 
 
 def export_processor():
