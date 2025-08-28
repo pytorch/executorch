@@ -19,6 +19,7 @@
 
 #include <executorch/extension/llm/runner/constants.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
@@ -59,11 +60,13 @@ ET_EXPERIMENTAL std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
  *
  * @param tokenizer Initialized tokenizer instance
  * @param module The model module
- * @return std::unordered_map<std::string, int64_t> Metadata key-value pairs
+ * @return Result<std::unordered_map<std::string, int64_t>> Metadata key-value
+ * pairs on success, or Error::InvalidArgument if required metadata (e.g.,
+ * kMaxSeqLen) is missing from the model
  */
-ET_EXPERIMENTAL std::unordered_map<std::string, int64_t> get_llm_metadata(
-    tokenizers::Tokenizer* tokenizer,
-    Module* module);
+ET_EXPERIMENTAL ::executorch::runtime::Result<
+    std::unordered_map<std::string, int64_t>>
+get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module);
 
 /**
  * @brief Gets EOS token IDs from the model and tokenizer
