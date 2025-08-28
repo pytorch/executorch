@@ -817,6 +817,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs openvino_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_QNN)
+    list(APPEND _dep_libs qnn_executorch_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_XNNPACK)
     # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
     # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
@@ -865,6 +869,10 @@ endif()
 
 if(EXECUTORCH_BUILD_WASM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm)
+endif()
+
+if(EXECUTORCH_BUILD_TOKENIZERS_WASM)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm/tokenizers)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
