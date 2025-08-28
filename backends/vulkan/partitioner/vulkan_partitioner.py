@@ -61,6 +61,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
         operator_blocklist: Optional[Set[OpKey]] = None,
         operator_allowlist: Optional[Set[OpKey]] = None,
         fusable_subgraphs: Optional[List[InternalMatch]] = None,
+        nn_module_blocklist: Optional[Set[str]] = None,
+        nn_module_allowlist: Optional[Set[str]] = None,
     ) -> None:
         super().__init__()
         self.texture_limits: utils.ImageExtents = texture_limits
@@ -77,6 +79,9 @@ class VulkanSupportedOperators(OperatorSupportBase):
         self.fusable_nodes: Set[torch.fx.Node] = set()
         for match in self.fusable_subgraphs:
             self.fusable_nodes.update(match.nodes_map.values())
+
+        self.nn_module_blocklist = nn_module_blocklist
+        self.nn_module_allowlist = nn_module_allowlist
 
     def op_node_is_compatible(  # noqa: C901: Function is too complex
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -213,10 +218,26 @@ class VulkanSupportedOperators(OperatorSupportBase):
         r = self._is_node_supported(node)
         return r
 
-    def _is_node_supported(self, node: torch.fx.Node) -> bool:
-        # Check if this node is part of a fusable subgraph
-        if node.op == "call_function" and node in self.fusable_nodes:
-            return True
+    def _is_node_supported(self, node: torch.fx.Node) -> bool:  # noqa: C901
+        if node.op == "call_function":
+            # Apply nn module allowlist and blocklist
+            if self.nn_module_allowlist is not None:
+                if not utils.node_comes_from_any_nn_module_in_set(
+                    node, self.nn_module_allowlist
+                ):
+                    self.log_skip(node, "source nn.Module is not in allowlist")
+                    return False
+
+            if self.nn_module_blocklist is not None:
+                if utils.node_comes_from_any_nn_module_in_set(
+                    node, self.nn_module_blocklist
+                ):
+                    self.log_skip(node, "source nn.Module is in blocklist")
+                    return False
+
+            # Check if this node is part of a fusable subgraph
+            if node in self.fusable_nodes:
+                return True
 
         target = node.target
         if node.target == torch.ops.higher_order.auto_functionalized:
@@ -311,6 +332,8 @@ class VulkanPartitioner(Partitioner):
         compile_options: Optional[Dict[str, Any]] = None,
         operator_blocklist: Optional[List[OpKey]] = None,
         operator_allowlist: Optional[List[OpKey]] = None,
+        nn_module_blocklist: Optional[List[str]] = None,
+        nn_module_allowlist: Optional[List[str]] = None,
     ) -> None:
         self.options: Dict[str, Any] = {}
         if compile_options is not None:
@@ -330,6 +353,20 @@ class VulkanPartitioner(Partitioner):
             for entry in operator_allowlist:
                 assert self.operator_allowlist is not None
                 self.operator_allowlist.add(entry)
+
+        self.nn_module_blocklist: Optional[Set[str]] = None
+        if nn_module_blocklist is not None:
+            self.nn_module_blocklist = set()
+            for entry in nn_module_blocklist or []:
+                assert self.nn_module_blocklist is not None
+                self.nn_module_blocklist.add(entry)
+
+        self.nn_module_allowlist: Optional[Set[str]] = None
+        if nn_module_allowlist is not None:
+            self.nn_module_allowlist = set()
+            for entry in nn_module_allowlist:
+                assert self.nn_module_allowlist is not None
+                self.nn_module_allowlist.add(entry)
 
     def ops_to_not_decompose(
         self, ep: ExportedProgram
@@ -362,6 +399,8 @@ class VulkanPartitioner(Partitioner):
                 operator_blocklist=self.operator_blocklist,
                 operator_allowlist=self.operator_allowlist,
                 fusable_subgraphs=fusable_subgraphs,
+                nn_module_blocklist=self.nn_module_blocklist,
+                nn_module_allowlist=self.nn_module_allowlist,
             ),
             allows_single_node_partition=True,
         )
