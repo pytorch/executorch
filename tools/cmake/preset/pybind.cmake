@@ -43,6 +43,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
   set_overridable_option(XNNPACK_ENABLE_AVX256VNNI OFF)
   set_overridable_option(XNNPACK_ENABLE_AVX256VNNIGFNI OFF)
   set_overridable_option(XNNPACK_ENABLE_AVX512BF16 OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX512VNNI OFF)
 else()
   message(
     FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for pybind: ${CMAKE_SYSTEM_NAME}"

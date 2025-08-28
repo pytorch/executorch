@@ -57,9 +57,9 @@ class XNNPACKPassManager:
             self.passes = [
                 # TODO - remove this pass once we have a better support for dim_order ops lowering
                 DimOrderOpsRevertPass,
-                ConvertToUpsampleBilinear2d,
+                #ConvertToUpsampleBilinear2d,
                 ConvertToLinearPass,
-                ConvertToSDPAPass,
+                #ConvertToSDPAPass,
                 ConstPropPass,
                 FuseBatchNormPass,
                 FuseActivationPass,

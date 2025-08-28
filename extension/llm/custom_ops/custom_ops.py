@@ -13,8 +13,13 @@
 import logging
 
 import torch
+import sys
 
 from torch.library import impl
+
+# The platform-specific naming prefix for the AOT library. On Linux and Mac, the
+# name is prefix with lib. On Windows, it is not.
+LIB_PREFIX = "" if sys.platform == "win32" else "lib"
 
 try:
     op = torch.ops.llama.sdpa_with_kv_cache.default
@@ -31,9 +36,9 @@ except:
     from pathlib import Path
 
     package_path = Path(__file__).parent.resolve()
-    logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
+    logging.info(f"Looking for {LIB_PREFIX}custom_ops_aot_lib in {package_path}")
 
-    libs = list(package_path.glob("**/libcustom_ops_aot_lib.*"))
+    libs = list(package_path.glob(f"**/{LIB_PREFIX}custom_ops_aot_lib.*"))
 
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")

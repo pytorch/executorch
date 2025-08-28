@@ -9,11 +9,16 @@ from pathlib import Path
 
 import torch
 
+# The platform-specific naming prefix for the AOT library. On Linux and Mac, the
+# name is prefix with lib. On Windows, it is not.
+import sys
+LIB_PREFIX = "" if sys.platform == "win32" else "lib"
+
 try:
     tile_crop = torch.ops.preprocess.tile_crop.default
     assert tile_crop is not None
 except:
-    libs = list(Path(__file__).parent.resolve().glob("libcustom_ops_aot_lib.*"))
+    libs = list(Path(__file__).parent.resolve().glob(f"{LIB_PREFIX}custom_ops_aot_lib.*"))
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])

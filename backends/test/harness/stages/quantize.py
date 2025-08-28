@@ -47,7 +47,7 @@ class Quantize(Stage):
         assert inputs is not None
         if self.is_qat:
             artifact.train()
-        captured_graph = export_for_training(artifact, inputs, strict=True).module()
+        captured_graph = export_for_training(artifact, inputs, strict=False).module()
 
         assert isinstance(captured_graph, torch.fx.GraphModule)
 

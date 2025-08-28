@@ -62,6 +62,8 @@ xcuserdata/
 /version.py
 *.csv
 *_etdump
+*.dll
+*.pyd
 
 # Android
 *.aar
