@@ -387,6 +387,8 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/transforms:view_copy_to_squeeze_unsqueeze",
                 "//executorch/backends/vulkan/_passes:vulkan_passes",
                 "//executorch/backends/vulkan/serialization:lib",
+                "//executorch/backends/transforms:remove_getitem_op",
+                "//executorch/backends/xnnpack/_passes:xnnpack_passes",
                 "//executorch/exir/backend:backend_details",
             ],
         )

@@ -157,7 +157,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             soc_model=args.model,
             runner="examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
-        self.adb.push(inputs=[], input_list="", files=[self.runtime_tokenizer_path])
+        self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
         # n seq len = n-1 cache len, so we len(inps) = n-1 during _model_call
         # pyre-ignore
         super().__init__(None, tokenizer, max_seq_length - 1)
@@ -192,7 +192,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             ]
         )
 
-        self.adb.push(inputs=[], input_list="", files=[input_file_name], init_env=False)
+        self.adb.push(inputs=[], files=[input_file_name], init_env=False)
         self.adb.execute(custom_runner_cmd=runner_cmd)
         output_data_folder = f"{self.output_dir}/outputs"
         make_output_dir(output_data_folder)
@@ -458,22 +458,34 @@ def prefill_inference(
 
 
 def graph_module_inference(
-    args,
-    use_kv_cache,
+    use_kv_cache: bool,
     get_example_inputs: Callable,
     module: torch.fx.GraphModule,
     tokenizer,
     ar_len=1,
     max_seq_len=512,
     kv_updater=smart_mask_updater,
+    prompt=None,
+    tasks=None,
+    tasks_limit=1,
+    num_fewshot=None,
     use_i64_token=False,
     event_name: Optional[str] = None,
 ):
-    if args.tasks is None:
+    """
+    This function supports model execution from static nn.Module decoder model
+    all the way to edge program.
+    Users could choose to provide either the prompt or tasks for execution but not both.
+    """
+    # Checks 1 and only 1 is provided.
+    assert (tasks is None) != (
+        prompt is None
+    ), "Please provide either tasks or prompt - not both or neither"
+    if tasks is None:
         if use_kv_cache:
             kv_inference(
                 get_example_inputs,
-                args.prompt[0],
+                prompt,
                 module,
                 tokenizer,
                 ar_len,
@@ -485,7 +497,7 @@ def graph_module_inference(
         else:
             prefill_inference(
                 get_example_inputs,
-                args.prompt[0],
+                prompt,
                 module,
                 tokenizer,
                 max_seq_len,
@@ -507,9 +519,24 @@ def graph_module_inference(
         with torch.no_grad():
             eval_results = simple_evaluate(
                 model=calibration_wrapper,
-                tasks=args.tasks,
-                limit=args.limit,
+                tasks=tasks,
+                num_fewshot=num_fewshot,
+                limit=tasks_limit,
             )
         logging.info(f"Perplexity evaluation summary for {event_name}")
         for task, res in eval_results["results"].items():
             logging.info(f"{task}: {res}")
+
+
+def apply_prompt_template(
+    chat_template: Callable, prompt: str, system_prompt: str = None
+):
+    messages = [{"role": "user", "content": prompt}]
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+
+    template_prompt = chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    logging.info(f"Prompt after applying template: {template_prompt}")
+    return template_prompt

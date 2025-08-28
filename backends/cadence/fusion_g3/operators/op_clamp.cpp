@@ -45,6 +45,7 @@ bool is_out_of_bounds(CTYPE_VAL val) {
 }
 
 ET_NODISCARD bool check_bounds(
+    KernelRuntimeContext& ctx,
     const Scalar& val_scalar,
     const ScalarType& val_type,
     const ScalarType& out_type,
@@ -107,14 +108,14 @@ Tensor& clamp_out(
   if (has_min) {
     ET_KERNEL_CHECK(
         ctx,
-        check_bounds(min_opt.value(), min_type, out_type, "minimum"),
+        check_bounds(ctx, min_opt.value(), min_type, out_type, "minimum"),
         InvalidArgument,
         out);
   }
   if (has_max) {
     ET_KERNEL_CHECK(
         ctx,
-        check_bounds(max_opt.value(), max_type, out_type, "maximum"),
+        check_bounds(ctx, max_opt.value(), max_type, out_type, "maximum"),
         InvalidArgument,
         out);
   }
