@@ -174,4 +174,3 @@ class ExecuTorchWhisperJni
 void register_natives_for_whisper() {
   executorch_jni::ExecuTorchWhisperJni::registerNatives();
 }
-
