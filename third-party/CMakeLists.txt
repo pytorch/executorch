@@ -29,7 +29,7 @@ endif()
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
 ExternalProject_Add(
   flatbuffers_ep
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatbuffers_ep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatc_proj
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
   CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
              -DFLATBUFFERS_INSTALL=ON

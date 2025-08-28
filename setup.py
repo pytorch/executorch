@@ -708,12 +708,11 @@ class CustomBuild(build):
         cmake_build_args = [
             # Default build parallelism based on number of cores, but allow
             # overriding through the environment.
-            "-j1",  # DEBUG
-            # "-j{parallelism}".format(
-            #    parallelism=os.environ.get(
-            #        "CMAKE_BUILD_PARALLEL_LEVEL", os.cpu_count() - 1
-            #    )
-            # ),
+             "-j{parallelism}".format(
+                parallelism=os.environ.get(
+                    "CMAKE_BUILD_PARALLEL_LEVEL", os.cpu_count() - 1
+                )
+            ),
             # CMAKE_BUILD_TYPE variable specifies the build type (configuration) for
             # single-configuration generators (e.g., Makefile Generators or Ninja).
             # For multi-config generators (like Visual Studio), CMAKE_BUILD_TYPE
@@ -774,7 +773,7 @@ setup(
     # platform-specific files using InstallerBuildExt.
     ext_modules=[
         BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers_external_project/bin/",
+            src_dir="%CMAKE_CACHE_DIR%/third-party/flatc_proj/bin/",
             src_name="flatc",
             dst="executorch/data/bin/",
             is_executable=True,
