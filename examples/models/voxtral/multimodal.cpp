@@ -111,77 +111,13 @@ std::vector<float> loadBinaryFloatData(const std::string& audio_path) {
  *       f.write(t.numpy().tobytes())
  *
  * @param audio_path Path to the binary audio file (.bin)
- * @param processor_path Path to the processor .pte file to get metadata
  * @return MultimodalInput containing the loaded audio data
  */
-MultimodalInput loadPreprocessedAudio(
-    const std::string& audio_path,
-    const std::string& processor_path = "") {
+MultimodalInput loadPreprocessedAudio(const std::string& audio_path) {
   std::vector<float> audio_data = loadBinaryFloatData(audio_path);
 
-  int32_t n_bins, n_frames;
-
-  if (processor_path.empty()) {
-    ET_LOG(
-        Error,
-        "Processor path is required to get feature_size and nb_max_frames");
-    throw std::runtime_error(
-        "Processor path is required to get feature_size and nb_max_frames");
-  }
-
-  // Load processor module to get metadata
-  std::unique_ptr<Module> processor_module;
-  try {
-    processor_module =
-        std::make_unique<Module>(processor_path, Module::LoadMode::File);
-    auto load_error = processor_module->load();
-    if (load_error != ::executorch::runtime::Error::Ok) {
-      ET_LOG(
-          Error,
-          "Failed to load processor module from: %s",
-          processor_path.c_str());
-      throw std::runtime_error("Failed to load processor module");
-    }
-  } catch (const std::exception& e) {
-    ET_LOG(Error, "Exception while loading processor module: %s", e.what());
-    throw std::runtime_error("Exception while loading processor module");
-  }
-
-  // Get n_bins by running "feature_size" method
-  auto feature_size_result = processor_module->execute("feature_size");
-  if (!feature_size_result.ok()) {
-    ET_LOG(
-        Error, "Failed to execute 'feature_size' method on processor module");
-    throw std::runtime_error(
-        "Failed to execute 'feature_size' method on processor module");
-  }
-  auto feature_size_outputs = feature_size_result.get();
-  if (feature_size_outputs.empty()) {
-    ET_LOG(Error, "'feature_size' method returned no outputs");
-    throw std::runtime_error("'feature_size' method returned no outputs");
-  }
-  n_bins = static_cast<int32_t>(feature_size_outputs[0].toInt());
-
-  // Get n_frames by running "nb_max_frames" method
-  auto nb_max_frames_result = processor_module->execute("nb_max_frames");
-  if (!nb_max_frames_result.ok()) {
-    ET_LOG(
-        Error, "Failed to execute 'nb_max_frames' method on processor module");
-    throw std::runtime_error(
-        "Failed to execute 'nb_max_frames' method on processor module");
-  }
-  auto nb_max_frames_outputs = nb_max_frames_result.get();
-  if (nb_max_frames_outputs.empty()) {
-    ET_LOG(Error, "'nb_max_frames' method returned no outputs");
-    throw std::runtime_error("'nb_max_frames' method returned no outputs");
-  }
-  n_frames = static_cast<int32_t>(nb_max_frames_outputs[0].toInt());
-
-  ET_LOG(
-      Info,
-      "Got values from processor methods: n_bins=%d, n_frames=%d",
-      n_bins,
-      n_frames);
+  int32_t n_bins = 128;
+  int32_t n_frames = 3000;
 
   std::size_t n_floats = audio_data.size();
   int32_t batch_size = ceil(
@@ -329,7 +265,7 @@ MultimodalInput processAudioFile(
       return processRawAudioFile(audio_path, processor_path);
     } else {
       // Load preprocessed audio stored as a binary file (existing behavior)
-      return loadPreprocessedAudio(audio_path, processor_path);
+      return loadPreprocessedAudio(audio_path);
     }
   } else {
     ET_LOG(
