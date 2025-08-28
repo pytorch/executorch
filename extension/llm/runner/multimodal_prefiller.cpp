@@ -104,7 +104,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     cache_positions[i] = start_pos + i;
   }
   auto cache_position_tensor = ::executorch::extension::from_blob(
-      cache_positions.data(), {seq_len}, executorch::aten::ScalarType::Long);
+      cache_positions.data(), {static_cast<int>(seq_len)}, executorch::aten::ScalarType::Long);
   auto prefill_result = module_->execute(
       kTextModelMethod, {cache_position_tensor, encoder_output});
   if (prefill_result.error() != ::executorch::runtime::Error::Ok) {
