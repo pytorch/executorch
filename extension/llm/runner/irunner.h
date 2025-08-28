@@ -128,19 +128,17 @@ class ET_EXPERIMENTAL IRunner {
    * Generate text based on the provided prompt and generation config, from a
    * given position in KV cache.
    *
-   * Deprecated method. Please use generate() instead. It manages the pos
-   * automatically.
-   *
    * @param prompt The input prompt to generate from
-   * @param start_pos The starting position in KV cache of the input
+   * @param start_pos [Unused] The starting position in KV cache of the input,
+   * ignored because the runner manages the position internally.
    * @param config Generation configuration parameters
    * @param token_callback Callback function called for each generated token
    * @param stats_callback Callback function for generation statistics
    * @return Error::Ok if successful, an error otherwise
    */
-  ET_DEPRECATED virtual runtime::Error generate_from_pos(
+  virtual runtime::Error generate_from_pos(
       const std::string& prompt,
-      int64_t start_pos,
+      ET_UNUSED int64_t start_pos,
       const GenerationConfig& config,
       std::function<void(const std::string&)> token_callback,
       std::function<void(const Stats&)> stats_callback) = 0;

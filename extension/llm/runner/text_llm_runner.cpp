@@ -70,8 +70,9 @@ Error TextLLMRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
-Error TextLLMRunner::generate(
+Error TextLLMRunner::generate_from_pos(
     const std::string& prompt,
+    ET_UNUSED int64_t start_pos,
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
@@ -214,6 +215,15 @@ Error TextLLMRunner::generate(
   }
 
   return Error::Ok;
+}
+
+Error TextLLMRunner::generate(
+    const std::string& prompt,
+    const GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
+  reset();
+  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
 }
 
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
