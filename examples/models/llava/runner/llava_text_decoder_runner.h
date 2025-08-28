@@ -89,7 +89,7 @@ class ET_EXPERIMENTAL LlavaTextDecoderRunner
   }
 
   inline static const std::string kTokenEmbeddingMethod = "token_embedding";
-  inline static const std::string kTextModelMethod = "text_model";
+  inline static const std::string kTextModelMethod = "text_decoder";
 };
 
 } // namespace example
