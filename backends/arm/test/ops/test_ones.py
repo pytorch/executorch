@@ -106,7 +106,6 @@ def test_ones_u85_INT(test_data: test_data_t):
     xfails={
         "fp32_int32": "MLETORCG-716: Do not delegate empty networks to vela",
         "fp32_int64": "MLETORCG-716: Do not delegate empty networks to vela",
-        "int32_int64": "MLETORCG-716: Do not delegate empty networks to vela",
     },
 )
 def test_ones_tosa_INT_not_delegated(test_data: test_data_t):

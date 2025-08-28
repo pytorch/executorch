@@ -2,17 +2,17 @@
 
 This directory contains examples for some AI models.
 
-We have seperated the example scripts into the following subfolders, please refer to [README.md](../../backends/qualcomm/README.md) for the example scripts' directory structure:
+We have separated the example scripts into the following subfolders, please refer to [README.md](../../backends/qualcomm/README.md) for the example scripts' directory structure:
 
 1. executor_runner: This folder contains a general executor runner capable of running most of the models. As a rule of thumb, if a model does not have its own customized runner, execute the model using [executor_runner](executor_runner/qnn_executor_runner.cpp). On the other hand, if a model has its own runner, such as [llama](oss_scripts/llama/qnn_llama_runner.cpp), use the customized runner to execute the model. Customized runner should be located under the same folder as the model's python script.
 
 2. oss_scripts: OSS stands for Open Source Software. This folder contains python scripts for open source models. Some models under this folder might also have their own customized runner.
    For example, [llama](oss_scripts/llama/qnn_llama_runner.cpp) contains not only the python scripts to prepare the model but also a customized runner for executing the model.
 
-3. qaihub_scripts: QAIHub stands for [Qualcomm AI Hub](https://aihub.qualcomm.com/). On QAIHub, users can find pre-compiled context binaries, a format used by QNN to save its models. This provides users with a new option for model deployment. Different from oss_scripts & scripts, which the example scripts are converting a model from nn.Module to ExecuTorch .pte files, qaihub_scripts provides example scripts for converting pre-compiled context binaries to ExecuTorch .pte files. Additionaly, users can find customized example runners specific to the QAIHub models for execution. For example [qaihub_llama2_7b](qaihub_scripts/llama/llama2/qaihub_llama2_7b.py) is a script converting context binaries to ExecuTorch .pte files, and [qaihub_llama2_7b_runner](qaihub_scripts/llama/llama2/qaihub_llama2_7b_runner.cpp) is a customized example runner to execute llama2 .pte files. Please be aware that context-binaries downloaded from QAIHub are tied to a specific QNN SDK version.
+3. qaihub_scripts: QAIHub stands for [Qualcomm AI Hub](https://aihub.qualcomm.com/). On QAIHub, users can find pre-compiled context binaries, a format used by QNN to save its models. This provides users with a new option for model deployment. Different from oss_scripts & scripts, which the example scripts are converting a model from nn.Module to ExecuTorch .pte files, qaihub_scripts provides example scripts for converting pre-compiled context binaries to ExecuTorch .pte files. Additionally, users can find customized example runners specific to the QAIHub models for execution. For example [qaihub_llama2_7b](qaihub_scripts/llama/llama2/qaihub_llama2_7b.py) is a script converting context binaries to ExecuTorch .pte files, and [qaihub_llama2_7b_runner](qaihub_scripts/llama/llama2/qaihub_llama2_7b_runner.cpp) is a customized example runner to execute llama2 .pte files. Please be aware that context-binaries downloaded from QAIHub are tied to a specific QNN SDK version.
 Before executing the scripts and runner, please ensure that you are using the QNN SDK version that is matching the context binary. Please refer to [Check context binary version](#check-context-binary-version) for tutorial on how to check the QNN Version for a context binary.
 
-4. scripts: This folder contains scripts to build models provided by Executorch.
+4. scripts: This folder contains scripts to build models provided by ExecuTorch.
 
 
 
@@ -22,7 +22,7 @@ Here are some general information and limitations.
 
 ## Prerequisite
 
-Please finish tutorial [Setting up executorch](https://pytorch.org/executorch/main/getting-started-setup).
+Please finish tutorial [Setting up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup).
 
 Please finish [setup QNN backend](../../docs/source/backends-qualcomm.md).
 
@@ -44,7 +44,7 @@ commands in the `SimpleADB` class inside [utils.py](utils.py).
 
 ## Please use python xxx.py --help for information of each examples.
 
-Some CLI examples here. Please adjust according to your environment. If you want to export the model without running it, please add `-compile_only` to the command.:
+Some CLI examples here. Please adjust according to your environment. If you want to export the model without running it, please add `--compile_only` to the command.:
 
 #### First switch to following folder
 ```bash
@@ -83,6 +83,32 @@ If you run into the following error, that means the ${QNN_SDK_ROOT} that you are
 ```
 Error: Failed to get context binary info.
 ```
+## Model Structure
+This section outlines the essential APIs and utilities provided to streamline the process of model conversion, deployment, and evaluation on Qualcomm hardware using ExecuTorch.
+
+1. `build_executorch_binary()`:
+
+   build_executorch_binary is a high-level API used to convert a PyTorch model into a Qualcomm-compatible .pte binary format. This function streamlines the process of quantization, transformation, optimization, and export, enabling users to efficiently deploy models on Qualcomm hardware.
+
+2. `SimpleADB`:
+
+   SimpleADB is a Python class that provides a simplified interface for interacting with Android devices. It allows users to execute ADB commands, retrieve device information, and manage files on the device.
+
+3. `get_imagenet_dataset`:
+   
+   If the model requires ImageNet, this function can be used to load the dataset and apply the necessary preprocessing steps to prepare it for inference or quantization calibration.
+
+4. `topk_accuracy`:
+
+   Calculates the Top-K accuracy for classification models, used to evaluate model performance.
+
+5. `parse_skip_delegation_node`:
+
+   Parses command-line arguments to identify node IDs or operation types that should be skipped during model conversion.
+
+6. `make_output_dir`:
+
+   Creates a clean directory for storing model outputs or intermediate results. If the directory already exists, it will be deleted and recreated to ensure a consistent environment for each run.
 
 ## Additional Dependency
 
@@ -95,7 +121,7 @@ pip install scikit-learn pandas
 
 ## Limitation
 
-1. QNN 2.24 is used for all examples. Newer or older QNN might work,
+1. QNN 2.28 is used for all examples. Newer or older QNN might work,
 but the performance and accuracy number can differ.
 
 2. The mobilebert example is on QNN HTP fp16, which is only supported by a limited

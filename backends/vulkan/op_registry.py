@@ -397,14 +397,17 @@ def register_reduce_op():
                 # If we can't get memory layout information, we'll assume the dims aren't packed
                 pass
 
-        keepdim = node.args[2]
-        if isinstance(keepdim, bool) and not keepdim:
+        def try_find_keepdim_arg(node: torch.fx.Node) -> bool:
+            for arg in node.args:
+                if isinstance(arg, bool):
+                    return arg
+
+            # Assume false by default
             return False
 
-        if len(node.args) > 2:
-            keepdim = node.args[2]
-            if isinstance(keepdim, bool) and not keepdim:
-                return False
+        keepdim = try_find_keepdim_arg(node)
+        if isinstance(keepdim, bool) and not keepdim:
+            return False
 
         return True
 
@@ -486,10 +489,7 @@ def register_rotary_emb_op():
 
 @update_features(
     [
-        exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.permute.default,
-        exir_ops.edge.aten.permute_copy.default,
-        exir_ops.edge.aten.view_copy.default,
     ]
 )
 def register_view_ops():
@@ -497,6 +497,27 @@ def register_view_ops():
         inputs_storage=utils.ANY_TEXTURE,
         supports_resize=True,
     )
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.squeeze_copy.dims,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.permute_copy.default,
+    ]
+)
+def register_view_ops_with_buffer_meta():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.expand_copy.default)
+def register_expand():
+    return OpFeatures(inputs_storage=utils.ANY_BUFFER, supports_resize=False)
 
 
 # Fully featured transfer operators (i.e. operators that copy data from the input
@@ -559,9 +580,6 @@ def register_ported_op():
 # Ops ported from PyTorch Vulkan backend. These ops are in a separate registry because they support all packed dimensions
 @update_features(
     [
-        # Shape Manipulation
-        exir_ops.edge.aten.squeeze_copy.dims,
-        exir_ops.edge.aten.unsqueeze_copy.default,
         # Tensor combination
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
