@@ -12,6 +12,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -46,6 +47,8 @@ class ArangeAdd(torch.nn.Module):
             lambda: (torch.randint(0, 10, [10], dtype=torch.int32),),
             (0.0, 10.0, 1.0, torch.int32),
         ),
+    }
+    test_reject: dict[str, test_data_t] = {
         "int32_int64": (
             lambda: (torch.randint(0, 10, [10], dtype=torch.int32),),
             (0.0, 10.0, 1.0, torch.int64),
@@ -73,6 +76,15 @@ def test_arange_start_step_tosa_FP_dtypes(test_data: test_data_t):
         input_data(),
         ArangeAdd.aten_op,
         ArangeAdd.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ArangeAdd.test_reject)
+def test_arange_start_step_tosa_FP_not_delegated(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = OpNotSupportedPipeline[input_t](
+        ArangeAdd(*init_data), input_data(), non_delegated_ops={ArangeAdd.exir_op: 1}
     )
     pipeline.run()
 

@@ -2,7 +2,7 @@
 
 **Author:** [Anthony Shoumikhin](https://github.com/shoumikhin)
 
-In the [Running an ExecuTorch Model in C++ Tutorial](running-a-model-cpp-tutorial.md), we explored the lower-level ExecuTorch APIs for running an exported model. While these APIs offer zero overhead, great flexibility, and control, they can be verbose and complex for regular use. To simplify this and resemble PyTorch's eager mode in Python, we introduce the `Module` facade APIs over the regular ExecuTorch runtime APIs. The `Module` APIs provide the same flexibility but default to commonly used components like `DataLoader` and `MemoryAllocator`, hiding most intricate details.
+In the [Detailed C++ Runtime APIs Tutorial](running-a-model-cpp-tutorial.md), we explored the lower-level ExecuTorch APIs for running an exported model. While these APIs offer zero overhead, great flexibility, and control, they can be verbose and complex for regular use. To simplify this and resemble PyTorch's eager mode in Python, we introduce the `Module` facade APIs over the regular ExecuTorch runtime APIs. The `Module` APIs provide the same flexibility but default to commonly used components like `DataLoader` and `MemoryAllocator`, hiding most intricate details.
 
 ## Example
 

@@ -37,7 +37,7 @@ def get_rvlcdip_dataset(data_size):
     )
 
     # prepare input data
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     for index, data in enumerate(dataset):
         if index >= data_size:
             break
@@ -47,9 +47,8 @@ def get_rvlcdip_dataset(data_size):
         )
         inputs.append((feature["pixel_values"],))
         targets.append(torch.tensor(target))
-        input_list += f"input_{index}_0.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def main(args):
@@ -70,7 +69,7 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_rvlcdip_dataset(data_num)
+        inputs, targets = get_rvlcdip_dataset(data_num)
 
     module = (
         AutoModelForImageClassification.from_pretrained(
@@ -112,7 +111,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data

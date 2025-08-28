@@ -155,6 +155,7 @@ However, please note:
 
 For more details about the ExecuTorch runtime, please see:
 
+* [Using ExecuTorch with C++](using-executorch-cpp.md)
 * [Detailed Runtime APIs Tutorial](running-a-model-cpp-tutorial.md)
 * [Simplified Runtime APIs Tutorial](extension-module.md)
 * [Building from Source](using-executorch-building-from-source.md)

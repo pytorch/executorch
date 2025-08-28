@@ -121,14 +121,6 @@ def test_sigmoid_tosa_INT_add_sigmoid(test_data):
     pipeline.run()
 
 
-xfails = {
-    "ones": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-    "rand": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-    "rand_4d": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-    "ramp": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-}
-
-
 @common.parametrize(
     "test_data",
     test_data_suite,
