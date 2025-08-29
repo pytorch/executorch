@@ -54,9 +54,9 @@ jobs:
         .ci/scripts/unittest-macos.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
 
   windows:
+    if: ${{ inputs.build-tool == 'cmake' }}
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     with:
-      if: ${{ inputs.build-tool == 'cmake' }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
