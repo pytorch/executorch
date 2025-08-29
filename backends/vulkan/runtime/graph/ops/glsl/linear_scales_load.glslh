@@ -1,0 +1,30 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_SCALES_LOAD_GLSLH
+#define LINEAR_SCALES_LOAD_GLSLH
+
+#include "linear_common.glslh"
+
+VEC4_T load_scale_x4(const uint n4) {
+  return t_weight_scales[n4];
+}
+
+void load_scales_tile(out FPPerOutChannelParams scales, const uint n4_start) {
+#if TILE_N4 == 1
+  scales.data[0] = load_scale_x4(n4_start);
+
+#else
+  [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+    scales.data[n4] = load_scale_x4[n4_start + n4];
+  }
+
+#endif
+}
+
+#endif // LINEAR_SCALES_LOAD_GLSLH
