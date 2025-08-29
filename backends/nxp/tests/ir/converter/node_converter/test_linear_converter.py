@@ -26,15 +26,15 @@ def test_linear_conversion__with_bias():
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
-    convert_run_compare(edge_program, input_data=input_data, atol=1.0e-6)
+    convert_run_compare(edge_program, input_data=input_data)
 
 
 def test_linear_conversion__without_bias():
     input_shape = (10, 32)
     edge_program = to_edge_program(
-        LinearModule(bias=True), input_shape
+        LinearModule(bias=False), input_shape
     ).exported_program()
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
-    convert_run_compare(edge_program, input_data=input_data, atol=1.0e-6)
+    convert_run_compare(edge_program, input_data=input_data)
