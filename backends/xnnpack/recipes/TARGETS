@@ -30,6 +30,6 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
-        "//executorch/export:lib",
+        "//executorch/export:recipe",
     ],
 )
