@@ -7,12 +7,31 @@
  */
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 
+#include <cstdlib>
+#include <cstring>
 #include "QnnInterface.h"
 namespace executorch {
 namespace backends {
 namespace qnn {
 
 using executorch::runtime::Error;
+
+namespace {
+// Helper function to check if the error message contains libc++ related issues
+// and provide helpful guidance for conda users
+void CheckLibcppError(const char* error_msg) {
+  if (error_msg == nullptr) {
+    return;
+  }
+
+  // Check if error contains "libc++"
+  if (strstr(error_msg, "libc++") != nullptr) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Detected libc++ library loading issue. "
+        "If you are using conda, try: conda install anaconda::libcxx");
+  }
+}
+} // anonymous namespace
 
 Error QnnImplementation::InitBackend(
     void* const lib_handle,
@@ -54,10 +73,12 @@ Error QnnImplementation::StartBackend(
   void* lib_handle = nullptr;
   lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
   if (lib_handle == nullptr) {
+    const char* error_msg = dlerror();
     QNN_EXECUTORCH_LOG_ERROR(
         "Cannot Open QNN library %s, with error: %s",
         lib_path.c_str(),
-        dlerror());
+        error_msg);
+    CheckLibcppError(error_msg);
     return Error::Internal;
   }
 
