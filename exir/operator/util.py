@@ -48,7 +48,7 @@ _QUANT_PRIMITIVES = [
     torch.ops.quantized_decomposed.dequantize_per_channel.default,
     torch.ops.quantized_decomposed.dequantize_per_tensor.default,
     torch.ops.quantized_decomposed.dequantize_per_tensor.tensor,
-    torch.ops.quantized_decomposed.convert_element_type.no_fuse,
+    #torch.ops.quantized_decomposed.convert_element_type.no_fuse,
     torch.ops.quantized_decomposed.quantize_per_tensor.default,
     torch.ops.quantized_decomposed.quantize_per_tensor.tensor,
     torch.ops.quantized_decomposed.quantize_per_channel.default,
