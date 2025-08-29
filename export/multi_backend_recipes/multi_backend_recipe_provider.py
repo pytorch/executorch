@@ -11,12 +11,12 @@ This module provides the recipe provider that combines multiple backends
 for optimized deployment on specific targets.
 """
 
+import logging
 from typing import Any, Optional, Sequence
 
 from executorch.export import BackendRecipeProvider, ExportRecipe, RecipeType
 
 from .target_recipe_types import IOSTargetRecipeType, TargetRecipeType
-import logging
 
 
 class MultiBackendRecipeProvider(BackendRecipeProvider):

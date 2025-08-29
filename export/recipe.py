@@ -217,9 +217,9 @@ class ExportRecipe:
         return cls._combine_recipes(recipes, recipe_name)
 
     @classmethod
-    def _combine_recipes(
+    def _combine_recipes(  # noqa: C901
         cls, backend_recipes: List["ExportRecipe"], recipe_name: Optional[str] = None
-    ) -> "ExportRecipe": # noqa: C901
+    ) -> "ExportRecipe":
         """
         Util to combine multiple backend recipes into a single multi-backend recipe.
 

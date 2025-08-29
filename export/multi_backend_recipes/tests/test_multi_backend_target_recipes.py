@@ -16,6 +16,7 @@ from executorch.export.multi_backend_recipes.target_recipe_types import (
 )
 from executorch.runtime import Runtime
 
+
 class TestMultiBackendTargetRecipes(unittest.TestCase):
     """Test multi-backend target recipes that combine CoreML and XNNPACK."""
 
@@ -86,11 +87,15 @@ class TestMultiBackendTargetRecipes(unittest.TestCase):
             executorch_program.execution_plan[0].delegates[2].id,
             "XnnpackBackend",
         )
-        
+
         et_runtime: Runtime = Runtime.get()
         backend_registry = et_runtime.backend_registry
-        logging.info(f"backends registered: {et_runtime.backend_registry.registered_backend_names}")
-        if backend_registry.is_available("CoreMLBackend") and backend_registry.is_available("XnnpackBackend"):
+        logging.info(
+            f"backends registered: {et_runtime.backend_registry.registered_backend_names}"
+        )
+        if backend_registry.is_available(
+            "CoreMLBackend"
+        ) and backend_registry.is_available("XnnpackBackend"):
             logging.info("Running with CoreML and XNNPACK backends")
             et_output = session.run_method("forward", *example_inputs[0])
             logging.info(f"et output {et_output}")

@@ -76,7 +76,6 @@ class IOSTargetRecipeType(TargetRecipeType):
     # No xnnpack fallback for quantization as coreml uses torch.ao quantizer vs xnnpack uses torchao quantizer
     IOS_ARM64_COREML_INT8_STATIC = "ios-arm64-coreml-int8-static"
 
-
     @classmethod
     def get_target_platform(cls) -> str:
         return "ios"
