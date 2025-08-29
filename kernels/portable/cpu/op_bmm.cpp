@@ -46,7 +46,7 @@ Tensor& bmm_out(
       internal::bmm_out_impl<CTYPE>(in, mat2, out);
     });
   } else {
-    ET_SWITCH_REALH_TYPES(in_type, ctx, op_name, CTYPE, [&]() {
+    ET_SWITCH_REALHBF16_TYPES(in_type, ctx, op_name, CTYPE, [&]() {
       internal::bmm_out_impl<CTYPE>(in, mat2, out);
     });
   }

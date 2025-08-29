@@ -121,7 +121,7 @@ class TransformerBlock(nn.Module):
                 f"Available: {list(ATTENTION_REGISTRY.keys())}"
             )
         cls = ATTENTION_REGISTRY[args.attention_type]
-        attention = cls(args, layer_id, rope)
+        attention = cls(args, layer_id, rope, **args.attention_kwargs)
         return TransformerBlock(args, attention)
 
     def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
@@ -255,7 +255,7 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
     layers = torch.nn.ModuleList()
     cls = ATTENTION_REGISTRY[model_args.attention_type]
     for layer_id in range(model_args.n_layers):
-        attention = cls(model_args, layer_id, rope)
+        attention = cls(model_args, layer_id, rope, **model_args.attention_kwargs)
         transformer_block = TransformerBlock(model_args, attention)
         layers.append(transformer_block)
 

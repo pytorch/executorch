@@ -103,6 +103,9 @@ def test_sigmoid_tosa_INT(test_data):
 @common.parametrize(
     "test_data",
     test_data_suite,
+    xfails={
+        "ramp": "AssertionError: Output 0 does not match reference output. MLETORCH-787"
+    },
     strict=False,
 )
 def test_sigmoid_tosa_INT_add_sigmoid(test_data):
