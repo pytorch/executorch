@@ -43,6 +43,9 @@ class ModelType(str, Enum):
     qwen3_4b = "qwen3_4b"
     phi_4_mini = "phi_4_mini"
     smollm2 = "smollm2"
+    lfm2_350m = "lfm2_350m"
+    lfm2_700m = "lfm2_700m"
+    lfm2_1_2b = "lfm2_1_2b"
 
 
 class PreqMode(str, Enum):
