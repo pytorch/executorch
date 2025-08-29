@@ -15,7 +15,6 @@
 namespace torch {
 namespace executor {
 namespace native {
-namespace impl {
 
 Tensor& add_out(
     KernelRuntimeContext& ctx,
@@ -152,77 +151,6 @@ Tensor& add_scalar_out(
   return out;
 }
 
-} // namespace impl
-
-Tensor& add_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& a,
-    const Tensor& b,
-    const Scalar& alpha,
-    Tensor& out) {
-  return impl::add_out(ctx, a, b, alpha, out);
-}
-
-Tensor& add_scalar_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& a,
-    const Scalar& b,
-    const Scalar& alpha,
-    Tensor& out) {
-  return impl::add_scalar_out(ctx, a, b, alpha, out);
-}
-
-namespace utils {
-
-Tensor& add_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& a,
-    const Tensor& b,
-    const Scalar& alpha,
-    Tensor& out) {
-  return impl::add_out(ctx, a, b, alpha, out);
-}
-
-Tensor& add_scalar_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& a,
-    const Scalar& b,
-    const Scalar& alpha,
-    Tensor& out) {
-  return impl::add_scalar_out(ctx, a, b, alpha, out);
-}
-
-std::tuple<
-    Error,
-    std::array<executorch::aten::SizesType, kTensorDimensionLimit>,
-    size_t>
-add_out_shape(const Tensor& a, const Tensor& b, ET_UNUSED const Scalar& alpha) {
-  std::array<executorch::aten::SizesType, kTensorDimensionLimit> out_sizes{};
-  size_t out_dim = 0;
-
-  Error err = get_broadcast_target_size(
-      a, b, out_sizes.data(), kTensorDimensionLimit, &out_dim);
-
-  return std::make_tuple(err, out_sizes, out_dim);
-}
-
-std::tuple<
-    Error,
-    std::array<executorch::aten::SizesType, kTensorDimensionLimit>,
-    size_t>
-add_scalar_out_shape(
-    const Tensor& a,
-    ET_UNUSED const Scalar& b,
-    ET_UNUSED const Scalar& alpha) {
-  std::array<executorch::aten::SizesType, kTensorDimensionLimit> out_sizes{};
-  size_t out_dim = a.dim();
-
-  std::copy(a.sizes().begin(), a.sizes().end(), out_sizes.begin());
-
-  return std::make_tuple(Error::Ok, out_sizes, out_dim);
-}
-
-} // namespace utils
 } // namespace native
 } // namespace executor
 } // namespace torch
