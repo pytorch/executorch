@@ -29,6 +29,9 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/core:core",
             "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     )
 

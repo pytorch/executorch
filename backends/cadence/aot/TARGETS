@@ -604,3 +604,17 @@ python_unittest(
         "//later:lib",
     ],
 )
+
+python_unittest(
+    name = "test_ref_implementations",
+    srcs = [
+        "tests/test_ref_implementations.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        ":typing_stubs",
+        "//executorch/backends/cadence/aot:ref_implementations",
+        "//caffe2:torch",
+    ]
+)
