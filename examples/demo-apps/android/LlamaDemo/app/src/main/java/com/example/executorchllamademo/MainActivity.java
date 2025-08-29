@@ -123,7 +123,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
         });
   }
 
-  private void setLocalModel(String modelPath, String tokenizerPath, float temperature) {
+  private void setLocalModel(String modelPath, String tokenizerPath, String dataPath, float temperature) {
     Message modelLoadingMessage = new Message("Loading model...", false, MessageType.SYSTEM, 0);
     ETLogging.getInstance().log("Loading model " + modelPath + " with tokenizer " + tokenizerPath);
     runOnUiThread(
@@ -139,13 +139,25 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
       ETLogging.getInstance().log("Completed deallocating existing module instance");
     }
     long runStartTime = System.currentTimeMillis();
-    mModule =
-        new LlmModule(
-            ModelUtils.getModelCategory(
-                mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
-            modelPath,
-            tokenizerPath,
-            temperature);
+    // Create LlmModule with or without dataPath
+    if (dataPath != null && !dataPath.isEmpty()) {
+      mModule =
+          new LlmModule(
+              ModelUtils.getModelCategory(
+                  mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
+              modelPath,
+              tokenizerPath,
+              temperature,
+              dataPath);
+    } else {
+      mModule =
+          new LlmModule(
+              ModelUtils.getModelCategory(
+                  mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
+              modelPath,
+              tokenizerPath,
+              temperature);
+    }
     int loadResult = mModule.load();
     long loadDuration = System.currentTimeMillis() - runStartTime;
     String modelLoadError = "";
@@ -213,12 +225,12 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
   }
 
   private void loadLocalModelAndParameters(
-      String modelFilePath, String tokenizerFilePath, float temperature) {
+      String modelFilePath, String tokenizerFilePath, String dataPath, float temperature) {
     Runnable runnable =
         new Runnable() {
           @Override
           public void run() {
-            setLocalModel(modelFilePath, tokenizerFilePath, temperature);
+            setLocalModel(modelFilePath, tokenizerFilePath, dataPath, temperature);
           }
         };
     new Thread(runnable).start();
@@ -381,15 +393,18 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
     // TODO need to add 'load model' in settings and queue loading based on that
     String modelPath = updatedSettingsFields.getModelFilePath();
     String tokenizerPath = updatedSettingsFields.getTokenizerFilePath();
+    String dataPath = updatedSettingsFields.getDataPath();
     double temperature = updatedSettingsFields.getTemperature();
     if (!modelPath.isEmpty() && !tokenizerPath.isEmpty()) {
       if (updatedSettingsFields.getIsLoadModel()
           || !modelPath.equals(mCurrentSettingsFields.getModelFilePath())
           || !tokenizerPath.equals(mCurrentSettingsFields.getTokenizerFilePath())
+          || !dataPath.equals(mCurrentSettingsFields.getDataPath())
           || temperature != mCurrentSettingsFields.getTemperature()) {
         loadLocalModelAndParameters(
             updatedSettingsFields.getModelFilePath(),
             updatedSettingsFields.getTokenizerFilePath(),
+            updatedSettingsFields.getDataPath(),
             (float) updatedSettingsFields.getTemperature());
         updatedSettingsFields.saveLoadModelAction(false);
         mDemoSharedPreferences.addSettings(updatedSettingsFields);
@@ -579,6 +594,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
         view -> {
           Log.d("addMore", "clicked");
           mMediaPreviewConstraintLayout.setVisibility(View.GONE);
+          // Direct user to select type of input
           mGalleryButton.callOnClick();
         });
   }

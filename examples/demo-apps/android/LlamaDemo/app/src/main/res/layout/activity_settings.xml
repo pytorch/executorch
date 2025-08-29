@@ -144,6 +144,44 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/dataPathLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/dataPathLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:text="Data Path"
+                android:textColor="#FDFDFD"
+                android:textSize="16sp"
+                android:translationX="5dp" />
+
+            <TextView
+                android:id="@+id/dataPathTextView"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical|end"
+                android:text="no data path selected"
+                android:textColor="#FFFFFF" />
+
+            <ImageButton
+                android:id="@+id/dataPathImageButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:background="#00FFFFFF"
+                android:scaleX="0.7"
+                android:scaleY="0.7"
+                android:src="@drawable/expand_circle_down" />
+
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/modelTypeLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

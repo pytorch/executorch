@@ -63,8 +63,13 @@ public class SettingsFields {
     return isLoadModel;
   }
 
+  public String getDataPath() {
+    return dataPath;
+  }
+
   private String modelFilePath;
   private String tokenizerFilePath;
+  private String dataPath;
   private double temperature;
   private String systemPrompt;
   private String userPrompt;
@@ -79,6 +84,7 @@ public class SettingsFields {
 
     modelFilePath = "";
     tokenizerFilePath = "";
+    dataPath = "";
     temperature = SettingsActivity.TEMPERATURE_MIN_VALUE;
     systemPrompt = "";
     userPrompt = PromptFormat.getUserPromptTemplate(DEFAULT_MODEL, false);
@@ -91,6 +97,7 @@ public class SettingsFields {
   public SettingsFields(SettingsFields settingsFields) {
     this.modelFilePath = settingsFields.modelFilePath;
     this.tokenizerFilePath = settingsFields.tokenizerFilePath;
+    this.dataPath = settingsFields.dataPath;
     this.temperature = settingsFields.temperature;
     this.systemPrompt = settingsFields.getSystemPrompt();
     this.userPrompt = settingsFields.getUserPrompt();
@@ -133,10 +140,15 @@ public class SettingsFields {
     this.isLoadModel = shouldLoadModel;
   }
 
+  public void saveDataPath(String dataPath) {
+    this.dataPath = dataPath;
+  }
+
   public boolean equals(SettingsFields anotherSettingsFields) {
     if (this == anotherSettingsFields) return true;
     return modelFilePath.equals(anotherSettingsFields.modelFilePath)
         && tokenizerFilePath.equals(anotherSettingsFields.tokenizerFilePath)
+        && java.util.Objects.equals(dataPath, anotherSettingsFields.dataPath)
         && temperature == anotherSettingsFields.temperature
         && systemPrompt.equals(anotherSettingsFields.systemPrompt)
         && userPrompt.equals(anotherSettingsFields.userPrompt)

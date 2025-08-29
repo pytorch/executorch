@@ -34,9 +34,11 @@ public class SettingsActivity extends AppCompatActivity {
 
   private String mModelFilePath = "";
   private String mTokenizerFilePath = "";
+  private String mDataPath = "";
   private TextView mBackendTextView;
   private TextView mModelTextView;
   private TextView mTokenizerTextView;
+  private TextView mDataPathTextView;
   private TextView mModelTypeTextView;
   private EditText mSystemPromptEditText;
   private EditText mUserPromptEditText;
@@ -75,10 +77,12 @@ public class SettingsActivity extends AppCompatActivity {
     mBackendTextView = requireViewById(R.id.backendTextView);
     mModelTextView = requireViewById(R.id.modelTextView);
     mTokenizerTextView = requireViewById(R.id.tokenizerTextView);
+    mDataPathTextView = requireViewById(R.id.dataPathTextView);
     mModelTypeTextView = requireViewById(R.id.modelTypeTextView);
     ImageButton backendImageButton = requireViewById(R.id.backendImageButton);
     ImageButton modelImageButton = requireViewById(R.id.modelImageButton);
     ImageButton tokenizerImageButton = requireViewById(R.id.tokenizerImageButton);
+    ImageButton dataPathImageButton = requireViewById(R.id.dataPathImageButton);
     ImageButton modelTypeImageButton = requireViewById(R.id.modelTypeImageButton);
     mSystemPromptEditText = requireViewById(R.id.systemPromptText);
     mUserPromptEditText = requireViewById(R.id.userPromptText);
@@ -97,6 +101,10 @@ public class SettingsActivity extends AppCompatActivity {
         view -> {
           setupTokenizerSelectorDialog();
         });
+    dataPathImageButton.setOnClickListener(
+        view -> {
+          setupDataPathSelectorDialog();
+        });
     modelTypeImageButton.setOnClickListener(
         view -> {
           setupModelTypeSelectorDialog();
@@ -108,6 +116,10 @@ public class SettingsActivity extends AppCompatActivity {
     mTokenizerFilePath = mSettingsFields.getTokenizerFilePath();
     if (!mTokenizerFilePath.isEmpty()) {
       mTokenizerTextView.setText(getFilenameFromPath(mTokenizerFilePath));
+    }
+    mDataPath = mSettingsFields.getDataPath();
+    if (mDataPath != null && !mDataPath.isEmpty()) {
+      mDataPathTextView.setText(getFilenameFromPath(mDataPath));
     }
     mModelType = mSettingsFields.getModelType();
     ETLogging.getInstance().log("mModelType from settings " + mModelType);
@@ -140,6 +152,7 @@ public class SettingsActivity extends AppCompatActivity {
                   android.R.string.yes,
                   new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int whichButton) {
+                      // Save current UI selections to settings before loading
                       mSettingsFields.saveLoadModelAction(true);
                       mLoadModelButton.setEnabled(false);
                       onBackPressed();
@@ -343,6 +356,24 @@ public class SettingsActivity extends AppCompatActivity {
     modelPathBuilder.create().show();
   }
 
+  private void setupDataPathSelectorDialog() {
+    String[] dataPathFiles = listLocalFile("/data/local/tmp/llama/", new String[] {".ptd"});
+    AlertDialog.Builder dataPathBuilder = new AlertDialog.Builder(this);
+    dataPathBuilder.setTitle("Select data path");
+
+    dataPathBuilder.setSingleChoiceItems(
+        dataPathFiles,
+        -1,
+        (dialog, item) -> {
+          mDataPath = dataPathFiles[item];
+          mDataPathTextView.setText(getFilenameFromPath(mDataPath));
+          mLoadModelButton.setEnabled(true);
+          dialog.dismiss();
+        });
+
+    dataPathBuilder.create().show();
+  }
+
   private static boolean fileHasExtension(String file, String[] suffix) {
     return Arrays.stream(suffix).anyMatch(entry -> file.endsWith(entry));
   }
@@ -448,6 +479,7 @@ public class SettingsActivity extends AppCompatActivity {
   private void saveSettings() {
     mSettingsFields.saveModelPath(mModelFilePath);
     mSettingsFields.saveTokenizerPath(mTokenizerFilePath);
+    mSettingsFields.saveDataPath(mDataPath);
     mSettingsFields.saveParameters(mSetTemperature);
     mSettingsFields.savePrompts(mSystemPrompt, mUserPrompt);
     mSettingsFields.saveModelType(mModelType);
