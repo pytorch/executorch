@@ -1428,34 +1428,34 @@ jobs:
   #       # Test llama2
   #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh -model stories110M -build_tool cmake -dtype "${DTYPE}" -mode "${MODE}"
 
-  # # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
-  # # test-llava-runner-macos:
-  # #   name: test-llava-runner-macos
-  # #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-  # #   strategy:
-  # #     fail-fast: false
-  # #   with:
-  # #     runner: macos-14-xlarge
-  # #     python-version: '3.11'
-  # #     submodules: 'recursive'
-  # #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-  # #     timeout: 900
-  # #     script: |
-  # #       BUILD_TOOL=cmake
+  # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
+  # test-llava-runner-macos:
+  #   name: test-llava-runner-macos
+  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: macos-14-xlarge
+  #     python-version: '3.11'
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 900
+  #     script: |
+  #       BUILD_TOOL=cmake
 
-  # #       bash .ci/scripts/setup-conda.sh
-  # #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
-  # #       GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+  #       bash .ci/scripts/setup-conda.sh
+  #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
+  #       GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
 
-  # #       # install Llava requirements
-  # #       ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
-  # #       ${CONDA_RUN} bash examples/models/llava/install_requirements.sh
+  #       # install Llava requirements
+  #       ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
+  #       ${CONDA_RUN} bash examples/models/llava/install_requirements.sh
 
-  # #       # run python unittest
-  # #       ${CONDA_RUN} python -m unittest examples.models.llava.test.test_llava
+  #       # run python unittest
+  #       ${CONDA_RUN} python -m unittest examples.models.llava.test.test_llava
 
-  # #       # run e2e (export, tokenizer and runner)
-  # #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh
+  #       # run e2e (export, tokenizer and runner)
+  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh
 
   # test-qnn-model:
   #   name: test-qnn-model
