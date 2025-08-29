@@ -64,6 +64,7 @@ dependencies=[
   "pytest",
   "pytest-xdist",
   "pytest-rerunfailures",
+  "pytest-timeout",
   "pyyaml",
   "ruamel.yaml",
   "sympy",

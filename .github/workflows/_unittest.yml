@@ -60,6 +60,7 @@ jobs:
     with:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
       script: |
         conda init powershell
         powershell .ci/scripts/unittest-windows.ps1 -editable "${{ inputs.editable }}"
