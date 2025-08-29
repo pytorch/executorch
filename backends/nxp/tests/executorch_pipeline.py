@@ -70,9 +70,10 @@ def to_quantized_edge_program(
         else tuple(torch.ones(input_shape) for input_shape in input_shapes)
     )
 
-    exir_program_aten = torch.export.export_for_training(
-        model, example_input, strict=True
-    )
+    # Make sure the model is in the evaluation mode.
+    model.eval()
+
+    exir_program_aten = torch.export.export(model, example_input, strict=True)
 
     exir_program_aten__module_quant = _quantize_model(
         exir_program_aten.module(), calibration_inputs
@@ -126,5 +127,9 @@ def to_edge_program(
         if type(input_shapes) is tuple
         else tuple(torch.ones(input_shape) for input_shape in input_shapes)
     )
+
+    # Make sure the model is in the evaluation mode.
+    model.eval()
+
     exir_program = torch.export.export(model, example_input)
     return exir.to_edge(exir_program)
