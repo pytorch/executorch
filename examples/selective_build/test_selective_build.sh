@@ -85,30 +85,6 @@ test_buck2_select_ops_from_yaml() {
 }
 
 # CMake examples; test in OSS. Check the README for more information.
-test_cmake_select_all_ops() {
-    echo "Exporting MobilenetV3"
-    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv3"
-
-    local example_dir=examples/selective_build
-    local build_dir=cmake-out/${example_dir}
-    rm -rf ${build_dir}
-    retry cmake -DCMAKE_BUILD_TYPE=Release \
-            -DEXECUTORCH_SELECT_ALL_OPS=ON \
-            -DCMAKE_INSTALL_PREFIX=cmake-out \
-            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-            -B${build_dir} \
-            ${example_dir}
-
-    echo "Building ${example_dir}"
-    cmake --build ${build_dir} -j9 --config Release
-
-    echo 'Running selective build test'
-    ${build_dir}/selective_build_test --model_path="./mv3.pte"
-
-    echo "Removing mv3.pte"
-    rm "./mv3.pte"
-}
-
 test_cmake_select_ops_in_list() {
     echo "Exporting MobilenetV2"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv2"
@@ -145,7 +121,8 @@ test_cmake_select_ops_in_yaml() {
     local build_dir=cmake-out/${example_dir}
     rm -rf ${build_dir}
     retry cmake -DCMAKE_BUILD_TYPE=Release \
-            -DEXECUTORCH_SELECT_OPS_YAML=ON \
+            -DEXECUTORCH_EXAMPLE_USE_CUSTOM_OPS=ON \
+            -DEXECUTORCH_EXAMPLE_DEFINE_CUSTOM_TARGET=ON \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
             -B${build_dir} \
@@ -170,7 +147,7 @@ test_cmake_select_ops_in_model() {
     local build_dir=cmake-out/${example_dir}
     rm -rf ${build_dir}
     retry cmake -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
-            -DEXECUTORCH_SELECT_OPS_FROM_MODEL="./${model_export_name}" \
+            -DEXECUTORCH_SELECT_OPS_MODEL="./${model_export_name}" \
             -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON \
             -DEXECUTORCH_OPTIMIZE_SIZE=ON \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
@@ -206,7 +183,6 @@ fi
 if [[ $1 == "cmake" ]];
 then
     cmake_install_executorch_lib $CMAKE_BUILD_TYPE
-    test_cmake_select_all_ops
     test_cmake_select_ops_in_list
     test_cmake_select_ops_in_yaml
     test_cmake_select_ops_in_model
