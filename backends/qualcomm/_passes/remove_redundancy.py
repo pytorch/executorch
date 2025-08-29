@@ -41,12 +41,7 @@ class RemoveRedundancy(ExportPass):
         )
 
     def _dim_order_op_condition(self, node):
-        dim_order = node.kwargs.get("dim_order")
-        # skip if there contains layout hint
-        # e.g. (0, 2, 3, 1) != (0, 1, 2, 3)
-        if node.meta["val"].dtype != node.args[0].meta["val"].dtype:
-            return False
-        return dim_order != list(range(len(dim_order)))
+        return node.meta["val"].dtype == node.args[0].meta["val"].dtype
 
     def _to_copy_op_condition(self, node):
         return "memory_format" in node.kwargs
