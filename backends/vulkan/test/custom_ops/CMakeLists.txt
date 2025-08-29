@@ -93,4 +93,5 @@ if(TARGET vulkan_backend)
 
   # Define operator prototypes
   add_operator_prototype(add)
+  add_operator_prototype(quantized_linear)
 endif()
