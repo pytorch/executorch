@@ -79,8 +79,8 @@ std::tuple<Tensor&, Tensor&> min_out(
 
   dim = dim < 0 ? dim + in.dim() : dim;
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "min.dim_min", CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(
+      in.scalar_type(), ctx, "min.dim_min", CTYPE, [&]() {
         CTYPE* min_data = min.mutable_data_ptr<CTYPE>();
         long* min_indices_data = min_indices.mutable_data_ptr<long>();
 

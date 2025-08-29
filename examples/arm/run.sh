@@ -51,7 +51,7 @@ function help() {
     echo "  --no_delegate                          Do not delegate the model (can't override builtin models)"
     echo "  --no_quantize                          Do not quantize the model (can't override builtin models)"
     echo "  --portable_kernels=<OPS>               TO BE DEPRECATED: Alias to select_ops_list."
-    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"    
+    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
     echo "                                           NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
     echo "                                           See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
@@ -104,7 +104,7 @@ ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
 setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
 if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
-elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
 else
     echo "Error: Invalid toolchain selection, provided: ${toolchain}"
@@ -202,13 +202,13 @@ backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --bu
 if [[ -z "$model_name" ]]; then
     # the test models run, and whether to delegate
     test_model=(
-        "softmax"  # 0
-        "add"      # 1
-        "add3"     # 2
-        "qadd"     # 3
-        "qadd2"    # 4
-        "qops"     # 5
-        "mv2"      # 6
+        "softmax"   # 0
+        "add"       # 1
+        "add3"      # 2
+        "qadd"      # 3
+        "qadd2"     # 4
+        "qops"      # 5
+        "mv2"       # 6
     )
     model_compiler_flags=(
         ""                      # 0 softmax
