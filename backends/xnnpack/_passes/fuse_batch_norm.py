@@ -109,6 +109,10 @@ class FuseBatchNormPass(XNNPACKPass):
             is_param_node(program, node) for node in {input_node_weights, bn_weights}
         ].count(False):
             return False
+    
+        # Check the rank of the convolutution input - only Conv1d and 2d are supported.
+        if len(input_node.args[0].meta["val"].shape) not in (3, 4):
+            return False
 
         return True
 
