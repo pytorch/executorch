@@ -153,6 +153,7 @@ public class SettingsActivity extends AppCompatActivity {
                   new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int whichButton) {
                       // Save current UI selections to settings before loading
+                      saveSettings();
                       mSettingsFields.saveLoadModelAction(true);
                       mLoadModelButton.setEnabled(false);
                       onBackPressed();
@@ -453,26 +454,42 @@ public class SettingsActivity extends AppCompatActivity {
   private void setXNNPACKSettingMode() {
     requireViewById(R.id.modelLayout).setVisibility(View.VISIBLE);
     requireViewById(R.id.tokenizerLayout).setVisibility(View.VISIBLE);
+    requireViewById(R.id.dataPathLayout).setVisibility(View.VISIBLE);
     requireViewById(R.id.parametersView).setVisibility(View.VISIBLE);
     requireViewById(R.id.temperatureLayout).setVisibility(View.VISIBLE);
-    mModelFilePath = "";
-    mTokenizerFilePath = "";
   }
 
   private void setMediaTekSettingMode() {
     requireViewById(R.id.modelLayout).setVisibility(View.GONE);
     requireViewById(R.id.tokenizerLayout).setVisibility(View.GONE);
+    requireViewById(R.id.dataPathLayout).setVisibility(View.GONE);
     requireViewById(R.id.parametersView).setVisibility(View.GONE);
     requireViewById(R.id.temperatureLayout).setVisibility(View.GONE);
-    mModelFilePath = "/in/mtk/llama/runner";
-    mTokenizerFilePath = "/in/mtk/llama/runner";
+    // For MediaTek, only set default paths if they're empty - preserve existing selections
+    if (mModelFilePath == null || mModelFilePath.isEmpty()) {
+      mModelFilePath = "/in/mtk/llama/runner";
+    }
+    if (mTokenizerFilePath == null || mTokenizerFilePath.isEmpty()) {
+      mTokenizerFilePath = "/in/mtk/llama/runner";
+    }
   }
+    
 
   private void loadSettings() {
     Gson gson = new Gson();
     String settingsFieldsJSON = mDemoSharedPreferences.getSettings();
     if (!settingsFieldsJSON.isEmpty()) {
       mSettingsFields = gson.fromJson(settingsFieldsJSON, SettingsFields.class);
+      
+      // Update local variables with loaded values for session persistence
+      mModelFilePath = mSettingsFields.getModelFilePath() != null ? mSettingsFields.getModelFilePath() : "";
+      mTokenizerFilePath = mSettingsFields.getTokenizerFilePath() != null ? mSettingsFields.getTokenizerFilePath() : "";
+      mDataPath = mSettingsFields.getDataPath(); // Can be null
+      mSetTemperature = mSettingsFields.getTemperature();
+      mSystemPrompt = mSettingsFields.getSystemPrompt() != null ? mSettingsFields.getSystemPrompt() : "";
+      mUserPrompt = mSettingsFields.getUserPrompt() != null ? mSettingsFields.getUserPrompt() : "";
+      mModelType = mSettingsFields.getModelType();
+      mBackendType = mSettingsFields.getBackendType();
     }
   }
 
