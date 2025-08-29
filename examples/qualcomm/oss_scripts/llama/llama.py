@@ -557,7 +557,7 @@ def compile(
     end_load_ts = time.time()
     logging.info(f"Time for loading checkpoint: {end_load_ts - start_ts}")
 
-    if decoder_model_config.r1 or decoder_model_config.r2 or decoder_model_config.r4:
+    if decoder_model_config.r1 or decoder_model_config.r2:
         config = types.SimpleNamespace(
             dim=prefill_config.dim,
             head_dim=prefill_config.dim // prefill_config.n_heads,
@@ -572,7 +572,7 @@ def compile(
                 model,
                 use_r1=decoder_model_config.r1,
                 use_r2=decoder_model_config.r2,
-                use_r4=decoder_model_config.r4,
+                use_r4=False,
                 pretrained_rotation_path=None,
                 qkv_split=True,
             )

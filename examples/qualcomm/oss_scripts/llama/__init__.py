@@ -60,7 +60,6 @@ class LLMModelConfig(ABC):
     r1: Enable SpinQuant R1 quantization optimization.
     r2: Enable SpinQuant R2 quantization optimization.
     r3: Enable SpinQuant R3 quantization optimization.
-    r4: Enable SpinQuant R4 quantization optimization.
     custom_annotation: Custom annotation to use when setting quant configs for the model.
     """
 
@@ -78,7 +77,6 @@ class LLMModelConfig(ABC):
     r1: bool
     r2: bool
     r3: bool
-    r4: bool
     custom_annotation: Tuple
 
     def get_kv_io_bit_width(self) -> int:
@@ -127,7 +125,6 @@ class LlamaStories260K(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = False
-    r4 = False
     quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
         act_dtype=torch.uint8,
         weight_dtype=torch.int4,
@@ -158,7 +155,6 @@ class LlamaStories110M(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = False
-    r4 = False
     quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
         act_dtype=torch.uint8,
         weight_dtype=torch.int4,
@@ -190,7 +186,6 @@ class Llama3_2(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = False
-    r4 = False
     quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
         act_dtype=torch.uint8,
         weight_dtype=torch.int4,
@@ -222,7 +217,6 @@ class Qwen2_5_0_5B(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = True
-    r4 = False
     custom_annotation = ()
 
 
@@ -245,7 +239,6 @@ class Qwen2_5_1_5B(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = True
-    r4 = False
     custom_annotation = ()
 
 
@@ -268,7 +261,6 @@ class Qwen3_0_6B(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = True
-    r4 = False
     custom_annotation = ()
 
 
@@ -291,7 +283,6 @@ class Qwen3_1_7B(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = True
-    r4 = False
     custom_annotation = (
         annotate_kv_8bit,
         annotate_output_16a8w,
@@ -317,7 +308,6 @@ class Phi4Mini(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = False
-    r4 = False
     quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
         act_dtype=torch.uint8,
         weight_dtype=torch.int4,
@@ -350,5 +340,4 @@ class Smollm2_135M(LLMModelConfig):
     r1 = False
     r2 = False
     r3 = False
-    r4 = False
     custom_annotation = ()
