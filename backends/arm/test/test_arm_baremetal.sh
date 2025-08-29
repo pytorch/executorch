@@ -155,30 +155,44 @@ test_run_ethosu_fvp() { # End to End model tests using run.sh
     echo "${TEST_SUITE_NAME}: Test ethos-u delegate examples with run.sh"
 
     # TOSA quantized
-    echo "${TEST_SUITE_NAME}: Test ethos-u target TOSA"
+    echo "${TEST_SUITE_NAME}: Test target TOSA"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA-1.0+INT --model_name=add
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA-1.0+INT --model_name=mul
 
     # Ethos-U55
-    echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U55"
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U55"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-64 --model_name=add
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-256 --model_name=add --bundleio --etdump
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --etdump
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-256 --model_name=add --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul --bundleio --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul --bundleio --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py --bundleio
 
     # Ethos-U85
-    echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add --bundleio
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add --bundleio --etdump
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add --etdump
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-256 --model_name=add --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-512 --model_name=add --bundleio --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-1024 --model_name=add --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-2048 --model_name=mul --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul --bundleio --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-256 --model_name=mul --bundleio --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-1024 --model_name=examples/arm/example_modules/add.py --bundleio
 
     # Cortex-M op tests
+    echo "${TEST_SUITE_NAME}: Test target Cortex-M55 (on a Ethos-U)"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --no_delegate --select_ops_list="aten::add.out"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qadd --bundleio
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio --no_delegate --portable_kernels="aten::sub.out,aten::add.out,aten::mul.out"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio --no_delegate --select_ops_list="aten::sub.out,aten::add.out,aten::mul.out"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=qops --bundleio
 
     echo "${TEST_SUITE_NAME}: PASS"
