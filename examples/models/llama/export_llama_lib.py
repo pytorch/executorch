@@ -72,8 +72,6 @@ from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
-from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
-
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
@@ -611,9 +609,7 @@ def export_llama(
         elif model_name == "phi_4_mini":
             from executorch.examples.models.phi_4_mini import convert_weights
         elif model_name == "smollm2":
-            from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.smollm2 import convert_weights
         else:
             raise ValueError(
                 f"Converting weights to meta format for {model_name} is not yet supported"
@@ -857,15 +853,15 @@ def _to_edge_and_lower_llama_xnnpack(
 
     # TODO: Enable generating ETRecord with XNNPack and to_edge_transform_and_lower().
     if generate_etrecord:
-        raise NotImplementedError(
-            "export_llama does not support XNNPack and generating ETRecord at the moment."
-        )
+        builder_exported.generate_etrecord = True
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
     )
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    # we need builder.export_program
 
     return builder.to_executorch(passes=additional_passes)
 
@@ -940,7 +936,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
             AnnotateStack,
             ConvertBmmToMatmul,
             FoldQDQ,
-            RecomposeRmsNorm,
             TagQuantIO,
         )
 
@@ -982,7 +977,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
         dep_table = get_passes_dependency_for_capture_program()
         passes_job[AnnotateStack][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[ConvertBmmToMatmul][QCOM_PASS_ACTIVATE_KEY] = True
-        passes_job[RecomposeRmsNorm][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
             "get_quant_io_dtype_fn"
@@ -1080,6 +1074,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
 
             from executorch.exir.passes.external_constants_pass import (
                 delegate_external_constants_pass_unlifted,
+                external_constants_pass,
             )
 
             assert (
@@ -1088,6 +1083,11 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             delegate_external_constants_pass_unlifted(
                 module=builder_exported.pre_autograd_graph_module,
                 gen_tag_fn=gen_tag_fn,
+            )
+
+            # Also add a pass for 'to_executorch' to tag weights that aren't delegated.
+            additional_passes.append(
+                partial(external_constants_pass, gen_tag_fn=gen_tag_fn)
             )
 
         builder = _to_edge_and_lower_llama_xnnpack(
@@ -1434,14 +1434,12 @@ def _get_source_transforms(  # noqa
                     transforms.append(get_model_with_r1_r2(optimized_rotation_path))
                 transforms.append(replace_attention_to_attention_sha)
                 transforms.append(replace_causal_mask)
-                transforms.append(replace_rms_norm_with_native_rms_norm)
                 # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
             else:
                 transforms.append(replace_kv_cache_with_simple_kv_cache)
                 transforms.append(replace_sdpa_with_flex_sdpa)
                 transforms.append(replace_causal_mask)
-                transforms.append(replace_rms_norm_with_native_rms_norm)
                 if optimized_rotation_path:
                     transforms.append(fuse_layer_norms)
                     transforms.append(get_model_with_r1_r2(optimized_rotation_path))

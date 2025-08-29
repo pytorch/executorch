@@ -112,7 +112,11 @@ uint64_t Runner::logits_to_token(
     const executorch::aten::Tensor& logits_tensor) {
   return sampler_->sample(logits_tensor.data_ptr<float>());
 }
-
+/**
+ * @param inputs: A vector containing one element: a vector of bytes that
+ * encodes a float tensor in little-endian byte order.
+ *
+ */
 Error Runner::transcribe(
     int32_t seq_len,
     std::vector<std::vector<char>>& inputs,

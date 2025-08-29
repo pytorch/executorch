@@ -910,20 +910,21 @@ struct promote_types {
   }
 #endif
 
-#define ET_INTERNAL_SWITCH(TYPE, CONTEXT, NAME, ...) \
-  [&] {                                              \
-    const auto& _st = TYPE;                          \
-    constexpr const char* et_switch_name = NAME;     \
-    (void)et_switch_name; /* Suppress unused var */  \
-    switch (_st) {                                   \
-      __VA_ARGS__                                    \
-      default:                                       \
-        ET_CHECK_MSG(                                \
-            false,                                   \
-            "Unhandled dtype %s for %s",             \
-            ::executorch::runtime::toString(_st),    \
-            et_switch_name);                         \
-    }                                                \
+#define ET_INTERNAL_SWITCH(TYPE, CONTEXT, NAME, ...)           \
+  [&] {                                                        \
+    const auto& _st = TYPE;                                    \
+    constexpr const char* et_switch_name = NAME;               \
+    (void)et_switch_name; /* Suppress unused var */            \
+    switch (_st) {                                             \
+      __VA_ARGS__                                              \
+      default:                                                 \
+        CONTEXT.fail(torch::executor::Error::InvalidArgument); \
+        ET_LOG(                                                \
+            Error,                                             \
+            "Unhandled dtype %s for %s",                       \
+            ::executorch::runtime::toString(_st),              \
+            et_switch_name);                                   \
+    }                                                          \
   }()
 
 #define ET_INTERNAL_SWITCH_CASE_INT_TYPES(CTYPE_ALIAS, ...)            \
@@ -1339,6 +1340,25 @@ struct promote_types {
                   ::executorch::aten::ScalarType::T3,                       \
                   CTYPE_ALIAS,                                              \
                   __VA_ARGS__))
+
+#define ET_SWITCH_FOUR_TYPES(                                               \
+    T1, T2, T3, T4, TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...)                  \
+  ET_INTERNAL_SWITCH(                                                       \
+      TYPE,                                                                 \
+      CONTEXT,                                                              \
+      NAME,                                                                 \
+      ET_INTERNAL_SWITCH_CASE(                                              \
+          ::executorch::aten::ScalarType::T1, CTYPE_ALIAS, __VA_ARGS__)     \
+          ET_INTERNAL_SWITCH_CASE(                                          \
+              ::executorch::aten::ScalarType::T2, CTYPE_ALIAS, __VA_ARGS__) \
+              ET_INTERNAL_SWITCH_CASE(                                      \
+                  ::executorch::aten::ScalarType::T3,                       \
+                  CTYPE_ALIAS,                                              \
+                  __VA_ARGS__)                                              \
+                  ET_INTERNAL_SWITCH_CASE(                                  \
+                      ::executorch::aten::ScalarType::T4,                   \
+                      CTYPE_ALIAS,                                          \
+                      __VA_ARGS__))
 
 } // namespace runtime
 } // namespace executorch

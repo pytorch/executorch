@@ -291,7 +291,8 @@ Error QnnManager::RegisterCustomMem(
           data_ptr,
           unaligned_custom_mem_base,
           total_custom_mem_size,
-          tensor_offset) == Error::Ok,
+          tensor_offset,
+          info) == Error::Ok,
       Internal,
       "Fail to register to shared memory.");
 

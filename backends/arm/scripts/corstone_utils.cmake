@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
+  message(STATUS "Fetching Ethos-U content into ${ETHOS_SDK_PATH}")
+
   file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
   include(FetchContent)
   set(ethos_u_base_tag "25.05")
@@ -55,7 +57,6 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
       "pwd && source backends/arm/scripts/utils.sh && patch_repo ${ETHOS_SDK_PATH}/core_platform ${core_platform_base_rev} ${patch_dir}"
     WORKING_DIRECTORY ${ET_DIR_PATH} COMMAND_ECHO STDOUT
   )
-
 endfunction()
 
 function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
