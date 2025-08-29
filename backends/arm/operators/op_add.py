@@ -47,10 +47,14 @@ class AddVisitor_INT(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
+        valid_dtypes = []
+        if self.tosa_spec.support_integer():
+            valid_dtypes.extend([ts.DType.INT8, ts.DType.INT16, ts.DType.INT32])
+
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT32],
+            valid_dtypes,
             output.tosa_spec,
         )
 
