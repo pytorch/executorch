@@ -42,10 +42,8 @@ if(TARGET vulkan_backend)
   set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
   set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
-  set(COMMON_INCLUDES
-      $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-      $<BUILD_INTERFACE:${VULKAN_HEADERS_PATH}/include>
-      $<BUILD_INTERFACE:${VOLK_PATH}> $<BUILD_INTERFACE:${VMA_PATH}>
+  set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH} ${VOLK_PATH}
+                      ${VMA_PATH}
   )
 
   # Prototyping utility files
