@@ -19,6 +19,7 @@ on:
         required: false
         type: string
         description: Install ExecuTorch in editable mode or not.
+        default: 'false'
       python-version:
         required: false
         type: string
