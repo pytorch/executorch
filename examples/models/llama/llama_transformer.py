@@ -17,24 +17,13 @@ from executorch.examples.models.llama.attention import (
     ATTENTION_REGISTRY,
     ForwardOptions,
 )
+from executorch.examples.models.lfm2.short_conv import ShortConvBlock
 
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
+from executorch.examples.models.llama.feed_forward import FeedForward
 from torch import nn
-
-
-class FeedForward(nn.Module):
-    def __init__(self, args: ModelArgs):
-        super().__init__()
-        assert args.hidden_dim is not None
-        hidden_dim: int = args.hidden_dim
-        self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
-        self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
-        self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
-
-    def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 
 class ConditionalFeedForward(nn.Module):
@@ -102,7 +91,7 @@ class TransformerBlock(nn.Module):
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
         else:
-            self.feed_forward = FeedForward(args)
+            self.feed_forward = FeedForward(dim=args.dim, hidden_dim=args.hidden_dim)
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
@@ -255,6 +244,13 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
     layers = torch.nn.ModuleList()
     cls = ATTENTION_REGISTRY[model_args.attention_type]
     for layer_id in range(model_args.n_layers):
+        # hybrid models define layer_types
+        if model_args.layer_types and model_args.layer_types[layer_id] == "conv":
+            layers.append(
+                ShortConvBlock(dim=model_args.dim, hidden_dim=model_args.hidden_dim, norm_eps=model_args.norm_eps)
+            )
+            continue
+
         attention = cls(model_args, layer_id, rope, **model_args.attention_kwargs)
         transformer_block = TransformerBlock(model_args, attention)
         layers.append(transformer_block)
