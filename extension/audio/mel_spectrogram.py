@@ -136,6 +136,8 @@ class WhisperAudioProcessor(nn.Module):
             mode="constant",
             value=self.padding_value,
         )
+        # torch._check(waveform.shape[0] % self.n_samples == 0)
+
         # Ideally we should do:
         # window = torch.hann_window(self.n_fft)
         # but this is not currently supported when lowering.
@@ -165,6 +167,7 @@ class WhisperAudioProcessor(nn.Module):
         log_spec = torch.maximum(log_spec, log_spec.max() - 8.0)
         log_spec = (log_spec + 4.0) / 4.0
 
+        # torch._check(log_spec.numel() % (self.feature_size * self.nb_max_frames) == 0)
         log_spec = log_spec.reshape(self.feature_size, -1, self.nb_max_frames)
         log_spec = log_spec.transpose(0, 1)
 
@@ -176,11 +179,11 @@ def export_processor():
     audio_tensor = torch.randn(480000)
     chunk_tensor = audio_tensor[:93680]
     with torch.no_grad():
-        dim = Dim("waveform", min=1600, max=audio_tensor.size(0) * 10)  # 10 chunks max
-        ep: ExportedProgram = export(
-            model, (chunk_tensor,), dynamic_shapes={"waveform": {0: dim}}, strict=True
+        # dim = Dim("waveform", min=1600, max=4800000)  # 10 chunks max
+        ep: ExportedProgram = torch.export.export(
+            model, (chunk_tensor,), dynamic_shapes={"waveform": {0: Dim.AUTO}}, strict=True
         )
-        logging.debug(ep)
+        # logging.debug(ep)
 
         # to edge
         edge: EdgeProgramManager = to_edge_transform_and_lower(
