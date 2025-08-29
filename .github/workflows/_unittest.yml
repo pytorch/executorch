@@ -62,4 +62,4 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         conda init powershell
-        powershell .ci/scripts/unittest-windows.ps1 -editable $("${{ inputs.editable }}" -eq "true")
+        powershell .ci/scripts/unittest-windows.ps1 -editable "${{ inputs.editable }}"
