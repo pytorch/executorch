@@ -79,8 +79,8 @@ class ConvolutionConverter(NodeConverter):
                         return False
                 elif conv_utils.group_conv_convertible_into_multiple_convolutions(
                     node, groups
-                ):  # Separable conv.
-                    # Requires addition of `Split` and `Concatenation` operators, which are not supported on Neutron.
+                ):  # Separable conv. This should never be reached, as the node should have been decomposed into
+                    #  multiple parallel convolutions by the `SplitGroupConvolution` pre-processing pass.
                     return False
                 else:  # Unexpected case (should never happen).
                     return False
@@ -324,17 +324,8 @@ class ConvolutionConverter(NodeConverter):
         elif conv_utils.group_conv_convertible_into_multiple_convolutions(
             t_op, conv_params.groups
         ):
-            # Note: by default the Group Separable Convolution is rejected by the Neutron Partitioner, see the
-            # ConvolutionConveter._is_supported_in_IR()
-            t_op.builtin_options = conv_2d_options.Conv2D()
-
-            return conv_utils.create_separated_convolutions_based_on_group(
-                t_op,
-                conv_params,
-                self.builder,
-                self._convert_unpadded_2D,
-                conv_utils.conv_op_factory,
-            )
+            # This case should have been rejected in the `is_supported_on_target()` method.
+            raise RuntimeError("Group convolution was not decomposed.")
 
         else:
             # Convert to regular `Conv2D`.
