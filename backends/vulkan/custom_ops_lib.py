@@ -408,7 +408,6 @@ def conv2d_q8ta_q8csw(
 
     # Reshape to original 4D format (OC, IC, H, W)
     qweights_4d = qweights_transposed.view(OC, IC, H, W)
-    print(qweights_4d.shape)
 
     # Dequantize weights
     weights = torch.ops.quantized_decomposed.dequantize_per_channel(
@@ -420,8 +419,6 @@ def conv2d_q8ta_q8csw(
         127,
         torch.int8,
     )
-    print(weights.shape)
-    print(x.shape)
 
     # Perform convolution
     out = torch.nn.functional.conv2d(

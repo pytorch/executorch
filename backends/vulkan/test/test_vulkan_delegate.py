@@ -104,14 +104,6 @@ def quantize_and_lower_module(
 
     program = export(program, sample_inputs, dynamic_shapes=dynamic_shapes)
 
-    print(program.graph_module.graph)
-    # test = to_edge(
-    #     program,
-    #     compile_config=EdgeCompileConfig(_check_ir_validity=False),
-    # )
-    # print(program.exported_program().graph_module)
-    # raise Exception("stop")
-
     edge_program = to_edge_transform_and_lower(
         program,
         compile_config=edge_compile_config,
