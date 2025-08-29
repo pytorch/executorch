@@ -10,6 +10,7 @@ runtime.python_library(
         "pattern_registry.py",
         "rope.py",
         "quantized_linear.py",
+        "quantized_convolution.py",
     ],
     visibility = [
         "//executorch/backends/...",
