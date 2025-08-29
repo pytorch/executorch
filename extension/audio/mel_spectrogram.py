@@ -180,8 +180,10 @@ def export_processor():
     chunk_tensor = audio_tensor[:93680]
     with torch.no_grad():
         # dim = Dim("waveform", min=1600, max=4800000)  # 10 chunks max
+        _waveform = Dim('_waveform', min=1, max=10)
+        waveform = 480000*_waveform - 386320
         ep: ExportedProgram = torch.export.export(
-            model, (chunk_tensor,), dynamic_shapes={"waveform": {0: Dim.AUTO}}, strict=True
+            model, (chunk_tensor,), dynamic_shapes={"waveform": {0: waveform}}, strict=True
         )
         # logging.debug(ep)
 
