@@ -740,12 +740,9 @@ struct PyModule final {
 
     auto* method = method_result.get();
     const auto num_outputs = method->outputs_size();
-    // Skip if we already have the right number of storages.
-    if (output_storages_.size() == num_outputs) {
-      return;
-    }
     // Create a buffer for each output tensor. Memory planned outputs and non
     // tensor outputs get an empty buffer in this list which is ignored later.
+    output_storages_.clear();
     output_storages_.reserve(num_outputs);
     auto meta = method->method_meta();
     for (size_t i = 0; i < num_outputs; ++i) {

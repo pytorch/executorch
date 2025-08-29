@@ -328,7 +328,7 @@ class TestBackends(unittest.TestCase):
     def test_backend_with_compiler_out_of_range(self, extract_delegate_segments: bool):
         with self.assertRaisesRegex(
             RuntimeError,
-            "Failed to execute method forward, error: 0x12",
+            "Failed to get method forward, error: 0x12",
         ):
             self.run_model_in_unsupported_backend(
                 extract_delegate_segments=extract_delegate_segments
