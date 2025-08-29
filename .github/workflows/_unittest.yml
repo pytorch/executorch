@@ -56,8 +56,9 @@ jobs:
   windows:
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     with:
+      if: ${{ inputs.build-tool == 'cmake' }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         conda init powershell
-        powershell .ci/scripts/unittest-windows.ps1
+        powershell .ci/scripts/unittest-windows.ps1 -editable "${{ inputs.editable }}"
