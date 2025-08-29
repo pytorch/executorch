@@ -24,9 +24,12 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+# Install test dependencies
+pip install -r .ci/docker/requirements-ci.txt
+
 # Run pytest with coverage
 # pytest -n auto --cov=./ --cov-report=xml
-pytest --continue-on-collection-errors -vv --full-trace
+pytest --continue-on-collection-errors -vv --full-trace -c pytest-windows.ini
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Pytest invocation was unsuccessful. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE
