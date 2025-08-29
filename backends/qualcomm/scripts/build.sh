@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Copyright (c) Qualcomm Innovation Center, Inc.
 # All rights reserved
 #

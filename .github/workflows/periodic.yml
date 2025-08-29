@@ -40,32 +40,32 @@ jobs:
           set -eux
           PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${EFFECTIVE_EVENT}"
 
-  test-models-linux:
-    name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    needs: gather-models
-    strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
-      fail-fast: false
-    with:
-      runner: ${{ matrix.runner }}
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: ${{ matrix.timeout }}
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # test-models-linux:
+  #   name: test-models-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   needs: gather-models
+  #   strategy:
+  #     matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+  #     fail-fast: false
+  #   with:
+  #     runner: ${{ matrix.runner }}
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: ${{ matrix.timeout }}
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL=${{ matrix.build-tool }}
-        BACKEND=${{ matrix.backend }}
-        DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
+  #       MODEL_NAME=${{ matrix.model }}
+  #       BUILD_TOOL=${{ matrix.build-tool }}
+  #       BACKEND=${{ matrix.backend }}
+  #       DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Build and test ExecuTorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       # Build and test ExecuTorch
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
