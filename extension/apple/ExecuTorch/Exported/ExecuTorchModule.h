@@ -134,7 +134,7 @@ __attribute__((deprecated("This API is experimental.")))
  * @return An initialized ExecuTorchModule instance.
  */
 - (instancetype)initWithFilePath:(NSString *)filePath
-                    dataFilePath:(NSString *)dataPath
+                    dataFilePath:(NSString *)dataFilePath
                         loadMode:(ExecuTorchModuleLoadMode)loadMode
     NS_DESIGNATED_INITIALIZER;
 
@@ -147,7 +147,7 @@ __attribute__((deprecated("This API is experimental.")))
  * @return An initialized ExecuTorchModule instance.
  */
 - (instancetype)initWithFilePath:(NSString *)filePath
-                    dataFilePath:(NSString *)dataPath;
+                    dataFilePath:(NSString *)dataFilePath;
 
 /**
  * Initializes a module with a file path and a specified load mode.
