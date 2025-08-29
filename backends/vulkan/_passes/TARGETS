@@ -119,6 +119,19 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "fold_qdq",
+    srcs = ["fold_qdq.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:utils_lib",
+        "//executorch/exir:pass_base",
+    ],
+)
+
+runtime.python_library(
     name = "fuse_patterns",
     srcs = ["fuse_patterns.py"],
     visibility = [
@@ -144,6 +157,7 @@ runtime.python_library(
         "//executorch/examples/...",
     ],
     deps = [
+        ":fold_qdq",
         ":fuse_patterns",
         ":fuse_quantized_ops",
         ":insert_prepack_nodes",

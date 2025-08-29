@@ -22,6 +22,8 @@ from executorch.backends.vulkan.op_registry import (
     vulkan_supported_ops,
 )
 
+from executorch.backends.vulkan.patterns import PatternMatch
+
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
     VkStorageType,
@@ -41,7 +43,6 @@ from torch.export.exported_program import ExportedProgram
 
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
-from torch.fx.passes.utils.matcher_utils import InternalMatch
 
 # pyre-ignore
 ops_not_to_decompose = [
@@ -60,7 +61,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         require_dynamic_shape: bool = False,
         operator_blocklist: Optional[Set[OpKey]] = None,
         operator_allowlist: Optional[Set[OpKey]] = None,
-        fusable_subgraphs: Optional[List[InternalMatch]] = None,
+        fusable_subgraphs: Optional[List[PatternMatch]] = None,
         nn_module_blocklist: Optional[Set[str]] = None,
         nn_module_allowlist: Optional[Set[str]] = None,
     ) -> None:
@@ -72,13 +73,13 @@ class VulkanSupportedOperators(OperatorSupportBase):
             operator_blocklist if operator_blocklist is not None else set()
         )
         self.operator_allowlist = operator_allowlist
-        self.fusable_subgraphs: List[InternalMatch] = (
+        self.fusable_subgraphs: List[PatternMatch] = (
             fusable_subgraphs if fusable_subgraphs is not None else []
         )
         # Create a set of all nodes that are part of fusable subgraphs for quick lookup
         self.fusable_nodes: Set[torch.fx.Node] = set()
         for match in self.fusable_subgraphs:
-            self.fusable_nodes.update(match.nodes_map.values())
+            self.fusable_nodes.update(match.all_nodes)
 
         self.nn_module_blocklist = nn_module_blocklist
         self.nn_module_allowlist = nn_module_allowlist

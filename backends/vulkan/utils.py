@@ -22,7 +22,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from executorch.exir.tensor import TensorSpec
 
-from torch._export.utils import is_buffer, is_param
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 
 from torch._subclasses.fake_tensor import FakeTensor
 
@@ -30,6 +30,8 @@ from torch.export import ExportedProgram
 
 from torch.export.exported_program import InputKind
 from torch.export.graph_signature import TensorArgument
+
+TorchOpType = Union[EdgeOpOverload, torch._ops.OpOverload, str]
 
 _DQ_OPS = {
     "dequantize_per_tensor.tensor",
@@ -273,6 +275,45 @@ def node_comes_from_any_nn_module_in_set(
                 return True
 
     return False
+
+
+def get_tensor_name(exp_prog: ExportedProgram, node: torch.fx.Node) -> str:
+    if node is None:
+        return ""
+    if is_param(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_parameters[node.name]
+    elif is_buffer(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_buffers[node.name]
+    elif is_lifted_tensor_constant(exp_prog, node):
+        return exp_prog.graph_signature.inputs_to_lifted_tensor_constants[node.name]
+    else:
+        assert isinstance(node.target, str)
+        return node.target
+
+    return ""
+
+
+def find_dequant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """
+    Search the direct users of the given node and return the first one that is a
+    dequantization op. Returns None if no dequantization op is found.
+    """
+    for user in node.users:
+        if is_dequant_node(user):
+            return user
+    return None
+
+
+def find_quant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """
+    Search the direct users of the given node and return the first one that is a
+    quantization op. Returns None if no quantization op is found.
+    """
+    for user in node.users:
+        if is_quant_node(user):
+            return user
+
+    return None
 
 
 ##
@@ -1066,6 +1107,69 @@ def get_node_repr(node) -> Union[TensorRepr, TensorReprList]:
         raise NotImplementedError("get_node_repr not implemented for list of nodes")
     else:
         return get_node_spec_attr(node, "etvk_node_repr", False)
+
+
+##
+## Graph Pattern Matching
+##
+
+
+def maybe_skip_q_dq_arg_chain(
+    arg: torch.fx.node.Argument,
+) -> Tuple[Optional[torch.fx.Node], Optional[torch.fx.Node], Optional[torch.fx.Node]]:
+    """
+    Check if the given node argument is part of a Quantize/Dequantize chain produced by
+    the quant workflow. If so, return the source tensor that is the input to the Q/DQ
+    chain and the quantize/dequantize nodes in the chain. Otherwise, return the argument
+    as is and None, None
+    """
+    if not isinstance(arg, torch.fx.Node):
+        return None, None, None
+
+    if is_dequant_node(arg):
+        dequant_node = arg
+        quant_node = dequant_node.args[0]
+        assert isinstance(quant_node, torch.fx.Node)
+        source_arg = quant_node.args[0]
+        assert isinstance(source_arg, torch.fx.Node)
+        return source_arg, quant_node, dequant_node
+    else:
+        return arg, None, None
+
+
+def trace_args_until_placeholder(
+    node: torch.fx.node.Argument, max_search_depth: int = 4
+) -> Tuple[Optional[torch.fx.Node], List[torch.fx.Node]]:
+    """
+    Trace through node.args[0] of a given initial node until a placeholder node is found
+    then return it and the list of nodes traversed. If no placeholder node is found,
+    returns None and an empty list.
+    """
+    cur_node = node
+    search_depth = 0
+
+    if not isinstance(cur_node, torch.fx.Node):
+        return None, []
+
+    traversed = [cur_node]
+    while cur_node.op != "placeholder" and search_depth < max_search_depth:
+        # Break if cur_node has no args
+        if len(cur_node.args) == 0:
+            break
+
+        cur_node = cur_node.args[0]
+        if not isinstance(cur_node, torch.fx.Node):
+            break
+        traversed.append(cur_node)
+        search_depth += 1
+
+    if not isinstance(cur_node, torch.fx.Node):
+        return None, []
+    if cur_node.op != "placeholder":
+        return None, []
+
+    assert isinstance(cur_node, torch.fx.Node)
+    return cur_node, traversed
 
 
 ##
