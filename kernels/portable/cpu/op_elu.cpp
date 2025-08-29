@@ -37,12 +37,9 @@ Tensor& elu_out(
   ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&]() {
     using MathT = std::
         conditional_t<c10::is_reduced_floating_point_v<CTYPE>, float, CTYPE>;
-    MathT math_alpha = 0;
-    MathT math_scale = 0;
-    MathT math_input_scale = 0;
-    ET_EXTRACT_SCALAR(alpha, math_alpha);
-    ET_EXTRACT_SCALAR(scale, math_scale);
-    ET_EXTRACT_SCALAR(input_scale, math_input_scale);
+    const auto math_alpha = utils::scalar_to<MathT>(alpha);
+    const auto math_scale = utils::scalar_to<MathT>(scale);
+    const auto math_input_scale = utils::scalar_to<MathT>(input_scale);
     const auto negcoef = math_alpha * math_scale;
     utils::apply_unitensor_elementwise_fn<
         CTYPE,
