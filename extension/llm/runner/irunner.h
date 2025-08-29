@@ -124,10 +124,12 @@ class ET_EXPERIMENTAL IRunner {
       const GenerationConfig& config,
       std::function<void(const std::string&)> token_callback,
       std::function<void(const Stats&)> stats_callback) = 0;
-
   /**
    * Generate text based on the provided prompt and generation config, from a
    * given position in KV cache.
+   *
+   * Deprecated method. Please use generate() instead. It manages the pos
+   * automatically.
    *
    * @param prompt The input prompt to generate from
    * @param start_pos The starting position in KV cache of the input
@@ -136,7 +138,7 @@ class ET_EXPERIMENTAL IRunner {
    * @param stats_callback Callback function for generation statistics
    * @return Error::Ok if successful, an error otherwise
    */
-  virtual runtime::Error generate_from_pos(
+  ET_DEPRECATED virtual runtime::Error generate_from_pos(
       const std::string& prompt,
       int64_t start_pos,
       const GenerationConfig& config,
@@ -146,6 +148,13 @@ class ET_EXPERIMENTAL IRunner {
    * Stop the generation process.
    */
   virtual void stop() = 0;
+  /**
+   * Remove prefilled tokens and reset start position
+   *
+   * This method removes the prefilled tokens from the KV cache and resets the
+   * start position to 0.
+   */
+  virtual void reset() = 0;
 };
 
 } // namespace llm

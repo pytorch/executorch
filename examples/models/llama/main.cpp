@@ -107,6 +107,7 @@ int32_t main(int32_t argc, char** argv) {
     }
   }
   // generate
+  runner->reset();
   executorch::extension::llm::GenerationConfig config{
       .seq_len = seq_len, .temperature = temperature};
   auto error = runner->generate(prompt, config);
