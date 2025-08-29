@@ -13,518 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-setup-linux-gcc:
-    name: test-setup-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        BUILD_TOOL="cmake"
-
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Build and test ExecuTorch with the add model on portable backend.
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "add" "${BUILD_TOOL}" "portable"
-
-  test-models-linux-basic:
-    name: test-models-linux-basic
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        model: [mv3, vit]
-        backend: [portable, xnnpack-quantization-delegation]
-        build-tool: [cmake, buck2]
-        runner: [linux.2xlarge, linux.arm64.2xlarge]
-        docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
-        # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
-        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
-        exclude:
-          - runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
-          # TODO: Need to figure out why buck2 doesnt work on Graviton instances.
-          - runner: linux.arm64.2xlarge
-            build-tool: buck2
-      fail-fast: false
-    with:
-      runner: ${{ matrix.runner }}
-      docker-image: ci-image:${{ matrix.docker-image }}
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL=${{ matrix.build-tool }}
-        BACKEND=${{ matrix.backend }}
-
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Build and test ExecuTorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
-
-  test-models-linux:
-    name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        model: [linear, add, add_mul, ic3, mv2, resnet18, resnet50, mobilebert, emformer_transcribe]
-        backend: [portable, xnnpack-quantization-delegation]
-        runner: [linux.2xlarge]
-        include:
-          - model: ic4
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: ic4
-            backend: xnnpack-quantization-delegation
-            runner: linux.4xlarge.memory
-          - model: emformer_join
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: emformer_join
-            backend: xnnpack-quantization-delegation
-            runner: linux.4xlarge.memory
-          - model: phi_4_mini
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: llama3_2_vision_encoder
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: w2l
-            backend: portable
-            runner: linux.4xlarge.memory
-      fail-fast: false
-    with:
-      runner: ${{ matrix.runner }}
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL=cmake
-        BACKEND=${{ matrix.backend }}
-
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Build and test ExecuTorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
-
-  test-llama-runner-linux:
-    # Test Both linux x86 and linux aarch64
-    name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        dtype: [fp32]
-        mode: [xnnpack+custom+qe,xnnpack+custom+quantize_kv,xnnpack+quantize_kv]
-        runner: [linux.2xlarge, linux.arm64.2xlarge]
-        docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
-        include:
-          - dtype: bf16
-            mode: custom
-            runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
-        # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
-        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
-        exclude:
-          - runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
-      fail-fast: false
-    with:
-      runner: ${{ matrix.runner }}
-      docker-image: ci-image:${{ matrix.docker-image }}
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 900
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        DTYPE=${{ matrix.dtype }}
-        BUILD_TOOL="cmake"
-        MODE=${{ matrix.mode }}
-        ARTIFACTS_DIR_NAME="artifacts-to-be-uploaded/${DTYPE}-${MODE}"
-        ARTIFACTS_DIR_NAME="${ARTIFACTS_DIR_NAME/+/-}"
-
-        # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Install requirements for export_llama
-        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
-        # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
-
-  test-llama-runner-linux-android:
-    name: test-llama-runner-linux-android
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
-        BUILD_TOOL="cmake"
-        PYTHON_EXECUTABLE=python \
-        bash .ci/scripts/build_llama_android.sh  "${BUILD_TOOL}"
-
-  test-custom-ops-linux:
-    name: test-custom-ops-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        BUILD_TOOL="cmake"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Test custom ops
-        PYTHON_EXECUTABLE=python bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
-
-  test-selective-build-linux:
-    name: test-selective-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        BUILD_TOOL="cmake"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Test selective build
-        PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
-
-  test-llava-runner-linux:
-    name: test-llava-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
-
-        # install Llava requirements
-        bash examples/models/llama/install_requirements.sh
-        bash examples/models/llava/install_requirements.sh
-
-        # run python unittest
-        python -m unittest examples.models.llava.test.test_llava
-
-        # run e2e (export, tokenizer and runner)
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llava.sh
-
-  test-moshi-linux:
-    name: test-moshi-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
-
-        # install Mimi requirements
-        bash examples/models/moshi/mimi/install_requirements.sh
-
-        # reinstall executorch
-        bash ./install_executorch.sh --minimal
-
-        # run python unittest
-        python -m unittest examples.models.moshi.mimi.test_mimi
-
-  test-quantized-aot-lib-linux:
-    name: test-quantized-aot-lib-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        BUILD_TOOL="cmake"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        PYTHON_EXECUTABLE=python bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" mv2
-
-  test-binary-size-linux-gcc:
-    name: test-binary-size-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        ./install_requirements.sh --use-pt-pinned-commit
-        # build module for executorch.extension.pybindings.portable_lib
-        bash test/build_size_test.sh
-        strip cmake-out/test/size_test
-        output=$(ls -la cmake-out/test/size_test)
-        arr=($output)
-        size=${arr[4]}
-        # threshold=48120 on devserver with gcc11.4
-        # todo(lfq): update once binary size is below 50kb.
-        threshold="63776"
-        if [[ "$size" -le "$threshold" ]]; then
-          echo "Success $size <= $threshold"
-        else
-          echo "Fail $size > $threshold"
-          exit 1
-        fi
-
-  test-binary-size-linux:
-    name: test-binary-size-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        ./install_requirements.sh --use-pt-pinned-commit
-
-        # build module for executorch.extension.pybindings.portable_lib
-        bash test/build_size_test.sh
-        strip cmake-out/test/size_test
-        output=$(ls -la cmake-out/test/size_test)
-        arr=($output)
-        size=${arr[4]}
-        threshold="51752"
-        if [[ "$size" -le "$threshold" ]]; then
-          echo "Success $size <= $threshold"
-        else
-          echo "Fail $size > $threshold"
-          exit 1
-        fi
-
-  android:
-    uses: ./.github/workflows/_android.yml
-    permissions:
-      id-token: write
-      contents: read
-
-  unittest:
-    uses: ./.github/workflows/_unittest.yml
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      build-mode: Debug
-      build-tool: cmake
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-
-  unittest-editable:
-    uses: ./.github/workflows/_unittest.yml
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      build-mode: Debug
-      build-tool: cmake
-      editable: true
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-
-  unittest-buck:
-    uses: ./.github/workflows/_unittest.yml
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      build-mode: Debug
-      build-tool: buck2
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-
-  unittest-arm-backend-with-no-fvp:
-    name: unittest-arm-backend-with-no-fvp
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        include:
-          - test_arm_baremetal: test_pytest_ops
-          - test_arm_baremetal: test_pytest_models
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
-
-        .ci/scripts/setup-arm-baremetal-tools.sh
-
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
-
-        # Test test_arm_baremetal.sh with test
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
-
-  test-llama-runner-qnn-linux:
-    name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        dtype: [fp32]
-        pt2e_quantize: [qnn_16a16w, qnn_8a8w]
-        mode: [qnn]
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 900
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        DTYPE=${{ matrix.dtype }}
-        BUILD_TOOL="cmake"
-        MODE=${{ matrix.mode }}
-        PT2E_QUANTIZE=${{ matrix.pt2e_quantize }}
-
-        ./install_requirements.sh --use-pt-pinned-commit
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
-
-        # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Install requirements for export_llama
-        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
-        # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
-
-  test-static-llama-qnn-linux:
-    name: test-static-llama-qnn-linux
+  test-qnn-wheel-packages-linux:
+    name: test-qnn-wheel-packages-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -542,95 +32,626 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL="cmake"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_wheel_package_qnn.sh
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+  # test-setup-linux-gcc:
+  #   name: test-setup-linux-gcc
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       BUILD_TOOL="cmake"
 
-        # Setup install_requirements for llama
-        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       # Build and test ExecuTorch with the add model on portable backend.
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "add" "${BUILD_TOOL}" "portable"
 
-        # Test static llama weight sharing and accuracy
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama.sh
+  # test-models-linux-basic:
+  #   name: test-models-linux-basic
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     matrix:
+  #       model: [mv3, vit]
+  #       backend: [portable, xnnpack-quantization-delegation]
+  #       build-tool: [cmake, buck2]
+  #       runner: [linux.2xlarge, linux.arm64.2xlarge]
+  #       docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
+  #       # Excluding specific runner + docker image combinations that don't make sense:
+  #       #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
+  #       #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
+  #       exclude:
+  #         - runner: linux.2xlarge
+  #           docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+  #         - runner: linux.arm64.2xlarge
+  #           docker-image: executorch-ubuntu-22.04-clang12
+  #         # TODO: Need to figure out why buck2 doesnt work on Graviton instances.
+  #         - runner: linux.arm64.2xlarge
+  #           build-tool: buck2
+  #     fail-fast: false
+  #   with:
+  #     runner: ${{ matrix.runner }}
+  #     docker-image: ci-image:${{ matrix.docker-image }}
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-  test-qnn-models-linux:
-    name: test-qnn-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 180
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  #       MODEL_NAME=${{ matrix.model }}
+  #       BUILD_TOOL=${{ matrix.build-tool }}
+  #       BACKEND=${{ matrix.backend }}
 
-        # placeholder for running test_qnn_delegate.py, can use matrix such that we can trigger different jobs, refers to test-llama-runner-qnn-linux
-        # reminder: make sure each job runs fast
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       # Build and test ExecuTorch
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
-  test-phi-3-mini-runner-linux:
-    name: test-phi-3-mini-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # test-models-linux:
+  #   name: test-models-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     matrix:
+  #       model: [linear, add, add_mul, ic3, mv2, resnet18, resnet50, mobilebert, emformer_transcribe]
+  #       backend: [portable, xnnpack-quantization-delegation]
+  #       runner: [linux.2xlarge]
+  #       include:
+  #         - model: ic4
+  #           backend: portable
+  #           runner: linux.4xlarge.memory
+  #         - model: ic4
+  #           backend: xnnpack-quantization-delegation
+  #           runner: linux.4xlarge.memory
+  #         - model: emformer_join
+  #           backend: portable
+  #           runner: linux.4xlarge.memory
+  #         - model: emformer_join
+  #           backend: xnnpack-quantization-delegation
+  #           runner: linux.4xlarge.memory
+  #         - model: phi_4_mini
+  #           backend: portable
+  #           runner: linux.4xlarge.memory
+  #         - model: llama3_2_vision_encoder
+  #           backend: portable
+  #           runner: linux.4xlarge.memory
+  #         - model: w2l
+  #           backend: portable
+  #           runner: linux.4xlarge.memory
+  #     fail-fast: false
+  #   with:
+  #     runner: ${{ matrix.runner }}
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+  #       MODEL_NAME=${{ matrix.model }}
+  #       BUILD_TOOL=cmake
+  #       BACKEND=${{ matrix.backend }}
 
-        # install phi-3-mini requirements
-        bash examples/models/phi-3-mini/install_requirements.sh
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       # Build and test ExecuTorch
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
-        # run e2e (export, tokenizer and runner)
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh Release
+  # test-llama-runner-linux:
+  #   # Test Both linux x86 and linux aarch64
+  #   name: test-llama-runner-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     matrix:
+  #       dtype: [fp32]
+  #       mode: [xnnpack+custom+qe,xnnpack+custom+quantize_kv,xnnpack+quantize_kv]
+  #       runner: [linux.2xlarge, linux.arm64.2xlarge]
+  #       docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
+  #       include:
+  #         - dtype: bf16
+  #           mode: custom
+  #           runner: linux.2xlarge
+  #           docker-image: executorch-ubuntu-22.04-clang12
+  #       # Excluding specific runner + docker image combinations that don't make sense:
+  #       #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
+  #       #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
+  #       exclude:
+  #         - runner: linux.2xlarge
+  #           docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+  #         - runner: linux.arm64.2xlarge
+  #           docker-image: executorch-ubuntu-22.04-clang12
+  #     fail-fast: false
+  #   with:
+  #     runner: ${{ matrix.runner }}
+  #     docker-image: ci-image:${{ matrix.docker-image }}
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 900
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-  test-eval_llama-wikitext-linux:
-    name: test-eval_llama-wikitext-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  #       DTYPE=${{ matrix.dtype }}
+  #       BUILD_TOOL="cmake"
+  #       MODE=${{ matrix.mode }}
+  #       ARTIFACTS_DIR_NAME="artifacts-to-be-uploaded/${DTYPE}-${MODE}"
+  #       ARTIFACTS_DIR_NAME="${ARTIFACTS_DIR_NAME/+/-}"
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+  #       # Setup executorch
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       # Install requirements for export_llama
+  #       PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+  #       # Test llama2
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
 
-        # install llama requirements
-        bash examples/models/llama/install_requirements.sh
+  # test-llama-runner-linux-android:
+  #   name: test-llama-runner-linux-android
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        # run eval_llama wikitext task
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_eval_llama_wikitext.sh
+  #       source .ci/scripts/utils.sh
+  #       install_executorch "--use-pt-pinned-commit"
+  #       BUILD_TOOL="cmake"
+  #       PYTHON_EXECUTABLE=python \
+  #       bash .ci/scripts/build_llama_android.sh  "${BUILD_TOOL}"
+
+  # test-custom-ops-linux:
+  #   name: test-custom-ops-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       BUILD_TOOL="cmake"
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       # Test custom ops
+  #       PYTHON_EXECUTABLE=python bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
+
+  # test-selective-build-linux:
+  #   name: test-selective-build-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       BUILD_TOOL="cmake"
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       # Test selective build
+  #       PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
+
+  # test-llava-runner-linux:
+  #   name: test-llava-runner-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.24xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+  #       # install Llava requirements
+  #       bash examples/models/llama/install_requirements.sh
+  #       bash examples/models/llava/install_requirements.sh
+
+  #       # run python unittest
+  #       python -m unittest examples.models.llava.test.test_llava
+
+  #       # run e2e (export, tokenizer and runner)
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_llava.sh
+
+  # test-moshi-linux:
+  #   name: test-moshi-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+  #       # install Mimi requirements
+  #       bash examples/models/moshi/mimi/install_requirements.sh
+
+  #       # reinstall executorch
+  #       bash ./install_executorch.sh --minimal
+
+  #       # run python unittest
+  #       python -m unittest examples.models.moshi.mimi.test_mimi
+
+  # test-quantized-aot-lib-linux:
+  #   name: test-quantized-aot-lib-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       BUILD_TOOL="cmake"
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       PYTHON_EXECUTABLE=python bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" mv2
+
+  # test-binary-size-linux-gcc:
+  #   name: test-binary-size-linux-gcc
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       ./install_requirements.sh --use-pt-pinned-commit
+  #       # build module for executorch.extension.pybindings.portable_lib
+  #       bash test/build_size_test.sh
+  #       strip cmake-out/test/size_test
+  #       output=$(ls -la cmake-out/test/size_test)
+  #       arr=($output)
+  #       size=${arr[4]}
+  #       # threshold=48120 on devserver with gcc11.4
+  #       # todo(lfq): update once binary size is below 50kb.
+  #       threshold="63776"
+  #       if [[ "$size" -le "$threshold" ]]; then
+  #         echo "Success $size <= $threshold"
+  #       else
+  #         echo "Fail $size > $threshold"
+  #         exit 1
+  #       fi
+
+  # test-binary-size-linux:
+  #   name: test-binary-size-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       ./install_requirements.sh --use-pt-pinned-commit
+
+  #       # build module for executorch.extension.pybindings.portable_lib
+  #       bash test/build_size_test.sh
+  #       strip cmake-out/test/size_test
+  #       output=$(ls -la cmake-out/test/size_test)
+  #       arr=($output)
+  #       size=${arr[4]}
+  #       threshold="51752"
+  #       if [[ "$size" -le "$threshold" ]]; then
+  #         echo "Success $size <= $threshold"
+  #       else
+  #         echo "Fail $size > $threshold"
+  #         exit 1
+  #       fi
+
+  # android:
+  #   uses: ./.github/workflows/_android.yml
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+
+  # unittest:
+  #   uses: ./.github/workflows/_unittest.yml
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   with:
+  #     build-mode: Debug
+  #     build-tool: cmake
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+
+  # unittest-editable:
+  #   uses: ./.github/workflows/_unittest.yml
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   with:
+  #     build-mode: Debug
+  #     build-tool: cmake
+  #     editable: true
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+
+  # unittest-buck:
+  #   uses: ./.github/workflows/_unittest.yml
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   with:
+  #     build-mode: Debug
+  #     build-tool: buck2
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+
+  # unittest-arm-backend-with-no-fvp:
+  #   name: unittest-arm-backend-with-no-fvp
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         - test_arm_baremetal: test_pytest_ops
+  #         - test_arm_baremetal: test_pytest_models
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       source .ci/scripts/utils.sh
+  #       install_executorch "--use-pt-pinned-commit"
+
+  #       .ci/scripts/setup-arm-baremetal-tools.sh
+
+  #       ARM_TEST=${{ matrix.test_arm_baremetal }}
+
+  #       # Test test_arm_baremetal.sh with test
+  #       backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+
+  # test-llama-runner-qnn-linux:
+  #   name: test-llama-runner-qnn-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     matrix:
+  #       dtype: [fp32]
+  #       pt2e_quantize: [qnn_16a16w, qnn_8a8w]
+  #       mode: [qnn]
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 900
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       DTYPE=${{ matrix.dtype }}
+  #       BUILD_TOOL="cmake"
+  #       MODE=${{ matrix.mode }}
+  #       PT2E_QUANTIZE=${{ matrix.pt2e_quantize }}
+
+  #       ./install_requirements.sh --use-pt-pinned-commit
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+
+  #       # Setup executorch
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       # Install requirements for export_llama
+  #       PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+  #       # Test llama2
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
+
+  # test-static-llama-qnn-linux:
+  #   name: test-static-llama-qnn-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 180
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       BUILD_TOOL="cmake"
+
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+
+  #       # Setup executorch
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+
+  #       # Setup install_requirements for llama
+  #       PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+
+  #       # Test static llama weight sharing and accuracy
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama.sh
+
+  # test-qnn-models-linux:
+  #   name: test-qnn-models-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 180
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       # placeholder for running test_qnn_delegate.py, can use matrix such that we can trigger different jobs, refers to test-llama-runner-qnn-linux
+  #       # reminder: make sure each job runs fast
+
+  # test-phi-3-mini-runner-linux:
+  #   name: test-phi-3-mini-runner-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.24xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+  #       # install phi-3-mini requirements
+  #       bash examples/models/phi-3-mini/install_requirements.sh
+
+  #       # run e2e (export, tokenizer and runner)
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_phi_3_mini.sh Release
+
+  # test-eval_llama-wikitext-linux:
+  #   name: test-eval_llama-wikitext-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.24xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+  #       # install llama requirements
+  #       bash examples/models/llama/install_requirements.sh
+
+  #       # run eval_llama wikitext task
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_eval_llama_wikitext.sh
 
   # TODO(larryliu0820): Fix this issue before reenabling it: https://gist.github.com/larryliu0820/7377ecd0d79dbc06076cec8d9f2b85d2
   # test-eval_llama-mmlu-linux:
@@ -660,348 +681,348 @@ jobs:
   #       # run eval_llama mmlu task
   #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_eval_llama_mmlu.sh
 
-  test-llama_runner_eager-linux:
-    name: test-llama_runner_eager-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # test-llama_runner_eager-linux:
+  #   name: test-llama_runner_eager-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.24xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
 
-        # install llama requirements
-        bash examples/models/llama/install_requirements.sh
+  #       # install llama requirements
+  #       bash examples/models/llama/install_requirements.sh
 
-        # run llama runner in eager mode
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_runner_eager.sh
+  #       # run llama runner in eager mode
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_runner_eager.sh
 
-  test-llama-lora-linux:
-    name: test-llama-lora-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # test-llama-lora-linux:
+  #   name: test-llama-lora-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.24xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
 
-        # Install llama requirements
-        bash examples/models/llama/install_requirements.sh
+  #       # Install llama requirements
+  #       bash examples/models/llama/install_requirements.sh
 
-        # install a recent version of torchtune.
-        PYTHON_EXECUTABLE=python python -m pip install torchtune==0.7.0.dev20250730  --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+  #       # install a recent version of torchtune.
+  #       PYTHON_EXECUTABLE=python python -m pip install torchtune==0.7.0.dev20250730  --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 
-        # run llama runner in eager mode
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_lora.sh
+  #       # run llama runner in eager mode
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_lora.sh
 
-  test-mediatek-models-linux:
-    name: test-mediatek-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-mediatek-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # test-mediatek-models-linux:
+  #   name: test-mediatek-models-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.24xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-mediatek-sdk
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
+  #       source .ci/scripts/utils.sh
+  #       install_executorch "--use-pt-pinned-commit"
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-mediatek-deps.sh
-        PYTHON_EXECUTABLE=python bash .ci/scripts/build-mediatek-sdk.sh
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "mv3" "buck2" "mediatek"
-        # placeholder for mediatek to add more tests
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-mediatek-deps.sh
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/build-mediatek-sdk.sh
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "mv3" "buck2" "mediatek"
+  #       # placeholder for mediatek to add more tests
 
-  test-openvino-linux:
-    name: test-openvino-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # test-openvino-linux:
+  #   name: test-openvino-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-openvino.sh
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_openvino.sh
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-openvino.sh
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_openvino.sh
 
-  test-build-wasm-linux:
-    name: test-build-wasm-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # test-build-wasm-linux:
+  #   name: test-build-wasm-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL="cmake"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       BUILD_TOOL="cmake"
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
 
-        # Install Node.js and Emscripten
-        source .ci/scripts/setup-emscripten.sh
+  #       # Install Node.js and Emscripten
+  #       source .ci/scripts/setup-emscripten.sh
 
-        # Test selective build
-        PYTHON_EXECUTABLE=python bash examples/wasm/test_build_wasm.sh
+  #       # Test selective build
+  #       PYTHON_EXECUTABLE=python bash examples/wasm/test_build_wasm.sh
 
-  unittest-wasm-bindings:
-    name: unittest-wasm-bindings
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        enable-etdump: ['', '--enable-etdump']
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # unittest-wasm-bindings:
+  #   name: unittest-wasm-bindings
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     matrix:
+  #       enable-etdump: ['', '--enable-etdump']
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL="cmake"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       BUILD_TOOL="cmake"
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
 
-        # Install Node.js and Emscripten
-        source .ci/scripts/setup-emscripten.sh
+  #       # Install Node.js and Emscripten
+  #       source .ci/scripts/setup-emscripten.sh
 
-        # Test selective build
-        bash scripts/build_wasm_tests.sh ${{ matrix.enable-etdump }}
+  #       # Test selective build
+  #       bash scripts/build_wasm_tests.sh ${{ matrix.enable-etdump }}
 
-        # Install Jest
-        cd cmake-out-wasm/extension/wasm/test
-        npm install --save-dev jest
+  #       # Install Jest
+  #       cd cmake-out-wasm/extension/wasm/test
+  #       npm install --save-dev jest
 
-        # Run unit test
-        npm test
+  #       # Run unit test
+  #       npm test
 
-  unittest-nxp-neutron:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        set -eux
+  # unittest-nxp-neutron:
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       set -eux
 
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        # Build and install Executorch
-        PYTHON_EXECUTABLE=python \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON" \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"
+  #       # Build and install Executorch
+  #       PYTHON_EXECUTABLE=python \
+  #       CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON" \
+  #       .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Install test requirements
-        pip install -r backends/nxp/requirements-tests-pypi.txt
-        pip install -r backends/nxp/requirements-tests-eiq.txt
+        # pip install -r backends/nxp/requirements-tests-pypi.txt
+        # pip install -r backends/nxp/requirements-tests-eiq.txt
 
-        # Run pytest
-        PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
+  #       # Run pytest
+  #       PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
 
         # Run aot examples:
-        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
-        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
+        # PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
+        # PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
 
 
-  test-samsung-models-linux:
-    name: test-samsung-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        set -ex
+  # test-samsung-models-linux:
+  #   name: test-samsung-models-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       set -ex
 
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        # Setup python
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+  #       # Setup python
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
 
-        # Setup Samsung SDK (AI Lite Core) and install enn backend
-        source .ci/scripts/setup-samsung-linux-deps.sh
+  #       # Setup Samsung SDK (AI Lite Core) and install enn backend
+  #       source .ci/scripts/setup-samsung-linux-deps.sh
 
-        # Test models serially
-        models="mv2 ic3 resnet18 resnet50"
-        for model in $models; do
-          python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
-        done
+  #       # Test models serially
+  #       models="mv2 ic3 resnet18 resnet50"
+  #       for model in $models; do
+  #         python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
+  #       done
 
-        # Test ops
-        python -m unittest discover -s backends/samsung/test/ops -p "test_*.py"
-
-
-  test-vulkan-models-linux:
-    name: test-vulkan-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        set -eux
-
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
-        source .ci/scripts/setup-vulkan-linux-deps.sh
-
-        # Setup python
-        PYTHON_EXECUTABLE=python \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"
-
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh --build
-
-        # Test models serially
-        models="mv2 mv3 edsr resnet18 resnet50 dl3"
-        for model in $models; do
-          python -m examples.vulkan.export --model_name=$model --test
-        done
+  #       # Test ops
+  #       python -m unittest discover -s backends/samsung/test/ops -p "test_*.py"
 
 
-  test-vulkan-operators-linux:
-    name: test-vulkan-operators-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        set -eux
+  # test-vulkan-models-linux:
+  #   name: test-vulkan-models-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       set -eux
 
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
-        source .ci/scripts/setup-vulkan-linux-deps.sh
+  #       # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
+  #       source .ci/scripts/setup-vulkan-linux-deps.sh
 
-        # Setup python
-        PYTHON_EXECUTABLE=python \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" \
-        .ci/scripts/setup-linux.sh --build-tool "cmake"
+  #       # Setup python
+  #       PYTHON_EXECUTABLE=python \
+  #       CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" \
+  #       .ci/scripts/setup-linux.sh --build-tool "cmake"
 
-        # Custom operator tests
-        PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh add
-        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_linear
-        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
-        ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_linear
-        ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
+  #       PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh --build
 
-        # Run e2e testing for selected operators. More operators will be tested via this
-        # route in the future.
-        python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
-        python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+  #       # Test models serially
+  #       models="mv2 mv3 edsr resnet18 resnet50 dl3"
+  #       for model in $models; do
+  #         python -m examples.vulkan.export --model_name=$model --test
+  #       done
 
-  nxp-build-test:
-    name: nxp-build-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
 
-        # Build
-        cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -Bcmake-out .
-        cmake --build cmake-out --target executorch_delegate_neutron --config Release
+  # test-vulkan-operators-linux:
+  #   name: test-vulkan-operators-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       set -eux
 
-        # Build check for the neutron backend library
-        lib_neutron="cmake-out/backends/nxp/libexecutorch_delegate_neutron.a"
-        if [ -f $lib_neutron ]; then
-            echo "Neutron backend library built."
-        else
-            echo "Neutron backend library not found!"
-            exit 1
-        fi
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
+  #       source .ci/scripts/setup-vulkan-linux-deps.sh
+
+  #       # Setup python
+  #       PYTHON_EXECUTABLE=python \
+  #       CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" \
+  #       .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        # # Custom operator tests
+        # PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh add
+        # ./cmake-out/backends/vulkan/test/custom_ops/q8csw_linear
+        # ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
+        # ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_linear
+        # ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
+
+        # # Run e2e testing for selected operators. More operators will be tested via this
+        # # route in the future.
+        # python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
+        # python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+
+  # nxp-build-test:
+  #   name: nxp-build-test
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
+
+  #       # Build
+  #       cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -Bcmake-out .
+  #       cmake --build cmake-out --target executorch_delegate_neutron --config Release
+
+  #       # Build check for the neutron backend library
+  #       lib_neutron="cmake-out/backends/nxp/libexecutorch_delegate_neutron.a"
+  #       if [ -f $lib_neutron ]; then
+  #           echo "Neutron backend library built."
+  #       else
+  #           echo "Neutron backend library not found!"
+  #           exit 1
+  #       fi
