@@ -17,6 +17,8 @@ PORTABLE_MODULE_DEPS = [
     "//executorch/extension/data_loader:mmap_data_loader",
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/extension/module:bundled_module",
+    "//executorch/extension/module:module",
+    "//executorch/extension/tensor:tensor",
     "//executorch/runtime/executor/test:test_backend_compiler_lib",
     "//executorch/devtools/etdump:etdump_flatcc",
 ] + get_all_cpu_backend_targets()
@@ -30,6 +32,8 @@ ATEN_MODULE_DEPS = [
     "//executorch/extension/data_loader:mmap_data_loader",
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/extension/module:bundled_module_aten",
+    "//executorch/extension/module:module_aten",
+    "//executorch/extension/tensor:tensor_aten",
     "//executorch/devtools/bundled_program:runtime_aten",
     "//executorch/runtime/executor/test:test_backend_compiler_lib_aten",
     "//executorch/devtools/etdump:etdump_flatcc",
