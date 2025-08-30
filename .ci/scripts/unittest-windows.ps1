@@ -14,6 +14,9 @@ conda activate et
 # See https://learn.microsoft.com/en-us/cpp/build/building-on-the-command-line.
 & "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64
 
+# Install test dependencies
+pip install -r .ci/docker/requirements-ci.txt
+
 if ($editable -eq 'true') {
     install_executorch.bat --editable
 } else {
@@ -23,9 +26,6 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "Installation was unsuccessful. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE
 }
-
-# Install test dependencies
-pip install -r .ci/docker/requirements-ci.txt
 
 # Run pytest with coverage
 # pytest -n auto --cov=./ --cov-report=xml

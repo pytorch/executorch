@@ -49,11 +49,6 @@ from torch._decomp import get_decompositions
 from torch._dynamo.guards import Guard
 from torch._functorch.eager_transforms import _maybe_unwrap_functional_tensor
 
-print(f"Checking torch version...")
-print(f"Version: {torch.__version__}")
-print(torch.__file__)
-print(torch.export.__file__)
-
 from torch.export import default_decompositions
 from torch.func import functionalize
 from torch.fx.operator_schemas import normalize_function
