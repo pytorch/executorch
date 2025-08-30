@@ -22,8 +22,61 @@ from torch.export.graph_signature import (
     ExportGraphSignature,
     InputKind,
     InputSpec,
+    OutputKind,
+    OutputSpec,
     TensorArgument,
 )
+
+
+def _spec_to_node(
+    exp_program: ExportedProgram, spec: InputSpec | OutputSpec
+) -> torch.fx.Node:
+    """
+    Converts an InputSpec or OutputSpec to its corresponding node in the graph.
+    """
+    # Extract the argument name from the spec
+    if hasattr(spec, "arg") and hasattr(spec.arg, "name"):
+        arg_name = spec.arg.name
+    else:
+        raise RuntimeError(f"Invalid spec format: {spec}")
+
+    # Find the corresponding node in the graph
+    for node in exp_program.graph.nodes:
+        if node.name == arg_name:
+            return node
+
+    raise RuntimeError(f"Could not find node with name '{arg_name}' in the graph")
+
+
+def _get_fake_tensor_mode(graph: torch.fx.Graph, data: torch.Tensor) -> torch.Tensor:
+    """
+    Helper function to create a fake tensor using the fake_mode from existing nodes in the graph.
+
+    Args:
+        graph: The graph to get fake_mode from
+        data: The tensor data to create fake tensor for
+
+    Returns:
+        A fake tensor with the appropriate fake_mode
+
+    Raises:
+        RuntimeError: If the graph has no nodes to extract fake_mode from
+    """
+    nodes = list(graph.nodes)
+    if not nodes:
+        raise RuntimeError(
+            "Cannot create fake tensor: graph has no nodes to extract fake_mode from"
+        )
+
+    example_node = nodes[0]
+    if isinstance(
+        example_node.meta["val"], (tuple, torch.fx.immutable_collections.immutable_list)
+    ):
+        example_fake_tensor = example_node.meta["val"][0]
+    else:
+        example_fake_tensor = example_node.meta["val"]
+
+    return FakeTensorConverter().from_real_tensor(example_fake_tensor.fake_mode, t=data)
 
 
 def is_get_attr_node(node: torch.fx.Node) -> bool:
@@ -98,17 +151,7 @@ def create_constant_placeholder(
         case _:
             raise RuntimeError("Can only create constant input nodes.")
 
-    # Create fake tensor using the same fake_mode as the other fake tensors in the graph
-    example_node = list(graph.nodes)[0]
-    if isinstance(
-        example_node.meta["val"], (tuple, torch.fx.immutable_collections.immutable_list)
-    ):
-        example_fake_tensor = example_node.meta["val"][0]
-    else:
-        example_fake_tensor = example_node.meta["val"]
-    fake_tensor = FakeTensorConverter().from_real_tensor(
-        example_fake_tensor.fake_mode, t=data
-    )
+    fake_tensor = _get_fake_tensor_mode(graph, data)
 
     # Create node
     node = graph.create_node(op="placeholder", name=name, target=name)
@@ -187,3 +230,128 @@ def delete_constant_placeholder(exp_program: ExportedProgram, node: torch.fx.Nod
 
     # Remove node from graph
     node.graph.erase_node(node)
+
+
+def create_mutable_buffer(
+    exp_program: ExportedProgram,
+    graph: torch.fx.Graph,
+    name: str,
+    data: torch.Tensor,
+) -> torch.fx.Node:
+    """
+    Creates and returns a mutable buffer placeholder node. This is similar to
+    create_constant_placeholder but specifically for creating mutable buffers that
+    can be modified during execution.
+
+    The difference between this and create_constant_placeholder is that this doesn't
+    expect user to set the correct position for the placeholder node to be inserted,
+    it finds the correct position automatically.
+
+    Args:
+        exp_program: The exported program to modify
+        graph: The graph to add the node to
+        name: The name for the new buffer node (should start with "b_" prefix by convention)
+        data: The initial tensor data for the buffer
+
+    Returns:
+        The created placeholder node to be used in the graph
+    """
+    # Input validation
+    if not name or not name.strip():
+        raise ValueError("Buffer name cannot be empty")
+
+    if not isinstance(data, torch.Tensor):
+        raise ValueError("Data must be a torch.Tensor")
+
+    # Extract target name (remove "b_" prefix if present, following export convention)
+    if name.startswith("b_"):
+        target = name[2:]
+    else:
+        target = name
+
+    # Check if target already exists
+    if target in exp_program.state_dict:
+        raise RuntimeError(f"Buffer target '{target}' already exists in state_dict")
+
+    persistent_buffer = True
+    exp_program.state_dict[target] = data
+
+    # Create fake tensor using helper function
+    fake_tensor = _get_fake_tensor_mode(graph, data)
+
+    # Signature ordering is as follows:
+    # Inputs = [*parameters_buffers_constant_tensors, *flattened_user_inputs]
+    #                       ^^^^^^^
+    # Outputs = [*mutated_inputs, *flattened_user_outputs]
+
+    # Validate that the signature is up to date and aligned with the placeholders in the graph
+    placeholders = [n for n in graph.nodes if n.op == "placeholder"]
+    if len(placeholders) != len(exp_program.graph_signature.input_specs):
+        raise RuntimeError(
+            f"Graph has {len(placeholders)} placeholder nodes but signature has "
+            f"{len(exp_program.graph_signature.input_specs)} input specs"
+        )
+
+    for node, input_spec in zip(placeholders, exp_program.graph_signature.input_specs):
+        if node.name != input_spec.arg.name:
+            raise RuntimeError(
+                f"Input node {node.name} does not match input spec {input_spec.arg.name}"
+            )
+
+    # Find indices of user inputs and constant tensors
+    user_input_indices_or_consts = [
+        i
+        for i, spec in enumerate(exp_program.graph_signature.input_specs)
+        if spec.kind == InputKind.USER_INPUT or spec.kind == InputKind.CONSTANT_TENSOR
+    ]
+
+    if not user_input_indices_or_consts:
+        # If no user inputs or constants exist, insert at the end of all existing inputs
+        node_index = len(exp_program.graph_signature.input_specs)
+        # Create node at the end of existing placeholders
+        node = graph.create_node(op="placeholder", name=name, target=name)
+        node.meta["val"] = fake_tensor
+    else:
+        node_index = user_input_indices_or_consts[0]
+        # Find the first user input placeholder node
+        first_user_input_or_constant = _spec_to_node(
+            exp_program, exp_program.graph_signature.input_specs[node_index]
+        )
+        # Insert the mutable buffer node before the first user input node or constant node
+        with graph.inserting_before(first_user_input_or_constant):
+            # Create node
+            node = graph.create_node(op="placeholder", name=name, target=name)
+            node.meta["val"] = fake_tensor
+
+    # Create input spec for the mutable buffer
+    input_specs = exp_program.graph_signature.input_specs
+    mutable_input_spec = InputSpec(
+        InputKind.BUFFER, TensorArgument(name), target, persistent_buffer
+    )
+    input_specs.insert(node_index, mutable_input_spec)
+
+    # Create output spec for the mutable buffer
+    # We don't have to explicitly update the output.args[0] since it will be updated by the user based on the graph.
+    user_output_indices = [
+        i
+        for i, spec in enumerate(exp_program.graph_signature.output_specs)
+        if spec.kind == OutputKind.USER_OUTPUT
+    ]
+
+    if not user_output_indices:
+        # If no user outputs exist, insert at the beginning of output specs
+        output_index = 0
+    else:
+        output_index = user_output_indices[0]
+
+    output_specs = exp_program.graph_signature.output_specs
+    mutation_output_spec = OutputSpec(
+        OutputKind.BUFFER_MUTATION, TensorArgument(name), target
+    )
+    output_specs.insert(output_index, mutation_output_spec)
+
+    # Update graph signature
+    new_graph_signature = ExportGraphSignature(input_specs, output_specs)
+    exp_program._graph_signature = new_graph_signature
+
+    return node
