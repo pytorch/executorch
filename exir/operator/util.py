@@ -64,5 +64,7 @@ try:
             torch.ops.torchao.choose_qparams_affine.default,
         ]
     )
+except AttributeError:
+    pass
 except ImportError:
     pass
