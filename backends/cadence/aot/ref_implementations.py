@@ -20,6 +20,42 @@ qdtype_map: dict[ScalarType, torch.dtype] = {
 }
 
 
+@impl(m, "quantize_per_tensor")
+def quantize_per_tensor(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """
+    Quantizes a floating-point tensor to an integral tensor.
+
+    Args:
+        - input (Tensor): input tensor
+        - scale (float): Quantization scale. Derived from the ratio
+            between the min/max of the floating-point tensor and the
+            min/max of the quantized range.
+        - zero_point (int): The point which represents 0 in the quantized
+            range. For example, consider the floating point range [-1., 2.] and
+            quantized integer range [-7, 7]. In this case, 0 is 1/3 of way from
+            -1. to 2. So, the point that represents 0 in the quantized range should
+            be 1/3 of the way from [-7, 7]. This ends up being -2 in the integer space.
+        - quant_min (int): The smallest value in the quantized domain. Unused since scale
+            is already provided.
+        - quant_max (int): The largest value in the quantized domain. Unused since scale
+            is already provided.
+        - dtype (torch.dtype): The type of the output tensor
+    """
+    supported_quant_types = [torch.int8, torch.int16, torch.int32]
+    if dtype not in supported_quant_types:
+        raise ValueError(
+            f"Unsupported dtype to quantize to. Supported dtypes must be one of {supported_quant_types}"
+        )
+    return torch.round(input / scale + zero_point).to(dtype)
+
+
 @impl(m, "requantize")
 def requantize(
     input: torch.Tensor,

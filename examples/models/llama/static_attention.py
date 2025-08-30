@@ -1044,5 +1044,5 @@ class StaticAttention(Attention):
 
 @register_attention("static_mha")
 class StaticAttentionMHA(StaticAttention):
-    def __init__(self, config: ModelArgs, layer_id: int, rope: Rope):
-        super().__init__(config, layer_id, rope, split_mha=False)
+    def __init__(self, config: ModelArgs, layer_id: int, rope: Rope, **kwargs: Any):
+        super().__init__(config, layer_id, rope, split_mha=False, **kwargs)
