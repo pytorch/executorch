@@ -18,6 +18,7 @@ from torch import nn
 
 from .recipe import ExportRecipe, LoweringRecipe, QuantizationRecipe
 from .stages import (
+    AOTILoweringStage,
     EdgeTransformAndLowerStage,
     ExecutorchStage,
     PipelineArtifact,
@@ -209,6 +210,8 @@ class ExportSession:
                 stage = ToBackendStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EXECUTORCH:
                 stage = ExecutorchStage(self._export_recipe.executorch_backend_config)
+            elif stage_type == StageType.AOTI_LOWERING:
+                stage = AOTILoweringStage()
             else:
                 logging.info(
                     f"{stage_type} is unknown, you have to register it before executing export()"
