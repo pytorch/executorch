@@ -2544,7 +2544,85 @@ class TestVulkanBackend(unittest.TestCase):
             0.75,
         )
 
-        input_tensor = torch.ones((1, 3, 32, 32), dtype=torch.float32)
+        # Create sample inputs
+        sample_inputs = (input_tensor,)
+
+        # Create XNNPACK quantizer with symmetric quantization config
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        # Test the quantized module using the existing quantize_and_lower_module function
+        # Use higher tolerance since quantization introduces some error
+        edge_program = quantize_and_lower_module(
+            conv_sequence_module, sample_inputs, quantizer
+        )
+
+        et_program = edge_program.to_executorch()
+        self.check_vk_delegation(et_program)
+
+        self.run_delegated_model_and_check_output(
+            et_program,
+            conv_sequence_module,
+            sample_inputs,
+            atol=1e-2,
+            rtol=1e-1,
+        )
+
+    def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence_all_reduced(self):
+        """
+        Test a sequence of convolution layers quantized with PT2E quantization.
+        This test creates a module with multiple Conv2d layers in sequence and applies
+        XNNPACK symmetric quantization to test the quantized model execution.
+        Similar to the linear sequence test but using convolution layers.
+        """
+
+        import executorch.backends.vulkan.test.utils as test_utils
+
+        class ConvSequenceModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=32,
+                    kernel_size=3,
+                    padding=1,
+                    bias=False,
+                )
+                self.conv2 = torch.nn.Conv2d(
+                    in_channels=32,
+                    out_channels=1,
+                    kernel_size=3,
+                    padding=1,
+                    bias=False,
+                )
+
+                MAX = 0.75
+                MIN = -0.25
+                self.conv1.weight.data = test_utils.random_uniform_tensor(
+                    self.conv1.weight.shape, MIN, MAX
+                )
+                self.conv2.weight.data = test_utils.random_uniform_tensor(
+                    self.conv2.weight.shape, MIN, MAX
+                )
+
+            def forward(self, x):
+                x = self.conv1(x)
+                x = self.conv2(x)
+                return x
+
+        # Create the module
+        conv_sequence_module = ConvSequenceModule()
+
+        input_tensor = test_utils.random_uniform_tensor(
+            (1, 3, 32, 32),
+            -0.25,
+            0.75,
+        )
+
         # Create sample inputs
         sample_inputs = (input_tensor,)
 

@@ -478,6 +478,8 @@ void conv2d_q8csw_linear_tiled_impl(
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef orig_OC = args.at(idx++);
+  (void)orig_OC;
   const ValueRef output = args.at(idx++);
 
   const ValueRef packed_weight = prepack_q8_linear_weight(graph, weight);
@@ -552,6 +554,8 @@ void conv2d_q8ta_q8csw_linear_tiled_impl(
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef orig_OC = args.at(idx++);
+  (void)orig_OC;
   const ValueRef output = args.at(idx++);
 
   const ValueRef packed_weight = prepack_q8_linear_weight(graph, weight);

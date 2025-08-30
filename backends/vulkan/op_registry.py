@@ -490,6 +490,7 @@ def register_quantized_conv_op():
             utils.NO_STORAGE,  # padding (non tensor)
             utils.NO_STORAGE,  # dilation (non tensor)
             utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # original OC count (non tensor)
         ],
         supports_resize=False,
         supports_prepacking=True,

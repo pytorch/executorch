@@ -151,19 +151,38 @@ def make_conv2d_q8ta_q8csw_custom_op(
 
     # Reshape weight tensor from (OC, IC, H, W) to (IC * H * W, OC) for matrix multiplication
     # This prepares the weights for Im2Col-based convolution computation
-    OC, IC, H, W = weight_tensor.shape
+    orig_OC, IC, H, W = weight_tensor.shape
+    OC = orig_OC
+    fake_weight = match.weight_node.meta["val"]
+
+    # The implementation requires that for grouped convolutions, a group does not cross
+    # any texel boundary.
+    if match.groups > 1:
+        assert (OC / match.groups) % 4 == 0
+
+    # The implementation requires that OC is a multiple of 4 so that data load/stores
+    # are well aligned with texel boundaries. If the original output channel count is
+    # not a multiple of 4, then add padding.
+    if OC % 4 != 0:
+        num_padding = 4 - (OC % 4)
+        # Pad the OC (output channel) dimension at the end with zeros
+        weight_tensor = torch.nn.functional.pad(
+            weight_tensor, (0, 0, 0, 0, 0, 0, 0, num_padding)
+        )
+        fake_weight = torch.nn.functional.pad(
+            fake_weight, (0, 0, 0, 0, 0, 0, 0, num_padding)
+        )
+        OC, IC, H, W = weight_tensor.shape
 
     weight_tensor_reshaped = (
         weight_tensor.permute(2, 3, 1, 0).contiguous().view(IC * H * W, OC)
     )
+    fake_weight_reshaped = (
+        fake_weight.permute(2, 3, 1, 0).contiguous().view(IC * H * W, OC)
+    )
     utils.update_program_state_dict(ep, match.weight_node.name, weight_tensor_reshaped)
     # Need to make sure the fake tensor matches the updated tensor's properties
-    match.weight_node.meta["val"] = (
-        match.weight_node.meta["val"]
-        .permute(1, 2, 3, 0)
-        .contiguous()
-        .view(IC * H * W, OC)
-    )
+    match.weight_node.meta["val"] = fake_weight_reshaped
 
     first_graph_node = list(graph_module.graph.nodes)[0]
     with graph_module.graph.inserting_before(first_graph_node):
@@ -200,6 +219,7 @@ def make_conv2d_q8ta_q8csw_custom_op(
                 match.padding,
                 match.dilation,
                 match.groups,
+                orig_OC,
             ),
         )
 

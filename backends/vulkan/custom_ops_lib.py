@@ -391,6 +391,7 @@ def conv2d_q8ta_q8csw(
     padding: list,
     dilation: list,
     groups: int,
+    out_channels: int,
 ):
     weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
 
@@ -408,6 +409,10 @@ def conv2d_q8ta_q8csw(
 
     # Reshape to original 4D format (OC, IC, H, W)
     qweights_4d = qweights_transposed.view(OC, IC, H, W)
+
+    # Remove any padding added to output channels dim
+    if out_channels != OC:
+        qweights_4d = qweights_4d[:out_channels, :, :, :]
 
     # Dequantize weights
     weights = torch.ops.quantized_decomposed.dequantize_per_channel(
@@ -443,11 +448,13 @@ lib.define(
         SymInt[] stride,
         SymInt[] padding,
         SymInt[] dilation,
-        SymInt groups) -> Tensor
+        SymInt groups,
+        SymInt out_channels) -> Tensor
     """
 )
 lib.impl(name, conv2d_q8ta_q8csw, "CompositeExplicitAutograd")
 conv2d_q8ta_q8csw_op = getattr(getattr(torch.ops, namespace), name)
+
 ######################
 ## apply_rotary_emb ##
 ######################

@@ -23,26 +23,19 @@ class FoldQDQPass(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
-            # Criteria for a foldable Q/DQ node:
-            # - only one user (dequantize)
             if utils.is_quant_node(node):
-                if len(node.users) > 1:
-                    continue
-
-                dq_node = None
+                original_node = node.args[0]
+                assert isinstance(original_node, torch.fx.Node)
+                # For each direct user that is a dequant node, connect the original
+                # node to the users of the dequant node.
                 for user in node.users:
                     if utils.is_dequant_node(user):
                         dq_node = user
-
-                if dq_node is None:
-                    continue
-
-                original_node = node.args[0]
-                assert isinstance(original_node, torch.fx.Node)
-                dq_node.replace_all_uses_with(original_node)
+                        dq_node.replace_all_uses_with(original_node)
 
         graph_module.recompile()
         dead_code_elimination_pass(graph_module)
         # Re-trace to validate everything is ok
         graph_module = super().call(graph_module).graph_module
+
         return PassResult(graph_module, True)
