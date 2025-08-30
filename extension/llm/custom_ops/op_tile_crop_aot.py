@@ -13,7 +13,7 @@ try:
     tile_crop = torch.ops.preprocess.tile_crop.default
     assert tile_crop is not None
 except:
-    libs = list(Path(__file__).parent.resolve().glob("libcustom_ops_aot_lib.*"))
+    libs = list(Path(__file__).parent.resolve().glob("*custom_ops_aot_lib.*"))
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
     torch.ops.load_library(libs[0])
