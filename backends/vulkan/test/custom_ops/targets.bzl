@@ -97,3 +97,4 @@ def define_common_targets(is_fbcode = False):
     )
 
     define_custom_op_test_binary("add")
+    define_custom_op_test_binary("quantized_linear")

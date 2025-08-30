@@ -1,0 +1,45 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_INT8_WEIGHT_TILE_GLSLH
+#define LINEAR_INT8_WEIGHT_TILE_GLSLH
+
+/*
+ * Defines the Int8WeightTile struct, which is used to represent a tile of the
+ * quantized int8 weight matrix of a quantized matrix multiplication operation.
+ *
+ * Settings:
+ * - TILE_K4: number of (groups of 4) rows in the weight tile
+ * - TILE_N4: number of (groups of 4) columns in the weight tile
+ */
+
+#extension GL_EXT_control_flow_attributes : require
+
+struct Int8WeightTile {
+  ivec4 data[TILE_K4][TILE_N4];
+};
+
+#ifdef DEBUG_MODE
+
+void printInt8WeightTile(const Int8WeightTile tile) {
+  debugPrintfEXT("int8_weight_tile: \\n");
+  [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      debugPrintfEXT(
+          "%i %i %i %i \\n",
+          tile.data[k4][n4][0],
+          tile.data[k4][n4][1],
+          tile.data[k4][n4][2],
+          tile.data[k4][n4][3]);
+    }
+  }
+}
+
+#endif // DEBUG_MODE
+
+#endif // LINEAR_INT8_WEIGHT_TILE_GLSLH
