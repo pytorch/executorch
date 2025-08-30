@@ -1,0 +1,54 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
+
+oncall("executorch")
+
+python_library(
+    name = "models",
+    srcs = [
+        "models.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "executorch_pipeline",
+    srcs = [
+        "executorch_pipeline.py",
+        "executors.py",
+    ],
+    deps = [
+        "//executorch/exir:lib",
+        "//executorch/extension/export_util:export_util",
+        "//pytorch/ao:torchao",  
+        "//executorch/backends/nxp:quantizer",
+        "//executorch/backends/nxp:neutron_backend",
+        "//executorch/backends/nxp:edge_passes",
+    ]
+)
+
+python_pytest(
+    name = "test_quantizer",
+    srcs = [
+        "test_quantizer.py",
+    ],
+    deps = [
+        "//executorch/backends/nxp:quantizer",
+        "//caffe2:torch",
+        "//executorch/backends/nxp/tests:models",
+    ],
+)
+
+python_pytest(
+    name = "test_neutron_backend",
+    srcs = [
+        "test_neutron_backend.py",
+    ],
+    deps = [
+        "//executorch/backends/nxp:neutron_backend",
+        ":executorch_pipeline",
+        ":models",
+    ]
+)

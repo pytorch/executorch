@@ -12,12 +12,12 @@
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/log.h>
 
+using executorch::ET_RUNTIME_NAMESPACE::Method;
+using executorch::ET_RUNTIME_NAMESPACE::MethodMeta;
+using executorch::ET_RUNTIME_NAMESPACE::TensorInfo;
 using executorch::runtime::Error;
-using executorch::runtime::Method;
-using executorch::runtime::MethodMeta;
 using executorch::runtime::Result;
 using executorch::runtime::Tag;
-using executorch::runtime::TensorInfo;
 
 namespace executorch {
 namespace extension {
@@ -54,6 +54,14 @@ Result<BufferCleanup> prepare_input_tensors(
       // The BufferCleanup will free the inputs when it goes out of scope.
       BufferCleanup cleanup({inputs, num_allocated});
       return tag.error();
+    }
+    if (tag.get() == Tag::None) {
+      Error err = method.set_input(runtime::EValue(), i);
+      if (err != Error::Ok) {
+        BufferCleanup cleanup({inputs, num_allocated});
+        return err;
+      }
+      continue;
     }
     if (tag.get() != Tag::Tensor) {
       ET_LOG(Debug, "Skipping non-tensor input %zu", i);

@@ -1,9 +1,9 @@
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
-    "ANDROID",
+    "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_verision")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
 PYTHON_MODULE_NAME = "PyQnnManagerAdaptor"
 
@@ -31,12 +31,12 @@ def define_common_targets():
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
+            "fbsource//third-party/pybind11:pybind11",
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
         ],
         external_deps = [
-            "pybind11",
             "libtorch_python",
         ],
         use_static_deps = True,
@@ -64,12 +64,12 @@ def define_common_targets():
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
+            "fbsource//third-party/pybind11:pybind11",
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
         ],
         external_deps = [
-            "pybind11",
             "libtorch_python",
         ],
         use_static_deps = True,
@@ -86,16 +86,15 @@ def define_common_targets():
         exported_headers = glob([
             "*.h",
         ]),
+        platforms = (CXX),
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [
             "//executorch/backends/qualcomm/aot/wrappers:wrappers",
             "//executorch/backends/qualcomm/runtime:logging",
             "//executorch/backends/qualcomm:schema",
-            "//executorch/backends/qualcomm/aot/ir:qcir_utils",
             "//executorch/backends/qualcomm/runtime:runtime",
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_verision()),
-        ],
-        external_deps = [
-            "pybind11",
+            "fbsource//third-party/pybind11:pybind11",
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
         ],
     )

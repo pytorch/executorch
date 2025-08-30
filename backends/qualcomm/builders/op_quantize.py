@@ -10,7 +10,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_ENCODING, QCOM_QUANT_ATTRS
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpQuantize, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -52,7 +53,7 @@ class QuantizeOpBase(NodeVisitor):
         quant_output_tensors = [output_tensor_wrapper]
 
         quant_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.target.__name__,
+            node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpQuantize.op_name,
         )

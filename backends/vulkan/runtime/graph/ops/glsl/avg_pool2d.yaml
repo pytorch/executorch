@@ -13,6 +13,6 @@ avg_pool2d:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int
+      - VALUE: int32
   shader_variants:
     - NAME: avg_pool2d

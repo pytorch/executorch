@@ -21,7 +21,7 @@ body:
       A clear and concise description of what the bug is.
 
       ```python
-      # Sample code to reproduce the problem
+      # Sample code to reproduce the problem. If applicable, also include your model export command.
       ```
 
       ```

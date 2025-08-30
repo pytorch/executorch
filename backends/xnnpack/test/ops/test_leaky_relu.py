@@ -11,6 +11,9 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestLeakyRelu(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     class LeakyReLU(torch.nn.Module):
         def __init__(self, **kwargs):
             super().__init__()

@@ -149,8 +149,10 @@
 // As of G3 RJ-2024.3 toolchain, zu format specifier is not supported for Xtensa
 #if defined(__XTENSA__)
 #define ET_PRIsize_t "lu"
+#define ET_PRIssize_t "ld"
 #else
 #define ET_PRIsize_t "zu"
+#define ET_PRIssize_t "zd"
 #endif
 
 // Whether the compiler supports GNU statement expressions.
@@ -169,6 +171,14 @@
 #else
 #include <stddef.h>
 using ssize_t = ptrdiff_t;
+#endif
+
+#ifdef __EXCEPTIONS
+#define ET_HAS_EXCEPTIONS 1
+#elif defined(_MSC_VER) && defined(_HAS_EXCEPTIONS) && _HAS_EXCEPTIONS
+#define ET_HAS_EXCEPTIONS 1
+#else
+#define ET_HAS_EXCEPTIONS 0
 #endif
 
 // DEPRECATED: Use the non-underscore-prefixed versions instead.

@@ -15,7 +15,7 @@
 #include <executorch/runtime/platform/system.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 namespace {
 
@@ -35,9 +35,12 @@ constexpr uint32_t kMaxRegisteredKernels = kMaxOperators * kMaxKernelsPerOp;
 // require constructing them at init time. Since we don't care about the values
 // until we add each entry to the table, allocate static zeroed memory instead
 // and point the table at it.
+struct alignas(Kernel) KernelBuffer {
+  uint8_t data[sizeof(Kernel)];
+};
+
 // @lint-ignore CLANGTIDY facebook-hte-CArray
-alignas(sizeof(Kernel)) uint8_t
-    registered_kernels_data[kMaxRegisteredKernels * sizeof(Kernel)];
+KernelBuffer registered_kernels_data[kMaxRegisteredKernels];
 
 /// Global table of registered kernels.
 Kernel* registered_kernels = reinterpret_cast<Kernel*>(registered_kernels_data);
@@ -71,7 +74,7 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
       ET_LOG(Error, "%s", kernels[i].name_);
       ET_LOG_KERNEL_KEY(kernels[i].kernel_key_);
     }
-    return Error::Internal;
+    return Error::RegistrationExceedingMaxKernels;
   }
   // for debugging purpose
   ET_UNUSED const char* lib_name =
@@ -79,13 +82,13 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
 
   for (const auto& kernel : kernels) {
     // Linear search. This is fine if the number of kernels is small.
-    for (int32_t i = 0; i < num_registered_kernels; i++) {
+    for (size_t i = 0; i < num_registered_kernels; i++) {
       Kernel k = registered_kernels[i];
       if (strcmp(kernel.name_, k.name_) == 0 &&
           kernel.kernel_key_ == k.kernel_key_) {
         ET_LOG(Error, "Re-registering %s, from %s", k.name_, lib_name);
         ET_LOG_KERNEL_KEY(k.kernel_key_);
-        return Error::InvalidArgument;
+        return Error::RegistrationAlreadyRegistered;
       }
     }
     registered_kernels[num_registered_kernels++] = kernel;
@@ -103,7 +106,8 @@ Error register_kernels_internal(const Span<const Kernel> kernels) {
 // Registers the kernels, but panics if an error occurs. Always returns Ok.
 Error register_kernels(const Span<const Kernel> kernels) {
   Error success = register_kernels_internal(kernels);
-  if (success == Error::InvalidArgument || success == Error::Internal) {
+  if (success == Error::RegistrationAlreadyRegistered ||
+      success == Error::RegistrationExceedingMaxKernels) {
     ET_CHECK_MSG(
         false,
         "Kernel registration failed with error %" PRIu32
@@ -188,7 +192,7 @@ Error make_kernel_key_string(
     buf_size -= 1;
 
     // Add dim order.
-    for (int j = 0; j < meta.dim_order_.size(); j++) {
+    for (size_t j = 0; j < meta.dim_order_.size(); j++) {
       n = copy_char_as_number_to_buf((int)meta.dim_order_[j], buf, buf_size);
       if (n < 0) {
         return Error::InvalidArgument;
@@ -258,5 +262,5 @@ Span<const Kernel> get_registered_kernels() {
   return {registered_kernels, num_registered_kernels};
 }
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

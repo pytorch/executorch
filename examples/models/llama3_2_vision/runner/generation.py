@@ -13,6 +13,7 @@ from executorch.examples.models.llama.runner.generation import LlamaRunner, next
 class TorchTuneLlamaRunner(LlamaRunner):
     def __init__(
         self,
+        *,
         tokenizer_path: str,
         max_seq_len: int,
         max_batch_size: int,
@@ -21,12 +22,12 @@ class TorchTuneLlamaRunner(LlamaRunner):
         device: str = "cpu",
     ):
         super().__init__(
-            tokenizer_path,
-            max_seq_len,
-            max_batch_size,
-            use_kv_cache,
-            vocab_size,
-            device,
+            tokenizer_path=tokenizer_path,
+            max_seq_len=max_seq_len,
+            max_batch_size=max_batch_size,
+            use_kv_cache=use_kv_cache,
+            vocab_size=vocab_size,
+            device=device,
         )
 
         self.causal_mask = torch.tril(

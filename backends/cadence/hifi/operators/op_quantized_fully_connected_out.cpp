@@ -1,4 +1,11 @@
-// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -12,12 +19,12 @@ namespace native {
 
 using ::executorch::aten::ArrayRef;
 using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::optional;
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::SizesType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 void inline _quantized_fully_connected_asym8u(
     const Tensor& in,

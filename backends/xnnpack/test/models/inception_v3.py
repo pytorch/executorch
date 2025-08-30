@@ -13,6 +13,9 @@ from torchvision import models
 
 
 class TestInceptionV3(unittest.TestCase):
+    def setUp(self):
+        torch._dynamo.reset()
+
     ic3 = models.inception_v3(weights="IMAGENET1K_V1").eval()  # noqa
     model_inputs = (torch.randn(1, 3, 224, 224),)
 

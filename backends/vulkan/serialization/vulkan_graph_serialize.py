@@ -191,19 +191,36 @@ def serialize_constant_tensors(
 
     current_offset = len(raw_bytes)
     for tensor in const_tensors:
-        array_type = ctypes.c_char * tensor.untyped_storage().nbytes()
-        array = ctypes.cast(
-            tensor.untyped_storage().data_ptr(),
-            ctypes.POINTER(array_type),
-        ).contents
+        # The tensor data is stored in the named data map
+        if isinstance(tensor, tuple):
+            named_key, size = tensor
+            vk_graph.constants.append(
+                VkBytes(
+                    offset=18446744073709551615,  # UINT64_MAX to indicate named data
+                    length=size,
+                    named_key=named_key,
+                )
+            )
+        elif tensor is None or (
+            isinstance(tensor, torch.Tensor) and tensor.numel() == 0
+        ):
+            vk_graph.constants.append(VkBytes(current_offset, 0))
+        elif isinstance(tensor, torch.Tensor):
+            array_type = ctypes.c_char * tensor.untyped_storage().nbytes()
+            array = ctypes.cast(
+                tensor.untyped_storage().data_ptr(),
+                ctypes.POINTER(array_type),
+            ).contents
 
-        tensor_bytes = bytes(array)
-        # Pad the tensor bytes to the next 16 byte boundary
-        raw_bytes += tensor_bytes
-        raw_bytes += b"\x00" * padding_required(len(tensor_bytes))
+            tensor_bytes = bytes(array)
+            # Pad the tensor bytes to the next 16 byte boundary
+            raw_bytes += tensor_bytes
+            raw_bytes += b"\x00" * padding_required(len(tensor_bytes))
 
-        vk_graph.constants.append(VkBytes(current_offset, len(tensor_bytes)))
-        current_offset += aligned_size(len(tensor_bytes))
+            vk_graph.constants.append(VkBytes(current_offset, len(tensor_bytes)))
+            current_offset += aligned_size(len(tensor_bytes))
+        else:
+            raise ValueError(f"Unsupported constant tensor type: {type(tensor)}")
 
 
 def serialize_custom_shaders(

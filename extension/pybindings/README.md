@@ -2,30 +2,18 @@
 This Python module, named `portable_lib`, provides a set of functions and classes for loading and executing bundled programs. To install it, run the fullowing command:
 
 ```bash
-EXECUTORCH_BUILD_PYBIND=ON \
+./install_executorch.sh
+
+# ...or use pip directly
 pip install . --no-build-isolation
-```
-
-Or when installing the rest of dependencies:
-
-```bash
-install_executorch.sh --pybind
 ```
 
 # Link Backends
 
-You can link the runtime against some backends to make sure a delegated or partitioned model can still run by Python module successfully:
+Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the MPS backend:
 
 ```bash
-EXECUTORCH_BUILD_PYBIND=ON \
-CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON" \
-pip install . --no-build-isolation
-```
-
-Similarly, when installing the rest of dependencies:
-
-```bash
-install_executorch.sh --pybind coreml mps xnnpack
+CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
 ```
 
 ## Functions
@@ -39,8 +27,6 @@ install_executorch.sh --pybind coreml mps xnnpack
 - `_reset_profile_results()`: Reset profile results.
 ## Classes
 ### ExecuTorchModule
-- `load_bundled_input()`: Load bundled input.
-- `verify_result_with_bundled_expected_output(bundle: str, method_name: str, testset_idx: int, rtol: float = 1e-5, atol: float = 1e-8)`: Verify result with bundled expected output.
 - `plan_execute()`: Plan and execute.
 - `run_method()`: Run method.
 - `forward()`: Forward. This takes a pytree-flattend PyTorch-tensor-based input.
@@ -49,5 +35,6 @@ install_executorch.sh --pybind coreml mps xnnpack
 - `__call__()`: Call method.
 ### BundledModule
 This class is currently empty and serves as a placeholder for future methods and attributes.
+- `verify_result_with_bundled_expected_output(method_name: str, testset_idx: int, rtol: float = 1e-5, atol: float = 1e-8)`: Verify result with bundled expected output.
 ## Note
 All functions and methods are guarded by a call guard that redirects `cout` and `cerr` to the Python environment.

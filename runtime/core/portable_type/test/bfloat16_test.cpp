@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/portable_type/bfloat16.h>
 
 #include <gtest/gtest.h>
@@ -41,7 +42,7 @@ uint16_t bits_from_f32(float src) {
 TEST(BFloat16Conversion, FloatToBFloat16AndBack) {
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers,modernize-avoid-c-arrays)
   float in[100];
-  for (int i = 0; i < 100; ++i) {
+  for (const auto i : c10::irange(100)) {
     // NOLINTNEXTLINE(bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions,cppcoreguidelines-avoid-magic-numbers)
     in[i] = i + 1.25;
   }
@@ -51,7 +52,7 @@ TEST(BFloat16Conversion, FloatToBFloat16AndBack) {
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers,modernize-avoid-c-arrays)
   float out[100];
 
-  for (int i = 0; i < 100; ++i) {
+  for (const auto i : c10::irange(100)) {
     bfloats[i].x = bits_from_f32(in[i]);
     out[i] = f32_from_bits(bfloats[i].x);
 
@@ -64,7 +65,7 @@ TEST(BFloat16Conversion, FloatToBFloat16AndBack) {
 TEST(BFloat16Conversion, FloatToBFloat16RNEAndBack) {
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers,modernize-avoid-c-arrays)
   float in[100];
-  for (int i = 0; i < 100; ++i) {
+  for (const auto i : c10::irange(100)) {
     // NOLINTNEXTLINE(bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions,cppcoreguidelines-avoid-magic-numbers)
     in[i] = i + 1.25;
   }
@@ -74,7 +75,7 @@ TEST(BFloat16Conversion, FloatToBFloat16RNEAndBack) {
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,cppcoreguidelines-avoid-magic-numbers,modernize-avoid-c-arrays)
   float out[100];
 
-  for (int i = 0; i < 100; ++i) {
+  for (const auto i : c10::irange(100)) {
     bfloats[i].x = round_to_nearest_even(in[i]);
     out[i] = f32_from_bits(bfloats[i].x);
 

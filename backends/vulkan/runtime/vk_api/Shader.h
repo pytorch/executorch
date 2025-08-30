@@ -61,7 +61,7 @@ struct ShaderInfo final {
   ShaderLayout::Signature kernel_layout{};
 
   // Shader Metadata
-  utils::uvec3 out_tile_size{1u, 1u, 1u};
+  utils::WorkgroupSize out_tile_size{1u, 1u, 1u};
   bool requires_shader_int16 = false;
   bool requires_16bit_storage = false;
   bool requires_8bit_storage = false;

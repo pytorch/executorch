@@ -1,8 +1,8 @@
-# Running an ExecuTorch Model in C++ Tutorial
+# Detailed C++ Runtime APIs Tutorial
 
 **Author:** [Jacob Szwejbka](https://github.com/JacobSzwejbka)
 
-In this tutorial, we will cover how to run an ExecuTorch model in C++ using the more detailed, lower-level APIs: prepare the `MemoryManager`, set inputs, execute the model, and retrieve outputs. However, if you’re looking for a simpler interface that works out of the box, consider trying the [Module Extension Tutorial](extension-module.md).
+In this tutorial, we will cover how to run an ExecuTorch model in C++ using the more detailed, lower-level APIs: prepare the `MemoryManager`, set inputs, execute the model, and retrieve outputs. However, if you’re looking for a simpler interface that works out of the box, consider trying the [Module Extension Tutorial](extension-module.md) and [Using ExecuTorch with C++](using-executorch-cpp.md).
 
 For a high level overview of the ExecuTorch Runtime please see [Runtime Overview](runtime-overview.md), and for more in-depth documentation on
 each API please see the [Runtime API Reference](executorch-runtime-api-reference.rst).
@@ -12,7 +12,7 @@ each API please see the [Runtime API Reference](executorch-runtime-api-reference
 ## Prerequisites
 
 You will need an ExecuTorch model to follow along. We will be using
-the model `SimpleConv` generated from the [Exporting to ExecuTorch tutorial](./tutorials/export-to-executorch-tutorial).
+the model `SimpleConv` generated from the [Exporting to ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial).
 
 ## Model Loading
 

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cmath>
 #include <cstring>
 
@@ -26,7 +27,7 @@ namespace {
 void increment_index(size_t* index, const ArrayRef<SizesType> sizes) {
   for (ssize_t i = sizes.size() - 1; i >= 0; --i) {
     index[i]++;
-    if (index[i] == sizes[i]) {
+    if (static_cast<ssize_t>(index[i]) == sizes[i]) {
       index[i] = 0;
     } else {
       return;
@@ -45,7 +46,7 @@ void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
   int32_t num_nonzero = 0;
 
   // Count number of non zeros
-  for (size_t i = 0; i < lim; ++i) {
+  for (const auto i : c10::irange(lim)) {
     if (in_data[i] != 0) {
       num_nonzero++;
     }
@@ -68,9 +69,9 @@ void nonzero(KernelRuntimeContext& ctx, const Tensor& input, Tensor& output) {
   size_t out_idx = 0;
 
   // Loop again and this time write the proper indices into out
-  for (size_t i = 0; i < lim; i++) {
+  for (const auto i : c10::irange(lim)) {
     if (in_data[i] != 0) {
-      for (size_t j = 0; j < input.dim(); j++) {
+      for (const auto j : c10::irange(input.dim())) {
         out_data[out_idx++] = index[j];
       }
     }

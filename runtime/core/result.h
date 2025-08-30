@@ -59,8 +59,13 @@ class Result final {
    * a non-Ok value.
    */
   /* implicit */ Result(Error error)
-      : error_(error == Error::Ok ? Error::Internal : error),
-        hasValue_(false) {}
+      : error_(error == Error::Ok ? Error::Internal : error), hasValue_(false) {
+    if ET_UNLIKELY (error == Error::Ok) {
+      ET_LOG(
+          Debug,
+          "Attempted to create Result from Error::Ok, this has been converted to Error::Internal.");
+    }
+  }
 
   /// Value copy constructor.
   /* implicit */ Result(const T& val) : value_(val), hasValue_(true) {}

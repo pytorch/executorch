@@ -1,4 +1,4 @@
-# ExecuTorch Vulkan Delegate
+# Vulkan Backend
 
 The ExecuTorch Vulkan delegate is a native GPU delegate for ExecuTorch that is
 built on top of the cross-platform Vulkan GPU API standard. It is primarily
@@ -133,7 +133,7 @@ will be executed on the GPU.
 
 
 ::::{note}
-The [supported ops list](https://github.com/pytorch/executorch/blob/main/backends/vulkan/partitioner/supported_ops.py)
+The [supported ops list](https://github.com/pytorch/executorch/blob/main/backends/vulkan/op_registry.py#L194)
 Vulkan partitioner code can be inspected to examine which ops are currently
 implemented in the Vulkan delegate.
 ::::
@@ -193,12 +193,12 @@ GPU!
 
 ```shell
 # Build a model runner binary linked with the Vulkan delegate libs
-cmake --build cmake-android-out --target vulkan_executor_runner -j32
+cmake --build cmake-android-out --target executor_runner -j32
 
 # Push model to device
 adb push vk_add.pte /data/local/tmp/vk_add.pte
 # Push binary to device
-adb push cmake-android-out/backends/vulkan/vulkan_executor_runner /data/local/tmp/runner_bin
+adb push cmake-android-out/executor_runner /data/local/tmp/runner_bin
 
 # Run the model
 adb shell /data/local/tmp/runner_bin --model_path /data/local/tmp/vk_add.pte

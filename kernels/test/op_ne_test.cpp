@@ -18,7 +18,7 @@ using namespace ::testing;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::runtime::KernelRuntimeContext;
+using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 using torch::executor::testing::TensorFactory;
 
 class OpNeTest : public OperatorTest {
@@ -83,7 +83,7 @@ class OpNeScalarOutTest : public OperatorTest {
 
 TEST_F(OpNeScalarOutTest, AllRealInputBoolOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) test_ne_scalar_out<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
@@ -117,13 +117,13 @@ TEST_F(OpNeScalarOutTest, MismatchedShapesDies) {
 
 TEST_F(OpNeScalarOutTest, AllRealOutputDTypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_ne_all_output_dtypes<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpNeTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

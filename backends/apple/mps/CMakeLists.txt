@@ -16,18 +16,9 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 set(_common_compile_options -Wno-deprecated-declarations)
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 set(_mps_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 
@@ -46,10 +37,11 @@ endforeach()
 add_custom_command(
   OUTPUT ${_mps_schema__outputs}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
     "${_mps_schema__include_dir}/executorch/backends/apple/mps"
     ${_mps_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  DEPENDS flatc
   COMMENT "Generating mps_schema headers"
   VERBATIM
 )
@@ -58,9 +50,10 @@ add_library(mps_schema INTERFACE ${_mps_schema__outputs})
 set_target_properties(mps_schema PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
   mps_schema
-  INTERFACE ${_mps_schema__include_dir}
-            ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
-            ${_common_include_directories}
+  INTERFACE
+    $<BUILD_INTERFACE:${_mps_schema__include_dir}>
+    $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
+    ${_common_include_directories}
 )
 
 list(TRANSFORM _mps_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
@@ -73,21 +66,17 @@ find_library(MPS_GRAPH_FRAMEWORK MetalPerformanceShadersGraph)
 
 target_link_libraries(
   mpsdelegate
-  PRIVATE bundled_program
-          mps_schema
-          executorch_core
-          ${FOUNDATION_FRAMEWORK}
-          ${METAL_FRAMEWORK}
-          ${MPS_FRAMEWORK}
-          ${MPS_GRAPH_FRAMEWORK}
+  PRIVATE mps_schema executorch_core ${FOUNDATION_FRAMEWORK} ${METAL_FRAMEWORK}
+          ${MPS_FRAMEWORK} ${MPS_GRAPH_FRAMEWORK}
 )
 
-target_link_options_shared_lib(mpsdelegate)
+executorch_target_link_options_shared_lib(mpsdelegate)
 target_compile_options(mpsdelegate PUBLIC ${_common_compile_options})
 target_compile_options(mpsdelegate PRIVATE "-fno-objc-arc")
 
 install(
-  TARGETS mpsdelegate
+  TARGETS mpsdelegate mps_schema
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

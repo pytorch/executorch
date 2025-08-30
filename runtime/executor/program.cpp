@@ -28,8 +28,7 @@
 #endif
 
 namespace executorch {
-namespace runtime {
-
+namespace ET_RUNTIME_NAMESPACE {
 namespace {
 
 /**
@@ -150,6 +149,22 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
 
+  // Instantiate PteDataMap if named_data is present.
+  const auto named_data = flatbuffer_program->named_data();
+  std::optional<internal::PteDataMap> pte_data_map = std::nullopt;
+  if (named_data != nullptr) {
+    Result<internal::PteDataMap> pte_data_map_result =
+        internal::PteDataMap::create(
+            loader,
+            segment_base_offset,
+            named_data,
+            flatbuffer_program->segments());
+    if (!pte_data_map_result.ok()) {
+      return pte_data_map_result.error();
+    }
+    pte_data_map.emplace(std::move(pte_data_map_result.get()));
+  }
+
   // Constant data may live inside the flatbuffer data (constant_buffer) or in a
   // separate segment (constant_segment). It should not be in both.
   // Check constant_segment->offsets()->size() > 1, as the offsets list will
@@ -157,16 +172,27 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   // only offset, the constant segment is empty and does not need to be loaded.
   const auto* constant_segment = flatbuffer_program->constant_segment();
   if (constant_segment != nullptr && constant_segment->offsets() != nullptr &&
-      constant_segment->offsets()->size() > 1) {
+      constant_segment->offsets()->size() > 0) {
+    if (constant_segment->offsets()->size() == 1) {
+      // No constants; the constant segment is empty and does not
+      // need to be loaded.
+      return Program(
+          loader,
+          segment_base_offset,
+          std::move(program_data.get()),
+          flatbuffer_program,
+          /*constant_segment_data=*/FreeableBuffer{},
+          std::move(pte_data_map));
+    }
     // The constant data is inside a separate segment.
     const auto* constant_buffer = flatbuffer_program->constant_buffer();
     ET_CHECK_OR_RETURN_ERROR(
         constant_buffer == nullptr || constant_buffer->size() == 0,
         InvalidProgram,
-        "constant_buffer contains %u items, "
-        "constant_segment.offsets contains %u items. Only one should be used.",
-        constant_buffer->size(),
-        constant_segment->offsets()->size());
+        "constant_buffer contains %zu items, "
+        "constant_segment.offsets contains %zu items. Only one should be used.",
+        static_cast<size_t>(constant_buffer->size()),
+        static_cast<size_t>(constant_segment->offsets()->size()));
     const auto* segments = flatbuffer_program->segments();
     ET_CHECK_OR_RETURN_ERROR(
         segments != nullptr, InvalidProgram, "No segments in program");
@@ -176,9 +202,9 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     ET_CHECK_OR_RETURN_ERROR(
         constant_segment->segment_index() < segments->size(),
         InvalidProgram,
-        "Constant segment index %d invalid for program segments range %d",
-        constant_segment->segment_index(),
-        segments->size());
+        "Constant segment index %zu invalid for program segments range %zu",
+        static_cast<size_t>(constant_segment->segment_index()),
+        static_cast<size_t>(segments->size()));
 
     const executorch_flatbuffer::DataSegment* data_segment =
         segments->Get(constant_segment->segment_index());
@@ -199,16 +225,28 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         segment_base_offset,
         std::move(program_data.get()),
         flatbuffer_program,
-        std::move(constant_segment_data.get()));
+        std::move(constant_segment_data.get()),
+        std::move(pte_data_map));
   } else {
     // The constant data is stored inside the flatbuffer, so this program does
     // not contain a separate segment for it.
+
+    // NOTE: This branch is deprecated from ExecuTorch 0.7 onwards.
+    // Please regenerate your PTE file to ensure newer ExecuTorch runtimes can
+    // support it. ExecuTorch deprecation policy:
+    // https://docs.pytorch.org/executorch/stable/api-life-cycle.html#deprecation-policy.
+    // For support, contact the PyTorch Edge team or make an issue in:
+    // https://github.com/pytorch/executorch/issues.
+    ET_LOG(
+        Error,
+        "!!DEPRECATED!! This branch is deprecated from ExecuTorch 0.7; re-export this PTE file to ensure support on newer runtimes.");
     return Program(
         loader,
         segment_base_offset,
         std::move(program_data.get()),
         flatbuffer_program,
-        /*constant_segment_data=*/FreeableBuffer{});
+        /*constant_segment_data=*/FreeableBuffer{},
+        std::move(pte_data_map));
   }
 }
 
@@ -240,7 +278,8 @@ Result<const char*> Program::get_method_name(size_t plan_index) const {
 Result<Method> Program::load_method(
     const char* method_name,
     MemoryManager* memory_manager,
-    EventTracer* event_tracer) const {
+    EventTracer* event_tracer,
+    const NamedDataMap* named_data_map) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileMethodScope event_tracer_scope =
@@ -257,7 +296,8 @@ Result<Method> Program::load_method(
   if (!plan.ok()) {
     return plan.error();
   }
-  return Method::load(plan.get(), this, memory_manager, event_tracer);
+  return Method::load(
+      plan.get(), this, memory_manager, event_tracer, named_data_map);
 }
 
 Result<MethodMeta> Program::method_meta(const char* method_name) const {
@@ -292,7 +332,12 @@ Result<const void*> Program::get_constant_buffer_data(
   // loaded during Program::load, or stored inside the flatbuffer data
   // (constant_buffer).
   if (constant_segment_data_.data() != nullptr) {
-    size_t num_elems = internal_program->constant_segment()->offsets()->size();
+    const auto* constant_segment = internal_program->constant_segment();
+    size_t num_elems = constant_segment == nullptr
+        ? 0
+        : (constant_segment->offsets() == nullptr
+               ? 0
+               : constant_segment->offsets()->size());
     ET_CHECK_OR_RETURN_ERROR(
         buffer_index < num_elems,
         InvalidArgument,
@@ -324,7 +369,9 @@ Result<const void*> Program::get_constant_buffer_data(
         offset);
   } else {
     // Otherwise, the constant data is stored inside Program.constant_buffer.
-    size_t num_elems = internal_program->constant_buffer()->size();
+    const auto* constant_buffer_ptr = internal_program->constant_buffer();
+    size_t num_elems =
+        constant_buffer_ptr == nullptr ? 0 : constant_buffer_ptr->size();
     ET_CHECK_OR_RETURN_ERROR(
         buffer_index < num_elems,
         InvalidArgument,
@@ -332,18 +379,25 @@ Result<const void*> Program::get_constant_buffer_data(
         buffer_index,
         num_elems);
 
-    const auto& constant_buffer = *internal_program->constant_buffer();
-
+    const auto& constant_buffer = *constant_buffer_ptr;
+    const auto* storage = constant_buffer[buffer_index]->storage();
+    auto storage_size = storage == nullptr ? 0 : storage->size();
     ET_CHECK_OR_RETURN_ERROR(
-        constant_buffer[buffer_index]->storage()->size() <= nbytes,
+        storage_size <= nbytes,
         InvalidArgument,
-        "Constant buffer size %u larger than allocated nbytes %zu",
-        constant_buffer[buffer_index]->storage()->size(),
+        "Constant buffer size %zu larger than allocated nbytes %zu",
+        static_cast<size_t>(constant_buffer[buffer_index]->storage()->size()),
         nbytes);
 
-    return static_cast<const void*>(
-        constant_buffer[buffer_index]->storage()->data());
+    return storage->data();
   }
+}
+
+Result<const NamedDataMap*> Program::get_named_data_map() const {
+  if (pte_data_map_.has_value()) {
+    return &pte_data_map_.value();
+  }
+  return Error::NotFound;
 }
 
 Result<const char*> Program::get_output_flattening_encoding(
@@ -470,8 +524,8 @@ Error Program::load_mutable_subsegment_into(
   if (segment_offsets->segment_index() >= num_segments) {
     ET_LOG(
         Error,
-        "Segment index %u out of range (>= %zu)",
-        segment_offsets->segment_index(),
+        "Segment index %zu out of range (>= %zu)",
+        static_cast<size_t>(segment_offsets->segment_index()),
         num_segments);
     return Error::NotFound;
   }
@@ -501,5 +555,5 @@ Error Program::load_mutable_subsegment_into(
       segment_base_offset_ + segment->offset() + offset, size, info, buffer);
 }
 
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

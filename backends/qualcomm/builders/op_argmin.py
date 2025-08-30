@@ -10,7 +10,8 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpArgmin, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -26,8 +27,9 @@ class Argmin(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
+        output_tensor = self.get_tensor(node, node)
         argmin_inp_tensor_wrapper = self.define_tensor(
             input_node,
             node,
@@ -36,18 +38,14 @@ class Argmin(NodeVisitor):
             nodes_to_wrappers,
         )
         argmin_input_tensors = [argmin_inp_tensor_wrapper]
-
-        output_tensor = self.get_tensor(node, node).to(torch.int32)
-        # arg output is index, do not quantize it.
-        node.meta.pop("quant_attrs", None)
-        output_tensor_wrapper = self.define_tensor(
+        argmin_out_tensor_wrapper = self.define_tensor(
             node,
             node,
-            output_tensor,
+            output_tensor.to(torch.int32),
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        argmin_output_tensors = [output_tensor_wrapper]
+        argmin_output_tensors = [argmin_out_tensor_wrapper]
 
         dim = cast(int, node.args[1])
         if dim < 0:

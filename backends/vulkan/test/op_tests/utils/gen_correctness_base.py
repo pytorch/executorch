@@ -140,7 +140,13 @@ class CorrectnessTestGen:
             else self.suite_def.arg_data_range[arg.name]
         )
 
-        ret_str = f"{self.suite_def.data_gen}({init_list_str(data)}, {tensor_dtype}, {data_range[0]}, {data_range[1]})"
+        data_gen_fn = (
+            self.suite_def.data_gen
+            if arg.name not in self.suite_def.arg_data_gen_fn
+            else self.suite_def.arg_data_gen_fn[arg.name]
+        )
+
+        ret_str = f"{data_gen_fn}({init_list_str(data)}, {tensor_dtype}, {data_range[0]}, {data_range[1]})"
         if terminate:
             ret_str += ";"
 
@@ -170,7 +176,13 @@ class CorrectnessTestGen:
 
         if cpp_type == AT_TENSOR:
             if arg.name == "index" or arg.name == "indices":
-                ret_str += f"make_index_tensor({init_list_str(data)});"
+                args_str = init_list_str(data)
+                if args_str[:3] == "{{{":
+                    ret_str += f"make_index_tensor_3d({init_list_str(data)});"
+                elif args_str[:2] == "{{":
+                    ret_str += f"make_index_tensor_2d({init_list_str(data)});"
+                else:
+                    ret_str += f"make_index_tensor_1d({init_list_str(data)});"
             else:
                 ret_str += self.call_data_gen_fn(arg, data)
         elif cpp_type == OPT_AT_TENSOR:
@@ -271,18 +283,47 @@ cpp_test_template = """
 
 {preamble}
 
+at::Tensor make_casted_randint_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    int low = 0,
+    int high = 10) {{
+
+  return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
+}}
+
 at::Tensor make_rand_tensor(
     std::vector<int64_t> sizes,
     at::ScalarType dtype = at::kFloat,
     float low = 0.0,
     float high = 1.0) {{
-  if (high == 1.0 && low == 0.0)
-    return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
-    
+
   if (dtype == at::kChar)
     return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
 
+  if (dtype == at::kBool)
+    return at::rand(sizes, at::device(at::kCPU)) > 0.5;
+
+  if (high == 1.0 && low == 0.0)
+    return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
+
   return at::rand(sizes, at::device(at::kCPU).dtype(dtype)) * (high - low) + low;
+}}
+
+at::Tensor make_zeros_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    float low = 0.0,
+    float high = 1.0) {{
+  return at::zeros(sizes, at::device(at::kCPU).dtype(dtype));
+}}
+
+at::Tensor make_ones_tensor(
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    float low = 0.0,
+    float high = 1.0) {{
+  return at::ones(sizes, at::device(at::kCPU).dtype(dtype));
 }}
 
 at::Tensor make_seq_tensor(
@@ -307,7 +348,7 @@ at::Tensor make_seq_tensor(
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
+at::Tensor make_index_tensor_1d(std::vector<int64_t> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{static_cast<int64_t>(indices.size())}};
 
@@ -315,7 +356,7 @@ at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
   return at::from_blob(indices.data(), sizes, dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor(std::vector<std::vector<int64_t>> indices) {{
+at::Tensor make_index_tensor_2d(std::vector<std::vector<int64_t>> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{
     static_cast<int64_t>(indices.size()),
@@ -331,7 +372,7 @@ at::Tensor make_index_tensor(std::vector<std::vector<int64_t>> indices) {{
   return at::from_blob(acc.data(), sizes, dtype).detach().clone();
 }}
 
-at::Tensor make_index_tensor(std::vector<std::vector<std::vector<int64_t>>> indices) {{
+at::Tensor make_index_tensor_3d(std::vector<std::vector<std::vector<int64_t>>> indices) {{
   at::ScalarType dtype = at::kInt;
   std::vector<int64_t> sizes = {{
     static_cast<int64_t>(indices.size()),

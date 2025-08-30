@@ -19,10 +19,10 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::native::dequantize_per_channel_out;
 using torch::executor::native::dequantize_per_tensor_out;
 using torch::executor::native::dequantize_per_tensor_tensor_args_out;
@@ -65,6 +65,96 @@ TEST(OpDequantizeOutTest, AllDtypesSupported) {
   test_dtype<ScalarType::Bits16>();
   test_dtype<ScalarType::UInt16>();
   test_dtype<ScalarType::Int>();
+}
+
+/// Test all supported output dtypes for dequantization
+template <ScalarType OUT_DTYPE>
+void test_output_dtype() {
+  TensorFactory<ScalarType::Byte> tf;
+
+  Tensor input = tf.full({3, 5}, 100);
+  double scale = 0.5;
+  int64_t zero_point = 30;
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  TensorFactory<OUT_DTYPE> tfo;
+  Tensor out = tfo.zeros({3, 5});
+  // (100 - 30) * 0.5 = 35
+  Tensor expected = tfo.full({3, 5}, 35);
+  dequantize_per_tensor_out(
+      input,
+      scale,
+      zero_point,
+      quant_min,
+      quant_max,
+      ScalarType::Byte,
+      optional<ScalarType>(OUT_DTYPE),
+      out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpDequantizeOutTest, AllOutputDtypesSupported) {
+  et_pal_init();
+  test_output_dtype<ScalarType::Float>();
+  test_output_dtype<ScalarType::Double>();
+  test_output_dtype<ScalarType::Half>();
+}
+
+TEST(OpDequantizeOutTest, HalfOutput) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tf;
+
+  Tensor input = tf.full({3, 5}, 10);
+  double scale = 0.5;
+  int64_t zero_point = 100000;
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  TensorFactory<ScalarType::Half> tfo;
+  Tensor out = tfo.zeros({3, 5});
+  // (10 - 100000) * 0.5 = -49995
+  dequantize_per_tensor_out(
+      input,
+      scale,
+      zero_point,
+      quant_min,
+      quant_max,
+      ScalarType::Byte,
+      optional<ScalarType>(ScalarType::Half),
+      out);
+
+  // The expected result should be (10 - 100000) * 0.5 = -49995
+  Tensor expected = tfo.full({3, 5}, -49995);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpDequantizeOutTest, DoubleOutput) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tf;
+
+  Tensor input = tf.full({3, 5}, 10);
+  double scale = 0.5;
+  int64_t zero_point = 100000;
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  TensorFactory<ScalarType::Double> tfo;
+  Tensor out = tfo.zeros({3, 5});
+  dequantize_per_tensor_out(
+      input,
+      scale,
+      zero_point,
+      quant_min,
+      quant_max,
+      ScalarType::Byte,
+      optional<ScalarType>(ScalarType::Double),
+      out);
+
+  // The expected result should be (10 - 100000) * 0.5 = -49995
+  Tensor expected = tfo.full({3, 5}, -49995);
+  EXPECT_TENSOR_EQ(out, expected);
 }
 
 TEST(OpDequantizeOutTest, NonWholeNumbers) {

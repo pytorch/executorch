@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options")
 # Copied from fbsource/third-party/googletest
 
 COMPILER_FLAGS = [
@@ -17,7 +18,7 @@ def define_gtest_targets():
         visibility = ["PUBLIC"],
     )
 
-    for aten_mode in (True, False):
+    for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
 
         # # Google Test

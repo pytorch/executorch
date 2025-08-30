@@ -29,7 +29,7 @@ CommandBuffer::CommandBuffer(
 CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept
     : handle_(other.handle_),
       flags_(other.flags_),
-      state_(CommandBuffer::State::INVALID),
+      state_(other.state_),
       bound_(other.bound_) {
   other.handle_ = VK_NULL_HANDLE;
   other.bound_.reset();
@@ -81,7 +81,7 @@ void CommandBuffer::end() {
 void CommandBuffer::bind_pipeline(
     VkPipeline pipeline,
     VkPipelineLayout pipeline_layout,
-    const utils::uvec3 local_workgroup_size) {
+    const utils::WorkgroupSize local_workgroup_size) {
   VK_CHECK_COND(
       state_ == CommandBuffer::State::RECORDING,
       "Vulkan CommandBuffer: called bind_pipeline() on a command buffer whose state "

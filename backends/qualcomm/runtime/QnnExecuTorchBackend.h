@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -32,7 +33,18 @@ class QnnExecuTorchBackend final
   executorch::runtime::Error execute(
       ET_UNUSED executorch::runtime::BackendExecutionContext& context,
       executorch::runtime::DelegateHandle* handle,
-      executorch::runtime::EValue** args) const override;
+      executorch::runtime::Span<executorch::runtime::EValue*> args)
+      const override;
+
+  ET_NODISCARD executorch::runtime::Error set_option(
+      executorch::runtime::BackendOptionContext& context,
+      const executorch::runtime::Span<executorch::runtime::BackendOption>&
+          backend_options) override;
+
+  executorch::runtime::Error get_option(
+      executorch::runtime::BackendOptionContext& context,
+      executorch::runtime::Span<executorch::runtime::BackendOption>&
+          backend_options) override;
 
   void destroy(executorch::runtime::DelegateHandle* handle) const override;
 
@@ -45,10 +57,15 @@ class QnnExecuTorchBackend final
   void erase_cached_delegate(executorch::runtime::DelegateHandle* handle) const;
 
   mutable std::mutex mutex_;
+  mutable std::mutex runtime_option_mutex_;
   mutable std::unordered_map<int64_t, executorch::runtime::DelegateHandle*>
       delegate_map_;
   mutable std::unordered_map<executorch::runtime::DelegateHandle*, std::int64_t>
       delegate_map_rev_;
+
+  RuntimeOption qnn_runtime_log_level_{false, 0};
+  RuntimeOption qnn_runtime_performance_mode_{false, 0};
+  RuntimeOption qnn_runtime_profile_level_{false, 0};
 };
 
 } // namespace qnn

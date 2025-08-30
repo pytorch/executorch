@@ -38,7 +38,7 @@ void check_dequantize_per_tensor_args(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    executorch::aten::optional<ScalarType>& out_dtype,
+    std::optional<ScalarType>& out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Byte ||
@@ -170,7 +170,7 @@ float get_scale(const Tensor& scale, size_t channel_ix) {
 bool can_use_optimized_dequantize_per_channel(
     const Tensor& in,
     const ScalarType in_dtype,
-    executorch::aten::optional<ScalarType>& out_dtype) {
+    std::optional<ScalarType>& out_dtype) {
   bool is_contiguous = false;
 #ifdef USE_ATEN_LIB
   is_contiguous = in.is_contiguous();
@@ -188,13 +188,13 @@ bool can_use_optimized_dequantize_per_channel(
 void dequantize_per_channel_optimized(
     const Tensor& in,
     const Tensor& scales,
-    const executorch::aten::optional<Tensor>& opt_zero_points,
+    const std::optional<Tensor>& opt_zero_points,
     Tensor& out,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType in_dtype,
-    executorch::aten::optional<ScalarType>& out_dtype) {
+    std::optional<ScalarType>& out_dtype) {
   check_dequantize_per_tensor_args(
       in, quant_min, quant_max, in_dtype, out_dtype, out);
   ET_CHECK_MSG(
@@ -263,7 +263,7 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   torch::executor::Error err = resize_tensor(out, input.sizes());
   ET_CHECK_MSG(
@@ -288,16 +288,16 @@ Tensor& dequantize_per_tensor_out(
           static_cast<float>(scale));                                          \
     }                                                                          \
   } break;
-#define CALCULATE_INT_TYPE(IN_CTYPE, in_dtype)               \
-  case ScalarType::in_dtype:                                 \
-    switch (out.scalar_type()) {                             \
-      ET_FORALL_FLOAT_TYPES_WITH(IN_CTYPE, DEQUANTIZE_IMPL); \
-      default:                                               \
-        ET_CHECK_MSG(                                        \
-            false,                                           \
-            "Unhandled output dtype %" PRId8,                \
-            static_cast<int8_t>(out.scalar_type()));         \
-    }                                                        \
+#define CALCULATE_INT_TYPE(IN_CTYPE, in_dtype)                \
+  case ScalarType::in_dtype:                                  \
+    switch (out.scalar_type()) {                              \
+      ET_FORALL_FLOATH_TYPES_WITH(IN_CTYPE, DEQUANTIZE_IMPL); \
+      default:                                                \
+        ET_CHECK_MSG(                                         \
+            false,                                            \
+            "Unhandled output dtype %" PRId8,                 \
+            static_cast<int8_t>(out.scalar_type()));          \
+    }                                                         \
     break;
 
   switch (input.scalar_type()) {
@@ -323,7 +323,7 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
@@ -357,12 +357,12 @@ Tensor& dequantize_per_tensor_tensor_args_out(
 Tensor& dequantize_per_channel_out(
     const Tensor& input,
     const Tensor& scale,
-    const executorch::aten::optional<Tensor>& opt_zero_points,
+    const std::optional<Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   // normalize axis
   ET_CHECK_MSG(
@@ -384,7 +384,8 @@ Tensor& dequantize_per_channel_out(
   if (opt_zero_points.has_value()) {
     auto zero_point = opt_zero_points.value();
     ET_CHECK_MSG(
-        zero_point.scalar_type() == ScalarType::Long,
+        zero_point.scalar_type() == ScalarType::Int ||
+            zero_point.scalar_type() == ScalarType::Long,
         "zero_point.scalar_type() %" PRId8 " is not integer type",
         static_cast<int8_t>(zero_point.scalar_type()));
 
@@ -428,9 +429,8 @@ Tensor& dequantize_per_channel_out(
     zero_point_data = nullptr;
   }
 
-  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>
-      optional_dim_list{
-          executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+  std::optional<executorch::aten::ArrayRef<int64_t>> optional_dim_list{
+      executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
 
   // Actual dequantization logic
   // input, out are the input and output tensors
@@ -447,7 +447,7 @@ Tensor& dequantize_per_channel_out(
       const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();           \
       ET_CHECK_MSG(                                                            \
           axis == 0, "Axis must be 0 for a single dimensional tensors");       \
-      const executorch::aten::optional<int64_t> dim;                           \
+      const std::optional<int64_t> dim;                                        \
       apply_over_dim(                                                          \
           [input_data_ptr, out_data_ptr, zero_point_data, &scale](             \
               size_t numel, size_t stride, size_t base_ix) {                   \
@@ -460,7 +460,8 @@ Tensor& dequantize_per_channel_out(
               }                                                                \
               out_data_ptr[current_ix] =                                       \
                   static_cast<CTYPE_OUT>(                                      \
-                      input_data_ptr[current_ix] - zero_point) *               \
+                      input_data_ptr[current_ix] -                             \
+                      static_cast<int32_t>(zero_point)) *                      \
                   _scale;                                                      \
             }                                                                  \
           },                                                                   \
@@ -479,23 +480,24 @@ Tensor& dequantize_per_channel_out(
       apply_over_dim_list(                                                     \
           [input_data_ptr, out_data_ptr, _scale, _zero_point](size_t in_ix) {  \
             out_data_ptr[in_ix] = static_cast<CTYPE_OUT>(                      \
-                (input_data_ptr[in_ix] - _zero_point) * _scale);               \
+                (input_data_ptr[in_ix] - static_cast<int32_t>(_zero_point)) *  \
+                _scale);                                                       \
           },                                                                   \
           input,                                                               \
           optional_dim_list,                                                   \
           channel_ix);                                                         \
     }                                                                          \
     break;
-#define CALCULATE_FLOAT_TYPE(CTYPE_IN, in_dtype)             \
-  case ScalarType::in_dtype:                                 \
-    switch (out.scalar_type()) {                             \
-      ET_FORALL_FLOAT_TYPES_WITH(CTYPE_IN, DEQUANTIZE_IMPL); \
-      default:                                               \
-        ET_CHECK_MSG(                                        \
-            false,                                           \
-            "Unhandled output dtype %" PRId8,                \
-            static_cast<int8_t>(out.scalar_type()));         \
-    }                                                        \
+#define CALCULATE_FLOAT_TYPE(CTYPE_IN, in_dtype)              \
+  case ScalarType::in_dtype:                                  \
+    switch (out.scalar_type()) {                              \
+      ET_FORALL_FLOATH_TYPES_WITH(CTYPE_IN, DEQUANTIZE_IMPL); \
+      default:                                                \
+        ET_CHECK_MSG(                                         \
+            false,                                            \
+            "Unhandled output dtype %" PRId8,                 \
+            static_cast<int8_t>(out.scalar_type()));          \
+    }                                                         \
     break;
 
   switch (input.scalar_type()) {
@@ -518,12 +520,12 @@ Tensor& dequantize_per_channel_out(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
-    const executorch::aten::optional<Tensor>& opt_zero_points,
+    const std::optional<Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   (void)context;
   torch::executor::Error err = resize_tensor(out, input.sizes());
@@ -551,7 +553,7 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
@@ -568,7 +570,7 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper

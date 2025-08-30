@@ -3,4 +3,4 @@ Tutorials
 
 1. tutorials/*
        Getting Started Tutorials
-       https://pytorch.org/executorch/tutorials/template_tutorial.html
+       https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source/template_tutorial.py

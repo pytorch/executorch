@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import logging
 import os
 import sys
 from multiprocessing.connection import Client
@@ -65,17 +66,16 @@ def get_dataset(data_size, artifact_dir):
         collate_fn=lambda x: collate_fun(x),
     )
     # prepare input data
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     for wave, label in data_loader:
         for index in range(data_size):
             # reshape input tensor to NCHW
             inputs.append((wave[index].reshape(1, 1, -1, 1),))
             targets.append(label[index])
-            input_list += f"input_{index}_0.raw\n"
         # here we only take first batch, i.e. 'data_size' tensors
         break
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def eval_metric(pred, target_str):
@@ -111,7 +111,12 @@ def main(args):
     # target labels " abcdefghijklmnopqrstuvwxyz'*"
     instance.vocab_size = 29
     model = instance.get_eager_model().eval()
-    model.load_state_dict(torch.load(args.pretrained_weight, weights_only=True))
+    if args.pretrained_weight:
+        model.load_state_dict(torch.load(args.pretrained_weight, weights_only=True))
+    else:
+        logging.warning(
+            "It is strongly recommended to provide pretrained weights, otherwise accuracy will be bad. This option is here mainly for CI purpose to ensure compile is successful."
+        )
 
     # convert conv1d to conv2d in nn.Module level will only introduce 2 permute
     # nodes around input & output, which is more quantization friendly.
@@ -128,9 +133,13 @@ def main(args):
 
     # retrieve dataset, will take some time to download
     data_num = 100
-    inputs, targets, input_list = get_dataset(
-        data_size=data_num, artifact_dir=args.artifact
-    )
+    if args.ci:
+        inputs = [(torch.rand(1, 1, 700, 1),)]
+        logging.warning(
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
+        )
+    else:
+        inputs, targets = get_dataset(data_size=data_num, artifact_dir=args.artifact)
     pte_filename = "w2l_qnn"
     build_executorch_binary(
         model,
@@ -157,7 +166,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -212,7 +221,7 @@ if __name__ == "__main__":
         ),
         default=None,
         type=str,
-        required=True,
+        required=False,
     )
 
     args = parser.parse_args()

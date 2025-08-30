@@ -13,6 +13,7 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/platform/platform.h>
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
@@ -131,6 +132,7 @@ TEST(BroadcastUtilTest, GetBroadcastTargetSize) {
           .equals(ArrayRef<Tensor::SizesType>({5, 2, 2})));
 
   Tensor c = tf.zeros({4, 5});
+  et_pal_init();
   err = get_broadcast_target_size(
       a,
       c,

@@ -18,16 +18,12 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-endif()
-
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -35,7 +31,7 @@ endif()
 
 add_compile_options("-Wall" "-Werror")
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC
                             -DET_EVENT_TRACER_ENABLED
@@ -62,8 +58,8 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   #
 
   # portable_ops_lib
-  include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-  include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
   gen_selected_ops(LIB_NAME "mps_portable_ops_lib" INCLUDE_ALL_OPS "ON")
   generate_bindings_for_kernels(
     LIB_NAME "mps_portable_ops_lib" FUNCTIONS_YAML
@@ -80,16 +76,10 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   )
 
   #
-  # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+  # The `_<target>_srcs` lists are defined by executorch_load_build_variables.
   #
-  set(EXECUTORCH_SRCS_FILE
-      "${CMAKE_CURRENT_BINARY_DIR}/../../../executorch_srcs.cmake"
-  )
-
-  extract_sources(${EXECUTORCH_SRCS_FILE})
-
+  executorch_load_build_variables()
   set(_mps_schema_headers ${CMAKE_BINARY_DIR}/../../../schema/include/)
-  include(${EXECUTORCH_SRCS_FILE})
   target_include_directories(
     bundled_program
     INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../../devtools/include
@@ -102,12 +92,6 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
 
   if(CMAKE_BUILD_TYPE MATCHES "Debug")
-    set(FLATCC_LIB flatccrt_d)
-  else()
-    set(FLATCC_LIB flatccrt)
-  endif()
-
-  if(CMAKE_BUILD_TYPE MATCHES "Debug")
     target_link_options(mps_executor_runner PUBLIC -fsanitize=undefined)
   endif()
 
@@ -115,9 +99,11 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
     mps_executor_runner
     bundled_program
     executorch
+    extension_evalue_util
+    extension_runner_util
     gflags
     etdump
-    ${FLATCC_LIB}
+    flatccrt
     mpsdelegate
     mps_portable_ops_lib
     ${mps_executor_runner_libs}

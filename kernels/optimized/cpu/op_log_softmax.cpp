@@ -8,14 +8,15 @@
 
 #ifdef __aarch64__
 #include <arm_neon.h>
-#include <sleef.h>
 #endif
 
 #include <cmath>
 #include <type_traits>
 
+#include <ATen/native/cpu/LogSoftmaxKernelImpl.h>
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 // `_log_softmax_out` Applies the Log_Softmax function to an n-dimensional input
 // Tensor rescaling them so that the elements of the n-dimensional output
@@ -49,56 +50,52 @@ void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
     inner_size *= input.size(i);
   }
 
-  int64_t dim_stride = inner_size;
-  int64_t outer_stride = dim_size * dim_stride;
-
-  for (size_t outer_idx = 0; outer_idx < outer_size; ++outer_idx) {
-    for (size_t inner_idx = 0; inner_idx < inner_size; ++inner_idx) {
-      const IN_T* input_data =
-          input_data_base + outer_idx * outer_stride + inner_idx;
-      OUT_T* output_data =
-          output_data_base + outer_idx * outer_stride + inner_idx;
-
-      // calculate max in softmax dim
-      IN_T max_input = input_data[0];
-      for (auto d = 0; d < dim_size; ++d) {
-        max_input = std::max(max_input, input_data[d * dim_stride]);
-      }
-      // calculate sum and exponential in softmax dim
-      OUT_T temp_sum = 0;
-#ifndef __aarch64__
-      for (auto d = 0; d < dim_size; ++d) {
-        output_data[d * dim_stride] =
-            std::exp(input_data[d * dim_stride] - max_input);
-        temp_sum += output_data[d * dim_stride];
-      }
-#else
-      auto d = 0;
-      for (; d + 4 < dim_size; d += 4) {
-        auto index = d * dim_stride;
-        float32x4_t in =
-            vld1q_f32(static_cast<const float*>(&input_data[index]));
-        float32x4_t out_ =
-            Sleef_expf4_u10(vsubq_f32(in, vmovq_n_f32(max_input)));
-        vst1q_f32(static_cast<float*>(&output_data[index]), out_);
-        temp_sum += vaddvq_f32(out_);
-      }
-
-      for (; d < dim_size; ++d) {
-        output_data[d * dim_stride] =
-            std::exp(input_data[d * dim_stride] - max_input);
-        temp_sum += output_data[d * dim_stride];
-      }
-#endif // __aarch64__
-
-      temp_sum = std::log(temp_sum);
-
-      for (auto dd = 0; dd < dim_size; ++dd) {
-        output_data[dd * dim_stride] =
-            input_data[dd * dim_stride] - max_input - temp_sum;
-      }
-    }
+  if (dim == input.dim() - 1) {
+    ::executorch::extension::parallel_for(
+        0,
+        outer_size,
+        ::executorch::extension::internal::GRAIN_SIZE,
+        [&](const auto begin, const auto end) {
+          at::native::serial_vec_log_softmax_lastdim_range(
+              input_data_base,
+              output_data_base,
+              dim_size,
+              at::native::vec_log_softmax_lastdim_chunk_size<IN_T>(
+                  executorch::extension::internal::GRAIN_SIZE,
+                  outer_size,
+                  dim_size),
+              begin,
+              end);
+        });
+  } else {
+    // BLOCK_SIZE in PyTorch is intended for server CPUs; let's
+    // halve it to try and have a better chance of fitting in mobile
+    // chip caches.
+    const auto [chunk_size_binding, num_chunks_binding] =
+        at::native::vec_logsoftmax_chunk_size_and_num_chunks<
+            float,
+            /*BLOCK_SIZE=*/64 * 1024>(inner_size, dim_size);
+    // Work around "capturing a structured binding is not yet supported in
+    // OpenMP".
+    const auto chunk_size = chunk_size_binding;
+    const auto num_chunks = num_chunks_binding;
+    ::executorch::extension::parallel_for(
+        0,
+        outer_size * num_chunks,
+        ::executorch::extension::internal::GRAIN_SIZE,
+        [&](const auto begin, const auto end) {
+          at::native::serial_vec_logsoftmax_range(
+              input_data_base,
+              output_data_base,
+              inner_size,
+              chunk_size,
+              num_chunks,
+              dim_size,
+              begin,
+              end);
+        });
   }
+  return;
 }
 
 // OUT_T is the corresponding C++ type for out.scalar_type(). Only takes float

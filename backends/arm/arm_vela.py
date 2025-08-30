@@ -12,17 +12,22 @@ import tempfile
 from typing import List
 
 import numpy as np
-from ethosu.vela import vela  # type: ignore
+
+try:
+    from ethosu.vela import vela  # type: ignore
+
+    has_vela = True
+except ImportError:
+    has_vela = False
 
 
 # Pack either input or output tensor block, compose the related arrays into
 # per-io structs to simplify runtime use.
-def vela_bin_pack_io(prefix, data, shape_order=None):
+def vela_bin_pack_io(prefix, data):
     vela_input_shapes = data[prefix + "_shape"]
 
-    order = shape_order if shape_order else range(len(vela_input_shapes))
     ios = struct.pack("<i", len(vela_input_shapes))
-    for i in order:
+    for i in range(len(vela_input_shapes)):
         io_shape = vela_input_shapes[i]
         io_elem_size = data[prefix + "_elem_size"][i]
         io_offset = data[prefix + "_offset"][i]
@@ -39,18 +44,27 @@ def vela_bin_pack_io(prefix, data, shape_order=None):
 # Output via Vela to binary stream for ArmBackendEthosU
 # WARNING: Do not change this without changing VelaBinStream.cpp as that
 #          function consumes this format and the two need to align.
-def vela_compile(tosa_graph, args: List[str], shape_order=None):
+def vela_compile(tosa_flatbuffer: bytes, args: List[str], verbose: bool = False):
+    """
+    Compile a TOSA graph to a binary stream for ArmBackendEthosU using Vela.
+    """
+    if not has_vela:
+        raise RuntimeError(
+            "ethos-u-vela pip package couldn't be imported. Make sure it's installed!"
+        )
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tosaname = "out.tosa"
-        flatbuffer = tosa_graph.serialize()
         tosa_path = os.path.join(tmpdir, tosaname)
         with open(tosa_path, "wb") as f:
-            f.write(flatbuffer)
+            f.write(tosa_flatbuffer)
 
         # invoke vela
         output_dir = os.path.join(tmpdir, "output")
         args.append(f"--output-dir={output_dir}")
         args.append(tosa_path)
+        if verbose:
+            args.append("--verbose-all")
         vela.main(" ".join(args).split(" "))
 
         if any("ethos-u85" in arg for arg in args) or any(
@@ -59,8 +73,8 @@ def vela_compile(tosa_graph, args: List[str], shape_order=None):
             np_path = os.path.join(tmpdir, "output", "out_vela.npz")
         else:
             np_path = os.path.join(tmpdir, "output", "out_sg0_vela.npz")
-        blocks = b""
 
+        blocks = b""
         with np.load(np_path, allow_pickle=False) as data:
             # Construct our modified output_blocks with data in a form easily
             # digested on the device side
@@ -78,10 +92,10 @@ def vela_compile(tosa_graph, args: List[str], shape_order=None):
             if not isinstance(data["scratch_shape"][0], np.int64):
                 raise RuntimeError("Expected scratch to be int64")
             block_length = int(data["scratch_shape"][0])
-            bin_blocks["scratch_data"] = b"\x00" * block_length
+            bin_blocks["scratch_size"] = struct.pack("<I", block_length)
 
             # Capture inputs and outputs
-            bin_blocks["inputs"] = vela_bin_pack_io("input", data, shape_order)
+            bin_blocks["inputs"] = vela_bin_pack_io("input", data)
             bin_blocks["outputs"] = vela_bin_pack_io("output", data)
 
             bin_blocks["vela_end_stream"] = b""

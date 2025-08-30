@@ -6,20 +6,21 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/core/tensor_layout.h>
 
 namespace executorch {
-namespace runtime {
+namespace ET_RUNTIME_NAMESPACE {
 
 namespace {
 Result<size_t> calculate_nbytes(
     const Span<const int32_t>& sizes,
     const executorch::aten::ScalarType& scalar_type) {
   ssize_t n = 1;
-  for (ssize_t i = 0; i < sizes.size(); i++) {
+  for (const auto i : c10::irange(sizes.size())) {
     if (sizes[i] < 0) {
       return Error::InvalidArgument;
     }
@@ -43,12 +44,12 @@ Result<const TensorLayout> TensorLayout::create(
     return Error::InvalidArgument;
   }
 
-  for (size_t i = 0; i < dim_order.size(); i++) {
+  for (const auto i : c10::irange(dim_order.size())) {
     if (dim_order[i] >= sizes.size()) {
       return Error::InvalidArgument;
     }
   }
   return TensorLayout(sizes, dim_order, scalar_type, nbytes.get());
 }
-} // namespace runtime
+} // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

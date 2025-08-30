@@ -10,10 +10,9 @@
 
 #include <cstring>
 
-#include <unistd.h>
-
 #include <gtest/gtest.h>
 
+#include <executorch/extension/data_loader/mman.h>
 #include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -34,7 +33,7 @@ class MmapDataLoaderTest : public ::testing::Test {
     executorch::runtime::runtime_init();
 
     // Get the page size and ensure it's a power of 2.
-    long page_size = sysconf(_SC_PAGESIZE);
+    long page_size = get_os_page_size();
     ASSERT_GT(page_size, 0);
     ASSERT_EQ(page_size & ~(page_size - 1), page_size);
     page_size_ = page_size;
@@ -376,4 +375,57 @@ TEST_F(MmapDataLoaderTest, DEPRECATEDFrom) {
   Result<size_t> total_size = mdl->size();
   ASSERT_EQ(total_size.error(), Error::Ok);
   EXPECT_EQ(*total_size, contents_size);
+}
+
+// Tests that load_into copies bytes correctly.
+TEST_F(MmapDataLoaderTest, LoadIntoCopiesCorrectly) {
+  // Create a test string.
+  const char* test_text = "FILE_CONTENTS";
+  const size_t text_size = std::strlen(test_text);
+  TempFile tf(test_text);
+
+  // Wrap it in a loader.
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(tf.path().c_str());
+  ASSERT_EQ(mdl.error(), Error::Ok);
+
+  // Destination buffer.
+  std::vector<uint8_t> dst(text_size);
+
+  // Call load_into()
+  Error err = mdl->load_into(
+      /*offset=*/0,
+      /*size=*/text_size,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+      dst.data());
+  ASSERT_EQ(err, Error::Ok);
+
+  // Verify memory copied correctly.
+  EXPECT_EQ(0, std::memcmp(dst.data(), test_text, text_size));
+}
+
+// Tests that load_into copies offset slice correctly.
+TEST_F(MmapDataLoaderTest, LoadIntoCopiesOffsetCorrectly) {
+  // Create a test string.
+  const char* contents = "ABCDEFGH";
+  TempFile tf(contents);
+
+  // Wrap it in a loader.
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(tf.path().c_str());
+  ASSERT_EQ(mdl.error(), Error::Ok);
+
+  // Copying 3 bytes starting at offset 2 = "CDE"
+  const size_t offset = 2;
+  const size_t size = 3;
+  uint8_t dst[size];
+
+  // Call load_into()
+  Error err = mdl->load_into(
+      offset,
+      size,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+      dst);
+  ASSERT_EQ(err, Error::Ok);
+
+  // Verify memory copied correctly.
+  EXPECT_EQ(0, std::memcmp(dst, contents + offset, size));
 }

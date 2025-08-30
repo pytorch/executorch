@@ -6,6 +6,8 @@
 
 - op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
 
+- op: _fft_c2r.out
+
 - op: _fft_r2c.out
 
 - op: _linalg_det.result
@@ -141,6 +143,8 @@
 
 - op: div.out_mode
 
+- op: elu.out
+
 - op: embedding.out
 
 - op: empty.out
@@ -197,6 +201,8 @@
 
 - op: index_put.out
 
+- op: index_put_
+
 - op: index_select.out
 
 - op: index.Tensor_out
@@ -248,6 +254,8 @@
 - op: masked_select.out
 
 - op: max_pool2d_with_indices.out
+
+- op: max_pool2d_with_indices_backward.grad_input
 
 - op: max.dim_max
 
@@ -306,6 +314,10 @@
 - op: prod.int_out
 
 - op: prod.out
+
+- op: rand.out
+
+- op: randn.out
 
 - op: reciprocal.out
 
@@ -403,6 +415,8 @@
 
 - op: unbind_copy.int_out
 
+- op: unfold_copy.out
+
 - op: unsafe_split.Tensor_out
 
 - op: unsqueeze_copy.dim_out
@@ -416,6 +430,8 @@
 - op: var.correction_out
 
 - op: var.out
+
+- op: view_as_real_copy.out
 
 - op: view_copy.out
 

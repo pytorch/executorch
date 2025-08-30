@@ -19,6 +19,7 @@
 
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 #define SV(x) ::vkcompute::vkapi::SpecVar(x)
 
@@ -81,6 +82,10 @@ class SpecVarList final {
   }
 
   void append(const SpecVarList& other);
+
+  void reserve(const size_t size);
+
+  void append(const SpecVar& other);
 
   std::vector<VkSpecializationMapEntry> generate_map_entries() const;
 
@@ -154,6 +159,8 @@ class ComputePipeline final {
     SpecVarList specialization_constants;
   };
 
+  explicit ComputePipeline(VkDevice device, VkPipeline handle);
+
   explicit ComputePipeline(
       VkDevice device,
       const Descriptor& descriptor,
@@ -170,6 +177,7 @@ class ComputePipeline final {
  private:
   VkDevice device_;
   VkPipeline handle_;
+  std::vector<VkSpecializationMapEntry> map_entries_;
 
  public:
   inline VkPipeline handle() const {
@@ -180,6 +188,10 @@ class ComputePipeline final {
   // does not allow for move assignment. The swap function will
   // be used in the hash map.
   friend void swap(ComputePipeline& lhs, ComputePipeline& rhs) noexcept;
+
+  friend bool operator==(
+      const ComputePipeline::Descriptor& _1,
+      const ComputePipeline::Descriptor& _2);
 };
 
 class PipelineLayoutCache final {
@@ -288,6 +300,8 @@ class ComputePipelineCache final {
   const std::string cache_data_path_;
 
  public:
+  bool contains(const Key&);
+  void create_pipelines(const std::unordered_set<Key, Hasher>&);
   VkPipeline retrieve(const Key&);
   void purge();
 };

@@ -7,9 +7,29 @@ import executorch.backends.vulkan.custom_ops_lib  # noqa
 import torch
 import torch.nn.functional as F
 
-from torchao.quantization.GPTQ import _check_linear_int4_k
 from torchao.quantization.unified import Quantizer
 from torchao.quantization.utils import groupwise_affine_quantize_tensor
+
+
+# TODO: import from from torchao.quantization.GPTQ.GPTQ import _check_linear_int4_k
+# Once diff train catches up
+def _check_linear_int4_k(k, group_size=1, inner_k_tiles=None):
+    """
+    Check if the dimensions are compatible with int4 quantization.
+
+    Args:
+        k: The dimension size to check
+        group_size: The group size for quantization
+        inner_k_tiles: The inner k tiles size
+
+    Returns:
+        bool: Whether the dimensions are compatible
+    """
+    k_divisible_by_group_size = k % group_size == 0
+    if inner_k_tiles is not None:
+        k_divisible_by_16_times_inner_k_tiles = k % (inner_k_tiles * 16) == 0
+        return k_divisible_by_group_size and k_divisible_by_16_times_inner_k_tiles
+    return k_divisible_by_group_size
 
 
 # This module is copied from torchao.quantization.GPTQ.WeightOnlyInt4Linear with
@@ -118,9 +138,6 @@ def _vk_replace_linear_int4(
     # Use custom vulkan linear layer as default
     linear_class: Type[torch.nn.Module] = VkWeightOnlyInt4Linear,
     copy_weights: bool = False,
-    # Serves the same purpose as `tensor_dim_limit` in
-    # executorch.backends.vulkan.partitioner.VulkanSupportedOperators
-    feature_limit: int = 16384,
 ):
     for name, child in module.named_children():
         if isinstance(child, torch.nn.Linear) and (
@@ -131,8 +148,6 @@ def _vk_replace_linear_int4(
             if (
                 _check_linear_int4_k(child.in_features, groupsize, inner_k_tiles)
                 or padding_allowed
-            ) and (
-                child.out_features < feature_limit and child.in_features < feature_limit
             ):
                 new_linear = linear_class(
                     child.in_features,
@@ -175,7 +190,6 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
         inner_k_tiles: Optional[int] = 8,
         device: torch.device = torch.device("cpu"),  # noqa
         precision: torch.dtype = torch.float32,
-        feature_limit: int = 16384,
     ) -> None:
         super().__init__()
         assert inner_k_tiles in [2, 4, 8]
@@ -186,9 +200,6 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
         self.padding_allowed: bool = padding_allowed
         self.device: torch.device = device
         self.precision: torch.dtype = precision
-        # Serves the same purpose as `tensor_dim_limit` in
-        # executorch.backends.vulkan.partitioner.VulkanSupportedOperators
-        self.feature_limit = feature_limit
 
     @torch.no_grad()
     def _create_quantized_state_dict(
@@ -197,10 +208,7 @@ class VkInt4WeightOnlyQuantizer(Quantizer):
         cur_state_dict = model.state_dict()
         for fqn, mod in model.named_modules():
             # Add additional check to make sure features do not exceed feature limit
-            if isinstance(mod, torch.nn.Linear) and (
-                mod.out_features < self.feature_limit
-                and mod.in_features < self.feature_limit
-            ):
+            if isinstance(mod, torch.nn.Linear):
                 out_features = mod.out_features
                 in_features = mod.in_features
                 logging.info(f"linear: {fqn}, in={in_features}, out={out_features}")

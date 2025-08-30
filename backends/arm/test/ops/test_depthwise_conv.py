@@ -1,23 +1,29 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-import unittest
 
 from typing import Tuple
 
 import pytest
 
 import torch
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
+
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
+
+input_t = Tuple[torch.Tensor]  # Input x
+
+exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
+
 from executorch.backends.arm.test.ops.test_conv1d import Conv1d
 from executorch.backends.arm.test.ops.test_conv2d import Conv2d
-
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.backend_details import CompileSpec
-from parameterized import parameterized
 
 
 """
@@ -149,158 +155,157 @@ two_dw_conv2d = Conv2d(
 )
 
 # Shenanigan to get a nicer output when test fails.
-testsuite_conv2d = [
-    ("2x2_1x6x4x4_gp6_st1", dw_conv2d_2x2_1x6x4x4_gp6_st1),
-    ("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1),
-    ("3x3_1x4x256x256_gp4_nobias", dw_conv2d_3x3_1x4x256x256_gp4_nobias),
-    ("3x3_1x4x256x256_gp4_st1", dw_conv2d_3x3_1x4x256x256_gp4_st1),
-    ("3x3_2x8x198x198_gp8_st3", dw_conv2d_3x3_2x8x198x198_gp8_st3),
-    ("two_dw_conv2d", two_dw_conv2d),
-]
+test_data_conv2d_FP = {
+    "2x2_1x6x4x4_gp6_st1": lambda: dw_conv2d_2x2_1x6x4x4_gp6_st1,
+    "3x3_1x3x256x256_gp3_st1": lambda: dw_conv2d_3x3_1x3x256x256_gp3_st1,
+    "3x3_1x4x256x256_gp4_nobias": lambda: dw_conv2d_3x3_1x4x256x256_gp4_nobias,
+    "3x3_1x4x256x256_gp4_st1": lambda: dw_conv2d_3x3_1x4x256x256_gp4_st1,
+    "3x3_2x8x198x198_gp8_st3": lambda: dw_conv2d_3x3_2x8x198x198_gp8_st3,
+    "two_dw_conv2d": lambda: two_dw_conv2d,
+}
 
-testsuite_conv2d_u85 = [
-    ("2x2_1x6x4x4_gp6_st1", dw_conv2d_2x2_1x6x4x4_gp6_st1),
-    ("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1),
-    ("3x3_1x4x256x256_gp4_st1", dw_conv2d_3x3_1x4x256x256_gp4_st1),
-    ("3x3_1x4x256x256_gp4_nobias", dw_conv2d_3x3_1x4x256x256_gp4_nobias),
-]
+# Generate a new test set paired with per_channel_quant=True/False.
+test_data_conv2d_INT = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
+    for (k, v) in test_data_conv2d_FP.items()
+    for q in [True, False]
+}
 
-testsuite_conv2d_u85_xfails = [
-    ("3x3_2x8x198x198_gp8_st3", dw_conv2d_3x3_2x8x198x198_gp8_st3),
-    ("two_dw_conv2d", two_dw_conv2d),
-]
+# Generate a new test set paired with per_channel_quant=True/False.
+test_data_conv2d_u85 = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
+    for (k, v) in {
+        "2x2_1x6x4x4_gp6_st1": lambda: dw_conv2d_2x2_1x6x4x4_gp6_st1,
+        "3x3_1x3x256x256_gp3_st1": lambda: dw_conv2d_3x3_1x3x256x256_gp3_st1,
+        "3x3_1x4x256x256_gp4_st1": lambda: dw_conv2d_3x3_1x4x256x256_gp4_st1,
+        "3x3_1x4x256x256_gp4_nobias": lambda: dw_conv2d_3x3_1x4x256x256_gp4_nobias,
+    }.items()
+    for q in [True, False]
+}
+
+test_data_conv1d_FP = {
+    "2_1x6x4_gp6_st1": lambda: dw_conv1d_2_1x6x4_gp6_st1,
+    "two_dw_conv1d": lambda: two_dw_conv1d,
+    "3_1x3x256_gp3_st1": lambda: dw_conv1d_3_1x3x256_gp3_st1,
+    "3_1x3x14_gp3_st1": lambda: dw_conv1d_3_1x3x14_gp3_st1,
+}
+
+# Generate a new test set paired with per_channel_quant=True/False.
+test_data_conv1d_INT = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
+    for (k, v) in test_data_conv1d_FP.items()
+    for q in [True, False]
+}
 
 
-testsuite_conv1d = [
-    ("2_1x6x4_gp6_st1", dw_conv1d_2_1x6x4_gp6_st1),
-    ("two_dw_conv1d", two_dw_conv1d),
-    ("3_1x3x256_gp3_st1", dw_conv1d_3_1x3x256_gp3_st1),
-    ("3_1x3x14_gp3_st1", dw_conv1d_3_1x3x14_gp3_st1),
-]
+@common.parametrize("test_data", test_data_conv1d_FP | test_data_conv2d_FP)
+def test_convolution_2d_tosa_FP_depthwise(test_data: torch.nn.Module):
+    pipeline = TosaPipelineFP[input_t](
+        test_data(),
+        test_data().get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+    )
+    pipeline.run()
 
 
-class TestDepthwiseConv(unittest.TestCase):
-    """Tests Conv1D and Conv2D where groups == in_channels and out_channels = K * in_channels. This
-    is a special case enables depthwise convolution."""
+@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
+@common.parametrize("test_data", test_data_conv1d_INT | test_data_conv2d_INT)
+def test_convolution_2d_tosa_INT_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
 
-    def _test_dw_conv_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI",
-                ),
-            )
-            .export()
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
 
-    def _test_dw_conv_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+BI",
-                ),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
+@common.parametrize("test_data", test_data_conv1d_FP | test_data_conv2d_FP)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_FP_depthwise(test_data: torch.nn.Module):
+    model = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
 
-    def _test_dw_conv_ethos_BI_pipeline(
-        self,
-        module: torch.nn.Module,
-        compile_spec: CompileSpec,
-        test_data: Tuple[torch.Tensor],
-    ):
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=test_data)
 
-    @parameterized.expand(testsuite_conv1d + testsuite_conv2d)
-    def test_dw_conv_tosa_MI(self, test_name: str, model: torch.nn.Module):
-        self._test_dw_conv_tosa_MI_pipeline(model, model.get_inputs())
+@common.parametrize("test_data", test_data_conv1d_INT | test_data_conv2d_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_INT_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
 
-    @parameterized.expand(testsuite_conv1d + testsuite_conv2d)
-    @pytest.mark.flaky  # TODO: Investigate flakyness (MLTORCH-307)
-    def test_dw_conv_tosa_BI(self, test_name: str, model: torch.nn.Module):
-        self._test_dw_conv_tosa_BI_pipeline(model, model.get_inputs())
 
-    @parameterized.expand(testsuite_conv2d[:4], skip_on_empty=True)
-    @pytest.mark.corstone_fvp
-    def test_dw_conv2d_u55_BI(self, test_name: str, model: torch.nn.Module):
-        self._test_dw_conv_ethos_BI_pipeline(
-            model,
-            common.get_u55_compile_spec(),
-            model.get_inputs(),
-        )
+@common.XfailIfNoCorstone300  # TODO: MLETORCH-516
+@common.parametrize("test_data", test_data_conv2d_INT)
+def test_convolution_2d_u55_INT_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=exir_op,
+        run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
 
-    @parameterized.expand(testsuite_conv2d[4:], skip_on_empty=True)
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-516
-    def test_dw_conv2d_u55_BI_xfails(self, test_name: str, model: torch.nn.Module):
-        self._test_dw_conv_ethos_BI_pipeline(
-            model,
-            common.get_u55_compile_spec(),
-            model.get_inputs(),
-        )
 
-    @parameterized.expand(testsuite_conv1d, skip_on_empty=True)
-    @pytest.mark.corstone_fvp
-    def test_dw_conv1d_u55_BI(self, test_name: str, model: torch.nn.Module):
-        self._test_dw_conv_ethos_BI_pipeline(
-            model,
-            common.get_u55_compile_spec(),
-            model.get_inputs(),
-        )
+@common.XfailIfNoCorstone300  # TODO: MLETORCH-516
+@common.parametrize("test_data", test_data_conv1d_INT)
+def test_convolution_1d_u55_INT_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=exir_op,
+        run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
 
-    @parameterized.expand(testsuite_conv1d + testsuite_conv2d_u85)
-    @pytest.mark.corstone_fvp
-    def test_dw_conv_u85_BI(self, test_name: str, model: torch.nn.Module):
-        self._test_dw_conv_ethos_BI_pipeline(
-            model,
-            common.get_u85_compile_spec(),
-            model.get_inputs(),
-        )
 
-    # All test cases except 3x3_1x3x256x256_gp3_st1 have numerical issues on FVP. MLETORCH-520
-    @parameterized.expand(testsuite_conv2d_u85_xfails)
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP
-    def test_dw_conv_u85_BI_xfails(self, test_name: str, model: torch.nn.Module):
-        self._test_dw_conv_ethos_BI_pipeline(
-            model,
-            common.get_u85_compile_spec(),
-            model.get_inputs(),
-        )
+@common.XfailIfNoCorstone320  # TODO: MLETORCH-516
+@common.parametrize("test_data", test_data_conv2d_INT)
+def test_convolution_2d_u85_INT_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=exir_op,
+        run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320  # TODO: MLETORCH-516
+@common.parametrize("test_data", test_data_conv1d_INT)
+def test_convolution_1d_u85_INT_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_ops=[],
+        exir_ops=exir_op,
+        run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()

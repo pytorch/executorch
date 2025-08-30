@@ -15,12 +15,12 @@ from coremltools.optimize.torch.quantization.quantization_config import (
 )
 
 from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
-from torch.ao.quantization.quantize_pt2e import (
+from torch.export import export_for_training
+from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
 )
-from torch.export import export_for_training
 
 
 class TestCoreMLQuantizer:
@@ -32,7 +32,9 @@ class TestCoreMLQuantizer:
     ) -> None:
         assert quantization_type in {"PTQ", "QAT"}
 
-        pre_autograd_aten_dialect = export_for_training(model, example_inputs).module()
+        pre_autograd_aten_dialect = export_for_training(
+            model, example_inputs, strict=True
+        ).module()
 
         quantization_config = LinearQuantizerConfig.from_dict(
             {

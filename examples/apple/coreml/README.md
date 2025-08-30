@@ -15,19 +15,11 @@ coreml
 
 We will walk through an example model to generate a Core ML delegated binary file from a python `torch.nn.module` then we will use the `coreml_executor_runner` to run the exported binary file.
 
-1. Following the setup guide in [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup)
+1. Following the setup guide in [Setting Up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup)
 you should be able to get the basic development environment for ExecuTorch working.
 
-2. Run `install_requirements.sh` to install dependencies required by the **Core ML** backend.
 
-```bash
-cd executorch
-
-./backends/apple/coreml/scripts/install_requirements.sh
-
-```
-
-3. Run the export script to generate a Core ML delegated binary file.
+2. Run the export script to generate a Core ML delegated binary file.
 
 ```bash
 cd executorch
@@ -39,10 +31,13 @@ python3 -m examples.portable.scripts.export -h
 python3 -m examples.apple.coreml.scripts.export --model_name add
 ```
 
-4. Run the binary file using the `coreml_executor_runner`.
+3. Run the binary file using the `coreml_executor_runner`.
 
 ```bash
 cd executorch
+
+# Install requirements needed to run the example runner
+./backends/apple/coreml/scripts/install_requirements.sh
 
 # Builds the Core ML executor runner. Generates ./coreml_executor_runner if successful.
 ./examples/apple/coreml/scripts/build_executor_runner.sh

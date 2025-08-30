@@ -101,7 +101,7 @@ def create_prs_for_orig_branch(pr_stack: List[int], repo: Repository):
         # gh/user/x/orig is the clean diff between gh/user/x/base <- gh/user/x/head
         orig_branch_merge_head = pr.base.ref.replace("base", "orig")
         bot_metadata = f"""This PR was created by the merge bot to help merge the original PR into the main branch.
-ghstack PR number: https://github.com/pytorch/executorch/pull/{pr.number}
+ghstack PR number: https://github.com/pytorch/executorch/pull/{pr.number} by @{pr.user.login}
 ^ Please use this as the source of truth for the PR details, comments, and reviews
 ghstack PR base: https://github.com/pytorch/executorch/tree/{pr.base.ref}
 ghstack PR head: https://github.com/pytorch/executorch/tree/{pr.head.ref}

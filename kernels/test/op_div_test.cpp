@@ -54,7 +54,7 @@ class OpDivOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_div<DTYPE_A, DTYPE_B, ScalarType::dtype>();
 
-    ET_FORALL_FLOAT_TYPES(ENUMERATE_TEST_ENTRY)
+    ET_FORALL_FLOATHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -64,7 +64,7 @@ class OpDivOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_div_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -81,6 +81,52 @@ class OpDivOutTest : public OperatorTest {
     Tensor out = tf_out.zeros(sizes);
 
     ET_EXPECT_KERNEL_FAILURE(context_, op_div_out(a, b, out));
+  }
+
+  template <ScalarType DTYPE>
+  void test_broadcast_3D() {
+    TensorFactory<DTYPE> tf_a;
+
+    Tensor a =
+        tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor b = tf_a.make({2, 1, 3}, /*data=*/{2, 3, 4, 5, 6, 7});
+
+    // Destination for output of mul.
+    Tensor out =
+        tf_a.make({2, 2, 3}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Tensor expected = tf_a.make(
+        {2, 2, 3},
+        /*data=*/
+        {0.5000,
+         0.6667,
+         0.75002,
+         2.0000,
+         1.6667,
+         1.5000,
+         1.4000,
+         1.3333,
+         1.2857,
+         2.0000,
+         1.8333,
+         1.7143});
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE_WITH_TOL(op_div_out(a, b, out), expected, 1e-4, 1e-4);
+    expected = tf_a.make(
+        {2, 2, 3},
+        /*data=*/
+        {2.0000,
+         1.5000,
+         1.3333,
+         0.5000,
+         0.6000,
+         0.6667,
+         0.7143,
+         0.7500,
+         0.7778,
+         0.5000,
+         0.5455,
+         0.5833});
+    EXPECT_TENSOR_CLOSE_WITH_TOL(op_div_out(b, a, out), expected, 1e-4, 1e-4);
   }
 
   /**
@@ -137,7 +183,7 @@ void OpDivOutTest::test_div_enumerate_a_types() {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_div_enumerate_b_types<ScalarType::dtype>();
 
-  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+  ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
   test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>();
 
@@ -234,6 +280,22 @@ TEST_F(OpDivOutTest, BroadcastScalarSupported2) {
   out = tf.zeros({3, 1, 1});
   op_div_out(a, b, out);
   ret = tf.make({3, 1, 1}, {0.25, 0.5, 1});
+  EXPECT_TENSOR_EQ(out, ret);
+}
+
+TEST_F(OpDivOutTest, BroadcastSupported3) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor a = tf.make({5}, {2, 3, 4, 5, 6});
+  Tensor b = tf.make({1, 5}, {2, 1, 2, 2, 3});
+
+  // Destination for the broadcasting div. Follow the broadcasting rules in
+  // https://fburl.com/n9wl4d0o
+  Tensor out = tf.zeros({1, 5});
+
+  op_div_out(a, b, out);
+
+  Tensor ret = tf.make({1, 5}, {1, 3, 2, 2.5, 2});
   EXPECT_TENSOR_EQ(out, ret);
 }
 
@@ -455,6 +517,13 @@ TEST_F(OpDivOutTest, DynamicShapeUpperBoundLargerThanExpected) {
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   Tensor ret = op_div_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST_F(OpDivOutTest, BroadcastNDTest) {
+  // Test 3D tensors
+  test_broadcast_3D<ScalarType::Float>();
+  test_broadcast_3D<ScalarType::Half>();
+  test_broadcast_3D<ScalarType::BFloat16>();
 }
 
 TEST_F(OpDivOutTest, DynamicShapeUnbound) {

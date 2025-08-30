@@ -74,6 +74,7 @@ class OpWrapper final {
         std::move(quantize_param_wrapper),
         rank,
         dims,
+        nullptr,
         kBytes,
         data,
         copy_data);

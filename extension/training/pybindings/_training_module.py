@@ -41,20 +41,20 @@ class TrainingModule:
             self.parameters_method_prefix + method_name, ()
         )[0]
 
-        full_outputs = self.model.run_method(method_name, inputs)
-
-        user_outs = full_outputs[:grad_start_idx]
-        grads = full_outputs[grad_start_idx:params_start_idx]
-        params = full_outputs[params_start_idx:]
-
         # Important that the outputs are not cloned because we need the optimizer to
         # be able to mutate the actual weights and not clones of them.
-        fqn = self.model.run_method(
-            self.fqn_method_prefix + method_name, (), clone_outputs=False
-        )
+        full_outputs = self.model.run_method(method_name, inputs, clone_outputs=False)
+
+        user_outs = full_outputs[:grad_start_idx]
+        user_outs = [x.clone() for x in user_outs]
+        grads = full_outputs[grad_start_idx:params_start_idx]
+        grads = [grad.clone() for grad in grads]
+
+        fqn = self.model.run_method(self.fqn_method_prefix + method_name, ())
 
         self.named_grads = dict(zip(fqn, grads))
         if self.named_params is None:
+            params = full_outputs[params_start_idx:]
             self.named_params = dict(zip(fqn, params))
 
         return user_outs
@@ -65,7 +65,7 @@ class TrainingModule:
         return self.named_grads
 
     def named_parameters(self) -> Dict[str, Tensor]:
-        if self.named_grads is None:
+        if self.named_params is None:
             raise RuntimeError(
                 "Must call forward_backward before named_params. This will be fixed in a later version"
             )

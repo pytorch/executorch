@@ -110,6 +110,7 @@ TEST(ErrorHandlingTest, ResultBasic) {
 }
 
 TEST(ErrorHandlingTest, OkErrorNotPossible) {
+  executorch::runtime::runtime_init();
   Result<uint32_t> r(Error::Ok);
   ASSERT_FALSE(r.ok());
   ASSERT_NE(r.error(), Error::Ok);

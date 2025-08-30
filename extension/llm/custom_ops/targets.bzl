@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
@@ -9,6 +10,18 @@ load(
     "get_compiler_optimization_flags",
 )
 
+def _get_quantized_sdpa_deps():
+    if runtime.is_oss:
+        return []
+    else:
+        return ["//pytorch/ao/torchao/experimental/kernels/cpu/interface:interface"]
+
+def _get_quantized_preproc_flags():
+    if runtime.is_oss:
+        return []
+    else:
+        return ["-DENABLE_CUSTOM_QUANTIZED_SDPA"]
+
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
 
@@ -18,33 +31,35 @@ def define_common_targets():
     for mkl_dep in ["", "_mkl_noomp"]:
         runtime.cxx_library(
             name = "custom_ops" + mkl_dep,
-            srcs = [
-                "op_fallback.cpp",
-                "op_fast_hadamard_transform.cpp",
-                "op_sdpa.cpp",
-                "op_update_cache.cpp",
-            ],
+            srcs = EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS,
             exported_headers = [
                 "op_fallback.h",
                 "op_fast_hadamard_transform.h",
                 "op_sdpa.h",
                 "op_update_cache.h",
             ],
-            preprocessor_flags = get_vec_preprocessor_flags(),
+            headers = [
+                "op_sdpa_impl.h",
+            ],
+            exported_preprocessor_flags = get_vec_preprocessor_flags() +
+                _get_quantized_preproc_flags(),
             exported_deps = [
                 "//executorch/runtime/kernel:kernel_includes",
                 "//executorch/kernels/portable/cpu:scalar_utils",
                 "//executorch/kernels/optimized:libblas{}".format(mkl_dep),
                 "//executorch/kernels/optimized:libvec",
                 "//executorch/extension/kernel_util:kernel_util",
-                "//executorch/extension/parallel:thread_parallel",
                 "//executorch/extension/threadpool:threadpool",
             ],
             deps = [
                 "//executorch/kernels/portable/cpu/util:reduce_util",
                 "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
-            ] + get_vec_deps(),
-            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"] + get_compiler_optimization_flags(),
+            ] + get_vec_deps() + _get_quantized_sdpa_deps(),
+            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"] + get_compiler_optimization_flags() +
+            select({
+                "DEFAULT": [],
+                "ovr_config//cpu:arm64": ["-march=armv8.2-a+dotprod"],
+            }),
             visibility = [
                 "//executorch/...",
                 "//executorch/extension/llm/custom_ops/...",

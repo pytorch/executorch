@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
@@ -96,7 +97,7 @@ class HierarchicalAllocator final {
         "n_allocators %" PRIu32 " > %zu",
         n_allocators,
         kSpanArraySize);
-    for (uint32_t i = 0; i < n_allocators; ++i) {
+    for (const auto i : c10::irange(n_allocators)) {
       span_array_[i] =
           Span<uint8_t>(allocators[i].base_address(), allocators[i].size());
     }

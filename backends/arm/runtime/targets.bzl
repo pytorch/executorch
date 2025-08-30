@@ -12,7 +12,7 @@ def define_common_targets():
     )
     runtime.cxx_library(
         name = "arm_backend",
-        srcs = ["ArmBackendEthosU.cpp"],
+        srcs = ["EthosUBackend.cpp"],
         headers = [],
         compatible_with = ["ovr_config//cpu:arm32-embedded"],
         # arm_executor_runner.cpp needs to compile with executor as whole

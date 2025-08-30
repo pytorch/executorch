@@ -6,6 +6,8 @@
 
 # preprocess qaihub runner src files for llama2,3
 set(_qaihub_llama_runner__srcs ${_llama_runner__srcs})
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
+
 list(TRANSFORM _qaihub_llama_runner__srcs PREPEND "${EXECUTORCH_SOURCE_DIR}/")
 list(FILTER _qaihub_llama_runner__srcs EXCLUDE REGEX ".*(/runner/).*")
 list(
@@ -26,6 +28,7 @@ list(PREPEND _qaihub_llama2_7b_runner__srcs
 
 # build qaihub llama2 7b runner
 add_executable(qaihub_llama2_7b_runner ${_qaihub_llama2_7b_runner__srcs})
+
 target_include_directories(
   qaihub_llama2_7b_runner PUBLIC ${_common_include_directories}
 )
@@ -34,10 +37,11 @@ target_link_libraries(
   qnn_executorch_backend
   executorch_core
   extension_data_loader
+  extension_flat_tensor
+  extension_llm_runner
   extension_module
   extension_tensor
   gflags
-  re2::re2
 )
 target_compile_options(
   qaihub_llama2_7b_runner PUBLIC ${_common_compile_options}
@@ -56,16 +60,6 @@ list(PREPEND _qaihub_llama3_8b_runner__srcs
 # Adding a compile option to differentiate llama2 with llama3 logic
 list(APPEND _common_compile_options -DQAIHUB_LLAMA3_RUNNER)
 
-list(
-  APPEND _qaihub_llama3_8b_runner__srcs
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/tiktoken.cpp
-)
-list(
-  APPEND
-  _qaihub_llama3_8b_runner__srcs
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../models/llama/tokenizer/llama_tiktoken.cpp
-)
-
 # build qaihub llama3 8b runner
 add_executable(qaihub_llama3_8b_runner ${_qaihub_llama3_8b_runner__srcs})
 target_include_directories(
@@ -77,10 +71,11 @@ target_link_libraries(
   qnn_executorch_backend
   executorch_core
   extension_data_loader
+  extension_flat_tensor
+  extension_llm_runner
   extension_module
   extension_tensor
   gflags
-  re2::re2
 )
 target_compile_options(
   qaihub_llama3_8b_runner PUBLIC ${_common_compile_options}

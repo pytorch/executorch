@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import logging
 import os
 import re
 from multiprocessing.connection import Client
@@ -24,7 +25,7 @@ from executorch.examples.qualcomm.utils import (
 
 from PIL import Image
 from torch.utils.data import Dataset
-from torchsr.datasets import B100
+from torchsr.datasets import B100, Div2K
 from torchvision.transforms.functional import to_pil_image, to_tensor
 
 
@@ -56,12 +57,6 @@ class SrDataset(Dataset):
         with Image.open(file) as img:
             return to_tensor(img.resize(tuple(self.input_size * scale))).unsqueeze(0)
 
-    def get_input_list(self):
-        input_list = ""
-        for i in range(len(self.lr)):
-            input_list += f"input_{i}_0.raw\n"
-        return input_list
-
 
 def get_b100(
     dataset_dir: str,
@@ -75,6 +70,16 @@ def get_b100(
     return SrDataset(hr_dir, lr_dir)
 
 
+def get_Div2K(
+    dataset_dir: str,
+):
+    hr_dir = f"{dataset_dir}/sr_bm_dataset/DIV2K/DIV2K_valid_HR"
+    lr_dir = f"{dataset_dir}/sr_bm_dataset/DIV2K/DIV2K_valid_LR_bicubic/X2"
+    if not os.path.exists(hr_dir) or not os.path.exists(lr_dir):
+        Div2K(root=f"{dataset_dir}/sr_bm_dataset", scale=2, download=True)
+    return SrDataset(hr_dir, lr_dir)
+
+
 def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str):
     if not (lr_dir and hr_dir) and not default_dataset:
         raise RuntimeError(
@@ -85,7 +90,7 @@ def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str
         raise RuntimeError("Either use custom dataset, or use default dataset.")
 
     if default_dataset:
-        return get_b100(dataset_dir)
+        return get_Div2K(dataset_dir)
 
     return SrDataset(hr_dir, lr_dir)
 
@@ -103,14 +108,17 @@ def main(args):
         )
 
     instance = EdsrModel()
-    if args.compile_only:
+    if args.ci:
         inputs = instance.get_example_inputs()
+        logging.warning(
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
+        )
     else:
         dataset = get_dataset(
             args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
         )
 
-        inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
+        inputs, targets = dataset.lr, dataset.hr
 
     pte_filename = "edsr_qnn_q8"
     build_executorch_binary(
@@ -138,7 +146,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data

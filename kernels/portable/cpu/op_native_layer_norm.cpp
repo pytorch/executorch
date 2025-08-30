@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <c10/util/irange.h>
 
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
@@ -45,7 +46,7 @@ void layer_norm(
   CTYPE* rstd_data = rstd.mutable_data_ptr<CTYPE>();
 
   if (normalized == 0) {
-    for (int i = 0; i < leading; ++i) {
+    for (const auto i : c10::irange(leading)) {
       mean_data[i] = static_cast<CTYPE>(0);
       rstd_data[i] = static_cast<CTYPE>(NAN);
     }
@@ -67,7 +68,7 @@ void layer_norm(
   }
 
   const CTYPE ct_normalized = static_cast<CTYPE>(normalized);
-  for (int i = 0; i < leading; ++i) {
+  for (const auto i : c10::irange(leading)) {
     const CTYPE* x = input_data + i * normalized;
     CTYPE* y = out_data + i * normalized;
 
@@ -79,7 +80,7 @@ void layer_norm(
     CTYPE std = std::sqrt(variance + eps);
 
     // Calculate the elements of output
-    for (int j = 0; j < normalized; ++j) {
+    for (const auto j : c10::irange(normalized)) {
       CTYPE w = weight_data ? weight_data[j] : static_cast<CTYPE>(1);
       CTYPE b = bias_data ? bias_data[j] : static_cast<CTYPE>(0);
       y[j] = (x[j] - mean_value) / std * w + b;
@@ -101,8 +102,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const executorch::aten::optional<Tensor>& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
     double eps,
     Tensor& out,
     Tensor& mean_out,

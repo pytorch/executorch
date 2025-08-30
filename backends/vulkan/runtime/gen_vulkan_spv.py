@@ -12,9 +12,11 @@ import array
 import codecs
 import copy
 import glob
+import hashlib
 import io
 import os
 import re
+import shutil
 import sys
 from itertools import product
 from multiprocessing.pool import ThreadPool
@@ -54,47 +56,97 @@ DEFAULT_ENV: Dict[str, Any] = {
 TYPE_MAPPINGS: Dict[str, Any] = {
     "IMAGE_T": {
         3: {
+            "double": "image3D",
             "float": "image3D",
             "half": "image3D",
-            "int": "iimage3D",
-            "uint": "uimage3D",
+            # integer dtypes
             "int8": "iimage3D",
             "uint8": "uimage3D",
+            "int16": "iimage3D",
+            "uint16": "uimage3D",
+            "int32": "iimage3D",
+            "uint32": "uimage3D",
+            "int64": "iimage3D",
+            "uint64": "uimage3D",
+            # common dtype aliases
+            "bool": "uimage3D",
+            "int": "iimage3D",
+            "uint": "uimage3D",
         },
         2: {
+            "double": "image2D",
             "float": "image2D",
             "half": "image2D",
-            "int": "iimage2D",
-            "uint": "uimage2D",
+            # integer dtypes
             "int8": "iimage2D",
             "uint8": "uimage2D",
+            "int16": "iimage2D",
+            "uint16": "uimage2D",
+            "int32": "iimage2D",
+            "uint32": "uimage2D",
+            "int64": "iimage2D",
+            "uint64": "uimage2D",
+            # common dtype aliases
+            "bool": "uimage2D",
+            "int": "iimage2D",
+            "uint": "uimage2D",
         },
     },
     "SAMPLER_T": {
         3: {
+            "double": "sampler3D",
             "float": "sampler3D",
             "half": "sampler3D",
-            "int": "isampler3D",
-            "uint": "usampler3D",
+            # integer dtypes
             "int8": "isampler3D",
             "uint8": "usampler3D",
+            "int16": "isampler3D",
+            "uint16": "usampler3D",
+            "int32": "isampler3D",
+            "uint32": "usampler3D",
+            "int64": "isampler3D",
+            "uint64": "usampler3D",
+            # common dtype aliases
+            "bool": "usampler3D",
+            "int": "isampler3D",
+            "uint": "usampler3D",
         },
         2: {
+            "double": "sampler2D",
             "float": "sampler2D",
             "half": "sampler2D",
-            "int": "isampler2D",
-            "uint": "usampler2D",
+            # integer dtypes
             "int8": "isampler2D",
             "uint8": "usampler2D",
+            "int16": "isampler2D",
+            "uint16": "usampler2D",
+            "int32": "isampler2D",
+            "uint32": "usampler2D",
+            "int64": "isampler2D",
+            "uint64": "usampler2D",
+            # common dtype aliases
+            "bool": "usampler2D",
+            "int": "isampler2D",
+            "uint": "usampler2D",
         },
     },
     "IMAGE_FORMAT": {
+        "double": "rgba32f",
         "float": "rgba32f",
         "half": "rgba16f",
-        "int": "rgba32i",
-        "uint": "rgba32ui",
+        # integer dtypes
         "int8": "rgba8i",
         "uint8": "rgba8ui",
+        "int16": "rgba16i",
+        "uint16": "rgba16ui",
+        "int32": "rgba32i",
+        "uint32": "rgba32ui",
+        "int64": "rgba32i",
+        "uint64": "rgba32ui",
+        # common dtype aliases
+        "bool": "rgba8ui",
+        "int": "rgba32i",
+        "uint": "rgba32ui",
     },
 }
 
@@ -111,9 +163,18 @@ def define_variable(name: str) -> str:
 def buffer_scalar_type(dtype: str) -> str:
     if dtype == "half":
         return "float16_t"
-    elif dtype[-1] == "8":
+    elif dtype == "float":
+        return "float"
+    elif dtype == "double":
+        return "float64_t"
+    # integer dtype alias conversion
+    elif dtype == "bool":
+        return "uint8_t"
+    # we don't want to append _t for int32 or uint32 as int is already 32bit
+    elif dtype == "int32" or dtype == "uint32":
+        return "int" if dtype == "int32" else "uint"
+    elif dtype[-1].isdigit():
         return dtype + "_t"
-
     return dtype
 
 
@@ -121,27 +182,37 @@ def buffer_gvec_type(dtype: str, n: int) -> str:
     if n == 1:
         return buffer_scalar_type(dtype)
 
-    if dtype == "float":
-        return f"vec{n}"
-    elif dtype == "half":
-        return f"f16vec{n}"
-    elif dtype == "int":
-        return f"ivec{n}"
-    elif dtype == "int8":
-        return f"i8vec{n}"
-    elif dtype == "uint8":
-        return f"u8vec{n}"
+    dtype_map = {
+        "half": f"f16vec{n}",
+        "float": f"vec{n}",
+        "double": f"vec{n}",  # No 64bit image format support in GLSL
+        "int8": f"i8vec{n}",
+        "uint8": f"u8vec{n}",
+        "int16": f"i16vec{n}",
+        "uint16": f"u16vec{n}",
+        "int32": f"ivec{n}",
+        "int": f"ivec{n}",
+        "uint32": f"uvec{n}",
+        "uint": f"uvec{n}",
+        "int64": f"ivec{n}",  # No 64bit image format support in GLSL
+        "uint64": f"uvec{n}",  # No 64bit image format support in GLSL
+        "bool": f"u8vec{n}",
+    }
 
-    raise AssertionError(f"Invalid dtype: {dtype}")
+    vector_type = dtype_map.get(dtype)
+    if vector_type is None:
+        raise AssertionError(f"Invalid dtype: {dtype}")
+
+    return vector_type
 
 
 def texel_type(dtype: str) -> str:
     image_format = TYPE_MAPPINGS["IMAGE_FORMAT"][dtype]
-    if image_format[-1] == "f":
+    if image_format[-1:] == "f":
         return "vec4"
-    elif image_format[-2] == "ui":
+    elif image_format[-2:] == "ui":
         return "uvec4"
-    elif image_format[-1] == "i":
+    elif image_format[-1:] == "i":
         return "ivec4"
     raise AssertionError(f"Invalid image format: {image_format}")
 
@@ -353,15 +424,22 @@ def define_required_extensions(dtypes: Union[str, List[str]]):
         if dtype == "half":
             nbit = "16bit"
             glsl_type = "float16"
-        elif dtype == "int16" or dtype == "uint16":
-            nbit = "16bit"
-            glsl_type = "int16"
-        elif dtype == "int8" or dtype == "uint8":
+        elif dtype == "double":
+            # We only need to allow float64_t type usage
+            glsl_type = "float64"
+        elif dtype in ["int8", "uint8", "bool"]:
             nbit = "8bit"
             glsl_type = "int8"
+        elif dtype in ["int16", "uint16"]:
+            nbit = "16bit"
+            glsl_type = "int16"
+        elif dtype in ["int64", "uint64"]:
+            # We only need to allow int64_t and uint64_t type usage
+            glsl_type = "int64"
 
-        if nbit is not None and glsl_type is not None:
+        if nbit is not None:
             out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
+        if glsl_type is not None:
             out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
 
     return out_str
@@ -396,6 +474,10 @@ def extract_filename(path: str, keep_ext: bool = True) -> Any:
         return os.path.basename(path)
     else:
         return os.path.basename(path).split(".")[0]
+
+
+def extract_extension(path: str) -> str:
+    return os.path.splitext(extract_filename(path))[1][1:]
 
 
 ############################
@@ -463,6 +545,9 @@ def escape(line: str) -> str:
 def preprocess(
     input_text: str, variables: Dict[str, Any], input_path: str = "codegen"
 ) -> str:
+    # Workaround to handle source files using \ to extend mecros to a new line
+    input_text = re.sub(r"\\$", r"\\\\", input_text, flags=re.MULTILINE)
+
     input_lines = input_text.splitlines()
     python_lines = []
 
@@ -549,10 +634,15 @@ class SPVGenerator:
 
         self.env = env
         self.glslc_path = glslc_path
-        self.glslc_flags = glslc_flags
+        self.glslc_flags = glslc_flags.split()
+        self.glslc_flags_no_opt = self.glslc_flags.copy()
+        if "-O" in self.glslc_flags_no_opt:
+            self.glslc_flags_no_opt.remove("-O")
+        if "-Os" in self.glslc_flags_no_opt:
+            self.glslc_flags_no_opt.remove("-Os")
         self.replace_u16vecn = replace_u16vecn
 
-        self.glsl_src_files: Dict[str, str] = {}
+        self.src_files: Dict[str, str] = {}
         self.template_yaml_files: List[str] = []
 
         self.addSrcAndYamlFiles(self.src_dir_paths)
@@ -560,18 +650,18 @@ class SPVGenerator:
         for yaml_file in self.template_yaml_files:
             self.parseTemplateYaml(yaml_file)
 
-        self.output_shader_map: Dict[str, Tuple[str, Dict[str, str]]] = {}
+        self.output_file_map: Dict[str, Tuple[str, Dict[str, str]]] = {}
         self.constructOutputMap()
 
     def addSrcAndYamlFiles(self, src_dir_paths: List[str]) -> None:
         for src_path in src_dir_paths:
             # Collect glsl source files
-            glsl_files = glob.glob(
-                os.path.join(src_path, "**", "*.glsl*"), recursive=True
-            )
-            for file in glsl_files:
+            src_files_list = glob.glob(
+                os.path.join(src_path, "**", "*.[gh]lsl*"), recursive=True
+            ) + glob.glob(os.path.join(src_path, "**", "*.h"), recursive=True)
+            for file in src_files_list:
                 if len(file) > 1:
-                    self.glsl_src_files[extract_filename(file, keep_ext=False)] = file
+                    self.src_files[extract_filename(file, keep_ext=False)] = file
             # Collect template yaml files
             yaml_files = glob.glob(
                 os.path.join(src_path, "**", "*.yaml"), recursive=True
@@ -608,6 +698,10 @@ class SPVGenerator:
 
                     elif "VALUE" in value:
                         suffix = value.get("SUFFIX", value["VALUE"])
+                        if value["VALUE"] in ["int", "uint"]:
+                            raise ValueError(
+                                f"Use int32 or uint32 instead of {value['VALUE']}"
+                            )
                         param_values.append((param_name, suffix, value["VALUE"]))
 
                     else:
@@ -627,6 +721,7 @@ class SPVGenerator:
                     raise KeyError(f"{template_name} params file is defined twice")
 
                 default_params = params_dict["parameter_names_with_default_values"]
+                default_params["YAML_SRC_FULLPATH"] = yaml_file
                 params_names = set(default_params.keys()).union({"NAME"})
 
                 self.shader_template_params[template_name] = []
@@ -636,9 +731,16 @@ class SPVGenerator:
                 )
 
                 for variant in params_dict["shader_variants"]:
+                    default_iterated_params_names = set(
+                        default_iterated_params.keys()
+                        if default_iterated_params is not None
+                        else {}
+                    )
                     variant_params_names = set(variant.keys())
+
                     invalid_keys = (
                         variant_params_names
+                        - default_iterated_params_names
                         - params_names
                         - {"generate_variant_forall"}
                     )
@@ -666,6 +768,7 @@ class SPVGenerator:
                                     variant_name = f"{variant_name}_{param_value[1]}"
 
                             default_params_copy["NAME"] = variant_name
+                            default_params_copy["VARIANT_NAME"] = variant["NAME"]
 
                             self.shader_template_params[template_name].append(
                                 default_params_copy
@@ -691,19 +794,19 @@ class SPVGenerator:
         return shader_params
 
     def constructOutputMap(self) -> None:
-        for shader_name, params in self.shader_template_params.items():
+        for src_name, params in self.shader_template_params.items():
             for variant in params:
-                source_glsl = self.glsl_src_files[shader_name]
+                src_file_fullpath = self.src_files[src_name]
 
-                self.output_shader_map[variant["NAME"]] = (
-                    source_glsl,
+                self.output_file_map[variant["NAME"]] = (
+                    src_file_fullpath,
                     self.create_shader_params(variant),
                 )
 
-        for shader_name, source_glsl in self.glsl_src_files.items():
-            if shader_name not in self.shader_template_params:
-                self.output_shader_map[shader_name] = (
-                    source_glsl,
+        for src_name, src_file_fullpath in self.src_files.items():
+            if src_name not in self.shader_template_params:
+                self.output_file_map[src_name] = (
+                    src_file_fullpath,
                     self.create_shader_params(),
                 )
 
@@ -728,59 +831,261 @@ class SPVGenerator:
         input_text = input_text.replace("uint16_t", "int")
         return input_text
 
-    def generateSPV(self, output_dir: str) -> Dict[str, str]:
-        output_file_map = {}
+    def get_md5_checksum(self, file_path: str) -> str:
+        # Use a reasonably sized buffer for better performance with large files
+        BUF_SIZE = 65536  # 64kb chunks
 
-        def process_shader(shader_paths_pair):
-            shader_name = shader_paths_pair[0]
+        md5 = hashlib.md5()
 
-            source_glsl = shader_paths_pair[1][0]
-            shader_params = shader_paths_pair[1][1]
+        with open(file_path, "rb") as f:
+            while True:
+                data = f.read(BUF_SIZE)
+                if not data:
+                    break
+                md5.update(data)
 
-            with codecs.open(source_glsl, "r", encoding="utf-8") as input_file:
-                input_text = input_file.read()
-                input_text = self.maybe_replace_u16vecn(input_text)
-                output_text = preprocess(input_text, shader_params)
+        # Get the hexadecimal digest and compare
+        file_md5 = md5.hexdigest()
+        return file_md5
 
-            glsl_out_path = os.path.join(output_dir, f"{shader_name}.glsl")
-            with codecs.open(glsl_out_path, "w", encoding="utf-8") as output_file:
-                output_file.write(output_text)
+    def generateSPV(  # noqa: C901
+        self,
+        output_dir: str,
+        cache_dir: Optional[str] = None,
+        force_rebuild: bool = False,
+    ) -> Dict[str, str]:
+        # The key of this dictionary is the full path to a generated source file. The
+        # value is a tuple that contains 3 entries:
+        #
+        # 1. A bool indicationg if the file has changed since the last compilation; this
+        #    is determined by comparing against the cached version.
+        # 2. List of other source files included by the generated file.
+        gen_file_meta: Dict[str, Tuple[bool, List[str], str]] = {}
 
-            # If no GLSL compiler is specified, then only write out the generated GLSL shaders.
-            # This is mainly for testing purposes.
-            if self.glslc_path is not None:
-                spv_out_path = os.path.join(output_dir, f"{shader_name}.spv")
+        # Return value of the function mapping the abspath of compiled SPIR-V binaries
+        # to the abspath of the generated GLSL file they were compiled from.
+        spv_to_glsl_map: Dict[str, str] = {}
 
-                cmd = (
-                    [
-                        self.glslc_path,
-                        "-fshader-stage=compute",
-                        glsl_out_path,
-                        "-o",
-                        spv_out_path,
-                        "--target-env=vulkan1.1",
-                        "-Werror",
-                    ]
-                    + [
-                        arg
-                        for src_dir_path in self.src_dir_paths
-                        for arg in ["-I", src_dir_path]
-                    ]
-                    + self.glslc_flags.split()
+        # Convert output_dir to absolute path
+        assert os.path.exists(output_dir)
+        output_dir = os.path.abspath(output_dir)
+
+        if cache_dir is not None:
+            assert os.path.exists(cache_dir)
+
+        def get_glsl_includes(glsl_text):
+            """
+            Parse GLSL text content and return a list of included files.
+
+            Args:
+                glsl_text: String containing the GLSL file content to analyze
+
+            Returns:
+                List of included file names (e.g., ["random.h"])
+            """
+            includes = []
+            for line in glsl_text.splitlines():
+                # Look for #include directives with quoted filenames
+                # Matches: #include "filename.h" or #include <filename.h>
+                include_match = re.match(
+                    r'^\s*#include\s+[<"]([^>"]+)[>"]', line.strip()
+                )
+                if include_match:
+                    includes.append(include_match.group(1))
+
+            return includes
+
+        def file_has_changed(gen_file_path, cached_file_path):
+            # If the file does not exist in the cache, then return True
+            if not os.path.exists(cached_file_path):
+                return True
+            current_checksum = self.get_md5_checksum(gen_file_path)
+            cached_checksum = self.get_md5_checksum(cached_file_path)
+            return current_checksum != cached_checksum
+
+        def any_sources_changed(gen_file_path, output_dir):
+            """
+            Given the path to a generated source file, check the gen_file_meta dict to
+            determine if the ANY of the source files contributing to the compilation of
+            this file were changed since the last successful compilation.
+            """
+            gen_file_changed, includes_list = gen_file_meta[gen_file_path]
+            any_changed = gen_file_changed
+            for included_file in includes_list:
+                included_file_path = os.path.join(output_dir, included_file)
+                any_changed = any_changed or any_sources_changed(
+                    included_file_path, output_dir
                 )
 
-                subprocess.check_call(cmd)
+            return any_changed
 
-                return (spv_out_path, glsl_out_path)
+        def generate_src_file(shader_paths_pair) -> Tuple[bool, List[str]]:
+            """
+            Given an input tuple containing the following items:
+            (src_file_name, (template_file_path, codegen_params))
 
-        # Parallelize shader compilation as much as possible to optimize build time.
+            This function generates src_file_name by processing
+            template_file_path with the Python preprocessor using the
+            parameters specified by codegen_params.
+
+            Then, it returns a tuple containing:
+            1. The path of the generated source file
+            2. A bool indicating if the generated source file has changed since the last
+               compilation.
+            3. A list of files included by the generated source file
+            """
+            # name of .glsl, .glslh, or .h file to be generated
+            src_file_name = shader_paths_pair[0]
+            # path of template file used for codegen
+            template_file_path = shader_paths_pair[1][0]
+            # args to be used for codegen
+            codegen_params = shader_paths_pair[1][1]
+
+            # Assume that generated files will have the same file extension as the
+            # source template file.
+            out_file_ext = extract_extension(template_file_path)
+
+            # Construct generated file name
+            gen_out_path = os.path.join(output_dir, f"{src_file_name}.{out_file_ext}")
+            # Construct path of cached generated file
+            cached_gen_out_path = os.path.join(
+                cache_dir, f"{src_file_name}.{out_file_ext}"
+            )
+
+            # Execute codegen to generate the output file
+            with codecs.open(template_file_path, "r", encoding="utf-8") as input_file:
+                input_text = input_file.read()
+                input_text = self.maybe_replace_u16vecn(input_text)
+                output_text = preprocess(input_text, codegen_params)
+
+            included_files = get_glsl_includes(output_text)
+
+            with codecs.open(gen_out_path, "w", encoding="utf-8") as output_file:
+                output_file.write(output_text)
+
+            file_changed = (
+                file_has_changed(gen_out_path, cached_gen_out_path) or force_rebuild
+            )
+
+            # Save the generated file to cache so it can be used for future checks
+            if cache_dir is not None and file_changed:
+                shutil.copyfile(gen_out_path, cached_gen_out_path)
+
+            return gen_out_path, file_changed, included_files
+
+        def compile_spirv(shader_paths_pair) -> Tuple[str, str]:
+            """
+            Given an input tuple containing the following items:
+            (src_file_name, (template_file_path, codegen_params))
+
+            Infer the path of the GLSL source file generated by generate_src_file and
+            compile a SPIR-V binary from it. Returns the path of the compiled SPIR-V
+            binary and the path of the source file used to compile it.
+
+            This function also utilizes a caching mechanism; if generate_src_file
+            reported that the source file was unchanged since the last successful
+            compilation, AND if the SPIR-V from the last successful compilation was
+            stored in the cache, then directly use the cached SPIR-V without triggering
+            a re-compilation.
+            """
+            # name of generated .glsl, .glslh, or .h from generate_src_file
+            src_file_name = shader_paths_pair[0]
+            # path of template file used for codegen
+            template_file_path = shader_paths_pair[1][0]
+            # args used for codegen
+            codegen_params = shader_paths_pair[1][1]
+
+            # Assume that generated files will have the same file extension as the
+            # source template file.
+            out_file_ext = extract_extension(template_file_path)
+
+            # Infer name of generated file (created by generate_src_file)
+            gen_out_path = os.path.join(output_dir, f"{src_file_name}.{out_file_ext}")
+
+            # Only proceed if GLSL -> SPIR-V compilation is required for this file
+            if out_file_ext != "glsl":
+                return (None, gen_out_path)
+
+            # Validate that the source file actually exists
+            assert os.path.exists(gen_out_path) and gen_out_path in gen_file_meta
+
+            # Construct name of SPIR-V file to be compiled
+            spv_out_path = os.path.join(output_dir, f"{src_file_name}.spv")
+
+            if cache_dir is not None:
+                # Construct the file names of cached SPIR-V file to check if they exist
+                # in the cache.
+                cached_spv_out_path = os.path.join(cache_dir, f"{src_file_name}.spv")
+
+                can_use_cached = not any_sources_changed(gen_out_path, output_dir)
+                if can_use_cached and os.path.exists(cached_spv_out_path):
+                    shutil.copyfile(cached_spv_out_path, spv_out_path)
+                    return (spv_out_path, gen_out_path)
+
+            vk_version = codegen_params.get("VK_VERSION", "1.1")
+            # Only proceed if a GLSL compiler was specified
+            if self.glslc_path is not None:
+                cmd_base = [
+                    self.glslc_path,
+                    "-fshader-stage=compute",
+                    gen_out_path,
+                    "-o",
+                    spv_out_path,
+                    "--target-env=vulkan{}".format(vk_version),
+                    "-Werror",
+                    "-I",
+                    output_dir,
+                ]
+                cmd = cmd_base + self.glslc_flags
+
+                try:
+                    subprocess.run(cmd, check=True, capture_output=True, text=True)
+                except subprocess.CalledProcessError as e:
+                    opt_fail = "compilation succeeded but failed to optimize"
+                    err_msg_base = f"Failed to compile {os.getcwd()}/{gen_out_path}: "
+                    if opt_fail in e.stderr or opt_fail in e.stdout:
+                        cmd_no_opt = cmd_base + self.glslc_flags_no_opt
+                        try:
+                            subprocess.run(cmd_no_opt, check=True, capture_output=True)
+                        except subprocess.CalledProcessError as e_no_opt:
+                            # Delete any existing cached SPIR-V file if it exists
+                            if os.path.exists(cached_spv_out_path):
+                                os.remove(cached_spv_out_path)
+
+                            raise RuntimeError(
+                                f"{err_msg_base} {e_no_opt.stderr}"
+                            ) from e_no_opt
+
+                    else:
+                        # Delete any existing cached SPIR-V file if it exists
+                        if os.path.exists(cached_spv_out_path):
+                            os.remove(cached_spv_out_path)
+
+                        raise RuntimeError(f"{err_msg_base} {e.stderr}") from e
+
+                # If compilation was successful, store the compiled SPIR-V file in the
+                # cache for future use.
+                if cache_dir is not None:
+                    shutil.copyfile(spv_out_path, cached_spv_out_path)
+
+            return (spv_out_path, gen_out_path)
+
+        # Run codegen serially to ensure that all .glsl, .glslh, and .h files are up to
+        # date before compilation
+        for generated_file_tuple in self.output_file_map.items():
+            gen_out_path, file_changed, include_list = generate_src_file(
+                generated_file_tuple
+            )
+            gen_file_meta[gen_out_path] = (file_changed, include_list)
+
+        # Parallelize SPIR-V compilation to optimize build time
         with ThreadPool(os.cpu_count()) as pool:
             for spv_out_path, glsl_out_path in pool.map(
-                process_shader, self.output_shader_map.items()
+                compile_spirv, self.output_file_map.items()
             ):
-                output_file_map[spv_out_path] = glsl_out_path
+                spv_to_glsl_map[spv_out_path] = glsl_out_path
 
-        return output_file_map
+        return spv_to_glsl_map
 
 
 ##############################################
@@ -1018,6 +1323,9 @@ def genCppFiles(
     shader_registry_strs = []
 
     for spvPath, srcPath in spv_files.items():
+        if spvPath is None:
+            continue
+
         name = getName(spvPath).replace("_spv", "")
 
         sizeBytes, spv_bin_str = generateSpvBinStr(spvPath, name)
@@ -1072,8 +1380,11 @@ def main(argv: List[str]) -> int:
         default=["."],
     )
     parser.add_argument("-c", "--glslc-path", required=True, help="")
-    parser.add_argument("-t", "--tmp-dir-path", required=True, help="/tmp")
+    parser.add_argument(
+        "-t", "--tmp-dir-path", required=True, help="/tmp/vulkan_shaders/"
+    )
     parser.add_argument("-o", "--output-path", required=True, help="")
+    parser.add_argument("-f", "--force-rebuild", action="store_true", default=False)
     parser.add_argument("--replace-u16vecn", action="store_true", default=False)
     parser.add_argument("--optimize_size", action="store_true", help="")
     parser.add_argument("--optimize", action="store_true", help="")
@@ -1114,7 +1425,9 @@ def main(argv: List[str]) -> int:
         glslc_flags=glslc_flags_str,
         replace_u16vecn=options.replace_u16vecn,
     )
-    output_spv_files = shader_generator.generateSPV(options.tmp_dir_path)
+    output_spv_files = shader_generator.generateSPV(
+        options.output_path, options.tmp_dir_path, options.force_rebuild
+    )
 
     genCppFiles(
         output_spv_files,

@@ -13,22 +13,21 @@ from typing import Any, Dict, final, List
 import executorch.backends.vulkan.utils as utils
 
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
-from executorch.backends.transforms.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
-)
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
-from executorch.backends.transforms.fuse_dequant_linear import FuseDequantLinearPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
 )
 from executorch.backends.vulkan._passes import (
+    FuseQuantizedOpsTransform,
     insert_prepack_nodes,
     RemoveLocalScalarDenseOpsTransform,
     RemoveRedundantOpsTransform,
-    SqueezeInt4LinearInputs,
+    SqueezeUnsqueezeInputs,
     TagMemoryMetaPass,
 )
+from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
+from executorch.backends.vulkan._passes.remove_asserts import RemoveAssertsTransform
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
@@ -38,6 +37,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
 )
+from executorch.backends.xnnpack._passes import FuseBatchNormPass
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -47,7 +47,7 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
-from executorch.exir.memory_planning import greedy
+from executorch.exir.memory_planning import greedy, MemoryPlanningAlgorithmSuite
 from executorch.exir.pass_base import ExportPass, PassBase
 
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
@@ -66,7 +66,6 @@ DEFAULT_DEBUG_HANDLE = 65535
 # pyre-ignore
 def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
     for p in passes:
-
         if issubclass(type(p), ExportPass) or issubclass(type(p), PassBase):
             new_gm = program.graph_module
             # This is a workaround to allow the memory planning pass to work without
@@ -109,6 +108,9 @@ def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
         if spec.key == "skip_tag_memory_metadata":
             options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
 
+        if spec.key == "downcast_64_bit":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
         # Unhandled options are ignored
 
     return options
@@ -141,6 +143,7 @@ class VulkanBackend(BackendDetails):
         default_memory_layout = compile_options.get(
             "memory_layout_override", VkMemoryLayout.TENSOR_WIDTH_PACKED
         )
+        downcast_64_bit = compile_options.get("downcast_64_bit", True)
 
         program = unsafe_remove_auto_functionalized_pass(program)
 
@@ -150,13 +153,14 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
+                FusePatternsPass(program),
                 RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
-                FuseDequantLinearPass(),
-                SqueezeInt4LinearInputs(),
+                FuseQuantizedOpsTransform(program),
+                SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
-                FuseBatchNormWithConvPass(program),
+                FuseBatchNormPass(program),
                 FuseClampPass(),
             ],
         )
@@ -172,6 +176,7 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
+                RemoveAssertsTransform(),
                 # Since this pass may replace a scalar argument with a tensor argument,
                 # this pass may result in a non ATen compliant graph structure.
                 RemoveLocalScalarDenseOpsTransform(),
@@ -199,16 +204,21 @@ class VulkanBackend(BackendDetails):
         # Finally, apply dynamic shape passes and memory planning pass. These passes
         # must be applied only when the graph structure is finalized.
         greedy_memory_planning = partial(greedy, allow_overlapping_allocations=False)
+        mem_planning_suite = MemoryPlanningAlgorithmSuite(
+            algo_list=[greedy_memory_planning]
+        )
         program = apply_passes(
             program,
             [
                 ConstraintBasedSymShapeEvalPass(),
-                MemoryPlanningPass(memory_planning_algo=greedy_memory_planning),
+                MemoryPlanningPass(memory_planning_algo=mem_planning_suite),
             ],
         )
 
         graph_builder = VkGraphBuilder(
-            program, DelegateMappingBuilder(generated_identifiers=True)
+            program,
+            DelegateMappingBuilder(generated_identifiers=True),
+            downcast_64_bit=downcast_64_bit,
         )
         vk_graph = graph_builder.build_graph()
 
@@ -217,4 +227,5 @@ class VulkanBackend(BackendDetails):
                 vk_graph, graph_builder.const_tensors, []
             ),
             debug_handle_map=graph_builder.delegate_mapping_builder.get_delegate_mapping(),
+            data_store_output=graph_builder.named_data_store.get_named_data_store_output(),
         )

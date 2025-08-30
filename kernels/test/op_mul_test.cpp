@@ -30,7 +30,7 @@ class OpMulOutTest : public OperatorTest {
     return torch::executor::aten::mul_outf(context_, self, other, out);
   }
 
-  // Common testing for multipling two integer Tensors
+  // Common testing for multiplying two integer Tensors
   template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
   void test_mul() {
     TensorFactory<DTYPE_A> tf_a;
@@ -54,6 +54,10 @@ class OpMulOutTest : public OperatorTest {
         tf_b.make(sizes, /*data=*/{1, 2, 4, 8}),
         out);
     EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{1, 4, 16, 64}));
+
+    out = tf_out.zeros({18});
+    op_mul_out(tf_a.full({18}, 4), tf_b.full({18}, 2), out);
+    EXPECT_TENSOR_EQ(out, tf_out.full({18}, 8));
   }
 
   template <ScalarType DTYPE_A, ScalarType DTYPE_B>
@@ -322,6 +326,38 @@ class OpMulOutTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
     EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
   }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_complex_dtype() {
+    TensorFactory<DTYPE> tf;
+    const std::vector<int32_t> sizes = {2, 2};
+
+    // Create complex tensors with real and imaginary parts
+    Tensor x =
+        tf.make(sizes, {CTYPE(1, 2), CTYPE(3, 4), CTYPE(5, 6), CTYPE(7, 8)});
+
+    Tensor y =
+        tf.make(sizes, {CTYPE(2, 3), CTYPE(4, 5), CTYPE(6, 7), CTYPE(8, 9)});
+
+    // Expected result: (a+bi) * (c+di) = (ac-bd) + (ad+bc)i
+    // (1+2i) * (2+3i) = (1*2-2*3) + (1*3+2*2)i = -4 + 7i
+    // (3+4i) * (4+5i) = (3*4-4*5) + (3*5+4*4)i = -8 + 31i
+    // (5+6i) * (6+7i) = (5*6-6*7) + (5*7+6*6)i = -12 + 71i
+    // (7+8i) * (8+9i) = (7*8-8*9) + (7*9+8*8)i = -16 + 127i
+    Tensor expected = tf.make(
+        sizes, {CTYPE(-4, 7), CTYPE(-8, 31), CTYPE(-12, 71), CTYPE(-16, 127)});
+
+    Tensor out = tf.make(
+        {2, 2},
+        {
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+            CTYPE(0, 0),
+        });
+    op_mul_out(x, y, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
 };
 
 class OpMulScalarOutTest : public OperatorTest {
@@ -417,16 +453,6 @@ TEST_F(OpMulOutTest, BroadcastA2BTest) {
   test_broadcast_a2b<ScalarType::Int>();
   test_broadcast_a2b<ScalarType::Half>();
   test_broadcast_a2b<ScalarType::BFloat16>();
-
-  // Test 3D tensors
-  test_broadcast_3D<ScalarType::Float>();
-  test_broadcast_3D<ScalarType::Half>();
-  test_broadcast_3D<ScalarType::BFloat16>();
-
-  // Test 4D tensors
-  test_broadcast_4D<ScalarType::Float>();
-  test_broadcast_4D<ScalarType::Half>();
-  test_broadcast_4D<ScalarType::BFloat16>();
 }
 
 // Broadcast tensor a's size to tensor b's size
@@ -447,13 +473,6 @@ TEST_F(OpMulOutTest, BroadcastNDTest) {
   test_broadcast_4D<ScalarType::Half>();
   test_broadcast_4D<ScalarType::BFloat16>();
 
-  // Test broadcasting on the last dimension
-  test_broadcast_last_dim<ScalarType::Float>();
-  test_broadcast_last_dim<ScalarType::Half>();
-  test_broadcast_last_dim<ScalarType::BFloat16>();
-}
-
-TEST_F(OpMulOutTest, BroadcastLastDimTest) {
   // Test broadcasting on the last dimension
   test_broadcast_last_dim<ScalarType::Float>();
   test_broadcast_last_dim<ScalarType::Half>();
@@ -487,6 +506,16 @@ TEST_F(OpMulOutTest, BothScalarInputBroadcastTest) {
   test_both_scalar_input_broadcast<ScalarType::Int>();
   test_both_scalar_input_broadcast<ScalarType::Half>();
   test_both_scalar_input_broadcast<ScalarType::BFloat16>();
+}
+
+TEST_F(OpMulOutTest, AllComplexDtypesSupported) {
+#define TEST_ENTRY(ctype, dtype) test_complex_dtype<ctype, ScalarType::dtype>();
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    ET_FORALL_COMPLEX_TYPES(TEST_ENTRY);
+  } else {
+    ET_FORALL_COMPLEXH_TYPES(TEST_ENTRY);
+  }
+#undef TEST_ENTRY
 }
 
 TEST_F(OpMulOutTest, MismatchedOutputShapesDies) {
@@ -717,6 +746,21 @@ TEST_F(OpMulOutTest, DynamicShapeUnbound) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
+// >>> torch.ops.aten.mul(torch.tensor([100], dtype=torch.int8),
+// torch.tensor([100], dtype=torch.int8), out=torch.zeros([1],
+// dtype=torch.long)) tensor([16])
+TEST_F(OpMulOutTest, MixedIntegerDtypeMatchesATen) {
+  TensorFactory<ScalarType::Char> tf_in;
+  TensorFactory<ScalarType::Long> tf_out;
+
+  Tensor in = tf_in.make({1}, {100});
+  Tensor out = tf_out.zeros({1});
+  Tensor ret = op_mul_out(in, in, out);
+
+  Tensor expected = tf_out.make({1}, {16});
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
 TEST_F(OpMulScalarOutTest, SanityCheck) {
   TensorFactory<ScalarType::Bool> tf_a;
   TensorFactory<ScalarType::Float> tf_out;
@@ -768,4 +812,113 @@ TEST_F(OpMulScalarOutTest, BFloat16SanityCheck) {
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {2.6, 4.2, 9.2, 16.4}));
+}
+
+// Tests for broadcast handling fix: when tensor dimensions don't match,
+// the output should be resized to match the tensor with higher dimensionality
+TEST_F(OpMulOutTest, BroadcastDimensionMismatchFix) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // Test case: tensor a of size [6] and b of size [1, 1, 6]
+  // Expected output should be [1, 1, 6], not [6]
+  Tensor a = tf.make({6}, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+  Tensor b = tf.make({1, 1, 6}, {2.0, 2.0, 2.0, 2.0, 2.0, 2.0});
+
+  // Create output tensor with expected broadcast shape [1, 1, 6]
+  Tensor out = tf.zeros({1, 1, 6});
+
+  // Call the mul function
+  Tensor& result = op_mul_out(a, b, out);
+
+  // Verify the output shape is [1, 1, 6]
+  EXPECT_EQ(result.dim(), 3);
+  EXPECT_EQ(result.size(0), 1);
+  EXPECT_EQ(result.size(1), 1);
+  EXPECT_EQ(result.size(2), 6);
+
+  // Verify the values are correct (element-wise multiplication with
+  // broadcasting)
+  Tensor expected = tf.make({1, 1, 6}, {2.0, 4.0, 6.0, 8.0, 10.0, 12.0});
+  EXPECT_TENSOR_CLOSE(result, expected);
+}
+
+TEST_F(OpMulOutTest, BroadcastDimensionMismatchReversed) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // Test case: tensor a of size [1, 1, 6] and b of size [6]
+  // Expected output should be [1, 1, 6]
+  Tensor a = tf.make({1, 1, 6}, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+  Tensor b = tf.make({6}, {2.0, 2.0, 2.0, 2.0, 2.0, 2.0});
+
+  // Create output tensor with expected broadcast shape [1, 1, 6]
+  Tensor out = tf.zeros({1, 1, 6});
+
+  // Call the mul function
+  Tensor& result = op_mul_out(a, b, out);
+
+  // Verify the output shape is [1, 1, 6]
+  EXPECT_EQ(result.dim(), 3);
+  EXPECT_EQ(result.size(0), 1);
+  EXPECT_EQ(result.size(1), 1);
+  EXPECT_EQ(result.size(2), 6);
+
+  // Verify the values are correct (element-wise multiplication with
+  // broadcasting)
+  Tensor expected = tf.make({1, 1, 6}, {2.0, 4.0, 6.0, 8.0, 10.0, 12.0});
+  EXPECT_TENSOR_CLOSE(result, expected);
+}
+
+TEST_F(OpMulOutTest, BroadcastDimensionMismatchWithDifferentTypes) {
+  // Test the same broadcast fix with different data types
+  TensorFactory<ScalarType::Half> tf_half;
+  TensorFactory<ScalarType::BFloat16> tf_bf16;
+  TensorFactory<ScalarType::Int> tf_int;
+
+  // Test with Half precision
+  {
+    Tensor a = tf_half.make({4}, {1.0, 2.0, 3.0, 4.0});
+    Tensor b = tf_half.make({1, 1, 4}, {2.0, 2.0, 2.0, 2.0});
+    Tensor out = tf_half.zeros({1, 1, 4});
+
+    Tensor& result = op_mul_out(a, b, out);
+    EXPECT_EQ(result.dim(), 3);
+    EXPECT_EQ(result.size(0), 1);
+    EXPECT_EQ(result.size(1), 1);
+    EXPECT_EQ(result.size(2), 4);
+
+    Tensor expected = tf_half.make({1, 1, 4}, {2.0, 4.0, 6.0, 8.0});
+    EXPECT_TENSOR_CLOSE(result, expected);
+  }
+
+  // Test with BFloat16
+  {
+    Tensor a = tf_bf16.make({4}, {1.0, 2.0, 3.0, 4.0});
+    Tensor b = tf_bf16.make({1, 1, 4}, {2.0, 2.0, 2.0, 2.0});
+    Tensor out = tf_bf16.zeros({1, 1, 4});
+
+    Tensor& result = op_mul_out(a, b, out);
+    EXPECT_EQ(result.dim(), 3);
+    EXPECT_EQ(result.size(0), 1);
+    EXPECT_EQ(result.size(1), 1);
+    EXPECT_EQ(result.size(2), 4);
+
+    Tensor expected = tf_bf16.make({1, 1, 4}, {2.0, 4.0, 6.0, 8.0});
+    EXPECT_TENSOR_CLOSE(result, expected);
+  }
+
+  // Test with Int
+  {
+    Tensor a = tf_int.make({4}, {1, 2, 3, 4});
+    Tensor b = tf_int.make({1, 1, 4}, {2, 2, 2, 2});
+    Tensor out = tf_int.zeros({1, 1, 4});
+
+    Tensor& result = op_mul_out(a, b, out);
+    EXPECT_EQ(result.dim(), 3);
+    EXPECT_EQ(result.size(0), 1);
+    EXPECT_EQ(result.size(1), 1);
+    EXPECT_EQ(result.size(2), 4);
+
+    Tensor expected = tf_int.make({1, 1, 4}, {2, 4, 6, 8});
+    EXPECT_TENSOR_EQ(result, expected);
+  }
 }

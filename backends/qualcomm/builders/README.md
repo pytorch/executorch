@@ -8,6 +8,7 @@ Thank you for contributing to Qualcomm AI Engine Direct delegate for ExecuTorch.
     * [Check Operator Spec](#check-operator-spec)
     * [Implementation](#implementation)
     * [Quantizer Annotation](#quantizer-annotation)
+* [Operator Support Status](#operator-support-status)
 * [Issues](#issues)
 * [Pull Requests](#pull-requests)
 
@@ -175,7 +176,8 @@ import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 # op builder will inherit NodeVisitor and have its own implementation
 # register_node_visitor for book-keeping the dictionary of target name v.s. callback
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 # the definitions required to build operator in QNN
 from .qnn_constants import OpLayerNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 # utility to get parameter value when creating tensor in QNN
@@ -226,7 +228,7 @@ Now, we can start to fill in function body step by step:
 
 2. Define input gamma / beta tensors:
     ```python
-        weight_node = node.args[2]
+        weight_node = self.get_node(node.args[2])
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
@@ -236,7 +238,7 @@ Now, we can start to fill in function body step by step:
             nodes_to_wrappers,
         )
 
-        bias_node = node.args[3]
+        bias_node = self.get_node(node.args[3])
         bias_tensor = get_parameter(bias_node, self.edge_program)
         bias_tensor_wrapper = self.define_tensor(
             bias_node,
@@ -246,7 +248,7 @@ Now, we can start to fill in function body step by step:
             nodes_to_wrappers,
         )
     ```
-    The logic should be similar and straightforward. Please carefully set arguments `tensor_type` 
+    The logic should be similar and straightforward. Please carefully set arguments `tensor_type`
     according to tensors' property.
 
 3. Define parameters:
@@ -354,6 +356,133 @@ Now, we can start to fill in function body step by step:
 
 ### Quantizer Annotation
 The operator now should be functional for Qualcomm backends. For operator to work in fixed-precision, we should also make `QnnQuantizer` to correctly insert observers for recording calibrated encodings. Please read more on the [Quantization Annotation Tutorial](../quantizer//README.md).
+
+## Operator Support Status
+Please help update following table if you are contributing new operators:
+
++ &check; = Supported
++ &cross; = Not Supported
++ &#128683; = Deprecated, supported with other QNN Ops
+
+
+| Operators | HTP - 90/116 Enabled |
+|-----------|---------|
+| Argmax | &check; |
+| Argmin | &check; |
+| BatchNorm | &check; |
+| BatchToSpace | &cross; |
+| Cast | &check; |
+| ChannelShuffle | &cross; |
+| Concat | &check; |
+| Conv2d | &check; |
+| Conv3d | &cross; |
+| Convert | &check; |
+| CreateSparse | &cross; |
+| CumulativeSum | &check; |
+| DepthToSpace | &check; |
+| DepthWiseConv2d | &check; |
+| Dequantize | &check; |
+| DetectionOutput | &cross; |
+| ElementWiseAbs | &check; |
+| ElementWiseAdd | &check; |
+| ElementWiseAnd | &check; |
+| ElementWiseAsin | &check; |
+| ElementWiseAtan | &check; |
+| ElementWiseBinary | &check; |
+| ElementWiseCeil | &check; |
+| ElementWiseCos | &check; |
+| ElementWiseDivide | &check; |
+| ElementWiseEqual | &check; |
+| ElementWiseExp | &check; |
+| ElementWiseFloor | &check; |
+| ElementWiseFloorDiv | &check; |
+| ElementWiseGreater | &check; |
+| ElementWiseGreaterEqual | &check; |
+| ElementWiseLess | &check; |
+| ElementWiseLessEqual | &check; |
+| ElementWiseLog | &check; |
+| ElementWiseMaximum | &check; |
+| ElementWiseMinimum | &check; |
+| ElementWiseMultiply | &check; |
+| ElementWiseNeg | &check; |
+| ElementWiseNeuron | &check; |
+| ElementWiseNot | &check; |
+| ElementWiseNotEqual | &check; |
+| ElementWiseOr | &check; |
+| ElementWisePower | &check; |
+| ElementWiseRound | &check; |
+| ElementWiseRsqrt | &check; |
+| ElementWiseSelect | &check; |
+| ElementWiseSign | &check; |
+| ElementWiseSin | &check; |
+| ElementWiseSquaredDifference | &cross; |
+| ElementWiseSquareRoot | &check; |
+| ElementWiseSubtract | &check; |
+| ElementWiseUnary | &cross; |
+| ElementWiseXor | &check; |
+| Elu | &check; |
+| ExpandDims | &check; |
+| ExtractGlimpse | &cross; |
+| ExtractPatches | &cross; |
+| FullyConnected | &check; |
+| Gather | &check; |
+| GatherElements | &cross; |
+| GatherNd | &check; |
+| Gelu | &check; |
+| GetSparseIndices | &cross; |
+| GetSparseValues | &cross; |
+| GridSample | &cross; |
+| GroupNorm | &check; |
+| HardSwish | &check; |
+| InstanceNorm | &check; |
+| L2Norm | &cross; |
+| LayerNorm | &check; |
+| LogSoftmax | &check; |
+| Lrn | &cross; |
+| Lstm | &cross; |
+| MatMul | &check; |
+| MultiClassNms | &cross; |
+| NonMaxSuppression | &cross; |
+| Nonzero | &cross; |
+| OneHot | &cross; |
+| Pack | &check; |
+| Pad | &check; |
+| PoolAvg2d | &check; |
+| PoolAvg3d | &cross; |
+| PoolMax2d | &check; |
+| Prelu | &check; |
+| Quantize | &check; |
+| ReduceMax | &check; |
+| ReduceMean | &check; |
+| ReduceMin | &check; |
+| ReduceSum | &check; |
+| Relu | &check; |
+| Relu1 | &#128683; |
+| Relu6 | &#128683; |
+| ReluMinMax | &check; |
+| Reshape | &check; |
+| Resize | &check; |
+| ResizeBilinear | &check; |
+| ResizeNearestNeighbor | &check; |
+| RoiAlign | &cross; |
+| RmsNorm | &check; |
+| ScatterElements | &cross; |
+| ScatterNd | &check; |
+| Sigmoid | &check; |
+| Softmax | &check; |
+| SpaceToBatch | &cross; |
+| SpaceToDepth | &check; |
+| SparseToDense | &cross; |
+| Split | &check; |
+| Squeeze | &check; |
+| StridedSlice | &check; |
+| Tanh | &check; |
+| Tile | &check; |
+| TopK | &check; |
+| TransPose | &check; |
+| TransPoseConv2d | &check; |
+| TransPoseConv3d | &cross; |
+| Unpack | &check; |
 
 ## Issues
 Please refer to the [issue section](../README.md#issues) for more information.

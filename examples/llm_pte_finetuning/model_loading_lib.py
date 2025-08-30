@@ -9,8 +9,9 @@
 from typing import Any, Dict, Tuple
 
 import torch
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.examples.llm_pte_finetuning.training_lib import TrainingModule
-from executorch.exir import to_edge
+from executorch.exir import EdgeCompileConfig, to_edge
 
 from omegaconf import DictConfig
 from torch.export import export, ExportedProgram
@@ -72,16 +73,70 @@ def export_model_lora_training(
         exported_graph: ExportedProgram = export(model, example_args, strict=False)
         print("Creating a joint forward-backwards graph for training")
         joint_graph = _export_forward_backward(exported_graph)
+        ep = joint_graph
+
+        # Currently there is no implementation of empty_permuted for edge dialect.
+        # We manually make a pass to rewrite the empty_permuted to empty and permute.
+        for node in ep.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.empty_permuted.out
+            ):
+                print("found empty_permute: ", node)
+                empty_permuted_node = node
+                with ep.graph.inserting_before(empty_permuted_node):
+                    empty_node = ep.graph.create_node(
+                        "call_function",
+                        torch.ops.aten.empty.memory_format,
+                        (node.args[0],),
+                        empty_permuted_node.kwargs,
+                    )
+                    permute_node = ep.graph.create_node(
+                        "call_function",
+                        torch.ops.aten.permute,
+                        (empty_node, node.args[1]),
+                    )
+                    for user in empty_permuted_node.users.copy():
+                        user.replace_input_with(empty_permuted_node, permute_node)
+            if (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.empty_permuted.default
+            ):
+                print("found empty_permute default: ", node)
+                empty_permuted_node = node
+                with ep.graph.inserting_before(empty_permuted_node):
+                    empty_node = ep.graph.create_node(
+                        "call_function",
+                        torch.ops.aten.empty.memory_format,
+                        (node.args[0],),
+                        empty_permuted_node.kwargs,
+                    )
+                    permute_node = ep.graph.create_node(
+                        "call_function",
+                        torch.ops.aten.permute.default,
+                        (empty_node, node.args[1]),
+                    )
+                    for user in empty_permuted_node.users.copy():
+                        user.replace_input_with(empty_permuted_node, permute_node)
 
         # 2. to_edge: Make optimizations for Edge devices.
         print("Lowering to edge dialect")
-        edge_program = to_edge(joint_graph)
+        edge_program = to_edge(
+            joint_graph,
+            compile_config=EdgeCompileConfig(
+                _core_aten_ops_exception_list=[torch.ops.aten.empty_permuted.default]
+            ),
+        )
 
         print(edge_program._edge_programs["forward"].graph_module)
 
     # 3. to_executorch: Convert the graph to an ExecuTorch program.
     print("Exporting to executorch")
+    edge_program = edge_program.to_backend(
+        XnnpackPartitioner(force_fp32_dynamic_linear=True)
+    )
     executorch_program = edge_program.to_executorch()
+
     print(executorch_program.exported_program().graph_signature)
     print(f"Saving to {output_file}")
     with open(output_file, "wb") as file:

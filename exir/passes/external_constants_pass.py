@@ -6,18 +6,33 @@
 
 # pyre-strict
 
+from typing import Callable, Optional
+
 import torch
 from executorch.exir.pass_base import PassResult
 from executorch.exir.tensor import TensorSpec
+
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export.exported_program import ExportedProgram, OutputKind
 from torch.fx import GraphModule
 
 
+def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
+    return (
+        is_param(exp_prog, node)
+        or is_buffer(exp_prog, node)
+        or is_lifted_tensor_constant(exp_prog, node)
+    )
+
+
 def external_constants_pass(
     gm: GraphModule,
+    gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
 ) -> PassResult:
     """
-    Move all constants to external file.
+    Move all non-lifted constants to external file.
+    NOTE: Lifted constants are not moved as they are closer
+    to code than data.
     """
     mutated = False
     for module in gm.modules():
@@ -25,10 +40,13 @@ def external_constants_pass(
             continue
 
         for node in module.graph.nodes:
-            if node.op == "placeholder":
+            if (node.op == "placeholder") and ("_lifted_tensor" not in node.name):
                 spec = node.meta.get("spec")
                 if isinstance(spec, TensorSpec) and spec.const:
-                    node.meta["constant_tag"] = "_default_external_constant"
+                    if gen_tag_fn is not None:
+                        node.meta["constant_tag"] = gen_tag_fn(node)
+                    else:
+                        node.meta["constant_tag"] = "_default_external_constant"
                     mutated = True
     return PassResult(gm, mutated)
 
@@ -72,3 +90,24 @@ def external_mutable_weights_pass(
                     node.meta["constant_tag"] = "_default_external_constant"
                     mutated = True
     return PassResult(gm, mutated)
+
+
+# Note: this pass must be run on an unlifted graph, e.g. ep.module(),
+# and not on a lifted graph, e.g. ep.graph_module.
+# This is using 'get_attr' to tag constants, which only appears in
+# unlifted graphs.
+def delegate_external_constants_pass_unlifted(
+    module: torch.nn.Module,
+    gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
+) -> PassResult:
+    mutated = False
+    for m in module.modules():
+        if not isinstance(m, torch.fx.GraphModule):
+            continue
+        for node in m.graph.nodes:
+            if node.op == "get_attr":
+                if gen_tag_fn is not None:
+                    node.meta.setdefault("custom", {})
+                    node.meta["custom"]["delegate_constant_tag"] = gen_tag_fn(node)
+                    mutated = True
+    return PassResult(module, mutated)

@@ -5,7 +5,7 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <ETCoreMLModel.h>
+#import "ETCoreMLModel.h"
 
 #import "ETCoreMLAsset.h"
 #import "ETCoreMLLogging.h"
@@ -256,14 +256,23 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         }
         
         if (multiArrayArg && lCopyData) {
-            [multiArrayArg getMutableBytesWithHandler:^(void *_Nonnull mutableBytes,
-                                                        NSInteger __unused size,
-                                                        NSArray<NSNumber *> *strides) {
-                MultiArray buffer(mutableBytes, MultiArray::MemoryLayout(to_multiarray_data_type(constraint.dataType).value(),
+            void (^copy_data)(void *, NSArray<NSNumber *> *) = ^(void *bytes, NSArray<NSNumber *> *strides) {
+                MultiArray buffer(bytes, MultiArray::MemoryLayout(to_multiarray_data_type(constraint.dataType).value(),
                                                                          layout.shape(),
                                                                          to_vector<ssize_t>(strides)));
                 arg.copy(buffer);
-            }];
+            };
+
+
+            if (@available(macOS 12.3, iOS 15.4, tvOS 15.4, watchOS 8.5, *)) {
+                [multiArrayArg getMutableBytesWithHandler:^(void *_Nonnull mutableBytes,
+                                                            NSInteger __unused size,
+                                                            NSArray<NSNumber *> *strides) {
+                    copy_data(mutableBytes, strides);
+                }];
+            } else {
+                copy_data(multiArrayArg.dataPointer, multiArrayArg.strides);
+            }
         }
         
         [result addObject:multiArrayArg];
@@ -318,8 +327,7 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
     BOOL result = [self.mlModel prewarmUsingState:self.state error:error];
     if (!result) {
         ETCoreMLLogError(localError,
-                         "%@: Failed to prewarm model with identifier = %@",
-                         NSStringFromClass(self.class),
+                         "Failed to prewarm model with identifier = %@",
                          self.identifier);
     }
 

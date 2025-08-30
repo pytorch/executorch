@@ -6,30 +6,34 @@
 # pyre-unsafe
 
 import torch
-from executorch.backends.arm.tosa_quant_utils import q_op
+from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm.constants import Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node
 
 
 class FuseQuantizedActivationPass(ExportPass):
-    def _is_fuseable_quantized_activation(self, node: Node):
+    @staticmethod
+    def _is_fuseable_quantized_activation(node: Node):
         """Fuse activations that have a 0 lower bound and quantized with a qmin zero-point"""
         is_fuseable = node.target == exir_ops.edge.aten.relu.default
         if node.target == exir_ops.edge.aten.hardtanh.default:
             min_val = node.args[1]
             is_fuseable = min_val == 0
 
-        is_quantized = len(node.users) == 1 and next(iter(node.users)).target == q_op
+        is_quantized = len(node.users) == 1 and next(iter(node.users)).target in Q_OPS
         if is_fuseable and is_quantized:
             quant_node = next(iter(node.users))
-            zp = quant_node.args[2]
-            qmin = quant_node.args[3]
+            quant_args = QuantArgs.from_operator(quant_node.target, quant_node.args)
+            zp = quant_args.zp
+            qmin = quant_args.qmin
             return zp == qmin
         else:
             return False
 
-    def _is_fuseable_input(self, node: Node):
+    @staticmethod
+    def _is_fuseable_input(node: Node):
         return (
             node.target
             in (
@@ -45,11 +49,11 @@ class FuseQuantizedActivationPass(ExportPass):
             if node.op != "call_function":
                 continue
 
-            if not self._is_fuseable_quantized_activation(node):
+            if not FuseQuantizedActivationPass._is_fuseable_quantized_activation(node):
                 continue
 
             input_node = node.args[0]
-            if not self._is_fuseable_input(input_node):
+            if not FuseQuantizedActivationPass._is_fuseable_input(input_node):
                 continue
 
             node.replace_all_uses_with(input_node)

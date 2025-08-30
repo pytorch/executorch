@@ -6,9 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <cmath>
 #include <tuple>
 
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -77,26 +79,31 @@ std::tuple<Tensor&, Tensor&> min_out(
 
   dim = dim < 0 ? dim + in.dim() : dim;
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "min.dim_min", CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(
+      in.scalar_type(), ctx, "min.dim_min", CTYPE, [&]() {
         CTYPE* min_data = min.mutable_data_ptr<CTYPE>();
         long* min_indices_data = min_indices.mutable_data_ptr<long>();
 
-        for (size_t out_ix = 0; out_ix < min.numel(); ++out_ix) {
-          std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
-              [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
-                if (!std::isnan(acc_val) && (std::isnan(v) || v < acc_val)) {
-                  acc_val = v;
-                  acc_ix = ix;
-                }
-                return std::tuple<CTYPE, long>{acc_val, acc_ix};
-              },
-              in,
-              dim,
-              out_ix);
-          min_data[out_ix] = std::get<0>(acc);
-          min_indices_data[out_ix] = std::get<1>(acc);
-        }
+        const bool success = parallel_for_each_reduce_over_dim_output_index(
+            in, dim, min, [&](const auto begin, const auto end) {
+              for (const auto out_ix : c10::irange(begin, end)) {
+                std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
+                    [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
+                      if (!utils::isnan_override(acc_val) &&
+                          (utils::isnan_override(v) || v < acc_val)) {
+                        acc_val = v;
+                        acc_ix = ix;
+                      }
+                      return std::tuple<CTYPE, long>{acc_val, acc_ix};
+                    },
+                    in,
+                    dim,
+                    out_ix);
+                min_data[out_ix] = std::get<0>(acc);
+                min_indices_data[out_ix] = std::get<1>(acc);
+              }
+            });
+        ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
       });
 
   return {min, min_indices};
@@ -124,9 +131,9 @@ min_unary_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       const auto data_in = in.const_data_ptr<CTYPE_IN>();
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       data_out[0] = upper_bound<CTYPE_OUT>();
-      for (auto i = 0; i < in.numel(); ++i) {
+      for (const auto i : c10::irange(in.numel())) {
         CTYPE_OUT val = static_cast<CTYPE_OUT>(data_in[i]);
-        if (std::isnan(val)) {
+        if (utils::isnan_override(val)) {
           data_out[0] = val;
           break;
         }

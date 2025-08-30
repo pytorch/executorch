@@ -84,7 +84,7 @@ void quantized_linear_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const executorch::aten::optional<Tensor>& offset,
+    __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
   // TODO: refactor to use switch case as quantized_linear_per_tensor_out
   if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
@@ -127,7 +127,81 @@ void quantized_linear_per_tensor_out(
     const int64_t out_multiplier,
     const int64_t out_shift,
     const int64_t out_zero_point,
-    __ET_UNUSED const executorch::aten::optional<Tensor>& offset,
+    __ET_UNUSED const std::optional<Tensor>& offset,
+    Tensor& out) {
+#define typed_quantized_linear_per_tensor(ctype, dtype) \
+  case executorch::aten::ScalarType::dtype: {           \
+    quantized_linear_per_tensor_<ctype>(                \
+        src,                                            \
+        weight,                                         \
+        bias,                                           \
+        src_zero_point,                                 \
+        weight_zero_point,                              \
+        out_multiplier,                                 \
+        out_shift,                                      \
+        out_zero_point,                                 \
+        out);                                           \
+    break;                                              \
+  }
+
+  executorch::aten::ScalarType dtype = out.scalar_type();
+  switch (dtype) {
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_linear_per_tensor);
+    default:
+      ET_DCHECK_MSG(
+          false, "Unhandled dtype %s", executorch::runtime::toString(dtype));
+  }
+#undef typed_quantized_linear_per_tensor
+}
+
+void quantized_linear_asym8sxasym8s_asym8s_per_tensor_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& src,
+    const Tensor& weight,
+    const Tensor& bias,
+    const int64_t src_zero_point,
+    const int64_t weight_zero_point,
+    const int64_t out_multiplier,
+    const int64_t out_shift,
+    const int64_t out_zero_point,
+    __ET_UNUSED const std::optional<Tensor>& offset,
+    Tensor& out) {
+#define typed_quantized_linear_per_tensor(ctype, dtype) \
+  case executorch::aten::ScalarType::dtype: {           \
+    quantized_linear_per_tensor_<ctype>(                \
+        src,                                            \
+        weight,                                         \
+        bias,                                           \
+        src_zero_point,                                 \
+        weight_zero_point,                              \
+        out_multiplier,                                 \
+        out_shift,                                      \
+        out_zero_point,                                 \
+        out);                                           \
+    break;                                              \
+  }
+
+  executorch::aten::ScalarType dtype = out.scalar_type();
+  switch (dtype) {
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_linear_per_tensor);
+    default:
+      ET_DCHECK_MSG(
+          false, "Unhandled dtype %s", executorch::runtime::toString(dtype));
+  }
+#undef typed_quantized_linear_per_tensor
+}
+
+void quantized_linear_asym8uxasym8u_asym8u_per_tensor_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& src,
+    const Tensor& weight,
+    const Tensor& bias,
+    const int64_t src_zero_point,
+    const int64_t weight_zero_point,
+    const int64_t out_multiplier,
+    const int64_t out_shift,
+    const int64_t out_zero_point,
+    __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear_per_tensor(ctype, dtype) \
   case executorch::aten::ScalarType::dtype: {           \

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 
 #include <gtest/gtest.h>
@@ -76,7 +77,7 @@ TEST_F(TensorImplTest, TestSetSizesContigContract) {
 
   SizesType new_sizes[RANK] = {0, 0, 0, 0, 0};
   // assign random sizes between 1 and 100
-  for (int i = 0; i < RANK; i++) {
+  for (const auto i : c10::irange(RANK)) {
     new_sizes[i] = distribution(generator);
   }
   Error err = resize_tensor_impl(&t, {new_sizes, RANK});

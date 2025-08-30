@@ -4,23 +4,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Callable, Dict, List
+
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
-from executorch.backends.qualcomm.utils.constants import QCOM_ENCODING
+from executorch.backends.qualcomm.utils.constants import QCOM_DTYPE, QCOM_ENCODING
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses import FakeTensor
 
 
-q_ops = {
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-}
-
-dq_ops = {
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-}
+def copy_meta(meta: Dict, callback=None):
+    copied = {}
+    for k, v in meta.items():
+        copied[k] = v
+    if callback:
+        copied = callback(copied)
+    return copied
 
 
 def get_quant_attrs(
@@ -41,65 +40,199 @@ def get_quant_attrs(
                 value = get_parameter(attr_n, edge_program)
         quant_attrs[quant_attr_keys[i - 1]] = value
 
+    # remap key for compatibility - block quantization only
+    if dtype := quant_attrs.get("input_dtype", None):
+        quant_attrs[QCOM_DTYPE] = dtype
+
     quant_attrs[QCOM_ENCODING] = quant_node.target
     return quant_attrs
 
 
 def get_passes_dependency_for_capture_program():
     """
-    This function records the dependencies for passes used in the capture_program.
+    This function records the dependencies for passes used in the to_edge_transform_and_lower_to_qnn.
 
     It returns a dictionary where the keys are pass classes and the values are lists of
     dependencies required by each pass. This helps in managing and organizing the sequence
-    of passes needed for the capture_program to function correctly.
+    of passes needed for the to_edge_transform_and_lower_to_qnn to function correctly.
 
     Returns:
         dict: A dictionary mapping each pass to its corresponding list of dependencies.
     """
     from executorch.backends.qualcomm._passes import (
-        AnnotateAndQuantScalar,
-        AnnotateDecomposed,
+        AnnotateAdaptiveAvgPool1D,
         AnnotateQuantAttrs,
+        AnnotateStack,
+        AnnotateUnbind,
         ConvertBmmToMatmul,
-        ConvertInterpolateWithUpsample2D,
-        ConvertPReLU,
-        ConvertToLinear,
+        ConvertConv1dToConv2d,
+        DecomposeAny,
+        DecomposeColIm,
+        DecomposeLinalgVectorNorm,
         ExpandBroadcastTensorShape,
+        FixedLinearKeepDim,
         FoldQDQ,
         I64toI32,
         LayoutTransform,
         RecomposePixelUnshuffle,
         RecomposeRmsNorm,
         RemoveRedundancy,
-        ReplaceIndexPutInput,
+        TagQuantIO,
     )
 
     return {
-        RecomposePixelUnshuffle: [RemoveRedundancy],
-        RecomposeRmsNorm: [RemoveRedundancy],
-        ConvertToLinear: [RecomposePixelUnshuffle],
-        ConvertPReLU: [RemoveRedundancy],
-        ConvertBmmToMatmul: [ConvertToLinear],
-        ConvertInterpolateWithUpsample2D: [RemoveRedundancy],
-        I64toI32: [RemoveRedundancy],
+        AnnotateAdaptiveAvgPool1D: [RemoveRedundancy],
         AnnotateQuantAttrs: [
-            RecomposePixelUnshuffle,
-            RecomposeRmsNorm,
-            ConvertToLinear,
-            ConvertPReLU,
             ConvertBmmToMatmul,
-            ConvertInterpolateWithUpsample2D,
+            RecomposePixelUnshuffle,
+            RemoveRedundancy,
         ],
-        AnnotateAndQuantScalar: [
-            AnnotateQuantAttrs,
-        ],
-        AnnotateDecomposed: [RemoveRedundancy],
-        FoldQDQ: [AnnotateQuantAttrs, AnnotateAndQuantScalar, AnnotateDecomposed],
-        ExpandBroadcastTensorShape: [RemoveRedundancy],
+        AnnotateStack: [RemoveRedundancy],
+        AnnotateUnbind: [RemoveRedundancy],
+        ConvertBmmToMatmul: [RecomposePixelUnshuffle],
+        DecomposeAny: [RemoveRedundancy],
+        DecomposeColIm: [FoldQDQ],
+        DecomposeLinalgVectorNorm: [RemoveRedundancy],
+        ExpandBroadcastTensorShape: [FoldQDQ],
+        FixedLinearKeepDim: [FoldQDQ],
+        FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
+        I64toI32: [RemoveRedundancy],
         LayoutTransform: [
             AnnotateQuantAttrs,
-            AnnotateAndQuantScalar,
+            ConvertConv1dToConv2d,
             ExpandBroadcastTensorShape,
+            FixedLinearKeepDim,
         ],
-        ReplaceIndexPutInput: [LayoutTransform],
+        RecomposePixelUnshuffle: [RemoveRedundancy],
+        RecomposeRmsNorm: [RemoveRedundancy],
+        TagQuantIO: [LayoutTransform],
     }
+
+
+def copy_nn_module_stack(src, target):
+    """
+    Copy meta["nn_module_stack"] from src node to target node if existing.
+    """
+    if value := src.meta.get("nn_module_stack"):
+        target.meta["nn_module_stack"] = value
+
+
+def is_float_tensor(node: torch.fx.Node) -> bool:
+    if "val" not in node.meta or not isinstance(node.meta["val"], FakeTensor):
+        return False
+    return node.meta["val"].dtype == torch.float32
+
+
+def _is_node(node):
+    return isinstance(node, torch.fx.Node)
+
+
+def _pred(node, pat):
+    return isinstance(pat, Callable) and pat(node)
+
+
+def _next(node, from_args=True):
+    if from_args:
+        yield from [i for i in node.args if _is_node(i)]
+    else:
+        yield from list(node.users)
+
+
+def _find_pattern(
+    node: torch.fx.Node,
+    pattern: List[Callable[[torch.fx.Node], bool] | str],
+    from_args: bool = True,
+    max_wildcard_life: int = 3,
+    verbose: bool = False,
+):
+    """
+    Implement wildcard pattern matching
+        - node: fx.Node
+        - pattern: predicate list, can contain followings
+            Callable(fx.node): predicate
+            '*': wildcard
+        - from_args: if True find from node.args, otherwise from node.users
+        - max_wildcard_life: max number of skips for wildcard
+
+    If not matched, return None.
+    Otherwise, return list of matched node list, which is the same length as pattern
+    """
+
+    asterisk = "*"
+
+    def _probe(
+        cur, hist, pat_idx, asterisk_life_count=max_wildcard_life, verbose=verbose
+    ):
+        if pat_idx == len(pattern):
+            # Expected len(hist) is equal to pat_idx
+            assert len(hist) == len(pattern)
+            if list(hist) not in matched:
+                matched.append(list(hist))
+            return
+        if verbose:
+            print(
+                f"cur:{cur}, idx:{pat_idx}, life={asterisk_life_count}, pattern:{pattern[pat_idx]} hist={hist}"
+            )
+        if _pred(cur, pattern[pat_idx]):
+            hist.append(cur)
+            for child in _next(cur, from_args):
+                _probe(child, hist, pat_idx + 1)
+            hist.pop()
+        elif pattern[pat_idx] == asterisk and asterisk_life_count > 0:
+            # 3 cases: ignore/consume/keep asterisk
+            # 1, Ignore asterisk
+            hist.append(None)
+            _probe(cur, hist, pat_idx + 1)
+            hist.pop()
+
+            # 2. Consume asterisk
+            hist.append(None)
+            for child in _next(cur, from_args):
+                _probe(child, hist, pat_idx + 1)
+            hist.pop()
+
+            # 3. keep asterisk and skip to next node
+            for child in _next(cur, from_args):
+                _probe(child, hist, pat_idx, asterisk_life_count - 1)
+
+    # Check if pattern is valid
+    assert all(
+        isinstance(i, Callable) or (isinstance(i, str) and i == "*") for i in pattern
+    ), f"Invalid pattern: {pattern}"
+
+    # Start probing
+    matched = []
+    _probe(node, [], 0)
+    return matched if matched else None
+
+
+def find_patterns(node, patterns, **kwargs):
+    assert isinstance(patterns, list) and isinstance(patterns[0], list)
+    results = []
+    for pattern in patterns:
+        result = _find_pattern(node, pattern, **kwargs)
+        results.append(result)
+    return results
+
+
+def append_qdq(
+    graph_module: torch.fx.GraphModule,
+    node: torch.fx.Node,
+    qdq_node: torch.fx.Node,
+):
+    q_op = torch.ops.quantized_decomposed.quantize_per_tensor.default
+    dq_op = torch.ops.quantized_decomposed.dequantize_per_tensor.default
+
+    if qdq_node.target not in {q_op, dq_op}:
+        return node
+
+    with graph_module.graph.inserting_after(node):
+        q_args = (node, *qdq_node.args[1:])
+        q_node = graph_module.graph.create_node("call_function", q_op, q_args)
+        q_node.meta = copy_meta(node.meta)
+        q_node.meta["val"] = q_node.meta["val"].to(q_args[-1])
+        with graph_module.graph.inserting_after(q_node):
+            dq_args = (q_node, *qdq_node.args[1:])
+            dq_node = graph_module.graph.create_node("call_function", dq_op, dq_args)
+            dq_node.meta = copy_meta(node.meta)
+    return dq_node

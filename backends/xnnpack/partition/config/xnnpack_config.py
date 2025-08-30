@@ -10,12 +10,18 @@ from enum import Enum
 from typing import List, Optional
 
 import torch
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_qparam,
+    is_quant,
+)
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
     PartitionerConfig,
 )
 from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import has_free_unbacked_symbols
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
@@ -41,7 +47,9 @@ class XNNPartitionerConfig(PartitionerConfig):
         super().__init__()
         self.enabled_precision_types = self.supported_precision_types()
         # Flag used in GEMMConfig()
-        self.force_fp32_dynamic_linear = kwargs.get("force_fp32_dynamic_linear", False)
+        self.force_non_static_weights_for_f32_linear = kwargs.get(
+            "force_non_static_weights_for_f32_linear", False
+        )
 
     def get_partition(
         self, node: torch.fx.Node, ep: ExportedProgram
@@ -142,9 +150,10 @@ class XNNPartitionerConfig(PartitionerConfig):
         return True
 
     def _check_inputs_are_valid_dtypes(self, node, valid_dtypes):
-        # Check inputs are valid dtypes
+        # Check inputs are valid and have the same dtypes
         # Gather all args which are nodes
         args_to_check = []
+        reference_dtype = None
         for arg in node.args:
             if isinstance(arg, list) or isinstance(arg, tuple):
                 for item in arg:
@@ -165,18 +174,41 @@ class XNNPartitionerConfig(PartitionerConfig):
             if not isinstance(arg_val, torch.Tensor):
                 return False
 
-            # XNNPACK does not support empty tensors
-            if arg_val.numel() == 0:
+            # XNNPACK does not support empty tensors. But we can't get numel()
+            # for unbacked symints, so we conservatively bail out here if any
+            # dimension of the tensor is unbacked symint.
+            if has_free_unbacked_symbols(arg_val) or arg_val.numel() == 0:
                 return False
 
             if arg_val.dtype not in valid_dtypes:
                 return False
 
+            # Use the first dtype as reference
+            reference_dtype = reference_dtype or arg_val.dtype
+
+            # Check for mixed dtypes
+            if arg_val.dtype != reference_dtype:
+                # Get op name if the attribute exists, otherwise use the full node target for logging
+                op_name = (
+                    node.target.__name__
+                    if hasattr(node.target, "__name__")
+                    else str(node.target)
+                )
+                why(
+                    node,
+                    reason=(
+                        f"{op_name} does not support mixed input dtypes, "
+                        f"got: [{reference_dtype}, {arg_val.dtype}]"
+                    ),
+                )
+                return False
+
         return True
 
     def _check_outputs_are_valid_dtypes(self, node, valid_dtypes):
-        # Check outputs are valid dtype
+        # Check outputs are valid
         node_val = node.meta.get("val", None)
+
         if node_val is None:
             return True
 
@@ -196,9 +228,18 @@ class XNNPartitionerConfig(PartitionerConfig):
         valid_dtypes = {
             torch.float32,
             torch.float16,
-            torch.int8,
-            torch.qint8,
         }
+        # Only allow int8 and quant dtypes for quant operations
+        if is_quant(node) or is_dequant(node) or is_qparam(node):
+            valid_dtypes.update(
+                {
+                    torch.qint32,
+                    torch.qint8,
+                    torch.quint8,
+                    torch.int8,
+                }
+            )
+
         if (
             node.op != "placeholder"
             and node.op != "call_function"

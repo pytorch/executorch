@@ -11,6 +11,8 @@ on:
     branches:
       - release/*
   workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}-${{ github.event.schedule }}
@@ -32,10 +34,11 @@ jobs:
           python-version: '3.10'
       - name: Extract the list of models to test
         id: gather-models
+        env:
+          EFFECTIVE_EVENT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ciflow/periodic') && 'schedule' || github.event_name }}
         run: |
           set -eux
-
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${GITHUB_EVENT_NAME}"
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${EFFECTIVE_EVENT}"
 
   test-models-linux:
     name: test-models-linux
@@ -49,8 +52,8 @@ jobs:
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: ${{ matrix.timeout }}
       script: |
@@ -63,6 +66,6 @@ jobs:
         BACKEND=${{ matrix.backend }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
         # Build and test ExecuTorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"

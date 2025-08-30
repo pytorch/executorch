@@ -9,11 +9,17 @@ from typing import List
 
 import torch
 from executorch.backends.example.example_operators.ops import module_to_annotator
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import OperatorConfig
 from torch import fx
-from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
-from torch.ao.quantization.pt2e.graph_utils import find_sequential_partitions
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
+from torchao.quantization.pt2e import (
+    find_sequential_partitions,
+    HistogramObserver,
+    MinMaxObserver,
+)
+from torchao.quantization.pt2e.quantizer import (
+    OperatorConfig,
+    QuantizationSpec,
+    Quantizer,
+)
 
 
 def get_uint8_tensor_spec(observer_or_fake_quant_ctr):

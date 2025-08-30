@@ -70,5 +70,8 @@ runtime.python_library(
         "//executorch/runtime/...",
         "@EXECUTORCH_CLIENTS",
     ],
-    deps = [":_portable_lib"],
+    deps = [
+        ":_portable_lib",
+        "//executorch/exir:_warnings",
+    ],
 )

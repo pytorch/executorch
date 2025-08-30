@@ -13,8 +13,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
+using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 using executorch::runtime::Error;
-using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 

@@ -1,4 +1,8 @@
-# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
 
@@ -26,33 +30,35 @@ from executorch.exir.tensor import num_bytes_from_shape_and_dtype
 
 # A list of ops that can be trivially quantized
 trivially_quantizable_ops_overloadpkt = {
-    torch.ops.aten.slice_copy,
-    torch.ops.aten.slice,
-    torch.ops.aten.view_copy,
-    torch.ops.aten.view,
-    torch.ops.aten.clone,
-    torch.ops.aten.transpose_copy,
-    torch.ops.aten.transpose,
-    torch.ops.aten.permute_copy,
-    torch.ops.aten.permute,
-    torch.ops.aten.squeeze_copy,
-    torch.ops.aten.squeeze,
-    torch.ops.aten.unsqueeze_copy,
-    torch.ops.aten.unsqueeze,
-    torch.ops.aten.chunk,
-    torch.ops.aten.contiguous,
-    torch.ops.aten.select_copy,
-    exir_ops.edge.aten.slice_copy,
-    exir_ops.edge.aten.view_copy,
-    exir_ops.edge.aten.clone,
-    exir_ops.edge.aten.transpose_copy,
-    exir_ops.edge.aten.permute_copy,
-    exir_ops.edge.aten.squeeze_copy,
-    exir_ops.edge.aten.unsqueeze_copy,
-    exir_ops.edge.aten.unfold_copy,
     exir_ops.edge.aten.chunk,
+    exir_ops.edge.aten.clone,
     exir_ops.edge.aten.contiguous,
+    exir_ops.edge.aten.expand_copy,
+    exir_ops.edge.aten.permute_copy,
     exir_ops.edge.aten.select_copy,
+    exir_ops.edge.aten.slice_copy,
+    exir_ops.edge.aten.squeeze_copy,
+    exir_ops.edge.aten.transpose_copy,
+    exir_ops.edge.aten.unfold_copy,
+    exir_ops.edge.aten.unsqueeze_copy,
+    exir_ops.edge.aten.view_copy,
+    torch.ops.aten.chunk,
+    torch.ops.aten.clone,
+    torch.ops.aten.contiguous,
+    torch.ops.aten.expand_copy,
+    torch.ops.aten.permute,
+    torch.ops.aten.permute_copy,
+    torch.ops.aten.select_copy,
+    torch.ops.aten.slice,
+    torch.ops.aten.slice_copy,
+    torch.ops.aten.squeeze,
+    torch.ops.aten.squeeze_copy,
+    torch.ops.aten.transpose,
+    torch.ops.aten.transpose_copy,
+    torch.ops.aten.unsqueeze,
+    torch.ops.aten.unsqueeze_copy,
+    torch.ops.aten.view,
+    torch.ops.aten.view_copy,
 }
 
 # slice-equivalent ops
@@ -114,6 +120,8 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
             if user_target in {
                 torch.ops.quantized_decomposed.quantize_per_tensor,
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+                torch.ops.cadence.quantize_per_tensor,
+                exir_ops.edge.cadence.quantize_per_tensor,
             }:
                 descendent_quant_ops.append(user)
             # If the successor is a trivially quantizable op, consider its users
@@ -296,6 +304,8 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
             if get_overload_packet(node.target) not in (
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor,
                 torch.ops.quantized_decomposed.quantize_per_tensor,
+                exir_ops.edge.cadence.quantize_per_tensor,
+                torch.ops.cadence.quantize_per_tensor,
             ):
                 continue
 
@@ -409,6 +419,7 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
             in {
                 exir_ops.edge.quantized_decomposed.quantize_per_tensor,
                 exir_ops.edge.quantized_decomposed.quantize_per_channel,
+                exir_ops.edge.cadence.quantize_per_tensor,
             }
             for x in users
         )
@@ -418,6 +429,7 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
         packet_to_overload_map = {
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor: "default",
             exir_ops.edge.quantized_decomposed.dequantize_per_channel: "default",
+            exir_ops.edge.cadence.dequantize_per_tensor: "default",
         }
         graph = graph_module.graph
         modified = False
@@ -496,6 +508,7 @@ class SinkOpsCloserToUsePass(ExportPass):
         exir_ops.edge.aten.dequantize,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel,
+        exir_ops.edge.cadence.dequantize_per_tensor,
     }
 
     def sink_ops_closer_to_use(self, graph_module: torch.fx.GraphModule):
@@ -554,6 +567,7 @@ class HoistOpsCloserToDefPass(ExportPass):
 
     hoistable_ops: Set[EdgeOpOverload] = {
         exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+        exir_ops.edge.cadence.quantize_per_tensor,
         exir_ops.edge.aten.slice_copy,
         exir_ops.edge.aten.select_copy,
     }
