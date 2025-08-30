@@ -6,34 +6,38 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/runtime/kernel/kernel_includes.h>
-
 #pragma once
+
+#include <executorch/runtime/kernel/kernel_includes.h>
+#include <tuple>
 
 namespace torch {
 namespace executor {
 namespace native {
 namespace utils {
 
-Tensor& stack_out(
-    KernelRuntimeContext& ctx,
+bool check_stack_args(
     executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out);
 
-/**
- * Computes the output shape for tensor stacking.
- *
- * @param[in] tensors Array of input tensors to stack
- * @param[in] dim Dimension along which to stack
- * @return Tuple containing the Error, output shape array, and number of
- * dimensions
- */
+void get_stack_out_target_size(
+    executorch::aten::ArrayRef<Tensor> tensors,
+    int64_t dim,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim);
+
 std::tuple<
     Error,
     std::array<executorch::aten::SizesType, kTensorDimensionLimit>,
     size_t>
 stack_out_shape(executorch::aten::ArrayRef<Tensor> tensors, int64_t dim);
+
+Tensor& stack_out_impl(
+    KernelRuntimeContext& ctx,
+    executorch::aten::ArrayRef<Tensor> tensors,
+    int64_t dim,
+    Tensor& out);
 
 } // namespace utils
 } // namespace native
