@@ -51,7 +51,7 @@ class RemoveRedundancy(ExportPass):
     def _to_copy_op_condition(self, node):
         return "memory_format" in node.kwargs
 
-    def _default_condition(self, ndoe):
+    def _default_condition(self, node):
         return True
 
     def _remove(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
