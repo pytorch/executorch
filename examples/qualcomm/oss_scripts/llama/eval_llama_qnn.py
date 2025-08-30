@@ -10,12 +10,13 @@ import json
 import logging
 import sys
 import types
+from functools import partial
 
 import torch
-
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
-    annotate_linear_16a8w_in_affine_layer,
-    annotate_matmul_16a8w,
+    annotate_kv_8bit,
+    annotate_output_16a8w,
+    annotate_wv_sha,
 )
 
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
@@ -23,6 +24,7 @@ from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     _derived_bias_quant_spec,
+    get_ptq_per_channel_quant_config,
     QuantizationConfig,
 )
 
@@ -51,11 +53,11 @@ from executorch.examples.qualcomm.oss_scripts.llama.range_setting_pt2e import (
     set_scales,
     WrappedLlamaModel,
 )
-
 from lm_eval.evaluator import simple_evaluate
 
 from pytorch_tokenizers import get_tokenizer
 from torchao.prototype.spinquant import apply_spinquant
+from torchao.quantization.pt2e import MinMaxObserver
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
@@ -207,11 +209,20 @@ def gen_eval_wrapper(model_name, args):
     if args.ptq is not None:
         quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
 
-        custom_annotations = (annotate_matmul_16a8w,)
+        quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
+            act_dtype=torch.uint8,
+            weight_dtype=torch.int4,
+            act_observer=MinMaxObserver,
+            act_symmetric=True,
+        )
+        custom_annotations = (
+            annotate_kv_8bit,
+            partial(
+                annotate_wv_sha, quantization_config=quantization_config_wv_sha_8a4w
+            ),
+        )
         if args.llama_model == "stories110m":
-            custom_annotations = custom_annotations + (
-                annotate_linear_16a8w_in_affine_layer,
-            )
+            custom_annotations = custom_annotations + (annotate_output_16a8w,)
 
         quantizer = make_custom_quantizer(
             quant_dtype, args.range_setting, custom_annotations, args.quant_linear_only
