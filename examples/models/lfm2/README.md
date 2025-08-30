@@ -55,10 +55,8 @@ With ExecuTorch's sample c++ runner (see the Llama README's [Step 3: Run on your
 cmake-out/examples/models/llama/llama_main \
   --model_path lfm2_700m_8da4w.pte \
   --tokenizer_path ~/.cache/huggingface/hub/models--LiquidAI--LFM2-700M/snapshots/ab260293733f05dd4ce22399bea1cae2cf9b272d/tokenizer.json \
-  --prompt="<|startoftext|><|im_start|>user\nWho are you?<|im_end|>\n<|im_start|>assistant\n"
+  --prompt="<|startoftext|><|im_start|>user\nWho are you?<|im_end|>\n<|im_start|>assistant\n" \
+  --temperature 0.3
 ```
 
 To run the model on an example iOS or Android app, see the Llama README's [Step 5: Build Mobile apps](../llama/README.md#step-5-build-mobile-apps) section.
-
-### FAQ
-For more help with exporting or running this model, feel free to ask in our [discord channel](https://discord.gg/UEjkY9Zs).
