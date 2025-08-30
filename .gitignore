@@ -65,3 +65,7 @@ xcuserdata/
 
 # Android
 *.aar
+
+# Windows
+*.dll
+*.pyd
