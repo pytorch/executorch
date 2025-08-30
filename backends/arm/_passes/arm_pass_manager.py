@@ -20,6 +20,8 @@ from executorch.backends.arm._passes import (
     ConvertAnyDefaultDimDimsPass,
     ConvertExpandCopyToRepeatPass,
     ConvertFullLikeToFullPass,
+    ConvertInt64ConstOpsToInt32Pass,
+    ConvertInt64OutputOpsToInt32Pass,
     ConvertIntPowToMuls,
     ConvertMinMaxPass,
     ConvertMmToBmmPass,
@@ -98,6 +100,7 @@ from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
+from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from torch.fx import GraphModule
 
 
@@ -258,6 +261,11 @@ class ArmPassManager(PassManager):
             )
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        self.add_pass(
+            RemoveGraphAssertsPass()
+        )  # ConvertInt64ConstOpsToInt32Pass requires this pass to remove the assertation in Graph
+        self.add_pass(ConvertInt64ConstOpsToInt32Pass())
+        self.add_pass(ConvertInt64OutputOpsToInt32Pass())
         self.add_pass(InsertCastForOpsWithInt64InputPass())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
