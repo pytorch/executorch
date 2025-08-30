@@ -522,9 +522,8 @@ TEST_F(OpDivOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 TEST_F(OpDivOutTest, BroadcastNDTest) {
   // Test 3D tensors
   test_broadcast_3D<ScalarType::Float>();
-  // half and bfloat16 are not supported for div quite yet
-  // test_broadcast_3D<ScalarType::Half>();
-  // test_broadcast_3D<ScalarType::BFloat16>();
+  test_broadcast_3D<ScalarType::Half>();
+  test_broadcast_3D<ScalarType::BFloat16>();
 }
 
 TEST_F(OpDivOutTest, DynamicShapeUnbound) {
