@@ -531,7 +531,6 @@ class MapReduceOverDimListPlan {
       const executorch::aten::Tensor& in,
       const std::optional<executorch::aten::ArrayRef<int64_t>>& dim_list)
       : plan_(in, dim_list, 1, -1) {
-    ET_CHECK_MSG(in.numel() > 0, "Input tensor must be nonempty");
   }
 
   template <
@@ -834,10 +833,12 @@ template <typename Func>
     const Func& func) {
 #ifdef ET_USE_THREADPOOL
   const ssize_t reduction_size = get_reduced_dim_product(in, dim_list);
-  const auto grain_size = std::max(
-      static_cast<ssize_t>(1),
-      static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
-          reduction_size);
+  const auto grain_size = reduction_size == 0
+      ? 1
+      : std::max(
+            static_cast<ssize_t>(1),
+            static_cast<ssize_t>(executorch::extension::internal::GRAIN_SIZE) /
+                reduction_size);
 #else // ET_USE_THREADPOOL
   const auto grain_size = 1;
 #endif // ET_USE_THREADPOOL
