@@ -12,6 +12,7 @@ from typing import List, Optional
 import torch
 
 from executorch.backends.vulkan.patterns.pattern_registry import (
+    PatternMatch,
     register_pattern_graph,
     register_pattern_replacement,
 )
@@ -20,7 +21,6 @@ from executorch.exir import EdgeCompileConfig, ExportedProgram, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.export import export
-from torch.fx.passes.utils.matcher_utils import InternalMatch
 
 
 class RotaryEmbeddingPattern(torch.nn.Module):
@@ -111,16 +111,16 @@ def get_rope_graphs() -> List[torch.fx.GraphModule]:
 def identify_rotary_emb_io_nodes(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
-    match: InternalMatch,
+    match: PatternMatch,
 ) -> Optional[List[torch.fx.Node]]:
-    # Get the input placeholders (xq, xk, freqs_cos, freqs_sin)
-    placeholder_nodes = match.placeholder_nodes
-    if len(placeholder_nodes) != 4:
+    # Get the input inputs (xq, xk, freqs_cos, freqs_sin)
+    input_nodes = match.input_nodes
+    if len(input_nodes) != 4:
         return None
 
-    xq, xk, freqs_cos, freqs_sin = placeholder_nodes
+    xq, xk, freqs_cos, freqs_sin = input_nodes
 
-    output_nodes = match.returning_nodes
+    output_nodes = match.output_nodes
     if len(output_nodes) != 2:
         return None
 
@@ -133,7 +133,7 @@ def identify_rotary_emb_io_nodes(
 def create_rotary_emb_custom_op(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
-    match: InternalMatch,
+    match: PatternMatch,
 ):
     io_nodes = identify_rotary_emb_io_nodes(ep, graph_module, match)
     if io_nodes is None:
