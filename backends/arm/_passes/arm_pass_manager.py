@@ -18,6 +18,7 @@ from executorch.backends.arm._passes import (
     ComputeConstantOpsAOT,
     Conv1dUnsqueezePass,
     ConvertAnyDefaultDimDimsPass,
+    ConvertELUParamsPass,
     ConvertExpandCopyToRepeatPass,
     ConvertFullLikeToFullPass,
     ConvertIntPowToMuls,
@@ -39,6 +40,7 @@ from executorch.backends.arm._passes import (
     DecomposeCosineSimilarityPass,
     DecomposeCumsumPass,
     DecomposeDivPass,
+    DecomposeEluPass,
     DecomposeEmbeddingPass,
     DecomposeExpm1Pass,
     DecomposeGeluPass,
@@ -132,6 +134,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
+        self.add_pass(ConvertELUParamsPass())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
@@ -180,6 +183,8 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeAtanPass())
         self.add_pass(DecomposeAtanhPass())
         self.add_pass(DecomposeAddmmPass())
+        self.add_pass(DecomposeEluPass())
+        self.add_pass(DecomposeExpm1Pass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())
