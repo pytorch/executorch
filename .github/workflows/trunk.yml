@@ -992,4 +992,4 @@ jobs:
       timeout: 60
       script: |
         conda init powershell
-        powershell .ci/scripts/test_model.ps1 -modelName $model -backend $backend
+        powershell .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
