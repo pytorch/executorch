@@ -979,3 +979,17 @@ jobs:
         # Run MCU models
         chmod +x examples/arm/run_mcu_models_fvp.sh
         examples/arm/run_mcu_models_fvp.sh --target=cortex-m55
+
+  test-models-windows:
+    if: ${{ inputs.build-tool == 'cmake' }}
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    with:
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      matrix:
+        model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
+        backend: [portable, xnnpack]
+      script: |
+        conda init powershell
+        powershell .ci/scripts/test_model.ps1 -modelName $model -backend $backend
