@@ -38,7 +38,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Run the runner
-& "$executorBinaryPath" --model_path="$(modelName).pte"
+& "$executorBinaryPath" --model_path="$modelName.pte"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Model execution failed. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE

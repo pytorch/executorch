@@ -983,6 +983,7 @@ jobs:
   test-models-windows:
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
+      fail-fast: false
       matrix:
         model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
         backend: [portable, xnnpack]
