@@ -1,7 +1,7 @@
 param (
     [string]$modelName,
     [string]$backend,
-    [string]$buildDir = "cmake-out"
+    [string]$buildDir = "cmake-out",
     [bool]$strict = $false
 )
 
