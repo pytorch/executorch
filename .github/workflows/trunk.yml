@@ -981,7 +981,6 @@ jobs:
         examples/arm/run_mcu_models_fvp.sh --target=cortex-m55
 
   test-models-windows:
-    if: ${{ inputs.build-tool == 'cmake' }}
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
       matrix:
