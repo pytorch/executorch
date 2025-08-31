@@ -16,7 +16,7 @@ if (Test-Path -Path $buildDir) {
     Remove-Item -Path $buildDir -Recurse -Force
 }
 New-Item -Path $buildDir -ItemType Directory
-Push-Directory $buildDir
+Push-Location $buildDir
 cmake .. --preset windows
 cmake --build . -t executor_runner -j16 --config Release
 if ($LASTEXITCODE -ne 0) {
