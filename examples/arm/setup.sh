@@ -70,10 +70,6 @@ else
     echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
 fi
 
-# Vela
-vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="d37febc1715edf0d236c2ff555739a8a9aadcf9a"
-
 # MLSDK dependencies
 mlsdk_manifest_dir="ml-sdk-for-vulkan-manifest"
 vulkan_sdk_bin_dir="${vulkan_sdk_base_dir}/${vulkan_sdk_version}/${ARCH}/bin"
@@ -377,8 +373,8 @@ function setup_toolchain() {
     tar xf "${toolchain_dir}.tar.xz"
 }
 
-function setup_vela() {
-    pip install ethos-u-vela@git+${vela_repo_url}@${vela_rev}
+function setup_ethos_u_tools() {
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
 }
 
 function prepend_env_in_setup_path() {
@@ -526,12 +522,11 @@ if [[ $is_script_sourced -eq 0 ]]; then
         create_setup_path
     fi
 
-    # Setup the tosa_reference_model
-    $et_dir/backends/arm/scripts/install_reference_model.sh ${root_dir}
+    # Setup the tosa_reference_model and dependencies
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-tosa.txt
 
-    # Setup vela and patch in codegen fixes
     if [[ "${enable_vela}" -eq 1 ]]; then
-        setup_vela
+        setup_ethos_u_tools
     fi
 
     echo "[main] Update path by running 'source ${setup_path_script}.sh'"
