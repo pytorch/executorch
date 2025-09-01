@@ -189,6 +189,11 @@ class NeuronExecuTorchDelegate {
     size_t data_input_count = mInputSizes.size();
     size_t data_output_count = mOutputSizes.size();
 
+    mPreparedInputs.clear();
+    mPreparedOutputs.clear();
+    mPreparedInputs.reserve(data_input_count);
+    mPreparedOutputs.reserve(data_output_count);
+
     // Prepare input data
     for (int i = 0; i < data_input_count; i++) {
       auto tensor_in = args[i]->toTensor();
@@ -205,7 +210,7 @@ class NeuronExecuTorchDelegate {
     }
 
     // Prepare output data
-    for (int o = data_output_count; o < data_input_count + data_output_count;
+    for (int o = data_input_count; o < data_input_count + data_output_count;
          o++) {
       auto tensor_out = args[o]->toTensor();
       auto data_ptr = tensor_out.data_ptr();
