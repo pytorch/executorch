@@ -1,7 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
- * Copyright 2024-2025 Arm Limited and/or its affiliates.
  * All rights reserved.
+ * Copyright 2024-2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -18,6 +18,7 @@
  * all fp32 tensors.
  */
 
+#include <fstream>
 #include <iostream>
 #include <memory>
 
@@ -49,6 +50,7 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
+DEFINE_string(inputs, "", "Comma-separated list of input files");
 DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
 #ifdef ET_EVENT_TRACER_ENABLED
 DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
@@ -58,6 +60,8 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
 using executorch::extension::FileDataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
@@ -70,6 +74,8 @@ using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
+using executorch::runtime::Tag;
+using executorch::runtime::TensorInfo;
 
 /// Helper to manage resources for ETDump generation
 class EventTraceManager {
@@ -155,6 +161,31 @@ int main(int argc, char** argv) {
       loader.ok(),
       "FileDataLoader::from() failed: 0x%" PRIx32,
       (uint32_t)loader.error());
+
+  std::vector<std::string> inputs_storage;
+  std::vector<std::pair<char*, size_t>> input_buffers;
+
+  std::stringstream list_of_input_files(FLAGS_inputs);
+  std::string token;
+
+  while (std::getline(list_of_input_files, token, ',')) {
+    std::ifstream input_file_handle(token, std::ios::binary | std::ios::ate);
+    if (!input_file_handle) {
+      ET_LOG(Error, "Failed to open input file: %s\n", token.c_str());
+      return 1;
+    }
+
+    std::streamsize file_size = input_file_handle.tellg();
+    input_file_handle.seekg(0, std::ios::beg);
+
+    inputs_storage.emplace_back(file_size, '\0');
+    if (!input_file_handle.read(&inputs_storage.back()[0], file_size)) {
+      ET_LOG(Error, "Failed to read input file: %s\n", token.c_str());
+      return 1;
+    }
+
+    input_buffers.emplace_back(&inputs_storage.back()[0], file_size);
+  }
 
   // Parse the program file. This is immutable, and can also be reused between
   // multiple execution invocations across multiple threads.
@@ -254,7 +285,8 @@ int main(int argc, char** argv) {
   // Run the model.
   for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
     ET_LOG(Debug, "Preparing inputs.");
-    // Allocate input tensors and set all of their elements to 1. The `inputs`
+    // Allocate input tensors and set all of their elements to 1 or to the
+    // contents of input_buffers if available. The `inputs`
     // variable owns the allocated memory and must live past the last call to
     // `execute()`.
     //
@@ -262,7 +294,8 @@ int main(int argc, char** argv) {
     // because inputs whose space gets reused by memory planning (if
     // any such inputs exist) will not be preserved for the next
     // execution.
-    auto inputs = executorch::extension::prepare_input_tensors(*method);
+    auto inputs = executorch::extension::prepare_input_tensors(
+        *method, {}, input_buffers);
     ET_CHECK_MSG(
         inputs.ok(),
         "Could not prepare inputs: 0x%" PRIx32,

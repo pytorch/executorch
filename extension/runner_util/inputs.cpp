@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -24,9 +25,22 @@ namespace extension {
 
 Result<BufferCleanup> prepare_input_tensors(
     Method& method,
-    PrepareInputTensorsOptions options) {
+    PrepareInputTensorsOptions options,
+    const std::vector<std::pair<char*, size_t>>& input_buffers) {
   MethodMeta method_meta = method.method_meta();
   size_t num_inputs = method_meta.num_inputs();
+  bool hard_code_inputs_to_ones = true;
+
+  ET_CHECK_OR_RETURN_ERROR(
+      input_buffers.size() > 0 && num_inputs == input_buffers.size(),
+      InvalidArgument,
+      "Wrong number of inputs allocated compared to method  %zu ? %zu",
+      num_inputs,
+      input_buffers.size());
+
+  if (input_buffers.size() > 0) {
+    hard_code_inputs_to_ones = false;
+  }
 
   // A large number of small allocations could exhaust the heap even if the
   // total size is smaller than the limit.
@@ -94,9 +108,25 @@ Result<BufferCleanup> prepare_input_tensors(
     }
     inputs[num_allocated++] = data_ptr;
 
+    // Write input data for input tensor
+    if (!hard_code_inputs_to_ones) {
+      auto [buffer, buffer_size] = input_buffers.at(i);
+      if (buffer_size != tensor_meta->nbytes()) {
+        ET_LOG(
+            Error,
+            "input size (%ld) and tensor size (%ld) mismatch!",
+            buffer_size,
+            tensor_meta->nbytes());
+        BufferCleanup cleanup({inputs, num_allocated});
+        return Error::InvalidArgument;
+      }
+      std::memcpy(data_ptr, buffer, buffer_size);
+    }
+
     // Create the tensor and set it as the input.
-    Error err =
-        internal::fill_and_set_input(method, tensor_meta.get(), i, data_ptr);
+    Error err = internal::fill_and_set_input(
+        method, tensor_meta.get(), i, data_ptr, hard_code_inputs_to_ones);
+
     if (err != Error::Ok) {
       ET_LOG(
           Error, "Failed to prepare input %zu: 0x%" PRIx32, i, (uint32_t)err);

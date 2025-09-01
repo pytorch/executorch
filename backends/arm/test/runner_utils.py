@@ -223,13 +223,29 @@ def run_target(
     elif target_board == "vkml_emulation_layer":
         return run_vkml_emulation_layer(
             executorch_program_manager,
+            inputs,
             intermediate_path,
             elf_path,
         )
 
 
+def save_inputs_to_file(
+    exported_program: ExportedProgram,
+    inputs: Tuple[torch.Tensor],
+    intermediate_path: str | Path,
+):
+    input_file_paths = []
+    input_names = get_input_names(exported_program)
+    for input_name, input_ in zip(input_names, inputs):
+        input_path = save_bytes(intermediate_path, input_, input_name)
+        input_file_paths.append(input_path)
+
+    return input_file_paths
+
+
 def run_vkml_emulation_layer(
     executorch_program_manager: ExecutorchProgramManager,
+    inputs: Tuple[torch.Tensor],
     intermediate_path: str | Path,
     elf_path: str | Path,
 ):
@@ -239,7 +255,7 @@ def run_vkml_emulation_layer(
         `intermediate_path`: Directory to save the .pte and capture outputs.
         `elf_path`: Path to the Vulkan-capable executor_runner binary.
     """
-
+    exported_program = executorch_program_manager.exported_program()
     intermediate_path = Path(intermediate_path)
     intermediate_path.mkdir(exist_ok=True)
     elf_path = Path(elf_path)
@@ -251,7 +267,19 @@ def run_vkml_emulation_layer(
     with open(pte_path, "wb") as f:
         f.write(executorch_program_manager.buffer)
 
-    cmd_line = [elf_path, "-model_path", pte_path]
+    input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
+
+    cmd_line = f"{elf_path} -model_path {pte_path}"
+    input_string = None
+    for input_path in input_paths:
+        if input_string is None:
+            input_string = f" -inputs={input_path}"
+        else:
+            input_string += f",{input_path}"
+    if input_string is not None:
+        cmd_line += input_string
+    cmd_line = cmd_line.split()
+
     result = _run_cmd(cmd_line)
 
     result_stdout = result.stdout.decode()  # noqa: F841
@@ -312,12 +340,7 @@ def run_corstone(
     with open(pte_path, "wb") as f:
         f.write(executorch_program_manager.buffer)
 
-    # Save inputs to file
-    input_names = get_input_names(exported_program)
-    input_paths = []
-    for input_name, input_ in zip(input_names, inputs):
-        input_path = save_bytes(intermediate_path, input_, input_name)
-        input_paths.append(input_path)
+    input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
 
     out_path = os.path.join(intermediate_path, "out")
 
