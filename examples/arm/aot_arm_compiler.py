@@ -602,9 +602,8 @@ def get_args():
     )
     parser.add_argument(
         "--enable_qdq_fusion_pass",
-        action="store",
-        default=False,
-        help="Skip the QuantizedOpFusionPass fusion step (default: False)",
+        action="store_true",
+        help="Enable the QuantizedOpFusionPass fusion step",
     )
     args = parser.parse_args()
 
@@ -806,7 +805,7 @@ def transform_for_cortex_m_backend(edge, args):
     passes = [ReplaceQuantNodesPass()]
 
     # Conditionally add the QuantizedOpFusionPass
-    if args.enable_qdq_fusion_pass.lower() == "true":
+    if args.enable_qdq_fusion_pass:
         passes.append(QuantizedOpFusionPass())
 
     # Apply the passes
@@ -846,8 +845,9 @@ if __name__ == "__main__":  # noqa: C901
             exported_program, args, model, example_inputs
         )
 
-    # Transform so we can use ops from the Cortex M backend
-    edge = transform_for_cortex_m_backend(edge, args)
+    if args.target != "vgf":
+        # Transform so we can use ops from the Cortex M backend
+        edge = transform_for_cortex_m_backend(edge, args)
 
     dump_delegation_info(edge, args.intermediates)
 
