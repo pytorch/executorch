@@ -179,7 +179,7 @@ class OpenVINOQuantizer(Quantizer):
         :return: Updated mapping of FX nodes with weight compression annotations.
         """
         self._algo.set_backend_entity(model)
-        all_wc_params, _ = self._algo.get_processed_weight_compression_parameters(model, nncf_graph)
+        all_wc_params, _ = self._algo.get_weight_compression_parameters(model, nncf_graph)
 
         for wc_param in all_wc_params:
             node_with_weight = wc_param.node_with_weight

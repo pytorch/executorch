@@ -30,7 +30,7 @@ from nncf.quantization.algorithms.weight_compression.config import (  # type: ig
 from nncf.quantization.algorithms.weight_compression.weight_lowering import (  # type: ignore[import-untyped]
     do_integer_quantization,
 )
-from nncf.tensor.tensor import Tensor  # type: ignore[import-untyped]
+from nncf.tensor.tensor import Tensor as NNCFTensor  # type: ignore[import-untyped]
 from nncf.torch.graph.transformations.commands import (  # type: ignore[import-untyped]
     PTTargetPoint,
     TargetType,
@@ -78,7 +78,7 @@ class WeightObserverBase(ObserverBase, ABC):
         wc_config = wc_param.compression_config
         reduction_axes = wc_param.reduction_axes
         q_weight, scale, zp = do_integer_quantization(
-            Tensor(weight), wc_config, reduction_axes=reduction_axes
+            NNCFTensor(weight), wc_config, reduction_axes=reduction_axes
         )
         zp = zp.data if zp is not None else None
         return q_weight.data, scale.data, zp
