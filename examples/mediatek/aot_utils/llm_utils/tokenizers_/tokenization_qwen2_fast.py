@@ -21,13 +21,13 @@ from .tokenization_qwen2 import Qwen2Tokenizer
 from .tokenization_utils_fast import PreTrainedTokenizerFast
 
 VOCAB_FILES_NAMES = {
-    'vocab_file': 'vocab.json',
-    'merges_file': 'merges.txt',
-    'tokenizer_file': 'tokenizer.json',
+    "vocab_file": "vocab.json",
+    "merges_file": "merges.txt",
+    "tokenizer_file": "tokenizer.json",
 }
 
 
-MAX_MODEL_INPUT_SIZES = {'qwen/qwen-tokenizer': 32768}
+MAX_MODEL_INPUT_SIZES = {"qwen/qwen-tokenizer": 32768}
 
 
 class Qwen2TokenizerFast(PreTrainedTokenizerFast):
@@ -73,7 +73,7 @@ class Qwen2TokenizerFast(PreTrainedTokenizerFast):
     """
 
     vocab_files_names = VOCAB_FILES_NAMES
-    model_input_names = ['input_ids', 'attention_mask']
+    model_input_names = ["input_ids", "attention_mask"]
     slow_tokenizer_class = Qwen2Tokenizer
 
     def __init__(
@@ -81,10 +81,10 @@ class Qwen2TokenizerFast(PreTrainedTokenizerFast):
         vocab_file=None,
         merges_file=None,
         tokenizer_file=None,
-        unk_token='<|endoftext|>',
+        unk_token="<|endoftext|>",
         bos_token=None,
-        eos_token='<|endoftext|>',
-        pad_token='<|endoftext|>',
+        eos_token="<|endoftext|>",
+        pad_token="<|endoftext|>",
         **kwargs,
     ):
         """Initializes the Qwen2TokenizerFast."""
@@ -94,22 +94,30 @@ class Qwen2TokenizerFast(PreTrainedTokenizerFast):
         # following GPT2TokenizerFast, also adding unk_token, bos_token, and eos_token
 
         bos_token = (
-            AddedToken(bos_token, lstrip=False, rstrip=False, special=True, normalized=False)
+            AddedToken(
+                bos_token, lstrip=False, rstrip=False, special=True, normalized=False
+            )
             if isinstance(bos_token, str)
             else bos_token
         )
         eos_token = (
-            AddedToken(eos_token, lstrip=False, rstrip=False, special=True, normalized=False)
+            AddedToken(
+                eos_token, lstrip=False, rstrip=False, special=True, normalized=False
+            )
             if isinstance(eos_token, str)
             else eos_token
         )
         unk_token = (
-            AddedToken(unk_token, lstrip=False, rstrip=False, special=True, normalized=False)
+            AddedToken(
+                unk_token, lstrip=False, rstrip=False, special=True, normalized=False
+            )
             if isinstance(unk_token, str)
             else unk_token
         )
         pad_token = (
-            AddedToken(pad_token, lstrip=False, rstrip=False, special=True, normalized=False)
+            AddedToken(
+                pad_token, lstrip=False, rstrip=False, special=True, normalized=False
+            )
             if isinstance(pad_token, str)
             else pad_token
         )
@@ -126,7 +134,9 @@ class Qwen2TokenizerFast(PreTrainedTokenizerFast):
         )
 
     # Copied from transformers.models.gpt2.tokenization_gpt2_fast.GPT2TokenizerFast.save_vocabulary
-    def save_vocabulary(self, save_directory: str, filename_prefix: Optional[str] = None) -> Tuple[str]:
+    def save_vocabulary(
+        self, save_directory: str, filename_prefix: Optional[str] = None
+    ) -> Tuple[str]:
         """Save only the vocabulary of the tokenizer (vocabulary).
 
         Returns:

@@ -1,18 +1,21 @@
-from contextlib import nullcontext
-# import os
-# import sys
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-# if os.getcwd() not in sys.path:
-#     sys.path.append(os.getcwd())
+from contextlib import nullcontext
+
 from models.llm_models.configuration_base import BaseConfig
 
 
 # flake8: noqa: C901
 
+
 class WhisperEncoderConfig(BaseConfig):
     def __init__(
         self,
-        model_type='whisper',
+        model_type="whisper",
         encoder_ffn_dim=None,
         encoder_layers=None,
         encoder_attention_heads=None,
@@ -30,31 +33,35 @@ class WhisperEncoderConfig(BaseConfig):
         self.intermediate_size = encoder_ffn_dim
         if self.intermediate_size is None:
             raise KeyError("encoder_ffn_dim is required but missing from config.json")
-        
+
         self.num_hidden_layers = encoder_layers
         if self.num_hidden_layers is None:
             raise KeyError("encoder_layers is required but missing from config.json")
-        
+
         self.num_attention_heads = encoder_attention_heads
         if self.num_attention_heads is None:
-            raise KeyError("encoder_attention_heads is required but missing from config.json")
-        
+            raise KeyError(
+                "encoder_attention_heads is required but missing from config.json"
+            )
+
         self.hidden_size = d_model
         if self.hidden_size is None:
             raise KeyError("d_model is required but missing from config.json")
-        
+
         self.decoder_num_layers = decoder_layers
         if self.decoder_num_layers is None:
             raise KeyError("decoder_layers is required but missing from config.json")
-        
+
         self.num_mel_bins = num_mel_bins
         if self.num_mel_bins is None:
             raise KeyError("num_mel_bins is required but missing from config.json")
-        
+
         self.max_source_positions = max_source_positions
         if self.max_source_positions is None:
-            raise KeyError("max_source_positions is required but missing from config.json")
-        
+            raise KeyError(
+                "max_source_positions is required but missing from config.json"
+            )
+
         if head_dim is None:
             self.head_dim = self.hidden_size // self.num_attention_heads
         else:
@@ -84,6 +91,7 @@ class WhisperEncoderConfig(BaseConfig):
                 print(f"Max pos emb:          {self.max_position_embeddings}")
             print(f"Num mel bins:         {self.num_mel_bins}")
             print()
+
 
 class WhisperDecoderConfig(BaseConfig):
     def __init__(
@@ -144,7 +152,9 @@ class WhisperDecoderConfig(BaseConfig):
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
         self.unk_token_id = unk_token_id
-        self.head_dim = kwargs.pop("head_dim", self.hidden_size // self.num_attention_heads)
+        self.head_dim = kwargs.pop(
+            "head_dim", self.hidden_size // self.num_attention_heads
+        )
 
         if position_embedding not in ["rope", "alibi"]:
             raise ValueError("Positional embedding must be one of: rope, alibi")
@@ -165,7 +175,9 @@ class WhisperDecoderConfig(BaseConfig):
         self.tokenizer = kwargs.pop("tokenizer", self.tokenizer)
         self.max_source_positions = kwargs.pop("max_source_positions", None)
         if self.max_source_positions is None:
-            raise KeyError("max_source_positions is required but missing from config.json")
+            raise KeyError(
+                "max_source_positions is required but missing from config.json"
+            )
 
         if response_handler is None:
             response_handler = nullcontext()
@@ -201,15 +213,17 @@ class WhisperDecoderConfig(BaseConfig):
                 print(f"Tokenizer:            {self.tokenizer}")
             print()
 
-class WhisperPreprocessorConfig():
+
+class WhisperPreprocessorConfig:
     def __init__(self, response_handler=None, **kwargs):
-        self.model_type = kwargs.pop('model_type', 'whisper')
+        self.model_type = kwargs.pop("model_type", "whisper")
         assert self.model_type == (
-            'whisper'), f'Expected model_type to be whisper but got {self.model_type} instead'
-        
-        self.feature_size = kwargs.pop('feature_size', 80)
-        self.sampling_rate = kwargs.pop('sampling_rate', 16000)
-        self.return_attention_mask = kwargs.pop('return_attention_mask', False)
+            "whisper"
+        ), f"Expected model_type to be whisper but got {self.model_type} instead"
+
+        self.feature_size = kwargs.pop("feature_size", 80)
+        self.sampling_rate = kwargs.pop("sampling_rate", 16000)
+        self.return_attention_mask = kwargs.pop("return_attention_mask", False)
 
         if response_handler is None:
             response_handler = nullcontext()
@@ -218,10 +232,10 @@ class WhisperPreprocessorConfig():
 
     def print_config(self, response_handler):
         with response_handler:
-            print(f'{self.model_type} preprocessor config:')
-            print(f'Feature Size:       {self.feature_size}')
-            print(f'Sampling Rate:      {self.sampling_rate}')
-            print(f'Audio Attn Mask:    {self.return_attention_mask}')
+            print(f"{self.model_type} preprocessor config:")
+            print(f"Feature Size:       {self.feature_size}")
+            print(f"Sampling Rate:      {self.sampling_rate}")
+            print(f"Audio Attn Mask:    {self.return_attention_mask}")
             print()
 
 
@@ -229,19 +243,19 @@ class WhisperConfig(BaseConfig):
     def __init__(self, **kwargs):
         encoder_config = kwargs.pop("encoder", None)
         if encoder_config is None:
-            raise KeyError("Encoder config not found in config.json") 
+            raise KeyError("Encoder config not found in config.json")
         llm_config = kwargs.pop("llm", None)
         if llm_config is None:
-            raise KeyError("llm config not found in config.json") 
+            raise KeyError("llm config not found in config.json")
         p_config = kwargs.pop("preprocessor", None)
         if p_config is None:
-            raise KeyError("preprocessor config not found in config.json") 
+            raise KeyError("preprocessor config not found in config.json")
 
         self.encoder = WhisperEncoderConfig(**encoder_config, verbose=False)
         self.llm = WhisperDecoderConfig(**llm_config, verbose=False)
         self.p = WhisperPreprocessorConfig(**p_config, verbose=False)
         self.model_type = "whisper"
-        self.tokenizer = 'default'
+        self.tokenizer = "default"
 
         response_handler = kwargs.pop("response_handler", None)
         if response_handler is None:
@@ -254,5 +268,3 @@ class WhisperConfig(BaseConfig):
         self.encoder.print_config(response_handler)
         self.llm.print_config(response_handler)
         self.p.print_config(response_handler)
-
-        

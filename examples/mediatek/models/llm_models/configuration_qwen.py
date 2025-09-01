@@ -1,3 +1,9 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from contextlib import nullcontext
 
 from models.llm_models.configuration_base import BaseConfig
@@ -65,7 +71,9 @@ class QwenConfig(BaseConfig):
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
         self.unk_token_id = unk_token_id
-        self.head_dim = kwargs.pop("head_dim", self.hidden_size // self.num_attention_heads)
+        self.head_dim = kwargs.pop(
+            "head_dim", self.hidden_size // self.num_attention_heads
+        )
 
         if position_embedding not in ["rope", "alibi"]:
             raise ValueError("Positional embedding must be one of: rope, alibi")
@@ -86,7 +94,7 @@ class QwenConfig(BaseConfig):
         self.tokenizer = kwargs.pop("tokenizer", self.tokenizer)
 
         if self.model_type == "qwen3":
-            self.use_qk_norm = kwargs.pop('use_qk_norm', True)
+            self.use_qk_norm = kwargs.pop("use_qk_norm", True)
 
         if response_handler is None:
             response_handler = nullcontext()

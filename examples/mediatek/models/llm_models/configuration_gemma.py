@@ -1,3 +1,9 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from contextlib import nullcontext
 
 from models.llm_models.configuration_base import BaseConfig
@@ -65,7 +71,9 @@ class GemmaConfig(BaseConfig):
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
         self.unk_token_id = unk_token_id
-        self.head_dim = kwargs.pop("head_dim", self.hidden_size // self.num_attention_heads)
+        self.head_dim = kwargs.pop(
+            "head_dim", self.hidden_size // self.num_attention_heads
+        )
 
         if position_embedding not in ["rope", "alibi"]:
             raise ValueError("Positional embedding must be one of: rope, alibi")
@@ -85,22 +93,25 @@ class GemmaConfig(BaseConfig):
 
         self.tokenizer = kwargs.pop("tokenizer", self.tokenizer)
 
-        if self.model_type == 'gemma2':
-            self.attn_logit_softcapping = kwargs.pop('attn_logit_softcapping', 50.0)
-            self.final_logit_softcapping = kwargs.pop('final_logit_softcapping', 30.0)
-            self.query_pre_attn_scalar = kwargs.pop('query_pre_attn_scalar', 256)
-        elif self.model_type == 'gemma3':
-            self.sliding_window_attention_size = kwargs.pop('sliding_window_attention_size', 1024)
-            self.global_local_attention_pattern = kwargs.pop('global_local_attention_pattern', None)
-            self.sliding_window_pattern = kwargs.pop('sliding_window_pattern', None)
-            self.rope_local_base_freq = kwargs.pop('rope_local_base_freq', 10000)
-            self.query_pre_attn_scalar = kwargs.pop('query_pre_attn_scalar', 256)
-            self.use_vision = kwargs.pop('use_vision', False)
-            self.use_qk_norm = kwargs.pop('use_qk_norm', True)
-            self.use_res_clamp = kwargs.pop('use_res_clamp', True)
+        if self.model_type == "gemma2":
+            self.attn_logit_softcapping = kwargs.pop("attn_logit_softcapping", 50.0)
+            self.final_logit_softcapping = kwargs.pop("final_logit_softcapping", 30.0)
+            self.query_pre_attn_scalar = kwargs.pop("query_pre_attn_scalar", 256)
+        elif self.model_type == "gemma3":
+            self.sliding_window_attention_size = kwargs.pop(
+                "sliding_window_attention_size", 1024
+            )
+            self.global_local_attention_pattern = kwargs.pop(
+                "global_local_attention_pattern", None
+            )
+            self.sliding_window_pattern = kwargs.pop("sliding_window_pattern", None)
+            self.rope_local_base_freq = kwargs.pop("rope_local_base_freq", 10000)
+            self.query_pre_attn_scalar = kwargs.pop("query_pre_attn_scalar", 256)
+            self.use_vision = kwargs.pop("use_vision", False)
+            self.use_qk_norm = kwargs.pop("use_qk_norm", True)
+            self.use_res_clamp = kwargs.pop("use_res_clamp", True)
             self.rope_theta = kwargs.pop("rope_theta", 1000000)
             self.rope_scaling = kwargs.pop("rope_scaling", None)
-
 
         if response_handler is None:
             response_handler = nullcontext()
@@ -116,7 +127,7 @@ class GemmaConfig(BaseConfig):
             print(f"Num attention heads:  {self.num_attention_heads}")
             print(f"Num KV heads:         {self.num_key_value_heads}")
             print(f"Head Dim:             {self.head_dim}")
-            if self.model_type == 'gemma3':
+            if self.model_type == "gemma3":
                 print(f"Size sliding window:  {self.sliding_window_attention_size}")
                 print(f"Sliding window pattern: {self.sliding_window_pattern}")
             print(f"Positional embedding: {self.position_embedding}")

@@ -29,7 +29,9 @@ void LlamaRuntime::Initialize(
   ET_CHECK_MSG(numChunk > 0, "No model to initialize");
 
   // Initialize rotary embedding master lookup table
-  const size_t rotEmbDim = modelOptions.hidden_size / modelOptions.num_head;
+  const size_t rotEmbDim = (modelOptions.head_dim == 0)
+      ? (modelOptions.hidden_size / modelOptions.num_head)
+      : modelOptions.head_dim;
   mRotEmbMasterLut = std::make_unique<llm_helper::RotaryEmbeddingMasterLut>(
       modelOptions.rot_emb_type,
       modelOptions.max_token_length,

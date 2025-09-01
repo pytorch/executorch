@@ -14,6 +14,9 @@
 # limitations under the License.
 """Module to contain all english normalizer classes."""
 
+# flake8: noqa: C901
+
+
 import re
 import unicodedata
 from fractions import Fraction
@@ -23,26 +26,26 @@ import regex
 
 # non-ASCII letters that are not separated by "NFKD" normalization
 ADDITIONAL_DIACRITICS = {
-    'œ': 'oe',
-    'Œ': 'OE',
-    'ø': 'o',
-    'Ø': 'O',
-    'æ': 'ae',
-    'Æ': 'AE',
-    'ß': 'ss',
-    'ẞ': 'SS',
-    'đ': 'd',
-    'Đ': 'D',
-    'ð': 'd',
-    'Ð': 'D',
-    'þ': 'th',
-    'Þ': 'th',
-    'ł': 'l',
-    'Ł': 'L',
+    "œ": "oe",
+    "Œ": "OE",
+    "ø": "o",
+    "Ø": "O",
+    "æ": "ae",
+    "Æ": "AE",
+    "ß": "ss",
+    "ẞ": "SS",
+    "đ": "d",
+    "Đ": "D",
+    "ð": "d",
+    "Ð": "D",
+    "þ": "th",
+    "Þ": "th",
+    "ł": "l",
+    "Ł": "L",
 }
 
 
-def remove_symbols_and_diacritics(s: str, keep=''):
+def remove_symbols_and_diacritics(s: str, keep=""):
     """Remove symbols and diacritics.
 
     Replace any other markers, symbols, and punctuations with a space, and drop any diacritics (category 'Mn' and some
@@ -55,20 +58,23 @@ def remove_symbols_and_diacritics(s: str, keep=''):
         if char in ADDITIONAL_DIACRITICS:
             return ADDITIONAL_DIACRITICS[char]
 
-        if unicodedata.category(char) == 'Mn':
-            return ''
+        if unicodedata.category(char) == "Mn":
+            return ""
 
-        if unicodedata.category(char)[0] in 'MSP':
-            return ' '
+        if unicodedata.category(char)[0] in "MSP":
+            return " "
 
         return char
 
-    return ''.join(replace_character(c) for c in unicodedata.normalize('NFKD', s))
+    return "".join(replace_character(c) for c in unicodedata.normalize("NFKD", s))
 
 
 def remove_symbols(s: str):
     """Replace any other markers, symbols, punctuations with a space, keeping diacritics."""
-    return ''.join(' ' if unicodedata.category(c)[0] in 'MSP' else c for c in unicodedata.normalize('NFKC', s))
+    return "".join(
+        " " if unicodedata.category(c)[0] in "MSP" else c
+        for c in unicodedata.normalize("NFKC", s)
+    )
 
 
 class BasicTextNormalizer:
@@ -76,20 +82,24 @@ class BasicTextNormalizer:
 
     def __init__(self, remove_diacritics: bool = False, split_letters: bool = False):
         """Initialize the BasicTextNormalizer class."""
-        self.clean = remove_symbols_and_diacritics if remove_diacritics else remove_symbols
+        self.clean = (
+            remove_symbols_and_diacritics if remove_diacritics else remove_symbols
+        )
         self.split_letters = split_letters
 
     def __call__(self, s: str):
         """Run the BasicTextNormalizer."""
         s = s.lower()
-        s = re.sub(r'[<\[][^>\]]*[>\]]', '', s)  # remove words between brackets
-        s = re.sub(r'\(([^)]+?)\)', '', s)  # remove words between parenthesis
+        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
+        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
         s = self.clean(s).lower()
 
         if self.split_letters:
-            s = ' '.join(regex.findall(r'\X', s, regex.U))
+            s = " ".join(regex.findall(r"\X", s, regex.U))
 
-        return re.sub(r'\s+', ' ', s)  # replace any successive whitespace characters with a space
+        return re.sub(
+            r"\s+", " ", s
+        )  # replace any successive whitespace characters with a space
 
 
 class EnglishNumberNormalizer:
@@ -108,7 +118,7 @@ class EnglishNumberNormalizer:
         """Initialize the EnglishNumberNormalizer class."""
         super().__init__()
 
-        self.zeros = {'o', 'oh', 'zero'}
+        self.zeros = {"o", "oh", "zero"}
         # fmt: off
         self.ones = {
             name: i
@@ -138,16 +148,19 @@ class EnglishNumberNormalizer:
             )
         }
         # fmt: on
-        self.ones_plural = {'sixes' if name == 'six' else name + 's': (value, 's') for name, value in self.ones.items()}
+        self.ones_plural = {
+            "sixes" if name == "six" else name + "s": (value, "s")
+            for name, value in self.ones.items()
+        }
         self.ones_ordinal = {
-            'zeroth': (0, 'th'),
-            'first': (1, 'st'),
-            'second': (2, 'nd'),
-            'third': (3, 'rd'),
-            'fifth': (5, 'th'),
-            'twelfth': (12, 'th'),
+            "zeroth": (0, "th"),
+            "first": (1, "st"),
+            "second": (2, "nd"),
+            "third": (3, "rd"),
+            "fifth": (5, "th"),
+            "twelfth": (12, "th"),
             **{
-                name + ('h' if name.endswith('t') else 'th'): (value, 'th')
+                name + ("h" if name.endswith("t") else "th"): (value, "th")
                 for name, value in self.ones.items()
                 if value > 3 and value != 5 and value != 12
             },
@@ -155,60 +168,75 @@ class EnglishNumberNormalizer:
         self.ones_suffixed = {**self.ones_plural, **self.ones_ordinal}
 
         self.tens = {
-            'twenty': 20,
-            'thirty': 30,
-            'forty': 40,
-            'fifty': 50,
-            'sixty': 60,
-            'seventy': 70,
-            'eighty': 80,
-            'ninety': 90,
+            "twenty": 20,
+            "thirty": 30,
+            "forty": 40,
+            "fifty": 50,
+            "sixty": 60,
+            "seventy": 70,
+            "eighty": 80,
+            "ninety": 90,
         }
-        self.tens_plural = {name.replace('y', 'ies'): (value, 's') for name, value in self.tens.items()}
-        self.tens_ordinal = {name.replace('y', 'ieth'): (value, 'th') for name, value in self.tens.items()}
+        self.tens_plural = {
+            name.replace("y", "ies"): (value, "s") for name, value in self.tens.items()
+        }
+        self.tens_ordinal = {
+            name.replace("y", "ieth"): (value, "th")
+            for name, value in self.tens.items()
+        }
         self.tens_suffixed = {**self.tens_plural, **self.tens_ordinal}
 
         self.multipliers = {
-            'hundred': 100,
-            'thousand': 1_000,
-            'million': 1_000_000,
-            'billion': 1_000_000_000,
-            'trillion': 1_000_000_000_000,
-            'quadrillion': 1_000_000_000_000_000,
-            'quintillion': 1_000_000_000_000_000_000,
-            'sextillion': 1_000_000_000_000_000_000_000,
-            'septillion': 1_000_000_000_000_000_000_000_000,
-            'octillion': 1_000_000_000_000_000_000_000_000_000,
-            'nonillion': 1_000_000_000_000_000_000_000_000_000_000,
-            'decillion': 1_000_000_000_000_000_000_000_000_000_000_000,
+            "hundred": 100,
+            "thousand": 1_000,
+            "million": 1_000_000,
+            "billion": 1_000_000_000,
+            "trillion": 1_000_000_000_000,
+            "quadrillion": 1_000_000_000_000_000,
+            "quintillion": 1_000_000_000_000_000_000,
+            "sextillion": 1_000_000_000_000_000_000_000,
+            "septillion": 1_000_000_000_000_000_000_000_000,
+            "octillion": 1_000_000_000_000_000_000_000_000_000,
+            "nonillion": 1_000_000_000_000_000_000_000_000_000_000,
+            "decillion": 1_000_000_000_000_000_000_000_000_000_000_000,
         }
-        self.multipliers_plural = {name + 's': (value, 's') for name, value in self.multipliers.items()}
-        self.multipliers_ordinal = {name + 'th': (value, 'th') for name, value in self.multipliers.items()}
-        self.multipliers_suffixed = {**self.multipliers_plural, **self.multipliers_ordinal}
+        self.multipliers_plural = {
+            name + "s": (value, "s") for name, value in self.multipliers.items()
+        }
+        self.multipliers_ordinal = {
+            name + "th": (value, "th") for name, value in self.multipliers.items()
+        }
+        self.multipliers_suffixed = {
+            **self.multipliers_plural,
+            **self.multipliers_ordinal,
+        }
         self.decimals = {*self.ones, *self.tens, *self.zeros}
 
         self.preceding_prefixers = {
-            'minus': '-',
-            'negative': '-',
-            'plus': '+',
-            'positive': '+',
+            "minus": "-",
+            "negative": "-",
+            "plus": "+",
+            "positive": "+",
         }
         self.following_prefixers = {
-            'pound': '£',
-            'pounds': '£',
-            'euro': '€',
-            'euros': '€',
-            'dollar': '$',
-            'dollars': '$',
-            'cent': '¢',
-            'cents': '¢',
+            "pound": "£",
+            "pounds": "£",
+            "euro": "€",
+            "euros": "€",
+            "dollar": "$",
+            "dollars": "$",
+            "cent": "¢",
+            "cents": "¢",
         }
-        self.prefixes = set(list(self.preceding_prefixers.values()) + list(self.following_prefixers.values()))
+        self.prefixes = set(
+            list(self.preceding_prefixers.values())
+            + list(self.following_prefixers.values())
+        )
         self.suffixers = {
-            'per': {'cent': '%'},
-            'percent': '%',
+            "per": {"cent": "%"},
+            "percent": "%",
         }
-        self.specials = {'and', 'double', 'triple', 'point'}
+        self.specials = {"and", "double", "triple", "point"}
 
         self.words = {
             key
@@ -227,7 +255,7 @@ class EnglishNumberNormalizer:
             ]
             for key in mapping
         }
-        self.literal_words = {'one', 'ones'}
+        self.literal_words = {"one", "ones"}
 
     def process_words(self, words: List[str]) -> Iterator[str]:
         """Process words."""
@@ -260,17 +288,17 @@ class EnglishNumberNormalizer:
                 skip = False
                 continue
 
-            next_is_numeric = next_ is not None and re.match(r'^\d+(\.\d+)?$', next_)
+            next_is_numeric = next_ is not None and re.match(r"^\d+(\.\d+)?$", next_)
             has_prefix = current[0] in self.prefixes
             current_without_prefix = current[1:] if has_prefix else current
-            if re.match(r'^\d+(\.\d+)?$', current_without_prefix):
+            if re.match(r"^\d+(\.\d+)?$", current_without_prefix):
                 # arabic numbers (potentially with signs and fractions)
                 f = to_fraction(current_without_prefix)
                 if f is None:
-                    raise ValueError('Converting the fraction failed')
+                    raise ValueError("Converting the fraction failed")
 
                 if value is not None:
-                    if isinstance(value, str) and value.endswith('.'):
+                    if isinstance(value, str) and value.endswith("."):
                         # concatenate decimals / ip address components
                         value = str(value) + str(current)
                         continue
@@ -285,14 +313,18 @@ class EnglishNumberNormalizer:
                     yield output(value)
                 yield output(current)
             elif current in self.zeros:
-                value = str(value or '') + '0'
+                value = str(value or "") + "0"
             elif current in self.ones:
                 ones = self.ones[current]
 
                 if value is None:
                     value = ones
                 elif isinstance(value, str) or prev in self.ones:
-                    value = value[:-1] + str(ones) if prev in self.tens and ones < 10 else str(value) + str(ones)
+                    value = (
+                        value[:-1] + str(ones)
+                        if prev in self.tens and ones < 10
+                        else str(value) + str(ones)
+                    )
                 elif ones < 10:
                     if value % 10 == 0:
                         value += ones
@@ -418,31 +450,31 @@ class EnglishNumberNormalizer:
                     if value is not None:
                         yield output(value)
                     yield output(current)
-                elif current == 'and':
+                elif current == "and":
                     # ignore "and" after hundreds, thousands, etc.
                     if prev not in self.multipliers:
                         if value is not None:
                             yield output(value)
                         yield output(current)
-                elif current == 'double' or current == 'triple':
+                elif current == "double" or current == "triple":
                     if next_ in self.ones or next_ in self.zeros:
-                        repeats = 2 if current == 'double' else 3
+                        repeats = 2 if current == "double" else 3
                         ones = self.ones.get(next_, 0)
-                        value = str(value or '') + str(ones) * repeats
+                        value = str(value or "") + str(ones) * repeats
                         skip = True
                     else:
                         if value is not None:
                             yield output(value)
                         yield output(current)
-                elif current == 'point':
+                elif current == "point":
                     if next_ in self.decimals or next_is_numeric:
-                        value = str(value or '') + '.'
+                        value = str(value or "") + "."
                 else:
                     # should all have been covered at this point
-                    raise ValueError(f'Unexpected token: {current}')
+                    raise ValueError(f"Unexpected token: {current}")
             else:
                 # all should have been covered at this point
-                raise ValueError(f'Unexpected token: {current}')
+                raise ValueError(f"Unexpected token: {current}")
 
         if value is not None:
             yield output(value)
@@ -451,7 +483,7 @@ class EnglishNumberNormalizer:
         """Replace '<number> and a half' with '<number> point five'."""
         results = []
 
-        segments = re.split(r'\band\s+a\s+half\b', s)
+        segments = re.split(r"\band\s+a\s+half\b", s)
         for i, segment in enumerate(segments):
             if len(segment.strip()) == 0:
                 continue
@@ -461,18 +493,18 @@ class EnglishNumberNormalizer:
                 results.append(segment)
                 last_word = segment.rsplit(maxsplit=2)[-1]
                 if last_word in self.decimals or last_word in self.multipliers:
-                    results.append('point five')
+                    results.append("point five")
                 else:
-                    results.append('and a half')
+                    results.append("and a half")
 
-        s = ' '.join(results)
+        s = " ".join(results)
 
         # put a space at number/letter boundary
-        s = re.sub(r'([a-z])([0-9])', r'\1 \2', s)
-        s = re.sub(r'([0-9])([a-z])', r'\1 \2', s)
+        s = re.sub(r"([a-z])([0-9])", r"\1 \2", s)
+        s = re.sub(r"([0-9])([a-z])", r"\1 \2", s)
 
         # but remove spaces which could be a suffix
-        return re.sub(r'([0-9])\s+(st|nd|rd|th|s)\b', r'\1\2', s)
+        return re.sub(r"([0-9])\s+(st|nd|rd|th|s)\b", r"\1\2", s)
 
     def postprocess(self, s: str):
         """Post-process."""
@@ -482,27 +514,27 @@ class EnglishNumberNormalizer:
                 currency = m.group(1)
                 integer = m.group(2)
                 cents = int(m.group(3))
-                return f'{currency}{integer}.{cents:02d}'
+                return f"{currency}{integer}.{cents:02d}"
             except ValueError:
                 return m.string
 
         def extract_cents(m: Match):
             try:
-                return f'¢{int(m.group(1))}'
+                return f"¢{int(m.group(1))}"
             except ValueError:
                 return m.string
 
         # apply currency postprocessing; "$2 and ¢7" -> "$2.07"
-        s = re.sub(r'([€£$])([0-9]+) (?:and )?¢([0-9]{1,2})\b', combine_cents, s)
-        s = re.sub(r'[€£$]0.([0-9]{1,2})\b', extract_cents, s)
+        s = re.sub(r"([€£$])([0-9]+) (?:and )?¢([0-9]{1,2})\b", combine_cents, s)
+        s = re.sub(r"[€£$]0.([0-9]{1,2})\b", extract_cents, s)
 
         # write "one(s)" instead of "1(s)", just for the readability
-        return re.sub(r'\b1(s?)\b', r'one\1', s)
+        return re.sub(r"\b1(s?)\b", r"one\1", s)
 
     def __call__(self, s: str):
         """Run the EnglishNumberNormalizer."""
         s = self.preprocess(s)
-        s = ' '.join(word for word in self.process_words(s.split()) if word is not None)
+        s = " ".join(word for word in self.process_words(s.split()) if word is not None)
         return self.postprocess(s)
 
 
@@ -518,7 +550,7 @@ class EnglishSpellingNormalizer:
 
     def __call__(self, s: str):
         """Run the EnglishSpellingNormalizer."""
-        return ' '.join(self.mapping.get(word, word) for word in s.split())
+        return " ".join(self.mapping.get(word, word) for word in s.split())
 
 
 class EnglishTextNormalizer:
@@ -526,61 +558,61 @@ class EnglishTextNormalizer:
 
     def __init__(self, english_spelling_mapping):
         """Initialize the EnglishTextNormalizer."""
-        self.ignore_patterns = r'\b(hmm|mm|mhm|mmm|uh|um)\b'
+        self.ignore_patterns = r"\b(hmm|mm|mhm|mmm|uh|um)\b"
         self.replacers = {
             # common contractions
-            r"\bwon't\b": 'will not',
-            r"\bcan't\b": 'can not',
-            r"\blet's\b": 'let us',
-            r"\bain't\b": 'aint',
-            r"\by'all\b": 'you all',
-            r'\bwanna\b': 'want to',
-            r'\bgotta\b': 'got to',
-            r'\bgonna\b': 'going to',
-            r"\bi'ma\b": 'i am going to',
-            r'\bimma\b': 'i am going to',
-            r'\bwoulda\b': 'would have',
-            r'\bcoulda\b': 'could have',
-            r'\bshoulda\b': 'should have',
-            r"\bma'am\b": 'madam',
+            r"\bwon't\b": "will not",
+            r"\bcan't\b": "can not",
+            r"\blet's\b": "let us",
+            r"\bain't\b": "aint",
+            r"\by'all\b": "you all",
+            r"\bwanna\b": "want to",
+            r"\bgotta\b": "got to",
+            r"\bgonna\b": "going to",
+            r"\bi'ma\b": "i am going to",
+            r"\bimma\b": "i am going to",
+            r"\bwoulda\b": "would have",
+            r"\bcoulda\b": "could have",
+            r"\bshoulda\b": "should have",
+            r"\bma'am\b": "madam",
             # contractions in titles/prefixes
-            r'\bmr\b': 'mister ',
-            r'\bmrs\b': 'missus ',
-            r'\bst\b': 'saint ',
-            r'\bdr\b': 'doctor ',
-            r'\bprof\b': 'professor ',
-            r'\bcapt\b': 'captain ',
-            r'\bgov\b': 'governor ',
-            r'\bald\b': 'alderman ',
-            r'\bgen\b': 'general ',
-            r'\bsen\b': 'senator ',
-            r'\brep\b': 'representative ',
-            r'\bpres\b': 'president ',
-            r'\brev\b': 'reverend ',
-            r'\bhon\b': 'honorable ',
-            r'\basst\b': 'assistant ',
-            r'\bassoc\b': 'associate ',
-            r'\blt\b': 'lieutenant ',
-            r'\bcol\b': 'colonel ',
-            r'\bjr\b': 'junior ',
-            r'\bsr\b': 'senior ',
-            r'\besq\b': 'esquire ',
+            r"\bmr\b": "mister ",
+            r"\bmrs\b": "missus ",
+            r"\bst\b": "saint ",
+            r"\bdr\b": "doctor ",
+            r"\bprof\b": "professor ",
+            r"\bcapt\b": "captain ",
+            r"\bgov\b": "governor ",
+            r"\bald\b": "alderman ",
+            r"\bgen\b": "general ",
+            r"\bsen\b": "senator ",
+            r"\brep\b": "representative ",
+            r"\bpres\b": "president ",
+            r"\brev\b": "reverend ",
+            r"\bhon\b": "honorable ",
+            r"\basst\b": "assistant ",
+            r"\bassoc\b": "associate ",
+            r"\blt\b": "lieutenant ",
+            r"\bcol\b": "colonel ",
+            r"\bjr\b": "junior ",
+            r"\bsr\b": "senior ",
+            r"\besq\b": "esquire ",
             # prefect tenses, ideally it should be any past participles, but it's harder..
-            r"'d been\b": ' had been',
-            r"'s been\b": ' has been',
-            r"'d gone\b": ' had gone',
-            r"'s gone\b": ' has gone',
-            r"'d done\b": ' had done',  # "'s done" is ambiguous
-            r"'s got\b": ' has got',
+            r"'d been\b": " had been",
+            r"'s been\b": " has been",
+            r"'d gone\b": " had gone",
+            r"'s gone\b": " has gone",
+            r"'d done\b": " had done",  # "'s done" is ambiguous
+            r"'s got\b": " has got",
             # general contractions
-            r"n't\b": ' not',
-            r"'re\b": ' are',
-            r"'s\b": ' is',
-            r"'d\b": ' would',
-            r"'ll\b": ' will',
-            r"'t\b": ' not',
-            r"'ve\b": ' have',
-            r"'m\b": ' am',
+            r"n't\b": " not",
+            r"'re\b": " are",
+            r"'s\b": " is",
+            r"'d\b": " would",
+            r"'ll\b": " will",
+            r"'t\b": " not",
+            r"'ve\b": " have",
+            r"'m\b": " am",
         }
         self.standardize_numbers = EnglishNumberNormalizer()
         self.standardize_spellings = EnglishSpellingNormalizer(english_spelling_mapping)
@@ -589,23 +621,29 @@ class EnglishTextNormalizer:
         """Run the EnglishTextNormalizer."""
         s = s.lower()
 
-        s = re.sub(r'[<\[][^>\]]*[>\]]', '', s)  # remove words between brackets
-        s = re.sub(r'\(([^)]+?)\)', '', s)  # remove words between parenthesis
-        s = re.sub(self.ignore_patterns, '', s)
-        s = re.sub(r"\s+'", "'", s)  # standardize when there's a space before an apostrophe
+        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
+        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
+        s = re.sub(self.ignore_patterns, "", s)
+        s = re.sub(
+            r"\s+'", "'", s
+        )  # standardize when there's a space before an apostrophe
 
         for pattern, replacement in self.replacers.items():
             s = re.sub(pattern, replacement, s)
 
-        s = re.sub(r'(\d),(\d)', r'\1\2', s)  # remove commas between digits
-        s = re.sub(r'\.([^0-9]|$)', r' \1', s)  # remove periods not followed by numbers
-        s = remove_symbols_and_diacritics(s, keep='.%$¢€£')  # keep some symbols for numerics
+        s = re.sub(r"(\d),(\d)", r"\1\2", s)  # remove commas between digits
+        s = re.sub(r"\.([^0-9]|$)", r" \1", s)  # remove periods not followed by numbers
+        s = remove_symbols_and_diacritics(
+            s, keep=".%$¢€£"
+        )  # keep some symbols for numerics
 
         s = self.standardize_numbers(s)
         s = self.standardize_spellings(s)
 
         # now remove prefix/suffix symbols that are not preceded/followed by numbers
-        s = re.sub(r'[.$¢€£]([^0-9])', r' \1', s)
-        s = re.sub(r'([^0-9])%', r'\1 ', s)
+        s = re.sub(r"[.$¢€£]([^0-9])", r" \1", s)
+        s = re.sub(r"([^0-9])%", r"\1 ", s)
 
-        return re.sub(r'\s+', ' ', s)  # replace any successive whitespace characters with a space
+        return re.sub(
+            r"\s+", " ", s
+        )  # replace any successive whitespace characters with a space

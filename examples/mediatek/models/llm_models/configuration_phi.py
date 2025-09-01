@@ -1,3 +1,9 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from contextlib import nullcontext
 
 from models.llm_models.configuration_base import BaseConfig
@@ -64,13 +70,16 @@ class PhiConfig(BaseConfig):
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
         self.unk_token_id = unk_token_id
-        self.head_dim = kwargs.pop("head_dim", self.hidden_size // self.num_attention_heads)
+        self.head_dim = kwargs.pop(
+            "head_dim", self.hidden_size // self.num_attention_heads
+        )
 
-        #Rotary embedding
+        # Rotary embedding
         self.partial_rotary_factor = kwargs.pop("partial_rotary_factor", None)
         self.rope_scaling = kwargs.pop("rope_scaling", None)
-        self.original_max_position_embeddings = kwargs.pop("original_max_position_embeddings", None)
-
+        self.original_max_position_embeddings = kwargs.pop(
+            "original_max_position_embeddings", None
+        )
 
         if position_embedding not in ["rope", "alibi"]:
             raise ValueError("Positional embedding must be one of: rope, alibi")

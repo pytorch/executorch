@@ -1,18 +1,25 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import numpy as np
 import torch
-from torch import nn
 from models.llm_models.configuration_qwen import QwenConfig
 
-from models.llm_models.modeling_common import Attention, DecoderLayer, MLP, ModelChunk, RMSNorm
+from models.llm_models.modeling_common import Attention, DecoderLayer, MLP, ModelChunk
 
 np.random.seed(42)
+
 
 class QwenMLP(MLP):
     def __init__(self, config: QwenConfig):
         super().__init__(config)
 
+
 class QwenAttention(Attention):
-    def __init__(self, config:QwenConfig, jit_trace=False):
+    def __init__(self, config: QwenConfig, jit_trace=False):
         super().__init__(config, jit_trace)
 
 
@@ -52,6 +59,7 @@ class Qwen3DecoderLayer(DecoderLayer):
             mlp_class=QwenMLP,
         )
 
+
 class Qwen2ModelChunk(ModelChunk):
     def __init__(
         self,
@@ -74,6 +82,7 @@ class Qwen2ModelChunk(ModelChunk):
             decoder_class=QwenDecoderLayer,
         )
 
+
 class Qwen3ModelChunk(ModelChunk):
     def __init__(
         self,
@@ -95,5 +104,3 @@ class Qwen3ModelChunk(ModelChunk):
             jit_trace,
             decoder_class=Qwen3DecoderLayer,
         )
-
-    

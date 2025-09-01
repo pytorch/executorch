@@ -23,12 +23,15 @@ from tokenizers import processors
 from .tokenization_gemma import GemmaTokenizer
 from .tokenization_utils_fast import PreTrainedTokenizerFast
 
-_, major, minor = tokenizers.__version__.split('.')[:3]
+_, major, minor = tokenizers.__version__.split(".")[:3]
 if (int(major) == 13 and int(minor) < 3) or int(major) < 13:
-    raise RuntimeError('Requires tokenizers>=0.13.3')
+    raise RuntimeError("Requires tokenizers>=0.13.3")
 
 
-VOCAB_FILES_NAMES = {'vocab_file': 'tokenizer.model', 'tokenizer_file': 'tokenizer.json'}
+VOCAB_FILES_NAMES = {
+    "vocab_file": "tokenizer.model",
+    "tokenizer_file": "tokenizer.json",
+}
 
 
 class GemmaTokenizerFast(PreTrainedTokenizerFast):
@@ -80,18 +83,18 @@ class GemmaTokenizerFast(PreTrainedTokenizerFast):
 
     vocab_files_names = VOCAB_FILES_NAMES
     slow_tokenizer_class = GemmaTokenizer
-    padding_side = 'left'
-    model_input_names = ['input_ids', 'attention_mask']
+    padding_side = "left"
+    model_input_names = ["input_ids", "attention_mask"]
 
     def __init__(
         self,
         vocab_file=None,
         tokenizer_file=None,
         clean_up_tokenization_spaces=False,
-        unk_token='<unk>',
-        bos_token='<bos>',
-        eos_token='<eos>',
-        pad_token='<pad>',
+        unk_token="<unk>",
+        bos_token="<bos>",
+        eos_token="<eos>",
+        pad_token="<pad>",
         add_bos_token=True,
         add_eos_token=False,
         **kwargs,
@@ -125,12 +128,12 @@ class GemmaTokenizerFast(PreTrainedTokenizerFast):
         bos = self.bos_token
         bos_token_id = self.bos_token_id
         if bos is None and self.add_bos_token:
-            raise ValueError('add_bos_token = True but bos_token = None')
+            raise ValueError("add_bos_token = True but bos_token = None")
 
         eos = self.eos_token
         eos_token_id = self.eos_token_id
         if eos is None and self.add_eos_token:
-            raise ValueError('add_eos_token = True but eos_token = None')
+            raise ValueError("add_eos_token = True but eos_token = None")
 
         single = f'{(bos + ":0 ") if self.add_bos_token else ""}$A:0{(" " + eos + ":0") if self.add_eos_token else ""}'
         pair = f'{single}{(" " + bos + ":1") if self.add_bos_token else ""} $B:1{(" " + eos + ":1") if self.add_eos_token else ""}'  # noqa: E501
@@ -165,18 +168,24 @@ class GemmaTokenizerFast(PreTrainedTokenizerFast):
         self.update_post_processor()
 
     # Copied from transformers.models.llama.tokenization_llama_fast.LlamaTokenizerFast.save_vocabulary
-    def save_vocabulary(self, save_directory: str, filename_prefix: Optional[str] = None) -> Tuple[str]:
+    def save_vocabulary(
+        self, save_directory: str, filename_prefix: Optional[str] = None
+    ) -> Tuple[str]:
         """Save vocabulary."""
         if not self.can_save_slow_tokenizer:
             raise ValueError(
-                'Your fast tokenizer does not have the necessary information to save the vocabulary for a slow '
-                'tokenizer.'
+                "Your fast tokenizer does not have the necessary information to save the vocabulary for a slow "
+                "tokenizer."
             )
 
         if not os.path.isdir(save_directory):
-            raise NotADirectoryError(f'Vocabulary path ({save_directory}) should be a directory')
+            raise NotADirectoryError(
+                f"Vocabulary path ({save_directory}) should be a directory"
+            )
         out_vocab_file = os.path.join(
-            save_directory, (filename_prefix + '-' if filename_prefix else '') + VOCAB_FILES_NAMES['vocab_file']
+            save_directory,
+            (filename_prefix + "-" if filename_prefix else "")
+            + VOCAB_FILES_NAMES["vocab_file"],
         )
 
         if os.path.abspath(self.vocab_file) != os.path.abspath(out_vocab_file):

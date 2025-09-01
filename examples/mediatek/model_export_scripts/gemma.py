@@ -1,3 +1,9 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import os
 import sys
 
@@ -241,11 +247,18 @@ def prepare_model_inputs(
     input_length = hidden_state.shape[1]
     # Assume fixed cache size
     global_mask = generate_mask(max_cache_size, 0, input_length, input_length)
-    local_mask = generate_mask(max_cache_size, 0, input_length, input_length, sliding_window=True, sliding_window_size=window_size)
-    mask = {
-            "SLIDING_LOCAL": local_mask,
-            "GLOBAL": global_mask
-        }
+    if window_size is not None:
+        local_mask = generate_mask(
+            max_cache_size,
+            0,
+            input_length,
+            input_length,
+            sliding_window=True,
+            sliding_window_size=window_size,
+        )
+        mask = {"SLIDING_LOCAL": local_mask, "GLOBAL": global_mask}
+    else:
+        mask = global_mask
     pos_emb = master_rot_emb[:, :, :input_length, :]
     # cache shape: num chunks of 2*num_block, num kv heads, c, head dim
     cache = reset_cache(
@@ -269,12 +282,21 @@ def prepare_model_inputs(
         curr_input_id = next_token[:, None].to(torch.int32)
         input_length = curr_input_id.shape[1]
         hidden_state = embedding_layer(curr_input_id)
-        global_mask = generate_mask(max_cache_size, seq_length, input_length, input_length)
-        local_mask = generate_mask(max_cache_size, seq_length, input_length, input_length, sliding_window=True, sliding_window_size=window_size)
-        mask = {
-            "SLIDING_LOCAL": local_mask,
-            "GLOBAL": global_mask
-        }
+        global_mask = generate_mask(
+            max_cache_size, seq_length, input_length, input_length
+        )
+        if window_size is not None:
+            local_mask = generate_mask(
+                max_cache_size,
+                0,
+                input_length,
+                input_length,
+                sliding_window=True,
+                sliding_window_size=window_size,
+            )
+            mask = {"SLIDING_LOCAL": local_mask, "GLOBAL": global_mask}
+        else:
+            mask = global_mask
         pos_emb = master_rot_emb[:, :, seq_length : seq_length + input_length, :]
         logits, cache = forward_and_save(
             models,
@@ -308,8 +330,10 @@ def calibrate_model(model, cal_dataset, chunk_idx: str):
                 if inp[chunk_idx][batch] is not None:
                     inputs_embeds = torch.tensor(inp[chunk_idx][batch]["hidden_state"])
                     mask = inp[chunk_idx][batch]["mask"]
-                    mask = {k: torch.tensor(v) for k, v in mask.items()}
-                    # mask = torch.tensor(inp[chunk_idx][batch]["mask"])
+                    try:
+                        mask = torch.tensor(mask)
+                    except:
+                        mask = {k: torch.tensor(v) for k, v in mask.items()}
                     pos_emb = torch.tensor(inp[chunk_idx][batch]["pos_emb"])
                     cache = torch.tensor(inp[chunk_idx][batch]["cache"])
                     model(inputs_embeds, mask, pos_emb, *torch.split(cache, 1, dim=0))
@@ -367,7 +391,7 @@ def export_to_et_ir(
             CompileSpec("gno-exp", b""),
             CompileSpec("gno-non-4d-tiling", b""),
             CompileSpec("ImportForever", struct.pack("?", True)),
-            CompileSpec("platform-config", b"mt6989"),
+            CompileSpec("platform-config", b"mt6991"),
         ]
         partitioner = NeuropilotPartitioner(compile_spec)
         delegated_program = edge_program.to_backend(partitioner)
@@ -462,7 +486,7 @@ def main():
         cal_dataset = cal_dataset.map(
             tokenize_dataset, fn_kwargs={"tokenizer": tokenizer}
         )
-        window_size = config.sliding_window_attention_size
+        window_size = getattr(config, "sliding_window_attention_size", None)
         print("Preparing Model Calibration Inputs...")
         cal_dataset = cal_dataset.map(
             prepare_model_inputs,
@@ -476,7 +500,7 @@ def main():
                 "max_cache_size": max_cache_size,
                 "eos_token_id_tensor": torch.tensor(tokenizer.eos_token_id),
                 "response_cap": args.response_cap,
-                "window_size": window_size
+                "window_size": window_size,
             },
         )
 

@@ -15,7 +15,8 @@ CACHE_SIZE=512
 HIDDEN_SIZE=2560
 NUM_HEAD=32
 NUM_LAYER=36
-MAX_TOKEN_LENGTH=9728
+HEAD_DIM=128
+MAX_TOKEN_LENGTH=40960
 ROT_EMB_BASE=1000000
 
 # Model IO Types
@@ -26,38 +27,32 @@ MASK_TYPE=fp32
 ROT_EMB_TYPE=fp32
 
 # Tokenizer
-VOCAB_SIZE=151646
+VOCAB_SIZE=151936
 BOS_TOKEN=151643
-EOS_TOKEN=1516465
+EOS_TOKEN=151645
 TOKENIZER_TYPE=hf  # Use "bpe" for LLAMA2, "tiktoken" for LLAMA3
 
 # Paths
-TOKENIZER_PATH="/data/local/tmp/et_mtk/qwen3/tokenizer.json"
-TOKEN_EMBEDDING_PATH="/data/local/tmp/et_mtk/qwen3/embedding_Qwen3-4B_fp32.bin"
+TOKENIZER_PATH="/data/local/tmp/et_mtk/tokenizer_qwen3.json"
+TOKEN_EMBEDDING_PATH="/data/local/tmp/et_mtk/embedding_Qwen3-4B_fp32.bin"
 
 # Comma-Separated Paths
 PROMPT_MODEL_PATHS="\
-/data/local/tmp/et_mtk/qwen3/Qwen3-4B_A16W4_4_chunks_128t512c/Qwen3-4B_A16W4_4_chunks_128t512c_0.pte,\
-/data/local/tmp/et_mtk/qwen3/Qwen3-4B_A16W4_4_chunks_128t512c/Qwen3-4B_A16W4_4_chunks_128t512c_1.pte,\
-/data/local/tmp/et_mtk/qwen3/Qwen3-4B_A16W4_4_chunks_128t512c/Qwen3-4B_A16W4_4_chunks_128t512c_2.pte,\
-/data/local/tmp/et_mtk/qwen3/Qwen3-4B_A16W4_4_chunks_128t512c/Qwen3-4B_A16W4_4_chunks_128t512c_3.pte,"
-
-# PROMPT_MODEL_PATHS="\
-# /data/local/tmp/et_mtk/qwen3/Qwen3-4B_A16W4_1_chunks_128t512c/Qwen3-4B_A16W4_1_chunks_128t512c_0.pte,"
-
-# GEN_MODEL_PATHS="\
-# /data/local/tmp/et_mtk/qwen3/Qwen3-4B_A16W4_1_chunks_1t512c/Qwen3-4B_A16W4_1_chunks_1t512c_0.pte,"
+/data/local/tmp/et_mtk/Qwen3-4B_A16W4_4_chunks_128t512c/Qwen3-4B_A16W4_4_chunks_128t512c_0.pte,\
+/data/local/tmp/et_mtk/Qwen3-4B_A16W4_4_chunks_128t512c/Qwen3-4B_A16W4_4_chunks_128t512c_1.pte,\
+/data/local/tmp/et_mtk/Qwen3-4B_A16W4_4_chunks_128t512c/Qwen3-4B_A16W4_4_chunks_128t512c_2.pte,\
+/data/local/tmp/et_mtk/Qwen3-4B_A16W4_4_chunks_128t512c/Qwen3-4B_A16W4_4_chunks_128t512c_3.pte,"
 
 # # Comma-Separated Paths
 GEN_MODEL_PATHS="\
-/data/local/tmp/et_mtk/qwen3/Qwen3-4B_A16W4_4_chunks_1t512c/Qwen3-4B_A16W4_4_chunks_1t512c_0.pte,\
-/data/local/tmp/et_mtk/qwen3/Qwen3-4B_A16W4_4_chunks_1t512c/Qwen3-4B_A16W4_4_chunks_1t512c_1.pte,\
-/data/local/tmp/et_mtk/qwen3/Qwen3-4B_A16W4_4_chunks_1t512c/Qwen3-4B_A16W4_4_chunks_1t512c_2.pte,\
-/data/local/tmp/et_mtk/qwen3/Qwen3-4B_A16W4_4_chunks_1t512c/Qwen3-4B_A16W4_4_chunks_1t512c_3.pte,"
+/data/local/tmp/et_mtk/Qwen3-4B_A16W4_4_chunks_1t512c/Qwen3-4B_A16W4_4_chunks_1t512c_0.pte,\
+/data/local/tmp/et_mtk/Qwen3-4B_A16W4_4_chunks_1t512c/Qwen3-4B_A16W4_4_chunks_1t512c_1.pte,\
+/data/local/tmp/et_mtk/Qwen3-4B_A16W4_4_chunks_1t512c/Qwen3-4B_A16W4_4_chunks_1t512c_2.pte,\
+/data/local/tmp/et_mtk/Qwen3-4B_A16W4_4_chunks_1t512c/Qwen3-4B_A16W4_4_chunks_1t512c_3.pte,"
 
 
 
-PROMPT_FILE=/data/local/tmp/et_mtk/qwen3/prompt.txt
+PROMPT_FILE=/data/local/tmp/et_mtk/prompt.txt
 
 chmod +x mtk_llama_executor_runner
 
@@ -70,6 +65,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD
     --hidden_size=$HIDDEN_SIZE \
     --num_head=$NUM_HEAD \
     --num_layer=$NUM_LAYER \
+    --head_dim=$HEAD_DIM \
     --max_token_length=$MAX_TOKEN_LENGTH \
     --rot_emb_base=$ROT_EMB_BASE \
     --input_type=$INPUT_TYPE \

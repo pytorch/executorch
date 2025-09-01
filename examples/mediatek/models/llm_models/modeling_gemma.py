@@ -1,26 +1,41 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import math
+
 import numpy as np
 import torch
-from torch import nn
 from models.llm_models.configuration_gemma import GemmaConfig
+
+from models.llm_models.modeling_common import (
+    Attention,
+    DecoderLayer,
+    FastGelu,
+    MLP,
+    ModelChunk,
+)
+from torch import nn
 from torch.export import Dim
 
-
-from models.llm_models.modeling_common import FastGelu, Attention, MLP, DecoderLayer, ModelChunk
-
 np.random.seed(42)
+
+# flake8: noqa: C901
 
 
 def scaled_tanh(hidden_states, scale):
     output = torch.tanh(hidden_states / scale)
     return scale * output
 
+
 class GemmaRMSNorm(nn.Module):
     def __init__(
-        self, 
-        hidden_size, 
-        eps=1e-6, 
-        with_scale=True, 
+        self,
+        hidden_size,
+        eps=1e-6,
+        with_scale=True,
         decompose=False,
     ):
         super().__init__()
@@ -35,11 +50,14 @@ class GemmaRMSNorm(nn.Module):
         if self.decompose:
             hidden_states = hidden_states / torch.sqrt(variance + self.variance_epsilon)
         else:
-            hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+            hidden_states = hidden_states * torch.rsqrt(
+                variance + self.variance_epsilon
+            )
 
         if self.with_scale:
             return (1.0 + self.weight) * hidden_states
         return hidden_states
+
 
 class GemmaMLP(MLP):
     def __init__(self, config: GemmaConfig):
@@ -53,10 +71,11 @@ class GemmaMLP(MLP):
         down = self.down_proj(pre_down)
 
         return down
-    
+
+
 class GemmaAttention(Attention):
     def __init__(
-        self, 
+        self,
         config: GemmaConfig,
         jit_trace=False,
     ):
@@ -65,17 +84,17 @@ class GemmaAttention(Attention):
             jit_trace,
         )
 
+
 class Gemma2Attention(Attention):
     def __init__(
-        self, 
+        self,
         config: GemmaConfig,
         jit_trace=False,
     ):
-        super().__init__(
-            config,
-            jit_trace
+        super().__init__(config, jit_trace)
+        self.query_pre_attn_scalar = torch.tensor(
+            self.config.query_pre_attn_scalar**0.5
         )
-        self.query_pre_attn_scalar = torch.tensor(self.config.query_pre_attn_scalar**0.5)
 
     def forward(
         self,
@@ -152,7 +171,6 @@ class Gemma2Attention(Attention):
         # NOTE: gemma2 scales with query pre attn scalar instead of attn scale
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3))
         attn_weights = attn_weights / self.query_pre_attn_scalar
-    
 
         # NOTE: Unique to gemma 2
         attn_weights = scaled_tanh(attn_weights, self.config.attn_logit_softcapping)
@@ -169,17 +187,14 @@ class Gemma2Attention(Attention):
         value_states_out = value_states_out[:, :, q_len:, :]
 
         return attn_output, key_states_out, value_states_out
-    
+
 
 class Gemma3Attention(Attention):
-    def __init__(
-        self, 
-        config: GemmaConfig, 
-        jit_trace=False
-    ):
-        super().__init__(
-            config, jit_trace)
-        self.query_pre_attn_scalar = torch.tensor(self.config.query_pre_attn_scalar**0.5)
+    def __init__(self, config: GemmaConfig, jit_trace=False):
+        super().__init__(config, jit_trace)
+        self.query_pre_attn_scalar = torch.tensor(
+            self.config.query_pre_attn_scalar**0.5
+        )
         if config.use_qk_norm:
             self.q_norm = GemmaRMSNorm(self.head_dim, eps=config.norm_eps)
             self.k_norm = GemmaRMSNorm(self.head_dim, eps=config.norm_eps)
@@ -243,7 +258,7 @@ class Gemma3Attention(Attention):
         if self.config.use_qk_norm:
             query_states = self.apply_q_norm(query_states)
             key_states = self.apply_k_norm(key_states)
-        
+
         if self.config.position_embedding == "rope":
             cos, sin = torch.split(pos_emb, 1, dim=1)
             query_states, key_states = self.apply_rotary_pos_emb_mtk(
@@ -277,7 +292,8 @@ class Gemma3Attention(Attention):
         value_states_out = value_states_out[:, :, q_len:, :]
 
         return attn_output, key_states_out, value_states_out
-    
+
+
 class GemmaDecoderLayer(DecoderLayer):
     def __init__(
         self,
@@ -292,6 +308,7 @@ class GemmaDecoderLayer(DecoderLayer):
             attn_class=GemmaAttention,
             mlp_class=GemmaMLP,
         )
+
 
 class Gemma2DecoderLayer(DecoderLayer):
     def __init__(
@@ -308,9 +325,15 @@ class Gemma2DecoderLayer(DecoderLayer):
             mlp_class=GemmaMLP,
         )
         self.input_norm = GemmaRMSNorm(config.hidden_size, eps=config.norm_eps).float()
-        self.post_attention_norm = GemmaRMSNorm(config.hidden_size, eps=config.norm_eps).float()
-        self.pre_feedforward_layernorm = GemmaRMSNorm(config.hidden_size, eps=config.norm_eps).float()
-        self.post_feedforward_layernorm = GemmaRMSNorm(config.hidden_size, eps=config.norm_eps).float()
+        self.post_attention_norm = GemmaRMSNorm(
+            config.hidden_size, eps=config.norm_eps
+        ).float()
+        self.pre_feedforward_layernorm = GemmaRMSNorm(
+            config.hidden_size, eps=config.norm_eps
+        ).float()
+        self.post_feedforward_layernorm = GemmaRMSNorm(
+            config.hidden_size, eps=config.norm_eps
+        ).float()
 
     def forward(
         self,
@@ -342,9 +365,9 @@ class Gemma2DecoderLayer(DecoderLayer):
             hidden_states = self.post_attention_norm(attn_output)
         else:
             dtype = hidden_states.dtype
-            hidden_states = self.post_attention_norm(
-                attn_output.to(torch.float32)
-            ).to(dtype)
+            hidden_states = self.post_attention_norm(attn_output.to(torch.float32)).to(
+                dtype
+            )
 
         hidden_states = residual.to(layer_device) + hidden_states
 
@@ -372,8 +395,9 @@ class Gemma2DecoderLayer(DecoderLayer):
 
         if self.return_attn:
             return hidden_states, present_key, present_value, attn_output
-        return hidden_states, present_key, present_value  
-    
+        return hidden_states, present_key, present_value
+
+
 class Gemma3DecoderLayer(DecoderLayer):
     def __init__(
         self,
@@ -390,8 +414,12 @@ class Gemma3DecoderLayer(DecoderLayer):
         )
         self.input_norm = GemmaRMSNorm(config.hidden_size, eps=config.norm_eps)
         self.post_attention_norm = GemmaRMSNorm(config.hidden_size, eps=config.norm_eps)
-        self.pre_feedforward_layernorm = GemmaRMSNorm(config.hidden_size, eps=config.norm_eps)
-        self.post_feedforward_layernorm = GemmaRMSNorm(config.hidden_size, eps=config.norm_eps)
+        self.pre_feedforward_layernorm = GemmaRMSNorm(
+            config.hidden_size, eps=config.norm_eps
+        )
+        self.post_feedforward_layernorm = GemmaRMSNorm(
+            config.hidden_size, eps=config.norm_eps
+        )
         self.use_res_clamp = config.use_res_clamp
 
     def forward(
@@ -424,16 +452,16 @@ class Gemma3DecoderLayer(DecoderLayer):
             hidden_states = self.post_attention_norm(attn_output)
         else:
             dtype = hidden_states.dtype
-            hidden_states = self.post_attention_norm(
-                attn_output.to(torch.float32)
-            ).to(dtype)
+            hidden_states = self.post_attention_norm(attn_output.to(torch.float32)).to(
+                dtype
+            )
 
         hidden_states = residual.to(layer_device) + hidden_states
 
         if self.use_res_clamp:
             hidden_states = torch.clamp(
-                hidden_states, 
-                torch.finfo(torch.float16).min, 
+                hidden_states,
+                torch.finfo(torch.float16).min,
                 torch.finfo(torch.float16).max,
             )
 
@@ -461,15 +489,16 @@ class Gemma3DecoderLayer(DecoderLayer):
 
         if self.use_res_clamp:
             hidden_states = torch.clamp(
-                hidden_states, 
-                torch.finfo(torch.float16).min, 
+                hidden_states,
+                torch.finfo(torch.float16).min,
                 torch.finfo(torch.float16).max,
             )
 
         if self.return_attn:
             return hidden_states, present_key, present_value, attn_output
-        return hidden_states, present_key, present_value  
-    
+        return hidden_states, present_key, present_value
+
+
 class GemmaModelChunk(ModelChunk):
     def __init__(
         self,
@@ -491,6 +520,7 @@ class GemmaModelChunk(ModelChunk):
             jit_trace,
             decoder_class=GemmaDecoderLayer,
         )
+
 
 class Gemma2ModelChunk(ModelChunk):
     def __init__(
@@ -537,7 +567,7 @@ class Gemma2ModelChunk(ModelChunk):
 
         if self.chunk_idx == 0:
             inputs_embeds = inputs_embeds * math.sqrt(self.config.hidden_size)
-        
+
         hidden_states = inputs_embeds
 
         next_key_cache = []
@@ -568,12 +598,14 @@ class Gemma2ModelChunk(ModelChunk):
                     self.dtype
                 )
             hidden_states = self.lm_head(hidden_states)
-            hidden_states = scaled_tanh(hidden_states, self.config.final_logit_softcapping)
+            hidden_states = scaled_tanh(
+                hidden_states, self.config.final_logit_softcapping
+            )
 
         if self.return_attn:
             return hidden_states, *next_key_cache, *next_value_cache, *attn_outputs
         return hidden_states, *next_key_cache, *next_value_cache
-    
+
     def load_weights(self, state_dict, state_dict_start_idx):
         if state_dict is None:
             fake_weights = True
@@ -680,7 +712,7 @@ class Gemma2ModelChunk(ModelChunk):
                                 dtype=self.dtype,
                             ),
                             f"layers.{inner_layer_idx}.self_attn.q_proj.bias": torch.zeros(
-                                self.config.head_dim * self.config.num_attention_heads, 
+                                self.config.head_dim * self.config.num_attention_heads,
                                 dtype=self.dtype,
                             ),
                             f"layers.{inner_layer_idx}.self_attn.k_proj.bias": torch.zeros(
@@ -722,7 +754,7 @@ class Gemma2ModelChunk(ModelChunk):
                         f"layers.{inner_layer_idx}.post_attention_norm.weight": torch.rand(
                             self.config.hidden_size, dtype=torch.float32
                         ),
-                        f"layers.{inner_layer_idx}.pre_feedforward_layernorm.weight":torch.rand(
+                        f"layers.{inner_layer_idx}.pre_feedforward_layernorm.weight": torch.rand(
                             self.config.hidden_size, dtype=torch.float32
                         ),
                         f"layers.{inner_layer_idx}.post_feedforward_layernorm.weight": torch.rand(
@@ -790,7 +822,8 @@ class Gemma2ModelChunk(ModelChunk):
                             f"layers.{inner_layer_idx}.self_attn.q_proj.bias": state_dict.pop(
                                 f"{prefix}layers.{outer_layer_idx}.self_attn.q_proj.bias",
                                 torch.zeros(
-                                    self.config.head_dim * self.config.num_attention_heads, 
+                                    self.config.head_dim
+                                    * self.config.num_attention_heads,
                                     dtype=self.dtype,
                                 ),
                             ),
@@ -828,9 +861,7 @@ class Gemma2ModelChunk(ModelChunk):
                         ),
                         f"layers.{inner_layer_idx}.input_norm.weight": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.{input_norm_subkey}.weight"
-                        ).to(
-                            torch.float32
-                        ),
+                        ).to(torch.float32),
                         f"layers.{inner_layer_idx}.post_attention_norm.weight": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.{post_attention_norm_subkey}.weight"
                         ).to(
@@ -963,7 +994,8 @@ class Gemma2ModelChunk(ModelChunk):
         self.eval()
 
         return self
-    
+
+
 class Gemma3ModelChunk(ModelChunk):
     def __init__(
         self,
@@ -1011,7 +1043,7 @@ class Gemma3ModelChunk(ModelChunk):
 
         if self.chunk_idx == 0:
             inputs_embeds = inputs_embeds * math.sqrt(self.config.hidden_size)
-        
+
         hidden_states = inputs_embeds
 
         next_key_cache = []
@@ -1050,7 +1082,7 @@ class Gemma3ModelChunk(ModelChunk):
         if self.return_attn:
             return hidden_states, *next_key_cache, *next_value_cache, *attn_outputs
         return hidden_states, *next_key_cache, *next_value_cache
-    
+
     def load_weights(self, state_dict, state_dict_start_idx):
         if state_dict is None:
             fake_weights = True
@@ -1076,10 +1108,7 @@ class Gemma3ModelChunk(ModelChunk):
                     and "post_attention" in key
                 ):
                     post_attention_norm_subkey = key.split(".")[-2]
-                if (
-                    f"layers.{state_dict_start_idx}" in key
-                    and "q_norm" in key
-                ):
+                if f"layers.{state_dict_start_idx}" in key and "q_norm" in key:
                     q_norm_subkey = key
             if temp_key is None:
                 raise KeyError(
@@ -1099,7 +1128,9 @@ class Gemma3ModelChunk(ModelChunk):
                     "post_attention inside the key string."
                 )
             if q_norm_subkey is not None and self.config.use_qk_norm is False:
-                model_name = ''.join([char for char in self.config.model_type if not char.isdigit()])
+                model_name = "".join(
+                    [char for char in self.config.model_type if not char.isdigit()]
+                )
                 raise KeyError(
                     f"Layer {state_dict_start_idx}'s q_norm weight detected inside state_dict but not used."
                     f"Please set use_qk_norm to True in configuration_{model_name}.py"
@@ -1170,7 +1201,7 @@ class Gemma3ModelChunk(ModelChunk):
                                 dtype=self.dtype,
                             ),
                             f"layers.{inner_layer_idx}.self_attn.q_proj.bias": torch.zeros(
-                                self.config.head_dim * self.config.num_attention_heads, 
+                                self.config.head_dim * self.config.num_attention_heads,
                                 dtype=self.dtype,
                             ),
                             f"layers.{inner_layer_idx}.self_attn.k_proj.bias": torch.zeros(
@@ -1212,7 +1243,7 @@ class Gemma3ModelChunk(ModelChunk):
                         f"layers.{inner_layer_idx}.post_attention_norm.weight": torch.rand(
                             self.config.hidden_size, dtype=torch.float32
                         ),
-                        f"layers.{inner_layer_idx}.pre_feedforward_layernorm.weight":torch.rand(
+                        f"layers.{inner_layer_idx}.pre_feedforward_layernorm.weight": torch.rand(
                             self.config.hidden_size, dtype=torch.float32
                         ),
                         f"layers.{inner_layer_idx}.post_feedforward_layernorm.weight": torch.rand(
@@ -1243,7 +1274,7 @@ class Gemma3ModelChunk(ModelChunk):
                             f"layers.{inner_layer_idx}.self_attn.k_norm.weight": torch.rand(
                                 self.head_dim, dtype=self.dtype
                             ),
-                        }
+                        },
                     }
 
                 if self.config.norm == "LayerNorm":
@@ -1292,9 +1323,10 @@ class Gemma3ModelChunk(ModelChunk):
                             f"layers.{inner_layer_idx}.self_attn.q_proj.bias": state_dict.pop(
                                 f"{prefix}layers.{outer_layer_idx}.self_attn.q_proj.bias",
                                 torch.zeros(
-                                    self.config.head_dim * self.config.num_attention_heads, 
+                                    self.config.head_dim
+                                    * self.config.num_attention_heads,
                                     dtype=self.dtype,
-                                ), 
+                                ),
                             ),
                             f"layers.{inner_layer_idx}.self_attn.k_proj.bias": state_dict.pop(
                                 f"{prefix}layers.{outer_layer_idx}.self_attn.k_proj.bias",
@@ -1379,7 +1411,7 @@ class Gemma3ModelChunk(ModelChunk):
                             f"layers.{inner_layer_idx}.self_attn.k_norm.weight": state_dict.pop(
                                 f"{prefix}layers.{outer_layer_idx}.self_attn.k_norm.weight"
                             ),
-                        }
+                        },
                     }
 
                 if self.config.norm == "LayerNorm":
@@ -1476,7 +1508,7 @@ class Gemma3ModelChunk(ModelChunk):
         self.eval()
 
         return self
-    
+
     def get_example_inputs(
         self, num_token: int = 128, cache_size: int = 512, get_dym_shape=False
     ):
@@ -1525,7 +1557,12 @@ class Gemma3ModelChunk(ModelChunk):
             dynamic_shapes = (
                 {0: Dim.STATIC, 1: nt, 2: Dim.STATIC},
                 {
-                    "SLIDING_LOCAL": {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: nt + cache_size},
+                    "SLIDING_LOCAL": {
+                        0: Dim.STATIC,
+                        1: Dim.STATIC,
+                        2: nt,
+                        3: nt + cache_size,
+                    },
                     "GLOBAL": {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: nt + cache_size},
                 },
                 {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: Dim.STATIC},

@@ -1,3 +1,9 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import os
 import sys
 
@@ -277,6 +283,7 @@ def prepare_model_inputs(
         )
         next_token_logits = logits[:, -1, :]
         next_token = torch.argmax(next_token_logits, dim=-1)
+
         if next_token == eos_token_id_tensor:
             print(f"Found EOS on batch: {response_count}")
             break

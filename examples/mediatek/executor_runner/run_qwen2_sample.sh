@@ -12,11 +12,11 @@ PROMPT_TOKEN_BATCH_SIZE=128
 CACHE_SIZE=512
 
 # Model Internals
-HIDDEN_SIZE=3072
-NUM_HEAD=32
-NUM_LAYER=32
-MAX_TOKEN_LENGTH=4096
-ROT_EMB_BASE=10000
+HIDDEN_SIZE=3584
+NUM_HEAD=28
+NUM_LAYER=28
+MAX_TOKEN_LENGTH=32768
+ROT_EMB_BASE=1000000
 
 # Model IO Types
 INPUT_TYPE=fp32
@@ -26,31 +26,32 @@ MASK_TYPE=fp32
 ROT_EMB_TYPE=fp32
 
 # Tokenizer
-VOCAB_SIZE=32000
-BOS_TOKEN=1
-EOS_TOKEN=32000
-TOKENIZER_TYPE=bpe  # Use "bpe" for LLAMA2, "tiktoken" for LLAMA3
+VOCAB_SIZE=152064
+BOS_TOKEN=151643
+EOS_TOKEN=151645
+TOKENIZER_TYPE=hf  # Use "bpe" for LLAMA2, "tiktoken" for LLAMA3, "hf" for huggingface tokenizer
 
 # Paths
-TOKENIZER_PATH="/data/local/tmp/et_mtk/tokenizer.bin"
-TOKEN_EMBEDDING_PATH="/data/local/tmp/et_mtk/embedding_phi3.5-mini-instruct_fp32.bin"
+TOKENIZER_PATH="/data/local/tmp/et_mtk/tokenizer_qwen3.json"
+TOKEN_EMBEDDING_PATH="/data/local/tmp/et_mtk/embedding_Qwen2-7B-Instruct_fp32.bin"
 
 # Comma-Separated Paths
 PROMPT_MODEL_PATHS="\
-/data/local/tmp/et_mtk/phi3.5-mini-instruct_A16W4_4_chunks_128t512c/phi3.5-mini-instruct_A16W4_4_chunks_128t512c_0.pte,\
-/data/local/tmp/et_mtk/phi3.5-mini-instruct_A16W4_4_chunks_128t512c/phi3.5-mini-instruct_A16W4_4_chunks_128t512c_1.pte,\
-/data/local/tmp/et_mtk/phi3.5-mini-instruct_A16W4_4_chunks_128t512c/phi3.5-mini-instruct_A16W4_4_chunks_128t512c_2.pte,\
-/data/local/tmp/et_mtk/phi3.5-mini-instruct_A16W4_4_chunks_128t512c/phi3.5-mini-instruct_A16W4_4_chunks_128t512c_3.pte,"
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c_0.pte,\
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c_1.pte,\
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c_2.pte,\
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c_3.pte,"
 
-
-# Comma-Separated Paths
+# # Comma-Separated Paths
 GEN_MODEL_PATHS="\
-/data/local/tmp/et_mtk/phi3.5-mini-instruct_A16W4_4_chunks_1t512c/phi3.5-mini-instruct_A16W4_4_chunks_1t512c_0.pte,\
-/data/local/tmp/et_mtk/phi3.5-mini-instruct_A16W4_4_chunks_1t512c/phi3.5-mini-instruct_A16W4_4_chunks_1t512c_1.pte,\
-/data/local/tmp/et_mtk/phi3.5-mini-instruct_A16W4_4_chunks_1t512c/phi3.5-mini-instruct_A16W4_4_chunks_1t512c_2.pte,\
-/data/local/tmp/et_mtk/phi3.5-mini-instruct_A16W4_4_chunks_1t512c/phi3.5-mini-instruct_A16W4_4_chunks_1t512c_3.pte,"
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c_0.pte,\
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c_1.pte,\
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c_2.pte,\
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c_3.pte,"
 
-PROMPT_FILE=/data/local/tmp/et_mtk/prompt_phi3.txt
+
+
+PROMPT_FILE=/data/local/tmp/et_mtk/prompt.txt
 
 chmod +x mtk_llama_executor_runner
 

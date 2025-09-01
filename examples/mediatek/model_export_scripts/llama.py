@@ -1,3 +1,9 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import os
 import sys
 
@@ -354,7 +360,7 @@ def export_to_et_ir(
             CompileSpec("gno-exp", b""),
             CompileSpec("gno-non-4d-tiling", b""),
             CompileSpec("ImportForever", struct.pack("?", True)),
-            CompileSpec("platform-config", b"mt6989"),
+            CompileSpec("platform-config", b"mt6991"),
         ]
         partitioner = NeuropilotPartitioner(compile_spec)
         delegated_program = edge_program.to_backend(partitioner)

@@ -1,3 +1,9 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import os
 import sys
 
@@ -34,7 +40,8 @@ from aot_utils.llm_utils.utils import (
     load_checkpoints,
     resolve_model_classes,
 )
-from datasets import load_dataset, Audio, Dataset
+from aot_utils.mllm_utils.preprocessor_whisper import WhisperAudioProcessor
+from datasets import Audio, Dataset, load_dataset
 from executorch import exir
 from executorch.backends.mediatek import (
     NeuropilotPartitioner,
@@ -44,7 +51,6 @@ from executorch.backends.mediatek import (
 from executorch.exir.backend.backend_details import CompileSpec
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from tqdm import tqdm
-from aot_utils.mllm_utils.preprocessor_whisper import WhisperAudioProcessor
 
 
 warnings.filterwarnings("ignore")
@@ -126,7 +132,9 @@ def args_sanity_checks(args):
     if args.dataset is not None:
         check_exist(args.dataset)
 
-    check_between_inclusive(args.num_chunks, 1, config.llm.num_hidden_layers, "num_chunks")
+    check_between_inclusive(
+        args.num_chunks, 1, config.llm.num_hidden_layers, "num_chunks"
+    )
 
     check_shapes(args.shapes)
 
@@ -161,18 +169,21 @@ def tokenize_dataset(inp, tokenizer):
     inp.pop("text")
     return inp
 
+
 def process_audio(inp, preprocessor, encoder):
     audio_path = inp["text"]
-    if audio_path.endswith('mp3'):  
-        print(f'Loading audio from path: {audio_path}')
-        mm_input = Dataset.from_dict(
-            {'audio': [str(audio_path)]}
-            ).cast_column('audio', Audio(sampling_rate=16000))[0]['audio']['array']
+    if audio_path.endswith("mp3"):
+        print(f"Loading audio from path: {audio_path}")
+        mm_input = Dataset.from_dict({"audio": [str(audio_path)]}).cast_column(
+            "audio", Audio(sampling_rate=16000)
+        )[0]["audio"]["array"]
     else:
         print(f"Expected mm input filepath to end with 'mp3', but got {audio_path}")
 
-    processed, _ = preprocessor.preprocess(mm_input, sampling_rate=16000, return_tensors="pt")
-    inputs = processed['input_features'].to(torch.float32)
+    processed, _ = preprocessor.preprocess(
+        mm_input, sampling_rate=16000, return_tensors="pt"
+    )
+    inputs = processed["input_features"].to(torch.float32)
     inp["encoder_inputs"] = inputs
     _, cross_cache = encoder(inputs)
 
@@ -181,14 +192,16 @@ def process_audio(inp, preprocessor, encoder):
 
     return inp
 
+
 def prepare_encoder_inputs(inp):
     inp["hidden_states"] = inp["encoder_inputs"]
     inp.pop("encoder_inputs")
     return inp
 
+
 def add_instruction(inp, tokenizer):
     prompt = ""
-    inp_encoded = tokenizer(prompt, return_tensors='pt')
+    inp_encoded = tokenizer(prompt, return_tensors="pt")
     inp_encoded.pop("attention_mask")
     inp_encoded = inp_encoded["input_ids"]
     inp_encoded = inp_encoded.to(torch.int32)
@@ -230,12 +243,13 @@ def forward_and_save(
         num_layers = int(cross_cache.shape[0] / 2)
         num_blocks = num_blocks_per_chunk[chunk_idx]
         cross_key = cross_cache[
-            chunk_idx * num_blocks : (chunk_idx + 1) * num_blocks,
-            ...
+            chunk_idx * num_blocks : (chunk_idx + 1) * num_blocks, ...
         ]
         cross_value = cross_cache[
-            chunk_idx * num_blocks + num_layers : (chunk_idx + 1) * num_blocks + num_layers,
-            ...
+            chunk_idx * num_blocks
+            + num_layers : (chunk_idx + 1) * num_blocks
+            + num_layers,
+            ...,
         ]
         cross_cache_in = torch.cat([cross_key, cross_value], dim=0)
 
@@ -262,7 +276,11 @@ def forward_and_save(
             }
         with torch.no_grad():
             model_out = models[chunk_idx](
-                hidden_state, mask, pos_emb, cross_cache_in, *torch.split(cache_in, 1, dim=0)
+                hidden_state,
+                mask,
+                pos_emb,
+                cross_cache_in,
+                *torch.split(cache_in, 1, dim=0),
             )
         hidden_state = model_out[0]
         cache[chunk_idx] = torch.cat(
@@ -296,7 +314,6 @@ def prepare_model_inputs(
     cache = reset_cache(
         len(models), num_key_value_heads, num_blocks_per_chunk, head_dim, max_cache_size
     )
-
 
     logits, cache = forward_and_save(
         models,
@@ -358,7 +375,13 @@ def calibrate_model(model, cal_dataset, chunk_idx: str):
                     pos_emb = torch.tensor(inp[chunk_idx][batch]["pos_emb"])
                     cache = torch.tensor(inp[chunk_idx][batch]["cache"])
                     cross_cache = torch.tensor(inp[chunk_idx][batch]["cross_cache"])
-                    model(inputs_embeds, mask, pos_emb, cross_cache, *torch.split(cache, 1, dim=0))
+                    model(
+                        inputs_embeds,
+                        mask,
+                        pos_emb,
+                        cross_cache,
+                        *torch.split(cache, 1, dim=0),
+                    )
 
 
 def export_to_et_ir(
@@ -437,6 +460,7 @@ def export_to_et_ir(
         with open(dest_path, "wb") as file:
             file.write(executorch_program.buffer)
 
+
 def export_encoder_to_et_ir(
     enc_output_folder,
     enc_exp_name,
@@ -446,9 +470,7 @@ def export_encoder_to_et_ir(
     cal_dataset=None,
 ):
     print(f"Exporting Encoder to PTE")
-    example_inputs = model.get_example_inputs(
-        num_mel_bins
-    )
+    example_inputs = model.get_example_inputs(num_mel_bins)
     print("Getting pre autograd ATen Dialect Graph")
     pre_autograd_aten_dialect = torch.export.export_for_training(
         model, example_inputs, strict=True
@@ -532,7 +554,9 @@ def main():
     )
     encoder_class = chunk_class[0]
     decoder_class = chunk_class[1]
-    tokenizer = tokenizer_class.from_pretrained(weight_dir, language="english", task="transcribe")
+    tokenizer = tokenizer_class.from_pretrained(
+        weight_dir, language="english", task="transcribe"
+    )
 
     preprocessor_attr = config.p.__dict__
     preprocessor = WhisperAudioProcessor(**preprocessor_attr)
@@ -578,25 +602,27 @@ def main():
             include_tail=(chunk_idx == args.num_chunks - 1),
             jit_trace=True,
         )
-        decoder_chunk = decoder_chunk.load_weights(state_dict, sum(num_blocks_per_chunk[:chunk_idx]))
+        decoder_chunk = decoder_chunk.load_weights(
+            state_dict, sum(num_blocks_per_chunk[:chunk_idx])
+        )
         models.append(decoder_chunk)
-
 
     cal_dataset = None
     if args.dataset is not None:
         cal_dataset = load_dataset("text", data_files=args.dataset, split="train")
         master_pos_emb = get_master_pos_emb(config.llm, weight_dir, dtype=torch.float32)
         cal_dataset = cal_dataset.map(
-            process_audio, fn_kwargs={
+            process_audio,
+            fn_kwargs={
                 "preprocessor": preprocessor,
                 "encoder": encoder,
-            }
+            },
         )
 
         encoder_cal_dataset = cal_dataset.map(prepare_encoder_inputs)
 
-        cal_dataset = cal_dataset.map( #keys: encoded_audio, encoder_inputs, cross_cache, input_ids
-            add_instruction, fn_kwargs={"tokenizer": tokenizer} 
+        cal_dataset = cal_dataset.map(  # keys: encoded_audio, encoder_inputs, cross_cache, input_ids
+            add_instruction, fn_kwargs={"tokenizer": tokenizer}
         )
 
         print("Preparing Model Calibration Inputs...")
@@ -621,7 +647,7 @@ def main():
         encoder,
         args.precision,
         config.encoder.num_mel_bins,
-        encoder_cal_dataset        
+        encoder_cal_dataset,
     )
 
     for chunk_idx, chunk in enumerate(models):
@@ -636,6 +662,7 @@ def main():
             export_shapes,
             cal_dataset,
         )
+
 
 if __name__ == "__main__":
     main()

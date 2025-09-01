@@ -14,6 +14,8 @@
 # limitations under the License.
 """Tokenizer utilities."""
 
+# flake8: noqa: C901
+
 import functools
 import os
 import sys
@@ -26,11 +28,7 @@ from uuid import uuid4
 
 import huggingface_hub
 import numpy as np
-from huggingface_hub import (
-    _CACHED_NO_EXIST,
-    hf_hub_download,
-    try_to_load_from_cache,
-)
+from huggingface_hub import _CACHED_NO_EXIST, hf_hub_download, try_to_load_from_cache
 
 get_torch_version = False
 is_flax_available = False
@@ -58,9 +56,12 @@ def add_model_info_to_auto_map(auto_map, repo_id):
     """Adds the information of the repo_id to a given auto map."""
     for key, value in auto_map.items():
         if isinstance(value, (tuple, list)):
-            auto_map[key] = [f'{repo_id}--{v}' if (v is not None and '--' not in v) else v for v in value]
-        elif value is not None and '--' not in value:
-            auto_map[key] = f'{repo_id}--{value}'
+            auto_map[key] = [
+                f"{repo_id}--{v}" if (v is not None and "--" not in v) else v
+                for v in value
+            ]
+        elif value is not None and "--" not in value:
+            auto_map[key] = f"{repo_id}--{value}"
 
     return auto_map
 
@@ -69,10 +70,10 @@ def add_model_info_to_custom_pipelines(custom_pipeline, repo_id):
     """Adds the information of the repo_id to a given custom pipeline."""
     # {custom_pipelines : {task: {"impl": "path.to.task"},...} }
     for task in custom_pipeline:
-        if 'impl' in custom_pipeline[task]:
-            module = custom_pipeline[task]['impl']
-            if '--' not in module:
-                custom_pipeline[task]['impl'] = f'{repo_id}--{module}'
+        if "impl" in custom_pipeline[task]:
+            module = custom_pipeline[task]["impl"]
+            if "--" not in module:
+                custom_pipeline[task]["impl"] = f"{repo_id}--{module}"
     return custom_pipeline
 
 
@@ -84,16 +85,16 @@ def infer_framework_from_repr(x):
     """
     representation = str(type(x))
     if representation.startswith("<class 'torch."):
-        return 'pt'
+        return "pt"
     if representation.startswith("<class 'tensorflow."):
-        return 'tf'
+        return "tf"
     if representation.startswith("<class 'jax"):
-        return 'jax'
+        return "jax"
     if representation.startswith("<class 'numpy."):
-        return 'np'
+        return "np"
     if representation.startswith("<class 'mlx."):
-        return 'mlx'
-    raise ValueError(f'Unsupported repr {x}')
+        return "mlx"
+    raise ValueError(f"Unsupported repr {x}")
 
 
 def _get_frameworks_and_test_func(x):
@@ -103,18 +104,20 @@ def _get_frameworks_and_test_func(x):
     we can guess from the repr first, then Numpy, then the others.
     """
     framework_to_test = {
-        'pt': is_torch_tensor,
-        'tf': is_tf_tensor,
-        'jax': is_jax_tensor,
-        'np': is_numpy_array,
-        'mlx': is_mlx_array,
+        "pt": is_torch_tensor,
+        "tf": is_tf_tensor,
+        "jax": is_jax_tensor,
+        "np": is_numpy_array,
+        "mlx": is_mlx_array,
     }
     preferred_framework = infer_framework_from_repr(x)
     # We will test this one first, then numpy, then the others.
     frameworks = [] if preferred_framework is None else [preferred_framework]
-    if preferred_framework != 'np':
-        frameworks.append('np')
-    frameworks.extend([f for f in framework_to_test if f not in [preferred_framework, 'np']])
+    if preferred_framework != "np":
+        frameworks.append("np")
+    frameworks.extend(
+        [f for f in framework_to_test if f not in [preferred_framework, "np"]]
+    )
     return {f: framework_to_test[f] for f in frameworks}
 
 
@@ -201,7 +204,7 @@ def _is_tf_symbolic_tensor(x):
     import tensorflow as tf
 
     # the `is_symbolic_tensor` predicate is only available starting with TF 2.14
-    if hasattr(tf, 'is_symbolic_tensor'):
+    if hasattr(tf, "is_symbolic_tensor"):
         return tf.is_symbolic_tensor(x)
     return isinstance(x, tf.Tensor)
 
@@ -239,10 +242,10 @@ def is_mlx_array(x):
 def to_py_obj(obj):
     """Convert a TensorFlow tensor, PyTorch tensor, Numpy array or python list to a python list."""
     framework_to_py_obj = {
-        'pt': lambda obj: obj.detach().cpu().tolist(),
-        'tf': lambda obj: obj.numpy().tolist(),
-        'jax': lambda obj: np.asarray(obj).tolist(),
-        'np': lambda obj: obj.tolist(),
+        "pt": lambda obj: obj.detach().cpu().tolist(),
+        "tf": lambda obj: obj.numpy().tolist(),
+        "jax": lambda obj: np.asarray(obj).tolist(),
+        "np": lambda obj: obj.tolist(),
     }
 
     if isinstance(obj, (dict, UserDict)):
@@ -265,10 +268,10 @@ def to_py_obj(obj):
 def to_numpy(obj):
     """Convert a TensorFlow tensor, PyTorch tensor, Numpy array or python list to a Numpy array."""
     framework_to_numpy = {
-        'pt': lambda obj: obj.detach().cpu().numpy(),
-        'tf': lambda obj: obj.numpy(),
-        'jax': lambda obj: np.asarray(obj),
-        'np': lambda obj: obj,
+        "pt": lambda obj: obj.detach().cpu().numpy(),
+        "tf": lambda obj: obj.numpy(),
+        "jax": lambda obj: np.asarray(obj),
+        "np": lambda obj: obj,
     }
 
     if isinstance(obj, (dict, UserDict)):
@@ -291,7 +294,7 @@ class ExplicitEnum(str, Enum):
     @classmethod
     def _missing_(cls, value):
         raise ValueError(
-            f'{value} is not a valid {cls.__name__}, please select one of {list(cls._value2member_map_.keys())}'
+            f"{value} is not a valid {cls.__name__}, please select one of {list(cls._value2member_map_.keys())}"
         )
 
 
@@ -301,9 +304,9 @@ class PaddingStrategy(ExplicitEnum):
     Useful for tab-completion in an IDE.
     """
 
-    LONGEST = 'longest'
-    MAX_LENGTH = 'max_length'
-    DO_NOT_PAD = 'do_not_pad'
+    LONGEST = "longest"
+    MAX_LENGTH = "max_length"
+    DO_NOT_PAD = "do_not_pad"
 
 
 class TensorType(ExplicitEnum):
@@ -312,11 +315,11 @@ class TensorType(ExplicitEnum):
     Useful for tab-completion in an IDE.
     """
 
-    PYTORCH = 'pt'
-    TENSORFLOW = 'tf'
-    NUMPY = 'np'
-    JAX = 'jax'
-    MLX = 'mlx'
+    PYTORCH = "pt"
+    TENSORFLOW = "tf"
+    NUMPY = "np"
+    JAX = "jax"
+    MLX = "mlx"
 
 
 def add_end_docstrings(*docstr):
@@ -330,7 +333,7 @@ def add_end_docstrings(*docstr):
     """
 
     def docstring_decorator(fn):
-        fn.__doc__ = (fn.__doc__ if fn.__doc__ is not None else '') + ''.join(docstr)
+        fn.__doc__ = (fn.__doc__ if fn.__doc__ is not None else "") + "".join(docstr)
         return fn
 
     return docstring_decorator
@@ -338,14 +341,14 @@ def add_end_docstrings(*docstr):
 
 def http_user_agent(user_agent: Union[Dict, str, None] = None) -> str:
     """Formats a user-agent string with basic info about a request."""
-    ua = f'python/{sys.version.split()[0]}; session_id/{uuid4().hex}'
+    ua = f"python/{sys.version.split()[0]}; session_id/{uuid4().hex}"
     if huggingface_hub.constants.HF_HUB_DISABLE_TELEMETRY:
-        return ua + '; telemetry/off'
+        return ua + "; telemetry/off"
     # CI will set this value to True
     if isinstance(user_agent, dict):
-        ua += '; ' + '; '.join(f'{k}/{v}' for k, v in user_agent.items())
+        ua += "; " + "; ".join(f"{k}/{v}" for k, v in user_agent.items())
     elif isinstance(user_agent, str):
-        ua += '; ' + user_agent
+        ua += "; " + user_agent
     return ua
 
 
@@ -359,7 +362,7 @@ def cached_file(
     token: Optional[Union[bool, str]] = None,
     revision: Optional[str] = None,
     local_files_only: bool = False,
-    subfolder: str = '',
+    subfolder: str = "",
     repo_type: Optional[str] = None,
     user_agent: Optional[Union[str, Dict[str, str]]] = None,
     _raise_exceptions_for_gated_repo: bool = True,
@@ -422,26 +425,31 @@ def cached_file(
     model_weights_file = cached_file("google-bert/bert-base-uncased", "pytorch_model.bin")
     ```
     """
-    use_auth_token = deprecated_kwargs.pop('use_auth_token', None)
+    use_auth_token = deprecated_kwargs.pop("use_auth_token", None)
     if use_auth_token is not None:
         if token is not None:
-            raise ValueError('`token` and `use_auth_token` are both specified. Please set only the argument `token`.')
+            raise ValueError(
+                "`token` and `use_auth_token` are both specified. Please set only the argument `token`."
+            )
         token = use_auth_token
 
     if is_offline_mode and not local_files_only:
         # print("Offline mode: forcing local_files_only=True")
         local_files_only = True
     if subfolder is None:
-        subfolder = ''
+        subfolder = ""
 
     path_or_repo_id = str(path_or_repo_id)
     full_filename = os.path.join(subfolder, filename)
     if os.path.isdir(path_or_repo_id):
         resolved_file = os.path.join(os.path.join(path_or_repo_id, subfolder), filename)
         if not os.path.isfile(resolved_file):
-            if _raise_exceptions_for_missing_entries and filename not in ['config.json', f'{subfolder}/config.json']:
+            if _raise_exceptions_for_missing_entries and filename not in [
+                "config.json",
+                f"{subfolder}/config.json",
+            ]:
                 raise OSError(
-                    f'{path_or_repo_id} does not appear to have a file named {full_filename}. Checkout '
+                    f"{path_or_repo_id} does not appear to have a file named {full_filename}. Checkout "
                     f"'https://huggingface.co/{path_or_repo_id}/tree/{revision}' for available files."
                 )
             return None
@@ -449,7 +457,10 @@ def cached_file(
 
     if cache_dir is None:
         cache_dir = os.getenv(
-            'TRANSFORMERS_CACHE', os.getenv('PYTORCH_TRANSFORMERS_CACHE', huggingface_hub.constants.HF_HUB_CACHE)
+            "TRANSFORMERS_CACHE",
+            os.getenv(
+                "PYTORCH_TRANSFORMERS_CACHE", huggingface_hub.constants.HF_HUB_CACHE
+            ),
         )
     if isinstance(cache_dir, Path):
         cache_dir = str(cache_dir)
@@ -457,14 +468,18 @@ def cached_file(
     if _commit_hash is not None and not force_download:
         # If the file is cached under that commit hash, we return it directly.
         resolved_file = try_to_load_from_cache(
-            path_or_repo_id, full_filename, cache_dir=cache_dir, revision=_commit_hash, repo_type=repo_type
+            path_or_repo_id,
+            full_filename,
+            cache_dir=cache_dir,
+            revision=_commit_hash,
+            repo_type=repo_type,
         )
         if resolved_file is not None:
             if resolved_file is not _CACHED_NO_EXIST:
                 return resolved_file
             if not _raise_exceptions_for_missing_entries:
                 return None
-            raise OSError(f'Could not locate {full_filename} inside {path_or_repo_id}.')
+            raise OSError(f"Could not locate {full_filename} inside {path_or_repo_id}.")
 
     user_agent = http_user_agent(user_agent)
 
@@ -487,7 +502,13 @@ def cached_file(
 def copy_func(f):
     """Returns a copy of a function f."""
     # Based on http://stackoverflow.com/a/6528148/190597 (Glenn Maynard)
-    g = types.FunctionType(f.__code__, f.__globals__, name=f.__name__, argdefs=f.__defaults__, closure=f.__closure__)
+    g = types.FunctionType(
+        f.__code__,
+        f.__globals__,
+        name=f.__name__,
+        argdefs=f.__defaults__,
+        closure=f.__closure__,
+    )
     g = functools.update_wrapper(g, f)
     g.__kwdefaults__ = f.__kwdefaults__
     return g

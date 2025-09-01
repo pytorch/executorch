@@ -1,15 +1,15 @@
-model=${1:-'gemma2_2b_it'}
+model=${1:-'gemma2'}
 chunks=${2:-4}
 tok=${3:-128}
 cache=${4:-512}
 cal=${5:-None}
 pres=${6:-A16W4}
 
-if [ $model = "gemma2_2b_it" ]
+if [ $model = "gemma2" ]
 then
 	config_path=gemma2_2b_it/config.json
 	pref="--preformatter aot_utils/llm_utils/preformatter_templates/gemma.json"
-elif [ $model = "gemma3_1b_it" ]
+elif [ $model = "gemma3" ]
 then
 	config_path=gemma3_1b_it/config.json
 	pref="--preformatter aot_utils/llm_utils/preformatter_templates/gemma.json"

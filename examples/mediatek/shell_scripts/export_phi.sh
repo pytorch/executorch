@@ -1,15 +1,15 @@
-model=${1:-'phi-4-mini-reasoning'}
+model=${1:-'phi-4'}
 chunks=${2:-4}
 tok=${3:-128}
 cache=${4:-512}
 cal=${5:-None}
 pres=${6:-A16W4}
 
-if [ $model = "phi3.5-mini-instruct" ]
+if [ $model = "phi3.5" ]
 then
 	config_path=phi3.5-mini-instruct/config.json
 	pref="--preformatter aot_utils/llm_utils/preformatter_templates/phi3.json"
-elif [ $model = "phi-4-mini-reasoning" ]
+elif [ $model = "phi-4" ]
 then
 	config_path=phi-4-mini-reasoning/config.json
 	pref="--preformatter aot_utils/llm_utils/preformatter_templates/phi3.json"

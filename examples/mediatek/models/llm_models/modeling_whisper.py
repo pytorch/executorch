@@ -1,12 +1,25 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import numpy as np
 import torch
-from torch import nn
-from models.llm_models.configuration_whisper import WhisperConfig, WhisperEncoderConfig, WhisperDecoderConfig
+from models.llm_models.configuration_whisper import (
+    WhisperConfig,
+    WhisperDecoderConfig,
+    WhisperEncoderConfig,
+)
 
-from models.llm_models.modeling_common import Attention, ModelChunk, TorchGelu, RMSNorm
+from models.llm_models.modeling_common import Attention, ModelChunk, RMSNorm, TorchGelu
+from torch import nn
 from torch.export import Dim
 
 np.random.seed(42)
+
+# flake8: noqa: C901
+
 
 class WhisperMLP(nn.Module):
     def __init__(self, config: WhisperConfig):
@@ -23,7 +36,8 @@ class WhisperMLP(nn.Module):
         down = self.down_proj(pre_down)
 
         return down
-    
+
+
 class WhisperEncoderAttention(nn.Module):
     def __init__(self, config: WhisperEncoderConfig):
         super().__init__()
@@ -72,6 +86,7 @@ class WhisperEncoderAttention(nn.Module):
         attn_output = self.o_proj(attn_output)
 
         return attn_output
+
 
 class WhisperDecoderAttention(Attention):
     def __init__(self, config: WhisperConfig):
@@ -130,6 +145,7 @@ class WhisperDecoderAttention(Attention):
 
         return attn_output, key_states_out, value_states_out
 
+
 class WhisperCrossAttention(nn.Module):
     def __init__(self, config: WhisperConfig):
         super().__init__()
@@ -163,7 +179,8 @@ class WhisperCrossAttention(nn.Module):
         attn_output = self.o_proj(attn_output)
 
         return attn_output
-    
+
+
 class WhisperEncoderLayer(nn.Module):
     def __init__(
         self,
@@ -179,10 +196,8 @@ class WhisperEncoderLayer(nn.Module):
         self.self_attn = attn_class(config)
         self.mlp = mlp_class(config)
 
-        norm_class = RMSNorm if config.norm == 'RMSNorm' else nn.LayerNorm
-        self.input_norm = norm_class(
-            self.hidden_size, eps=config.norm_eps
-        ).float()
+        norm_class = RMSNorm if config.norm == "RMSNorm" else nn.LayerNorm
+        self.input_norm = norm_class(self.hidden_size, eps=config.norm_eps).float()
         self.post_attention_norm = norm_class(
             self.hidden_size, eps=config.norm_eps
         ).float()
@@ -208,13 +223,16 @@ class WhisperEncoderLayer(nn.Module):
         if self.jit_trace:
             hidden_states = self.post_attention_norm(hidden_states)
         else:
-            dtype=hidden_states.dtype
-            hidden_states = self.post_attention_norm(hidden_states.to(torch.float32)).to(dtype)
-        
+            dtype = hidden_states.dtype
+            hidden_states = self.post_attention_norm(
+                hidden_states.to(torch.float32)
+            ).to(dtype)
+
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
 
         return hidden_states
+
 
 class WhisperEncoderKVLayer(nn.Module):
     def __init__(self, config: WhisperEncoderConfig):
@@ -229,20 +247,21 @@ class WhisperEncoderKVLayer(nn.Module):
     def forward(self, hidden_states):
         bsz, q_len, _ = hidden_states.size()
 
-        k_out = ( 
+        k_out = (
             self.k_proj(hidden_states)
             .view(bsz, q_len, self.num_heads, self.head_dim)
             .transpose(1, 2)
         )
-        v_out = ( 
+        v_out = (
             self.v_proj(hidden_states)
             .view(bsz, q_len, self.num_heads, self.head_dim)
             .transpose(1, 2)
         )
-        
+
         return k_out, v_out
 
-class WhisperDecoderLayer(nn.Module): 
+
+class WhisperDecoderLayer(nn.Module):
     def __init__(
         self,
         config: WhisperConfig,
@@ -260,10 +279,8 @@ class WhisperDecoderLayer(nn.Module):
         self.cross_attn = cross_attn_class(config)
         self.mlp = mlp_class(config)
 
-        norm_class = RMSNorm if config.norm == 'RMSNorm' else nn.LayerNorm
-        self.input_norm = norm_class(
-            self.hidden_size, eps=config.norm_eps
-        ).float()
+        norm_class = RMSNorm if config.norm == "RMSNorm" else nn.LayerNorm
+        self.input_norm = norm_class(self.hidden_size, eps=config.norm_eps).float()
         self.post_attention_norm = norm_class(
             self.hidden_size, eps=config.norm_eps
         ).float()
@@ -303,8 +320,10 @@ class WhisperDecoderLayer(nn.Module):
             hidden_states = self.post_attention_norm(hidden_states)
         else:
             dtype = hidden_states.dtype
-            hidden_states = self.post_attention_norm(hidden_states.to(torch.float32)).to(dtype)
-        
+            hidden_states = self.post_attention_norm(
+                hidden_states.to(torch.float32)
+            ).to(dtype)
+
         # Cross Attention
         hidden_states = self.cross_attn(
             hidden_states=hidden_states.to(layer_device),
@@ -312,19 +331,22 @@ class WhisperDecoderLayer(nn.Module):
             cross_value=cross_value.to(layer_device),
         )
         hidden_states = residual.to(layer_device) + hidden_states
-        residual=hidden_states
+        residual = hidden_states
         if self.jit_trace:
             hidden_states = self.post_cross_attention_norm(hidden_states)
         else:
             dtype = hidden_states.dtype
-            hidden_states = self.post_cross_attention_norm(hidden_states.to(torch.float32)).to(dtype)
+            hidden_states = self.post_cross_attention_norm(
+                hidden_states.to(torch.float32)
+            ).to(dtype)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
 
         if self.return_attn:
             return hidden_states, present_key, present_value, attn_output
         return hidden_states, present_key, present_value
-    
+
+
 class WhisperEncoderModel(nn.Module):
     def __init__(
         self,
@@ -335,11 +357,17 @@ class WhisperEncoderModel(nn.Module):
     ):
         super().__init__()
         self.config = config
-        self.conv1 = nn.Conv1d(config.num_mel_bins, config.hidden_size, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv1d(config.hidden_size, config.hidden_size, kernel_size=3, stride=2, padding=1)
+        self.conv1 = nn.Conv1d(
+            config.num_mel_bins, config.hidden_size, kernel_size=3, padding=1
+        )
+        self.conv2 = nn.Conv1d(
+            config.hidden_size, config.hidden_size, kernel_size=3, stride=2, padding=1
+        )
         self.gelu1 = TorchGelu()
         self.gelu2 = TorchGelu()
-        self.embed_positions = nn.Embedding(config.max_source_positions, config.hidden_size)
+        self.embed_positions = nn.Embedding(
+            config.max_source_positions, config.hidden_size
+        )
         self.num_layers = config.num_hidden_layers
         self.dtype = dtype
         self.jit_trace = jit_trace
@@ -349,7 +377,7 @@ class WhisperEncoderModel(nn.Module):
             [encoder_class(config, self.jit_trace) for _ in range(self.num_layers)]
         )
 
-        norm_class = RMSNorm if config.norm == 'RMSNorm' else nn.LayerNorm
+        norm_class = RMSNorm if config.norm == "RMSNorm" else nn.LayerNorm
         self.norm = norm_class(config.hidden_size, eps=config.norm_eps).float()
         self.encoder_tails_kv = nn.ModuleList(
             [WhisperEncoderKVLayer(config) for _ in range(config.decoder_num_layers)]
@@ -359,22 +387,26 @@ class WhisperEncoderModel(nn.Module):
         input_embeds = self.gelu1(self.conv1(input_embeds))
         input_embeds = self.gelu2(self.conv2(input_embeds)).permute(0, 2, 1)
         embed_pos = self.embed_positions.weight
-        input_embeds = input_embeds + embed_pos.reshape((1, embed_pos.shape[0], embed_pos.shape[1]))
+        input_embeds = input_embeds + embed_pos.reshape(
+            (1, embed_pos.shape[0], embed_pos.shape[1])
+        )
 
         hidden_states = input_embeds
         for idx, encoder_layer in enumerate(self.layers):
             encoder_outputs = encoder_layer(hidden_states.to(self.device_list[idx]))
             hidden_states = encoder_outputs
-        
+
         cross_key_cache = []
         cross_value_cache = []
         if self.jit_trace:
             hidden_states = self.norm(hidden_states)
         else:
             hidden_states = self.norm(hidden_states.to(torch.float32)).to(self.dtype)
-        
+
         for idx, encoder_tails_kv_layer in enumerate(self.encoder_tails_kv):
-            k_out, v_out = encoder_tails_kv_layer(hidden_states.to(self.device_list[idx]))
+            k_out, v_out = encoder_tails_kv_layer(
+                hidden_states.to(self.device_list[idx])
+            )
             cross_key_cache.append(k_out.to(input_embeds.device))
             cross_value_cache.append(v_out.to(input_embeds.device))
 
@@ -383,7 +415,7 @@ class WhisperEncoderModel(nn.Module):
         cross_cache = torch.cat([k_out, v_out], dim=0)
 
         return hidden_states, cross_cache
-    
+
     def load_weights(self, state_dict):
         state_dict_start_idx = 0
         if state_dict is None:
@@ -419,7 +451,7 @@ class WhisperEncoderModel(nn.Module):
                             dtype=self.dtype,
                         ),
                         f"layers.{inner_layer_idx}.self_attn.q_proj.bias": torch.zeros(
-                            self.config.head_dim * self.config.num_attention_heads, 
+                            self.config.head_dim * self.config.num_attention_heads,
                             dtype=self.dtype,
                         ),
                         f"layers.{inner_layer_idx}.self_attn.k_proj.bias": torch.zeros(
@@ -498,7 +530,7 @@ class WhisperEncoderModel(nn.Module):
                         f"layers.{inner_layer_idx}.self_attn.q_proj.bias": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.self_attn.q_proj.bias",
                             torch.zeros(
-                                self.config.head_dim * self.config.num_attention_heads, 
+                                self.config.head_dim * self.config.num_attention_heads,
                                 dtype=self.dtype,
                             ),
                         ),
@@ -533,9 +565,7 @@ class WhisperEncoderModel(nn.Module):
                         ),
                         f"layers.{inner_layer_idx}.input_norm.weight": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.{input_norm_subkey}.weight"
-                        ).to(
-                            torch.float32
-                        ),
+                        ).to(torch.float32),
                         f"layers.{inner_layer_idx}.post_attention_norm.weight": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.{post_attention_norm_subkey}.weight"
                         ).to(
@@ -569,7 +599,9 @@ class WhisperEncoderModel(nn.Module):
                             f"layers.{inner_layer_idx}.post_attention_norm.bias": state_dict.pop(
                                 f"{prefix}layers.{outer_layer_idx}.{post_attention_norm_subkey}.bias",
                                 torch.zeros(self.config.hidden_size, dtype=self.dtype),
-                            ).to(torch.float32),
+                            ).to(
+                                torch.float32
+                            ),
                         },
                     }
 
@@ -586,26 +618,26 @@ class WhisperEncoderModel(nn.Module):
         for dec_idx in range(self.config.decoder_num_layers):
             if fake_weights:
                 temp_state_dict = {
-                **temp_state_dict,
-                **{
-                    f"encoder_tails_kv.{dec_idx}.k_proj.weight": torch.rand(
-                        self.config.num_key_value_heads * self.head_dim,
-                        self.config.hidden_size,
-                        dtype=self.dtype,
-                    ),
-                    f"encoder_tails_kv.{dec_idx}.k_proj.bias": torch.rand(
-                        self.config.hidden_size, dtype=self.dtype
-                    ),
-                    f"encoder_tails_kv.{dec_idx}.v_proj.weight": torch.rand(
-                        self.config.num_key_value_heads * self.head_dim,
-                        self.config.hidden_size,
-                        dtype=self.dtype,
-                    ),
-                    f"encoder_tails_kv.{dec_idx}.v_proj.bias":torch.rand(
-                        self.config.hidden_size, dtype=self.dtype
-                    ),
+                    **temp_state_dict,
+                    **{
+                        f"encoder_tails_kv.{dec_idx}.k_proj.weight": torch.rand(
+                            self.config.num_key_value_heads * self.head_dim,
+                            self.config.hidden_size,
+                            dtype=self.dtype,
+                        ),
+                        f"encoder_tails_kv.{dec_idx}.k_proj.bias": torch.rand(
+                            self.config.hidden_size, dtype=self.dtype
+                        ),
+                        f"encoder_tails_kv.{dec_idx}.v_proj.weight": torch.rand(
+                            self.config.num_key_value_heads * self.head_dim,
+                            self.config.hidden_size,
+                            dtype=self.dtype,
+                        ),
+                        f"encoder_tails_kv.{dec_idx}.v_proj.bias": torch.rand(
+                            self.config.hidden_size, dtype=self.dtype
+                        ),
+                    },
                 }
-            }
 
             else:
                 temp_state_dict = {
@@ -616,37 +648,36 @@ class WhisperEncoderModel(nn.Module):
                         ).to(torch.float32),
                         f"encoder_tails_kv.{dec_idx}.k_proj.bias": state_dict.pop(
                             f"model.decoder.layers.{dec_idx}.encoder_attn.k_proj.bias",
-                            torch.zeros(self.config.hidden_size, dtype=self.dtype)
+                            torch.zeros(self.config.hidden_size, dtype=self.dtype),
                         ),
                         f"encoder_tails_kv.{dec_idx}.v_proj.weight": state_dict.pop(
                             f"model.decoder.layers.{dec_idx}.encoder_attn.v_proj.weight"
                         ).to(torch.float32),
                         f"encoder_tails_kv.{dec_idx}.v_proj.bias": state_dict.pop(
                             f"model.decoder.layers.{dec_idx}.encoder_attn.v_proj.bias",
-                            torch.zeros(self.config.hidden_size, dtype=self.dtype)
+                            torch.zeros(self.config.hidden_size, dtype=self.dtype),
                         ),
-                    }
+                    },
                 }
 
         if fake_weights:
             temp_state_dict = {
                 **temp_state_dict,
                 **{
-                    
                     "norm.weight": torch.rand(
-                    self.config.hidden_size, dtype=torch.float32
+                        self.config.hidden_size, dtype=torch.float32
                     ),
                     "conv1.weight": torch.rand(
-                        self.config.hidden_size, 
+                        self.config.hidden_size,
                         self.config.num_mel_bins,
                         3,
-                        dtype=self.dtype
+                        dtype=self.dtype,
                     ),
                     "conv2.weight": torch.rand(
-                        self.config.hidden_size, 
+                        self.config.hidden_size,
                         self.config.num_mel_bins,
                         3,
-                        dtype=self.dtype
+                        dtype=self.dtype,
                     ),
                     "conv1.bias": torch.zeros(
                         self.config.hidden_size, dtype=self.dtype
@@ -655,9 +686,9 @@ class WhisperEncoderModel(nn.Module):
                         self.config.hidden_size, dtype=self.dtype
                     ),
                     "embed_positions.weight": torch.rand(
-                        self.config.max_source_positions, 
+                        self.config.max_source_positions,
                         self.config.hidden_size,
-                        dtype=self.dtype  
+                        dtype=self.dtype,
                     ),
                 },
             }
@@ -678,15 +709,17 @@ class WhisperEncoderModel(nn.Module):
                     "conv2.weight": state_dict.pop(f"{prefix}conv2.weight").to(
                         torch.float32
                     ),
-                    "conv1.bias": state_dict.pop(f"{prefix}conv1.bias",
-                        torch.zeros(self.config.hidden_size, dtype=self.dtype)
+                    "conv1.bias": state_dict.pop(
+                        f"{prefix}conv1.bias",
+                        torch.zeros(self.config.hidden_size, dtype=self.dtype),
                     ),
-                    "conv2.bias": state_dict.pop(f"{prefix}conv2.bias",
-                        torch.zeros(self.config.hidden_size, dtype=self.dtype)
+                    "conv2.bias": state_dict.pop(
+                        f"{prefix}conv2.bias",
+                        torch.zeros(self.config.hidden_size, dtype=self.dtype),
                     ),
-                    "embed_positions.weight": state_dict.pop(f"{prefix}embed_positions.weight").to(
-                        torch.float32
-                    ),
+                    "embed_positions.weight": state_dict.pop(
+                        f"{prefix}embed_positions.weight"
+                    ).to(torch.float32),
                 },
             }
             if self.config.norm == "LayerNorm":
@@ -717,18 +750,15 @@ class WhisperEncoderModel(nn.Module):
         self.embed_positions.to(self.device_list[0])
         self.eval()
 
-        return self    
+        return self
 
-    def get_example_inputs(
-        self, num_mel_bins: int = 128, cache_size: int = 512
-    ):
+    def get_example_inputs(self, num_mel_bins: int = 128, cache_size: int = 512):
         example_inputs = (
-            torch.randn(
-                1, num_mel_bins, 3000, device="cpu", dtype=torch.float32
-            ),
+            torch.randn(1, num_mel_bins, 3000, device="cpu", dtype=torch.float32),
         )
 
         return example_inputs
+
 
 class WhisperDecoderModelChunk(ModelChunk):
     def __init__(
@@ -777,8 +807,6 @@ class WhisperDecoderModelChunk(ModelChunk):
 
         cross_cache = [*torch.split(cross_cache, 1, dim=0)]
 
-        
-
         next_key_cache = []
         next_value_cache = []
         if self.return_attn:
@@ -792,7 +820,9 @@ class WhisperDecoderModelChunk(ModelChunk):
                 past_key=cache[idx].to(self.device_list[idx]),
                 past_value=cache[self.num_blocks + idx].to(self.device_list[idx]),
                 cross_key=cross_cache[idx].to(self.device_list[idx]),
-                cross_value=cross_cache[self.num_blocks + idx].to(self.device_list[idx]),
+                cross_value=cross_cache[self.num_blocks + idx].to(
+                    self.device_list[idx]
+                ),
             )
 
             hidden_states = decoder_outputs[0]
@@ -813,7 +843,7 @@ class WhisperDecoderModelChunk(ModelChunk):
         if self.return_attn:
             return hidden_states, *next_key_cache, *next_value_cache, *attn_outputs
         return hidden_states, *next_key_cache, *next_value_cache
-    
+
     def load_weights(self, state_dict, state_dict_start_idx):
         if state_dict is None:
             fake_weights = True
@@ -870,7 +900,7 @@ class WhisperDecoderModelChunk(ModelChunk):
                             dtype=self.dtype,
                         ),
                         f"layers.{inner_layer_idx}.self_attn.q_proj.bias": torch.zeros(
-                            self.config.head_dim * self.config.num_attention_heads, 
+                            self.config.head_dim * self.config.num_attention_heads,
                             dtype=self.dtype,
                         ),
                         f"layers.{inner_layer_idx}.self_attn.k_proj.bias": torch.zeros(
@@ -972,7 +1002,7 @@ class WhisperDecoderModelChunk(ModelChunk):
                         f"layers.{inner_layer_idx}.self_attn.q_proj.bias": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.self_attn.q_proj.bias",
                             torch.zeros(
-                                self.config.head_dim * self.config.num_attention_heads, 
+                                self.config.head_dim * self.config.num_attention_heads,
                                 dtype=self.dtype,
                             ),
                         ),
@@ -996,7 +1026,7 @@ class WhisperDecoderModelChunk(ModelChunk):
                         f"layers.{inner_layer_idx}.cross_attn.q_proj.bias": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.encoder_attn.q_proj.bias",
                             torch.zeros(
-                                self.config.head_dim * self.config.num_attention_heads, 
+                                self.config.head_dim * self.config.num_attention_heads,
                                 dtype=self.dtype,
                             ),
                         ),
@@ -1020,9 +1050,7 @@ class WhisperDecoderModelChunk(ModelChunk):
                         ),
                         f"layers.{inner_layer_idx}.input_norm.weight": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.{input_norm_subkey}.weight"
-                        ).to(
-                            torch.float32
-                        ),
+                        ).to(torch.float32),
                         f"layers.{inner_layer_idx}.post_attention_norm.weight": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.{post_attention_norm_subkey}.weight"
                         ).to(
@@ -1065,11 +1093,15 @@ class WhisperDecoderModelChunk(ModelChunk):
                             f"layers.{inner_layer_idx}.post_attention_norm.bias": state_dict.pop(
                                 f"{prefix}layers.{outer_layer_idx}.{post_attention_norm_subkey}.bias",
                                 torch.zeros(self.config.hidden_size, dtype=self.dtype),
-                            ).to(torch.float32),
+                            ).to(
+                                torch.float32
+                            ),
                             f"layers.{inner_layer_idx}.post_cross_attention_norm.bias": state_dict.pop(
                                 f"{prefix}layers.{outer_layer_idx}.final_layer_norm.bias",
                                 torch.zeros(self.config.hidden_size, dtype=self.dtype),
-                            ).to(torch.float32),
+                            ).to(
+                                torch.float32
+                            ),
                         },
                     }
 
@@ -1151,7 +1183,7 @@ class WhisperDecoderModelChunk(ModelChunk):
         self.eval()
 
         return self
-    
+
     def get_example_inputs(
         self, num_token: int = 128, cache_size: int = 512, get_dym_shape=False
     ):
@@ -1168,15 +1200,17 @@ class WhisperDecoderModelChunk(ModelChunk):
                 device="cpu",
                 dtype=torch.float32,
             ),
-            torch.randn(1, num_token, self.config.hidden_size, device="cpu", dtype=torch.float32),
             torch.randn(
-                    2 * self.num_blocks,
-                    self.config.num_key_value_heads,
-                    1500,
-                    head_dim,
-                    device="cpu",
-                    dtype=torch.float32,
-                ),
+                1, num_token, self.config.hidden_size, device="cpu", dtype=torch.float32
+            ),
+            torch.randn(
+                2 * self.num_blocks,
+                self.config.num_key_value_heads,
+                1500,
+                head_dim,
+                device="cpu",
+                dtype=torch.float32,
+            ),
             *[
                 torch.randn(
                     1,
@@ -1205,5 +1239,3 @@ class WhisperDecoderModelChunk(ModelChunk):
             return example_inputs, dynamic_shapes
 
         return example_inputs
-    
-    

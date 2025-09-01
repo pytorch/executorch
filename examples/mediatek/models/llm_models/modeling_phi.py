@@ -1,11 +1,20 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import numpy as np
 import torch
-from torch import nn
 from models.llm_models.configuration_phi import PhiConfig
 
-from models.llm_models.modeling_common import Attention, DecoderLayer, MLP, ModelChunk
+from models.llm_models.modeling_common import Attention, DecoderLayer, ModelChunk
+from torch import nn
+from torch.export import Dim
 
 np.random.seed(42)
+
+# flake8: noqa: C901
 
 
 class PhiMLP(nn.Module):
@@ -40,11 +49,11 @@ class Phi4Attention(Attention):
 
         Phi4-mini uses partial rotary embedding, which only rotate some of the q and k.
         """
-        
-        rotary_dim = cos.shape[-1] # rotary dim: head_dim
+
+        rotary_dim = cos.shape[-1]
 
         # Use split
-        q_rot, q_pass = torch.split(q, rotary_dim, dim=-1) 
+        q_rot, q_pass = torch.split(q, rotary_dim, dim=-1)
         q1, q2 = torch.split(q_rot, rotary_dim // 2, dim=-1)
         q_rotated = torch.cat((-q2, q1), dim=-1)
 
@@ -60,6 +69,7 @@ class Phi4Attention(Attention):
 
         return q_embed, k_embed
 
+
 class Phi3DecoderLayer(DecoderLayer):
     def __init__(
         self,
@@ -74,6 +84,7 @@ class Phi3DecoderLayer(DecoderLayer):
             attn_class=Phi3Attention,
             mlp_class=PhiMLP,
         )
+
 
 class Phi4DecoderLayer(DecoderLayer):
     def __init__(
@@ -239,7 +250,7 @@ class Phi3ModelChunk(ModelChunk):
                             self.config.hidden_size,
                             dtype=self.dtype,
                         ),
-                        f"layers.{inner_layer_idx}.mlp.gate_up_proj.weight": torch.rand( #Check Again
+                        f"layers.{inner_layer_idx}.mlp.gate_up_proj.weight": torch.rand(  # Check Again
                             2 * self.config.intermediate_size,
                             self.config.hidden_size,
                             dtype=self.dtype,
@@ -463,6 +474,7 @@ class Phi3ModelChunk(ModelChunk):
 
         return self
 
+
 class Phi4ModelChunk(ModelChunk):
     def __init__(
         self,
@@ -484,6 +496,7 @@ class Phi4ModelChunk(ModelChunk):
             jit_trace,
             decoder_class=Phi4DecoderLayer,
         )
+        self.partial_rotary_factor = config.partial_rotary_factor
 
     def load_weights(self, state_dict, state_dict_start_idx):
         if state_dict is None:
@@ -611,7 +624,7 @@ class Phi4ModelChunk(ModelChunk):
                             self.config.hidden_size,
                             dtype=self.dtype,
                         ),
-                        f"layers.{inner_layer_idx}.mlp.gate_up_proj.weight": torch.rand( #Check Again
+                        f"layers.{inner_layer_idx}.mlp.gate_up_proj.weight": torch.rand(  # Check Again
                             2 * self.config.intermediate_size,
                             self.config.hidden_size,
                             dtype=self.dtype,
@@ -834,3 +847,55 @@ class Phi4ModelChunk(ModelChunk):
         self.eval()
 
         return self
+
+    def get_example_inputs(
+        self, num_token: int = 128, cache_size: int = 512, get_dym_shape=False
+    ):
+        head_dim = int(self.head_dim)
+        example_inputs = (
+            torch.randn(
+                1, num_token, self.config.hidden_size, device="cpu", dtype=torch.float32
+            ),
+            torch.randn(
+                1,
+                1,
+                num_token,
+                cache_size + num_token,
+                device="cpu",
+                dtype=torch.float32,
+            ),
+            torch.randn(
+                1,
+                2,
+                num_token,
+                int(head_dim * self.partial_rotary_factor),
+                device="cpu",
+                dtype=torch.float32,
+            ),
+            *[
+                torch.randn(
+                    1,
+                    self.config.num_key_value_heads,
+                    cache_size,
+                    head_dim,
+                    device="cpu",
+                    dtype=torch.float32,
+                )
+                for _ in range(2 * self.num_blocks)
+            ],
+        )
+        # Specify dims that would be dynamic during calibration
+        # Note: Assume cache size fixed shape as torch dynamic shape cannot handle dim 3 being
+        # combination of 2 dynamic dims
+        if get_dym_shape:
+            nt = Dim("num_token", max=num_token)
+            cache_dims = tuple(({} for _ in range(2 * self.num_blocks)))
+            dynamic_shapes = (
+                {0: Dim.STATIC, 1: nt, 2: Dim.STATIC},
+                {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: nt + cache_size},
+                {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: Dim.STATIC},
+                cache_dims,
+            )
+            return example_inputs, dynamic_shapes
+
+        return example_inputs

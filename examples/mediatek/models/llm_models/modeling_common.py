@@ -1,3 +1,9 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Common backbone across multiple models"""
 
 import math
@@ -35,13 +41,15 @@ class Gelu(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * torch.sigmoid(1.702 * x)
 
+
 class FastGelu(nn.Module):
     def __init__(self):
         super().__init__()
-        
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.gelu(x, approximate='tanh')
-    
+        return torch.nn.functional.gelu(x, approximate="tanh")
+
+
 class TorchGelu(nn.Module):
     def __init__(self):
         super().__init__()
@@ -49,6 +57,7 @@ class TorchGelu(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.gelu(x)
+
 
 class MLP(nn.Module):
     def __init__(self, config: BaseConfig):
@@ -77,7 +86,9 @@ class Attention(nn.Module):
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
-        self.head_dim = getattr(config, 'head_dim', config.hidden_size // config.num_attention_heads)
+        self.head_dim = getattr(
+            config, "head_dim", config.hidden_size // config.num_attention_heads
+        )
         self.attn_scale = math.sqrt(self.head_dim)
         self.jit_trace = jit_trace
 
@@ -97,7 +108,7 @@ class Attention(nn.Module):
         self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size)
 
         if config.use_qk_norm:
-            self.q_norm = RMSNorm(self.head_dim, eps=config.norm_eps) 
+            self.q_norm = RMSNorm(self.head_dim, eps=config.norm_eps)
             self.k_norm = RMSNorm(self.head_dim, eps=config.norm_eps)
 
     def apply_rotary_pos_emb_mtk(self, q, k, cos, sin):
@@ -123,14 +134,13 @@ class Attention(nn.Module):
         else:
             hidden_states = hidden_states.repeat(1, 1, n_rep, 1)
             return hidden_states.view(batch, self.num_heads, q_len, self.head_dim)
-        
+
     def apply_k_norm(self, k):
         if self.jit_trace:
             return self.k_norm(k)
         else:
             dtype = k.dtype
             return self.k_norm(k.to(torch.float32)).to(dtype)
-        
 
     def apply_q_norm(self, q):
         if self.jit_trace:
@@ -290,7 +300,7 @@ class DecoderLayer(nn.Module):
         # Fully Connected
         residual = hidden_states
         if self.jit_trace:
-            hidden_states = self.post_attention_norm(hidden_states) 
+            hidden_states = self.post_attention_norm(hidden_states)
         else:
             dtype = hidden_states.dtype
             hidden_states = self.post_attention_norm(
@@ -319,7 +329,9 @@ class ModelChunk(BaseModelChunk):
         super().__init__(
             config, num_blocks, chunk_idx, dtype, include_tail, return_attn, jit_trace
         )
-        self.head_dim = getattr(self.config, 'head_dim', config.hidden_size // config.num_attention_heads)
+        self.head_dim = getattr(
+            self.config, "head_dim", config.hidden_size // config.num_attention_heads
+        )
         self.layers = nn.ModuleList(
             [
                 decoder_class(config, return_attn=return_attn, jit_trace=jit_trace)
@@ -418,10 +430,7 @@ class ModelChunk(BaseModelChunk):
                     and "post_attention" in key
                 ):
                     post_attention_norm_subkey = key.split(".")[-2]
-                if (
-                    f"layers.{state_dict_start_idx}" in key
-                    and "q_norm" in key
-                ):
+                if f"layers.{state_dict_start_idx}" in key and "q_norm" in key:
                     q_norm_subkey = key
             if temp_key is None:
                 raise KeyError(
@@ -441,7 +450,9 @@ class ModelChunk(BaseModelChunk):
                     "post_attention inside the key string."
                 )
             if q_norm_subkey is not None and self.config.use_qk_norm is False:
-                model_name = ''.join([char for char in self.config.model_type if not char.isdigit()])
+                model_name = "".join(
+                    [char for char in self.config.model_type if not char.isdigit()]
+                )
                 raise KeyError(
                     f"Layer {state_dict_start_idx}'s q_norm weight detected inside state_dict but not used."
                     f"Please set use_qk_norm to True in configuration_{model_name}.py"
@@ -512,8 +523,8 @@ class ModelChunk(BaseModelChunk):
                                 dtype=self.dtype,
                             ),
                             f"layers.{inner_layer_idx}.self_attn.q_proj.bias": torch.zeros(
-                                self.config.head_dim * self.config.num_attention_heads, 
-                                dtype=self.dtype, 
+                                self.config.head_dim * self.config.num_attention_heads,
+                                dtype=self.dtype,
                             ),
                             f"layers.{inner_layer_idx}.self_attn.k_proj.bias": torch.zeros(
                                 self.config.num_key_value_heads * self.head_dim,
@@ -579,7 +590,7 @@ class ModelChunk(BaseModelChunk):
                             f"layers.{inner_layer_idx}.self_attn.k_norm.weight": torch.rand(
                                 self.head_dim, dtype=self.dtype
                             ),
-                        }
+                        },
                     }
 
                 if self.config.norm == "LayerNorm":
@@ -628,9 +639,10 @@ class ModelChunk(BaseModelChunk):
                             f"layers.{inner_layer_idx}.self_attn.q_proj.bias": state_dict.pop(
                                 f"{prefix}layers.{outer_layer_idx}.self_attn.q_proj.bias",
                                 torch.zeros(
-                                    self.config.head_dim * self.config.num_attention_heads, 
+                                    self.config.head_dim
+                                    * self.config.num_attention_heads,
                                     dtype=self.dtype,
-                                ), 
+                                ),
                             ),
                             f"layers.{inner_layer_idx}.self_attn.k_proj.bias": state_dict.pop(
                                 f"{prefix}layers.{outer_layer_idx}.self_attn.k_proj.bias",
@@ -666,9 +678,7 @@ class ModelChunk(BaseModelChunk):
                         ),
                         f"layers.{inner_layer_idx}.input_norm.weight": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.{input_norm_subkey}.weight"
-                        ).to(
-                            torch.float32
-                        ),
+                        ).to(torch.float32),
                         f"layers.{inner_layer_idx}.post_attention_norm.weight": state_dict.pop(
                             f"{prefix}layers.{outer_layer_idx}.{post_attention_norm_subkey}.weight"
                         ).to(
@@ -707,7 +717,7 @@ class ModelChunk(BaseModelChunk):
                             f"layers.{inner_layer_idx}.self_attn.k_norm.weight": state_dict.pop(
                                 f"{prefix}layers.{outer_layer_idx}.self_attn.k_norm.weight"
                             ),
-                        }
+                        },
                     }
 
                 if self.config.norm == "LayerNorm":
