@@ -2030,6 +2030,18 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_flip(self):
+        sample_input = (torch.randn(3, 4, 5,6),)
+        # golden_module = Flip()
+        decomp_module = FlipDecomp()
+        decomp_module = self.get_qdq_module(decomp_module, sample_input)
+        self.lower_module_and_test_output(decomp_module, sample_input)
+        # golden_out = golden_module(sample_input)
+        # decomp_out = decomp_module(sample_input)
+        # torch.testing.assert_close(golden_out, decomp_out)
+        
+        
+    
     def test_qnn_backend_floor(self):
         sample_input = (torch.randn(3, 4),)
         module = Floor()  # noqa: F405

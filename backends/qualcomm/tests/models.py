@@ -813,7 +813,23 @@ class ExpM1(torch.nn.Module):
     def forward(self, x):
         return torch.special.expm1(x)
 
+class Flip(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.dims = [0,2]
 
+    def forward(self, x):
+        return torch.flip(x, self.dims)
+
+class FlipDecomp(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.dims = [0,2]
+    def forward(self, x):
+        for dim in self.dims:
+            idx = torch.arange(x.size(dim) - 1, -1, -1, device=x.device)
+            x = torch.index_select(x, dim, idx)
+        return x
 class Floor(torch.nn.Module):
     def __init__(self):
         super().__init__()
