@@ -20,6 +20,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 logger = logging.getLogger(__name__)
 
+SupportedTypeDict = dict[torch.dtype, list[torch.dtype]]
+
 
 @register_tosa_support_check
 class ToCopySupported(SupportedTOSAOperatorCheck):
@@ -32,8 +34,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
-
-    SupportedTypeDict = dict[torch.dtype, list[torch.dtype]]
 
     @staticmethod
     def _merge_supported_types(
@@ -53,11 +53,22 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         torch.int8: [torch.bool, torch.int16, torch.int32],
         torch.int16: [torch.bool, torch.int8, torch.int32],
         torch.int32: [torch.bool, torch.int8, torch.int16],
+        torch.int64: [torch.bool, torch.int8, torch.int16, torch.int32],
     }
     SUPPORTED_FLOAT_TYPES: SupportedTypeDict = {
         torch.int8: [torch.float16, torch.bfloat16, torch.float32],
         torch.int16: [torch.float16, torch.bfloat16, torch.float32],
         torch.int32: [torch.float16, torch.bfloat16, torch.float32],
+        # INT64 inputs to casts *should* be ok, since they should be rejected by
+        # CheckInt64InputsAndOutputs if the cast can't be done AOT.
+        torch.int64: [
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.float16,
+            torch.bfloat16,
+            torch.float32,
+        ],
         torch.bfloat16: [torch.int8, torch.int16, torch.int32, torch.float32],
         torch.float16: [torch.int8, torch.int16, torch.int32, torch.float32],
         torch.float32: [
@@ -71,22 +82,20 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
     ALL_SUPPORTED_TYPES = _merge_supported_types(
         SUPPORTED_INT_TYPES, SUPPORTED_FLOAT_TYPES
     )
-    POSSIBLE_TYPE_CONVERSIONS = {torch.int64: torch.int32}
 
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:
-        supported_dtypes = (
-            self.ALL_SUPPORTED_TYPES
-            if tosa_spec.support_float()
-            else self.SUPPORTED_INT_TYPES
-        )
-        # Take into account possible type conversions
-        supported_dtypes.update(
-            (k, supported_dtypes[v])
-            for k, v in self.POSSIBLE_TYPE_CONVERSIONS.items()
-            if v in supported_dtypes
-        )
+
+        supported_dtypes: SupportedTypeDict = {}
+        if tosa_spec.support_integer():
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_INT_TYPES, supported_dtypes
+            )
+        if tosa_spec.support_float():
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_FLOAT_TYPES, supported_dtypes
+            )
 
         if len(node.all_input_nodes) != 1:
             self.reporter.report_reject(
@@ -156,7 +165,7 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if "dim_order" in node.kwargs:
             dim_order = node.kwargs["dim_order"]
             # pyre-ignore[6]
-            if dim_order != list(range(len(dim_order))):  # type: ignore[arg-type]
+            if dim_order is not None and dim_order != list(range(len(dim_order))):  # type: ignore[arg-type]
                 self.reporter.report_reject(
                     node,
                     (
