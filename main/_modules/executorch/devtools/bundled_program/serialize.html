@@ -510,6 +510,7 @@
   <h1>Source code for executorch.devtools.bundled_program.serialize</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) Meta Platforms, Inc. and affiliates.</span>
 <span class="c1"># All rights reserved.</span>
+<span class="c1"># Copyright 2025 Arm Limited and/or its affiliates.</span>
 <span class="c1">#</span>
 <span class="c1"># This source code is licensed under the BSD-style license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
@@ -518,16 +519,15 @@
 
 <span class="c1"># TODO(T138924864): Refactor to unify the serialization for bundled program and executorch program.</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">importlib.resources</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_resources</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.schema</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">bp_schema</span>
 
-<span class="c1"># @manual=fbsource//third-party/pypi/setuptools:setuptools</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pkg_resources</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.serialize</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">serialization_package</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">BundledProgram</span>
-
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._dataclass</span><span class="w"> </span><span class="kn">import</span> <span class="n">_DataclassEncoder</span><span class="p">,</span> <span class="n">_json_to_dataclass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._flatbuffer</span><span class="w"> </span><span class="kn">import</span> <span class="n">_flatc_compile</span><span class="p">,</span> <span class="n">_flatc_decompile</span>
 
@@ -540,7 +540,7 @@
     <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.fbs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">schema_name</span><span class="p">))</span>
     <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">schema_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">schema_file</span><span class="p">:</span>
         <span class="n">schema_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
-            <span class="n">pkg_resources</span><span class="o">.</span><span class="n">resource_string</span><span class="p">(</span><span class="vm">__name__</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.fbs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">schema_name</span><span class="p">))</span>
+            <span class="n">_resources</span><span class="o">.</span><span class="n">read_binary</span><span class="p">(</span><span class="n">serialization_package</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">schema_name</span><span class="si">}</span><span class="s2">.fbs&quot;</span><span class="p">)</span>
         <span class="p">)</span>
 
 
