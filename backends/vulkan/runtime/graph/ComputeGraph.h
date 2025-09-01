@@ -221,6 +221,10 @@ class ComputeGraph final {
   // config.execute_threshold_node_count.
   size_t execute_threshold_node_count_ = 0;
 
+  // Whether the underlying GPU support accelerated integer dot product
+  // extensions
+  bool can_use_int8_dot_product_ = false;
+
  public:
   //
   // Accessors
@@ -357,6 +361,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().has_buffer_storage();
   }
 
+  inline bool is_texture_storage(const ValueRef idx) const {
+    return !is_buffer_storage(idx);
+  }
+
   /*
    * Checks that the following is true:
    * 1. The value at `idx` is a tensor
@@ -409,6 +417,10 @@ class ComputeGraph final {
 
   inline vkapi::BufferBindInfo sizes_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().sizes_ubo();
+  }
+
+  inline vkapi::BufferBindInfo buffer_meta_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().buffer_meta_ubo();
   }
 
   inline vkapi::BufferBindInfo strides_ubo(const ValueRef idx) {
@@ -694,6 +706,16 @@ class ComputeGraph final {
       const void* const data);
 
   /*
+   * Add a `TensorRef` value to the graph with the specific properties. A
+   * `TensorRef` is a reference to a `api::vTensor` whose data is stored in a
+   * FreeableBuffer. The TensorRef will take ownership of the FreeableBuffer.
+   */
+  ValueRef add_tensorref(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      executorch::runtime::FreeableBuffer&& buffer);
+
+  /*
    * Add a staging buffer to the graph. Staging buffers are data buffers that
    * use memory that is visible to both the CPU and GPU, and therefore is used
    * as a intermediary when transferring data between the CPU and GPU.
@@ -816,6 +838,13 @@ class ComputeGraph final {
   }
 
   SharedObject& get_shared_object(const int64_t idx);
+
+  /*
+   * Creates a dedicated memory allocation for a vTensor value, and have the
+   * tensor acquire the allocation object. If the tensor is already bound to a
+   * memory allocation, this function will be a no-op.
+   */
+  void create_dedicated_allocation_for(const ValueRef idx);
 
   //
   // Graph Preparation
@@ -986,6 +1015,10 @@ class ComputeGraph final {
 
   inline size_t execute_count() const {
     return execute_count_;
+  }
+
+  inline bool can_use_int8_dot_product() const {
+    return can_use_int8_dot_product_;
   }
 
   /*

@@ -92,7 +92,9 @@ def annotate_mimi_decoder(gm: torch.fx.GraphModule):
             break
 
 
-def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
+def annotate_linear_16a8w_in_affine_layer(
+    gm: torch.fx.GraphModule, is_qat: bool = False
+) -> None:
     def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
         input_qspec_map = {}
         input_act = node.args[0]
@@ -108,9 +110,14 @@ def annotate_linear_16a8w_in_affine_layer(gm: torch.fx.GraphModule) -> None:
             _annotated=True,
         )
 
-    quantization_config_16a8w_per_channel = get_ptq_per_channel_quant_config(
-        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
-    )
+    if is_qat:
+        quantization_config_16a8w_per_channel = get_qat_per_channel_quant_config(
+            torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+        )
+    else:
+        quantization_config_16a8w_per_channel = get_ptq_per_channel_quant_config(
+            torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+        )
     for node in gm.graph.nodes:
         if node.op == "call_function" and node.target == torch.ops.aten.conv2d.default:
             if "nn_module_stack" in node.meta:
@@ -317,6 +324,7 @@ def annotate_matmul_16a8w(  # noqa: C901
                 torch.ops.aten.transpose.int,
                 torch.ops.aten.view.default,
                 torch.ops.aten.reshape.default,
+                torch.ops.aten.slice.Tensor,
             ]:
                 annotate_single_in_single_out(node, quantization_config_8a8w)
                 node = node.args[0]
@@ -340,7 +348,11 @@ def annotate_matmul_16a8w(  # noqa: C901
                     node, quantization_config=quantization_config_8a4w_per_channel
                 )
                 break
-            elif node.target in [torch.ops.aten.add.Tensor, torch.ops.aten.sub.Tensor]:
+            elif node.target in [
+                torch.ops.aten.add.Tensor,
+                torch.ops.aten.sub.Tensor,
+                torch.ops.aten.matmul.default,
+            ]:
                 break
             else:
                 print(f"The node ({node}) is not expected in the input1 of the matmul")
@@ -356,7 +368,12 @@ def annotate_matmul_16a8w(  # noqa: C901
         )
 
     for node in gm.graph.nodes:
-        if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
+        if (
+            node.op == "call_function"
+            and node.target == torch.ops.aten.matmul.default
+            and all(arg.op == "call_function" for arg in node.args)
+        ):
+            # Only apply custom annotation on Q @ K^T @ V
             annotate_matmul(node, quantization_config_16a8w)
             annotate_matmul_input1(node.args[1], is_qat=is_qat)
 

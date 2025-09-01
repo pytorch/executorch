@@ -349,13 +349,16 @@ endfunction()
 function(executorch_append_filelist name outputvar)
   # configure_file adds its input to the list of CMAKE_RERUN dependencies
   configure_file(
-    ${PROJECT_SOURCE_DIR}/shim_et/xplat/executorch/build/build_variables.bzl
+    ${EXECUTORCH_ROOT}/shim_et/xplat/executorch/build/build_variables.bzl
     ${PROJECT_BINARY_DIR}/build_variables.bzl COPYONLY
   )
+  if(NOT PYTHON_EXECUTABLE)
+    resolve_python_executable()
+  endif()
   execute_process(
     COMMAND
       "${PYTHON_EXECUTABLE}" -c
-      "exec(open('${PROJECT_SOURCE_DIR}/shim_et/xplat/executorch/build/build_variables.bzl').read());print(';'.join(${name}))"
+      "exec(open('${EXECUTORCH_ROOT}/shim_et/xplat/executorch/build/build_variables.bzl').read());print(';'.join(${name}))"
     WORKING_DIRECTORY "${_rootdir}"
     RESULT_VARIABLE _retval
     OUTPUT_VARIABLE _tempvar
@@ -375,25 +378,14 @@ function(executorch_append_filelist name outputvar)
   )
 endfunction()
 
-# Fail the build if the src lists in build_variables.bzl do not match the src
-# lists extracted from Buck and placed into EXECUTORCH_SRCS_FILE. This is
-# intended to be a safety mechanism while we are in the process of removing Buck
-# from the CMake build and replacing it with build_variables.bzl; if you are
-# seeing failures after you have intentionally changed Buck srcs, then simply
-# update build_variables.bzl. If you are seeing failures after changing
-# something about the build system, make sure your changes will work both before
-# and after we finish replacing Buck with build_variables.bzl, which should
-# involve getting these lists to match!
-function(executorch_validate_build_variables)
-  include(${EXECUTORCH_SRCS_FILE})
-  set(BUILD_VARIABLES_FILELISTS
+function(executorch_load_build_variables)
+  set(EXECUTORCH_BUILD_VARIABLES_FILELISTS
       EXECUTORCH_SRCS
       EXECUTORCH_CORE_SRCS
       PORTABLE_KERNELS_SRCS
       KERNELS_UTIL_ALL_DEPS_SRCS
       OPTIMIZED_KERNELS_SRCS
       QUANTIZED_KERNELS_SRCS
-      PROGRAM_SCHEMA_SRCS
       OPTIMIZED_CPUBLAS_SRCS
       OPTIMIZED_NATIVE_CPU_OPS_SRCS
       TEST_BACKEND_COMPILER_LIB_SRCS
@@ -419,14 +411,13 @@ function(executorch_validate_build_variables)
       CUSTOM_OPS_SRCS
       LLAMA_RUNNER_SRCS
   )
-  set(BUILD_VARIABLES_VARNAMES
+  set(EXECUTORCH_BUILD_VARIABLES_VARNAMES
       _executorch__srcs
       _executorch_core__srcs
       _portable_kernels__srcs
       _kernels_util_all_deps__srcs
       _optimized_kernels__srcs
       _quantized_kernels__srcs
-      _program_schema__srcs
       _optimized_cpublas__srcs
       _optimized_native_cpu_ops__srcs
       _test_backend_compiler_lib__srcs
@@ -452,58 +443,16 @@ function(executorch_validate_build_variables)
       _custom_ops__srcs
       _llama_runner__srcs
   )
-  foreach(filelist_and_varname IN ZIP_LISTS BUILD_VARIABLES_FILELISTS
-                                  BUILD_VARIABLES_VARNAMES
+  foreach(filelist_and_varname IN
+          ZIP_LISTS EXECUTORCH_BUILD_VARIABLES_FILELISTS
+          EXECUTORCH_BUILD_VARIABLES_VARNAMES
   )
-    if("${filelist_and_varname_1}" STREQUAL "_custom_ops__srcs")
-      continue()
-    endif()
     executorch_append_filelist(
-      ${filelist_and_varname_0}
-      "${filelist_and_varname_1}_from_build_variables"
+      ${filelist_and_varname_0} "${filelist_and_varname_1}"
     )
-    # The Buck and CMake mechanisms for getting the default PAL set up are
-    # different. Prevent the Buck choice from flowing into CMake and causing
-    # validation to fail, just like we do in our CMakeLists.txt.
-    if("${filelist_and_varname_1}" STREQUAL "_executorch_core__srcs")
-      list(FILTER ${filelist_and_varname_1} EXCLUDE REGEX
-           "runtime/platform/default/[^/]*.cpp$"
-      )
-    endif()
-    if(NOT ${filelist_and_varname_1} STREQUAL
-       ${filelist_and_varname_1}_from_build_variables
+    set(${filelist_and_varname_1}
+        "${${filelist_and_varname_1}}"
+        PARENT_SCOPE
     )
-      set(generated_items_not_in_build_variables ${${filelist_and_varname_1}})
-      list(REMOVE_ITEM generated_items_not_in_build_variables
-           ${${filelist_and_varname_1}_from_build_variables}
-      )
-
-      set(build_variables_items_not_in_generated
-          ${${filelist_and_varname_1}_from_build_variables}
-      )
-      list(REMOVE_ITEM build_variables_items_not_in_generated
-           ${${filelist_and_varname_1}}
-      )
-
-      list(JOIN generated_items_not_in_build_variables "\n"
-           pretty_generated_items_not_in_build_variables
-      )
-      list(JOIN build_variables_items_not_in_generated "\n"
-           pretty_build_variables_items_not_in_generated
-      )
-      if(NOT pretty_generated_items_not_in_build_variables)
-        set(pretty_generated_items_not_in_build_variables "<none>")
-      endif()
-      if(NOT pretty_build_variables_items_not_in_generated)
-        set(pretty_build_variables_items_not_in_generated "<none>")
-      endif()
-      message(
-        FATAL_ERROR
-          "Buck-generated ${filelist_and_varname_1} does not match hardcoded "
-          "${filelist_and_varname_0} in build_variables.bzl. Buck-generated items not in build_variables.bzl: "
-          "${pretty_generated_items_not_in_build_variables}\n "
-          "build_variables.bzl items not in buck-generated list: ${pretty_build_variables_items_not_in_generated}"
-      )
-    endif()
   endforeach()
 endfunction()

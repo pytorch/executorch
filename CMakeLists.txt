@@ -79,11 +79,6 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 announce_configured_options(PYTHON_EXECUTABLE)
 
-if(NOT BUCK2)
-  resolve_buck2()
-endif()
-announce_configured_options(BUCK2)
-
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 announce_configured_options(BUILD_TESTING)
@@ -309,24 +304,15 @@ set(_common_include_directories
 )
 
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
-
-if(NOT EXECUTORCH_SRCS_FILE)
-  # A file wasn't provided. Run a script to extract the source lists from the
-  # buck2 build system and write them to a file we can include.
-  #
-  # NOTE: This will only happen once during cmake setup, so it will not re-run
-  # if the buck2 targets change.
-  message(STATUS "executorch: Generating source lists")
-  set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/executorch_srcs.cmake")
-  extract_sources(${EXECUTORCH_SRCS_FILE})
-  executorch_validate_build_variables()
+if(EXECUTORCH_SRCS_FILE)
+  message(
+    WARNING
+      "EXECUTORCH_SRCS_FILE is no longer necessary and will not affect the build."
+  )
 endif()
-
-# This file defines the `_<target>__srcs` variables used below.
-message(STATUS "executorch: Using sources file ${EXECUTORCH_SRCS_FILE}")
-include(${EXECUTORCH_SRCS_FILE})
+executorch_load_build_variables()
 
 # Detect if an iOS toolchain is set.
 if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
@@ -596,7 +582,6 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
-  list(APPEND _executorch_extensions apple_extension)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
@@ -663,7 +648,6 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
-  list(APPEND _executorch_extensions extension_llm_apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -831,6 +815,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs openvino_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_QNN)
+    list(APPEND _dep_libs qnn_executorch_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_XNNPACK)
     # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
     # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
@@ -879,6 +867,10 @@ endif()
 
 if(EXECUTORCH_BUILD_WASM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm)
+endif()
+
+if(EXECUTORCH_BUILD_TOKENIZERS_WASM)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm/tokenizers)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
@@ -973,6 +965,10 @@ else()
   endif()
 endif()
 target_link_libraries(executorch_kernels INTERFACE ${_executorch_kernels})
+
+install(TARGETS executorch_backends executorch_extensions executorch_kernels
+        EXPORT ExecuTorchTargets
+)
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.

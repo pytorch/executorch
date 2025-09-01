@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import warnings
-from typing import Dict, Union
+from typing import Callable, Dict, Union
 
 import numpy
 import numpy as np
@@ -18,7 +18,12 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_first_to_channels_last_permutation,
     create_channels_last_to_channels_first_permutation,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    NodeConverter,
+    Target,
+)
 from torch.export import ExportedProgram
+from torch.fx import Node
 from torch.fx.graph import Graph
 
 
@@ -52,6 +57,13 @@ class EdgeProgramExecutor:
             return output.detach().numpy()
         elif isinstance(output, tuple) and len(output) == 1:
             return output[0].detach().numpy()
+        elif isinstance(output, tuple):
+            output_names = self.edge_program.graph_signature.user_outputs
+
+            return {
+                name: tensor.detach().numpy()
+                for (name, tensor) in zip(output_names, output)
+            }
 
         raise RuntimeError(
             "Edge program inference with multiple outputs not implemented"
@@ -356,16 +368,23 @@ def graph_contains_any_of_ops(graph: Graph, ops: list) -> bool:
     return any(node.target in ops for node in graph.nodes)
 
 
-class OverrideSupportedTargets:
+target_support_check_function = Callable[[Node, Target], bool]
 
-    def __init__(self, converter_class, *, new_targets):
+
+class OverrideTargetSupportCheck:
+
+    def __init__(
+        self,
+        converter_class: type[NodeConverter],
+        *,
+        new_target_support_check: target_support_check_function,
+    ):
         self._converter_class = converter_class
-        self._new_targets = new_targets
-
-        self._old_targets = self._converter_class.supported_targets
+        self.new_target_support_check = new_target_support_check
+        self.old_target_support_check = converter_class._is_supported_on_target
 
     def __enter__(self):
-        self._converter_class.supported_targets = self._new_targets
+        self._converter_class._is_supported_on_target = self.new_target_support_check
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._converter_class.supported_targets = self._old_targets
+        self._converter_class._is_supported_on_target = self.old_target_support_check

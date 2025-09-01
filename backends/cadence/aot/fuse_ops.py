@@ -72,11 +72,13 @@ class FuseMMWithAdd(ExportPass):
         fuse it with mm.
         """
         graph = graph_module.graph
-        for node in graph.nodes:
+        for node in graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mm.default
+        ):
             # We want to discover a chain of mm -> add, or mm -> view -> add.
             # Only proceed if the current node is an mm node, and has only one
             # user/successor.
-            if node.target != exir_ops.edge.aten.mm.default or len(node.users) != 1:
+            if len(node.users) != 1:
                 continue
 
             # Our addmm implementation computes (mat1 * mat2 + bias). So the
@@ -128,6 +130,7 @@ class FuseMMWithAdd(ExportPass):
                 mm_arg_shape is None
                 or bias_arg_shape is None
                 or not broadcastable(mm_arg_shape, bias_arg_shape)
+                or len(bias_arg_shape) > 2
             ):
                 continue
 

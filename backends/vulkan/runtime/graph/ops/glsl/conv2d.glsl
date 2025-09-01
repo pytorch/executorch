@@ -30,6 +30,8 @@ ${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "ngroups", "1")}
+
 /*
  * Computes a 2D convolution. Each shader invocation calculates the output at
  * a single output location.
@@ -74,7 +76,18 @@ void main() {
   // Perform the convolution by iterating over the overlay region.
   VEC4_T sum = texelFetch(t_bias, ivec2(pos.z, 0), 0);
   const int ic4 = in_group_size / 4;
-  for (int z4 = 0; z4 < ic4; ++z4, kstart.x += kernel_size.x * 4) {
+
+  int z_start = 0;
+  int z_end = ic4;
+  if (ngroups > 1) {
+    const int group_size = (out_limits.z) / ngroups;
+    const int group_idx = pos.z / group_size;
+
+    z_start = ic4 * group_idx;
+    z_end = z_start + ic4;
+  }
+
+  for (int z4 = z_start; z4 < z_end; ++z4, kstart.x += kernel_size.x * 4) {
     for (int y = start.y, ky = kstart.y; y < end.y; y += dilation.y, ++ky) {
       for (int x = start.x, kx = kstart.x; x < end.x; x += dilation.x, kx += 4) {
         const VEC4_T in_texel = texelFetch(t_in, ivec3(x, y, z4), 0);

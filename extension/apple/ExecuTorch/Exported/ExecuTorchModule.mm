@@ -250,11 +250,13 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 }
 
 - (instancetype)initWithFilePath:(NSString *)filePath
+                    dataFilePath:(NSString *)dataFilePath
                         loadMode:(ExecuTorchModuleLoadMode)loadMode {
   self = [super init];
   if (self) {
     _module = std::make_unique<Module>(
       filePath.UTF8String,
+      dataFilePath.UTF8String,
       static_cast<Module::LoadMode>(loadMode)
     );
     _inputs = [NSMutableDictionary new];
@@ -263,8 +265,23 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
   return self;
 }
 
+- (instancetype)initWithFilePath:(NSString *)filePath
+                    dataFilePath:(NSString *)dataFilePath {
+  return [self initWithFilePath:filePath
+                   dataFilePath:dataFilePath
+                       loadMode:ExecuTorchModuleLoadModeFile];
+}
+
+- (instancetype)initWithFilePath:(NSString *)filePath
+                        loadMode:(ExecuTorchModuleLoadMode)loadMode {
+  return [self initWithFilePath:filePath
+                   dataFilePath:@""
+                       loadMode:loadMode];
+}
 - (instancetype)initWithFilePath:(NSString *)filePath {
-  return [self initWithFilePath:filePath loadMode:ExecuTorchModuleLoadModeFile];
+  return [self initWithFilePath:filePath
+                   dataFilePath:@""
+                       loadMode:ExecuTorchModuleLoadModeFile];
 }
 
 - (BOOL)loadWithVerification:(ExecuTorchVerification)verification

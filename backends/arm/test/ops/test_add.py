@@ -185,16 +185,26 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add.test_data)
+# TODO/MLETORCH-1282: remove once inputs are not hard coded to ones
+skip_keys = {"5d_float", "1d_ones", "1d_randn"}
+filtered_test_data = {k: v for k, v in Add.test_data.items() if k not in skip_keys}
+
+
+@common.parametrize("test_data", filtered_test_data)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
-        Add(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+        run_on_vulkan_runtime=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Add.test_data)
+@common.parametrize("test_data", filtered_test_data)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_INT(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
@@ -203,5 +213,6 @@ def test_add_tensor_vgf_INT(test_data: input_t1):
         aten_op,
         exir_op,
         tosa_version="TOSA-1.0+INT",
+        run_on_vulkan_runtime=True,
     )
     pipeline.run()

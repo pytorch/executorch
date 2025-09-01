@@ -116,6 +116,9 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
         Greedily place the spec in the first memory that can fit it.
         """
         for spec.mem_id in range(1, self.get_num_memories()):
+            if placement_constraints.is_mem_id_in_blocklist(spec, spec.mem_id):
+                # Skip placement for blocked memory id.
+                continue
             prev_offset, smallest_gap = 0, float("inf")
             for allocated_spec in state.allocated_buffers[spec.mem_id]:
                 if not Verifier.lifetime_overlap(spec, allocated_spec):
@@ -141,11 +144,11 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
                 )
             if spec.mem_offset is None:
                 spec.mem_offset = prev_offset
-                if not self.is_valid_placement(spec, placement_constraints):
-                    spec.mem_offset = None
-                    continue
-                else:
-                    spec.mem_offset = prev_offset
+
+            if not self.is_valid_placement(spec, placement_constraints):
+                # Skip placement for invalid memory id.
+                spec.mem_offset = None
+                continue
 
             state.place_spec(spec)
             # A data structure used for maintaining the tensor order
