@@ -18,7 +18,7 @@ from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.program._program import _transform
 
-from test_helpers_passes_utils import AddQuantizer, check_count
+from executorch.backends.cortex_m.test.test_helpers_passes_utils import AddQuantizer, check_count
 
 from torch.export import export
 
