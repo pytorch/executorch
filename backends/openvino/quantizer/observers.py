@@ -9,12 +9,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
-import nncf.torch.graph.operator_metatypes as om  # type: ignore[import-untyped]
-
 import torch
-from nncf.experimental.torch.fx.nncf_graph_builder import (  # type: ignore[import-untyped]
-    GraphConverter,
-)
 
 from nncf.experimental.torch.fx.node_utils import (  # type: ignore[import-untyped]
     get_tensor_constant_from_node,
@@ -23,7 +18,6 @@ from nncf.experimental.torch.fx.transformations import (  # type: ignore[import-
     constant_update_fn,
     module_insertion_transformation_builder,
 )
-from nncf.parameters import CompressWeightsMode  # type: ignore[import-untyped]
 from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionParameters,
 )
@@ -57,9 +51,8 @@ class WeightObserverBase(ObserverBase, ABC):
         **kwargs,
     ) -> None:
         """
-        :param wc_param: Weight compression parameter which contains information such as group_size
-                        reduction_axes, quantization mode etc.
-        :param dtype: target dtype for quantization such as int8, uint8, etc.
+        :param wc_param: Weight compression parameters container.
+        :param dtype: target dtype for the quantization.
         """
         super().__init__(dtype=dtype, is_dynamic=False)
         self.wc_param = wc_param
@@ -69,10 +62,10 @@ class WeightObserverBase(ObserverBase, ABC):
         weight: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """
-        Calculate quantization parameters such as scale, quantized weight and zero point.
+        Calculates quantization parameters: quantized weight, quantization scale and quantization zero point.
 
         :param weight: FP weight to be used for calculating qparams.
-        :return: quantization params quantized weight, scale and zero point
+        :return: A tuple containing the quantized weight, quantization scale and quantization zero point.
         """
         wc_param = self.get_wc_param()
         wc_config = wc_param.compression_config
@@ -90,10 +83,8 @@ class WeightObserverBase(ObserverBase, ABC):
         self, model: torch.fx.GraphModule, observer_node: torch.fx.Node
     ) -> None:
         """
-        Converts the weight observer node into a decompression subgraph after calibration.
-        This method is responsible for transforming the model after the quantization preparation
-        and calibration phases. It replaces the observer node with the quantized weight and a decompression
-        module.
+        Replaces the given observer node from the given model with a quantized 
+        weight and a OpenVINO specific decompression module.
 
         :param model: A `torch.fx.GraphModule` representing the statically traced model
                     with observer nodes attached and calibrated.
@@ -144,7 +135,7 @@ class WeightObserverBase(ObserverBase, ABC):
         original_weight: torch.Tensor,
     ) -> BaseWeightsDecompressor:
         """
-        Used to return the respective NNCF decompressor for different types of quantization.
+        Returns a respective NNCF decompressor for different types of quantization.
 
         :param scale: Calculated scale quantization parameter.
         :param zero_point: Calculated zero_point quantization parameter.
@@ -152,17 +143,14 @@ class WeightObserverBase(ObserverBase, ABC):
         :param original_weight: FP weight.
         :return: NNCF observer according to the qmode which creates the decompression subgraph supported by OpenVINO.
         """
-        pass
 
-    @abstractmethod
     def get_wc_param(self) -> WeightCompressionParameters:
         """
-        Used to return the respective NNCF Weight Compression Config.
+        Returns a respective NNCF Weight Compression Config.
 
         :return: Weight compression config with the compression information such as qmode, group_size etc.
         """
-        pass
-
+        return self.wc_param
 
 class INT4WeightObserver(WeightObserverBase):
     """
@@ -189,13 +177,10 @@ class INT4WeightObserver(WeightObserverBase):
                 scale, q_weight.shape, original_weight.shape, original_weight.dtype
             )
 
-    def get_wc_param(self) -> WeightCompressionParameters:
-        return self.wc_param
-
 
 class INT8WeightObserver(WeightObserverBase):
     """
-    This class defines the behavior for Int8 WC which has per channel granularity.
+    OpenVINO INT8 Weight Compression per channel observer.
     """
 
     def _create_decompressor(
@@ -212,6 +197,3 @@ class INT8WeightObserver(WeightObserverBase):
         else:
             return INT8SymmetricWeightsDecompressor(scale, original_weight.dtype)
 
-    def get_wc_param(self) -> WeightCompressionParameters:
-        return self.wc_param
-    

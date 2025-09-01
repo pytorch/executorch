@@ -205,15 +205,10 @@ class OpenVINOQuantizer(Quantizer):
         """
         Annotates the model graph with post-training quantization configurations.
 
-        Converts NNCF quantization points into TorchAO-compatible quantization specs,
-        assigning them to corresponding nodes or edges. Also handles unified scale groups,
-        ensuring shared quantization specs across grouped quantizers with consistent configs.
-
         :param model: The FX GraphModule to annotate.
         :param graph: The underlying FX graph.
         :param nncf_graph: The corresponding NNCF graph.
         :param node_vs_torch_annotation: A mapping of FX nodes to quantization annotations.
-
         :return: Updated mapping of FX nodes with post-training quantization annotations.
         """
         quantization_setup = self.get_nncf_quantization_setup(model, nncf_graph)
