@@ -32,6 +32,45 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 
+class NeuronSharedWeights {
+ public:
+  explicit NeuronSharedWeights(const FreeableBuffer& shared_weights_buffer) {
+    auto& buffer_allocator = GET_NEURON_ALLOCATOR;
+    nbytes_ = shared_weights_buffer.size();
+    data_ = buffer_allocator.Allocate(nbytes_);
+    ET_CHECK_MSG(
+        data_ != nullptr,
+        "Error: Failed to allocate memory for shared weights of size %zu",
+        nbytes_);
+    std::memcpy(data_, shared_weights_buffer.data(), nbytes_);
+  }
+
+  explicit NeuronSharedWeights(FreeableBuffer&& shared_weights_buffer)
+      : NeuronSharedWeights(shared_weights_buffer) {
+    shared_weights_buffer.Free();
+  }
+
+  ~NeuronSharedWeights() {
+    if (data_ == nullptr || nbytes_ == 0) {
+      return;
+    }
+    auto& buffer_allocator = GET_NEURON_ALLOCATOR;
+    buffer_allocator.RemoveBuffer(data_);
+  }
+
+  void* data() const {
+    return data_;
+  }
+
+  size_t size() const {
+    return nbytes_;
+  }
+
+ private:
+  void* data_ = nullptr;
+  size_t nbytes_ = 0;
+};
+
 class NeuronBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ::executorch::runtime::Result<::executorch::runtime::DelegateHandle*> init(
@@ -48,6 +87,10 @@ class NeuronBackend final : public ::executorch::runtime::BackendInterface {
   void destroy(::executorch::runtime::DelegateHandle* handle) const override;
 
   bool is_available() const override;
+
+ private:
+  mutable std::unordered_map<std::string, std::weak_ptr<NeuronSharedWeights>>
+      neuron_shared_weights_cache_;
 };
 
 extern const char kHighAddrKey[];
@@ -79,8 +122,7 @@ class NeuronExecuTorchDelegate {
     void* data_ptr;
     size_t size;
 
-    InputOutputInfo(void* ptr, size_t sz)
-        : data_ptr(ptr), size(sz) {}
+    InputOutputInfo(void* ptr, size_t sz) : data_ptr(ptr), size(sz) {}
   };
 
   class MemoryCache {
@@ -129,8 +171,8 @@ class NeuronExecuTorchDelegate {
     return NEURON_NO_ERROR;
   }
 
-  int SetSharedWeights(FreeableBuffer& buffer) {
-    neuron_shared_weights_.push_back(std::move(buffer));
+  int SetSharedWeights(std::shared_ptr<NeuronSharedWeights> sharedWeights) {
+    neuron_shared_weights_.push_back(sharedWeights);
     return NEURON_NO_ERROR;
   }
 
@@ -202,11 +244,12 @@ class NeuronExecuTorchDelegate {
       mPreparedInputs.push_back(InputOutputInfo{data_ptr, data_size});
     }
 
-    // Prepare shared weights if any as the last model input
+    // Prepare shared weights if any as the last model inputs
     if (has_shared_weights_input) {
-      FreeableBuffer& buffer = neuron_shared_weights_.at(0);
-      mPreparedInputs.push_back(
-          InputOutputInfo{const_cast<void*>(buffer.data()), buffer.size()});
+      for (const auto& shared_weights : neuron_shared_weights_) {
+        mPreparedInputs.push_back(
+            InputOutputInfo{shared_weights->data(), shared_weights->size()});
+      }
     }
 
     // Prepare output data
@@ -242,7 +285,8 @@ class NeuronExecuTorchDelegate {
 
   mutable std::unordered_set<const void*> mHasImported;
 
-  mutable std::vector<FreeableBuffer> neuron_shared_weights_;
+  mutable std::vector<std::shared_ptr<NeuronSharedWeights>>
+      neuron_shared_weights_;
 
  private:
   NeuronExecuTorchDelegate(const NeuronExecuTorchDelegate&);
