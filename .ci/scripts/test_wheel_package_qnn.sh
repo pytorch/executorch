@@ -12,14 +12,40 @@ echo "Found wheel: $WHEEL_FILE"
 echo "=== Checking for expected .so files ==="
 SO_FILES=$(unzip -l "$WHEEL_FILE" | grep "\.so" | grep "qualcomm")
 
-# Check for the three expected .so files
-if echo "$SO_FILES" | grep -q "executorch/backends/qualcomm/qnn_backend.cpython-310-x86_64-linux-gnu.so" && \
-   echo "$SO_FILES" | grep -q "executorch/backends/qualcomm/python/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so" && \
-   echo "$SO_FILES" | grep -q "executorch/backends/qualcomm/python/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so"; then
-    echo "All expected .so files found in wheel"
-else
-    echo "ERROR: Missing expected .so files"
+echo "=== Checking for expected .so files ==="
+echo "Listing all .so files in the wheel:"
+unzip -l "$WHEEL_FILE" | grep "\.so" || echo "No .so files found in the wheel!"
+
+# List all .so files with full paths
+ALL_SO_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep "\.so")
+
+echo "All .so files in wheel:"
+echo "$ALL_SO_FILES"
+
+# Define expected .so files
+EXPECTED_SO_FILES=(
+    "executorch/backends/qualcomm/qnn_backend.cpython-310-x86_64-linux-gnu.so"
+    "executorch/backends/qualcomm/python/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so"
+    "executorch/backends/qualcomm/python/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so"
+)
+
+MISSING=false
+for file in "${EXPECTED_SO_FILES[@]}"; do
+    if echo "$ALL_SO_FILES" | grep -q "$file"; then
+        echo "Found expected .so file: $file"
+    else
+        echo "ERROR: Missing expected .so file: $file"
+        MISSING=true
+    fi
+done
+
+if [ "$MISSING" = true ]; then
+    echo "==== .so file check failed ===="
+    echo "Wheel contents for debugging:"
+    unzip -l "$WHEEL_FILE"
     exit 1
+else
+    echo "All expected .so files found in wheel ✅"
 fi
 
 # Create a temporary directory for our test environment
