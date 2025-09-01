@@ -29,10 +29,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.permute_fully_connected_weights_after_reshape import (
     PermuteFullyConnectedWeightsAfterReshape,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_quantize_operators import (
-    FuseParallelQuantizeOperators,
-    PruneQuantizeOperators,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_transpose_operators import (
     FuseTransposeOperators,
     RemoveIdentityTransposeOperators,
@@ -49,9 +45,6 @@ class Optimization(Enum):
 
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
-
-    PRUNE_QUANTIZE_OPERATORS = 7
-    FUSE_PARALLEL_QUANTIZE_OPERATORS = 8
 
     REMOVE_UNUSED_TENSORS = 10
     PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE = 12
@@ -100,12 +93,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.REMOVE_IDENTITY_TRANSPOSE_OPERATORS: RemoveIdentityTransposeOperators(
-                builder, conversion_config
-            ),
-            Optimization.PRUNE_QUANTIZE_OPERATORS: PruneQuantizeOperators(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_PARALLEL_QUANTIZE_OPERATORS: FuseParallelQuantizeOperators(
                 builder, conversion_config
             ),
             Optimization.REMOVE_UNUSED_TENSORS: RemoveUnusedTensorsAndBuffers(
