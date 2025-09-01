@@ -466,9 +466,25 @@ class InstallerBuildExt(build_ext):
         try:
             from backends.qualcomm.scripts.download_qnn_sdk import (
                 _download_qnn_sdk,
+                LLVM_VERSION,
                 SDK_DIR,
+                stage_libcxx,
             )
 
+            # libcxx setup
+            prj_root = Path(__file__).parent.resolve()
+            target_dir = (
+                prj_root
+                / "executorch"
+                / "backends"
+                / "qualcomm"
+                / "sdk"
+                / f"libcxx-{LLVM_VERSION}"
+            )
+
+            stage_libcxx(target_dir)
+
+            # qnn sdk setup
             print(
                 "SDK_DIR: ",
                 SDK_DIR,
@@ -480,62 +496,64 @@ class InstallerBuildExt(build_ext):
             _download_qnn_sdk()
 
             sdk_path = Path(SDK_DIR).resolve()  # full absolute path
-        except ImportError:
-            print("Import error: ", sys.exc_info()[0])
-            sdk_path = None
 
-        sdk_path = Path(SDK_DIR).resolve()  # full absolute path
-        print("sdk_path: ", sdk_path)
-        if not sdk_path:
-            raise RuntimeError("Qualcomm SDK not found, cannot build backend")
+            sdk_path = Path(SDK_DIR).resolve()  # full absolute path
+            print("sdk_path: ", sdk_path)
+            if not sdk_path:
+                raise RuntimeError("Qualcomm SDK not found, cannot build backend")
 
-        # Determine paths
-        prj_root = Path(__file__).parent.resolve()
-        build_sh = prj_root / "backends/qualcomm/scripts/build.sh"
-        build_root = prj_root / "build-x86"
+            # # Determine paths
+            prj_root = Path(__file__).parent.resolve()
+            print("prj_root: ", prj_root)
+            build_sh = prj_root / "backends/qualcomm/scripts/build.sh"
+            build_root = prj_root / "build-x86"
 
-        if not build_sh.exists():
-            raise FileNotFoundError(f"{build_sh} not found")
+            if not build_sh.exists():
+                raise FileNotFoundError(f"{build_sh} not found")
 
-        # Run build.sh with SDK path exported
-        env = dict(**os.environ)
-        print("str(sdk_path): ", str(sdk_path))
-        env["QNN_SDK_ROOT"] = str(sdk_path)
-        subprocess.check_call([str(build_sh), "--skip_aarch64"], env=env)
+            # Run build.sh with SDK path exported
+            env = dict(**os.environ)
+            print("str(sdk_path): ", str(sdk_path))
+            env["QNN_SDK_ROOT"] = str(sdk_path)
+            subprocess.check_call([str(build_sh), "--skip_aarch64"], env=env)
 
-        # Copy the main .so into the wheel package
-        so_src = build_root / "backends/qualcomm/libqnn_executorch_backend.so"
-        so_dst = Path(self.get_ext_fullpath("executorch.backends.qualcomm.qnn_backend"))
-        self.mkpath(so_dst.parent)  # ensure destination exists
-        self.copy_file(str(so_src), str(so_dst))
-        print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
-
-        # Remove Qualcomm SDK .so so they don’t get packaged
-        if os.path.exists(SDK_DIR):
-            for root, dirs, files in os.walk(SDK_DIR):
-                for f in files:
-                    if f.endswith(".so"):
-                        os.remove(os.path.join(root, f))
-                        print(f"Removed SDK .so from wheel package: {f}")
-
-        so_files = [
-            (
-                "executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
-                prj_root
-                / "backends/qualcomm/python/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so",
-            ),
-            (
-                "executorch.backends.qualcomm.python.PyQnnWrapperAdaptor",
-                prj_root
-                / "backends/qualcomm/python/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so",
-            ),
-        ]
-
-        for module_name, so_src in so_files:
-            so_dst = Path(self.get_ext_fullpath(module_name))
-            self.mkpath(str(so_dst.parent))
+            # Copy the main .so into the wheel package
+            so_src = build_root / "backends/qualcomm/libqnn_executorch_backend.so"
+            so_dst = Path(
+                self.get_ext_fullpath("executorch.backends.qualcomm.qnn_backend")
+            )
+            self.mkpath(so_dst.parent)  # ensure destination exists
             self.copy_file(str(so_src), str(so_dst))
             print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
+
+            # Remove Qualcomm SDK .so so they don’t get packaged
+            if os.path.exists(SDK_DIR):
+                for root, dirs, files in os.walk(SDK_DIR):
+                    for f in files:
+                        if f.endswith(".so"):
+                            os.remove(os.path.join(root, f))
+                            print(f"Removed SDK .so from wheel package: {f}")
+
+            so_files = [
+                (
+                    "executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
+                    prj_root
+                    / "backends/qualcomm/python/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so",
+                ),
+                (
+                    "executorch.backends.qualcomm.python.PyQnnWrapperAdaptor",
+                    prj_root
+                    / "backends/qualcomm/python/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so",
+                ),
+            ]
+
+            for module_name, so_src in so_files:
+                so_dst = Path(self.get_ext_fullpath(module_name))
+                self.mkpath(str(so_dst.parent))
+                self.copy_file(str(so_src), str(so_dst))
+                print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
+        except ImportError:
+            print("Import error: ", sys.exc_info()[0])
 
         if self.editable_mode:
             self._ran_build = True
@@ -849,11 +867,11 @@ setup(
         "build_ext": InstallerBuildExt,
         "build_py": CustomBuildPy,
     },
-    packages=find_packages(),
-    include_package_data=True,
-    package_data={
-        "executorch.backends.qualcomm": ["*.so"],
-    },
+    # packages=find_packages(),
+    # include_package_data=True,
+    # package_data={
+    #     "executorch.backends.qualcomm": ["*.so"],
+    # },
     # Note that setuptools uses the presence of ext_modules as the main signal
     # that a wheel is platform-specific. If we install any platform-specific
     # files, this list must be non-empty. Therefore, we should always install
