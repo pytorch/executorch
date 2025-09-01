@@ -59,16 +59,26 @@ def _download_qnn_sdk() -> Optional[pathlib.Path]:
         print(f"Downloading Qualcomm SDK from {qairt_url}...")
         try:
             # Use urlretrieve with a reporthook to show progress
-            def report_progress(block_num, block_size, total_size):
-                downloaded = block_num * block_size
-                percent = downloaded / total_size * 100
-                print(
-                    f"Downloaded: {downloaded}/{total_size} bytes ({percent:.2f}%)",
-                    end="\r",
-                )
+            def make_report_progress():
+                last_reported = 0  # nonlocal variable
 
+                def report_progress(block_num, block_size, total_size):
+                    nonlocal last_reported
+                    downloaded = block_num * block_size
+                    percent = downloaded / total_size * 100
+
+                    # Report every 20%
+                    if percent - last_reported >= 20 or percent >= 100:
+                        print(
+                            f"Downloaded: {downloaded}/{total_size} bytes ({percent:.2f}%)"
+                        )
+                        last_reported = percent
+
+                return report_progress
+
+            report_progress = make_report_progress()
             urllib.request.urlretrieve(qairt_url, archive_path, report_progress)
-            print("\nDownload completed!")
+            print("Download completed!")
 
             # Check if file was downloaded successfully
             if archive_path.exists():
