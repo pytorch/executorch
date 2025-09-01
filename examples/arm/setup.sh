@@ -9,9 +9,9 @@
 
 set -u
 
-########
+########################
 ### Hardcoded constants
-########
+########################
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_dir=$(realpath $script_dir/../..)
 ARCH="$(uname -m)"
@@ -25,8 +25,10 @@ enable_vela=1
 enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
+enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
 mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
-
+vulkan_sdk_version="1.4.321.1"
+vulkan_sdk_base_dir="vulkan_sdk"
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -45,6 +47,11 @@ if [[ "${ARCH}" == "x86_64" ]]; then
     corstone320_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64.tgz?rev=a507bffc219a4d5792f1192ab7002d89&hash=D9A824AA8227D2E679C9B9787FF4E8B6FBE3D7C6"
     corstone320_model_dir="Linux64_GCC-9.3"
     corstone320_md5_checksum="3deb3c68f9b2d145833f15374203514d"
+
+    # Vulkan SDK
+    vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${vulkan_sdk_version}/linux/vulkansdk-linux-x86_64-${vulkan_sdk_version}.tar.xz"
+    vulkan_sdk_sha256="f22a3625bd4d7a32e7a0d926ace16d5278c149e938dac63cecc00537626cbf73"
+
 elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
     # FVPs
     corstone300_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
@@ -54,16 +61,18 @@ elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
     corstone320_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-320/FVP_Corstone_SSE-320_11.27_25_Linux64_armv8l.tgz?rev=b6ebe0923cb84f739e017385fd3c333c&hash=8965C4B98E2FF7F792A099B08831FE3CB6120493"
     corstone320_model_dir="Linux64_armv8l_GCC-9.3"
     corstone320_md5_checksum="3889f1d80a6d9861ea4aa6f1c88dd0ae"
+
+    # Vulkan SDK
+    vulkan_sdk_url="https://github.com/jakoch/vulkan-sdk-arm/releases/download/1.4.321.1/vulkansdk-ubuntu-22.04-arm-1.4.321.1.tar.xz"
+    vulkan_sdk_sha256="c57e318d0940394d3a304034bb7ddabda788b5b0b54638e80e90f7264efe9f84"
+
 else
     echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
 fi
 
-# Vela
-vela_repo_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela"
-vela_rev="d37febc1715edf0d236c2ff555739a8a9aadcf9a"
-
 # MLSDK dependencies
 mlsdk_manifest_dir="ml-sdk-for-vulkan-manifest"
+vulkan_sdk_bin_dir="${vulkan_sdk_base_dir}/${vulkan_sdk_version}/${ARCH}/bin"
 
 # List of supported options and their descriptions
 OPTION_LIST=(
@@ -156,6 +165,10 @@ function check_options() {
                 enable_emulation_layer=1
                 shift
                 ;;
+            --enable-vulkan-sdk)
+                enable_vulkan_sdk=1
+                shift
+                ;;
             --disable-ethos-u-deps)
                 enable_baremetal_toolchain=0
                 enable_fvps=0
@@ -166,6 +179,7 @@ function check_options() {
                 enable_model_converter=1
                 enable_vgf_lib=1
                 enable_emulation_layer=1
+                enable_vulkan_sdk=1
                 shift
                 ;;
             --mlsdk-manifest-url)
@@ -272,6 +286,36 @@ function setup_fvp() {
     done
 }
 
+function setup_vulkan_sdk() {
+
+    if command -v vulkaninfo > /dev/null 2>&1; then
+        echo "[${FUNCNAME[0]}] Vulkan SDK already installed..."
+        enable_vulkan_sdk=0
+        return
+    fi
+
+    cd "${root_dir}"
+
+    vulkan_sdk_tar_file="${vulkan_sdk_url##*/}"
+    if [[ ! -e "${vulkan_sdk_tar_file}" ]]; then
+        echo "[${FUNCNAME[0]}] Downloading Vulkan SDK - ${vulkan_sdk_url}.."
+        curl -L --output "${vulkan_sdk_tar_file}" "${vulkan_sdk_url}"
+        echo "${vulkan_sdk_sha256} ${vulkan_sdk_tar_file}" | sha256sum -c -
+        rm -fr ${vulkan_sdk_base_dir}
+    fi
+
+    mkdir -p ${vulkan_sdk_base_dir}
+    tar -C ${vulkan_sdk_base_dir} -xJf "${vulkan_sdk_tar_file}"
+
+    vulkan_sdk_bin_path="$(cd ${vulkan_sdk_bin_dir} && pwd)"
+    if ${vulkan_sdk_bin_path}/vulkaninfo > /dev/null 2>&1; then
+        echo "[${FUNCNAME[0]}] Vulkan SDK OK"
+    else
+        echo "[${FUNCNAME[0]}] Vulkan SDK NOK - perhaps need manual install of swifthshader or mesa-vulkan driver?"
+        exit 1
+    fi
+}
+
 function select_toolchain() {
     if [[ "${ARCH}" == "x86_64" ]]; then
         if [[ "${OS}" == "Linux" ]]; then
@@ -329,8 +373,8 @@ function setup_toolchain() {
     tar xf "${toolchain_dir}.tar.xz"
 }
 
-function setup_vela() {
-    pip install ethos-u-vela@git+${vela_repo_url}@${vela_rev}
+function setup_ethos_u_tools() {
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
 }
 
 function prepend_env_in_setup_path() {
@@ -370,6 +414,12 @@ function create_setup_path(){
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
         toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
         append_env_in_setup_path PATH ${toolchain_bin_path}
+    fi
+
+    if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
+        cd "${root_dir}"
+        vulkan_sdk_bin_path="$(cd ${vulkan_sdk_bin_dir} && pwd)"
+        append_env_in_setup_path PATH ${vulkan_sdk_bin_path}
     fi
 
     if [[ "${enable_model_converter}" -eq 1 ]]; then
@@ -432,6 +482,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
     echo "enable-model-converter=${enable_model_converter}"
     echo "enable-vgf-lib=${enable_vgf_lib}"
     echo "enable-emulation-layer=${enable_emulation_layer}"
+    echo "enable-vulkan-sdk=${enable_vulkan_sdk}"
     echo "enable-vela=${enable_vela}"
     echo "mlsdk-manifest-url=${mlsdk_manifest_url}"
 
@@ -451,6 +502,11 @@ if [[ $is_script_sourced -eq 0 ]]; then
         setup_fvp
     fi
 
+    # Setup Vulkan SDK
+    if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
+        setup_vulkan_sdk
+    fi
+
     if [[ "${enable_model_converter}" -eq 1 || \
           "${enable_vgf_lib}" -eq 1 || \
           "${enable_emulation_layer}" -eq 1 ]]; then
@@ -460,17 +516,17 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     # Create new setup_path script
     if [[ "${enable_baremetal_toolchain}" -eq 1 || \
-          "${enable_fvps}" -eq 1 || \
+           "${enable_fvps}" -eq 1 || \
+           "${enable_vulkan_sdk}" -eq 1 || \
           "${enable_model_converter}" -eq 1 ]]; then
         create_setup_path
     fi
 
-    # Setup the tosa_reference_model
-    $et_dir/backends/arm/scripts/install_reference_model.sh ${root_dir}
+    # Setup the tosa_reference_model and dependencies
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-tosa.txt
 
-    # Setup vela and patch in codegen fixes
     if [[ "${enable_vela}" -eq 1 ]]; then
-        setup_vela
+        setup_ethos_u_tools
     fi
 
     echo "[main] Update path by running 'source ${setup_path_script}.sh'"

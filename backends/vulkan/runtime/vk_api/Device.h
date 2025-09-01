@@ -44,6 +44,12 @@ struct PhysicalDevice final {
 #ifdef VK_KHR_shader_float16_int8
   VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types;
 #endif /* VK_KHR_shader_float16_int8 */
+#ifdef VK_KHR_shader_integer_dot_product
+  VkPhysicalDeviceShaderIntegerDotProductFeatures
+      shader_int_dot_product_features;
+  VkPhysicalDeviceShaderIntegerDotProductProperties
+      shader_int_dot_product_properties;
+#endif /* VK_KHR_shader_integer_dot_product */
 
   // Available GPU queues
   std::vector<VkQueueFamilyProperties> queue_families;
