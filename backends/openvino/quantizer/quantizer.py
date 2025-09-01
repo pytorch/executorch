@@ -187,7 +187,7 @@ class OpenVINOQuantizer(Quantizer):
                 graph, node_with_weight.node_name
             )
             annotation = node_vs_torch_annotation[target_node]
-            edge_or_node = OpenVINOQuantizer._get_weight_edge(target_node, nncf_graph)
+            edge_or_node = self._get_weight_edge(target_node, nncf_graph)
             qspec = self._get_torch_ao_qspec_from_nncf_config(
                 qp=None, wc_param=wc_param
             )

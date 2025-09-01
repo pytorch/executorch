@@ -166,7 +166,7 @@ class WeightObserverBase(ObserverBase, ABC):
 
 class INT4WeightObserver(WeightObserverBase):
     """
-    This class defines the behavior for INT4 Weight Compression which has per-group granularity.
+    OpenVINO INT4 Weight Compression observer.
     """
 
     def _create_decompressor(
