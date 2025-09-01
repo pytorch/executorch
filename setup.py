@@ -471,19 +471,6 @@ class InstallerBuildExt(build_ext):
                 stage_libcxx,
             )
 
-            # libcxx setup
-            prj_root = Path(__file__).parent.resolve()
-            target_dir = (
-                prj_root
-                / "executorch"
-                / "backends"
-                / "qualcomm"
-                / "sdk"
-                / f"libcxx-{LLVM_VERSION}"
-            )
-
-            stage_libcxx(target_dir)
-
             # qnn sdk setup
             print(
                 "SDK_DIR: ",

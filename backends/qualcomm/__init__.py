@@ -2,11 +2,15 @@ import ctypes
 import os
 import pathlib
 
-from .scripts.download_qnn_sdk import _download_qnn_sdk, _load_libcxx_libs, SDK_DIR
+from .scripts.download_qnn_sdk import (
+    _download_qnn_sdk,
+    _get_libcxx_dir,
+    _load_libcxx_libs,
+    _stage_libcxx,
+)
 
-LLVM_VERSION = "14.0.0"
-PKG_ROOT = pathlib.Path(__file__).parent.parent
-LIBCXX_DIR = PKG_ROOT / "sdk" / f"libcxx-{LLVM_VERSION}"
+# Path to executorch/backends/qualcomm/
+PKG_ROOT = pathlib.Path(__file__).parent.parent / "qualcomm"
 
 # --- Qualcomm SDK handling ---
 qnn_root = os.environ.get("QNN_SDK_ROOT")
@@ -30,17 +34,12 @@ except OSError as e:
     raise
 
 # --- libc++ handling ---
-if LIBCXX_DIR.exists():
-    include_path = LIBCXX_DIR / "include"
-    lib_path = LIBCXX_DIR / "lib"
+# Path to executorch/backends/
+_libcxx_dir = _get_libcxx_dir(PKG_ROOT)
 
-    # Prepend paths to environment
-    os.environ["CPLUS_INCLUDE_PATH"] = (
-        f"{include_path}:{os.environ.get('CPLUS_INCLUDE_PATH','')}"
-    )
-    os.environ["LD_LIBRARY_PATH"] = f"{lib_path}:{os.environ.get('LD_LIBRARY_PATH','')}"
-    os.environ["LIBRARY_PATH"] = f"{lib_path}:{os.environ.get('LIBRARY_PATH','')}"
-
-    _load_libcxx_libs(lib_path)
-else:
-    print(f"libc++ not found at {LIBCXX_DIR}, please check installation.")
+# Stage (download if missing) and load
+try:
+    _stage_libcxx(_libcxx_dir)
+    _load_libcxx_libs(_libcxx_dir)
+except Exception as e:
+    print(f"[libcxx] Warning: failed to stage/load libc++: {e}")
