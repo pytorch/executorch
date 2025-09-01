@@ -81,6 +81,8 @@ class QDQClusterRecognizer:
         operator.getitem,
         exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
     ]
 
     def __init__(self):

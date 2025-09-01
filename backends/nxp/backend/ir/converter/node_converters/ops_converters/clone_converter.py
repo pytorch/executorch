@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
@@ -13,10 +14,31 @@ from torch.nn import Parameter
 
 
 def _has_supported_memory_format(node: Node) -> bool:
-    if "memory_format" in node.kwargs.keys():
-        return node.kwargs["memory_format"] == torch.preserve_format
+    """The node can either represent an `aten.clone` or a `dim_order_ops._clone_dim_order` operator."""
+    memory_format = node.kwargs.get("memory_format", None)  # Attribute of `aten.clone`.
+    dim_order = node.kwargs.get(
+        "dim_order", None
+    )  # Attribute of `dim_order_ops._clone_dim_order`.
 
-    return True
+    if (memory_format, dim_order) == (torch.preserve_format, None):
+        # The operator does nothing (e.g. originated as a `Dropout`).
+        return True
+
+    contiguous_dim_order = list(range(len(node.meta["val"].shape)))
+    if (memory_format, dim_order) in [
+        (torch.contiguous_format, None),
+        (None, contiguous_dim_order),
+    ]:
+        # Sometimes there is a `permute_copy` (Transpose) in Executorch, which doesn't actually permute the data in
+        #  memory. Instead, it just changes the `strides` (memory format) to match the permutation. Then, some
+        #  following operator may or may not support the particular strides (e.g. `mul` supports anything but
+        #  `view_copy` does not), so the `clone` may be inserted to actually permute the data in memory to the
+        #  `contiguous` format. This is purely an Executorch issue, and there is no equivalent system in NeutronIR.
+        #  In NeutronIR, every tensor is stored in memory exactly as its shape suggests. Therefore, the `clone` can
+        #  simply be omitted.
+        return True
+
+    return False
 
 
 class CloneConverter(NodeConverter):
