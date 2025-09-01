@@ -36,6 +36,12 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
       shader_float16_int8_types{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR},
 #endif /* VK_KHR_shader_float16_int8 */
+#ifdef VK_KHR_shader_integer_dot_product
+      shader_int_dot_product_features{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES_KHR},
+      shader_int_dot_product_properties{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES_KHR},
+#endif
       queue_families{},
       num_compute_queues(0),
       supports_int16_shader_types(false),
@@ -76,6 +82,13 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
   shader_float16_int8_types.pNext = extension_list_top;
   extension_list_top = &shader_float16_int8_types;
 #endif /* VK_KHR_shader_float16_int8 */
+
+#ifdef VK_KHR_shader_integer_dot_product
+  shader_int_dot_product_features.pNext = extension_list_top;
+  extension_list_top = &shader_int_dot_product_features;
+  shader_int_dot_product_properties.pNext = extension_list_top;
+  extension_list_top = &shader_int_dot_product_properties;
+#endif /* VK_KHR_shader_integer_dot_product */
 
   features2.pNext = extension_list_top;
 

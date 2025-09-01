@@ -12,9 +12,6 @@
 
 #include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/sampler/sampler.h>
-#include <executorch/extension/module/module.h>
-#include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
 namespace extension {
