@@ -70,7 +70,7 @@ function help() {
     echo "  --pte_placement=<elf|ADDR>             Ethos-U: Control if runtime has PTE baked into the elf or if its placed in memory outside of the elf, defaults to ${pte_placement}"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
-    echo "  --qdq_fusion_op=<true/false>           Enable/Disable QDQ fusion op"
+    echo "  --qdq_fusion_op                        Enable QDQ fusion op"
     exit 0
 }
 
@@ -98,7 +98,7 @@ for arg in "$@"; do
       --pte_placement=*) pte_placement="${arg#*=}";;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
-      --qdq_fusion_op=*) qdq_fusion_op="${arg#*=}";;
+      --qdq_fusion_op) qdq_fusion_op=true;;
       *)
       ;;
     esac
@@ -200,6 +200,7 @@ devtools_flag=""
 bundleio_flag=""
 etrecord_flag=""
 et_dump_flag=""
+qdq_fusion_op_flag=""
 if [ "$build_with_etdump" = true ] ; then
     et_dump_flag="--etdump"
     etrecord_flag="--etrecord"
@@ -208,6 +209,10 @@ fi
 if [ "$bundleio" = true ] ; then
     devtools_flag="--devtools"
     bundleio_flag="--bundleio"
+fi
+
+if [ "$qdq_fusion_op" = true ] ; then
+    qdq_fusion_op_flag="--enable_qdq_fusion_pass"
 fi
 
 backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
@@ -278,7 +283,7 @@ for i in "${!test_model[@]}"; do
         model_compiler_flags="${model_compiler_flags} --model_input=${model_input}"
     fi
 
-    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${etrecord_flag} --config=${config} --enable_qdq_fusion_pass=${qdq_fusion_op}"
+    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${etrecord_flag} --config=${config} $qdq_fusion_op_flag"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 
