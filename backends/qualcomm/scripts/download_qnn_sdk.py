@@ -7,7 +7,10 @@ import shutil
 import tarfile
 import tempfile
 import urllib.request
+import zipfile
 from typing import Optional
+
+from tqdm import tqdm
 
 SDK_DIR = pathlib.Path(__file__).parent.parent / "sdk" / "qnn"
 PKG_ROOT = pathlib.Path(__file__).parent
@@ -110,63 +113,90 @@ def _extract_zip(archive_path, content_dir, target_dir):
     print(f"Extracting {archive_path} to {target_dir}")
     print(f"Looking for content in subdirectory: {content_dir}")
 
-    # Add your zip extraction code here, with additional logging
-    # For example:
-    import zipfile
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     with zipfile.ZipFile(archive_path, "r") as zip_ref:
-        # List all files in the archive
-        print("Files in archive:")
-        for file in zip_ref.namelist():
-            print(f"  {file}")
+        # Filter files that start with content_dir
+        files_to_extract = [f for f in zip_ref.namelist() if f.startswith(content_dir)]
 
-        # Extract only the specific content directory
-        for file in zip_ref.namelist():
-            if file.startswith(content_dir):
-                # Extract with path relative to content_dir
-                relative_path = os.path.relpath(file, content_dir)
-                if relative_path == ".":
-                    continue  # Skip the directory entry itself
-                target_path = target_dir / relative_path
-                if file.endswith("/"):
-                    # Create directory
-                    target_path.mkdir(parents=True, exist_ok=True)
-                else:
-                    # Extract file
-                    with zip_ref.open(file) as source, open(
-                        target_path, "wb"
-                    ) as target:
-                        shutil.copyfileobj(source, target)
-                    print(f"Extracted: {relative_path}")
+        for file in tqdm(files_to_extract, desc="Extracting files"):
+            relative_path = os.path.relpath(file, content_dir)
+            if relative_path == ".":
+                continue  # skip the root directory itself
+
+            target_path = target_dir / relative_path
+
+            if file.endswith("/"):
+                target_path.mkdir(parents=True, exist_ok=True)
+            else:
+                target_path.parent.mkdir(
+                    parents=True, exist_ok=True
+                )  # ensure parent exists
+                with zip_ref.open(file) as source, open(target_path, "wb") as target:
+                    shutil.copyfileobj(source, target)
+
+
+def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Path):
+    """
+    Extract files from a tar.gz archive into target_dir, stripping a prefix.
+
+    Args:
+        archive_path (pathlib.Path): Path to the .tar.gz or .tgz archive.
+        prefix (str): Prefix folder inside the archive to strip.
+        target_dir (pathlib.Path): Destination directory.
+    """
+    with tarfile.open(archive_path, "r:gz") as tf:
+        for m in tf.getmembers():
+            if not m.name.startswith(prefix + "/"):
+                continue
+            relpath = pathlib.Path(m.name).relative_to(prefix)
+            if not relpath.parts or relpath.parts[0] == "..":
+                continue
+
+            out_path = target_dir / relpath
+            if m.isdir():
+                out_path.mkdir(parents=True, exist_ok=True)
+            else:
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                src = tf.extractfile(m)
+                if src is None:
+                    # Skip non-regular files (links, devices, etc.)
+                    continue
+                with src, open(out_path, "wb") as dst:
+                    dst.write(src.read())
 
 
 LLVM_VERSION = "14.0.0"
-LIBCXX_LIB_DIR = (
-    PKG_ROOT / "executorch" / "backends" / "qualcomm" / "sdk" / f"libcxx-{LLVM_VERSION}"
-)
-LIBCXX_BASE_NAME = f"clang+llvm-{LLVM_VERSION}-x86_64-linux-gnu-ubuntu-20.04"
+LIBCXX_BASE_NAME = f"clang+llvm-{LLVM_VERSION}-x86_64-linux-gnu-ubuntu-18.04"
+LLVM_URL = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/{LIBCXX_BASE_NAME}.tar.xz"
+
+REQUIRED_LIBS = [
+    "libc++.so.1.0",
+    "libc++abi.so.1.0",
+    "libunwind.so.1",
+    "libm.so.6",
+    "libpython3.10.so.1.0",  # optional, include if needed
+]
 
 
-def stage_libcxx(target_dir: pathlib.Path):
-    """
-    Download (if needed) and stage libc++ shared libraries into the wheel package.
-    - target_dir: destination folder in the wheel, e.g.
-      executorch/backends/qualcomm/sdk/libcxx-14.0.0
-    """
+def _get_libcxx_dir(pkg_root: pathlib.Path) -> pathlib.Path:
+    """Path where libc++ should be staged in the wheel."""
+    return pkg_root / "sdk" / f"libcxx-{LLVM_VERSION}"
+
+
+def _stage_libcxx(target_dir: pathlib.Path):
+    """Download LLVM tarball and stage only the needed .so files."""
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Check if already staged
-    existing_files = list(target_dir.glob("*"))
-    if existing_files:
-        print(f"[libcxx] Already staged at {target_dir}, skipping")
+    # Already staged?
+    if all((target_dir / libname).exists() for libname in REQUIRED_LIBS):
+        print(f"[libcxx] Already staged at {target_dir}, skipping download")
         return
 
-    # URL to a tarball with prebuilt libc++ shared libraries
-    LLVM_URL = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/{LIBCXX_BASE_NAME}.tar.xz"
     temp_tar = pathlib.Path("/tmp") / f"{LIBCXX_BASE_NAME}.tar.xz"
-    temp_extract = pathlib.Path("/tmp") / f"{LIBCXX_BASE_NAME}"
+    temp_extract = pathlib.Path("/tmp") / LIBCXX_BASE_NAME
 
-    # Download if not already exists
+    # Download tarball if missing
     if not temp_tar.exists():
         print(f"[libcxx] Downloading {LLVM_URL}")
         urllib.request.urlretrieve(LLVM_URL, temp_tar)
@@ -176,26 +206,24 @@ def stage_libcxx(target_dir: pathlib.Path):
     with tarfile.open(temp_tar, "r:xz") as tar:
         tar.extractall(temp_extract.parent)
 
-    # Copy only the required .so files
+    # Copy required .so files
     lib_src = temp_extract / "lib"
-    required_files = [
-        "libc++.so.1.0",
-        "libc++abi.so.1.0",
-        "libunwind.so.1",
-        "libm.so.6",
-        "libpython3.10.so.1.0",
-    ]
-    for fname in required_files:
+    for fname in REQUIRED_LIBS:
         src_path = lib_src / fname
         if not src_path.exists():
-            raise FileNotFoundError(f"{fname} not found in extracted LLVM")
+            print(f"[libcxx] Warning: {fname} not found in extracted LLVM")
+            continue
         shutil.copy(src_path, target_dir / fname)
 
-    # Create symlinks
-    os.symlink("libc++.so.1.0", target_dir / "libc++.so.1")
-    os.symlink("libc++.so.1", target_dir / "libc++.so")
-    os.symlink("libc++abi.so.1.0", target_dir / "libc++abi.so.1")
-    os.symlink("libc++abi.so.1", target_dir / "libc++abi.so")
+    # Create symlinks for libc++/abi
+    libcxx = target_dir / "libc++.so.1.0"
+    libcxx_abi = target_dir / "libc++abi.so.1.0"
+    if libcxx.exists():
+        os.symlink("libc++.so.1.0", target_dir / "libc++.so.1")
+        os.symlink("libc++.so.1", target_dir / "libc++.so")
+    if libcxx_abi.exists():
+        os.symlink("libc++abi.so.1.0", target_dir / "libc++abi.so.1")
+        os.symlink("libc++abi.so.1", target_dir / "libc++abi.so")
 
     print(f"[libcxx] Staged libc++ to {target_dir}")
 
