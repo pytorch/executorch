@@ -82,6 +82,7 @@ enum class VulkanExtension : uint8_t {
   SHADER_INT16,
   INT16_STORAGE,
   INT8_STORAGE,
+  INTEGER_DOT_PRODUCT,
 };
 
 class ShaderNotSupportedError : public std::exception {

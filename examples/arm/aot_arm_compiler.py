@@ -600,6 +600,11 @@ def get_args():
         action="store_false",
         help="Disable strict checking while exporting models.",
     )
+    parser.add_argument(
+        "--enable_qdq_fusion_pass",
+        action="store_true",
+        help="Enable the QuantizedOpFusionPass fusion step",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -791,14 +796,20 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
     return model_int8, edge
 
 
-def transform_for_cortex_m_backend(edge):
+def transform_for_cortex_m_backend(edge, args):
     # Let's make sure we are using optimized Cortex M backend
     # NB: If we can't find and replace ops those are expected to be replaced,
     # bad things will happen at runtime, like "missing operator" errors!
-    # Instantiate the pass
-    replace_quant_pass = ReplaceQuantNodesPass()
-    quantized_op_fusion_pass = QuantizedOpFusionPass()
-    edge = edge.transform([replace_quant_pass, quantized_op_fusion_pass])
+
+    # Instantiate the mandatory ReplaceQuantNodesPass
+    passes = [ReplaceQuantNodesPass()]
+
+    # Conditionally add the QuantizedOpFusionPass
+    if args.enable_qdq_fusion_pass:
+        passes.append(QuantizedOpFusionPass())
+
+    # Apply the passes
+    edge = edge.transform(passes)
 
     return edge
 
@@ -834,8 +845,9 @@ if __name__ == "__main__":  # noqa: C901
             exported_program, args, model, example_inputs
         )
 
-    # Transform so we can use ops from the Cortex M backend
-    edge = transform_for_cortex_m_backend(edge)
+    if args.target != "vgf":
+        # Transform so we can use ops from the Cortex M backend
+        edge = transform_for_cortex_m_backend(edge, args)
 
     dump_delegation_info(edge, args.intermediates)
 
