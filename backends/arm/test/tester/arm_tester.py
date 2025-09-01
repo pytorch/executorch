@@ -303,7 +303,7 @@ class ArmTester(Tester):
         Args:
             model (torch.nn.Module): The model to test
             example_inputs (Tuple[torch.Tensor]): Example inputs to the model
-            compile_spec (List[CompileSpec]): The compile spec to use
+            compile_spec (ArmCompileSpec): The compile spec to use
         """
 
         self.transform_passes = transform_passes
