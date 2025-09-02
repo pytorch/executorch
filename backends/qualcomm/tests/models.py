@@ -274,6 +274,19 @@ class Cat4(torch.nn.Module):
         return torch.cat((y, y, x, x), axis=2)
 
 
+class CausalMask(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("causal_mask", torch.zeros((1, 1, 1, 128)))
+        self.mask_length = 128
+
+    def forward(self, padding_mask):
+        self.causal_mask[:, :, :, : self.mask_length] = self.causal_mask[
+            :, :, :, : self.mask_length
+        ].masked_fill(padding_mask, 1)
+        return self.causal_mask + 1
+
+
 class CDist(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1124,7 +1137,7 @@ class LiftAddTensor(torch.nn.Module):
 class Linear(torch.nn.Module):
     def __init__(self, use_bias: bool = True):
         super().__init__()
-        self.linear = torch.nn.Linear(4, 5, use_bias).eval()
+        self.linear = torch.nn.Linear(512, 32, use_bias).eval()
 
     def forward(self, x):
         return self.linear(x)
@@ -1699,6 +1712,20 @@ class SliceCopyWithStep(torch.nn.Module):
         return (
             x[:, : seq_length : self.step]
             + self.position_ids[:, : seq_length : self.step]
+        )
+
+
+class SliceScatter(torch.nn.Module):
+    def __init__(self, dim, start, end, step):
+        super().__init__()
+        self.dim = dim
+        self.start = start
+        self.end = end
+        self.step = step
+
+    def forward(self, x, y):
+        return x.slice_scatter(
+            y, dim=self.dim, start=self.start, end=self.end, step=self.step
         )
 
 
