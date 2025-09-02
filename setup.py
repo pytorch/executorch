@@ -514,13 +514,13 @@ class InstallerBuildExt(build_ext):
             self.copy_file(str(so_src), str(so_dst))
             print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
 
-            # Remove Qualcomm SDK .so so they don’t get packaged
+            # Remove Qualcomm SDK completely so it doesn’t get packaged
             if os.path.exists(SDK_DIR):
-                for root, dirs, files in os.walk(SDK_DIR):
-                    for f in files:
-                        if f.endswith(".so"):
-                            os.remove(os.path.join(root, f))
-                            print(f"Removed SDK .so from wheel package: {f}")
+                try:
+                    shutil.rmtree(SDK_DIR)
+                    print(f"Removed Qualcomm SDK folder: {SDK_DIR}")
+                except Exception as e:
+                    print(f"Failed to remove SDK_DIR {SDK_DIR}: {e}")
 
             so_files = [
                 (
