@@ -56,6 +56,7 @@ import sys
 # Import this before distutils so that setuptools can intercept the distuils
 # imports.
 import setuptools  # noqa: F401 # usort: skip
+import importlib.machinery
 import os
 import platform
 import subprocess
@@ -662,6 +663,14 @@ class CustomBuildPy(build_py):
                 "share/cmake/executorch-config.cmake",
             ),
         ]
+        # Pick up all .so files automatically
+        ext_suffixes = importlib.machinery.EXTENSION_SUFFIXES
+        for suffix in ext_suffixes:
+            for so_file in Path("backends/qualcomm/python").glob(f"*{suffix}"):
+                rel_dst = os.path.join(
+                    "executorch/backends/qualcomm/python", so_file.name
+                )
+                src_to_dst.append((str(so_file), rel_dst))
         # Copy all the necessary headers into include/executorch/ so that they can
         # be found in the pip package. This is the subset of headers that are
         # essential for building custom ops extensions.
