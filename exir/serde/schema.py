@@ -384,9 +384,8 @@ class ExportedProgram:
     opset_version: Dict[str, int]
     range_constraints: Dict[str, RangeConstraint]
     schema_version: SchemaVersion
-    dialect: str
     verifiers: List[str] = field(default_factory=list)
-    dialect: str = ""  # TODO deprecated
+    dialect: str = "" # TODO deprecated
 
 
 @dataclass
