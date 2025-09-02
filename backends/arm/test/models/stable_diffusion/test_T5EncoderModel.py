@@ -7,7 +7,11 @@
 import unittest
 
 import torch
-from executorch.backends.arm._passes import InsertCastForOpsWithInt64InputPass
+from executorch.backends.arm._passes import (
+    ConvertInt64ConstOpsToInt32Pass,
+    ConvertInt64OutputOpsToInt32Pass,
+    InsertCastForOpsWithInt64InputPass,
+)
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.stable_diffusion.stable_diffusion_module_test_configs import (
@@ -29,19 +33,7 @@ class TestT5EncoderModel(unittest.TestCase):
     # .to_executorch step, i.e. after Arm partitioner.
     ops_after_partitioner = {
         "executorch_exir_dialects_edge__ops_aten__to_copy_default": 2,
-        "executorch_exir_dialects_edge__ops_aten_abs_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_add_Tensor": 3,
-        "executorch_exir_dialects_edge__ops_aten_arange_start_step": 2,
-        "executorch_exir_dialects_edge__ops_aten_full_like_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_gt_Scalar": 1,
-        "executorch_exir_dialects_edge__ops_aten_lt_Scalar": 1,
-        "executorch_exir_dialects_edge__ops_aten_minimum_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
-        "executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1,
-        "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 2,
         "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_where_self": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 3,
         "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
@@ -68,7 +60,7 @@ class TestT5EncoderModel(unittest.TestCase):
 
         return t5_encoder_model, t5_encoder_model_inputs
 
-    def test_T5EncoderModel_tosa_MI(self):
+    def test_T5EncoderModel_tosa_FP(self):
         t5_encoder_model, t5_encoder_model_inputs = self.prepare_model_and_inputs()
         with torch.no_grad():
             (
@@ -76,7 +68,11 @@ class TestT5EncoderModel(unittest.TestCase):
                     t5_encoder_model,
                     example_inputs=t5_encoder_model_inputs,
                     compile_spec=common.get_tosa_compile_spec(tosa_spec="TOSA-1.0+FP"),
-                    transform_passes=[InsertCastForOpsWithInt64InputPass()],
+                    transform_passes=[
+                        InsertCastForOpsWithInt64InputPass(),
+                        ConvertInt64ConstOpsToInt32Pass(),
+                        ConvertInt64OutputOpsToInt32Pass(),
+                    ],
                 )
                 .export()
                 .to_edge_transform_and_lower()

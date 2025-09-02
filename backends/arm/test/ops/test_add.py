@@ -58,12 +58,16 @@ class Add2(torch.nn.Module):
         "4d_randn_1": lambda: (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
         "4d_randn_2": lambda: (torch.randn(1, 3, 4, 4), torch.randn(1, 3, 4, 4)),
         "4d_randn_big": lambda: (
-            10000 * torch.randn(1, 1, 4, 4),
+            (1 << 30) * torch.randn(1, 1, 4, 4),
             torch.randn(1, 1, 4, 1),
         ),
         "4d_randn_1_mutltiple_broadcasts": lambda: (
             torch.randn(1, 4, 4, 1),
             torch.ones(1, 1, 4, 4),
+        ),
+        "4d_big_small": lambda: (
+            (10e10) * torch.randn(1, 10, 20, 30),
+            torch.randn(1, 10, 20, 30),
         ),
     }
 
@@ -87,7 +91,7 @@ def test_add_tensor_tosa_FP(test_data: input_t1):
 
 @common.parametrize("test_data", Add.test_data)
 def test_add_tensor_tosa_INT(test_data: input_t1):
-    pipeline = TosaPipelineINT[input_t1](Add(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineINT[input_t1](Add(), test_data(), aten_op, exir_op, qtol=0)
     pipeline.run()
 
 
@@ -112,9 +116,16 @@ def test_add_tensor_tosa_INT_i32(test_data: input_t1):
         quant_max=2**31 - 1,
         quant_min=-(2**31),
     )
+    output_act_qspec = QuantizationSpec(
+        torch.int32,
+        observer,
+        qscheme=torch.per_tensor_symmetric,
+        quant_max=2**31 - 1,
+        quant_min=-(2**31),
+    )
     # This quantization_config will be set as global config.
     quantization_config = arm_quantizer.QuantizationConfig(
-        input_act_qspec, None, None, None
+        input_act_qspec, output_act_qspec, None, None
     )
     quantize_stage = Quantize(quantizer, quantization_config)
     pipeline.change_args("quantize", quantize_stage)
@@ -158,13 +169,13 @@ def test_add_tensor_tosa_FP_3(test_data: input_t2):
 
 @common.parametrize("test_data", Add3.test_data)
 def test_add_tensor_tosa_INT_3(test_data: input_t2):
-    pipeline = TosaPipelineINT[input_t2](Add3(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineINT[input_t2](Add3(), test_data(), aten_op, exir_op, qtol=0)
     pipeline.run()
 
 
 @common.parametrize("test_data", Add2.test_data)
 def test_add_tensor_tosa_INT_2(test_data: input_t2):
-    pipeline = TosaPipelineINT[input_t2](Add2(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineINT[input_t2](Add2(), test_data(), aten_op, exir_op, qtol=0)
     pipeline.run()
 
 
@@ -186,13 +197,13 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add.test_data)
+# TODO/MLETORCH-1282: remove once inputs are not hard coded to ones
+skip_keys = {"5d_float", "1d_ones", "1d_randn"}
+filtered_test_data = {k: v for k, v in Add.test_data.items() if k not in skip_keys}
+
+
+@common.parametrize("test_data", filtered_test_data)
 @common.SkipIfNoModelConverter
-@common.XfailfNoVKMLEmulationLayer
-@pytest.mark.xfail(
-    reason="VGF runtime is not yet fully supported for FP pipeline (MLETORCH-1234)",
-    strict=True,
-)
 def test_add_tensor_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Add(),
@@ -202,10 +213,13 @@ def test_add_tensor_vgf_FP(test_data: input_t1):
         tosa_version="TOSA-1.0+FP",
         run_on_vulkan_runtime=True,
     )
-    pipeline.run()
+    try:
+        pipeline.run()
+    except FileNotFoundError as e:
+        pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
 
 
-@common.parametrize("test_data", Add.test_data)
+@common.parametrize("test_data", filtered_test_data)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_INT(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
@@ -214,5 +228,9 @@ def test_add_tensor_vgf_INT(test_data: input_t1):
         aten_op,
         exir_op,
         tosa_version="TOSA-1.0+INT",
+        run_on_vulkan_runtime=True,
     )
-    pipeline.run()
+    try:
+        pipeline.run()
+    except FileNotFoundError as e:
+        pytest.skip(f"VKML executor_runner not found - not built - skip {e}")

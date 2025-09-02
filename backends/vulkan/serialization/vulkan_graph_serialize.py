@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # pyre-strict
 #
@@ -7,14 +8,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
+import importlib.resources as _resources
 import json
 import os
 import tempfile
-
 from dataclasses import dataclass
 from typing import ClassVar, List
 
-import pkg_resources
+import executorch.backends.vulkan.serialization as serialization_package
+
 import torch
 
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
@@ -22,7 +24,6 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkGraph,
 )
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
-
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 
 
@@ -32,7 +33,9 @@ def convert_to_flatbuffer(vk_graph: VkGraph) -> bytes:
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "schema.fbs")
         with open(schema_path, "wb") as schema_file:
-            schema_file.write(pkg_resources.resource_string(__name__, "schema.fbs"))
+            schema_file.write(
+                _resources.read_binary(serialization_package, "schema.fbs")
+            )
         json_path = os.path.join(d, "schema.json")
         with open(json_path, "wb") as json_file:
             json_file.write(vk_graph_json.encode("ascii"))
@@ -48,7 +51,9 @@ def flatbuffer_to_vk_graph(flatbuffers: bytes) -> VkGraph:
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "schema.fbs")
         with open(schema_path, "wb") as schema_file:
-            schema_file.write(pkg_resources.resource_string(__name__, "schema.fbs"))
+            schema_file.write(
+                _resources.read_binary(serialization_package, "schema.fbs")
+            )
 
         bin_path = os.path.join(d, "schema.bin")
         with open(bin_path, "wb") as bin_file:

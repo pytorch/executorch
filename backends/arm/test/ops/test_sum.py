@@ -60,6 +60,7 @@ def test_sum_dim_intlist_tosa_INT(test_data: input_t1):
         aten_op,
         exir_op=[],
     )
+    pipeline.dump_artifact("export")
     pipeline.run()
 
 

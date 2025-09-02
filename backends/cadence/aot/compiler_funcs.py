@@ -11,11 +11,7 @@ from typing import Optional
 
 import torch
 from torch._inductor.decomposition import remove_decompositions
-from torchao.quantization.pt2e.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-    prepare_qat_pt2e,
-)
+from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
 
 
@@ -56,8 +52,3 @@ def prepare(
         prepared_model = prepare_pt2e(traced_model, quantizer)
 
     return prepared_model
-
-
-def convert(prepared_model: torch.fx.GraphModule) -> torch.fx.GraphModule:
-    converted_model = convert_pt2e(prepared_model)
-    return converted_model

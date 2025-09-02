@@ -13,7 +13,6 @@ from typing import Optional
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot.compiler_funcs import (
-    convert as convert_fn,
     prepare as prepare_fn,
     trace as trace_fn,
 )
@@ -42,6 +41,7 @@ from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.program._program import to_edge
 
 from torch.export.exported_program import ExportedProgram
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e
 
 from .passes import apply_exir_ops_passes, apply_torch_ops_passes
 
@@ -139,7 +139,7 @@ def convert_pt2(
     Returns a GraphModule with the converted model.
     """
 
-    converted_model = convert_fn(graph_module)
+    converted_model = convert_pt2e(graph_module)
 
     if dump_graphs:
         logging.info("Graph after convert:")
