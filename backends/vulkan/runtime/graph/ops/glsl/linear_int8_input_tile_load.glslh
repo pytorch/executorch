@@ -27,18 +27,18 @@
 #ifdef INPUT_BUFFER
 
 ivec4 load_input_block(
-    const uint block_x,
-    const uint block_y,
-    const uint nblocks_x) {
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
   return t_input[(block_y * nblocks_x) + block_x];
 }
 
 #else
 
 ivec4 load_input_block(
-    const uint block_x,
-    const uint block_y,
-    const uint nblocks_x) {
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
   return texelFetch(t_input, ivec3(block_x, block_y, 0), 0);
 }
 
@@ -46,9 +46,9 @@ ivec4 load_input_block(
 
 void load_input_tile(
     out Int8InputTile in_tile,
-    const uint block_x,
-    const uint block_y,
-    const uint nblocks_x) {
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
 #if TILE_M4 == 1 && TILE_K4 == 1
   in_tile.data[0][0] = load_input_block(block_x, block_y, nblocks_x);
 

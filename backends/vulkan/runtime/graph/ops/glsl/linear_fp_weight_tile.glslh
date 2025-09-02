@@ -20,6 +20,8 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
+#include "common.glslh"
+
 struct FPWeightTile {
   VEC4_T data[TILE_K][TILE_N4];
 };
@@ -33,24 +35,24 @@ int sign_extend(const int val) {
   return val;
 }
 
-T extract_8bit_value(const Int8WeightTile w_tile, const uint k, const uint n) {
+T extract_8bit_value(const Int8WeightTile w_tile, const int k, const int n) {
 #if TILE_K4 == 1 && TILE_N4 == 1
-  const uint k4i = k;
-  const uint n4i = n;
+  const int k4i = k;
+  const int n4i = n;
   ivec4 block = w_tile.data[0][0];
 
 #else
-  const uint k4 = div_4(k);
-  const uint k4i = mod_4(k);
+  const int k4 = div_4(k);
+  const int k4i = mod_4(k);
 
-  const uint n4 = div_4(n);
-  const uint n4i = mod_4(n);
+  const int n4 = div_4(n);
+  const int n4i = mod_4(n);
 
   ivec4 block = w_tile.data[k4][n4];
 #endif
 
   int col = block[n4i];
-  int val = (col >> ((3 - k4i) * 8)) & 0xFF;
+  int val = (col >> (k4i * 8)) & 0xFF;
 
   return T(sign_extend(val));
 }
@@ -67,7 +69,7 @@ void unpack(out FPWeightTile fp_w_tile, const Int8WeightTile w_tile) {
 #else
   [[unroll]] for (int k = 0; k < TILE_M; ++k) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
-      const uint n = mul_4(n4);
+      const int n = mul_4(n4);
       fp_w_tile.data[k][n4][0] = extract_8bit_value(w_tile, k, n);
       fp_w_tile.data[k][n4][1] = extract_8bit_value(w_tile, k, n + 1);
       fp_w_tile.data[k][n4][2] = extract_8bit_value(w_tile, k, n + 2);
@@ -86,12 +88,13 @@ void printFPWeightTile(const FPWeightTile tile) {
   [[unroll]] for (int k = 0; k < TILE_K; ++k) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       debugPrintfEXT(
-          "  %f, %f, %f, %f, \\n",
+          "  %f, %f, %f, %f, ",
           tile.data[k][n4].x,
           tile.data[k][n4].y,
           tile.data[k][n4].z,
           tile.data[k][n4].w);
     }
+    debugPrintfEXT("\\n");
   }
 }
 

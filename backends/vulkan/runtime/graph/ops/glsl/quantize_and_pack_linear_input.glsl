@@ -45,8 +45,8 @@ void main() {
   // Each input block contains 4x4 int8 quantized values, which are packed into
   // a ivec4. k4 and m4 represent the "block index" of the current block being
   // processed.
-  uint k4 = gl_GlobalInvocationID.x;
-  uint m4 = gl_GlobalInvocationID.y;
+  int k4 = int(gl_GlobalInvocationID.x);
+  int m4 = int(gl_GlobalInvocationID.y);
 
   const int K = input_sizes.x;
   const int M = input_sizes.y;
@@ -61,7 +61,7 @@ void main() {
 
   // row of the input tensor to start loading from. Note the input tensor is
   // interpreted as a t
-  const uint m = mul_4(m4);
+  const int m = mul_4(m4);
 
   const bool dont_check_bounds = (M - m) >= 4;
 

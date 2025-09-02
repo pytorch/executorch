@@ -12,6 +12,11 @@ option(
   "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size"
   OFF
 )
+option(
+  ET_MODEL_PTE_ADDR
+  "Place in memory that the PTE file is located/flashed, if set to OFF the PTE is built into the code as a big data area."
+  OFF
+)
 option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
 option(ET_ATOL "Set atol to use for BundleIO testing" OFF)
 option(ET_RTOL "Set rtol to use for BundleIO testing" OFF)
@@ -25,11 +30,16 @@ set(ET_NUM_INFERENCES
     CACHE STRING "Number of inferences to run"
 )
 
-if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
+if(NOT DEFINED ET_MODEL_PTE_ADDR
+   AND NOT DEFINED ET_PTE_FILE_PATH
+   AND NOT DEFINED SEMIHOSTING
+)
   message(
     FATAL_ERROR
-      "ET_PTE_FILE_PATH must specify a model .pte or .bpte, for bare metal systems the "
-      "model is built into the binary."
+      "You must specify one of "
+      "ET_MODEL_PTE_ADDR - .pte (or .bpte) on address, "
+      "ET_PTE_FILE_PATH - .pte (or .bpte) built into the binary or "
+      "SEMIHOSTING - pte and input via host filesystem (use by pytest)"
   )
 endif()
 
@@ -113,7 +123,7 @@ find_package(
 )
 
 # Convert pte to header
-if(NOT ${SEMIHOSTING})
+if(NOT ${ET_MODEL_PTE_ADDR} AND NOT SEMIHOSTING)
   add_custom_target(
     gen_model_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
   )
@@ -308,10 +318,12 @@ target_compile_definitions(
   arm_executor_runner PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
 
+if(NOT ${ET_MODEL_PTE_ADDR} AND NOT SEMIHOSTING)
+  add_dependencies(arm_executor_runner gen_model_header)
+endif()
+
 if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
-else()
-  add_dependencies(arm_executor_runner gen_model_header)
 endif()
 
 if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
@@ -332,6 +344,12 @@ if(DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
     arm_executor_runner
     PUBLIC
       ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE}
+  )
+endif()
+
+if(ET_MODEL_PTE_ADDR)
+  target_compile_definitions(
+    arm_executor_runner PUBLIC -DET_MODEL_PTE_ADDR=${ET_MODEL_PTE_ADDR}
   )
 endif()
 
