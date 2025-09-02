@@ -7,6 +7,7 @@
 
 from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.quantizer import arm_quantizer
 from executorch.backends.arm.test import common, conftest
@@ -201,7 +202,10 @@ def test_add_tensor_vgf_FP(test_data: input_t1):
         tosa_version="TOSA-1.0+FP",
         run_on_vulkan_runtime=True,
     )
-    pipeline.run()
+    try:
+        pipeline.run()
+    except FileNotFoundError as e:
+        pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
 
 
 @common.parametrize("test_data", filtered_test_data)
@@ -215,4 +219,7 @@ def test_add_tensor_vgf_INT(test_data: input_t1):
         tosa_version="TOSA-1.0+INT",
         run_on_vulkan_runtime=True,
     )
-    pipeline.run()
+    try:
+        pipeline.run()
+    except FileNotFoundError as e:
+        pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
