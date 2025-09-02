@@ -30,7 +30,7 @@ function ExportModel-Portable {
 
 function ExportModel-Xnnpack {
     param (
-        [string]$model_name,
+        [string]$model_name
     )
 
     python -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate
