@@ -857,6 +857,7 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     package_data={
+        "executorch": ["version.py"],
         "executorch.backends.qualcomm": ["*.so"],
     },
     # Note that setuptools uses the presence of ext_modules as the main signal
