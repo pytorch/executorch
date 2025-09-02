@@ -5,6 +5,10 @@
 #include <thread>
 #include <vector>
 
+#include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
+
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/runtime.h>
 
@@ -12,6 +16,11 @@
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/runner_util/inputs.h>
 
+using executorch::backends::xnnpack::workspace_sharing_mode_option_key;
+using executorch::backends::xnnpack::WorkspaceSharingMode;
+using executorch::backends::xnnpack::xnnpack_backend_key;
+
+using executorch::runtime::BackendOptions;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::HierarchicalAllocator;
@@ -126,34 +135,61 @@ class XNNPACKMultiDelegateTest : public ETPTEMethodRunBaseTest {
     num_threads = 40;
     kMethodName = "forward";
   }
+
+  // This test is to validate the assumption that the delegate is thread safe.
+  // That includes the following:
+  // 1. The delegate can be initilized by multiple threads in parallel.
+  // 2. The delegate can be executed by multiple threads in parallel.
+  // 3. The delegate can be destroyed by multiple threads in parallel.
+  // Regardless of the underlying implementation of the delegate.
+  // This is particularly important when we have shared resources across
+  // delegate instances through a singleton backend instance.
+  void runStressTest() {
+    ASSERT_NE(kTestPTE1Path.size(), 0);
+    ASSERT_NE(kTestPTE2Path.size(), 0);
+    ASSERT_NE(num_threads, 0);
+    ASSERT_NE(kMethodName.size(), 0);
+
+    std::vector<std::thread> threads(num_threads);
+    std::atomic<size_t> count{0};
+
+    for (int i = 0; i < num_threads; i++) {
+      threads[i] = std::thread([&, i]() {
+        run(i, i % 7 ? kTestPTE1Path : kTestPTE2Path, kMethodName, count);
+      });
+    }
+    for (int i = 0; i < num_threads; i++) {
+      threads[i].join();
+    }
+    ASSERT_EQ(count, num_threads);
+  }
+
+  void setWorkspaceSharingMode(WorkspaceSharingMode mode) {
+    executorch::runtime::runtime_init();
+
+    BackendOptions<1> backend_options;
+    backend_options.set_option(
+        workspace_sharing_mode_option_key, static_cast<int>(mode));
+
+    auto status = executorch::runtime::set_option(
+        xnnpack_backend_key, backend_options.view());
+    ASSERT_EQ(status, Error::Ok);
+  }
 };
 
-// This test is to validate the assumption that the delegate is thread safe.
-// That includes the following:
-// 1. The delegate can be initilized by multiple threads in parallel.
-// 2. The delegate can be executed by multiple threads in parallel.
-// 3. The delegate can be destroyed by multiple threads in parallel.
-// Regardless of the underlying implementation of the delegate.
-// This is particularly important when we have shared resources across
-// delegate instances through a singleton backend instance.
-TEST_F(XNNPACKMultiDelegateTest, MultipleThreads) {
-  ASSERT_NE(kTestPTE1Path.size(), 0);
-  ASSERT_NE(kTestPTE2Path.size(), 0);
-  ASSERT_NE(num_threads, 0);
-  ASSERT_NE(kMethodName.size(), 0);
+TEST_F(XNNPACKMultiDelegateTest, MultipleThreadsSharingDisabled) {
+  setWorkspaceSharingMode(WorkspaceSharingMode::Disabled);
+  runStressTest();
+}
 
-  std::vector<std::thread> threads(num_threads);
-  std::atomic<size_t> count{0};
+TEST_F(XNNPACKMultiDelegateTest, MultipleThreadsPerModelSharing) {
+  setWorkspaceSharingMode(WorkspaceSharingMode::PerModel);
+  runStressTest();
+}
 
-  for (int i = 0; i < num_threads; i++) {
-    threads[i] = std::thread([&, i]() {
-      run(i, i % 7 ? kTestPTE1Path : kTestPTE2Path, kMethodName, count);
-    });
-  }
-  for (int i = 0; i < num_threads; i++) {
-    threads[i].join();
-  }
-  ASSERT_EQ(count, num_threads);
+TEST_F(XNNPACKMultiDelegateTest, MultipleThreadsGlobalSharing) {
+  setWorkspaceSharingMode(WorkspaceSharingMode::Global);
+  runStressTest();
 }
 
 // TODO(T208989291): Add more tests here. For example,
