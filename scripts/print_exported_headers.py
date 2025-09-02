@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from typing import List, Set
 
 # Run buck2 from the same directory (and thus repo) as this script.
@@ -25,7 +26,10 @@ def run(command: List[str]) -> str:
     try:
         result = subprocess.run(command, capture_output=True, check=True, cwd=BUCK_CWD)
     except subprocess.CalledProcessError as ex:
-        print(f"Subprocess failed. stdout: {ex.stdout}\nstderr: {ex.stderr}")
+        print(
+            f"Subprocess failed. stdout: {ex.stdout}\nstderr: {ex.stderr}",
+            file=sys.stderr,
+        )
         raise
     return result.stdout.decode()
 
