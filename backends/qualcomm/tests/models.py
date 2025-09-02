@@ -813,23 +813,29 @@ class ExpM1(torch.nn.Module):
     def forward(self, x):
         return torch.special.expm1(x)
 
+
 class Flip(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.dims = [0,2]
+        self.dims = [0, 2]
 
     def forward(self, x):
         return torch.flip(x, self.dims)
 
+
 class FlipDecomp(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.dims = [0,2]
+        self.dims = [0, 2]
+
     def forward(self, x):
         for dim in self.dims:
-            idx = torch.arange(x.size(dim) - 1, -1, -1, device=x.device)
+            idx = torch.arange(start=x.size(dim) - 1, end=-1, step=-1)
+            # Select using reverse index, equivalent to flipping.
             x = torch.index_select(x, dim, idx)
         return x
+
+
 class Floor(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1053,6 +1059,15 @@ class IndexPut(torch.nn.Module):
     def forward(self, input_pos, k_val):
         k_out = torch.ops.aten.index_put_(self.k_cache, [None, input_pos], k_val)
         return k_out + 0
+
+
+class IndexSelect(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, indices):
+        return torch.index_select(x, self.dim, indices)
 
 
 class InstanceNorm2d(torch.nn.Module):
