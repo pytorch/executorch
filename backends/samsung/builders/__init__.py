@@ -31,6 +31,9 @@ from . import (
     op_unsqueeze,
     op_slice_copy,
     op_sqrt,
+    op_squeeze,
+    op_sub,
+
     op_to_copy,
 
 
@@ -65,6 +68,8 @@ __all__ = [
     op_unsqueeze,
     op_slice_copy,
     op_sqrt,
+    op_squeeze,
+    op_sub,
     op_to_copy,
 
 
