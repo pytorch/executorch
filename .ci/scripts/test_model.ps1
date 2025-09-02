@@ -19,7 +19,7 @@ function ExportModel-Portable {
     if ($strict) {
         $exportParams += "--strict"
     }
-    python -m examples.portable.scripts.export @exportParams
+    python -m examples.portable.scripts.export @exportParams | Write-Host
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Model export failed. Exit code: $LASTEXITCODE."
         exit $LASTEXITCODE
@@ -33,7 +33,7 @@ function ExportModel-Xnnpack {
         [string]$model_name
     )
 
-    python -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate
+    python -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate | Write-Host
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Model export failed. Exit code: $LASTEXITCODE."
         exit $LASTEXITCODE
