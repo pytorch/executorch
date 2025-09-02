@@ -12,7 +12,6 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     is_param_node,
 )
-from executorch.backends.arm.tosa_utils import is_consumer_node_depthwise_conv2d
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -43,6 +42,19 @@ class ToTosaMemoryFormatPass(ExportPass):
         self.exported_program = exported_program
         super().__init__()
 
+    @staticmethod
+    def _is_consumer_node_depthwise_conv2d(node: torch.fx.Node):
+        consumer_node = list(node.users)[0]
+        if consumer_node.target == exir_ops.edge.aten.convolution.default:
+            consumer_node_inputs = consumer_node.all_input_nodes
+            groups = consumer_node.args[-1]
+            in_channels = consumer_node_inputs[0].meta["val"].shape[1]
+            out_channels = consumer_node_inputs[1].meta["val"].shape[0]
+            if (in_channels == groups) and (out_channels % in_channels) == 0:
+                return True
+
+        return False
+
     def is_weight_node_for_depthwise_conv2d(self, node: torch.fx.Node):
         """
         returns True for w in the following sequence;
@@ -53,7 +65,7 @@ class ToTosaMemoryFormatPass(ExportPass):
             consumer_node = list(node.users)[0]
             if self.is_weight_node_for_depthwise_conv2d(consumer_node):
                 return True
-            if is_consumer_node_depthwise_conv2d(node):
+            if self._is_consumer_node_depthwise_conv2d(node):
                 # Check that node is the weight-argument and not input or bias
                 return consumer_node.args[1] == node
 

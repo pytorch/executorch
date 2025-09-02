@@ -33,9 +33,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_tra
     FuseTransposeOperators,
     RemoveIdentityTransposeOperators,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.remove_unused_tensors_and_buffers import (
-    RemoveUnusedTensorsAndBuffers,
-)
 
 
 class Optimization(Enum):
@@ -46,7 +43,6 @@ class Optimization(Enum):
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
 
-    REMOVE_UNUSED_TENSORS = 10
     PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE = 12
 
     MOVE_ACTIVATION_BEFORE_CONCAT = 15
@@ -93,9 +89,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.REMOVE_IDENTITY_TRANSPOSE_OPERATORS: RemoveIdentityTransposeOperators(
-                builder, conversion_config
-            ),
-            Optimization.REMOVE_UNUSED_TENSORS: RemoveUnusedTensorsAndBuffers(
                 builder, conversion_config
             ),
             Optimization.PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE: PermuteFullyConnectedWeightsAfterReshape(
