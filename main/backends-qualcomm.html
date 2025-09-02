@@ -940,11 +940,12 @@ The model, inputs, and output location are passed to <code class="docutils liter
 <div class="section" id="step-3-configure-compile-specs">
 <h4>Step 3: Configure Compile Specs<a class="headerlink" href="#step-3-configure-compile-specs" title="Permalink to this heading">¶</a></h4>
 <p>During this step, you will need to specify the target SoC, data type, and other QNN compiler spec.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.qualcomm.compiler</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.qualcomm.utils.utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">generate_qnn_executorch_compiler_spec</span><span class="p">,</span>
     <span class="n">generate_htp_compiler_spec</span><span class="p">,</span>
+    <span class="n">QcomChipset</span><span class="p">,</span>
+    <span class="n">to_edge_transform_and_lower_to_qnn</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.qualcomm.utils.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">QcomChipset</span>
 
 <span class="c1"># HTP Compiler Configuration</span>
 <span class="n">backend_options</span> <span class="o">=</span> <span class="n">generate_htp_compiler_spec</span><span class="p">(</span>
@@ -961,12 +962,7 @@ The model, inputs, and output location are passed to <code class="docutils liter
 </div>
 <div class="section" id="step-4-lower-and-export-the-model">
 <h4>Step 4: Lower and Export the Model<a class="headerlink" href="#step-4-lower-and-export-the-model" title="Permalink to this heading">¶</a></h4>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.qualcomm.partition.qnn_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">to_edge_transform_and_lower_to_qnn</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExecutorchBackendConfig</span>
-
-<span class="c1"># Lower to QNN backend</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Lower to QNN backend</span>
 <span class="n">delegated_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower_to_qnn</span><span class="p">(</span>
     <span class="n">quantized_model</span> <span class="k">if</span> <span class="n">quantized</span> <span class="k">else</span> <span class="n">model</span><span class="p">,</span>
     <span class="n">example_inputs</span><span class="p">,</span>
@@ -974,9 +970,7 @@ The model, inputs, and output location are passed to <code class="docutils liter
 <span class="p">)</span>
 
 <span class="c1"># Export to ExecuTorch format</span>
-<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">delegated_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
-    <span class="n">config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span><span class="n">extract_delegate_segments</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="p">)</span>
+<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">delegated_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># Save the compiled model</span>
 <span class="n">model_name</span> <span class="o">=</span> <span class="s2">&quot;custom_model_qnn.pte&quot;</span>
