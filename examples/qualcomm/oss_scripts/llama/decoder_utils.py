@@ -83,7 +83,6 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
                 inps,
                 self._model,
                 self._tokenizer,
-                self.ar_len,
                 self.max_seq_length,
                 use_i64_token=self.use_i64_token,
                 collect_logits=True,
@@ -458,15 +457,13 @@ def prefill_inference(
                 logits, new_k_caches, new_v_caches = results
             elif len(results) == 1:
                 logits = results
-            logits = torch.argmax(logits[:, pos - 1], dim=-1).item()
-            token_list.append(logits)
+            token = torch.argmax(logits[:, pos - 1], dim=-1).item()
+            token_list.append(token)
             if collect_logits:
-                result_logits.append(logits)
+                result_logits = logits[:, :pos]
             pos += 1
 
     logging.info(f"prefill inference result:\n{tokenizer.decode(token_list)}")
-    if collect_logits:
-        result_logits = torch.cat(result_logits, dim=1)
     return result_logits
 
 
