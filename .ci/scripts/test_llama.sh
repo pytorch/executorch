@@ -154,6 +154,7 @@ cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
     retry cmake --preset llm \
+        -DEXECUTORCH_BUILD_TESTS=ON \
         -DBUILD_TESTING=OFF \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
@@ -170,6 +171,7 @@ cmake_build_llama_runner() {
     popd
     dir="examples/models/llama"
     retry cmake \
+        -DEXECUTORCH_BUILD_TESTS=ON \
         -DBUILD_TESTING=OFF \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
