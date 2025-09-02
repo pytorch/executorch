@@ -9,20 +9,32 @@ from . import (
     op_add,
     op_avg_pool2d,
     op_batch_norm,
+    op_bmm,
     op_cat,
     op_clamp,
     op_conv2d,
     op_getitem,
+    op_div,
     op_hardtanh,
     op_linear,
     op_max_pool2d,
+    op_maximum,
     op_mean_dim,
+    op_minimum,
     op_mul,
     op_permute,
     op_relu,
     op_reshape,
+    op_rsqrt,
+
     op_select,
     op_unsqueeze,
+    op_slice_copy,
+    op_sqrt,
+    op_to_copy,
+
+
+
 )
 
 __all__ = [
@@ -30,18 +42,30 @@ __all__ = [
     op_add,
     op_avg_pool2d,
     op_batch_norm,
+    op_bmm,
     op_cat,
     op_clamp,
     op_conv2d,
     op_getitem,
+    op_div,
+
     op_hardtanh,
     op_linear,
     op_max_pool2d,
+    op_maximum,
     op_mean_dim,
+    op_minimum,
     op_mul,
     op_permute,
     op_relu,
     op_reshape,
+    op_rsqrt,
+
     op_select,
     op_unsqueeze,
+    op_slice_copy,
+    op_sqrt,
+    op_to_copy,
+
+
 ]
