@@ -430,6 +430,21 @@ struct PyMethodMeta final {
     }
   }
 
+  size_t num_attributes() const {
+    return meta_.num_attributes();
+  }
+
+  std::unique_ptr<PyTensorInfo> attribute_tensor_meta(size_t index) const {
+    const auto result = meta_.attribute_tensor_meta(index);
+    THROW_INDEX_IF_ERROR(
+        result.error(), "Cannot get attribute tensor meta at %zu", index);
+    if (module_) {
+      return std::make_unique<PyTensorInfo>(module_, result.get());
+    } else {
+      return std::make_unique<PyTensorInfo>(state_, result.get());
+    }
+  }
+
   py::str repr() const {
     py::list input_meta_strs;
     for (size_t i = 0; i < meta_.num_inputs(); ++i) {
@@ -1425,6 +1440,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def("name", &PyMethodMeta::name, call_guard)
       .def("num_inputs", &PyMethodMeta::num_inputs, call_guard)
       .def("num_outputs", &PyMethodMeta::num_outputs, call_guard)
+      .def("num_attributes", &PyMethodMeta::num_attributes, call_guard)
       .def(
           "input_tensor_meta",
           &PyMethodMeta::input_tensor_meta,
@@ -1433,6 +1449,11 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def(
           "output_tensor_meta",
           &PyMethodMeta::output_tensor_meta,
+          py::arg("index"),
+          call_guard)
+      .def(
+          "attribute_tensor_meta",
+          &PyMethodMeta::attribute_tensor_meta,
           py::arg("index"),
           call_guard)
       .def("__repr__", &PyMethodMeta::repr, call_guard);
