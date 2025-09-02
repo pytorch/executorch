@@ -17,25 +17,22 @@ import re
 import shlex
 from enum import Enum
 from functools import partial
+
+from importlib import resources as _resources
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, List, Optional, Union
 
-import pkg_resources
 import torch
 
 from executorch.devtools.backend_debug import print_delegation_info
-
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
-
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
-
 from executorch.extension.llm.export.config.llm_config import LlmConfig
-
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_mps_partitioner,
@@ -43,7 +40,6 @@ from executorch.extension.llm.export.partitioner_lib import (
     get_vulkan_partitioner,
     get_xnnpack_partitioner,
 )
-
 from executorch.extension.llm.export.quantizer_lib import (
     get_coreml_quantizer,
     get_pt2e_quantization_params,
@@ -52,7 +48,6 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
-
 from omegaconf import DictConfig
 
 from ..model_factory import EagerModelFactory
@@ -60,14 +55,12 @@ from .source_transformation.apply_spin_quant_r1_r2 import (
     fuse_layer_norms,
     get_model_with_r1_r2,
 )
-
 from .source_transformation.attention import replace_attention_to_attention_sha
 from .source_transformation.custom_kv_cache import (
     replace_kv_cache_with_custom_kv_cache,
     replace_kv_cache_with_quantized_kv_cache,
     replace_kv_cache_with_ring_kv_cache,
 )
-
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -129,7 +122,7 @@ def set_pkg_name(name: str) -> None:
 
 
 def get_resource_path(resource_name) -> str:
-    return pkg_resources.resource_filename(pkg_name, resource_name)
+    return str(_resources.files(pkg_name).joinpath(resource_name))
 
 
 def set_verbosity(val):
@@ -575,7 +568,7 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         print("not FBCODE")
         return path[4:]
     else:
-        return_val = pkg_resources.resource_filename(pkg_name, path[4:])
+        return_val = str(_resources.files(pkg_name).joinpath(path[4:]))
         if verbose_export():
             print(f"canonical name is: {return_val}")
         return return_val

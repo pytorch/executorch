@@ -20,12 +20,12 @@ $if WEIGHT_STORAGE == "buffer":
   #define WEIGHT_BUFFER
 
 #define TILE_M4 ${TILE_M4}
-#define TILE_N4 ${TILE_N4}
 #define TILE_K4 ${TILE_K4}
+#define TILE_N4 ${TILE_N4}
 
 #define TILE_M ${TILE_M4 * 4}
-#define TILE_N ${TILE_N4 * 4}
 #define TILE_K ${TILE_K4 * 4}
+#define TILE_N ${TILE_N4 * 4}
 
 ${define_required_extensions(DTYPE)}
 
@@ -48,51 +48,48 @@ ${layout_declare_spec_const(C, "uint", "apply_bias", "0")}
 #include "linear_int8_weight_tile_load.glslh"
 #include "linear_fp_weight_tile.glslh"
 #include "linear_fp_output_tile_fp_compute.glslh"
+#include "linear_fp_output_tile_fp_int8_compute.glslh"
 #include "linear_fp_output_tile_store.glslh"
-#include "linear_scales_load.glslh"
-#include "linear_bias_load.glslh"
+#include "linear_fp_scales_load.glslh"
+#include "linear_fp_bias_load.glslh"
 
 void main() {
   // Each thread writes out a 4 wide x 4 high tile of output values
-  const uint out_tile_x = gl_GlobalInvocationID.x;
-  const uint out_tile_y = gl_GlobalInvocationID.y;
+  const int out_tile_x = int(gl_GlobalInvocationID.x);
+  const int out_tile_y = int(gl_GlobalInvocationID.y);
 
-  const uint n = out_tile_x * TILE_N;
-  const uint m = out_tile_y * TILE_M;
+  const int n = out_tile_x * TILE_N;
+  const int m = out_tile_y * TILE_M;
 
-  const uint n4 = div_4(n);
-  const uint m4 = div_4(m);
+  const int n4 = div_4(n);
+  const int m4 = div_4(m);
 
   if (n >= output_sizes.x || m >= output_sizes.y) {
     return;
   }
 
-  const uint M = uint(input_sizes.y);
-  const uint K4 = div_up_4(input_sizes.x);
-  const uint N4 = div_up_4(output_sizes.x);
+  const int M = input_sizes.y;
+  const int K4 = div_up_4(input_sizes.x);
+  const int N4 = div_up_4(output_sizes.x);
 
   FPOutTile out_tile;
   initialize(out_tile);
 
   FPInputTile in_tile;
   Int8WeightTile weight_tile;
-  FPWeightTile fp_weight_tile;
 
   const bool dont_check_bounds = (M - m) >= TILE_M;
-
   if (dont_check_bounds) {
-    for (int k4 = 0; k4 < K4; k4++) {
+    for (int k4 = 0; k4 < K4; k4 += TILE_K4) {
       load_input_tile_no_checks(in_tile, k4, m, K4, M);
       load_weight_tile(weight_tile, n4, k4, N4);
-      unpack(fp_weight_tile, weight_tile);
-      update(out_tile, in_tile, fp_weight_tile);
+      fp_accumulate_with_int8_weight(out_tile, in_tile, weight_tile);
     }
   } else {
-    for (int k4 = 0; k4 < K4; k4++) {
+    for (int k4 = 0; k4 < K4; k4 += TILE_K4) {
       load_input_tile_with_checks(in_tile, k4, m, K4, M);
       load_weight_tile(weight_tile, n4, k4, N4);
-      unpack(fp_weight_tile, weight_tile);
-      update(out_tile, in_tile, fp_weight_tile);
+      fp_accumulate_with_int8_weight(out_tile, in_tile, weight_tile);
     }
   }
 

@@ -26,13 +26,13 @@
 
 #ifdef INPUT_BUFFER
 
-VEC4_T load_input_x4(const uint k4, const uint m, const uint ntexels_k) {
+VEC4_T load_input_x4(const int k4, const int m, const int ntexels_k) {
   return t_input[(m * ntexels_k) + k4];
 }
 
 #else
 
-VEC4_T load_input_x4(const uint k4, const uint m, const uint ntexels_k) {
+VEC4_T load_input_x4(const int k4, const int m, const int ntexels_k) {
   return texelFetch(t_input, ivec3(k4, m, 0), 0);
 }
 
@@ -41,10 +41,10 @@ VEC4_T load_input_x4(const uint k4, const uint m, const uint ntexels_k) {
 // To be used if (M - m_start >= TILE_M) || (K4 - k4_start >= TILE_K4)
 void load_input_tile_no_checks(
     out FPInputTile in_tile,
-    const uint k4_start,
-    const uint m_start,
-    const uint K4,
-    const uint M) {
+    const int k4_start,
+    const int m_start,
+    const int K4,
+    const int M) {
 #if TILE_K4 == 1
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     in_tile.data[m][0] = load_input_x4(k4_start, m_start + m, K4);
@@ -62,10 +62,10 @@ void load_input_tile_no_checks(
 // To be used if near tensor boundaries
 void load_input_tile_with_checks(
     out FPInputTile in_tile,
-    const uint k4_start,
-    const uint m_start,
-    const uint K4,
-    const uint M) {
+    const int k4_start,
+    const int m_start,
+    const int K4,
+    const int M) {
 #if TILE_K4 == 1
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     if (m_start + m < M) {

@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -61,7 +62,7 @@ utils::uvec3 quantized_linear_local_wg_size(
   return {local_wg_size_x, local_wg_size_y, 1};
 }
 
-ValueRef prepack_q8_linear_weight(
+ValueRef prepack_quantized_linear_weight(
     ComputeGraph& graph,
     const ValueRef qmat2_data) {
   std::vector<int64_t> qmat2_orig_sizes = graph.sizes_of(qmat2_data);
@@ -221,7 +222,7 @@ DynamicDispatchNode make_quantize_and_pack_linear_input_node(
       {});
 }
 
-DynamicDispatchNode make_linear_q8ta_q8csw_tiled_node(
+DynamicDispatchNode make_linear_q8ta_qw_tiled_node(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
   // Extract arguments
@@ -293,7 +294,7 @@ DynamicDispatchNode make_linear_q8ta_q8csw_tiled_node(
       nullptr);
 }
 
-DynamicDispatchNode make_linear_q8csw_node(
+DynamicDispatchNode make_linear_qw_node(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
   // Extract arguments
@@ -345,20 +346,22 @@ DynamicDispatchNode make_linear_q8csw_node(
 
 /*
  * Allows orchestration of two compute shader dispatch paths:
- * 1. quantize & pack input to int8, execute linear_q8ta_q8csw
- * 2. execute linear_q8csw with fp inputs
+ * 1. Quantize & pack input to int8, execute activation and weight quantized
+ *    linear operator.
+ * 2. Execute fp activation and weight quantized linear operator (skipping the
+ *    quantize and pack input step)
  *
  * The reason for this split is twofold:
  * - Some devices may not support accelerated int8 dot product. In that case,
- *   there is no benefit to quantizing the input tensor. In that case
- * linear_q8csw is required.
+ *   there is no benefit to quantizing the activation tensor, as the goal with
+ *   quantizing the activation is to achieve higher arithmetic throughput via
+ *   the int8 dot product extensions.
  * - For LLMs, which switch between GEMM and GEMV input conditions when going
  *   from prefill to decode. GEMM is typically a compute bound operation, which
  *   will benefit from accelerated int8 accumulation. On the other hand, GEMV
  *   is usually memory bound, which means it may actually suffer from the extra
  *   cost of having to quantize and pack the input tensor. Therefore,
- *   linear_q8ta_q8csw is preferred fro GEMM and linear_q8csw is preferred for
- * GEMV.
+ *   linear_q8ta_qw is preferred for GEMM and linear_qw is preferred for GEMV.
  *
  * Note that dynamic shape is currently not supported, so switching paths
  * when input conditions go between GEMM -> GEMV is currently not implemented.
@@ -369,20 +372,20 @@ struct QuantizedLinearNode : public ExecuteNode {
 
   bool can_use_int8_dot_product = false;
   DynamicDispatchNode quantize_and_pack_input_node;
-  DynamicDispatchNode linear_q8ta_q8csw_tiled_node;
-  DynamicDispatchNode linear_q8csw_node;
+  DynamicDispatchNode linear_q8ta_qw_tiled_node;
+  DynamicDispatchNode linear_qw_node;
 
   explicit QuantizedLinearNode(
       ComputeGraph& graph,
       const std::vector<ValueRef>& args,
       DynamicDispatchNode&& quant_pack_input,
       DynamicDispatchNode&& qaqw_tiled_linear,
-      DynamicDispatchNode&& linear_q8csw,
+      DynamicDispatchNode&& qw_linear,
       bool int8_dot_product_enabled)
       : ExecuteNode(),
-        quantize_and_pack_input_node(std::move(quant_pack_input)),
-        linear_q8ta_q8csw_tiled_node(std::move(qaqw_tiled_linear)),
-        linear_q8csw_node(std::move(linear_q8csw)) {
+        quantize_and_pack_input_node(quant_pack_input),
+        linear_q8ta_qw_tiled_node(qaqw_tiled_linear),
+        linear_qw_node(qw_linear) {
     if (int8_dot_product_enabled) {
       can_use_int8_dot_product = graph.can_use_int8_dot_product();
     }
@@ -391,17 +394,17 @@ struct QuantizedLinearNode : public ExecuteNode {
   void prepare_pipelines(ComputeGraph* graph) override {
     if (can_use_int8_dot_product) {
       quantize_and_pack_input_node.prepare_pipelines(graph);
-      linear_q8ta_q8csw_tiled_node.prepare_pipelines(graph);
+      linear_q8ta_qw_tiled_node.prepare_pipelines(graph);
     }
-    linear_q8csw_node.prepare_pipelines(graph);
+    linear_qw_node.prepare_pipelines(graph);
   }
 
   void encode(ComputeGraph* graph) override {
     if (can_use_int8_dot_product) {
       quantize_and_pack_input_node.encode(graph);
-      linear_q8ta_q8csw_tiled_node.encode(graph);
+      linear_q8ta_qw_tiled_node.encode(graph);
     } else {
-      linear_q8csw_node.encode(graph);
+      linear_qw_node.encode(graph);
     }
   }
 };
@@ -412,7 +415,7 @@ struct QuantizedLinearNode : public ExecuteNode {
  * - activation quantized to int8 with per tensor quant params
  * - weight quantized to int8 with per channel quant params
  */
-void linear_q8ta_q8csw_impl(
+void linear_q8ta_qw_impl(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args,
     const bool use_int8_dot_product = true) {
@@ -423,6 +426,8 @@ void linear_q8ta_q8csw_impl(
   const ValueRef weight = args.at(idx++);
   const ValueRef weight_sums = args.at(idx++);
   const ValueRef weight_scales = args.at(idx++);
+  const ValueRef orig_OC = args.at(idx++);
+  (void)orig_OC; // unused
   const ValueRef bias = args.at(idx++);
   const ValueRef output = args.at(idx++);
 
@@ -445,7 +450,7 @@ void linear_q8ta_q8csw_impl(
   VK_CHECK_COND(N % 4 == 0);
 
   // Prepacking
-  const ValueRef packed_weight = prepack_q8_linear_weight(graph, weight);
+  const ValueRef packed_weight = prepack_quantized_linear_weight(graph, weight);
   ValueRef packed_weight_scales = prepack_standard(
       graph, weight_scales, utils::kBuffer, utils::kWidthPacked);
   ValueRef packed_weight_sums =
@@ -506,8 +511,8 @@ void linear_q8ta_q8csw_impl(
       output,
       weight};
 
-  DynamicDispatchNode linear_q8ta_q8csw_tiled_node(
-      make_linear_q8ta_q8csw_tiled_node(graph, linear_args));
+  DynamicDispatchNode linear_q8ta_qw_tiled_node(
+      make_linear_q8ta_qw_tiled_node(graph, linear_args));
 
   linear_args = {
       input,
@@ -518,26 +523,25 @@ void linear_q8ta_q8csw_impl(
       output,
       weight};
 
-  DynamicDispatchNode linear_q8csw_node(
-      make_linear_q8csw_node(graph, linear_args));
+  DynamicDispatchNode linear_qw_node(make_linear_qw_node(graph, linear_args));
 
   graph.execute_nodes().emplace_back(new QuantizedLinearNode(
       graph,
       linear_args,
       std::move(quantize_and_pack_linear_node),
-      std::move(linear_q8ta_q8csw_tiled_node),
-      std::move(linear_q8csw_node),
+      std::move(linear_q8ta_qw_tiled_node),
+      std::move(linear_qw_node),
       use_int8_dot_product));
 }
 
 void linear_q8ta_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  linear_q8ta_q8csw_impl(graph, args, true);
+  linear_q8ta_qw_impl(graph, args, true);
 }
 
 void linear_q8ta_q8csw_no_int8(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-  linear_q8ta_q8csw_impl(graph, args, false);
+  linear_q8ta_qw_impl(graph, args, false);
 }
 
 REGISTER_OPERATORS {
