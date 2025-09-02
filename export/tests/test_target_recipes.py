@@ -15,8 +15,8 @@ from executorch.export.target_recipes import get_ios_recipe
 from executorch.runtime import Runtime
 
 
-class TestMultiBackendTargetRecipes(unittest.TestCase):
-    """Test multi-backend target recipes that combine CoreML and XNNPACK."""
+class TestTargetRecipes(unittest.TestCase):
+    """Test target recipes."""
 
     def test_ios_fp32_recipe_with_xnnpack_fallback(self) -> None:
         # Linear ops skipped by coreml but handled by xnnpack
@@ -90,7 +90,7 @@ class TestMultiBackendTargetRecipes(unittest.TestCase):
             "CoreMLBackend"
         ) and backend_registry.is_available("XnnpackBackend"):
             logging.info("Running with CoreML and XNNPACK backends")
-            et_output = session.run_method("forward", *example_inputs[0])
+            et_output = session.run_method("forward", example_inputs[0])
             logging.info(f"et output {et_output}")
 
     def test_ios_int8_recipe(self) -> None:
@@ -145,5 +145,5 @@ class TestMultiBackendTargetRecipes(unittest.TestCase):
             f"backends registered: {et_runtime.backend_registry.registered_backend_names}"
         )
         if backend_registry.is_available("CoreMLBackend"):
-            et_output = session.run_method("forward", *example_inputs[0])
+            et_output = session.run_method("forward", example_inputs[0])
             logging.info(f"et output {et_output}")
