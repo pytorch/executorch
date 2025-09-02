@@ -56,6 +56,62 @@ def quantize_per_tensor(
     return torch.round(input / scale + zero_point).to(dtype)
 
 
+@impl(m, "dequantize_per_tensor")
+def dequantize_per_tensor(
+    input_tensor: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """
+    Dequantizes an integral tensor to a floating-point tensor.
+
+    Args:
+        - input (Tensor): input tensor
+        - scale (float): Quantization scale. Derived from the ratio
+            between the min/max of the floating-point tensor and the
+            min/max of the quantized range.
+        - zero_point (int): The point which represents 0 in the quantized
+            range. For example, consider the floating point range [-1., 2.] and
+            quantized integer range [-7, 7]. In this case, 0 is 1/3 of way from
+            -1. to 2. So, the point that represents 0 in the quantized range should
+            be 1/3 of the way from [-7, 7]. This ends up being -2 in the integer space.
+        - quant_min (int): The smallest value in the quantized domain. Unused since scale
+            is already provided.
+        - quant_max (int): The largest value in the quantized domain. Unused since scale
+            is already provided.
+        - dtype (torch.dtype): The type of the output tensor. Must be a floating point type.
+    """
+    supported_quant_types = [
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.uint8,
+        torch.uint16,
+    ]
+    if input_tensor.dtype not in supported_quant_types:
+        raise ValueError(f"Input dtype must be one of {supported_quant_types}")
+    supported_dequant_types = [
+        torch.float,
+        torch.float32,
+        torch.float16,
+        torch.bfloat16,
+    ]
+    if dtype not in supported_dequant_types:
+        raise ValueError(
+            f"Unsupported dtype to dequantize to. Supported dtypes must be one of {supported_dequant_types}"
+        )
+
+    # Needed to prevent underflow in cases where the zero_point is larger than
+    # the quantized value.
+    if not input_tensor.dtype.is_signed:
+        input_tensor = input_tensor.to(torch.int32)
+
+    return (input_tensor - zero_point).to(dtype) * scale
+
+
 @impl(m, "requantize")
 def requantize(
     input: torch.Tensor,
