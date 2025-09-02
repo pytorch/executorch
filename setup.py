@@ -854,12 +854,11 @@ setup(
         "build_ext": InstallerBuildExt,
         "build_py": CustomBuildPy,
     },
-    packages=find_packages(),
-    include_package_data=True,
-    package_data={
-        "executorch": ["version.py"],
-        "executorch.backends.qualcomm": ["*.so"],
-    },
+    # packages=find_packages(),
+    # include_package_data=True,
+    # package_data={
+    #     "executorch.backends.qualcomm": ["*.so"],
+    # },
     # Note that setuptools uses the presence of ext_modules as the main signal
     # that a wheel is platform-specific. If we install any platform-specific
     # files, this list must be non-empty. Therefore, we should always install
