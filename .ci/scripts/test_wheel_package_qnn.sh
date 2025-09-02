@@ -100,6 +100,25 @@ conda run -p "$TEMP_ENV_DIR/env" pip install "$WHEEL_FILE"
 conda run -p "$TEMP_ENV_DIR/env" pip install torch=="2.9.0.dev20250801" --index-url "https://download.pytorch.org/whl/nightly/cpu"
 conda run -p "$TEMP_ENV_DIR/env" pip install --pre torchao --index-url "https://download.pytorch.org/whl/nightly/cpu"
 
+# ----------------------------
+# Check .so files in the wheel
+# ----------------------------
+echo "Checking for .so files inside the wheel..."
+WHEEL_SO_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep "executorch/backends/qualcomm/python" || true)
+if [ -z "$WHEEL_SO_FILES" ]; then
+    echo "WARNING: No .so files found in wheel under executorch/backends/qualcomm/python"
+else
+    echo "Wheel contains the following .so files:"
+    echo "$WHEEL_SO_FILES"
+fi
+
+# ----------------------------
+# Check installed .so files in conda env
+# ----------------------------
+echo "Checking installed executorch/backends/qualcomm/python contents in conda env..."
+ENV_SO_DIR="$TEMP_ENV_DIR/env/lib/python3.10/site-packages/executorch/backends/qualcomm/python"
+ls -l "$ENV_SO_DIR" || echo "Folder does not exist!"
+
 # Run import tests
 conda run -p "$TEMP_ENV_DIR/env" python -c "import executorch; print('executorch imported successfully')"
 conda run -p "$TEMP_ENV_DIR/env" python -c "import executorch.backends.qualcomm; print('executorch.backends.qualcomm imported successfully')"
