@@ -88,6 +88,19 @@ You can test to run some models with the full fvp test flow
 backends/arm/test/test_arm_baremetal.sh test_full_ethosu_fvp
 ```
 
+To run the unit test suite with VKML use the following. Note Vulkan SDK need to be installed.
+Have a look at install_vulkan_sdk() in .ci/scripts/setup-vulkan-linux-deps.sh on how to install Vulkan SDK.
+
+```
+backends/arm/test/test_arm_baremetal.sh test_pytest_vkml
+```
+
+You can test to run some models with the full VKML flow
+
+```
+backends/arm/test/test_arm_baremetal.sh test_full_vkml
+```
+
 ## Unit tests
 
 This is the structure of the test directory
@@ -102,6 +115,7 @@ test                            #  Root test folder
 ├── tosautil                    #  Utility functions for TOSA artifacts
 ├ common.py                     #  Common functions and definitions used by many tests
 ├ setup_testing.sh              #  Script to prepare testing for using the Corstone 3x0 FVP
+├ setup_testing_vkml.sh         #  Script to prepare testing for using the VKML
 ├ test_arm_baremetal.sh         #  Help script to trigger testing
 ```
 
@@ -123,7 +137,7 @@ first you need to build and prepare some used target libs
 
 ```
 examples/arm/run.sh --model_name=add --build_only
-backends/arm/test/setup_testing.sh
+backends/arm/test/setup_testing.sh and/or backends/arm/test/setup_testing_vkml.sh
 ```
 
 The you can run the tests with

@@ -312,7 +312,7 @@ TEST_F(OpMinOutTest, MismatchedDTypesDies) {
 
 TEST_F(OpMinOutTest, AllRealInputLongOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_min_out_dtype<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

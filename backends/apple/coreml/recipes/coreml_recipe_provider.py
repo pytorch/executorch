@@ -3,6 +3,7 @@
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 
+import logging
 from typing import Any, Optional, Sequence
 
 import coremltools as ct
@@ -111,8 +112,9 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
 
         unexpected = set(kwargs.keys()) - expected_keys
         if unexpected:
-            raise ValueError(
-                f"Recipe '{recipe_type.value}' received unexpected parameters: {list(unexpected)}"
+            logging.warning(
+                f"CoreML recipe '{recipe_type.value}' ignoring unexpected parameters: {list(unexpected)}. "
+                f"Expected parameters: {list(expected_keys)}"
             )
 
         self._validate_base_parameters(kwargs)
