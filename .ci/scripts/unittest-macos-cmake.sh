@@ -11,3 +11,4 @@ ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
 # Run gtest
 LLVM_PROFDATA="xcrun llvm-profdata" LLVM_COV="xcrun llvm-cov" \
 ${CONDA_RUN} test/run_oss_cpp_tests.sh
+${CONDA_RUN} test/check_for_installed_private_headers_in_cmake_out.sh
