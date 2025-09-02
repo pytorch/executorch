@@ -93,6 +93,13 @@ class CompileTimeTypeDispatchPass(ExportPass):
             },
             weight_arg_idx=3,
         ),
+        exir_ops.edge.aten._softmax.default: OpConfig(
+            "_softmax",
+            type_dispatch_suffixes={
+                (torch.float32,): "f32_f32",
+            },
+            variant="default",
+        ),
     }
 
     def call_operator(
