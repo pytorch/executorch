@@ -20,12 +20,12 @@ $if WEIGHT_STORAGE == "buffer":
   #define WEIGHT_BUFFER
 
 #define TILE_M4 ${TILE_M4}
-#define TILE_N4 ${TILE_N4}
 #define TILE_K4 ${TILE_K4}
+#define TILE_N4 ${TILE_N4}
 
 #define TILE_M ${TILE_M4 * 4}
-#define TILE_N ${TILE_N4 * 4}
 #define TILE_K ${TILE_K4 * 4}
+#define TILE_N ${TILE_N4 * 4}
 
 ${define_required_extensions(DTYPE)}
 
@@ -33,7 +33,6 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-#define DEBUG_MODE
 #include "conv2d_common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_output", DTYPE, OUTPUT_STORAGE, is_scalar_array=False)}
@@ -54,20 +53,20 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-${layout_declare_spec_const(C, "uint", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "apply_bias", "1")}
 
 #include "linear_int8_input_tile_load.glslh"
 #include "linear_int8_weight_tile_load.glslh"
-#include "linear_fp_output_tile_int8_compute.glslh"
-#include "linear_scales_load.glslh"
-#include "linear_weight_sums_load.glslh"
-#include "linear_bias_load.glslh"
+#include "linear_fp_output_tile_int8_int8_compute.glslh"
+#include "linear_fp_scales_load.glslh"
+#include "linear_fp_weight_sums_load.glslh"
+#include "linear_fp_bias_load.glslh"
 #include "conv2d_fp_im2col_block_store.glslh"
 
 void main() {
   // Each thread writes out a 4 wide x 4 high tile of output values
-  const uint out_tile_x = gl_GlobalInvocationID.x;
-  const uint out_tile_y = gl_GlobalInvocationID.y;
+  const int out_tile_x = int(gl_GlobalInvocationID.x);
+  const int out_tile_y = int(gl_GlobalInvocationID.y);
 
   const int n = int(out_tile_x * TILE_N);
   const int m = int(out_tile_y * TILE_M);
@@ -90,7 +89,7 @@ void main() {
   const int K4 = conv2d_params.K4;
   const int N4 = div_up_4(N);
 
-  Int8OutAccum out_accum;
+  Int32Accum out_accum;
   initialize(out_accum);
 
   Int8InputTile in_tile;
@@ -100,7 +99,7 @@ void main() {
     load_input_tile(in_tile, k4 + input_k4_offset, m4, K4);
     load_weight_tile(weight_tile, n4, k4, N4);
 
-    accumulate(out_accum, in_tile, weight_tile);
+    int_accumulate_with_int8_weight(out_accum, in_tile, weight_tile);
   }
 
   FPPerOutChannelParams scales_tile;
@@ -112,12 +111,14 @@ void main() {
   FPOutTile out_tile;
   if (apply_bias > 0) {
     FPPerOutChannelParams bias_tile;
-    load_bias_tile(bias_tile, uint(n4));
+    load_bias_tile(bias_tile, int(n4));
 
-    compute(out_tile, out_accum, sums_tile, scales_tile, bias_tile);
+    accumulate_out_tile_with_int_accum(
+        out_tile, out_accum, sums_tile, scales_tile, bias_tile);
   }
   else {
-    compute(out_tile, out_accum, sums_tile, scales_tile);
+    accumulate_out_tile_with_int_accum(
+        out_tile, out_accum, sums_tile, scales_tile);
   }
 
   write_im2col_tile_as_image(out_tile, n4, m);

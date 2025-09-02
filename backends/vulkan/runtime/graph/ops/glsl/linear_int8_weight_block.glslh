@@ -26,6 +26,8 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
+#include "linear_common.glslh"
+
 // Represents source data for a 4x4 block of the weight matrix read from the
 // input buffer.
 struct Int8WeightBlockSourceData {
@@ -41,10 +43,10 @@ struct Int8WeightBlockPacked {
 // To be used if K - k_start >= 4
 void load_block_source_data_no_checks(
     out Int8WeightBlockSourceData src_data,
-    const uint n4,
-    const uint k_start,
-    const uint ntexels_N,
-    const uint K) {
+    const int n4,
+    const int k_start,
+    const int ntexels_N,
+    const int K) {
   [[unroll]] for (int k = 0; k < 4; ++k) {
     src_data.data[k] = t_input[(k_start + k) * ntexels_N + n4];
   }
@@ -53,10 +55,10 @@ void load_block_source_data_no_checks(
 // To be used if K - k_start < 4
 void load_block_source_data_with_checks(
     out Int8WeightBlockSourceData src_data,
-    const uint n4,
-    const uint k_start,
-    const uint ntexels_N,
-    const uint K) {
+    const int n4,
+    const int k_start,
+    const int ntexels_N,
+    const int K) {
   [[unroll]] for (int k = 0; k < 4; ++k) {
     if (k_start + k < K) {
       src_data.data[k] = t_input[(k_start + k) * ntexels_N + n4];
@@ -66,20 +68,14 @@ void load_block_source_data_with_checks(
   }
 }
 
-int extract_8bit_from_packed_uint_le(const uint packed, const uint i) {
-  // account for little endian
-  int byte = int(packed >> (8 * i) & 255);
-  return byte;
-}
-
 int pack_4x8bit_signed_into_int(
     const int val0,
     const int val1,
     const int val2,
     const int val3) {
   return int(
-      ((val0 & 0xFF) << 24) | ((val1 & 0xFF) << 16) | ((val2 & 0xFF) << 8) |
-      ((val3 & 0xFF)));
+      ((val3 & 0xFF) << 24) | ((val2 & 0xFF) << 16) | ((val1 & 0xFF) << 8) |
+      ((val0 & 0xFF)));
 }
 
 void create_packed_block(
@@ -87,10 +83,10 @@ void create_packed_block(
     const Int8WeightBlockSourceData src_data) {
   [[unroll]] for (int col = 0; col < 4; ++col) {
     block.data[col] = pack_4x8bit_signed_into_int(
-        extract_8bit_from_packed_uint_le(src_data.data[0], col),
-        extract_8bit_from_packed_uint_le(src_data.data[1], col),
-        extract_8bit_from_packed_uint_le(src_data.data[2], col),
-        extract_8bit_from_packed_uint_le(src_data.data[3], col));
+        extract_8bit_from_packed_int_le(src_data.data[0], col),
+        extract_8bit_from_packed_int_le(src_data.data[1], col),
+        extract_8bit_from_packed_int_le(src_data.data[2], col),
+        extract_8bit_from_packed_int_le(src_data.data[3], col));
   }
 }
 
@@ -98,9 +94,9 @@ void create_packed_block(
 
 void write_packed_block(
     const Int8WeightBlockPacked block,
-    const uint block_x,
-    const uint block_y,
-    const uint nblocks_x) {
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
   t_qmat2[block_y * nblocks_x + block_x] = block.data;
 }
 
@@ -108,9 +104,9 @@ void write_packed_block(
 
 void write_packed_block(
     const Int8WeightBlockPacked block,
-    const uint block_x,
-    const uint block_y,
-    const uint nblocks_w) {
+    const int block_x,
+    const int block_y,
+    const int nblocks_w) {
   imageStore(t_qmat2, ivec2(block_x, block_y), block.data);
 }
 

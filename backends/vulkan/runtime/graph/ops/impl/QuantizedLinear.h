@@ -20,16 +20,8 @@ utils::uvec3 quantized_linear_local_wg_size(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
-ValueRef prepack_q8_linear_weight(
+ValueRef prepack_quantized_linear_weight(
     ComputeGraph& graph,
     const ValueRef qmat2_data);
-
-DynamicDispatchNode make_linear_q8ta_q8csw_tiled_node(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args);
-
-DynamicDispatchNode make_linear_q8csw_node(
-    ComputeGraph& graph,
-    const std::vector<ValueRef>& args);
 
 } // namespace vkcompute
