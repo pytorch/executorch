@@ -97,6 +97,9 @@ echo "Using temporary directory: $TEMP_ENV_DIR"
 conda create -y -p "$TEMP_ENV_DIR/env" python=3.10
 conda run -p "$TEMP_ENV_DIR/env" pip install "$WHEEL_FILE"
 
+pip install torch=="2.9.0.dev20250801" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+pip install --pre torchao --index-url https://download.pytorch.org/whl/nightly/cpu
+
 # Run import tests
 conda run -p "$TEMP_ENV_DIR/env" python -c "import executorch; print('executorch imported successfully')"
 conda run -p "$TEMP_ENV_DIR/env" python -c "import executorch.backends.qualcomm; print('executorch.backends.qualcomm imported successfully')"
