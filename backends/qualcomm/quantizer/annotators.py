@@ -162,6 +162,11 @@ def annotate_single_in_single_out(
         )
 
 
+@register_annotator([torch.ops.aten.to.dtype])
+def annotate_to_dtype(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.atan.default])
 def annotate_atan(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -463,6 +468,11 @@ def annotate_sin(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.floor_divide.default])
+def annotate_floor_divide(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.scalar_tensor.default])
 def annotate_scalar_tensor(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
@@ -626,6 +636,11 @@ def annotate_softmax(node: Node, quantization_config: QuantizationConfig) -> Non
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.asin.default])
+def annotate_asin(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.linalg_vector_norm.default])
 def annotate_linalg_vector_norm(
     node: Node, quantization_config: QuantizationConfig
@@ -658,9 +673,30 @@ def annotate_select(node: Node, quantization_config: QuantizationConfig) -> None
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.sign.default])
+def annotate_sign(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.slice.Tensor])
 def annotate_slice(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.slice_scatter.default])
+def annotate_slice_scatter(node: Node, quantization_config: QuantizationConfig) -> None:
+    input = node.args[0]
+    value = node.args[1]
+
+    input_qspec_map = {}
+    input_qspec_map[input] = quantization_config.input_activation
+    input_qspec_map[value] = SharedQuantizationSpec((input, node))
+
+    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=SharedQuantizationSpec((input, node)),
+        _annotated=True,
+    )
 
 
 @register_annotator([torch.ops.aten.sqrt.default])
@@ -799,6 +835,11 @@ def annotate_and(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.bitwise_or.Tensor, torch.ops.aten.__or__.Tensor])
 def annotate_bitwise_or(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.bitwise_xor.Tensor, torch.ops.aten.__xor__.Tensor])
+def annotate_xor(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
@@ -1047,6 +1088,7 @@ def annotate_cdist(node: Node, quantization_config: QuantizationConfig) -> None:
         torch.ops.aten.conv1d.default,
         torch.ops.aten.conv_transpose2d.input,
         torch.ops.aten.conv_transpose1d.default,
+        torch.ops.aten.convolution.default,
     ]
 )
 def annotate_conv(node: Node, quantization_config: QuantizationConfig) -> None:
@@ -1100,6 +1142,12 @@ def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None
 
     if _is_annotated([node]):
         return
+
+    # block quantization
+    if quantization_config.block_size is not None:
+        quantization_config.weight.observer_or_fake_quant_ctr.p.keywords.update(
+            {"block_size": quantization_config.block_size}
+        )
 
     annotate_input_qspec_map(
         node,

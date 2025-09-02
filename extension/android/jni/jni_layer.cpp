@@ -6,7 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/android/jni/jni_helper.h>
 #include <executorch/extension/android/jni/jni_layer_constants.h>
+
 #include <executorch/extension/android/jni/log.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/inputs.h>
@@ -55,14 +57,14 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     // Java wrapper currently only supports contiguous tensors.
 
     const auto scalarType = tensor.scalar_type();
-
-    if (scalar_type_to_java_dtype.count(scalarType) == 0) {
-      facebook::jni::throwNewJavaException(
-          facebook::jni::gJavaLangIllegalArgumentException,
-          "executorch::aten::Tensor scalar type %d is not supported on java side",
-          scalarType);
-    }
     int jdtype = scalar_type_to_java_dtype.at(scalarType);
+    if (scalar_type_to_java_dtype.count(scalarType) == 0) {
+      std::stringstream ss;
+      ss << "executorch::aten::Tensor scalar [java] type: " << jdtype
+         << " is not supported on java side";
+      jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    }
 
     const auto& tensor_shape = tensor.sizes();
     std::vector<jlong> tensor_shape_vec;
@@ -124,19 +126,19 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     }
     JNIEnv* jni = facebook::jni::Environment::current();
     if (java_dtype_to_scalar_type.count(jdtype) == 0) {
-      facebook::jni::throwNewJavaException(
-          facebook::jni::gJavaLangIllegalArgumentException,
-          "Unknown Tensor jdtype %d",
-          jdtype);
+      std::stringstream ss;
+      ss << "Unknown Tensor jdtype: [" << jdtype << "]";
+      jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     }
     ScalarType scalar_type = java_dtype_to_scalar_type.at(jdtype);
     const auto dataCapacity = jni->GetDirectBufferCapacity(jbuffer.get());
     if (dataCapacity != numel) {
-      facebook::jni::throwNewJavaException(
-          facebook::jni::gJavaLangIllegalArgumentException,
-          "Tensor dimensions(elements number:%d inconsistent with buffer capacity(%d)",
-          numel,
-          dataCapacity);
+      std::stringstream ss;
+      ss << "Tensor dimensions(elements number: " << numel
+         << "inconsistent with buffer capacity " << dataCapacity << "]";
+      jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
     }
     return from_blob(
         jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
@@ -194,10 +196,11 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
       return jMethodTensor(
           JEValue::javaClassStatic(), facebook::jni::make_jstring(str));
     }
-    facebook::jni::throwNewJavaException(
-        facebook::jni::gJavaLangIllegalArgumentException,
-        "Unsupported EValue type: %d",
-        evalue.tag);
+    std::stringstream ss;
+    ss << "Unknown EValue type: [" << static_cast<int>(evalue.tag) << "]";
+    jni_helper::throwExecutorchException(
+        static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    return {};
   }
 
   static TensorPtr JEValueToTensorImpl(
@@ -213,10 +216,11 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
       auto jtensor = jMethodGetTensor(JEValue);
       return TensorHybrid::newTensorFromJTensor(jtensor);
     }
-    facebook::jni::throwNewJavaException(
-        facebook::jni::gJavaLangIllegalArgumentException,
-        "Unknown EValue typeCode %d",
-        typeCode);
+    std::stringstream ss;
+    ss << "Unknown EValue typeCode: " << typeCode;
+    jni_helper::throwExecutorchException(
+        static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    return {};
   }
 };
 
@@ -296,13 +300,24 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
           jinputs) {
     // If no inputs is given, it will run with sample inputs (ones)
     if (jinputs->size() == 0) {
-      if (module_->load_method(method) != Error::Ok) {
+      auto result = module_->load_method(method);
+      if (result != Error::Ok) {
+        // Format hex string
+        std::stringstream ss;
+        ss << "Cannot get method names [Native Error: 0x" << std::hex
+           << std::uppercase << static_cast<uint32_t>(result) << "]";
+
+        jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(result), ss.str());
         return {};
       }
       auto&& underlying_method = module_->methods_[method].method;
       auto&& buf = prepare_input_tensors(*underlying_method);
-      auto result = underlying_method->execute();
+      result = underlying_method->execute();
       if (result != Error::Ok) {
+        jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(result),
+            "Execution failed for method: " + method);
         return {};
       }
       facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> jresult =
@@ -356,11 +371,9 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #endif
 
     if (!result.ok()) {
-      facebook::jni::throwNewJavaException(
-          "java/lang/Exception",
-          "Execution of method %s failed with status 0x%" PRIx32,
-          method.c_str(),
-          static_cast<error_code_t>(result.error()));
+      jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(result.error()),
+          "Execution failed for method: " + method);
       return {};
     }
 
@@ -438,9 +451,15 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getMethods() {
     const auto& names_result = module_->method_names();
     if (!names_result.ok()) {
-      facebook::jni::throwNewJavaException(
-          facebook::jni::gJavaLangIllegalArgumentException,
-          "Cannot get load module");
+      // Format hex string
+      std::stringstream ss;
+      ss << "Cannot get load module [Native Error: 0x" << std::hex
+         << std::uppercase << static_cast<uint32_t>(names_result.error())
+         << "]";
+
+      jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::InvalidArgument), ss.str());
+      return {};
     }
     const auto& methods = names_result.get();
     facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =

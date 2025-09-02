@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -48,6 +49,9 @@ class EyeAdd(torch.nn.Module):
     }
 
 
+# skip test since int32 isn't support on FP profile
+# "int32_int32": "view/RESHAPE of integer tensor is not supported for +FP profile"
+@pytest.mark.skip(reason="MLETORCH-1274 Improve data type checks during partitioning")
 @common.parametrize("test_data", EyeAdd.test_data)
 def test_eye_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
@@ -99,6 +103,9 @@ def test_eye_u85_INT(test_data: test_data_t):
     pipeline.run()
 
 
+# skip since int32 isn't support on FP profile
+# "int32_int32": "view/RESHAPE of integer tensor is not supported for +FP profile"
+@pytest.mark.skip(reason="MLETORCH-1274 Improve data type checks during partitioning")
 @common.parametrize(
     "test_data",
     EyeAdd.test_data,

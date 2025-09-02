@@ -55,6 +55,14 @@ else()
   )
 endif()
 
+if(WIN32)
+  # These XNNPACK options don't currently build on Windows.
+  set_overridable_option(XNNPACK_ENABLE_AVX256SKX OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX256VNNI OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX256VNNIGFNI OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX512BF16 OFF)
+endif()
+
 set(XNNPACK_BUILD_ALL_MICROKERNELS
     OFF
     CACHE BOOL ""
