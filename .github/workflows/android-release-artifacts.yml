@@ -25,25 +25,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check-if-aar-exists:
-    name: check-if-aar-exists
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    steps:
-      - name: Check if this RC version is already in S3
-        shell: bash
-        run: |
-          VERSION="${{ inputs.version }}"
-          if [ -z "$VERSION" ]; then
-            echo "No version name specified. Will create a snapshot AAR"
-            exit 0
-          fi
-          if curl -I "https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}/executorch.aar" | grep "200 OK"; then
-            echo "AAR already exists at https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}/executorch.aar"
-            echo "Will skip build/upload"
-            exit 1
-          fi
-
   build-aar:
     name: build-aar
     needs: check-if-aar-exists
@@ -121,32 +102,3 @@ jobs:
         if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
           (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew  ${GRADLE_ARGS} :executorch_android:publishToMavenCentral)
         fi
-
-  upload-release-aar:
-    name: upload-release-aar
-    needs: build-aar
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v1.7.0
-        with:
-          role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-android
-          aws-region: us-east-1
-      - name: Upload AAR RC to AWS S3
-        shell: bash
-        run: |
-          wget https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/executorch.aar
-          shasum -a 256 executorch.aar > executorch.aar.sha256sums
-
-          pip install awscli==1.32.18
-          AWS_CMD="aws s3 cp"
-          VERSION="${{ inputs.version }}"
-          if [ -z "$VERSION" ]; then
-            VERSION="snapshot-$(date +"%Y%m%d")"
-          fi
-          ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION}/executorch.aar --acl public-read
-          ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION}/executorch.aar.sha256sums --acl public-read
