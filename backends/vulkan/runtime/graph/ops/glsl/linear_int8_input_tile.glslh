@@ -26,15 +26,7 @@ struct Int8InputTile {
 
 #ifdef DEBUG_MODE
 
-int extract_8bit_from_packed_int_le(const int packed, const uint i) {
-  // account for little endian, extract 8-bit value at position i
-  int byte = int(uint(packed) >> (8 * i) & 255u);
-  // convert unsigned byte to signed byte
-  if (byte > 127) {
-    byte = byte - 256;
-  }
-  return byte;
-}
+#include "linear_common.glslh"
 
 void printInt8InputTile(const Int8InputTile tile) {
   debugPrintfEXT(

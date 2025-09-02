@@ -28,8 +28,8 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 #include "linear_int8_weight_block.glslh"
 
 void main() {
-  uint block_x = gl_GlobalInvocationID.x;
-  uint block_y = gl_GlobalInvocationID.y;
+  int block_x = int(gl_GlobalInvocationID.x);
+  int block_y = int(gl_GlobalInvocationID.y);
 
   const int N = orig_sizes.y;
   const int K = orig_sizes.x;

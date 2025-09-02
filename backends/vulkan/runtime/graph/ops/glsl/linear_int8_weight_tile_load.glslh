@@ -27,18 +27,18 @@
 #ifdef WEIGHT_BUFFER
 
 ivec4 load_weight_block(
-    const uint block_x,
-    const uint block_y,
-    const uint nblocks_x) {
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
   return t_qmat2[(block_y * nblocks_x) + block_x];
 }
 
 #else // WEIGHT_TEXTURE
 
 ivec4 load_weight_block(
-    const uint block_x,
-    const uint block_y,
-    const uint nblocks_x) {
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
   return texelFetch(t_qmat2, ivec2(block_x, block_y), 0);
 }
 
@@ -46,9 +46,9 @@ ivec4 load_weight_block(
 
 void load_weight_tile(
     out Int8WeightTile weight_tile,
-    const uint block_x,
-    const uint block_y,
-    const uint nblocks_x) {
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
 #if TILE_K4 == 1 && TILE_N4 == 1
   weight_tile.data[0][0] = load_weight_block(block_x, block_y, nblocks_x);
 

@@ -28,9 +28,9 @@
 
 void write_output_x4(
     const VEC4_T out_texel,
-    const uint n4,
-    const uint m,
-    const uint N4) {
+    const int n4,
+    const int m,
+    const int N4) {
   t_output[m * N4 + n4] = out_texel;
 }
 
@@ -38,9 +38,9 @@ void write_output_x4(
 
 void write_output_x4(
     const VEC4_T out_texel,
-    const uint n4,
-    const uint m,
-    const uint N4) {
+    const int n4,
+    const int m,
+    const int N4) {
   imageStore(t_output, ivec3(n4, m, 0), out_texel);
 }
 
@@ -48,9 +48,9 @@ void write_output_x4(
 
 void write_output_tile(
     const FPOutTile out_tile,
-    const uint n4_start,
-    const uint m_start,
-    const uint N4) {
+    const int n4_start,
+    const int m_start,
+    const int N4) {
 #if TILE_K4 == 1
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     write_output_x4(out_tile.data[m][0], n4_start, m_start + m, N4);
@@ -68,10 +68,10 @@ void write_output_tile(
 // To be used if M - m >= TILE_M && N4 - n4 >= TILE_N4
 void write_output_tile_no_checks(
     const FPOutTile out_tile,
-    const uint n4_start,
-    const uint m_start,
-    const uint N4,
-    const uint M) {
+    const int n4_start,
+    const int m_start,
+    const int N4,
+    const int M) {
 #if TILE_N4 == 1
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     write_output_x4(out_tile.data[m][0], n4_start, m_start + m, N4);
@@ -89,10 +89,10 @@ void write_output_tile_no_checks(
 // To be used if close to tensor boundaries
 void write_output_tile_with_checks(
     const FPOutTile out_tile,
-    const uint n4_start,
-    const uint m_start,
-    const uint N4,
-    const uint M) {
+    const int n4_start,
+    const int m_start,
+    const int N4,
+    const int M) {
 #if TILE_N4 == 1
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     if (m_start + m < M) {

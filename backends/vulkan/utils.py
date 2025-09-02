@@ -24,7 +24,7 @@ from executorch.exir.tensor import TensorSpec
 
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 
-from torch._subclasses.fake_tensor import FakeTensor
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorConverter
 
 from torch.export import ExportedProgram
 
@@ -1247,3 +1247,39 @@ def update_program_state_dict(
 
     # Finally, overwrite the current tensor with updated tensor
     program.state_dict[target_name] = updated_tensor
+
+
+def align_width_and_update_state_dict(
+    ep: ExportedProgram,
+    node: torch.fx.Node,
+    cur_tensor: torch.Tensor,
+    align_to: int = 4,
+    force_update: bool = False,
+) -> torch.Tensor:
+    """
+    Align the width of the given tensor to the given alignment value and update the
+    state dict of the program with the aligned tensor.
+    """
+    added_padding = False
+    cur_width = cur_tensor.shape[-1]
+    # Only align the width of the tensor if it is not already aligned
+    if cur_width % align_to != 0:
+        num_padding = align_to - (cur_width % align_to)
+        # Align the width of the tensor to the given alignment value
+        aligned_tensor = torch.nn.functional.pad(
+            cur_tensor, (0, num_padding)
+        ).contiguous()
+        added_padding = True
+    else:
+        aligned_tensor = cur_tensor
+
+    if added_padding or force_update:
+        update_program_state_dict(ep, node.name, aligned_tensor)
+        # FakeTensor needs to match updated tensor
+        cur_fake_tensor = node.meta["val"]
+        node.meta["val"] = FakeTensorConverter().from_real_tensor(
+            cur_fake_tensor.fake_mode,
+            aligned_tensor,
+        )
+
+    return aligned_tensor

@@ -16,6 +16,8 @@ using namespace executorch::vulkan::prototyping;
 
 using namespace vkcompute;
 
+static constexpr int64_t kRefDimSizeLimit = 100;
+
 // Component structs for better readability
 struct KernelSize {
   int32_t h;
@@ -69,7 +71,7 @@ struct Conv2dConfig {
   Padding padding;
   Dilation dilation;
   int32_t groups; // Number of groups for grouped convolution
-  std::string name_suffix;
+  std::string name_suffix = "no_name";
   std::string shader_variant_name = "conv2d_q8ta_q8csw_linear_tiled";
 
   // Calculate output dimensions
@@ -195,6 +197,9 @@ TestCase create_test_case_from_config(
   // Kernel size parameters
   ValueSpec kernel_size({config.kernel.h, config.kernel.w});
 
+  // Original output channel count
+  ValueSpec orig_OC(config.channels.out);
+
   // Output tensor (float/half) - [1, C_out, H_out, W_out] (batch size always 1)
   ValueSpec output(
       {1, config.channels.out, H_out, W_out},
@@ -216,6 +221,7 @@ TestCase create_test_case_from_config(
   test_case.add_input_spec(padding);
   test_case.add_input_spec(dilation);
   test_case.add_input_spec(groups);
+  test_case.add_input_spec(orig_OC);
 
   test_case.add_output_spec(output);
 
@@ -257,119 +263,106 @@ std::vector<TestCase> generate_quantized_conv2d_easy_cases() {
 std::vector<TestCase> generate_quantized_conv2d_test_cases() {
   std::vector<TestCase> test_cases;
 
-  std::vector<Conv2dConfig> configs = {// Small conv2d layers
-                                       {OutInChannels(32, 3),
-                                        InputSize2D(64, 64),
-                                        KernelSize(3, 3),
-                                        Stride(2, 2),
-                                        Padding(1, 1),
-                                        Dilation(1, 1),
-                                        1,
-                                        "3x32x32_to_16x32x32"},
-                                       {OutInChannels(32, 16),
-                                        InputSize2D(32, 32),
-                                        KernelSize(3, 3),
-                                        Stride(1, 1),
-                                        Padding(1, 1),
-                                        Dilation(1, 1),
-                                        1,
-                                        "16x32x32_to_32x32x32"},
-                                       {OutInChannels(64, 32),
-                                        InputSize2D(16, 16),
-                                        KernelSize(3, 3),
-                                        Stride(1, 1),
-                                        Padding(1, 1),
-                                        Dilation(1, 1),
-                                        1,
-                                        "32x16x16_to_64x16x16"},
+  std::vector<Conv2dConfig> configs = {
+      {OutInChannels(32, 3),
+       InputSize2D(64, 64),
+       KernelSize(3, 3),
+       Stride(2, 2),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(32, 16),
+       InputSize2D(32, 32),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(64, 32),
+       InputSize2D(16, 16),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
 
-                                       // Stride 2 convolutions
-                                       {OutInChannels(32, 3),
-                                        InputSize2D(64, 64),
-                                        KernelSize(3, 3),
-                                        Stride(2, 2),
-                                        Padding(1, 1),
-                                        Dilation(1, 1),
-                                        1,
-                                        "3x64x64_to_32x32x32_s2"},
-                                       {OutInChannels(64, 32),
-                                        InputSize2D(32, 32),
-                                        KernelSize(3, 3),
-                                        Stride(2, 2),
-                                        Padding(1, 1),
-                                        Dilation(1, 1),
-                                        1,
-                                        "32x32x32_to_64x16x16_s2"},
-                                       // Different kernel sizes
-                                       {OutInChannels(32, 16),
-                                        InputSize2D(28, 28),
-                                        KernelSize(5, 5),
-                                        Stride(1, 1),
-                                        Padding(2, 2),
-                                        Dilation(1, 1),
-                                        1,
-                                        "16x28x28_to_32x28x28_k5"},
-                                       {OutInChannels(64, 32),
-                                        InputSize2D(14, 14),
-                                        KernelSize(7, 7),
-                                        Stride(1, 1),
-                                        Padding(3, 3),
-                                        Dilation(1, 1),
-                                        1,
-                                        "32x14x14_to_64x14x14_k7"},
+      // Stride 2 convolutions
+      {OutInChannels(32, 3),
+       InputSize2D(64, 64),
+       KernelSize(3, 3),
+       Stride(2, 2),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(64, 32),
+       InputSize2D(32, 32),
+       KernelSize(3, 3),
+       Stride(2, 2),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1},
+      // Different kernel sizes
+      {OutInChannels(32, 16),
+       InputSize2D(28, 28),
+       KernelSize(5, 5),
+       Stride(1, 1),
+       Padding(2, 2),
+       Dilation(1, 1),
+       1},
+      {OutInChannels(64, 32),
+       InputSize2D(14, 14),
+       KernelSize(7, 7),
+       Stride(1, 1),
+       Padding(3, 3),
+       Dilation(1, 1),
+       1},
 
-                                       // Dilated convolutions
-                                       {OutInChannels(32, 16),
-                                        InputSize2D(32, 32),
-                                        KernelSize(3, 3),
-                                        Stride(1, 1),
-                                        Padding(2, 2),
-                                        Dilation(2, 2),
-                                        1,
-                                        "16x32x32_to_32x32x32_d2"},
-                                       {OutInChannels(64, 32),
-                                        InputSize2D(16, 16),
-                                        KernelSize(3, 3),
-                                        Stride(1, 1),
-                                        Padding(3, 3),
-                                        Dilation(3, 3),
-                                        1,
-                                        "32x16x16_to_64x16x16_d3"},
+      // Dilated convolutions
+      {OutInChannels(32, 16),
+       InputSize2D(32, 32),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(2, 2),
+       Dilation(2, 2),
+       1},
+      {OutInChannels(64, 32),
+       InputSize2D(16, 16),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(3, 3),
+       Dilation(3, 3),
+       1},
 
-                                       // Grouped convolutions
-                                       {OutInChannels(32, 32),
-                                        InputSize2D(32, 32),
-                                        KernelSize(3, 3),
-                                        Stride(1, 1),
-                                        Padding(1, 1),
-                                        Dilation(1, 1),
-                                        4,
-                                        "32x32x32_to_32x32x32_g4"},
-                                       {OutInChannels(64, 64),
-                                        InputSize2D(16, 16),
-                                        KernelSize(3, 3),
-                                        Stride(1, 1),
-                                        Padding(1, 1),
-                                        Dilation(1, 1),
-                                        8,
-                                        "64x16x16_to_64x16x16_g8"},
-                                       // Performance test cases
-                                       {OutInChannels(256, 128),
-                                        InputSize2D(128, 128),
-                                        KernelSize(1, 1),
-                                        Stride(1, 1),
-                                        Padding(1, 1),
-                                        Dilation(1, 1),
-                                        8,
-                                        "64x16x16_to_64x16x16_g8"},
-                                       {OutInChannels(128, 64),
-                                        InputSize2D(128, 128),
-                                        KernelSize(3, 3),
-                                        Stride(1, 1),
-                                        Padding(1, 1),
-                                        Dilation(1, 1),
-                                        1,
-                                        "perf"}};
+      // Grouped convolutions
+      {OutInChannels(32, 32),
+       InputSize2D(32, 32),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       4},
+      {OutInChannels(64, 64),
+       InputSize2D(16, 16),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       8},
+      // Performance test cases
+      {OutInChannels(256, 128),
+       InputSize2D(128, 128),
+       KernelSize(1, 1),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       8},
+      {OutInChannels(128, 64),
+       InputSize2D(128, 128),
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       1}};
 
   // Test with different storage types and data types
   std::vector<utils::StorageType> storage_types = {utils::kTexture3D};
@@ -377,13 +370,27 @@ std::vector<TestCase> generate_quantized_conv2d_test_cases() {
   // Generate test cases for each combination
   for (const auto& config : configs) {
     for (const auto& storage_type : storage_types) {
-      // Test both with and without shader int8 dot product
+      // Generate test case name programmatically
+      bool is_performance = config.channels.out > kRefDimSizeLimit ||
+          config.channels.in > kRefDimSizeLimit ||
+          config.input_size.h > kRefDimSizeLimit ||
+          config.input_size.w > kRefDimSizeLimit;
+      std::string prefix = is_performance ? "performance_" : "correctness_";
+      std::string suffix = std::to_string(config.channels.out) +
+          std::to_string(config.channels.in) +
+          std::to_string(config.input_size.h) +
+          std::to_string(config.input_size.w) +
+          std::to_string(config.kernel.h) + "_" +
+          std::to_string(config.kernel.w);
+
+      Conv2dConfig config1 = config;
+      config1.name_suffix = prefix + suffix;
       test_cases.push_back(
-          create_test_case_from_config(config, storage_type, vkapi::kFloat));
+          create_test_case_from_config(config1, storage_type, vkapi::kFloat));
 
       Conv2dConfig config2 = config;
       config2.shader_variant_name = "conv2d_q8csw_linear_tiled";
-
+      config2.name_suffix = prefix + suffix;
       test_cases.push_back(
           create_test_case_from_config(config2, storage_type, vkapi::kFloat));
     }
@@ -394,8 +401,6 @@ std::vector<TestCase> generate_quantized_conv2d_test_cases() {
 
 // Reference implementation for quantized conv2d operation
 void quantized_conv2d_reference_impl(TestCase& test_case) {
-  static constexpr int64_t kRefDimSizeLimit = 100;
-
   // Extract input specifications
   int32_t idx = 0;
   const ValueSpec& input_spec = test_case.inputs()[idx++];

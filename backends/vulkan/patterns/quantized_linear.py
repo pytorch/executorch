@@ -279,22 +279,36 @@ def make_linear_q8ta_q8csw_custom_op(
     weight_zeros_tensor = get_param_tensor(ep, match.weight_zeros_node)
     assert weight_zeros_tensor is not None
 
+    bias_tensor = None
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        assert bias_tensor is not None
+
     # Transpose the weight matrix
-    weight_transposed = weight_tensor.transpose(0, 1).contiguous()
-    utils.update_program_state_dict(ep, match.weight_node.name, weight_transposed)
-    weight_tensor = weight_transposed
-    # Need to make sure the fake tensor matches the updated tensor's properties
-    match.weight_node.meta["val"] = match.weight_node.meta["val"].transpose(0, 1)
+    weight_tensor = weight_tensor.transpose(0, 1)
+    orig_OC = weight_tensor.shape[-1]
+
+    # Ensure that OC dim is a multiple of 4 so that data load/stores are well aligned
+    # with texel boundaries.
+    utils.align_width_and_update_state_dict(
+        ep, match.weight_node, weight_tensor, force_update=True
+    )
+    utils.align_width_and_update_state_dict(
+        ep, match.weight_scales_node, weight_scales_tensor
+    )
+    if bias_tensor is not None:
+        utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
 
     first_graph_node = list(graph_module.graph.nodes)[0]
     with graph_module.graph.inserting_before(first_graph_node):
         qweight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
         # Pre-compute the weight sums which are needed to apply activation zero point
         # when using integer accumulation.
-        sum_per_output_channel = (
-            weight_transposed.sum(dim=0).to(torch.float).contiguous()
-        )
+        sum_per_output_channel = weight_tensor.sum(dim=0).to(torch.float).contiguous()
         sums_name = qweight_tensor_name + "_sums"
+        # Sanitize the name
+        sums_name = sums_name.replace(".", "_")
+
         weight_sums_node = create_constant_placeholder(
             exp_program=ep,
             graph=graph_module.graph,
@@ -314,6 +328,7 @@ def make_linear_q8ta_q8csw_custom_op(
                 match.weight_node,
                 weight_sums_node,
                 match.weight_scales_node,
+                orig_OC,
             ),
         )
 

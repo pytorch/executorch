@@ -149,40 +149,34 @@ def make_conv2d_q8ta_q8csw_custom_op(
     weight_zeros_tensor = get_param_tensor(ep, match.weight_zeros_node)
     assert weight_zeros_tensor is not None
 
-    # Reshape weight tensor from (OC, IC, H, W) to (IC * H * W, OC) for matrix multiplication
-    # This prepares the weights for Im2Col-based convolution computation
+    bias_tensor = None
+    if match.bias_node is not None:
+        bias_tensor = get_param_tensor(ep, match.bias_node)
+        assert bias_tensor is not None
+
     orig_OC, IC, H, W = weight_tensor.shape
-    OC = orig_OC
-    fake_weight = match.weight_node.meta["val"]
 
     # The implementation requires that for grouped convolutions, a group does not cross
     # any texel boundary.
     if match.groups > 1:
-        assert (OC / match.groups) % 4 == 0
+        assert (orig_OC / match.groups) % 4 == 0
 
-    # The implementation requires that OC is a multiple of 4 so that data load/stores
-    # are well aligned with texel boundaries. If the original output channel count is
-    # not a multiple of 4, then add padding.
-    if OC % 4 != 0:
-        num_padding = 4 - (OC % 4)
-        # Pad the OC (output channel) dimension at the end with zeros
-        weight_tensor = torch.nn.functional.pad(
-            weight_tensor, (0, 0, 0, 0, 0, 0, 0, num_padding)
-        )
-        fake_weight = torch.nn.functional.pad(
-            fake_weight, (0, 0, 0, 0, 0, 0, 0, num_padding)
-        )
-        OC, IC, H, W = weight_tensor.shape
+    # Reshape weight tensor from (OC, IC, H, W) to (H * W * IC, OC) for matrix multiplication
+    # This prepares the weights for Im2Col-based convolution computation
+    weight_tensor = (
+        weight_tensor.permute(2, 3, 1, 0).contiguous().view(H * W * IC, orig_OC)
+    )
 
-    weight_tensor_reshaped = (
-        weight_tensor.permute(2, 3, 1, 0).contiguous().view(IC * H * W, OC)
+    # Need to make sure that OC dim is a multiple of 4 so that data load/stores are well
+    # aligned with texel boundaries.
+    utils.align_width_and_update_state_dict(
+        ep, match.weight_node, weight_tensor, force_update=True
     )
-    fake_weight_reshaped = (
-        fake_weight.permute(2, 3, 1, 0).contiguous().view(IC * H * W, OC)
+    utils.align_width_and_update_state_dict(
+        ep, match.weight_scales_node, weight_scales_tensor
     )
-    utils.update_program_state_dict(ep, match.weight_node.name, weight_tensor_reshaped)
-    # Need to make sure the fake tensor matches the updated tensor's properties
-    match.weight_node.meta["val"] = fake_weight_reshaped
+    if bias_tensor is not None:
+        utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
 
     first_graph_node = list(graph_module.graph.nodes)[0]
     with graph_module.graph.inserting_before(first_graph_node):
@@ -190,10 +184,11 @@ def make_conv2d_q8ta_q8csw_custom_op(
         # Pre-compute the weight sums which are needed to apply activation zero point
         # when using integer accumulation. For the reshaped 2D weight matrix (IC * H * W, OC),
         # sum over dimension 0 to get sums per output channel
-        sum_per_output_channel = (
-            weight_tensor_reshaped.sum(dim=0).to(torch.float).contiguous()
-        )
+        sum_per_output_channel = weight_tensor.sum(dim=0).to(torch.float).contiguous()
         sums_name = qweight_tensor_name + "_sums"
+        # Sanitize the name
+        sums_name = sums_name.replace(".", "_")
+
         weight_sums_node = create_constant_placeholder(
             exp_program=ep,
             graph=graph_module.graph,

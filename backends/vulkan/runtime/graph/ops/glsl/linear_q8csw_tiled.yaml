@@ -16,6 +16,7 @@ linear_q8csw_tiled:
   generate_variant_forall:
     DTYPE:
       - VALUE: float
+      - VALUE: half
   shader_variants:
     - NAME: linear_q8csw_tiled_texture3d_texture3d_texture2d
     - NAME: linear_q8csw_tiled_texture3d_texture3d_buffer

@@ -855,7 +855,8 @@ jobs:
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Install test requirements
-        pip install -r backends/nxp/requirements-tests.txt
+        pip install -r backends/nxp/requirements-tests-pypi.txt
+        pip install -r backends/nxp/requirements-tests-eiq.txt
 
         # Run pytest
         PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh

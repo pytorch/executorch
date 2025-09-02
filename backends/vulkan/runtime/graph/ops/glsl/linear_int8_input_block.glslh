@@ -39,8 +39,8 @@ ivec4 quantize(const VEC4_T val) {
 }
 
 int pack_into_int32(const ivec4 quant_vals) {
-  int packed = ((quant_vals[3] & 0xFF) << 0) | ((quant_vals[2] & 0xFF) << 8) |
-      ((quant_vals[1] & 0xFF) << 16) | ((quant_vals[0] & 0xFF) << 24);
+  int packed = ((quant_vals[0] & 0xFF) << 0) | ((quant_vals[1] & 0xFF) << 8) |
+      ((quant_vals[2] & 0xFF) << 16) | ((quant_vals[3] & 0xFF) << 24);
 
   return packed;
 }
@@ -56,9 +56,9 @@ void quantize_and_pack(out Int8InputBlock packed, const FPInputTile in_block) {
 
 void write_block(
     const Int8InputBlock block,
-    const uint block_x,
-    const uint block_y,
-    const uint nblocks_x) {
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
   t_output[block_y * nblocks_x + block_x] = block.data;
 }
 
@@ -66,9 +66,9 @@ void write_block(
 
 void write_block(
     const Int8InputBlock block,
-    const uint block_x,
-    const uint block_y,
-    const uint nblocks_x) {
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
   imageStore(t_output, ivec3(block_x, block_y, 0), block.data);
 }
 
