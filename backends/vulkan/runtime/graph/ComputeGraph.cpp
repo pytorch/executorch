@@ -155,6 +155,11 @@ ComputeGraph::ComputeGraph(GraphConfig config)
     config_.execute_threshold_node_count = 128;
     config_.execute_initial_threshold_node_count = 64;
   }
+
+  // Check if the underlying GPU can access accelerated integer dot product
+  // instructions
+  can_use_int8_dot_product_ =
+      context_->adapter_ptr()->supports_int8_dot_product();
 }
 
 ComputeGraph::~ComputeGraph() {

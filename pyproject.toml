@@ -63,7 +63,7 @@ dependencies=[
   "parameterized",
   "pytest",
   "pytest-xdist",
-  "pytest-rerunfailures",
+  "pytest-rerunfailures==15.1",
   "pyyaml",
   "ruamel.yaml",
   "sympy",

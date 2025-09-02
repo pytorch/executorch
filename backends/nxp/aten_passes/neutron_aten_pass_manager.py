@@ -13,11 +13,14 @@ from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_conv_pass import (
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
     FuseBatchNormWithLinearPass,
 )
+from executorch.backends.nxp.aten_passes.split_group_convolution import (
+    SplitGroupConvolution,
+)
 from executorch.exir.pass_manager import PassManager
 from torch import nn
 from torch.fx.passes.infra.pass_base import PassResult
 
-PassType = list[type[Callable[[torch.fx.GraphModule], PassResult]]]
+PassType = type[Callable[[torch.fx.GraphModule], PassResult]]
 
 
 class NeutronAtenPassManager(PassManager):
@@ -26,6 +29,7 @@ class NeutronAtenPassManager(PassManager):
         passes: list[PassType] = passes or [
             FuseBatchNormWithConvPass(),
             FuseBatchNormWithLinearPass(),
+            SplitGroupConvolution(),
         ]
 
         super().__init__(passes)
