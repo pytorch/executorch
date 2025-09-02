@@ -1,20 +1,20 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
+import importlib.resources as _resources
 import json
 import os
 import tempfile
 
-import pkg_resources
+import executorch.devtools.etdump as etdump_package
 from executorch.devtools.etdump.schema_flatcc import ETDumpFlatCC
-
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
-
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 
 # The prefix of schema files used for etdump
@@ -25,9 +25,7 @@ SCALAR_TYPE_SCHEMA_NAME = "scalar_type"
 def _write_schema(d: str, schema_name: str) -> None:
     schema_path = os.path.join(d, "{}.fbs".format(schema_name))
     with open(schema_path, "wb") as schema_file:
-        schema_file.write(
-            pkg_resources.resource_string(__name__, "{}.fbs".format(schema_name))
-        )
+        schema_file.write(_resources.read_binary(etdump_package, f"{schema_name}.fbs"))
 
 
 def _serialize_from_etdump_to_json(etdump: ETDumpFlatCC) -> str:
