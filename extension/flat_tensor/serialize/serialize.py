@@ -1,11 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
 
+import importlib.resources as _resources
 import json
 import math
 import os
@@ -13,10 +15,10 @@ import tempfile
 from dataclasses import dataclass
 from typing import ClassVar, Dict, List, Literal, Optional
 
-import pkg_resources
+import executorch.extension.flat_tensor.serialize as serialize_package
+
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
-
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 from executorch.exir._serialize._program import _insert_flatbuffer_header
 from executorch.exir._serialize.data_serializer import (
@@ -24,9 +26,7 @@ from executorch.exir._serialize.data_serializer import (
     DataPayload,
     DataSerializer,
 )
-
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
-
 from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
     DataSegment,
     FlatTensor,
@@ -49,12 +49,12 @@ def _serialize_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
         schema_path = os.path.join(d, "flat_tensor.fbs")
         with open(schema_path, "wb") as schema_file:
             schema_file.write(
-                pkg_resources.resource_string(__name__, "flat_tensor.fbs")
+                _resources.read_binary(serialize_package, "flat_tensor.fbs")
             )
         scalar_type_path = os.path.join(d, "scalar_type.fbs")
         with open(scalar_type_path, "wb") as scalar_type_file:
             scalar_type_file.write(
-                pkg_resources.resource_string(__name__, "scalar_type.fbs")
+                _resources.read_binary(serialize_package, "scalar_type.fbs")
             )
         json_path = os.path.join(d, "flat_tensor.json")
         with open(json_path, "wb") as json_file:
@@ -72,13 +72,13 @@ def _deserialize_to_flat_tensor(flatbuffer: bytes) -> FlatTensor:
         schema_path = os.path.join(d, "flat_tensor.fbs")
         with open(schema_path, "wb") as schema_file:
             schema_file.write(
-                pkg_resources.resource_string(__name__, "flat_tensor.fbs")
+                _resources.read_binary(serialize_package, "flat_tensor.fbs")
             )
 
         scalar_type_path = os.path.join(d, "scalar_type.fbs")
         with open(scalar_type_path, "wb") as scalar_type_file:
             scalar_type_file.write(
-                pkg_resources.resource_string(__name__, "scalar_type.fbs")
+                _resources.read_binary(serialize_package, "scalar_type.fbs")
             )
 
         bin_path = os.path.join(d, "flat_tensor.bin")

@@ -97,6 +97,6 @@ def define_common_targets(is_fbcode = False):
     )
 
     define_custom_op_test_binary("add")
-    define_custom_op_test_binary("quantized_linear")
+    define_custom_op_test_binary("quantized_q8csw_linear")
     define_custom_op_test_binary("conv2d")
     define_custom_op_test_binary("quantized_conv2d")

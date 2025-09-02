@@ -20,12 +20,12 @@ $if WEIGHT_STORAGE == "buffer":
   #define WEIGHT_BUFFER
 
 #define TILE_M4 ${TILE_M4}
-#define TILE_N4 ${TILE_N4}
 #define TILE_K4 ${TILE_K4}
+#define TILE_N4 ${TILE_N4}
 
 #define TILE_M ${TILE_M4 * 4}
-#define TILE_N ${TILE_N4 * 4}
 #define TILE_K ${TILE_K4 * 4}
+#define TILE_N ${TILE_N4 * 4}
 
 ${define_required_extensions(DTYPE)}
 
@@ -45,20 +45,21 @@ ${layout_declare_ubo(B, "Conv2DParams", "conv2d_params")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-${layout_declare_spec_const(C, "uint", "apply_bias", "1")}
+${layout_declare_spec_const(C, "int", "apply_bias", "1")}
 
 #include "linear_fp_input_tile_load.glslh"
 #include "linear_int8_weight_tile_load.glslh"
 #include "linear_fp_weight_tile.glslh"
+#include "linear_fp_output_tile_fp_int8_compute.glslh"
 #include "linear_fp_output_tile_fp_compute.glslh"
-#include "linear_scales_load.glslh"
-#include "linear_bias_load.glslh"
+#include "linear_fp_scales_load.glslh"
+#include "linear_fp_bias_load.glslh"
 #include "conv2d_fp_im2col_block_store.glslh"
 
 void main() {
   // Each thread writes out a 4 wide x 4 high tile of output values
-  const uint out_tile_x = gl_GlobalInvocationID.x;
-  const uint out_tile_y = gl_GlobalInvocationID.y;
+  const int out_tile_x = int(gl_GlobalInvocationID.x);
+  const int out_tile_y = int(gl_GlobalInvocationID.y);
 
   const int n = int(out_tile_x * TILE_N);
   const int m = int(out_tile_y * TILE_M);
@@ -86,7 +87,6 @@ void main() {
 
   FPInputTile in_tile;
   Int8WeightTile weight_tile;
-  FPWeightTile fp_weight_tile;
 
   const bool dont_check_bounds = (M - m) >= TILE_M;
 
@@ -94,15 +94,13 @@ void main() {
     for (int k4 = 0; k4 < conv2d_params.K4_per_group; k4++) {
       load_input_tile_no_checks(in_tile, k4 + input_k4_offset, m, K4, M);
       load_weight_tile(weight_tile, n4, k4, N4);
-      unpack(fp_weight_tile, weight_tile);
-      update(out_tile, in_tile, fp_weight_tile);
+      fp_accumulate_with_int8_weight(out_tile, in_tile, weight_tile);
     }
   } else {
     for (int k4 = 0; k4 < conv2d_params.K4_per_group; k4++) {
       load_input_tile_with_checks(in_tile, k4 + input_k4_offset, m, K4, M);
       load_weight_tile(weight_tile, n4, k4, N4);
-      unpack(fp_weight_tile, weight_tile);
-      update(out_tile, in_tile, fp_weight_tile);
+      fp_accumulate_with_int8_weight(out_tile, in_tile, weight_tile);
     }
   }
 

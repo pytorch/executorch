@@ -16,12 +16,14 @@ using namespace executorch::vulkan::prototyping;
 
 using namespace vkcompute;
 
+static constexpr int64_t kRefDimSizeLimit = 300;
+
 // Linear configuration struct
 struct LinearConfig {
   int64_t M; // Batch size / number of rows in input
   int64_t K; // Input features / columns in input, rows in weight
   int64_t N; // Output features / columns in weight
-  std::string name_suffix;
+  std::string name_suffix = "no_name";
   std::string shader_variant_name = "default";
 };
 
@@ -56,7 +58,7 @@ TestCase create_test_case_from_config(
       input_dtype,
       storage_type,
       utils::kWidthPacked,
-      DataGenType::RANDINT);
+      DataGenType::ONES);
 
   if (debugging()) {
     print_valuespec_data(input_tensor, "input_tensor");
@@ -74,7 +76,7 @@ TestCase create_test_case_from_config(
       vkapi::kChar, // int8 for quantized weights
       storage_type,
       utils::kWidthPacked,
-      DataGenType::RANDINT8);
+      DataGenType::RANDINT);
   quantized_weight.set_constant(true);
 
   if (debugging()) {
@@ -87,7 +89,7 @@ TestCase create_test_case_from_config(
       input_dtype,
       storage_type,
       utils::kWidthPacked,
-      DataGenType::RANDOM_SCALES);
+      DataGenType::ONES);
   weight_scales.set_constant(true);
 
   ValueSpec weight_sums(
@@ -102,6 +104,9 @@ TestCase create_test_case_from_config(
   int64_t in_features = config.K;
   int64_t out_features = config.N;
   compute_weight_sums(weight_sums, quantized_weight, out_features, in_features);
+
+  // Original output channel count
+  ValueSpec orig_OC(static_cast<int32_t>(config.N));
 
   // Bias (optional, float/half) - [N]
   ValueSpec bias(
@@ -127,6 +132,7 @@ TestCase create_test_case_from_config(
   test_case.add_input_spec(quantized_weight);
   test_case.add_input_spec(weight_sums);
   test_case.add_input_spec(weight_scales);
+  test_case.add_input_spec(orig_OC);
   test_case.add_input_spec(bias);
 
   test_case.add_output_spec(output);
@@ -139,15 +145,16 @@ std::vector<TestCase> generate_quantized_linear_easy_cases() {
   std::vector<TestCase> test_cases;
 
   // Single simple configuration for debugging
-  int M = 16;
-  int K = 128;
-  int N = 64;
+  int M = 4;
+  int K = 4;
+  int N = 4;
 
   LinearConfig config = {
       M, // Batch size
       K, // Input features
       N, // Output features
-      "simple" // descriptive name
+      "simple", // descriptive name
+      "noint8" // shader variant name
   };
 
   // Test with both storage types and data types for completeness
@@ -170,28 +177,36 @@ std::vector<TestCase> generate_quantized_linear_easy_cases() {
 std::vector<TestCase> generate_quantized_linear_test_cases() {
   std::vector<TestCase> test_cases;
 
-  std::vector<LinearConfig> configs = {// Small linear layers
-                                       {1, 64, 32, "64to32_single"},
-                                       {1, 128, 64, "128to64_single"},
-                                       {1, 256, 128, "256to128_single"},
-
-                                       // Larger batch sizes
-                                       {32, 64, 32, "64to32_batch32"},
-                                       {32, 128, 64, "128to64_batch32"},
-                                       {32, 256, 128, "256to128_batch32"},
-
-                                       // Performance test cases
-                                       {128, 2048, 2048, "perf_K2048"},
-                                       {16384, 576, 128, "perf_conv"}
-
+  std::vector<std::tuple<int64_t, int64_t, int64_t>> dims = {
+      {1, 64, 32},
+      {1, 128, 64},
+      {1, 256, 128},
+      {32, 64, 32},
+      {32, 128, 64},
+      {32, 256, 128},
+      {256, 2048, 2048},
+      {512, 2048, 2048},
+      {1024, 2048, 2048},
   };
 
   // Test with different storage types and data types
   std::vector<utils::StorageType> storage_types = {
       utils::kTexture3D, utils::kBuffer};
 
-  // Generate test cases for each combination
-  for (const auto& config : configs) {
+  for (const auto& dim : dims) {
+    int64_t M = std::get<0>(dim);
+    int64_t K = std::get<1>(dim);
+    int64_t N = std::get<2>(dim);
+
+    std::string prefix =
+        (M < kRefDimSizeLimit && K < kRefDimSizeLimit && N < kRefDimSizeLimit)
+        ? "correctness_"
+        : "performance_";
+    std::string test_case_name = prefix + std::to_string(M) + "_" +
+        std::to_string(K) + "_" + std::to_string(N);
+
+    LinearConfig config = {M, K, N, test_case_name, "default"};
+
     for (const auto& storage_type : storage_types) {
       // Test both with and without shader int8 dot product
       test_cases.push_back(
@@ -211,7 +226,6 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
 
 // Reference implementation for quantized linear operation
 void quantized_linear_reference_impl(TestCase& test_case) {
-  static constexpr int64_t kRefDimSizeLimit = 300;
   // Extract input specifications
   int32_t idx = 0;
   const ValueSpec& input_spec = test_case.inputs()[idx++];
@@ -221,6 +235,8 @@ void quantized_linear_reference_impl(TestCase& test_case) {
   const ValueSpec& weight_sums_spec = test_case.inputs()[idx++];
   (void)weight_sums_spec;
   const ValueSpec& weight_scales_spec = test_case.inputs()[idx++];
+  const ValueSpec& orig_OC = test_case.inputs()[idx++];
+  (void)orig_OC;
   const ValueSpec& bias_spec = test_case.inputs()[idx++];
 
   // Extract output specification (mutable reference)

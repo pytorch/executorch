@@ -482,7 +482,7 @@ void conv2d_q8csw_linear_tiled_impl(
   (void)orig_OC;
   const ValueRef output = args.at(idx++);
 
-  const ValueRef packed_weight = prepack_q8_linear_weight(graph, weight);
+  const ValueRef packed_weight = prepack_quantized_linear_weight(graph, weight);
   ValueRef packed_weight_scales = prepack_standard(
       graph, weight_scales, utils::kBuffer, utils::kWidthPacked);
 
@@ -558,7 +558,7 @@ void conv2d_q8ta_q8csw_linear_tiled_impl(
   (void)orig_OC;
   const ValueRef output = args.at(idx++);
 
-  const ValueRef packed_weight = prepack_q8_linear_weight(graph, weight);
+  const ValueRef packed_weight = prepack_quantized_linear_weight(graph, weight);
   ValueRef packed_weight_scales = prepack_standard(
       graph, weight_scales, utils::kBuffer, utils::kWidthPacked);
   ValueRef packed_weight_sums =
