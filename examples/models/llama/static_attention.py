@@ -658,7 +658,12 @@ class StaticAttention(Attention):
     """
 
     def __init__(
-        self, config: ModelArgs, layer_id: int, rope: Rope, split_mha: bool = True
+        self,
+        config: ModelArgs,
+        layer_id: int,
+        rope: Rope,
+        split_mha: bool = True,
+        **kwargs: Any,
     ):
         super().__init__()
         self.n_heads = config.n_heads
@@ -676,6 +681,7 @@ class StaticAttention(Attention):
         self.qk_norm_before_rope = config.qk_norm_before_rope
         self.split_mha = split_mha
         self.use_conv2d = False
+        self.enable_qnn_masked_softmax = kwargs.get("enable_qnn_masked_softmax", False)
 
         if self.split_mha:
             self.wqs = nn.ModuleList(
@@ -857,7 +863,14 @@ class StaticAttention(Attention):
             kv_idx = i // self.n_heads_per_kv_group
             attn = new_qs[i] @ all_ks[kv_idx].transpose(-2, -1)
             attn = attn * self.inv_scale
-            attn = attn + mask
+            if self.enable_qnn_masked_softmax:
+                attn_min = torch.amin(attn, dim=-1, keepdim=True)
+                minus_value = -20
+                attn = torch.where(
+                    mask == 0, attn, attn_min + minus_value
+                )  # prye-ignore
+            else:
+                attn = attn + mask
             attn = F.softmax(attn, dim=-1)
             heads.append(attn @ all_vs[kv_idx])
 
@@ -1031,5 +1044,5 @@ class StaticAttention(Attention):
 
 @register_attention("static_mha")
 class StaticAttentionMHA(StaticAttention):
-    def __init__(self, config: ModelArgs, layer_id: int, rope: Rope):
-        super().__init__(config, layer_id, rope, split_mha=False)
+    def __init__(self, config: ModelArgs, layer_id: int, rope: Rope, **kwargs: Any):
+        super().__init__(config, layer_id, rope, split_mha=False, **kwargs)

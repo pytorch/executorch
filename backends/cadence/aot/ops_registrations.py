@@ -16,6 +16,7 @@ from executorch.backends.cadence.aot.utils import (
     get_im2row_output_size,
 )
 from executorch.exir.scalar_type import ScalarType
+from torch._meta_registrations import _linalg_svd_meta
 from torch.library import Library, register_fake
 
 lib = Library("cadence", "DEF")
@@ -250,6 +251,12 @@ lib.define(
     "int in_zero_point, bool channel_last=False) -> (Tensor out)"
 )
 lib.define("linalg_vector_norm(Tensor X) -> (Tensor Y)")
+lib.define(
+    "linalg_svd(Tensor A, bool full_matrices=False, bool compute_uv=True, str? driver=None) -> (Tensor U, Tensor S, Tensor Vh)"
+)
+lib.define(
+    "linalg_svd.out(Tensor A, bool full_matrices=False, bool compute_uv=True, str? driver=None, *, Tensor(a!) U, Tensor(b!) S, Tensor(c!) Vh) -> (Tensor(a!) U, Tensor(b!) S, Tensor(c!) Vh)"
+)
 lib.define(
     "transposed_im2row(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
     "int[2] output_padding, Tensor in_zero_point, bool channel_last=False) -> (Tensor out)"
@@ -1574,6 +1581,26 @@ def linalg_vector_norm_meta(
 ) -> torch.Tensor:
     # Output of norm is a scalar, so we return a [] tensor
     return X.new_empty([], dtype=X.dtype)
+
+
+@register_fake("cadence::linalg_svd")
+def linalg_svd_meta(
+    A: torch.Tensor,
+    full_matrices: bool = False,
+    compute_uv: bool = True,
+    driver: Optional[str] = None,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # Based on the _linalg_svd meta implementation, but ensuring contiguous strides
+
+    # Get the shapes from the original meta function
+    U, S, Vh = _linalg_svd_meta(A, full_matrices, compute_uv, driver)
+
+    # Create new tensors with contiguous strides to fix the non-contiguous issue
+    U_contiguous = A.new_empty(U.shape, dtype=A.dtype).contiguous()
+    S_contiguous = A.new_empty(S.shape, dtype=A.dtype).contiguous()
+    Vh_contiguous = A.new_empty(Vh.shape, dtype=A.dtype).contiguous()
+
+    return U_contiguous, S_contiguous, Vh_contiguous
 
 
 @register_fake("cadence::requantize")

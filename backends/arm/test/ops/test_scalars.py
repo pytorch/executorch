@@ -417,6 +417,9 @@ def test_div_scalar_u85_INT():
 
 
 # SHIFT ETHOS-U ------------------------------------------------------
+@pytest.mark.skip(
+    reason="integer operations (shift and sub) are not supported on FP profile"
+)
 def test_bitwise_right_shift_tensor_tosa_FP_inplace():
     pipeline = TosaPipelineFP[input_t1](
         ShiftInplaceSub(),

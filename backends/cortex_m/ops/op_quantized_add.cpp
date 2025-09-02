@@ -8,6 +8,11 @@
 
 #include "cortex_m_ops_common.h"
 
+// Include CMSIS-NN headers with C linkage
+extern "C" {
+#include "arm_nnfunctions.h"
+}
+
 namespace cortex_m {
 namespace native {
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
@@ -54,19 +59,15 @@ Tensor& quantized_add_out(
       "quantized_add_out: input1_int8.sizes() = %zu",
       input1_int8.sizes().size());
 
-  // FIX: Use template types that ExecutorTorch definitely provides
-  // Use to<int64_t>() and to<double>() which are commonly instantiated
-  int32_t zp1 = static_cast<int32_t>(input1_zero_point.to<int64_t>());
-  int32_t input1_mult = static_cast<int32_t>(input1_multiplier.to<int64_t>());
-  int input1_shift_val = static_cast<int>(input1_shift.to<int64_t>());
-
-  int32_t zp2 = static_cast<int32_t>(input2_zero_point.to<int64_t>());
-  int32_t input2_mult = static_cast<int32_t>(input2_multiplier.to<int64_t>());
-  int input2_shift_val = static_cast<int>(input2_shift.to<int64_t>());
-
-  int32_t out_zp = static_cast<int32_t>(output_zero_point.to<int64_t>());
-  int32_t output_mult = static_cast<int32_t>(output_multiplier.to<int64_t>());
-  int output_shift_val = static_cast<int>(output_shift.to<int64_t>());
+  int32_t zp1 = extractScalarToInt32(input1_zero_point);
+  int32_t input1_mult = extractScalarToInt32(input1_multiplier);
+  int input1_shift_val = extractScalarToInt(input1_shift);
+  int32_t zp2 = extractScalarToInt32(input2_zero_point);
+  int32_t input2_mult = extractScalarToInt32(input2_multiplier);
+  int input2_shift_val = extractScalarToInt(input2_shift);
+  int32_t out_zp = extractScalarToInt32(output_zero_point);
+  int32_t output_mult = extractScalarToInt32(output_multiplier);
+  int output_shift_val = extractScalarToInt(output_shift);
 
   // Left shift to maximize precision (tune as needed)
   const int32_t left_shift = 20;

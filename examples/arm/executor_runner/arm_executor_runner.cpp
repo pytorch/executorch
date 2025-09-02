@@ -160,6 +160,7 @@ using executorch::bundled_program::verify_method_outputs;
 #if defined(ET_EVENT_TRACER_ENABLED)
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
+using torch::executor::etdump_result;
 #endif
 /**
  * The method_allocation_pool should be large enough to fit the setup, input
@@ -503,7 +504,7 @@ struct RunnerContext {
   Box<ArmMemoryAllocator> temp_allocator;
   Box<Result<Method>> method;
 #if defined(ET_EVENT_TRACER_ENABLED)
-  Box<torch::executor::ETDumpGen> etdump_gen;
+  Box<ETDumpGen> etdump_gen;
 #endif
 #if defined(SEMIHOSTING)
   Box<ArmMemoryAllocator> input_file_allocator;
@@ -863,11 +864,11 @@ void write_etdump(RunnerContext& ctx) {
 #else
   // Dump the etdump data containing profiling/debugging data to the specified
   // file.
-  etdump_result result = etdump_gen.get_etdump_data();
+  etdump_result result = ctx.etdump_gen->get_etdump_data();
   if (result.buf != nullptr && result.size > 0) {
     // On a device with a file system we can just write it out
     // to the file-system.
-    char etdump_filename = "etdump.bin";
+    const char* etdump_filename = "etdump.bin";
     ET_LOG(Info, "Writing etdump to file: %s", etdump_filename);
     FILE* f = fopen(etdump_filename, "w+");
     fwrite((uint8_t*)result.buf, 1, result.size, f);

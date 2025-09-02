@@ -17,8 +17,12 @@ from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
+from executorch.backends.cortex_m.test.test_helpers_passes_utils import (
+    AddQuantizer,
+    check_count,
+    get_node_args,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
-from test_helpers_passes_utils import AddQuantizer, check_count, get_node_args
 from torch.export import export, export_for_training
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
