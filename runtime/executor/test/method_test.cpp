@@ -8,6 +8,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <unordered_map>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
