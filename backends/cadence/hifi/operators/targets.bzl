@@ -97,6 +97,7 @@ OPERATORS = [
     "sigmoid",
     "slice_copy",
     "softmax",
+    "softmax_f32_f32",
     "split_with_sizes_copy",
     "sub",
     "tanh",
