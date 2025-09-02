@@ -61,17 +61,17 @@ class GraphBuilder(ExportPass):
         )
 
     # pyre-ignore[14]: Inconsistent override.
-    def placeholder(
+    def placeholder(  # type: ignore[override]
         self, target: str, fake_tensor: Union[FakeTensor, torch.Tensor]
     ) -> ProxyValue:
         if not isinstance(fake_tensor, FakeTensor):
-            fake_tensor = self.fake_tensor_mode.from_tensor(fake_tensor)
+            fake_tensor = self.fake_tensor_mode.from_tensor(fake_tensor)  # type: ignore[union-attr]
         logging.debug(f"Creating placeholder {target} => {fake_tensor.shape}")
         placeholder = super().placeholder(target, fake_tensor, NodeMetadata({}))
         return placeholder
 
     # pyre-ignore[14]: Inconsistent override.
-    def output(self, results: list[ProxyValue]) -> ProxyValue:
+    def output(self, results: list[ProxyValue]) -> ProxyValue:  # type: ignore[override]
         logging.debug(f"Creating outputs {results}")
         return super().output(results, NodeMetadata({}))
 
@@ -109,7 +109,7 @@ class GraphBuilder(ExportPass):
         kwargs: dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        with self.fake_tensor_mode, enable_python_dispatcher():
+        with self.fake_tensor_mode, enable_python_dispatcher():  # type: ignore[union-attr]
             return super()._fx(kind, target, args, kwargs, meta)
 
 

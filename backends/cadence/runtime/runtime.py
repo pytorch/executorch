@@ -67,7 +67,7 @@ class CadenceETDump:
             if event_block.name == "Execute"
         ]
         logging.debug(f"[ETdump] output: {output}")
-        return output[0]
+        return output[0]  # type: ignore[return-value]
 
     def print_event_block(self) -> None:
         logging.debug("[ETdump] data tabular:")

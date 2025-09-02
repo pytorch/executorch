@@ -135,9 +135,9 @@ def requantize(
     quant_min = torch.iinfo(input.dtype).min
     quant_max = torch.iinfo(input.dtype).max
     # pyre-fixme[6]: This dtype is actually the right one.
-    out_quant_min = torch.iinfo(dtype).min
+    out_quant_min = torch.iinfo(dtype).min  # type: ignore[arg-type]
     # pyre-fixme[6]: This dtype is actually the right one.
-    out_quant_max = torch.iinfo(dtype).max
+    out_quant_max = torch.iinfo(dtype).max  # type: ignore[arg-type]
     return torch.ops.quantized_decomposed.quantize_per_tensor(
         torch.ops.quantized_decomposed.dequantize_per_tensor(
             input,

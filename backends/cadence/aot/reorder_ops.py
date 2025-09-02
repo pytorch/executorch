@@ -185,7 +185,7 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
             if len(descendent_quant_ops) == 1:
                 quant_node = descendent_quant_ops.pop()
                 # Replace the uses of quant node with its predecessor
-                quant_node.replace_all_uses_with(quant_node.args[0])  # pyre-fixme[6]
+                quant_node.replace_all_uses_with(quant_node.args[0])  # type: ignore[arg-type]
                 # Hoist the quant node after the current node. Make sure that
                 # the insertion is after placeholders
                 with graph.inserting_after(insertion_pt):
@@ -271,7 +271,7 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
         if isinstance(inp.target, EdgeOpOverload):
             inp_overloadpkt = get_edge_overload_packet(inp.target)
         else:
-            inp_overloadpkt = get_overload_packet(inp.target)
+            inp_overloadpkt = get_overload_packet(inp.target)  # type: ignore[assignment]
 
         if (
             inp_overloadpkt not in trivially_quantizable_ops_overloadpkt
@@ -683,13 +683,13 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(ExportPass):
     ):
         with graph.inserting_after(view_node):
             new_view_node = graph.call_function(
-                view_node.target,  # pyre-fixme[6]
+                view_node.target,  # type: ignore[arg-type]
                 args=(pred, new_view_shape),
             )
 
         with graph.inserting_after(new_view_node):
             new_permute_node = graph.call_function(
-                permute_node.target,  # pyre-fixme[6]
+                permute_node.target,  # type: ignore[arg-type]
                 args=(new_view_node, new_permute_dims),
             )
             new_permute_node.meta = view_node.meta

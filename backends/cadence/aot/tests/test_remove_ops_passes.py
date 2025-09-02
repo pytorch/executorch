@@ -38,7 +38,7 @@ from executorch.backends.cadence.aot.remove_ops import (
 )
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.exir.dialects._ops import ops as exir_ops
-from pyre_extensions import none_throws
+from pyre_extensions import none_throws  # type: ignore[import-not-found]
 
 from torch.fx.passes.infra.pass_base import PassResult
 

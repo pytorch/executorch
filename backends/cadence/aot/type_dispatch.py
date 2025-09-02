@@ -108,13 +108,13 @@ class CompileTimeTypeDispatchPass(ExportPass):
         config = self._SUPPORTED_OPS[op]
 
         # pyre-ignore[16]: None has no attribute `to_tensor`.
-        input_dtype = args[0].to_tensor().dtype
+        input_dtype = args[0].to_tensor().dtype  # type: ignore[union-attr]
 
         if config.weight_arg_idx is not None:
-            weight_dtype = args[config.weight_arg_idx].to_tensor().dtype
+            weight_dtype = args[config.weight_arg_idx].to_tensor().dtype  # type: ignore[union-attr]
             dtype_key = (input_dtype, weight_dtype)
         else:
-            dtype_key = (input_dtype,)
+            dtype_key = (input_dtype,)  # type: ignore[assignment]
 
         if dtype_key not in config.type_dispatch_suffixes:
             raise RuntimeError(f"Unsupported input types for {op}: {dtype_key}")
@@ -128,15 +128,15 @@ class CompileTimeTypeDispatchPass(ExportPass):
         ]:
             groups = args[6]
             input_channels = (
-                args[0].to_tensor().shape[1]
+                args[0].to_tensor().shape[1]  # type: ignore[union-attr]
                 if op == exir_ops.edge.cadence.quantized_conv_nchw.per_tensor
-                else args[0].to_tensor().shape[-1]
+                else args[0].to_tensor().shape[-1]  # type: ignore[union-attr]
             )
             is_depthwise = groups == input_channels
 
             dilation = args[5]
             # pyre-ignore[16]: None has no attribute '__iter__'.
-            is_dilated = any(d > 1 for d in dilation)
+            is_dilated = any(d > 1 for d in dilation)  # type: ignore[operator,union-attr]
 
             if is_dilated:
                 type_suffix = f"dilated_{type_suffix}"

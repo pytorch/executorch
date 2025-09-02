@@ -166,7 +166,7 @@ def fuse_pt2(
     """
     # Get patterns and apply fusion of dq -> op -> q to qop
     # pyre-ignore[16]: no attribute
-    patterns = [q.pattern for q in quantizer.quantizers]
+    patterns = [q.pattern for q in quantizer.quantizers]  # type: ignore[attr-defined]
     QuantFusion(patterns)(converted_graph_module)
 
     return converted_graph_module

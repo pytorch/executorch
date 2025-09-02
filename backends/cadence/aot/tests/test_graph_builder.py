@@ -18,7 +18,7 @@ from executorch.backends.cadence.aot.graph_builder import (
 from executorch.backends.cadence.aot.pass_utils import count_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata
-from later.unittest import TestCase
+from later.unittest import TestCase  # type: ignore[import-not-found]
 
 
 class TestGraphBuilder(TestCase):

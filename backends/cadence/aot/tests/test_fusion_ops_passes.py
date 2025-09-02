@@ -895,20 +895,20 @@ class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
         self.check_op_counts(
             gm,
             # pyre-fixme[6]: Incompatible parameter type
-            expected_op_counts=expected_op_counts,
+            expected_op_counts=expected_op_counts,  # type: ignore[arg-type]
         )
 
         # Check that the pass fuses the two transpose/permute ops.
         fusion_pass_result = FuseTransposeOrPermuteOpPairsPass()(gm)
         self.assertIsNotNone(fusion_pass_result)
-        gm_after_pass = fusion_pass_result.graph_module
+        gm_after_pass = fusion_pass_result.graph_module  # type: ignore[union-attr]
         if expected_is_fused:
             expected_op_counts[op1] = 0
             expected_op_counts[op2] = 0
         self.check_op_counts(
             gm_after_pass,
             # pyre-fixme[6]: Incompatible parameter type
-            expected_op_counts=expected_op_counts,
+            expected_op_counts=expected_op_counts,  # type: ignore[arg-type]
         )
 
     def test_fusion_for_forked_transposes(self) -> None:

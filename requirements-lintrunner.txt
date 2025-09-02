@@ -19,4 +19,4 @@ cmakelang==0.6.13
 cmakelint==1.4.1
 
 # MyPy
-mypy==1.14.1
+mypy==1.17.1

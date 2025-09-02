@@ -54,7 +54,7 @@ class ProgramBuilder(GraphBuilder):
         elif input_kind == InputKind.CONSTANT_TENSOR:
             self.constants[target] = value
 
-    def placeholder(
+    def placeholder(  # type: ignore[override]
         self,
         target: str,
         fake_tensor: Tensor,
@@ -64,7 +64,7 @@ class ProgramBuilder(GraphBuilder):
         self.insert_input_spec(target, input_kind, fake_tensor)
         return placeholder
 
-    def output(
+    def output(  # type: ignore[override]
         self, results: list[ProxyValue], output_kinds: Optional[list[OutputKind]] = None
     ) -> ProxyValue:
         if output_kinds is None:
@@ -94,12 +94,12 @@ class ProgramBuilder(GraphBuilder):
                 input_specs=self.input_specs, output_specs=self.output_specs
             ),
             # pyre-ignore[6]: Incompatible parameter type.
-            constants=self.constants,
+            constants=self.constants,  # type: ignore[arg-type]
             state_dict=self.state_dict,
             range_constraints={},
             module_call_graph=[],
             # pyre-ignore[6]: Incompatible parameter type.
-            verifiers=self.get_verifiers(),
+            verifiers=self.get_verifiers(),  # type: ignore[arg-type]
         )
 
     def get_edge_program(self) -> EdgeProgramManager:

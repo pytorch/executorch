@@ -48,7 +48,7 @@ from executorch.exir.memory_planning import (
 from executorch.exir.pass_base import PassBase, PassResult
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tests.models import MultiLayerPerceptron
-from parameterized import parameterized
+from parameterized import parameterized  # type: ignore[import-untyped]
 from torch.fx import GraphModule
 
 
@@ -161,38 +161,38 @@ class TestMemTransform(unittest.TestCase):
         node_spec = node.meta.get("spec", None)
         self.assertIsNotNone(node_spec)
         dim: int = cast(int, node.kwargs["dim"]) if "dim" in node.kwargs else 0
-        outer_size = math.prod(node_spec.shape[:dim])
+        outer_size = math.prod(node_spec.shape[:dim])  # type: ignore[union-attr]
         self.assertEqual(
             outer_size,
             1,
             f"{node=} has wrong outer size: {outer_size=}, expected 1.",
         )
         inner_dim_elements = (
-            math.prod(node_spec.shape[dim + 1 :]) * node_spec.dtype.itemsize
+            math.prod(node_spec.shape[dim + 1 :]) * node_spec.dtype.itemsize  # type: ignore[union-attr]
         )
         dim_offset = 0
         for arg in cast(list[torch.fx.Node], node.args[0]):
             arg_spec = arg.meta.get("spec", None)
-            self.assertEqual(arg_spec.mem_id, node_spec.mem_id)
-            actual_offset = node_spec.mem_offset + dim_offset * inner_dim_elements
+            self.assertEqual(arg_spec.mem_id, node_spec.mem_id)  # type: ignore[union-attr]
+            actual_offset = node_spec.mem_offset + dim_offset * inner_dim_elements  # type: ignore[union-attr]
             self.assertEqual(
-                arg_spec.mem_offset,
+                arg_spec.mem_offset,  # type: ignore[union-attr]
                 actual_offset,
-                f"{arg=} of node {node=} has wrong memory offset: expected {arg_spec.mem_offset=}, but got {actual_offset=} = {node_spec.mem_offset=} + {dim_offset=} * {inner_dim_elements=}",
+                f"{arg=} of node {node=} has wrong memory offset: expected {arg_spec.mem_offset=}, but got {actual_offset=} = {node_spec.mem_offset=} + {dim_offset=} * {inner_dim_elements=}",  # type: ignore[union-attr]
             )
-            dim_offset += arg_spec.shape[dim]
+            dim_offset += arg_spec.shape[dim]  # type: ignore[union-attr]
 
     def _verify_slice_nop_memory_alloc(self, node: torch.fx.Node) -> None:
         spec = node.meta.get("spec", None)
         self.assertIsNotNone(spec)
         dim: int = cast(int, node.args[1]) if len(node.args) > 1 else 0
-        outer_size = math.prod(spec.shape[:dim])
+        outer_size = math.prod(spec.shape[:dim])  # type: ignore[union-attr]
         self.assertEqual(
             outer_size,
             1,
             f"{node=} has wrong outer size: {outer_size=}, expected 1.",
         )
-        inner_dim_elements = math.prod(spec.shape[dim + 1 :]) * spec.dtype.itemsize
+        inner_dim_elements = math.prod(spec.shape[dim + 1 :]) * spec.dtype.itemsize  # type: ignore[union-attr]
         start: int = (
             cast(int, node.args[2])
             if (len(node.args) > 2 and node.args[2] is not None)
@@ -200,24 +200,24 @@ class TestMemTransform(unittest.TestCase):
         )
         arg = cast(torch.fx.Node, node.args[0])
         arg_spec = arg.meta.get("spec", None)
-        self.assertEqual(arg_spec.mem_id, spec.mem_id)
+        self.assertEqual(arg_spec.mem_id, spec.mem_id)  # type: ignore[union-attr]
         self.assertEqual(
-            spec.mem_offset,
-            arg_spec.mem_offset + start * inner_dim_elements,
-            f"{arg=} for node {node=} has wrong memory offset: {arg_spec.mem_offset=} {start=} for slice on {dim=}, but output has {spec.mem_offset=}",
+            spec.mem_offset,  # type: ignore[union-attr]
+            arg_spec.mem_offset + start * inner_dim_elements,  # type: ignore[union-attr]
+            f"{arg=} for node {node=} has wrong memory offset: {arg_spec.mem_offset=} {start=} for slice on {dim=}, but output has {spec.mem_offset=}",  # type: ignore[union-attr]
         )
 
     def _verify_select_nop_memory_alloc(self, node: torch.fx.Node) -> None:
         spec = node.meta.get("spec", None)
         self.assertIsNotNone(spec)
         dim: int = cast(int, node.args[1]) if len(node.args) > 1 else 0
-        outer_size = math.prod(spec.shape[:dim])
+        outer_size = math.prod(spec.shape[:dim])  # type: ignore[union-attr]
         self.assertEqual(
             outer_size,
             1,
             f"{node=} has wrong outer size: {outer_size=}, expected 1.",
         )
-        inner_dim_elements = math.prod(spec.shape[dim:]) * spec.dtype.itemsize
+        inner_dim_elements = math.prod(spec.shape[dim:]) * spec.dtype.itemsize  # type: ignore[union-attr]
         index: int = (
             cast(int, node.args[2])
             if (len(node.args) > 2 and node.args[2] is not None)
@@ -225,11 +225,11 @@ class TestMemTransform(unittest.TestCase):
         )
         arg = cast(torch.fx.Node, node.args[0])
         arg_spec = arg.meta.get("spec", None)
-        self.assertEqual(arg_spec.mem_id, spec.mem_id)
+        self.assertEqual(arg_spec.mem_id, spec.mem_id)  # type: ignore[union-attr]
         self.assertEqual(
-            spec.mem_offset,
-            arg_spec.mem_offset + index * inner_dim_elements,
-            f"{arg=} for node {node=} has wrong memory offset: {arg_spec.mem_offset=} for select on {dim=} {index=}, "
+            spec.mem_offset,  # type: ignore[union-attr]
+            arg_spec.mem_offset + index * inner_dim_elements,  # type: ignore[union-attr]
+            f"{arg=} for node {node=} has wrong memory offset: {arg_spec.mem_offset=} for select on {dim=} {index=}, "  # type: ignore[union-attr]
             f"but output has {spec.mem_offset=}"
             f"{spec=} {arg_spec=}",
         )
@@ -1017,7 +1017,7 @@ class TestMemTransform(unittest.TestCase):
                 if spec and spec.mem_offset:
                     self.assertEqual(spec.mem_offset % 37, 0)
 
-    @parameterized.expand([0, 1])
+    @parameterized.expand([0, 1])  # type: ignore[misc]
     def test_block_mem_id(self, mem_algo: int) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(16))
@@ -1047,7 +1047,7 @@ class TestMemTransform(unittest.TestCase):
             def __init__(self, memory_constraints: MemConstraints):
                 self.memory_constraints = memory_constraints
 
-            def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+            def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # type: ignore[return]
                 for node in graph_module.graph.find_nodes(
                     op="call_function", target=torch.ops.aten.add.Scalar
                 ):
@@ -1133,7 +1133,7 @@ class TestConstraintsBase(unittest.TestCase):
             specs,
             gm,
             # pyre-ignore[6]
-            None,
+            None,  # type: ignore[arg-type]
             state,
             placement_constraints,
         )

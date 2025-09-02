@@ -143,8 +143,8 @@ class MemConstraints:
             node_source_spec = node_source_info.source.meta.get("spec")
             return (
                 node_source_info.offset == 0
-                and math.prod(node_source_spec.shape) == math.prod(node_spec.shape)
-                and node_source_spec.dtype == node_spec.dtype
+                and math.prod(node_source_spec.shape) == math.prod(node_spec.shape)  # type: ignore[union-attr]
+                and node_source_spec.dtype == node_spec.dtype  # type: ignore[union-attr]
                 and self.is_alias_of(node_source_info.source, other_node)
             )
 
@@ -172,7 +172,7 @@ class MemConstraints:
         # Check if any node is a param.
         if node.op == "get_attr":
             return False
-        if node.op == "placeholder" and node.meta.get("spec").const:
+        if node.op == "placeholder" and node.meta.get("spec").const:  # type: ignore[union-attr]
             # Parameters / constants are not memory planned.
             return False
         if node.op == "placeholder" and not (self.alloc_graph_input):
@@ -213,8 +213,8 @@ class MemConstraints:
             source_info = self.get_relative_placement_source(dependent_node)
             assert source_info is not None
             dependent_spec = cast(TensorSpec, dependent_node.meta.get("spec"))
-            dependent_spec.mem_id = spec.mem_id
-            dependent_spec.mem_offset = spec.mem_offset + source_info.offset
+            dependent_spec.mem_id = spec.mem_id  # type: ignore[assignment]
+            dependent_spec.mem_offset = spec.mem_offset + source_info.offset  # type: ignore[operator,assignment]
             # Recursively resolve any relative constraints on this arg_spec
             self.resolve_relative_loc_constraints(dependent_spec)
 
@@ -280,14 +280,14 @@ class MemConstraints:
         dependent_spec = dependent.meta.get("spec")
         if update_lifetime:
             source_spec = source.meta.get("spec")
-            source.meta.get("spec").lifetime = [
-                min(source_spec.lifetime[0], dependent_spec.lifetime[0]),
-                max(source_spec.lifetime[1], dependent_spec.lifetime[1]),
+            source.meta.get("spec").lifetime = [  # type: ignore[union-attr]
+                min(source_spec.lifetime[0], dependent_spec.lifetime[0]),  # type: ignore[union-attr]
+                max(source_spec.lifetime[1], dependent_spec.lifetime[1]),  # type: ignore[union-attr]
             ]
 
         self.update_children_nodes(dependent, update_lifetime)
 
-        abs_constraint = self.get_absolute_placement_constraint(dependent_spec)
+        abs_constraint = self.get_absolute_placement_constraint(dependent_spec)  # type: ignore[arg-type]
         if abs_constraint is None:
             return
 
@@ -366,7 +366,7 @@ def get_relative_offset_of_slice(slice_node: torch.fx.Node) -> int:
     slice_input = slice_node.args[0]
     assert isinstance(slice_input, torch.fx.Node)
     input_spec = slice_input.meta.get("spec")
-    tensor_shape = list(input_spec.shape)
+    tensor_shape = list(input_spec.shape)  # type: ignore[union-attr]
     assert tensor_shape
     # get the slice dimension
     dim = 0 if len(slice_node.args) == 1 else cast(int, slice_node.args[1])
@@ -390,7 +390,7 @@ def get_relative_offset_of_slice(slice_node: torch.fx.Node) -> int:
     tensor_shape[dim] = 1
 
     nbytes = num_bytes_from_shape_and_dtype(
-        torch.Size(tensor_shape), input_spec.scalar_type
+        torch.Size(tensor_shape), input_spec.scalar_type  # type: ignore[union-attr]
     )
     offset = start * nbytes
     return offset
@@ -406,7 +406,7 @@ class GenerateCatNopConstraints(PassBase):
     def __init__(self, constraint: MemConstraints) -> None:
         self.constraint = constraint
 
-    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
+    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:  # type: ignore[return]
         self.compute_cat_contiguity_constraints(graph_module)
 
     def is_slice_view(self, node: torch.fx.Node) -> bool:
@@ -545,7 +545,7 @@ class GenerateMemoryViewConstraints(PassBase):
     def __init__(self, constraint: MemConstraints) -> None:
         self.constraint = constraint
 
-    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
+    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:  # type: ignore[return]
         for node in graph_module.graph.nodes:
             if node.op != "call_function" or node.target != memory.view:
                 continue
@@ -563,7 +563,7 @@ class GenerateSliceAndSelectNopConstraints(PassBase):
     def __init__(self, constraint: MemConstraints) -> None:
         self.constraint = constraint
 
-    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
+    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:  # type: ignore[return]
         self.compute_slice_and_select_loc_constraints(graph_module)
 
     # Return True if the slice or select op can be replaced by a nop after
@@ -593,9 +593,9 @@ class GenerateSliceAndSelectNopConstraints(PassBase):
         # is along the outermost dimension, or (b) all dimensions previous to
         # slicing/select dimension are 0 or 1.
         node_spec = node.meta.get("spec")
-        tensor_shape = list(node_spec.shape)
+        tensor_shape = list(node_spec.shape)  # type: ignore[union-attr]
         dim = 0 if len(node.args) == 1 else node.args[1]
-        if dim and not set(tensor_shape[0:dim]).issubset({0, 1}):
+        if dim and not set(tensor_shape[0:dim]).issubset({0, 1}):  # type: ignore[misc]
             return False
 
         # The slice step should be 1 for contiguity.
@@ -684,7 +684,7 @@ class GenerateMemConstraints:
             for mcg_pass in cast(
                 list[ConstraintsGenPass],
                 # pyre-ignore[6]: Incompatible parameter type.
-                list(filter(pass_filter, constraint_gen_passes)),
+                list(filter(pass_filter, constraint_gen_passes)),  # type: ignore[arg-type]
             )
         ]
         # Now run the pass manager on the filtered passes

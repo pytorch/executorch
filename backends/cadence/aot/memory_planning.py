@@ -9,7 +9,7 @@
 import collections
 import itertools
 import logging
-from typing import Iterable, Optional, Sequence
+from typing import Any, Iterable, Optional, Sequence
 
 import torch
 from executorch.backends.cadence.aot.memory_constraints import MemConstraints
@@ -28,7 +28,7 @@ from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import collect_specs_from_nodes, Verifier
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.tensor import TensorSpec
-from tabulate import tabulate
+from tabulate import tabulate  # type: ignore[import-untyped]
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -64,15 +64,15 @@ class PositionBasedGreedyWithHierarchy(MemoryPlanningAlgo):
         """
         Greedily place the spec in the first memory that can fit it.
         """
-        for spec.mem_id in range(1, self.get_num_memories()):
-            spec.mem_offset = 0
+        for spec.mem_id in range(1, self.get_num_memories()):  # type: ignore[assignment]
+            spec.mem_offset = 0  # type: ignore[assignment]
             while self.is_valid_placement(spec, placement_constraints) and (
                 overlapped := state.get_overlapping_spec(spec)
             ):
                 # Found an overlapping spec, so we need to adjust the offset = end of the overlapping spec + alignment.
-                spec.mem_offset = get_aligned_offset(
-                    overlapped.mem_offset + overlapped.allocated_memory,
-                    self.get_alignment(spec.mem_id),
+                spec.mem_offset = get_aligned_offset(  # type: ignore[assignment]
+                    overlapped.mem_offset + overlapped.allocated_memory,  # type: ignore[operator]
+                    self.get_alignment(spec.mem_id),  # type: ignore[arg-type]
                 )
 
             if self.is_valid_placement(spec, placement_constraints):
@@ -115,12 +115,12 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
         """
         Greedily place the spec in the first memory that can fit it.
         """
-        for spec.mem_id in range(1, self.get_num_memories()):
-            if placement_constraints.is_mem_id_in_blocklist(spec, spec.mem_id):
+        for spec.mem_id in range(1, self.get_num_memories()):  # type: ignore[assignment]
+            if placement_constraints.is_mem_id_in_blocklist(spec, spec.mem_id):  # type: ignore[arg-type]
                 # Skip placement for blocked memory id.
                 continue
             prev_offset, smallest_gap = 0, float("inf")
-            for allocated_spec in state.allocated_buffers[spec.mem_id]:
+            for allocated_spec in state.allocated_buffers[spec.mem_id]:  # type: ignore[call-overload]
                 if not Verifier.lifetime_overlap(spec, allocated_spec):
                     continue
 
@@ -128,7 +128,7 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
                     gap := allocated_spec.mem_offset - prev_offset
                 ) >= spec.allocated_memory and gap < smallest_gap:
                     smallest_gap = gap
-                    spec.mem_offset = prev_offset
+                    spec.mem_offset = prev_offset  # type: ignore[assignment]
                 # Note that different from the paper, which updates prev_offset for all
                 # allocated tensors, we only update tensors with overlapping lifetime.
                 # Updating prev_offset outside the if statement will include tensors without
@@ -138,12 +138,12 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
                 prev_offset = max(
                     get_aligned_offset(
                         allocated_spec.mem_offset + allocated_spec.allocated_memory,
-                        self.get_alignment(spec.mem_id),
+                        self.get_alignment(spec.mem_id),  # type: ignore[arg-type]
                     ),
                     prev_offset,
                 )
             if spec.mem_offset is None:
-                spec.mem_offset = prev_offset
+                spec.mem_offset = prev_offset  # type: ignore[assignment]
 
             if not self.is_valid_placement(spec, placement_constraints):
                 # Skip placement for invalid memory id.
@@ -153,7 +153,7 @@ class GreedyWithHeuristic(MemoryPlanningAlgo):
             state.place_spec(spec)
             # A data structure used for maintaining the tensor order
             # by offset, named ordered_allocated_ids in the paper
-            state.allocated_buffers[spec.mem_id].sort(key=lambda spec: spec.mem_offset)
+            state.allocated_buffers[spec.mem_id].sort(key=lambda spec: spec.mem_offset)  # type: ignore[call-overload]
             break
 
     def plan(
@@ -200,7 +200,7 @@ def find_peak_memory_usages_per_memory(
     # Create a defaultdict to keep track of memory usages: {mem_id: mem_usage}
     # Use a defaultdict here because we don't know how many unique memory_id in
     # the memory hierarchy used in memory planning.
-    usages = collections.defaultdict(int)
+    usages: collections.defaultdict[Any, int] = collections.defaultdict(int)  # type: ignore[var-annotated]
 
     # go through all nodes in the graph, collect memory usage per spec.mem_id
     for spec in collect_specs_from_graph_module(
@@ -209,7 +209,7 @@ def find_peak_memory_usages_per_memory(
         if mem_constraints is not None and mem_constraints.skipped_spec(spec):
             continue
         usages[spec.mem_id] = max(
-            usages[spec.mem_id], spec.mem_offset + spec.allocated_memory
+            usages[spec.mem_id], spec.mem_offset + spec.allocated_memory  # type: ignore[operator]
         )
 
     # Convert usages dictionary into list of len of max memory id

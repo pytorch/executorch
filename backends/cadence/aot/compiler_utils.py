@@ -60,7 +60,7 @@ def get_shape(
             return fake_tensor.shape
         # Case 3. node holds a param
         if node.op == "get_attr":
-            attr_node = getattr(graph_module, node.target)
+            attr_node = getattr(graph_module, node.target)  # type: ignore[arg-type]
             return attr_node.shape
         # Default: return None
         return None
@@ -140,7 +140,7 @@ def get_permuted_dims(node: torch.fx.Node, dims: List[int]) -> List[int]:
     assert node.target == exir_ops.edge.aten.permute_copy.default
     # Permute each index of the dimension ordering (dims)
     # pyre-fixme[6]: This combined typecheck isn't supported yet.
-    permute_dims: List[int] = list(node.args[1])
+    permute_dims: List[int] = list(node.args[1])  # type: ignore[arg-type]
     assert all(isinstance(x, int) for x in permute_dims)
     return [dims[x] for x in permute_dims]
 
@@ -156,7 +156,7 @@ def get_tensor_from_attr(
     if node is None:
         return None
     assert node.op == "get_attr"
-    return getattr(graph_module, node.target)
+    return getattr(graph_module, node.target)  # type: ignore[arg-type]
 
 
 def is_node_with_op(node: torch.fx.Node, op: str) -> bool:

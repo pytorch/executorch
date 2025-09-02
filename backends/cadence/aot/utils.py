@@ -19,7 +19,7 @@ from executorch.exir import ExecutorchProgramManager, memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import Argument
-from tabulate import tabulate
+from tabulate import tabulate  # type: ignore[import-untyped]
 from torch.fx.operator_schemas import get_signature_for_torch_op
 
 from torch.utils._pytree import tree_flatten
@@ -93,7 +93,7 @@ def get_conv2d_output_size(
     hout = (H + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) // stride[
         0
     ] + 1
-    wout = (W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[
+    wout = (W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[  # type: ignore[misc]
         1
     ] + 1
     if channel_last:
@@ -121,9 +121,11 @@ def get_im2row_output_size(
         input_height + 2 * padding[0] - (dilation[0] * (kernel_size[0] - 1) + 1)
     ) // stride[0] + 1
     output_width = (
-        input_width + 2 * padding[1] - (dilation[1] * (kernel_size[1] - 1) + 1)
-    ) // stride[1] + 1
-    n_output_plane = n_input_plane * kernel_size[0] * kernel_size[1]
+        input_width + 2 * padding[1] - (dilation[1] * (kernel_size[1] - 1) + 1)  # type: ignore[misc]
+    ) // stride[
+        1
+    ] + 1  # type: ignore[misc]
+    n_output_plane = n_input_plane * kernel_size[0] * kernel_size[1]  # type: ignore[misc]
     output_size = torch.Size((batch_size, output_height * output_width, n_output_plane))
     return torch.Size(output_size)
 
@@ -142,7 +144,7 @@ def get_edge_overload_packet(edge_op: EdgeOpOverload) -> EdgeOpOverloadPacket:
 
 # Get the frequency list of ops in a graph module
 def get_ops_count(graph_module: torch.fx.GraphModule) -> Dict[str, int]:
-    freq = {}
+    freq = {}  # type: ignore[var-annotated]
     # Loop over nodes to count the number of times each op occurs
     for node in graph_module.graph.nodes:
         if node.op == "call_function":
@@ -197,7 +199,7 @@ def get_shape(
             return fake_tensor.shape
         # Case 3. node holds a param
         if node.op == "get_attr":
-            attr_node = getattr(graph_module, node.target)
+            attr_node = getattr(graph_module, node.target)  # type: ignore[arg-type]
             return attr_node.shape
         # Default: return None
         return None
@@ -230,7 +232,7 @@ def print_ops_info(
         ]
         for op in final_ops_count
     ]
-    sorted_ops_count = sorted(ops_count, key=lambda x: x[1], reverse=True)
+    sorted_ops_count = sorted(ops_count, key=lambda x: x[1], reverse=True)  # type: ignore[arg-type,return-value]
 
     # Create a dict of deleted ops and their counts to pass to tabulate
     removed_ops_count = [

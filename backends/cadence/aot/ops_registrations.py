@@ -493,7 +493,7 @@ lib_aten.define(
 )
 
 
-@register_fake("cadence::quantize_per_tensor")
+@register_fake("cadence::quantize_per_tensor")  # type: ignore[misc]
 def quantize_per_tensor_meta(
     input: torch.Tensor,
     scale: float,
@@ -505,7 +505,7 @@ def quantize_per_tensor_meta(
     return input.new_empty(input.size(), dtype=dtype)
 
 
-@register_fake("cadence::dequantize_per_tensor")
+@register_fake("cadence::dequantize_per_tensor")  # type: ignore[misc]
 def dequantize_per_tensor_meta(
     input: torch.Tensor,
     scale: float,
@@ -517,7 +517,7 @@ def dequantize_per_tensor_meta(
     return input.new_empty(input.size(), dtype=torch.float)
 
 
-@register_fake("cadence::quantized_add")
+@register_fake("cadence::quantized_add")  # type: ignore[misc]
 def quantized_add_meta(
     X: torch.Tensor,
     X_scale: torch.Tensor,
@@ -534,7 +534,7 @@ def quantized_add_meta(
     return X.new_empty(out_size, dtype=X.dtype)
 
 
-@register_fake("cadence::quantized_add.per_tensor")
+@register_fake("cadence::quantized_add.per_tensor")  # type: ignore[misc]
 def quantized_add_per_tensor_meta(
     X: torch.Tensor,
     X_scale: float,
@@ -550,7 +550,7 @@ def quantized_add_per_tensor_meta(
     return X.new_empty(out_size, dtype=X.dtype)
 
 
-@register_fake("cadence::quantized_add_asym8sxasym8s_asym8s.per_tensor")
+@register_fake("cadence::quantized_add_asym8sxasym8s_asym8s.per_tensor")  # type: ignore[misc]
 def quantized_add_asym8sxasym8s_asym8s_per_tensor_meta(
     X: torch.Tensor,
     X_scale: float,
@@ -565,7 +565,7 @@ def quantized_add_asym8sxasym8s_asym8s_per_tensor_meta(
     return X.new_empty(out_size, dtype=X.dtype)
 
 
-@register_fake("cadence::quantized_add_asym8uxasym8u_asym8u.per_tensor")
+@register_fake("cadence::quantized_add_asym8uxasym8u_asym8u.per_tensor")  # type: ignore[misc]
 def quantized_add_asym8uxasym8u_asym8u_per_tensor_meta(
     X: torch.Tensor,
     X_scale: float,
@@ -580,7 +580,7 @@ def quantized_add_asym8uxasym8u_asym8u_per_tensor_meta(
     return X.new_empty(out_size, dtype=X.dtype)
 
 
-@register_fake("cadence::quantized_linear")
+@register_fake("cadence::quantized_linear")  # type: ignore[misc]
 def quantized_linear_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -602,7 +602,7 @@ def quantized_linear_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::quantized_linear.per_tensor")
+@register_fake("cadence::quantized_linear.per_tensor")  # type: ignore[misc]
 def quantized_linear_per_tensor_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -624,7 +624,7 @@ def quantized_linear_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::quantized_linear_asym8sxasym8s_asym8s.per_tensor")
+@register_fake("cadence::quantized_linear_asym8sxasym8s_asym8s.per_tensor")  # type: ignore[misc]
 def quantized_linear_asym8sxasym8s_asym8s_per_tensor_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -646,7 +646,7 @@ def quantized_linear_asym8sxasym8s_asym8s_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::quantized_linear_asym8uxasym8u_asym8u.per_tensor")
+@register_fake("cadence::quantized_linear_asym8uxasym8u_asym8u.per_tensor")  # type: ignore[misc]
 def quantized_linear_asym8uxasym8u_asym8u_per_tensor_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -668,7 +668,7 @@ def quantized_linear_asym8uxasym8u_asym8u_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc")
+@register_fake("cadence::quantized_conv_nhwc")  # type: ignore[misc]
 def quantized_conv_nhwc_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -697,9 +697,9 @@ def quantized_conv_nhwc_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             True,
         )
@@ -712,7 +712,7 @@ def quantized_conv_nhwc_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw")
+@register_fake("cadence::quantized_conv_nchw")  # type: ignore[misc]
 def quantized_conv_nchw_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -741,9 +741,9 @@ def quantized_conv_nchw_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             False,
         )
@@ -756,7 +756,7 @@ def quantized_conv_nchw_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw.per_tensor")
+@register_fake("cadence::quantized_conv_nchw.per_tensor")  # type: ignore[misc]
 def quantized_conv_nchw_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -785,9 +785,9 @@ def quantized_conv_nchw_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             False,
         )
@@ -800,7 +800,7 @@ def quantized_conv_nchw_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc.per_tensor")
+@register_fake("cadence::quantized_conv_nhwc.per_tensor")  # type: ignore[misc]
 def quantized_conv_nhwc_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -829,9 +829,9 @@ def quantized_conv_nhwc_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             True,
         )
@@ -844,7 +844,7 @@ def quantized_conv_nhwc_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor")
+@register_fake("cadence::quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor")  # type: ignore[misc]
 def quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -873,9 +873,9 @@ def quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             False,
         )
@@ -888,7 +888,7 @@ def quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor")
+@register_fake("cadence::quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor")  # type: ignore[misc]
 def quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -917,9 +917,9 @@ def quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             False,
         )
@@ -932,7 +932,7 @@ def quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor")
+@register_fake("cadence::quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor")  # type: ignore[misc]
 def quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -961,9 +961,9 @@ def quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             True,
         )
@@ -976,7 +976,7 @@ def quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor")
+@register_fake("cadence::quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor")  # type: ignore[misc]
 def quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1005,9 +1005,9 @@ def quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             True,
         )
@@ -1020,7 +1020,7 @@ def quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor")
+@register_fake("cadence::quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor")  # type: ignore[misc]
 def quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1049,9 +1049,9 @@ def quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             False,
         )
@@ -1064,7 +1064,7 @@ def quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor")
+@register_fake("cadence::quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor")  # type: ignore[misc]
 def quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1093,9 +1093,9 @@ def quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             False,
         )
@@ -1108,7 +1108,7 @@ def quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor")
+@register_fake("cadence::quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor")  # type: ignore[misc]
 def quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1137,9 +1137,9 @@ def quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             True,
         )
@@ -1152,7 +1152,7 @@ def quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor")
+@register_fake("cadence::quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor")  # type: ignore[misc]
 def quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1181,9 +1181,9 @@ def quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             True,
         )
@@ -1196,7 +1196,7 @@ def quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor")
+@register_fake("cadence::quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor")  # type: ignore[misc]
 def quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1225,9 +1225,9 @@ def quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             False,
         )
@@ -1240,7 +1240,7 @@ def quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor")
+@register_fake("cadence::quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor")  # type: ignore[misc]
 def quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1269,9 +1269,9 @@ def quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             False,
         )
@@ -1284,7 +1284,7 @@ def quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor")
+@register_fake("cadence::quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor")  # type: ignore[misc]
 def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1313,9 +1313,9 @@ def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             True,
         )
@@ -1328,7 +1328,7 @@ def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor")
+@register_fake("cadence::quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor")  # type: ignore[misc]
 def quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1357,9 +1357,9 @@ def quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
         get_conv1d_output_size(
             in_size,
             out_channels,
-            stride[1],
-            padding[1],
-            dilation[1],
+            stride[1],  # type: ignore[misc]
+            padding[1],  # type: ignore[misc]
+            dilation[1],  # type: ignore[misc]
             kernel_size[0],
             True,
         )
@@ -1372,7 +1372,7 @@ def quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_layer_norm")
+@register_fake("cadence::quantized_layer_norm")  # type: ignore[misc]
 def quantized_layer_norm_meta(
     input: torch.Tensor,
     X_scale: torch.Tensor,
@@ -1387,7 +1387,7 @@ def quantized_layer_norm_meta(
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_layer_norm.per_tensor")
+@register_fake("cadence::quantized_layer_norm.per_tensor")  # type: ignore[misc]
 def quantized_layer_norm_per_tensor_meta(
     input: torch.Tensor,
     X_scale: float,
@@ -1402,7 +1402,7 @@ def quantized_layer_norm_per_tensor_meta(
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_relu")
+@register_fake("cadence::quantized_relu")  # type: ignore[misc]
 def quantized_relu_meta(
     X: torch.Tensor,
     X_zero_point: torch.Tensor,
@@ -1413,7 +1413,7 @@ def quantized_relu_meta(
     return X.new_empty(X.size(), dtype=X.dtype)
 
 
-@register_fake("cadence::quantized_matmul")
+@register_fake("cadence::quantized_matmul")  # type: ignore[misc]
 def quantized_matmul_meta(
     X: torch.Tensor,
     X_zero_point: int,
@@ -1456,7 +1456,7 @@ def quantized_matmul_meta(
     return X.new_empty(out_size, dtype=X.dtype)
 
 
-@register_fake("cadence::quantized_matmul_asym8sxasym8s_asym8s")
+@register_fake("cadence::quantized_matmul_asym8sxasym8s_asym8s")  # type: ignore[misc]
 def quantized_matmul_asym8sxasym8s_asym8s_meta(
     X: torch.Tensor,
     X_zero_point: int,
@@ -1499,7 +1499,7 @@ def quantized_matmul_asym8sxasym8s_asym8s_meta(
     return X.new_empty(out_size, dtype=X.dtype)
 
 
-@register_fake("cadence::quantized_matmul_asym8uxasym8u_asym8u")
+@register_fake("cadence::quantized_matmul_asym8uxasym8u_asym8u")  # type: ignore[misc]
 def quantized_matmul_asym8uxasym8u_asym8u_meta(
     X: torch.Tensor,
     X_zero_point: int,
@@ -1542,7 +1542,7 @@ def quantized_matmul_asym8uxasym8u_asym8u_meta(
     return X.new_empty(out_size, dtype=X.dtype)
 
 
-@register_fake("cadence::im2row")
+@register_fake("cadence::im2row")  # type: ignore[misc]
 def im2row_meta(
     input: torch.Tensor,
     kernel_size: Tuple[int],
@@ -1558,7 +1558,7 @@ def im2row_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::im2row.per_tensor")
+@register_fake("cadence::im2row.per_tensor")  # type: ignore[misc]
 def im2row_per_tensor_meta(
     input: torch.Tensor,
     kernel_size: Tuple[int],
@@ -1575,7 +1575,7 @@ def im2row_per_tensor_meta(
 
 
 # Define the abstract implementations of the operators as required
-@register_fake("cadence::linalg_vector_norm")
+@register_fake("cadence::linalg_vector_norm")  # type: ignore[misc]
 def linalg_vector_norm_meta(
     X: torch.Tensor,
 ) -> torch.Tensor:
@@ -1583,7 +1583,7 @@ def linalg_vector_norm_meta(
     return X.new_empty([], dtype=X.dtype)
 
 
-@register_fake("cadence::linalg_svd")
+@register_fake("cadence::linalg_svd")  # type: ignore[misc]
 def linalg_svd_meta(
     A: torch.Tensor,
     full_matrices: bool = False,
@@ -1603,7 +1603,7 @@ def linalg_svd_meta(
     return U_contiguous, S_contiguous, Vh_contiguous
 
 
-@register_fake("cadence::requantize")
+@register_fake("cadence::requantize")  # type: ignore[misc]
 def requantize_meta(
     input: torch.Tensor,
     in_scale: torch.Tensor,
@@ -1612,14 +1612,14 @@ def requantize_meta(
     out_zero_point: torch.Tensor,
     dtype: ScalarType,
 ) -> torch.Tensor:
-    return input.new_empty(
+    return input.new_empty(  # type: ignore[call-overload]
         input.size(),
         # pyre-ignore[6]: Incompatible type
         dtype=dtype,
     )
 
 
-@register_fake("cadence::requantize.per_tensor")
+@register_fake("cadence::requantize.per_tensor")  # type: ignore[misc]
 def requantize_per_tensor_meta(
     input: torch.Tensor,
     in_scale: float,
@@ -1628,14 +1628,14 @@ def requantize_per_tensor_meta(
     out_zero_point: int,
     dtype: ScalarType,
 ) -> torch.Tensor:
-    return input.new_empty(
+    return input.new_empty(  # type: ignore[call-overload]
         input.size(),
         # pyre-ignore[6]: Incompatible type
         dtype=dtype,
     )
 
 
-@register_fake("cadence::quantized_relu.per_tensor")
+@register_fake("cadence::quantized_relu.per_tensor")  # type: ignore[misc]
 def quantized_relu_per_tensor_meta(
     input: torch.Tensor,
     in_zero_point: int,
@@ -1646,7 +1646,7 @@ def quantized_relu_per_tensor_meta(
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_relu_asym8s_asym8s.per_tensor")
+@register_fake("cadence::quantized_relu_asym8s_asym8s.per_tensor")  # type: ignore[misc]
 def quantized_relu_asym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     in_zero_point: int,
@@ -1657,7 +1657,7 @@ def quantized_relu_asym8s_asym8s_per_tensor_meta(
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_relu_asym8u_asym8u.per_tensor")
+@register_fake("cadence::quantized_relu_asym8u_asym8u.per_tensor")  # type: ignore[misc]
 def quantized_relu_asym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     in_zero_point: int,
@@ -1668,7 +1668,7 @@ def quantized_relu_asym8u_asym8u_per_tensor_meta(
     return input.new_empty(input.size(), dtype=input.dtype)
 
 
-@register_fake("cadence::fully_connected")
+@register_fake("cadence::fully_connected")  # type: ignore[misc]
 def fully_connected_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -1684,7 +1684,7 @@ def fully_connected_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::quantized_fully_connected")
+@register_fake("cadence::quantized_fully_connected")  # type: ignore[misc]
 def quantized_fully_connected_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -1706,7 +1706,7 @@ def quantized_fully_connected_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::quantized_fully_connected.per_tensor")
+@register_fake("cadence::quantized_fully_connected.per_tensor")  # type: ignore[misc]
 def quantized_fully_connected_per_tensor_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -1728,7 +1728,7 @@ def quantized_fully_connected_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor")
+@register_fake("cadence::quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor")  # type: ignore[misc]
 def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -1750,7 +1750,7 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")
+@register_fake("cadence::quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")  # type: ignore[misc]
 def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_meta(
     src: torch.Tensor,
     weight: torch.Tensor,
@@ -1772,7 +1772,7 @@ def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::convolution")
+@register_fake("cadence::convolution")  # type: ignore[misc]
 def convolution_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1812,7 +1812,7 @@ def convolution_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::transposed_convolution")
+@register_fake("cadence::transposed_convolution")  # type: ignore[misc]
 def transposed_convolution_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -1888,10 +1888,10 @@ def transposed_convolution_meta(
             + 1
         )
         wout = (
-            (W - 1) * stride[1]
-            - 2 * padding[1]
-            + dilation[1] * (kernel_size[1] - 1)
-            + output_padding[1]
+            (W - 1) * stride[1]  # type: ignore[misc]
+            - 2 * padding[1]  # type: ignore[misc]
+            + dilation[1] * (kernel_size[1] - 1)  # type: ignore[misc]
+            + output_padding[1]  # type: ignore[misc]
             + 1
         )
 
@@ -1931,7 +1931,7 @@ def transposed_convolution_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::avg_pool2d")
+@register_fake("cadence::avg_pool2d")  # type: ignore[misc]
 def avg_pool2d_meta(
     input: torch.Tensor,
     kernel_size: Tuple[int],
@@ -1955,7 +1955,7 @@ def avg_pool2d_meta(
     )
 
 
-@register_fake("cadence::transposed_im2row")
+@register_fake("cadence::transposed_im2row")  # type: ignore[misc]
 def transposed_im2row_meta(
     input: torch.Tensor,
     kernel_size: Tuple[int],
@@ -1982,20 +1982,20 @@ def transposed_im2row_meta(
         + 1
     )
     output_width = (
-        (input_width - 1) * stride[1]
-        - 2 * padding[1]
-        + dilation[1] * (kernel_size[1] - 1)
-        + output_padding[1]
+        (input_width - 1) * stride[1]  # type: ignore[misc]
+        - 2 * padding[1]  # type: ignore[misc]
+        + dilation[1] * (kernel_size[1] - 1)  # type: ignore[misc]
+        + output_padding[1]  # type: ignore[misc]
         + 1
     )
-    n_output_plane = n_input_plane * kernel_size[0] * kernel_size[1]
+    n_output_plane = n_input_plane * kernel_size[0] * kernel_size[1]  # type: ignore[misc]
     output_length = output_height * output_width
     output_size = torch.Size((batch_size, output_length, n_output_plane))
 
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::where_Scalar")
+@register_fake("cadence::where_Scalar")  # type: ignore[misc]
 def where_Scalar_meta(
     condition: torch.Tensor,
     self: float,
@@ -2004,7 +2004,7 @@ def where_Scalar_meta(
     return condition.new_empty(condition.size(), dtype=torch.float32)
 
 
-@register_fake("cadence::rope")
+@register_fake("cadence::rope")  # type: ignore[misc]
 def rope_meta(
     input: torch.Tensor,
     sin_tensor: torch.Tensor,
@@ -2031,7 +2031,7 @@ def rope_meta(
     return input.new_empty(input.shape, dtype=input.dtype)
 
 
-@register_fake("cadence::idma_copy")
+@register_fake("cadence::idma_copy")  # type: ignore[misc]
 def copy_idma_copy_impl(
     src: torch.Tensor,
     task_num: int = 0,
@@ -2040,7 +2040,7 @@ def copy_idma_copy_impl(
     return src.new_empty(*src.shape, dtype=src.dtype)
 
 
-@register_fake("cadence::idma_wait")
+@register_fake("cadence::idma_wait")  # type: ignore[misc]
 def copy_idma_wait_impl(
     src: torch.Tensor,
     task_num: int = 0,
@@ -2048,7 +2048,7 @@ def copy_idma_wait_impl(
     return src.new_empty(*src.shape, dtype=src.dtype)
 
 
-@register_fake("cadence::idma_load")
+@register_fake("cadence::idma_load")  # type: ignore[misc]
 def idma_load_impl(
     src: torch.Tensor,
     task_num: int = 0,
@@ -2057,7 +2057,7 @@ def idma_load_impl(
     return copy_idma_copy_impl(src, task_num, channel)
 
 
-@register_fake("cadence::idma_store")
+@register_fake("cadence::idma_store")  # type: ignore[misc]
 def idma_store_impl(
     src: torch.Tensor,
     task_num: int = 0,
@@ -2066,7 +2066,7 @@ def idma_store_impl(
     return copy_idma_copy_impl(src, task_num, channel)
 
 
-@register_fake("cadence::roi_align_box_processor")
+@register_fake("cadence::roi_align_box_processor")  # type: ignore[misc]
 def roi_align_box_processor_meta(
     rois: torch.Tensor,
     output_size_h: int,

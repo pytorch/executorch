@@ -1473,7 +1473,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         b = torch.randn(16)
         args = (x, w, b, (2, 2), (1, 1), (0, 0), 1)
         if channels_last is not None:
-            args = args + (channels_last,)
+            args = args + (channels_last,)  # type: ignore[assignment]
         return single_op_builder(
             placeholders=(x, w, b),
             op=exir_ops.edge.cadence.convolution.default,
@@ -1550,7 +1550,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         b = torch.randn(16)
         args = (x, w, b, (2, 2), (1, 1), (0, 0), 1)
         if channels_last is not None:
-            args = args + (channels_last,)
+            args = args + (channels_last,)  # type: ignore[assignment]
         return single_op_builder(
             placeholders=(x, w, b),
             op=exir_ops.edge.cadence.convolution.default,
@@ -1941,8 +1941,8 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
             op_counts_match(
                 graph_after_passes,
                 expected_op_counts={
-                    torch.ops.aten.mul.Tensor: 1,
-                    torch.ops.aten.full.default: 1,
+                    torch.ops.aten.mul.Tensor: 1,  # type: ignore[dict-item]
+                    torch.ops.aten.full.default: 1,  # type: ignore[dict-item]
                 },
             )
         )

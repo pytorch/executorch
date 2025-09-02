@@ -164,7 +164,7 @@ class CadenceAtenQuantizer(Quantizer):
                 weights_or_biases: List[Tuple[fx.Node, int]],
                 spec: Optional[QuantizationSpec],
             ) -> None:
-                for node, idx, *custom_spec in weights_or_biases:
+                for node, idx, *custom_spec in weights_or_biases:  # type: ignore[var-annotated]
                     annotation = node.meta.get(
                         Q_ANNOTATION_KEY,
                         QuantizationAnnotation(_annotated=True),
@@ -175,10 +175,10 @@ class CadenceAtenQuantizer(Quantizer):
                     node.meta[Q_ANNOTATION_KEY] = annotation
 
             # pyre-ignore[6]: incompatible parameter type
-            annotate_inputs(anchors.inputs, input_act_qspec)
+            annotate_inputs(anchors.inputs, input_act_qspec)  # type: ignore[arg-type]
             annotate_weights_or_biases(anchors.weights, weight_qspec)
             # pyre-ignore[6]: incompatible parameter type
-            annotate_weights_or_biases(anchors.biases, bias_qspec)
+            annotate_weights_or_biases(anchors.biases, bias_qspec)  # type: ignore[arg-type]
         return model
 
     def validate(self, model: fx.GraphModule) -> None:

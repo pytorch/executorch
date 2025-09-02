@@ -397,14 +397,14 @@ class FuseQuantizedBatchNormWithConv(ExportPass):
             # Requantize the fused weight with the scale and zero point of the
             # quantized::conv's weight
             if per_tensor_quantization:
-                fused_weight = torch.quantize_per_tensor(
+                fused_weight = torch.quantize_per_tensor(  # type: ignore[assignment]
                     fused_weight,
                     weight_scale.item(),
                     cast(int, weight_zero_point.item()),
                     weight_dtype,
                 )
             else:
-                fused_weight = torch.quantize_per_channel(
+                fused_weight = torch.quantize_per_channel(  # type: ignore[assignment]
                     fused_weight,
                     weight_scale,
                     weight_zero_point,
@@ -693,7 +693,7 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
 
     def _pkg_name_match(self, node1: torch.fx.Node, node2: torch.fx.Node) -> bool:
         # pyre-ignore[16]: Item `typing.Callable` has no attribute `_op`
-        return node1.target._op.namespace == node2.target._op.namespace
+        return node1.target._op.namespace == node2.target._op.namespace  # type: ignore[union-attr]
 
     def can_fuse_for_chain(
         self,
