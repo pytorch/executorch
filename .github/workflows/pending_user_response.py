@@ -17,14 +17,22 @@ DAYS_BEFORE_REMINDER = 30
 DAYS_BEFORE_CLOSE = 30
 
 def main():
-    g = Github(os.environ['GH_TOKEN'])
-    repo = g.get_repo(REPO_NAME)
+    # g = Github(os.environ['GH_TOKEN'])
+    # repo = g.get_repo(REPO_NAME)
 
-    issues = repo.get_issues(state='open', labels=[LABEL])
+    print("[VALIDATION] Would connect to Github and fetch repo:", REPO_NAME)
+    # issues = repo.get_issues(state='open', labels=[LABEL])
+    print(f"[VALIDATION] Would fetch open issues with label '{LABEL}'.")
+
     now = datetime.datetime.utcnow()
 
+    # Simulate issues for validation workflow
+    issues = []  # Replace with mock issues if needed
+
     for issue in issues:
-        comments = list(issue.get_comments())
+        # comments = list(issue.get_comments())
+        print(f"[VALIDATION] Would fetch comments for issue/PR #{issue.number}.")
+        comments = []  # Replace with mock comments if needed
         last_comment = comments[-1] if comments else None
 
         # Find automation comments
@@ -36,8 +44,8 @@ def main():
             if last_comment and (now - last_comment.created_at).days >= DAYS_BEFORE_REMINDER:
                 # Tag the issue author or PR author
                 user = issue.user.login
-                issue.create_comment(REMINDER_COMMENT.format(user))
-                print(f"Reminded {user} on issue/PR #{issue.number}")
+                # issue.create_comment(REMINDER_COMMENT.format(user))
+                print(f"[VALIDATION] Would remind {user} on issue/PR #{issue.number}")
 
         # Case 2: Automation comment exists, but no user response after 30 more days
         elif auto_comments:
@@ -50,15 +58,15 @@ def main():
 
             if not user_responded:
                 if (now - last_auto.created_at).days >= DAYS_BEFORE_CLOSE:
-                    issue.create_comment(CLOSE_COMMENT)
-                    issue.edit(state="closed")
-                    print(f"Closed issue/PR #{issue.number} due to inactivity.")
+                    # issue.create_comment(CLOSE_COMMENT)
+                    # issue.edit(state="closed")
+                    print(f"[VALIDATION] Would close issue/PR #{issue.number} due to inactivity.")
 
             else:
                 # Remove label if user responded
                 labels = [l.name for l in issue.labels if l.name != LABEL]
-                issue.set_labels(*labels)
-                print(f"Removed label from issue/PR #{issue.number} after user response.")
+                # issue.set_labels(*labels)
+                print(f"[VALIDATION] Would remove label from issue/PR #{issue.number} after user response.")
 
 if __name__ == "__main__":
     main()
