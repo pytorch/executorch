@@ -217,7 +217,8 @@ class Module {
    * @returns A Result object containing either a pointer to the requested
    *          method or an error to indicate failure.
    */
-  ET_DEPRECATED ET_NODISCARD runtime::Result<Method*> method(const std::string& method_name);
+  ET_DEPRECATED ET_NODISCARD runtime::Result<Method*> method(
+      const std::string& method_name);
 
   /**
    * Load the 'forward' method from the program and set up memory management if
