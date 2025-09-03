@@ -25,13 +25,17 @@ else()
   set(_executorch_external_project_additional_args CMAKE_GENERATOR "Unix Makefiles")
 endif()
 
+# DEBUG
+if(WIN32)
+  set_directory_properties(PROPERTIES EP_BASE "C:\\actions-runner\\_work\\")
+endif()
+
 # We use ExternalProject to build flatc from source to force it target the host.
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
 ExternalProject_Add(
   flatbuffers_ep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatc_proj
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
-  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatc_proj/src/build
   CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
              -DFLATBUFFERS_INSTALL=ON
              -DFLATBUFFERS_BUILD_FLATHASH=OFF
