@@ -41,5 +41,7 @@ runtime.python_test(
         "//executorch/export:lib",
         "//executorch/export:target_recipes",
         "//executorch/runtime:runtime",
+        "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
+        "//executorch/backends/apple/coreml:coreml_recipes",
     ]
 )

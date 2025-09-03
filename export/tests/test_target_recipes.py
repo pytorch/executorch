@@ -10,13 +10,27 @@ import logging
 import unittest
 
 import torch
-from executorch.export import export
+from executorch.backends.apple.coreml.recipes import CoreMLRecipeProvider  # pyre-ignore
+from executorch.backends.xnnpack.recipes.xnnpack_recipe_provider import (
+    XNNPACKRecipeProvider,
+)
+from executorch.export import export, recipe_registry
 from executorch.export.target_recipes import get_ios_recipe
 from executorch.runtime import Runtime
 
 
 class TestTargetRecipes(unittest.TestCase):
     """Test target recipes."""
+
+    def setUp(self) -> None:
+        torch._dynamo.reset()
+        super().setUp()
+        recipe_registry.register_backend_recipe_provider(XNNPACKRecipeProvider())
+        # pyre-ignore
+        recipe_registry.register_backend_recipe_provider(CoreMLRecipeProvider())
+
+    def tearDown(self) -> None:
+        super().tearDown()
 
     def test_ios_fp32_recipe_with_xnnpack_fallback(self) -> None:
         # Linear ops skipped by coreml but handled by xnnpack
@@ -93,7 +107,7 @@ class TestTargetRecipes(unittest.TestCase):
             et_output = session.run_method("forward", example_inputs[0])
             logging.info(f"et output {et_output}")
 
-    def test_ios_int8_recipe(self) -> None:
+    def test_ios_quant_recipes(self) -> None:
         class Model(torch.nn.Module):
             def __init__(self):
                 super().__init__()
