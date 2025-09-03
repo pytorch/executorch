@@ -77,17 +77,27 @@ For more information about OpenVINO build, refer to the [OpenVINO Build Instruct
 
 Follow the steps below to setup your build environment:
 
-1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](https://pytorch.org/executorch/main/getting-started-setup#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
 
-2. **Setup OpenVINO Backend Environment**
+1. **Create a Virtual Environment**
+- Create a virtual environment and activate it by executing the commands below.
+   ```bash
+   python -m venv env
+   source env/bin/activate
+   ```
+2. **Clone ExecuTorch Repository from Github**
+- Clone Executorch repository by executing the command below.
+   ```bash
+   git clone --recurse-submodules https://github.com/pytorch/executorch.git
+   ```
+3. **Setup OpenVINO Backend Environment**
 - Install the dependent libs. Ensure that you are inside `executorch/backends/openvino/` directory
    ```bash
    pip install -r requirements.txt
    ```
   Note: To achieve optimal performance with NNCF quantization, you should install the latest development version of NNCF (version 2.16.0.dev0+191b53d9 or higher).
-3. Navigate to `scripts/` directory.
+4. Navigate to `scripts/` directory.
 
-4. **Build OpenVINO Backend C++ Libraries and Executor Runner**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process. By default, OpenVINO backend will be built under `cmake-out/backends/openvino/` as `libopenvino_backend.a`
+5. **Build OpenVINO Backend C++ Libraries and Executor Runner**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process. By default, OpenVINO backend will be built under `cmake-out/backends/openvino/` as `libopenvino_backend.a`
 
    ```bash
    ./openvino_build.sh
@@ -97,6 +107,7 @@ Follow the steps below to setup your build environment:
    ```bash
    ./openvino_build.sh --enable_python
    ```
+For more information about ExecuTorch environment setup, refer to the [Environment Setup](https://pytorch.org/executorch/main/getting-started-setup#environment-setup) guide.
 
 ### Run
 
