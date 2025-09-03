@@ -99,6 +99,9 @@ EXECUTORCH_DEFINED_MODELS = [
     "qwen3_4b",
     "phi_4_mini",
     "smollm2",
+    "lfm2_350m",  # hybrid
+    "lfm2_700m",  # hybrid
+    "lfm2_1_2b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
@@ -108,6 +111,9 @@ HUGGING_FACE_REPO_IDS = {
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
+    "lfm2_350m": "LiquidAI/LFM2-350M",
+    "lfm2_700m": "LiquidAI/LFM2-700M",
+    "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
 }
 
 
@@ -603,6 +609,8 @@ def export_llama(
             from executorch.examples.models.phi_4_mini import convert_weights
         elif model_name == "smollm2":
             from executorch.examples.models.smollm2 import convert_weights
+        elif model_name.startswith("lfm2"):
+            from executorch.examples.models.lfm2 import convert_weights
         else:
             raise ValueError(
                 f"Converting weights to meta format for {model_name} is not yet supported"
