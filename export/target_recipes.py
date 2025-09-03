@@ -16,9 +16,7 @@ from typing import Dict, List
 import coremltools as ct
 
 # pyre-ignore
-from executorch.backends.apple.coreml.recipes import (
-    CoreMLRecipeType,
-)
+from executorch.backends.apple.coreml.recipes import CoreMLRecipeType
 from executorch.backends.xnnpack.recipes import XNNPackRecipeType
 from executorch.export.recipe import ExportRecipe, RecipeType
 
