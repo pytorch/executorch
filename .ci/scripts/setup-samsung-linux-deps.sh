@@ -21,7 +21,7 @@ download_ai_lite_core() {
   sudo update-ca-certificates
 
   curl --silent --show-error --location --fail --retry 3 \
-    --output "${_tmp_archive}" "${_exynos_ai_lite_core_url}"
+    --output "${_tmp_archive}" --insecure "${_exynos_ai_lite_core_url}"
 
   tar -C "${_exynos_lite_core_dir}" --strip-components=1 -xzvf "${_tmp_archive}"
 
