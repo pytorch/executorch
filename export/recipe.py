@@ -301,6 +301,9 @@ class ExportRecipe:
                 edge_compile_config=edge_compile_config or EdgeCompileConfig(),
             )
 
+        recipe_name = recipe_name or "_".join(
+            [r.name for r in backend_recipes if r.name is not None]
+        )
         return cls(
             name=recipe_name,
             quantization_recipe=combined_quantization_recipe,
