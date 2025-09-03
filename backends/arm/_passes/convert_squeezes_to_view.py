@@ -8,6 +8,8 @@
 
 from typing import Set, Type
 
+from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
+
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -17,7 +19,7 @@ class ConvertSqueezesToViewPass(ExportPass):
     Replaces squeeze/unsqueeze operators with view. These are simply special cases of the view op, so removing them gives us less cases to handle in the node visitiors.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {FuseViewCopyTransform}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in [
