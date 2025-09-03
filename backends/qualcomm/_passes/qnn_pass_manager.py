@@ -13,8 +13,8 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
+    CanonicalizeConv,
     ConvertBmmToMatmul,
-    ConvertConv1dToConv2d,
     ConvertLinearToConv2d,
     ConvertSquareToPow,
     DecomposeAny,
@@ -82,6 +82,7 @@ def get_capture_program_passes():
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
+        (CanonicalizeConv, True),
         (ConvertBmmToMatmul, False),
         (DecomposeAny, True),
         (DecomposeColIm, True),
@@ -215,7 +216,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeWrapWithAutocast())
         # this pass will rewrite state_dict, it needs to be accomplished before
         # to_edge_transform_and_lower
-        self.add_pass(ConvertConv1dToConv2d(exported_program))
+        self.add_pass(CanonicalizeConv(exported_program))
         if convert_linear_to_conv2d:
             self.add_pass(ConvertLinearToConv2d(exported_program))
         self.add_pass(ConvertSquareToPow())

@@ -15,15 +15,43 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
 from executorch.backends.nxp.aten_passes.split_group_convolution import (
     SplitGroupConvolution,
 )
-from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
+from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
+from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.tests.executorch_pipeline import (
+    _quantize_model,
+    get_random_calibration_inputs,
+    to_model_input_spec,
+)
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.models import (
     Conv1dModule,
     Conv2dModule,
     Conv3dModule,
 )
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.extension.export_util import export_to_edge
 from parameterized import parameterized
+from torch.fx import GraphModule
+
+
+def _quantize_and_lower_module(
+    module: GraphModule, input_shape: tuple[int, ...], target="imxrt700"
+) -> EdgeProgramManager:
+    calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_shape))
+
+    exir_program_aten__module_quant = _quantize_model(module, calibration_inputs)
+
+    edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+    edge_program_manager = export_to_edge(
+        exir_program_aten__module_quant,
+        calibration_inputs[0],
+        edge_compile_config=edge_compile_config,
+    )
+
+    compile_spec = generate_neutron_compile_spec(target, "SDK_25_03")
+    partitioner = NeutronPartitioner(compile_spec)
+    return edge_program_manager.to_backend(partitioner)
 
 
 class TestSplitGroupConvolution(unittest.TestCase):
@@ -81,7 +109,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
         assert np.allclose(out1, out2, atol=2.0e-7)
 
         # Make sure the graph can be correctly quantized and lowered to edge.
-        ep = to_quantized_edge_program(
+        ep = _quantize_and_lower_module(
             modified_module, tuple(input_shape)
         ).exported_program()
         nodes = list(ep.graph.nodes)
@@ -138,7 +166,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
         assert np.allclose(out1, out2, atol=2.0e-7)
 
         # Make sure the graph can be correctly quantized and lowered to edge.
-        ep = to_quantized_edge_program(
+        ep = _quantize_and_lower_module(
             modified_module, tuple(input_shape)
         ).exported_program()
         nodes = list(ep.graph.nodes)
@@ -226,7 +254,7 @@ class TestSplitGroupConvolution(unittest.TestCase):
         assert np.allclose(out1, out2, atol=5.0e-7)
 
         # Make sure the graph can be correctly quantized and lowered to edge.
-        ep = to_quantized_edge_program(
+        ep = _quantize_and_lower_module(
             modified_module, tuple(input_shape)
         ).exported_program()
         nodes = list(ep.graph.nodes)
