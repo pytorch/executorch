@@ -64,8 +64,10 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.amax.default,
         exir_ops.edge.aten.amin.default,
+        exir_ops.edge.aten.asin.default,
         exir_ops.edge.aten.atan.default,
         exir_ops.edge.aten.bitwise_or.Tensor,
+        exir_ops.edge.aten.bitwise_xor.Tensor,
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.cat.default,
@@ -78,6 +80,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.exp.default,
         exir_ops.edge.aten.floor.default,
+        exir_ops.edge.aten.floor_divide.default,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.full_like.default,
         exir_ops.edge.aten.ge.Tensor,
@@ -107,6 +110,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.sigmoid.default,
+        exir_ops.edge.aten.sign.default,
         exir_ops.edge.aten.split_with_sizes.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
         exir_ops.edge.aten.sqrt.default,
@@ -175,6 +179,7 @@ class LayoutTransform(ExportPass):
             exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.min.dim,
             exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.aten.amax.default,
         }:
             # if dimemsion is not kept, we'll have no clue how to do layout transform
             if len(node.args) < 3 or not node.args[2]:

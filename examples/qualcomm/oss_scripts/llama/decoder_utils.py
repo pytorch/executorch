@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import getpass
-import json
 import logging
 import os
 from typing import Callable, Optional, Union
@@ -84,7 +83,6 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
                 inps,
                 self._model,
                 self._tokenizer,
-                self.ar_len,
                 self.max_seq_length,
                 use_i64_token=self.use_i64_token,
                 collect_logits=True,
@@ -117,6 +115,9 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
         # Retrieve vocab_size from get_metadata under static_llama that is passed to edge manager
         self.output_vocab_size = None
         pte_max_seq_len = None
+        self.logits_scale = None
+        self.logits_zero_point = None
+        self.kv_io_bit_width = 32
         for method in program.execution_plan:
             # Don't use tokenizer.n_words, the numbers are off once calling get_tokenizer()
             if method.name == "get_vocab_size":
@@ -125,6 +126,22 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             if method.name == "get_max_seq_len":
                 # pyre-ignore
                 pte_max_seq_len = method.values[0].val.int_val
+            if method.name == "get_logits_scale":
+                self.logits_scale = method.values[0].val.double_val
+            if method.name == "get_logits_zero_point":
+                self.logits_zero_point = method.values[0].val.int_val
+            if method.name == "get_kv_io_bit_width":
+                self.kv_io_bit_width = method.values[0].val.int_val
+
+        # FP has no scale/zero_point, use following values, which is equivalent to not performing dequantize.
+        if self.kv_io_bit_width == 32:
+            self.logits_scale = 1
+            self.logits_zero_point = 0
+        elif self.logits_scale is None or self.logits_zero_point is None:
+            raise RuntimeError(
+                "Unable to find scale/offset. The .pte file might be deprecated. Please generate a new .pte file"
+            )
+
         assert self.output_vocab_size is not None, "Couldn't find the vocab size"
         assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
         if pte_max_seq_len != max_seq_length:
@@ -137,11 +154,6 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
                 )
                 max_seq_length = pte_max_seq_len
         self.max_seq_length = max_seq_length
-
-        assert (
-            args.quant_attrs_path is not None
-        ), "Please provide path to quant_attrs json file"
-        self.quant_attrs = json.load(open(args.quant_attrs_path))
         self.runtime_tokenizer_path = runtime_tokenizer_path
 
         self.output_dir = args.artifact
@@ -206,8 +218,8 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
                     )
                 )
                 output_tensor = (
-                    output_tensor.to(torch.float32) - self.quant_attrs["zero_point"]
-                ) * self.quant_attrs["scale"]
+                    output_tensor.to(torch.float32) - self.logits_zero_point
+                ) * self.logits_scale
                 output_tensor_list.append(output_tensor)
 
             # simple_eval will run multiple rounds, use last run for inference speed
@@ -445,35 +457,45 @@ def prefill_inference(
                 logits, new_k_caches, new_v_caches = results
             elif len(results) == 1:
                 logits = results
-            logits = torch.argmax(logits[:, pos - 1], dim=-1).item()
-            token_list.append(logits)
+            token = torch.argmax(logits[:, pos - 1], dim=-1).item()
+            token_list.append(token)
             if collect_logits:
-                result_logits.append(logits)
+                result_logits = logits[:, :pos]
             pos += 1
 
     logging.info(f"prefill inference result:\n{tokenizer.decode(token_list)}")
-    if collect_logits:
-        result_logits = torch.cat(result_logits, dim=1)
     return result_logits
 
 
 def graph_module_inference(
-    args,
-    use_kv_cache,
+    use_kv_cache: bool,
     get_example_inputs: Callable,
     module: torch.fx.GraphModule,
     tokenizer,
     ar_len=1,
     max_seq_len=512,
     kv_updater=smart_mask_updater,
+    prompt=None,
+    tasks=None,
+    tasks_limit=1,
+    num_fewshot=None,
     use_i64_token=False,
     event_name: Optional[str] = None,
 ):
-    if args.tasks is None:
+    """
+    This function supports model execution from static nn.Module decoder model
+    all the way to edge program.
+    Users could choose to provide either the prompt or tasks for execution but not both.
+    """
+    # Checks 1 and only 1 is provided.
+    assert (tasks is None) != (
+        prompt is None
+    ), "Please provide either tasks or prompt - not both or neither"
+    if tasks is None:
         if use_kv_cache:
             kv_inference(
                 get_example_inputs,
-                args.prompt[0],
+                prompt,
                 module,
                 tokenizer,
                 ar_len,
@@ -485,7 +507,7 @@ def graph_module_inference(
         else:
             prefill_inference(
                 get_example_inputs,
-                args.prompt[0],
+                prompt,
                 module,
                 tokenizer,
                 max_seq_len,
@@ -507,9 +529,24 @@ def graph_module_inference(
         with torch.no_grad():
             eval_results = simple_evaluate(
                 model=calibration_wrapper,
-                tasks=args.tasks,
-                limit=args.limit,
+                tasks=tasks,
+                num_fewshot=num_fewshot,
+                limit=tasks_limit,
             )
         logging.info(f"Perplexity evaluation summary for {event_name}")
         for task, res in eval_results["results"].items():
             logging.info(f"{task}: {res}")
+
+
+def apply_prompt_template(
+    chat_template: Callable, prompt: str, system_prompt: str = None
+):
+    messages = [{"role": "user", "content": prompt}]
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+
+    template_prompt = chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    logging.info(f"Prompt after applying template: {template_prompt}")
+    return template_prompt

@@ -71,7 +71,7 @@ ExecuTorch provides support for:
 - [Overview](runtime-overview)
 - [Extension Module](extension-module)
 - [Extension Tensor](extension-tensor)
-- [Running a Model (C++ Tutorial)](running-a-model-cpp-tutorial)
+- [Detailed C++ Runtime APIs Tutorial](running-a-model-cpp-tutorial)
 - [Backend Delegate Implementation and Linking](runtime-backend-delegate-implementation-and-linking)
 - [Platform Abstraction Layer](runtime-platform-abstraction-layer)
 #### Portable C++ Programming

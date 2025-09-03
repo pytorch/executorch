@@ -22,4 +22,5 @@ runtime.python_library(
         "//executorch/exir/backend:utils",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
     ],
+    typing = True,
 )

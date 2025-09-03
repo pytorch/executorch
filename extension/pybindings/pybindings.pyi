@@ -133,6 +133,10 @@ class MethodMeta:
         internal buffers"""
         ...
 
+    def num_attributes(self) -> int:
+        """The number of attribute tensors from the method"""
+        ...
+
     def input_tensor_meta(self, index: int) -> TensorInfo:
         """The tensor info for the 'index'th input. Index must be in the interval
         [0, num_inputs()). Raises an IndexError if the index is out of bounds"""
@@ -141,6 +145,11 @@ class MethodMeta:
     def output_tensor_meta(self, index: int) -> TensorInfo:
         """The tensor info for the 'index'th output. Index must be in the interval
         [0, num_outputs()). Raises an IndexError if the index is out of bounds"""
+        ...
+
+    def attribute_tensor_meta(self, index: int) -> TensorInfo:
+        """The tensor info for the 'index'th attribute. Index must be in the interval
+        [0, num_attributes()). Raises an IndexError if the index is out of bounds"""
         ...
 
     def __repr__(self) -> str: ...

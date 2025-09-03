@@ -102,6 +102,24 @@ class AMax(torch.nn.Module):
         return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
 
 
+class AMaxFollowingConv2D(torch.nn.Module):
+    def __init__(
+        self, in_channels, out_channels, kernel_size=3, dim=None, keepdim=False
+    ):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels, out_channels, kernel_size, padding=kernel_size // 2
+        )
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        x = self.conv(
+            x
+        )  # Apply convolution (output shape: [batch, out_channels, H, W])
+        return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
+
+
 class AMin(torch.nn.Module):
     def __init__(self, dim=None, keepdim=False):
         super().__init__()
@@ -163,6 +181,14 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         view_out = argmin_out.view(-1)
         squeeze_out = view_out.squeeze(-1)
         return squeeze_out, conv_out
+
+
+class Asin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.asin(x)
 
 
 class Atan(torch.nn.Module):
@@ -246,6 +272,19 @@ class Cat4(torch.nn.Module):
 
     def forward(self, x, y):
         return torch.cat((y, y, x, x), axis=2)
+
+
+class CausalMask(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("causal_mask", torch.zeros((1, 1, 1, 128)))
+        self.mask_length = 128
+
+    def forward(self, padding_mask):
+        self.causal_mask[:, :, :, : self.mask_length] = self.causal_mask[
+            :, :, :, : self.mask_length
+        ].masked_fill(padding_mask, 1)
+        return self.causal_mask + 1
 
 
 class CDist(torch.nn.Module):
@@ -550,10 +589,16 @@ class Conv2dSingle(torch.nn.Module):
 
 
 class ConvTranspose1dSingle(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, bias=True, dilation=1):
         super().__init__()
         self.conv_transpose = torch.nn.ConvTranspose1d(
-            in_channels=1, out_channels=3, kernel_size=3, stride=2, padding=1, bias=bias
+            in_channels=1,
+            out_channels=3,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            dilation=dilation,
+            bias=bias,
         )
 
     def forward(self, x):
@@ -561,7 +606,7 @@ class ConvTranspose1dSingle(torch.nn.Module):
 
 
 class ConvTranspose2dSingle(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, bias=True, dilation=1):
         super().__init__()
         self.conv_transpose = torch.nn.ConvTranspose2d(
             in_channels=1,
@@ -569,6 +614,7 @@ class ConvTranspose2dSingle(torch.nn.Module):
             kernel_size=3,
             stride=2,
             padding=1,
+            dilation=dilation,
             bias=bias,
         )
 
@@ -774,6 +820,23 @@ class Floor(torch.nn.Module):
 
     def forward(self, x):
         return torch.floor(x)
+
+
+class FloorDiv(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.floor_divide(x, y)
+
+
+class FloorDivConstantFloat(torch.nn.Module):
+    def __init__(self, constant=2.0):
+        super().__init__()
+        self.constant = constant
+
+    def forward(self, x):
+        return torch.floor(x / self.constant)
 
 
 class Fold(torch.nn.Module):
@@ -1081,7 +1144,7 @@ class LiftAddTensor(torch.nn.Module):
 class Linear(torch.nn.Module):
     def __init__(self, use_bias: bool = True):
         super().__init__()
-        self.linear = torch.nn.Linear(4, 5, use_bias).eval()
+        self.linear = torch.nn.Linear(512, 32, use_bias).eval()
 
     def forward(self, x):
         return self.linear(x)
@@ -1380,6 +1443,15 @@ class Relu(torch.nn.Module):
         return self.relu(x)
 
 
+class Relu6(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.relu6 = torch.nn.ReLU6()
+
+    def forward(self, x):
+        return self.relu6(x)
+
+
 class Repeat(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1564,6 +1636,14 @@ class Sigmoid(torch.nn.Module):
         return torch.sigmoid(x)
 
 
+class Sign(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sign(x)
+
+
 class Sin(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1639,6 +1719,20 @@ class SliceCopyWithStep(torch.nn.Module):
         return (
             x[:, : seq_length : self.step]
             + self.position_ids[:, : seq_length : self.step]
+        )
+
+
+class SliceScatter(torch.nn.Module):
+    def __init__(self, dim, start, end, step):
+        super().__init__()
+        self.dim = dim
+        self.start = start
+        self.end = end
+        self.step = step
+
+    def forward(self, x, y):
+        return x.slice_scatter(
+            y, dim=self.dim, start=self.start, end=self.end, step=self.step
         )
 
 
@@ -1851,6 +1945,28 @@ class WhereConstantInf(torch.nn.Module):
         return torch.nn.functional.softmax(
             torch.where(x >= 0, 0.1, float("-inf")), dim=-1
         )
+
+
+class XorBitWise(torch.nn.Module):
+    def __init__(self, pos, neg):
+        super().__init__()
+        self.pos = pos
+        self.neg = neg
+
+    def forward(self, x, y):
+        bitwise_xor = torch.bitwise_xor(x, y).bool()
+        return torch.where(bitwise_xor, self.pos, self.neg)
+
+
+class XorOperator(torch.nn.Module):
+    def __init__(self, pos, neg):
+        super().__init__()
+        self.pos = pos
+        self.neg = neg
+
+    def forward(self, x, y):
+        operator_xor = x.to(torch.bool) ^ y.to(torch.bool)
+        return torch.where(operator_xor, self.pos, self.neg)
 
 
 # Mimi Decoder has 0D tensor which QNN cannot handle.
