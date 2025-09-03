@@ -6,7 +6,6 @@
 # pyre-unsafe
 
 from . import (  # noqa
-    clone_dim_order_support,
     clone_support,
     convolution_support,
     embedding_support,
