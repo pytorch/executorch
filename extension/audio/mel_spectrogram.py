@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import logging
 
 import torch
@@ -50,6 +51,7 @@ class WhisperAudioProcessor(nn.Module):
         chunk_length: int = 30,
         n_fft: int = 400,
         padding_value: float = 0.0,
+        stack_batch: bool = False,
     ) -> None:
         super().__init__()
         self.feature_size = feature_size
@@ -65,6 +67,7 @@ class WhisperAudioProcessor(nn.Module):
         self.mel_filters = self.get_mel_filters(
             sampling_rate, n_fft, n_mels=feature_size
         )
+        self.stack_batch = stack_batch
 
     def get_mel_filters(
         self, sr: int, n_fft: int, n_mels: int = 128, dtype: torch.dtype = torch.float32
@@ -179,13 +182,10 @@ def export_processor():
     audio_tensor = torch.randn(480000)
     chunk_tensor = audio_tensor[:93680]
     with torch.no_grad():
-        # dim = Dim("waveform", min=1600, max=4800000)  # 10 chunks max
-        _waveform = Dim('_waveform', min=1, max=10)
-        waveform = 480000*_waveform - 386320
         ep: ExportedProgram = torch.export.export(
-            model, (chunk_tensor,), dynamic_shapes={"waveform": {0: waveform}}, strict=True
+            model, (chunk_tensor,), dynamic_shapes={"waveform": {0: Dim.AUTO}}, strict=True
         )
-        # logging.debug(ep)
+        logging.debug(ep)
 
         # to edge
         edge: EdgeProgramManager = to_edge_transform_and_lower(
