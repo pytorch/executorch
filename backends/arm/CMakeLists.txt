@@ -73,9 +73,10 @@ if(EXECUTORCH_BUILD_VGF)
   # vgf backend
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
   add_library(vgf_backend ${_vgf_backend_sources})
+  install(TARGETS vgf_backend EXPORT ExecuTorchTargets)
   target_include_directories(
-    vgf_backend PUBLIC ${_common_include_directories} ${VULKAN_HEADERS_PATH}
-                       ${VOLK_HEADERS_PATH}
+    vgf_backend PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
+                        ${VOLK_HEADERS_PATH}
   )
   target_compile_options(
     vgf_backend PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK
