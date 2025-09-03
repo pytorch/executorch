@@ -73,7 +73,9 @@ class AddVisitor_INT(NodeVisitor):
         input1, input2 = rescaled_inputs
 
         # Do the INT32 Add
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().ADD,
             [input1.name, input2.name],
             [add_output.name],
@@ -127,7 +129,9 @@ class AddVisitor_FP(AddVisitor_INT):
             input1, input2 = inputs
 
             # FP lowering
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().ADD,
                 [input1.name, input2.name],
                 [output.name],
