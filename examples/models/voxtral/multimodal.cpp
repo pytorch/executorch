@@ -178,16 +178,11 @@ int32_t main(int32_t argc, char** argv) {
   }
 
   // Prepare inputs
-  std::vector<MultimodalInput> inputs;
-
-  // 1. Add start bos-related text inputs and modality start token.
-  inputs.emplace_back(make_text_input("<s>[INST][BEGIN_AUDIO]"));
-
-  // 2. Add audio input
-  inputs.emplace_back(processAudioFile(audio_path));
-
-  // 3. Add text input (the actual user-submitted prompt)
-  inputs.emplace_back(make_text_input(std::string(prompt) + "[/INST]"));
+  std::vector<MultimodalInput> inputs = {
+      make_text_input("<s>[INST][BEGIN_AUDIO]"),
+      processAudioFile(audio_path),
+      make_text_input(std::string(prompt) + "[/INST]"),
+  };
 
   ::executorch::extension::llm::GenerationConfig config;
   config.max_new_tokens = 100;
