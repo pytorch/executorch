@@ -1,6 +1,0 @@
---extra-index-url https://eiq.nxp.com/repository
-tensorflow==2.18.0
-pytest-mock
-tflite
-GvGen
-neutron_converter_SDK_25_03

@@ -6,8 +6,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
-from dataclasses import dataclass
-from typing import Optional
 
 import executorch.backends.cortex_m.ops.operators  # noqa
 
@@ -19,91 +17,12 @@ from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.program._program import _transform
+
+from test_helpers_passes_utils import AddQuantizer, check_count
+
 from torch.export import export
-from torch.fx import GraphModule
-from torchao.quantization.pt2e.observer import HistogramObserver
+
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torchao.quantization.pt2e.quantizer import (
-    QuantizationAnnotation,
-    QuantizationSpec,
-    Quantizer,
-)
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
-
-
-@dataclass(eq=True, frozen=True)
-class QuantizationConfig:
-    input_activation: Optional[QuantizationSpec]
-    output_activation: Optional[QuantizationSpec]
-
-
-class AddQuantizer(Quantizer):
-    def __init__(self):
-        super().__init__()
-
-    @staticmethod
-    def _get_qspec():
-        return QuantizationSpec(
-            dtype=torch.int8,
-            quant_min=-128,
-            quant_max=127,
-            qscheme=torch.per_tensor_symmetric,
-            is_dynamic=False,
-            observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
-        )
-
-    @staticmethod
-    def _get_qconfig():
-        qspec = AddQuantizer._get_qspec()
-        return QuantizationConfig(
-            input_activation=qspec,
-            output_activation=qspec,
-        )
-
-    def annotate(self, model: GraphModule):
-        config = self._get_qconfig()
-        annotated_partitions = []
-
-        for node in model.graph.nodes:
-            if node.op != "call_function" or node.target not in [
-                torch.ops.aten.add.Tensor,
-                torch.ops.aten.add_.Tensor,
-            ]:
-                continue
-
-            if Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated:
-                continue
-
-            input_qspec_map = {
-                node.args[0]: config.input_activation,
-                node.args[1]: config.input_activation,
-            }
-
-            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-                input_qspec_map=input_qspec_map,
-                output_qspec=config.output_activation,
-                _annotated=True,
-            )
-            annotated_partitions.append([node])
-
-        return annotated_partitions
-
-    def validate(self, model: GraphModule) -> None:
-        pass
-
-
-def check_count(
-    graph_module: GraphModule, op: torch.fx.node.Target, expected_count: int
-):
-    actual_count = sum(
-        1
-        for node in graph_module.graph.nodes
-        if node.op == "call_function" and node.target == op
-    )
-
-    assert (
-        actual_count == expected_count
-    ), f"Expected {expected_count} {op} nodes, got {actual_count}"
 
 
 class TestReplaceQuantOps(unittest.TestCase):
@@ -207,3 +126,7 @@ class TestReplaceQuantOps(unittest.TestCase):
                     "cortex_m::quantize_per_tensor",
                     "cortex_m::dequantize_per_tensor",
                 ], f"Unexpected op {op.name}"
+
+
+if __name__ == "__main__":
+    unittest.main()

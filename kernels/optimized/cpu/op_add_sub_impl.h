@@ -10,7 +10,7 @@
 #include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/cpu/binary_ops.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
-#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -18,55 +18,6 @@ namespace torch {
 namespace executor {
 namespace kernels {
 namespace impl {
-
-namespace {
-template <
-    bool can_cast,
-    typename CTYPE_A,
-    typename CTYPE_B,
-    typename CTYPE_IN,
-    typename CTYPE_OUT>
-struct AddInner;
-
-template <
-    typename CTYPE_A,
-    typename CTYPE_B,
-    typename CTYPE_IN,
-    typename CTYPE_OUT>
-struct AddInner<true, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT> {
-  static void
-  run(const Tensor& a, const Tensor& b, CTYPE_IN alpha_val, Tensor& out) {
-    apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-        // NOLINTNEXTLINE(facebook-hte-ConstantArgumentPassByValue)
-        [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
-          CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-          CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-          CTYPE_IN value = a_casted + alpha_val * b_casted;
-
-          return static_cast<CTYPE_OUT>(value);
-        },
-        a,
-        b,
-        out);
-  }
-};
-
-template <typename CTYPE_IN>
-struct ReportCanCastBug {
-  static void run(const Tensor&, const Tensor&, CTYPE_IN, Tensor&) {
-    ET_DCHECK_MSG(false, "BUG: canCast should have been checked above");
-  }
-};
-
-template <
-    typename CTYPE_A,
-    typename CTYPE_B,
-    typename CTYPE_IN,
-    typename CTYPE_OUT>
-struct AddInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
-    : public ReportCanCastBug<CTYPE_IN> {};
-
-} // namespace
 
 using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
@@ -78,8 +29,6 @@ Tensor& opt_add_sub_out_impl(
     const Tensor& b,
     const Scalar& alpha,
     Tensor& out) {
-  (void)ctx;
-
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
@@ -115,14 +64,6 @@ Tensor& opt_add_sub_out_impl(
   }
 
   if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
-    // Resize for dynamic shape
-    ET_KERNEL_CHECK_MSG(
-        ctx,
-        resize_to_broadcast_target_size(a, b, out) == Error::Ok,
-        InvalidArgument,
-        out,
-        "Failed to resize output tensor.");
-
     ET_SWITCH_REALB_TYPES(a_type, ctx, op_name, CTYPE, [&]() {
       CTYPE alpha_val;
       ET_KERNEL_CHECK(
@@ -202,39 +143,32 @@ Tensor& opt_add_sub_out_impl(
       }
     });
   } else {
-    ScalarType common_type =
-        promoteTypes(a_type, b_type, /*half_to_float*/ true);
-    ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+    ScalarType common_type = promoteTypes(a_type, b_type);
+    ScalarType compute_type =
+        native::utils::internal::get_compute_type(common_type);
 
-    ET_KERNEL_CHECK(
-        ctx,
-        resize_to_broadcast_target_size(a, b, out) == Error::Ok,
-        InvalidArgument,
-        out);
-
-    ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, op_name, CTYPE_A, [&]() {
-      ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, op_name, CTYPE_B, [&]() {
-        using CTYPE_IN = typename torch::executor::
-            promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
-        ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-        ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, op_name, CTYPE_OUT, [&]() {
-          CTYPE_IN alpha_val;
-          ET_KERNEL_CHECK(
-              ctx,
-              torch::executor::native::utils::extract_scalar(alpha, &alpha_val),
-              InvalidArgument, );
-          if constexpr (is_sub) {
-            alpha_val = -alpha_val;
-          }
-
-          AddInner<
-              can_cast<CTYPE_IN, CTYPE_OUT>::value,
-              CTYPE_A,
-              CTYPE_B,
-              CTYPE_IN,
-              CTYPE_OUT>::run(a, b, alpha_val, out);
-        });
-      });
+    ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+      CTYPE_COMPUTE val_alpha;
+      ET_KERNEL_CHECK(
+          ctx,
+          native::utils::extract_scalar(alpha, &val_alpha),
+          InvalidArgument, );
+      if constexpr (is_sub) {
+        val_alpha = -val_alpha;
+      }
+      native::utils::apply_bitensor_elementwise_fn<
+          CTYPE_COMPUTE,
+          op_name,
+          native::utils::SupportedTensorDtypes::REALHBBF16>(
+          [val_alpha](const auto val_a, const auto val_b) {
+            return val_a + val_alpha * val_b;
+          },
+          ctx,
+          a,
+          native::utils::SupportedTensorDtypes::REALHBBF16,
+          b,
+          native::utils::SupportedTensorDtypes::REALHBBF16,
+          out);
     });
   }
 

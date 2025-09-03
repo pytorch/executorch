@@ -331,6 +331,7 @@ class AttentionMHA(Attention):
         args: ModelArgs,
         layer_id: int,
         rope: Rope,
+        **_kwargs: Any,
     ):
         """
         Multi-head attention layer.
