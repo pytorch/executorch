@@ -23,6 +23,9 @@ from executorch.backends.qualcomm.quantizer.qconfig import (
     get_ptq_per_channel_quant_config,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.examples.models.codegen import (
+    convert_weights as convert_codegen_weights,
+)
 
 from executorch.examples.models.gemma import convert_weights as convert_gemma_weights
 from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_weights
@@ -329,6 +332,28 @@ class Gemma_2B(LLMModelConfig):
         annotate_output_16a8w,
         partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_16a8w),
     )
+
+
+@register_llm_model("codegen2_1b")
+@dataclass(init=False, frozen=True)
+class Codegen(LLMModelConfig):
+    repo_id: str = "Salesforce/codegen2-1B_P"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/codegen/config/config.json"
+    )
+    convert_weights = convert_codegen_weights
+    transform_weight = True
+    instruct_model = False
+    num_sharding = 1
+    # quant config
+    ptq = QuantDtype.use_16a8w
+    group_size = None
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    custom_annotation = ()
 
 
 @register_llm_model("gemma3-1b")
