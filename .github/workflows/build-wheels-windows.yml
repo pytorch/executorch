@@ -43,6 +43,7 @@ jobs:
       matrix:
         include:
           - repository: pytorch/executorch
+            env-script: .ci/scripts/wheel/run_with_symlink_windows.sh
             pre-script: .ci/scripts/wheel/pre_build_script.sh
             post-script: .ci/scripts/wheel/post_build_script.sh
             smoke-test-script: .ci/scripts/wheel/test_windows.py

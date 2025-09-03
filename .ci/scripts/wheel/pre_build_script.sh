@@ -9,9 +9,6 @@ set -euxo pipefail
 
 # This script is run before building ExecuTorch binaries
 
-# Enable long paths (relevant for Windows, but can run on any system).
-git config --system core.longpaths true
-
 # Clone nested submodules for tokenizers - this is a workaround for recursive
 # submodule clone failing due to path length limitations on Windows. Eventually,
 # we should update the core job in test-infra to enable long paths before
@@ -25,4 +22,4 @@ popd
 # which does install them. Though we'd need to disable build isolation to be
 # able to see the installed torch package.
 
-"${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh"  --example
+"${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example

@@ -157,7 +157,9 @@ class Conv2dVisitor(NodeVisitor):
 
             reshape_attr = ts.TosaSerializerAttribute()
             reshape_attr.ReshapeAttribute()
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().RESHAPE,
                 [weight.name, shape.name],
                 [weight_reshaped.name],
@@ -188,7 +190,9 @@ class Conv2dVisitor(NodeVisitor):
                 acc_type=acc_type,
             )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             tosa_op,
             [
                 input.name,
