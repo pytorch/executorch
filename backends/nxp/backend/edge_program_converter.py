@@ -19,10 +19,7 @@ from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.backend.node_format_inference import (
-    NodeFormatInference,
-    NXP_NODE_FORMAT,
-)
+from executorch.backends.nxp.backend.node_format_inference import NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
@@ -76,7 +73,6 @@ class EdgeProgramToIRConverter:
         :param custom_delegation_options: Custom user options which affect node delegation.
         :return: TFLite flatbuffers as bytes.
         """
-        NodeFormatInference(edge_program).identify_node_formats()
         parameters_mapping = self.map_inputs_to_parameters(edge_program)
 
         cc = self.build_conversion_context(
