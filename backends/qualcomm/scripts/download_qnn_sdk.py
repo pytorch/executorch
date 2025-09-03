@@ -13,7 +13,7 @@ from typing import Optional
 from tqdm import tqdm
 
 SDK_DIR = pathlib.Path(__file__).parent.parent / "sdk" / "qnn"
-PKG_ROOT = pathlib.Path(__file__).parent
+PKG_ROOT = pathlib.Path(__file__).parent.parent
 
 
 def is_linux_x86() -> bool:
@@ -278,7 +278,7 @@ def install_qnn_sdk(force_download: bool = True) -> bool:
     """
 
     # --- Qualcomm SDK handling ---
-    qnn_sdk_dir = PKG_ROOT / "sdk" / "qnn"
+    qnn_sdk_dir = SDK_DIR
     print(f"[INIT] qnn_sdk_dir: {qnn_sdk_dir}")
     if not qnn_sdk_dir.exists():
         print("[INIT] Qualcomm SDK not found. Downloading...")
