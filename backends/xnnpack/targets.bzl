@@ -73,3 +73,13 @@ def define_common_targets():
             # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
             link_whole = True,
         )
+    
+    runtime.cxx_library(
+        name = "xnnpack_interface",
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_headers = [
+            "runtime/XNNPACKBackend.h",
+        ],
+    )
