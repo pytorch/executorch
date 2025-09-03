@@ -13,6 +13,8 @@ from torch.export import ExportedProgram
 
 logger = logging.getLogger(__name__)
 
+NXP_NODE_FORMAT = "nxp_node_format"  # Key into the `meta` attribute of nodes, which is mapped to the inferred format.
+
 
 class NodeFormat(Enum):
     # Node's output in NCHW format
@@ -43,8 +45,6 @@ class NodeFormatInference:
     # are channels first but output is formatless).
     ops_that_can_change_tensor_format = {exir_ops.edge.aten.view_copy.default}
 
-    _node_format_mapping: dict[Node, NodeFormat]
-
     _type_changed_during_last_run: bool
 
     # Mapping between Node and its ancestors (inputs)
@@ -57,7 +57,6 @@ class NodeFormatInference:
         self._edge_program = edge_program
 
         self._nodes = edge_program.graph.nodes
-        self._node_format_mapping = {}
         self._node_inputs = {
             node: node.all_input_nodes for node in edge_program.graph.nodes
         }
@@ -67,7 +66,7 @@ class NodeFormatInference:
 
         self._type_changed_during_last_run = False
 
-    def identify_node_formats(self) -> dict[Node, NodeFormat]:
+    def identify_node_formats(self):
         self._type_changed_during_last_run = True
 
         # Re-run format inference until there are no changes
@@ -77,7 +76,15 @@ class NodeFormatInference:
             for node in self._nodes:
                 self._infer_format_of_nodes(node)
 
-        return self._node_format_mapping
+        for node in self._nodes:
+            if self._get_node_op_type(node) is None:
+                continue
+            if not hasattr(node, "meta"):
+                logging.warning(f"Node `{node}` does not have the `meta` attribute.")
+                node.meta = {}
+            if NXP_NODE_FORMAT not in node.meta:
+                logging.warning(f"Node `{node}` does not have inferred format.")
+                node.meta[NXP_NODE_FORMAT] = NodeFormat.NONE
 
     def _infer_format_of_nodes(self, node: Node):
         op_type = self._get_node_op_type(node)
@@ -151,7 +158,7 @@ class NodeFormatInference:
         if old_node_format != node_format:
             self._type_changed_during_last_run = True
 
-        self._node_format_mapping[node] = node_format
+        node.meta[NXP_NODE_FORMAT] = node_format
 
     def _get_node_op_type(self, node: Node) -> str | None:
         """
@@ -252,8 +259,10 @@ class NodeFormatInference:
             for ancestor_node in input_nodes
         )
 
-    def _get_node_format(self, node):
-        return self._node_format_mapping.get(node, NodeFormat.NONE)
+    def _get_node_format(self, node) -> NodeFormat:
+        if not hasattr(node, "meta"):
+            node.meta = {}
+        return node.meta.get(NXP_NODE_FORMAT, NodeFormat.NONE)
 
-    def _node_is_placeholder(self, node: Node):
+    def _node_is_placeholder(self, node: Node) -> bool:
         return node.op == "placeholder"
