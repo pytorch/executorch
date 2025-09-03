@@ -32,6 +32,7 @@ from torch.export import export
 from torchvision import models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from torchvision.models.resnet import ResNet18_Weights
+from transformers import AutoModelForCausalLM
 
 
 # for maintaing precision of 32-bit float as much as possible
@@ -165,6 +166,30 @@ class SingleResNetBlock(nn.Module):
         return out
 
 
+class Llama31(torch.nn.Module):
+    def __init__(self, model_id="meta-llama/Meta-Llama-3.1-8B"):
+        super(Llama31, self).__init__()
+        # Load Llama 3.1 model from HF
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=torch.float32,
+            device_map="cuda",
+            # trust_remote_code=True,
+            use_cache=False,  # Turn off KV cache
+        )
+        self.model.eval()
+
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor = None):
+        # Disable KV cache for inference
+        with torch.no_grad():
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                use_cache=False,  # Explicitly turn off KV cache
+            )
+        return outputs.logits
+
+
 # Model registry mapping model names to their configurations
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "mv2": {
@@ -214,6 +239,12 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "input_shapes": [(1, 64, 8, 8)],
         "device": "cuda",
         "description": "Single ResNet block with skip connection",
+    },
+    "llama31": {
+        "model_class": Llama31,
+        "input_shapes": [(1, 128)],  # batch_size=1, sequence_length=128
+        "device": "cuda",
+        "description": "Llama 3.1 model with KV cache disabled",
     },
 }
 
