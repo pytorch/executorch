@@ -31,6 +31,7 @@ ExternalProject_Add(
   flatbuffers_ep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatc_proj
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatbuffers
+  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatc_proj/build
   CMAKE_ARGS -DFLATBUFFERS_BUILD_FLATC=ON
              -DFLATBUFFERS_INSTALL=ON
              -DFLATBUFFERS_BUILD_FLATHASH=OFF
