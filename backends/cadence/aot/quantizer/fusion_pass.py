@@ -80,7 +80,7 @@ def get_args_and_kwargs_add(
         quant_node.args[2],
     )
 
-    kwargs = {}
+    kwargs = {}  # type: ignore[var-annotated]
     return args, kwargs
 
 
@@ -99,8 +99,8 @@ def get_args_and_kwargs_linear(
     """
     weight_scale = dequants_weights[0].args[1]
     # pyre-fixme[58]: Unsupported operand types
-    bias_scale = dequants_inputs[0].args[1] * weight_scale
-    requantize_scale = bias_scale / quant_node.args[1]
+    bias_scale = dequants_inputs[0].args[1] * weight_scale  # type: ignore[operator]
+    requantize_scale = bias_scale / quant_node.args[1]  # type: ignore[operator,arg-type]
     requantize_scale_t = torch.tensor([requantize_scale])
 
     (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale_t)
@@ -109,7 +109,7 @@ def get_args_and_kwargs_linear(
     if not bias_inputs:
         weight_node = dequants_weights[0].args[0]
         assert isinstance(weight_node, fx.Node)
-        bias = create_zero_bias_int32(graph_module, weight_node, bias_scale)
+        bias = create_zero_bias_int32(graph_module, weight_node, bias_scale)  # type: ignore[arg-type]
     else:
         bias = bias_inputs[0]
 
@@ -141,7 +141,7 @@ def get_args_and_kwargs_linear(
         "out_zero_point": quant_node.args[2],
         "offset": None,
     }
-    return args, kwargs
+    return args, kwargs  # type: ignore[return-value]
 
 
 # Helper function to get the args and kwargs for the layer norm replacement op
@@ -213,7 +213,7 @@ def get_args_and_kwargs_layer_norm(
         "output_scale": quant_node.args[1],
         "output_zero_point": quant_node.args[2],
     }
-    return args, kwargs
+    return args, kwargs  # type: ignore[return-value]
 
 
 def get_args_and_kwargs_matmul(
@@ -221,9 +221,9 @@ def get_args_and_kwargs_matmul(
     dequants_inputs: List[fx.Node],
     quant_node: fx.Node,
 ) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
-    requantize_scale = (
+    requantize_scale = (  # type: ignore[operator,arg-type]
         # pyre-ignore[58]: Unsupported operand
-        dequants_inputs[0].args[1]
+        dequants_inputs[0].args[1]  # type: ignore[operator]
         * dequants_inputs[1].args[1]
     ) / quant_node.args[1]
     requantize_scale_t = torch.tensor([requantize_scale])
@@ -250,11 +250,11 @@ def get_args_and_kwargs_matmul(
 def get_args_and_kwargs_cat(
     inputs_inputs: List[fx.Node], other_inputs: List[fx.Node], op_node: fx.Node
 ) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
-    args = tuple([inputs_inputs] + other_inputs)
+    args = tuple([inputs_inputs] + other_inputs)  # type: ignore[operator]
     dim = op_node.args[1] if len(op_node.args) > 1 else 0
     # pyre-fixme[6]: Incompatible parameter type
-    kwargs = {"dim": int(dim)}
-    return args, kwargs
+    kwargs = {"dim": int(dim)}  # type: ignore[arg-type]
+    return args, kwargs  # type: ignore[return-value]
 
 
 def get_args_and_kwargs_conv(
@@ -270,7 +270,7 @@ def get_args_and_kwargs_conv(
     weight_scale = dequants_weights[0].args[1]
     weight_zero_point = dequants_weights[0].args[2]
     # pyre-fixme[58]: Unsupported operand types
-    bias_scale = dequants_inputs[0].args[1] * weight_scale
+    bias_scale = dequants_inputs[0].args[1] * weight_scale  # type: ignore[operator]
     stride = [1, 1] if len(op_node.args) < 4 else get_conv_args(op_node.args[3], 1)
     padding = [0, 0] if len(op_node.args) < 5 else get_conv_args(op_node.args[4], 0)
     dilation = [1, 1] if len(op_node.args) < 6 else get_conv_args(op_node.args[5], 1)
@@ -280,14 +280,14 @@ def get_args_and_kwargs_conv(
     if not bias_inputs:
         weight_node = dequants_weights[0].args[0]
         assert isinstance(weight_node, fx.Node)
-        bias = create_zero_bias_int32(graph_module, weight_node, bias_scale)
+        bias = create_zero_bias_int32(graph_module, weight_node, bias_scale)  # type: ignore[arg-type]
     else:
         bias = bias_inputs[0]
 
     # Compute the out multiplier and out shift. They are used when the conv op is
     # replaced by quantized linear, we compute them a priori for simplicity but
     # may revisit the decision.
-    requantize_scale = bias_scale / quant_node.args[1]
+    requantize_scale = bias_scale / quant_node.args[1]  # type: ignore[operator,arg-type]
     requantize_scale_t = torch.tensor([requantize_scale])
 
     (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale_t)
@@ -332,7 +332,7 @@ def get_args_and_kwargs_conv(
         "out_multiplier": out_multiplier_,
         "out_shift": out_shift_,
     }
-    return args, kwargs
+    return args, kwargs  # type: ignore[return-value]
 
 
 def get_args_and_kwargs_relu(
@@ -343,7 +343,7 @@ def get_args_and_kwargs_relu(
 ) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
     input_scale = dequants_inputs[0].args[1]
     # pyre-fixme[58]: Unsupported operand types
-    requantize_scale = input_scale / quant_node.args[1]
+    requantize_scale = input_scale / quant_node.args[1]  # type: ignore[operator,arg-type]
     requantize_scale_t = torch.tensor([requantize_scale])
 
     (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale_t)
@@ -373,7 +373,7 @@ def get_args_and_kwargs_relu(
         "out_multiplier": out_multiplier_,
         "out_shift": out_shift_,
     }
-    return args, kwargs
+    return args, kwargs  # type: ignore[return-value]
 
 
 class QuantFusion(ExportPass):
@@ -383,7 +383,9 @@ class QuantFusion(ExportPass):
         # pyre-ignore[4]: Parameter `patterns` of class `QuantFusion` has no type specified
         self.patterns = patterns
 
-    def call(self, graph_module: fx.GraphModule) -> PassResult:  # noqa: C901
+    def call(  # noqa: C901
+        self, graph_module: fx.GraphModule
+    ) -> PassResult:  # type: ignore[return]
         for pattern in self.patterns:
             fused_partitions = find_sequential_partitions_aten(
                 graph_module,
@@ -441,7 +443,7 @@ class QuantFusion(ExportPass):
                     args = tuple(
                         inputs_inputs + weights_inputs + other_inputs + bias_inputs
                     )
-                    kwargs = {}
+                    kwargs = {}  # type: ignore[var-annotated]
                     if isinstance(pattern, AddPattern):
                         args, kwargs = get_args_and_kwargs_add(
                             graph_module,
@@ -523,6 +525,7 @@ class QuantFusion(ExportPass):
             graph_module.graph.eliminate_dead_code()
             # pyre-fixme[7]: Incompatible return type
             graph_module.recompile()
+        return PassResult(graph_module, True)
 
     @classmethod
     # pyre-ignore[2]: Parameter `nodes` has no type specified
@@ -531,7 +534,7 @@ class QuantFusion(ExportPass):
 
     @classmethod
     # pyre-ignore[2]: Parameter `nodes` has no type specified
-    def mark_fused(cls, nodes) -> bool:
+    def mark_fused(cls, nodes) -> None:
         for n in nodes:
             # pyre-fixme[7]: Incompatible return type
             n.meta["QuantFusion"] = True

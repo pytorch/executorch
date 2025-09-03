@@ -250,7 +250,7 @@ for event_block in inspector.event_blocks:
     slowest = None
     for event in event_block.events:
         if event.name == "native_call_convolution.out":
-            if slowest is None or event.perf_data.p50 > slowest.perf_data.p50:
+            if slowest is None or event.perf_data.p50 > slowest.perf_data.p50:  # type: ignore[union-attr]
                 slowest = event
     if slowest is not None:
         print(slowest.name)

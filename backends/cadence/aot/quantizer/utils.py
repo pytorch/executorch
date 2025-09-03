@@ -114,7 +114,7 @@ def create_zero_bias_int32(
     """
     Creates a zero bias tensor with the shape of weight[0]
     """
-    attr_node = getattr(graph_module, weight_node.target)
+    attr_node = getattr(graph_module, weight_node.target)  # type: ignore[arg-type]
     weight_shape = list(attr_node.shape)
     bias_shape = weight_shape[0]
     return graph_module.graph.call_function(
@@ -135,7 +135,7 @@ def get_bias_qparams(
 
 
 def get_conv_args(arg, first_val: int) -> List[fx.Node]:
-    return arg if len(arg) == 2 else [first_val, arg[0]]
+    return arg if len(arg) == 2 else [first_val, arg[0]]  # type: ignore[list-item]
 
 
 def get_aten_node_target_partitions(
@@ -231,6 +231,6 @@ def find_sequential_partitions_aten(
     fusion_candidates = itertools.product(*typed_partitions_list)
     fused_partitions = []
     for candidate in fusion_candidates:
-        if _partitions_sequential(candidate):
+        if _partitions_sequential(candidate):  # type: ignore[arg-type]
             fused_partitions.append(candidate)
     return fused_partitions

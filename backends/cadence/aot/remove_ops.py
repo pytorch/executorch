@@ -106,7 +106,7 @@ class RemoveZeroSizedCatArgsPass(ExportPass):
         # Otherwise, we replace args[0] with cat_inputs.
         new_args = list(args)
         # pyre error introduced after D66937105
-        new_args[0] = cat_inputs  # pyre-ignore[6]
+        new_args[0] = cat_inputs  # type: ignore[assignment]
         return super().call_operator(op, tuple(new_args), kwargs, meta)
 
 
@@ -797,7 +797,7 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
         view_node.replace_all_uses_with(input_node)
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        visited_view_nodes = set()
+        visited_view_nodes = set()  # type: ignore[var-annotated]
         for view_node in graph_module.graph.find_nodes(
             op="call_function", target=exir_ops.edge.aten.view_copy.default, sort=True
         ):

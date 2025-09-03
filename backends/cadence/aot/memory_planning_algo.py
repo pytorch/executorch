@@ -42,17 +42,17 @@ class MemoryPlanningState:
         """Place the spec at the given memory and offset."""
         logging.debug(f"Placing spec {spec}: {spec.mem_id=}, {spec.mem_offset=}")
         assert self.get_overlapping_spec(spec) is None
-        self.allocated_buffers[spec.mem_id].append(spec)
-        self.bufsizes[spec.mem_id] = max(
-            self.bufsizes[spec.mem_id],
+        self.allocated_buffers[spec.mem_id].append(spec)  # type: ignore[call-overload]
+        self.bufsizes[spec.mem_id] = max(  # type: ignore[call-overload]
+            self.bufsizes[spec.mem_id],  # type: ignore[call-overload]
             get_aligned_offset(
-                spec.mem_offset + spec.allocated_memory, self.alignment[spec.mem_id]
+                spec.mem_offset + spec.allocated_memory, self.alignment[spec.mem_id]  # type: ignore[operator,call-overload]
             ),
         )
 
     def get_overlapping_spec(self, spec: TensorSpec) -> Optional[TensorSpec]:
         """Get the overlapping spec for the given spec."""
-        for allocated_spec in self.allocated_buffers[spec.mem_id]:
+        for allocated_spec in self.allocated_buffers[spec.mem_id]:  # type: ignore[call-overload]
             if Verifier.lifetime_overlap(
                 spec, allocated_spec
             ) and Verifier.storage_overlap(spec, allocated_spec):
@@ -131,13 +131,13 @@ class MemoryPlanningAlgo(ABC):
     ) -> bool:
         """Returns true if the spec can be placed at the given memory id."""
         end_of_allocation = get_aligned_offset(
-            spec.mem_offset + spec.allocated_memory,
-            self.get_alignment(spec.mem_id),
+            spec.mem_offset + spec.allocated_memory,  # type: ignore[operator]
+            self.get_alignment(spec.mem_id),  # type: ignore[arg-type]
         )
         return (
-            self.memory_id_is_valid[spec.mem_id]
-            and end_of_allocation <= self.get_size(spec.mem_id)
-            and not placement_constraints.is_mem_id_in_blocklist(spec, spec.mem_id)
+            self.memory_id_is_valid[spec.mem_id]  # type: ignore[call-overload]
+            and end_of_allocation <= self.get_size(spec.mem_id)  # type: ignore[arg-type]
+            and not placement_constraints.is_mem_id_in_blocklist(spec, spec.mem_id)  # type: ignore[arg-type]
         )
 
     @contextmanager
@@ -180,8 +180,8 @@ class MemoryPlanningAlgo(ABC):
             if c is not None and c.offset is not None
         }
         for spec, constraint in pinned_specs.items():
-            spec.mem_id = constraint.pinned_memory_id
-            spec.mem_offset = constraint.offset
+            spec.mem_id = constraint.pinned_memory_id  # type: ignore[assignment]
+            spec.mem_offset = constraint.offset  # type: ignore[assignment]
             state.place_spec(spec)
             placement_constraints.resolve_relative_loc_constraints(spec)
 

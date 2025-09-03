@@ -97,7 +97,7 @@ class ReplaceLogicalNotBooleanWhereWithWherePass(ExportPass):
             )
 
             # If the logical_not input is not a boolean tensor, bail.
-            if logical_not_input_tensor.meta["spec"].dtype != torch.bool:
+            if logical_not_input_tensor.meta["spec"].dtype != torch.bool:  # type: ignore[union-attr]
                 continue
 
             # Replace the where op with another one, flipping the inputs and using the boolean
@@ -943,7 +943,7 @@ class ExportPassWithTransposeHelper(ExportPass):
             canonicalize_transposed_dim(dim1, shape),
         )
         dim0, dim1 = min(dim0, dim1), max(dim0, dim1)
-        return super().call_operator(
+        return super().call_operator(  # type: ignore[misc]
             exir_ops.edge.aten.transpose_copy.int, (proxy, dim0, dim1), {}, meta
         )
 
@@ -1864,22 +1864,22 @@ class ReplaceWhereWithFullArgsWithWhereScalar(ExportPass):
 
         # If the args are not full ops, bail
         # pyre-ignore[16]: `ProxyValue` has no attribute `node`.
-        if (args[1].node.target != exir_ops.edge.aten.full.default) or (
-            args[2].node.target != exir_ops.edge.aten.full.default
+        if (args[1].node.target != exir_ops.edge.aten.full.default) or (  # type: ignore[union-attr]
+            args[2].node.target != exir_ops.edge.aten.full.default  # type: ignore[union-attr]
         ):
             return super().call_operator(op, args, kwargs, meta)
 
         # If one of the full ops is a different size than than the cond tensor, we need to broadcast. Bail.
         if (
             # pyre-ignore[16]: `ProxyValue` has no attribute `node`.
-            list(args[0].to_tensor().shape) != args[1].node.args[0]
-            or list(args[0].to_tensor().shape) != args[2].node.args[0]
+            list(args[0].to_tensor().shape) != args[1].node.args[0]  # type: ignore[union-attr]
+            or list(args[0].to_tensor().shape) != args[2].node.args[0]  # type: ignore[union-attr]
         ):
             return super().call_operator(op, args, kwargs, meta)
 
         # Get the scalar values from the full ops
-        scalar_value_1 = args[1].node.args[1]
-        scalar_value_2 = args[2].node.args[1]
+        scalar_value_1 = args[1].node.args[1]  # type: ignore[union-attr]
+        scalar_value_2 = args[2].node.args[1]  # type: ignore[union-attr]
 
         # Replace the where op with a scalar where op
         return super().call_operator(
@@ -1946,7 +1946,7 @@ class ReplaceSplitWithSlicePass(ExportPass):
             slice_ops.append(slice_args)
             split_start = split_end
 
-        return slice_ops
+        return slice_ops  # type: ignore[return-value]
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
@@ -2004,8 +2004,8 @@ class ReplacePowWithMulPass(ExportPass):
         if not (
             len(args) > 1
             and isinstance(args[1], int)
-            and cast(int, args[1]) > 1
-            and cast(int, args[1]) < 5
+            and cast(int, args[1]) > 1  # type: ignore[redundant-cast]
+            and cast(int, args[1]) < 5  # type: ignore[redundant-cast]
             and op
             in {
                 exir_ops.edge.aten.pow.Tensor_Scalar,
@@ -2014,11 +2014,11 @@ class ReplacePowWithMulPass(ExportPass):
             return super().call_operator(op, args, kwargs, meta)
 
         x = args[0]
-        exponent = cast(int, args[1])
+        exponent = cast(int, args[1])  # type: ignore[redundant-cast]
 
         if exponent > 2:
             for _ in range(exponent, 2, -1):
-                x = super().call_operator(
+                x = super().call_operator(  # type: ignore[assignment]
                     exir_ops.edge.aten.mul.Tensor,
                     (x, args[0]),
                     {},

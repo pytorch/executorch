@@ -87,12 +87,12 @@ class AddmmPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        addmm_node = fused_partition[0].nodes[-1]
+        addmm_node = fused_partition[0].nodes[-1]  # type: ignore[index]
 
         bias_qspec = DerivedQuantizationSpec(
             derived_from=[
-                (addmm_node.args[1], addmm_node),
-                (addmm_node.args[2], addmm_node),
+                (addmm_node.args[1], addmm_node),  # type: ignore[list-item,union-attr]
+                (addmm_node.args[2], addmm_node),  # type: ignore[list-item,union-attr]
             ],
             derive_qparams_fn=get_bias_qparams,
             dtype=torch.int32,
@@ -102,10 +102,10 @@ class AddmmPattern(QuantizationPattern):
         )
 
         return PartitionAnchors(
-            inputs=[(addmm_node, 1)],
-            weights=[(addmm_node, 2)],
-            biases=[(addmm_node, 0, bias_qspec)],
-            output=[(addmm_node,)],
+            inputs=[(addmm_node, 1)],  # type: ignore[list-item]
+            weights=[(addmm_node, 2)],  # type: ignore[list-item]
+            biases=[(addmm_node, 0, bias_qspec)],  # type: ignore[list-item]
+            output=[(addmm_node,)],  # type: ignore[list-item]
         )
 
     def replacement_op(self) -> OpOverload:
@@ -120,24 +120,24 @@ class AddPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        add_node = fused_partition[0].nodes[-1]
+        add_node = fused_partition[0].nodes[-1]  # type: ignore[index]
 
         # Bail if:
         #   - the add node is not a tensor add
         #   - the add node has kwargs (e.g. alpha)
-        is_tensor_add = isinstance(add_node.args[0], fx.Node) and isinstance(
-            add_node.args[1], fx.Node
+        is_tensor_add = isinstance(add_node.args[0], fx.Node) and isinstance(  # type: ignore[union-attr]
+            add_node.args[1], fx.Node  # type: ignore[union-attr]
         )
-        if not is_tensor_add or len(add_node.kwargs) > 0:
+        if not is_tensor_add or len(add_node.kwargs) > 0:  # type: ignore[union-attr]
             return PartitionAnchors(
                 empty=True,
             )
 
         return PartitionAnchors(
-            inputs=[(add_node, 0), (add_node, 1)],
+            inputs=[(add_node, 0), (add_node, 1)],  # type: ignore[list-item]
             weights=[],
             biases=[],
-            output=[(add_node,)],
+            output=[(add_node,)],  # type: ignore[list-item]
         )
 
     def replacement_op(self) -> OpOverload:
@@ -152,13 +152,13 @@ class BmmPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        bmm_node = fused_partition[0].nodes[-1]
+        bmm_node = fused_partition[0].nodes[-1]  # type: ignore[index]
 
         return PartitionAnchors(
-            inputs=[(bmm_node, 0), (bmm_node, 1)],
+            inputs=[(bmm_node, 0), (bmm_node, 1)],  # type: ignore[list-item]
             weights=[],
             biases=[],
-            output=[(bmm_node,)],
+            output=[(bmm_node,)],  # type: ignore[list-item]
         )
 
     def replacement_op(self) -> OpOverload:
@@ -173,7 +173,7 @@ class CatPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        cat_node = fused_partition[0].nodes[-1]
+        cat_node = fused_partition[0].nodes[-1]  # type: ignore[index]
 
         # Create args. The first argument does not have quant spec and
         # will inherit from the overall quant spec. All subsequent args
@@ -188,13 +188,15 @@ class CatPattern(QuantizationPattern):
                     SharedQuantizationSpec,
                 ],
             ]
-        ] = [(cat_node, (0, 0))]
-        for i in range(1, len(cat_node.args[0])):
+        ] = [
+            (cat_node, (0, 0))  # type: ignore[list-item]
+        ]
+        for i in range(1, len(cat_node.args[0])):  # type: ignore[union-attr]
             args.append(
                 (
                     cat_node,
                     (0, i),
-                    SharedQuantizationSpec((cat_node.args[0][0], cat_node)),
+                    SharedQuantizationSpec((cat_node.args[0][0], cat_node)),  # type: ignore[arg-type,union-attr]
                 )
             )
 
@@ -203,7 +205,7 @@ class CatPattern(QuantizationPattern):
             weights=[],
             biases=[],
             output=[
-                (cat_node, SharedQuantizationSpec((cat_node.args[0][0], cat_node)))
+                (cat_node, SharedQuantizationSpec((cat_node.args[0][0], cat_node)))  # type: ignore[list-item,arg-type,union-attr]
             ],
         )
 
@@ -219,12 +221,12 @@ class Conv1dPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        conv1d_node = fused_partition[0].nodes[-1]
+        conv1d_node = fused_partition[0].nodes[-1]  # type: ignore[index]
 
         bias_qspec = DerivedQuantizationSpec(
             derived_from=[
-                (conv1d_node.args[0], conv1d_node),
-                (conv1d_node.args[1], conv1d_node),
+                (conv1d_node.args[0], conv1d_node),  # type: ignore[list-item,union-attr]
+                (conv1d_node.args[1], conv1d_node),  # type: ignore[list-item,union-attr]
             ],
             derive_qparams_fn=get_bias_qparams,
             dtype=torch.int32,
@@ -235,15 +237,15 @@ class Conv1dPattern(QuantizationPattern):
 
         # Keep bias empty if not supplied
         bias = []
-        if len(conv1d_node.args) > 2 and conv1d_node.args[2] is not None:
+        if len(conv1d_node.args) > 2 and conv1d_node.args[2] is not None:  # type: ignore[union-attr]
             bias = [(conv1d_node, 2, bias_qspec)]
 
         return PartitionAnchors(
-            inputs=[(conv1d_node, 0)],
-            weights=[(conv1d_node, 1)],
+            inputs=[(conv1d_node, 0)],  # type: ignore[list-item]
+            weights=[(conv1d_node, 1)],  # type: ignore[list-item]
             # pyre-fixme[6]: Incompatible parameter type
-            biases=bias,
-            output=[(conv1d_node,)],
+            biases=bias,  # type: ignore[arg-type]
+            output=[(conv1d_node,)],  # type: ignore[list-item]
         )
 
     def replacement_op(self) -> OpOverload:
@@ -258,12 +260,12 @@ class Conv2dPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        conv2d_node = fused_partition[0].nodes[-1]
+        conv2d_node = fused_partition[0].nodes[-1]  # type: ignore[index]
 
         bias_qspec = DerivedQuantizationSpec(
             derived_from=[
-                (conv2d_node.args[0], conv2d_node),
-                (conv2d_node.args[1], conv2d_node),
+                (conv2d_node.args[0], conv2d_node),  # type: ignore[list-item,union-attr]
+                (conv2d_node.args[1], conv2d_node),  # type: ignore[list-item,union-attr]
             ],
             derive_qparams_fn=get_bias_qparams,
             dtype=torch.int32,
@@ -274,15 +276,15 @@ class Conv2dPattern(QuantizationPattern):
 
         # Keep bias empty if not supplied
         bias = []
-        if len(conv2d_node.args) > 2 and conv2d_node.args[2] is not None:
+        if len(conv2d_node.args) > 2 and conv2d_node.args[2] is not None:  # type: ignore[union-attr]
             bias = [(conv2d_node, 2, bias_qspec)]
 
         return PartitionAnchors(
-            inputs=[(conv2d_node, 0)],
-            weights=[(conv2d_node, 1)],
+            inputs=[(conv2d_node, 0)],  # type: ignore[list-item]
+            weights=[(conv2d_node, 1)],  # type: ignore[list-item]
             # pyre-fixme[6]: Incompatible parameter type
-            biases=bias,
-            output=[(conv2d_node,)],
+            biases=bias,  # type: ignore[arg-type]
+            output=[(conv2d_node,)],  # type: ignore[list-item]
         )
 
     def replacement_op(self) -> OpOverload:
@@ -297,27 +299,27 @@ class LayerNormPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        layer_norm_node = fused_partition[0].nodes[-1]
+        layer_norm_node = fused_partition[0].nodes[-1]  # type: ignore[index]
 
         others = [(layer_norm_node, 1)]
 
         # Add weights if supplied
-        if len(layer_norm_node.args) > 2 and layer_norm_node.args[2]:
+        if len(layer_norm_node.args) > 2 and layer_norm_node.args[2]:  # type: ignore[union-attr]
             others.append((layer_norm_node, 2))
 
         # Add bias if supplied
-        if len(layer_norm_node.args) > 3 and layer_norm_node.args[3]:
+        if len(layer_norm_node.args) > 3 and layer_norm_node.args[3]:  # type: ignore[union-attr]
             others.append((layer_norm_node, 3))
 
         # Weights are used in quantized mode by our kernel, so they are
         # passed in as others here along with the normalized shape.
         return PartitionAnchors(
-            inputs=[(layer_norm_node, 0)],
+            inputs=[(layer_norm_node, 0)],  # type: ignore[list-item]
             weights=[],
             biases=[],
             # Ordering: normalized_shape, weights, bias
-            others=others,
-            output=[(layer_norm_node,)],
+            others=others,  # type: ignore[arg-type]
+            output=[(layer_norm_node,)],  # type: ignore[list-item]
         )
 
     def replacement_op(self) -> OpOverload:
@@ -332,12 +334,12 @@ class LinearPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        linear_node = fused_partition[0].nodes[-1]
+        linear_node = fused_partition[0].nodes[-1]  # type: ignore[index]
 
         bias_qspec = DerivedQuantizationSpec(
             derived_from=[
-                (linear_node.args[0], linear_node),
-                (linear_node.args[1], linear_node),
+                (linear_node.args[0], linear_node),  # type: ignore[list-item,union-attr]
+                (linear_node.args[1], linear_node),  # type: ignore[list-item,union-attr]
             ],
             derive_qparams_fn=get_bias_qparams,
             dtype=torch.int32,
@@ -348,15 +350,15 @@ class LinearPattern(QuantizationPattern):
 
         # Keep bias empty if not supplied
         bias = []
-        if len(linear_node.args) > 2:
+        if len(linear_node.args) > 2:  # type: ignore[union-attr]
             bias = [(linear_node, 2, bias_qspec)]
 
         return PartitionAnchors(
-            inputs=[(linear_node, 0)],
-            weights=[(linear_node, 1)],
+            inputs=[(linear_node, 0)],  # type: ignore[list-item]
+            weights=[(linear_node, 1)],  # type: ignore[list-item]
             # pyre-fixme[6]: Incompatible parameter type
-            biases=bias,
-            output=[(linear_node,)],
+            biases=bias,  # type: ignore[arg-type]
+            output=[(linear_node,)],  # type: ignore[list-item]
         )
 
     def replacement_op(self) -> OpOverload:
@@ -371,13 +373,13 @@ class MatmulPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        matmul_node = fused_partition[0].nodes[-1]
+        matmul_node = fused_partition[0].nodes[-1]  # type: ignore[index]
 
         return PartitionAnchors(
-            inputs=[(matmul_node, 0), (matmul_node, 1)],
+            inputs=[(matmul_node, 0), (matmul_node, 1)],  # type: ignore[list-item]
             weights=[],
             biases=[],
-            output=[(matmul_node,)],
+            output=[(matmul_node,)],  # type: ignore[list-item]
         )
 
     def replacement_op(self) -> OpOverload:
@@ -394,13 +396,13 @@ class ReluBasePattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        relu_node = fused_partition[0].nodes[-1]
+        relu_node = fused_partition[0].nodes[-1]  # type: ignore[index]
 
         return PartitionAnchors(
-            inputs=[(relu_node, 0)],
+            inputs=[(relu_node, 0)],  # type: ignore[list-item]
             weights=[],
             biases=[],
-            output=[(relu_node,)],
+            output=[(relu_node,)],  # type: ignore[list-item]
         )
 
     def replacement_op(self) -> OpOverload:

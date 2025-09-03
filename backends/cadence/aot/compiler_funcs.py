@@ -30,7 +30,7 @@ def trace(
 
     decomp_table = torch.export.default_decompositions()
     # pyre-fixme[6]: For 1st argument expected `Dict[typing.Callable[..., typing.Any
-    remove_decompositions(decomp_table, ops_to_keep)
+    remove_decompositions(decomp_table, ops_to_keep)  # type: ignore[arg-type]
     program = torch.export.export(model, inputs, strict=strict).run_decompositions(
         decomp_table
     )

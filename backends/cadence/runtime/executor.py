@@ -45,17 +45,17 @@ def _execute_subprocess(cmd: List[str], cwd: Optional[str] = None) -> Tuple[str,
         sel = selectors.DefaultSelector()
         # pyre-fixme[6]: For 1st argument expected `Union[HasFileno, int]` but got
         #  `Optional[IO[bytes]]`.
-        sel.register(p.stdout, selectors.EVENT_READ)
+        sel.register(p.stdout, selectors.EVENT_READ)  # type: ignore[arg-type]
         # pyre-fixme[6]: For 1st argument expected `Union[HasFileno, int]` but got
         #  `Optional[IO[bytes]]`.
-        sel.register(p.stderr, selectors.EVENT_READ)
+        sel.register(p.stderr, selectors.EVENT_READ)  # type: ignore[arg-type]
 
         done = False
         while not done:
             for key, _ in sel.select():
                 # pyre-fixme[16]: Item `HasFileno` of `Union[HasFileno, int]` has no
                 #  attribute `read1`.
-                data = key.fileobj.read1().decode()
+                data = key.fileobj.read1().decode()  # type: ignore[union-attr]
                 if not data:
                     done = True
                     break
