@@ -40,6 +40,7 @@ ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
 scratch_dir_set=false
 toolchain=arm-none-eabi-gcc
 select_ops_list="aten::_softmax.out"
+qdq_fusion_op=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -60,7 +61,7 @@ function help() {
     echo "  --etdump                               Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --build_type=<TYPE>                    Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --extra_build_flags=<FLAGS>            Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
-    echo "  --build_only                           Only build, don't run FVP"
+    echo "  --build_only                           Only build, don't run"
     echo "  --toolchain=<TOOLCHAIN>                Ethos-U: Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
     echo "  --system_config=<CONFIG>               Ethos-U: System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                            NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
@@ -69,6 +70,7 @@ function help() {
     echo "  --pte_placement=<elf|ADDR>             Ethos-U: Control if runtime has PTE baked into the elf or if its placed in memory outside of the elf, defaults to ${pte_placement}"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
+    echo "  --qdq_fusion_op                        Enable QDQ fusion op"
     exit 0
 }
 
@@ -96,6 +98,7 @@ for arg in "$@"; do
       --pte_placement=*) pte_placement="${arg#*=}";;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
+      --qdq_fusion_op) qdq_fusion_op=true;;
       *)
       ;;
     esac
@@ -197,6 +200,7 @@ devtools_flag=""
 bundleio_flag=""
 etrecord_flag=""
 et_dump_flag=""
+qdq_fusion_op_flag=""
 if [ "$build_with_etdump" = true ] ; then
     et_dump_flag="--etdump"
     etrecord_flag="--etrecord"
@@ -205,6 +209,10 @@ fi
 if [ "$bundleio" = true ] ; then
     devtools_flag="--devtools"
     bundleio_flag="--bundleio"
+fi
+
+if [ "$qdq_fusion_op" = true ] ; then
+    qdq_fusion_op_flag="--enable_qdq_fusion_pass"
 fi
 
 backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
@@ -275,7 +283,7 @@ for i in "${!test_model[@]}"; do
         model_compiler_flags="${model_compiler_flags} --model_input=${model_input}"
     fi
 
-    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${etrecord_flag} --config=${config}"
+    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${etrecord_flag} --config=${config} $qdq_fusion_op_flag"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 
@@ -287,6 +295,17 @@ for i in "${!test_model[@]}"; do
 
     if [[ ${target} == *"TOSA"*  ]]; then
         echo "Build for ${target} skip generating a .elf and running it"
+    elif [[ ${target} == *"vgf"*  ]]; then
+        echo "Build and run for VKML, (target: ${target})"
+        set -x
+        backends/arm/scripts/build_executor_runner_vkml.sh --build_type=${build_type} \
+                                                           --extra_build_flags="${extra_build_flags}" \
+                                                           --output="${output_folder}"
+        if [ "$build_only" = false ] ; then
+            backends/arm/scripts/run_vkml.sh --model=${pte_file} --build_path=${output_folder}
+        fi
+        set +x
+
     else
         # Build the application, the pte is imported as a header/c array or the address specified by --pte_placement
         model_data=""

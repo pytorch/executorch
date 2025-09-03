@@ -862,7 +862,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
 
         # Run aot examples:
-        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10        
+        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
 
 
@@ -902,6 +902,34 @@ jobs:
         done
 
 
+  test-vulkan-operators-linux:
+    name: test-vulkan-operators-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
+        source .ci/scripts/setup-vulkan-linux-deps.sh
+
+        # Setup python
+        PYTHON_EXECUTABLE=python \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" \
+        .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh add
 
   nxp-build-test:
     name: nxp-build-test
