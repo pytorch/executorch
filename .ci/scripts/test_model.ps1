@@ -30,19 +30,24 @@ function ExportModel-Portable {
 
 function ExportModel-Xnnpack {
     param (
-        [string]$model_name
+        [string]$model_name,
+        [bool]$quantize
     )
 
-    python -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate | Write-Host
+    if $(quantize) {
+        python -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --quantize | Write-Host
+        $modelFile = "$($modelName)_xnnpack_q8.pte"
+    } else {
+        python -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate | Write-Host
+        $modelFile = "$($modelName)_xnnpack_fp32.pte"
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Model export failed. Exit code: $LASTEXITCODE."
         exit $LASTEXITCODE
     }
 
-    "$($modelName)_xnnpack_fp32.pte"
+    $modelFile
 }
-
-.ci/scripts/setup-windows.ps1
 
 # Build the runner
 if (Test-Path -Path $buildDir) {
@@ -64,8 +69,11 @@ switch ($backend) {
     "portable" {
         $model_path = ExportModel-Portable -model_name $modelName -strict $strict
     }
-    "xnnpack" {
-        $model_path = ExportModel-Xnnpack -model_name $modelName
+    "xnnpack-f32" {
+        $model_path = ExportModel-Xnnpack -model_name $modelName -quantize $false
+    }
+    "xnnpack-q8" {
+        $model_path = ExportModel-Xnnpack -model_name $modelName -quantize $true
     }
     default {
         Write-Host "Unknown backend $backend."

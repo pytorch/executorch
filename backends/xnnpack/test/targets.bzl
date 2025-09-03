@@ -63,3 +63,26 @@ def define_common_targets():
                 "ET_MODULE_LINEAR_XNN_DATA_PATH": "$(location fbcode//executorch/test/models:exported_xnnpack_program_and_data[ModuleLinear.ptd])",
             },
     )
+
+    runtime.cxx_test(
+        name = "test_workspace_sharing",
+        srcs = ["runtime/test_workspace_sharing.cpp"],
+        deps = [
+                "//executorch/extension/module:module",
+                "//executorch/extension/tensor:tensor",
+                "//executorch/backends/xnnpack:xnnpack_backend",
+            ],
+            env = {
+                "ET_XNNPACK_GENERATED_ADD_LARGE_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_delegated_programs[ModuleAddLarge.pte])",
+                "ET_XNNPACK_GENERATED_SUB_LARGE_PTE_PATH": "$(location fbcode//executorch/test/models:exported_xnnp_delegated_programs[ModuleSubLarge.pte])",
+            },
+    )
+
+    runtime.cxx_test(
+        name = "test_workspace_manager",
+        srcs = ["runtime/test_workspace_manager.cpp"],
+        deps = [
+                third_party_dep("XNNPACK"),
+                "//executorch/backends/xnnpack:xnnpack_backend",
+            ],
+    )
