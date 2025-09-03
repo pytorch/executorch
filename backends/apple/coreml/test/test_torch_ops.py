@@ -117,7 +117,7 @@ class TestTorchOps(unittest.TestCase):
     def test_dequantize_affine_c4w_linear(self):
         model, example_inputs = self._get_test_model()
         quantize_(
-            model, IntxWeightOnlyConfig(weight_dtype=torch.int8, granularity=PerAxis(0))
+            model, IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerAxis(0))
         )
         ep = torch.export.export(model, example_inputs)
         delegated_program = executorch.exir.to_edge_transform_and_lower(
