@@ -43,8 +43,8 @@ jobs:
       matrix:
         include:
           - repository: pytorch/executorch
-            env-script: .ci/scripts/wheel/run_with_symlink_windows.sh
             pre-script: .ci/scripts/wheel/pre_build_script.sh
+            env-script: .ci/scripts/wheel/run_with_symlink_windows.sh
             post-script: .ci/scripts/wheel/post_build_script.sh
             smoke-test-script: .ci/scripts/wheel/test_windows.py
             package-name: executorch
@@ -57,6 +57,7 @@ jobs:
       test-infra-ref: main
       build-matrix: ${{ needs.generate-matrix.outputs.matrix }}
       submodules: true
+      env-script: ${{ matrix.env-script }}
       pre-script: ${{ matrix.pre-script }}
       post-script: ${{ matrix.post-script }}
       package-name: ${{ matrix.package-name }}
