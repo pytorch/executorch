@@ -12,17 +12,16 @@ from typing import Any, Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 
+from executorch.examples.models.lfm2.short_conv import ShortConvBlock
 from executorch.examples.models.llama.attention import (
     Attention,
     ATTENTION_REGISTRY,
     ForwardOptions,
 )
-from executorch.examples.models.lfm2.short_conv import ShortConvBlock
-
+from executorch.examples.models.llama.feed_forward import FeedForward
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
-from executorch.examples.models.llama.feed_forward import FeedForward
 from torch import nn
 
 
@@ -247,12 +246,15 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
         # hybrid models define layer_types
         if model_args.layer_types and model_args.layer_types[layer_id] == "conv":
             layers.append(
-                ShortConvBlock(dim=model_args.dim, hidden_dim=model_args.hidden_dim, norm_eps=model_args.norm_eps)
+                ShortConvBlock(
+                    dim=model_args.dim,
+                    hidden_dim=model_args.hidden_dim,
+                    norm_eps=model_args.norm_eps,
+                )
             )
-            continue
-
-        attention = cls(model_args, layer_id, rope, **model_args.attention_kwargs)
-        transformer_block = TransformerBlock(model_args, attention)
-        layers.append(transformer_block)
+        else:
+            attention = cls(model_args, layer_id, rope, **model_args.attention_kwargs)
+            transformer_block = TransformerBlock(model_args, attention)
+            layers.append(transformer_block)
 
     return Transformer(model_args, layers, rope)

@@ -12,16 +12,13 @@ from torchtune.models.convert_weights import get_mapped_key
 _LFM_2_TO_META = {
     "model.embed_tokens.weight": "tok_embeddings.weight",
     "model.embedding_norm.weight": "norm.weight",
-
     "model.layers.{}.self_attn.k_proj.weight": "layers.{}.attention.wk.weight",
     "model.layers.{}.self_attn.q_proj.weight": "layers.{}.attention.wq.weight",
     "model.layers.{}.self_attn.v_proj.weight": "layers.{}.attention.wv.weight",
     "model.layers.{}.self_attn.out_proj.weight": "layers.{}.attention.wo.weight",
     "model.layers.{}.self_attn.k_layernorm.weight": "layers.{}.attention.k_norm_fn.weight",
     "model.layers.{}.self_attn.q_layernorm.weight": "layers.{}.attention.q_norm_fn.weight",
-
     "model.layers.{}.post_attention_layernorm.weight": "layers.{}.ffn_norm.weight",
-
     "model.layers.{}.operator_norm.weight": "layers.{}.attention_norm.weight",
 }
 
@@ -48,7 +45,9 @@ def lfm_2_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor
 
         # split in_proj
         if new_key.endswith(".conv.in_proj.weight"):
-            for name, split_value in zip(["B_proj", "C_proj", "x_proj"], torch.chunk(value, 3, dim=0)):
+            for name, split_value in zip(
+                ["B_proj", "C_proj", "x_proj"], torch.chunk(value, 3, dim=0)
+            ):
                 converted_state_dict[new_key.replace("in_proj", name)] = split_value
         else:
             converted_state_dict[new_key] = value

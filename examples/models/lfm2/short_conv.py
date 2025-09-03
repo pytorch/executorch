@@ -1,9 +1,9 @@
 import torch
-from torch import nn
-
-from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.attention import ForwardOptions
 from executorch.examples.models.llama.feed_forward import FeedForward
+
+from executorch.examples.models.llama.norm import RMSNorm
+from torch import nn
 
 
 class ShortConv(nn.Module):
@@ -61,10 +61,14 @@ class ShortConv(nn.Module):
         #  So, assuming prefill is done on an empty cache, concatenating conv_state to the beginning of the sequence acts similary to
         ## using nn.Conv1d(padding=L_cache-1) (for prefill) without no manual padding.
         ## However, the manual padding has the added benefit of being correct during decode, when the cache is not initialized to 0.
-        Bx = torch.cat([self.conv_state, Bx], dim=-1)  # (batch_size, dim, seq_len + L_cache - 1)
+        Bx = torch.cat(
+            [self.conv_state, Bx], dim=-1
+        )  # (batch_size, dim, seq_len + L_cache - 1)
 
         ## Update the conv_state
-        new_conv_state = Bx[..., -(self.conv.weight.size(-1) - 1) :]  # (batch_size, dim, L_cache - 1)
+        new_conv_state = Bx[
+            ..., -(self.L_cache - 1) :
+        ]  # (batch_size, dim, L_cache - 1)
         with torch.no_grad():
             self.conv_state.copy_(new_conv_state)
 
@@ -83,15 +87,20 @@ class ShortConv(nn.Module):
 class ShortConvBlock(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, norm_eps: float):
         super().__init__()
-        # hardcode 3 for now
-        L_cache = 3
-        self.conv = ShortConv(dim, L_cache, bias=False)
+        self.L_cache = 3  # hardcode 3 for now
+        self.conv = ShortConv(dim, self.L_cache, bias=False)
         self.feed_forward = FeedForward(dim, hidden_dim)
         self.ffn_norm = RMSNorm(dim, norm_eps)
         # use attention_norm norm instead of operator_norm to unify with TransformerBlock
         self.attention_norm = RMSNorm(dim, norm_eps)
 
-    def forward(self, x, freqs_cos=None, freqs_sin=None, _unused_attn_options: ForwardOptions = None):  # x: 1xN
+    def forward(
+        self,
+        x,
+        freqs_cos=None,
+        freqs_sin=None,
+        _unused_attn_options: ForwardOptions = None,
+    ):  # x: 1xN
         h = self.conv.forward(self.attention_norm(x))
         h = x + h
         out = h + self.feed_forward(self.ffn_norm(h))

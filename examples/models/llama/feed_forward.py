@@ -1,5 +1,6 @@
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
+
 
 class FeedForward(nn.Module):
     def __init__(self, dim: int, hidden_dim: int):
@@ -11,5 +12,3 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
-
-
