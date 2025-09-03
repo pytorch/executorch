@@ -430,6 +430,27 @@ TEST_F(MethodTest, MethodGetAttributeTest) {
   EXPECT_EQ(res->const_data_ptr<int32_t>()[0], 1);
 }
 
+TEST_F(MethodTest, MethodIdTest) {
+  // Verify that methods are assigned unique ids. Load three methods and verify
+  // that they have different ids.
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+
+  Result<Method> add_method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(add_method.error(), Error::Ok);
+
+  Result<Method> add_mul_method =
+      programs_["add_mul"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(add_mul_method.error(), Error::Ok);
+
+  Result<Method> stateful_method =
+      programs_["stateful"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(stateful_method.error(), Error::Ok);
+  
+  EXPECT_NE(add_method->id(), add_mul_method->id());
+  EXPECT_NE(add_method->id(), stateful_method->id());
+  EXPECT_NE(add_mul_method->id(), stateful_method->id());
+}
+
 /*
  * TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
  * the portable op lib
