@@ -136,6 +136,47 @@ def get_8a8w_qnn_ptq_config(
     return quantization_config
 
 
+def get_8a4w_qnn_ptq_config(
+    act_symmetric: bool = False, act_observer=MovingAverageMinMaxObserver
+) -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.uint8,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
+        ch_axis=0,
+        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+    )
+
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=-7,
+        quant_max=7,
+        qscheme=torch.per_tensor_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+    return quantization_config
+
+
 # 4 bits quantization only supports specific ops.
 def get_16a4w_qnn_ptq_config(
     act_observer=MovingAverageMinMaxObserver,
