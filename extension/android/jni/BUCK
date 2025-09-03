@@ -98,12 +98,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
 
 non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_llama_jni",
-    srcs = [
-        "jni_layer.cpp",
-        "jni_layer_llama.cpp",
-        "jni_layer_runtime.cpp",
-        "jni_helper.cpp",
-    ],
+    srcs = ["jni_layer.cpp", "jni_layer_llama.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
     compiler_flags = ET_JNI_COMPILER_FLAGS + [
         "-DEXECUTORCH_BUILD_LLAMA_JNI",

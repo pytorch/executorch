@@ -92,6 +92,9 @@ std::ostream& operator<<(std::ostream& out, const VulkanExtension result) {
     case VulkanExtension::INT8_STORAGE:
       out << "VK_KHR_8bit_storage";
       break;
+    case VulkanExtension::INTEGER_DOT_PRODUCT:
+      out << "VK_KHR_shader_integer_dot_product";
+      break;
   }
   return out;
 }

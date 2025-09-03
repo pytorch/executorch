@@ -47,7 +47,14 @@ class TransposeVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            [
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP32,
+                ts.DType.BOOL,
+                ts.DType.FP16,
+            ],
             output.tosa_spec,
         )
 
@@ -55,6 +62,11 @@ class TransposeVisitor(NodeVisitor):
         perms = [dim % output_rank for dim in inputs[1].special]
         attr = ts.TosaSerializerAttribute()
         attr.TransposeAttribute(perms)
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().TRANSPOSE,
+            [inputs[0].name],
+            [output.name],
+            attr,
         )

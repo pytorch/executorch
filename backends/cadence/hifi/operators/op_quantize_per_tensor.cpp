@@ -109,10 +109,6 @@ void quantize_per_tensor_out(
     uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
     cadence::impl::HiFi::kernels::quantize<uint16_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
-  } else if (out.scalar_type() == ScalarType::Int) {
-    int32_t* out_data = out.mutable_data_ptr<int32_t>();
-    cadence::impl::HiFi::kernels::quantize<int32_t>(
-        out_data, input_data, 1. / scale, zero_point, numel);
   } else {
     ET_KERNEL_CHECK_MSG(
         ctx,
