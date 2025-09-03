@@ -264,3 +264,45 @@ def _load_libcxx_libs(lib_path):
             print(f"Loaded {sofile.name}")
         except OSError as e:
             print(f"[WARN] Failed to load {sofile.name}: {e}")
+
+
+def install_qnn_sdk(force_download: bool = True) -> bool:
+    """
+    Initialize Qualcomm backend:
+      - Ensure SDK is available (env or packaged/downloaded copy)
+      - Load QNN libraries
+      - Stage and load libc++
+
+    Returns:
+        bool: True if QNN was successfully loaded, False otherwise.
+    """
+
+    # --- Qualcomm SDK handling ---
+    qnn_sdk_dir = PKG_ROOT / "sdk" / "qnn"
+    print(f"[INIT] qnn_sdk_dir: {qnn_sdk_dir}")
+    if not qnn_sdk_dir.exists():
+        print("[INIT] Qualcomm SDK not found. Downloading...")
+        _download_qnn_sdk()
+
+    os.environ["QNN_SDK_ROOT"] = str(qnn_sdk_dir)
+
+    # Load QNN library
+    qnn_lib = qnn_sdk_dir / "lib" / "x86_64-linux-clang" / "libQnnHtp.so"
+    print(f"[INIT] qnn_lib: {qnn_lib}")
+    try:
+        ctypes.CDLL(str(qnn_lib), mode=ctypes.RTLD_GLOBAL)
+        print(f"[INIT] Loaded QNN library from {qnn_lib}")
+    except OSError as e:
+        print(f"[ERROR] Failed to load QNN library at {qnn_lib}: {e}")
+        return False
+
+    # --- libc++ handling ---
+    try:
+        libcxx_dir = _get_libcxx_dir(PKG_ROOT / "sdk")
+        _stage_libcxx(libcxx_dir)
+        _load_libcxx_libs(libcxx_dir)
+        print(f"[INIT] Loaded libc++ from {libcxx_dir}")
+    except Exception as e:
+        print(f"[libcxx] Warning: failed to stage/load libc++: {e}")
+
+    return True
