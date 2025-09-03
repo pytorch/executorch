@@ -42,23 +42,6 @@ executorch
 
 Before you begin, ensure you have openvino installed and configured on your system.
 
-### Build OpenVINO from Source
-
-```bash
-git clone https://github.com/openvinotoolkit/openvino.git
-cd openvino && git checkout b16b776ac119dafda51f69a80f1e6b7376d02c3b
-git submodule update --init --recursive
-sudo ./install_build_dependencies.sh
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
-make -j$(nproc)
-
-cd ..
-cmake --install build --prefix <your_preferred_install_location>
-cd <your_preferred_install_location>
-source setupvars.sh
-```
-
 ### Use OpenVINO from Release Packages
 
 1. Download the OpenVINO release package from [here](https://docs.openvino.ai/2025/get-started/install-openvino.html). Make sure to select your configuration and click on **OpenVINO Archives** under the distribution section to download the appropriate archive for your platform.
@@ -70,6 +53,23 @@ source setupvars.sh
    cd openvino_toolkit_<your_release_configuration>
    source setupvars.sh
    ```
+
+### (Optional) Build OpenVINO from Source
+
+```bash
+git clone https://github.com/openvinotoolkit/openvino.git
+cd openvino
+git submodule update --init --recursive
+sudo ./install_build_dependencies.sh
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
+make -j$(nproc)
+
+cd ..
+cmake --install build --prefix <your_preferred_install_location>
+cd <your_preferred_install_location>
+source setupvars.sh
+```
 
 For more information about OpenVINO build, refer to the [OpenVINO Build Instructions](https://github.com/openvinotoolkit/openvino/blob/master/docs/dev/build_linux.md).
 
