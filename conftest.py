@@ -1,6 +1,6 @@
 import sys
 
-collect_ignore_glob = []
+collect_ignore_glob: list[str] = []
 
 # Skip Apple tests on Windows. Note that some Core ML tests can run on Linux, as the AOT flow
 # is available. Tests will manage this internally. However, the coremltools import is not available
