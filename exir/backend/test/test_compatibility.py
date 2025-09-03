@@ -62,13 +62,12 @@ class TestCompatibility(unittest.TestCase):
             )
         )
 
-        executorch_module = _load_for_executorch_from_buffer(buff)
         # Throw runtime error with error code 0x30, meaning delegate is incompatible.
         with self.assertRaisesRegex(
             RuntimeError,
-            "Failed to get method forward, error: 0x30",
+            "loading method forward failed with error 0x30",
         ):
-            executorch_module.run_method("forward")
+            executorch_module = _load_for_executorch_from_buffer(buff)
 
     def test_compatibility_in_runtime_edge_program_manager(self):
         class SinModule(torch.nn.Module):
@@ -109,10 +108,9 @@ class TestCompatibility(unittest.TestCase):
             )
         )
 
-        executorch_module = _load_for_executorch_from_buffer(buff)
         # Throw runtime error with error code 0x30, meaning delegate is incompatible.
         with self.assertRaisesRegex(
             RuntimeError,
-            "Failed to get method forward, error: 0x30",
+            "loading method forward failed with error 0x30",
         ):
-            executorch_module.run_method("forward")
+            executorch_module = _load_for_executorch_from_buffer(buff)
