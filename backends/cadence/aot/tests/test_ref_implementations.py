@@ -13,6 +13,7 @@ import torch
 from executorch.backends.cadence.aot.ref_implementations import (
     dequantize_per_tensor,
     quantize_per_tensor,
+    quantized_add,
 )
 from executorch.backends.cadence.aot.typing_stubs import expand
 
@@ -93,5 +94,47 @@ class TestRefImplementations(unittest.TestCase):
         )
         self.assertTrue(
             torch.allclose(output, expected_output, rtol=0.001, atol=0.001),
+            f"Values don't match in {name}: got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            # Only these types need to be tested as per ET_FORALL_JARVIS_QUANTIZED_TYPES in
+            # on_device_ai/Assistant/Jarvis/min_runtime/operators/generic/operators.h
+            ("int16", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.int8),
+            ("uint8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.uint8),
+        ]
+    )
+    def test_quantized_add(
+        self,
+        name: str,
+        X: int,
+        X_scale: float,
+        X_zero_point: int,
+        Y: int,
+        Y_scale: float,
+        Y_zero_point: int,
+        out_scale: float,
+        out_zero_point: int,
+        expected_value: int,
+        dtype: torch.dtype,
+    ) -> None:
+        X_tensor = torch.tensor([X], dtype=dtype)
+        Y_tensor = torch.tensor([Y], dtype=dtype)
+        expected_output = torch.tensor([expected_value], dtype=dtype)
+
+        output = quantized_add(
+            X_tensor,
+            torch.tensor(X_scale),
+            torch.tensor(X_zero_point, dtype=dtype),
+            Y_tensor,
+            torch.tensor(Y_scale),
+            torch.tensor(Y_zero_point, dtype=dtype),
+            out_scale,
+            out_zero_point,
+        )
+
+        self.assertTrue(
+            torch.equal(output, expected_output),
             f"Values don't match in {name}: got {output}, expected {expected_output}",
         )
