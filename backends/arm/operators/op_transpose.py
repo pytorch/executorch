@@ -44,17 +44,17 @@ class TransposeVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [inputs[0], output], ts)
-
-        valid_dtypes = [ts.DType.BOOL]
-        if self.tosa_spec.support_integer():
-            valid_dtypes.extend([ts.DType.INT8, ts.DType.INT16])
-        if self.tosa_spec.support_float():
-            valid_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
-
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            valid_dtypes,
+            [
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP32,
+                ts.DType.BOOL,
+                ts.DType.FP16,
+            ],
             output.tosa_spec,
         )
 
