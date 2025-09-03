@@ -65,7 +65,7 @@ def test_conformer_tosa_INT():
     pipeline = TosaPipelineINT[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
-        aten_op=TestConformer.aten_ops,
+        aten_op=[],  # RemoveGraphAssertsPass is added in transform_for_annotation_pipeline to remove the assert ops
         exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
@@ -132,7 +132,7 @@ def test_conformer_vgf_INT():
     pipeline = VgfPipeline[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
-        aten_op=TestConformer.aten_ops,
+        aten_op=[],  # RemoveGraphAssertsPass is added in transform_for_annotation_pipeline to remove the assert ops
         exir_op=[],
         tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
