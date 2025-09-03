@@ -459,30 +459,6 @@ model properly for a specific backend.
         return pytree.tree_unflatten((relu,), self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:818: FutureWarning: `torch.export.export_for_training` is deprecated and will be removed in PyTorch 2.10. Please use `torch.export.export` instead, which is functionally equivalent.
-      aten_pattern = torch.export.export_for_training(
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/utils.py:145: UserWarning: must run observer before calling calculate_qparams. Returning default values.
       warnings.warn(
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torchao/quantization/pt2e/observer.py:1350: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
@@ -1445,7 +1421,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 12.964 seconds)
+   **Total running time of the script:** (0 minutes 13.252 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
