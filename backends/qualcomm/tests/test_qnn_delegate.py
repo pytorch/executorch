@@ -910,6 +910,14 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.rand([1, 2, 3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_logical_and(self):
+        module = LogicalAnd()  # noqa: F405
+        input1 = torch.tensor([True, False, True, False])
+        input2 = torch.tensor([True, True, False, False])
+        sample_input = (input1, input2)
+        self.lower_module_and_test_output(module, sample_input)
+
+
     def test_qnn_backend_logical_not(self):
         module = LogicalNot()  # noqa: F405
         sample_input = (torch.rand([1, 2, 3, 4]),)
@@ -2440,6 +2448,14 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_log(self):
         module = Log()  # noqa: F405
         sample_input = (torch.rand([1, 2, 3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_logical_and(self):
+        module = LogicalAnd()  # noqa: F405
+        input1 = torch.tensor([True, False, True, False])
+        input2 = torch.tensor([True, True, False, False])
+        sample_input = (input1, input2)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 

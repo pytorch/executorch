@@ -1171,6 +1171,14 @@ class Log(torch.nn.Module):
         return torch.log(x)
 
 
+class LogicalAnd(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.logical_and(x, y)
+
+
 class LogicalNot(torch.nn.Module):
     def __init__(self):
         super().__init__()
