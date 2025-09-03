@@ -13,9 +13,6 @@ namespace executorch {
 namespace backends {
 namespace aoti {
 
-using executorch::runtime::Error;
-using executorch::runtime::etensor::Tensor;
-
 // Global storage for tensor metadata
 std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_sizes;
 std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_strides;

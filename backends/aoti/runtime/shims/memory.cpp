@@ -23,9 +23,6 @@ namespace executorch {
 namespace backends {
 namespace aoti {
 
-using executorch::runtime::Error;
-using executorch::runtime::etensor::Tensor;
-
 namespace { // Internal namespace for utility functions
 
 // Version 1: For use with int64_t sizes (e.g., from blob creation functions)

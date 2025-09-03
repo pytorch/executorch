@@ -8,8 +8,7 @@
 
 #pragma once
 
-#include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/core/error.h>
+#include "types.h"
 #include <unordered_map>
 #include <vector>
 
@@ -17,15 +16,7 @@ namespace executorch {
 namespace backends {
 namespace aoti {
 
-using executorch::runtime::Error;
-using executorch::runtime::etensor::Tensor;
-
 extern "C" {
-
-// Type definitions
-using AOTITensorHandle = Tensor*;
-using AOTIRuntimeError = Error;
-using AOTITorchError = Error;
 
 // Global storage for tensor metadata
 extern std::unordered_map<Tensor*, std::vector<int64_t>> tensor_to_sizes;
