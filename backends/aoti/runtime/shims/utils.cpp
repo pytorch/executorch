@@ -25,7 +25,7 @@ const char* const TENSOR_OUTPUT_FILENAME =
 
 extern "C" {
 
-void aoti_torch_print_tensor_handle(AtenTensorHandle self, const char* msg) {
+void aoti_torch_print_tensor_handle(AOTITensorHandle self, const char* msg) {
   printf("Printing tensor handle: %p\n", self);
 
   if (!self) {
