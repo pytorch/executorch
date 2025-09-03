@@ -10,6 +10,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import numpy as np
 import torch
 
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
+
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpStridedSlice, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -47,11 +49,14 @@ class Flip(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-
         ranges = []
 
+        dims = node.args[1]
+        if QCOM_AXIS_ORDER in node.meta:
+            dims = [node.meta[QCOM_AXIS_ORDER].index(dim) for dim in dims]
+
         for dim, size in enumerate(output_tensor.shape):
-            if dim in node.args[1]:
+            if dim in dims:
                 ranges.extend([size - 1, -1, -1])
             else:
                 ranges.extend([0, size, 1])

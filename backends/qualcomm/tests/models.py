@@ -646,6 +646,40 @@ class Conv2dDownUpSample(torch.nn.Module):
         return self.conv_transpose(self.conv(x))
 
 
+class Conv2dFlip(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=False,
+        )
+        self.dims = [1, 3]
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.flip(x, self.dims)
+
+
+class Conv2dSliceCopy(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=1,
+            out_channels=4,
+            kernel_size=(3, 3),
+            padding=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x[:, 2:, :, :]
+
+
 class Conv2dSumReduceDim(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -821,19 +855,6 @@ class Flip(torch.nn.Module):
 
     def forward(self, x):
         return torch.flip(x, self.dims)
-
-
-class FlipDecomp(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.dims = [0, 2]
-
-    def forward(self, x):
-        for dim in self.dims:
-            idx = torch.arange(start=x.size(dim) - 1, end=-1, step=-1)
-            # Select using reverse index, equivalent to flipping.
-            x = torch.index_select(x, dim, idx)
-        return x
 
 
 class Floor(torch.nn.Module):
