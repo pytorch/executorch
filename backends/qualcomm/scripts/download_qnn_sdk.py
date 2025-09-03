@@ -1,4 +1,3 @@
-# Add these imports for additional logging
 import ctypes
 import os
 import pathlib
@@ -12,149 +11,97 @@ from typing import Optional
 
 from tqdm import tqdm
 
-SDK_DIR = pathlib.Path(__file__).parent.parent / "sdk" / "qnn"
+# === executorch/backends/qualcomm path ===
 PKG_ROOT = pathlib.Path(__file__).parent.parent
+QNN_SDK_PATH = PKG_ROOT / "sdk" / "qnn"
+libcxx_DIR_PATH
 
 
 def is_linux_x86() -> bool:
-    """
-    Check if the current platform is Linux x86_64.
+    """Return True if running on Linux x86/x86_64."""
+    return platform.system().lower() == "linux" and platform.machine().lower() in (
+        "x86_64",
+        "amd64",
+        "i386",
+        "i686",
+    )
 
-    Returns:
-        bool: True if the system is Linux x86_64, False otherwise.
-    """
-    system = platform.system().lower()
-    machine = platform.machine().lower()
 
-    return system == "linux" and machine in ("x86_64", "amd64", "i386", "i686")
+# ========================
+# === QNN SDK handling ===
+# ========================
+
+
+def _get_qnn_sdk_dir() -> pathlib.Path:
+    # === executorch/backends/qualcomm/sdk/qnn path ===
+    return PKG_ROOT / "sdk" / "qnn"
 
 
 def _download_qnn_sdk() -> Optional[pathlib.Path]:
-    """
-    Download and extract the Qualcomm SDK into SDK_DIR.
-
-    Notes:
-        - Only runs on Linux x86 platforms. Skips otherwise.
-    """
-    print("Downloading Qualcomm SDK...")
-    qairt_url = (
-        "https://softwarecenter.qualcomm.com/api/download/software/sdks/"
-        "Qualcomm_AI_Runtime_Community/All/2.34.0.250424/v2.34.0.250424.zip"
-    )
-    qairt_content_dir = "qairt/2.34.0.250424"
-
+    """Download and extract the Qualcomm SDK into SDK_DIR (Linux x86 only)."""
     if not is_linux_x86():
         print("Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
 
-    SDK_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"SDK_DIR is {SDK_DIR}, exists: {SDK_DIR.exists()}")
-    print(f"Current working directory: {os.getcwd()}")
+    # Already exists? Skip
+    if QNN_SDK_PATH.exists() and any(QNN_SDK_PATH.iterdir()):
+        print(f"Qualcomm SDK already present at {QNN_SDK_PATH}, skipping download.")
+        return QNN_SDK_PATH
+
+    QNN_SDK_PATH.mkdir(parents=True, exist_ok=True)
+    QAIRT_URL = "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.34.0.250424/v2.34.0.250424.zip"
+    QAIRT_CONTENT_DIR = "qairt/2.34.0.250424"
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        archive_path = pathlib.Path(tmpdir) / pathlib.Path(qairt_url).name
-        print(f"Temporary directory: {tmpdir}")
-        print(f"Archive will be saved to: {archive_path}")
+        archive_path = pathlib.Path(tmpdir) / pathlib.Path(QAIRT_URL).name
 
-        print(f"Downloading Qualcomm SDK from {qairt_url}...")
         try:
-            # Use urlretrieve with a reporthook to show progress
-            def make_report_progress():
-                last_reported = 0  # nonlocal variable
-
-                def report_progress(block_num, block_size, total_size):
-                    nonlocal last_reported
-                    downloaded = block_num * block_size
-                    percent = downloaded / total_size * 100
-
-                    # Report every 20%
-                    if percent - last_reported >= 20 or percent >= 100:
-                        print(
-                            f"Downloaded: {downloaded}/{total_size} bytes ({percent:.2f}%)"
-                        )
-                        last_reported = percent
-
-                return report_progress
-
-            report_progress = make_report_progress()
-            urllib.request.urlretrieve(qairt_url, archive_path, report_progress)
-            print("Download completed!")
-
-            # Check if file was downloaded successfully
-            if archive_path.exists():
-                file_size = archive_path.stat().st_size
-                print(f"Downloaded file size: {file_size} bytes")
-                if file_size == 0:
-                    print("WARNING: Downloaded file is empty!")
-            else:
-                print("ERROR: File was not downloaded!")
-                return None
-
+            print(f"Downloading Qualcomm SDK from {QAIRT_URL}...")
+            urllib.request.urlretrieve(QAIRT_URL, archive_path)
         except Exception as e:
             print(f"Error during download: {e}")
             return None
 
-        # Check extraction method
-        if qairt_url.endswith(".zip"):
-            print("Extracting ZIP archive...")
-            _extract_zip(archive_path, qairt_content_dir, SDK_DIR)
-        elif qairt_url.endswith((".tar.gz", ".tgz")):
-            print("Extracting TAR archive...")
-            _extract_tar(archive_path, qairt_content_dir, SDK_DIR)
+        if not archive_path.exists() or archive_path.stat().st_size == 0:
+            print("ERROR: Download failed or file empty.")
+            return None
+
+        # Extract
+        if QAIRT_URL.endswith(".zip"):
+            _extract_zip(archive_path, QAIRT_CONTENT_DIR, QNN_SDK_PATH)
+        elif QAIRT_URL.endswith((".tar.gz", ".tgz")):
+            _extract_tar(archive_path, QAIRT_CONTENT_DIR, QNN_SDK_PATH)
         else:
-            raise ValueError(f"Unsupported archive format: {qairt_url}")
+            raise ValueError(f"Unsupported archive format: {QAIRT_URL}")
 
-        # Verify extraction
-        print(f"Verifying extraction to {SDK_DIR}")
-        if SDK_DIR.exists():
-            print(f"SDK directory exists. Contents:")
-            for item in SDK_DIR.iterdir():
-                print(f"  {item.name}")
-        else:
-            print("ERROR: SDK directory was not created!")
-
-        print(f"Qualcomm SDK extracted to {SDK_DIR}")
-
-    return SDK_DIR
+    print(f"Qualcomm SDK extracted to {QNN_SDK_PATH}")
+    return QNN_SDK_PATH
 
 
-# You might also want to add detailed logging to your extraction functions
+# === End of QNN SDK handling ===
+
+
 def _extract_zip(archive_path, content_dir, target_dir):
     print(f"Extracting {archive_path} to {target_dir}")
-    print(f"Looking for content in subdirectory: {content_dir}")
-
     target_dir.mkdir(parents=True, exist_ok=True)
 
     with zipfile.ZipFile(archive_path, "r") as zip_ref:
-        # Filter files that start with content_dir
         files_to_extract = [f for f in zip_ref.namelist() if f.startswith(content_dir)]
-
         for file in tqdm(files_to_extract, desc="Extracting files"):
-            relative_path = os.path.relpath(file, content_dir)
-            if relative_path == ".":
-                continue  # skip the root directory itself
-
-            target_path = target_dir / relative_path
-
+            relpath = os.path.relpath(file, content_dir)
+            if relpath == ".":
+                continue
+            out_path = target_dir / relpath
             if file.endswith("/"):
-                target_path.mkdir(parents=True, exist_ok=True)
+                out_path.mkdir(parents=True, exist_ok=True)
             else:
-                target_path.parent.mkdir(
-                    parents=True, exist_ok=True
-                )  # ensure parent exists
-                with zip_ref.open(file) as source, open(target_path, "wb") as target:
-                    shutil.copyfileobj(source, target)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                with zip_ref.open(file) as src, open(out_path, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
 
 
 def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Path):
-    """
-    Extract files from a tar.gz archive into target_dir, stripping a prefix.
-
-    Args:
-        archive_path (pathlib.Path): Path to the .tar.gz or .tgz archive.
-        prefix (str): Prefix folder inside the archive to strip.
-        target_dir (pathlib.Path): Destination directory.
-    """
+    """Extract files from a tar.gz archive into target_dir, stripping prefix."""
     with tarfile.open(archive_path, "r:gz") as tf:
         for m in tf.getmembers():
             if not m.name.startswith(prefix + "/"):
@@ -162,101 +109,101 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
             relpath = pathlib.Path(m.name).relative_to(prefix)
             if not relpath.parts or relpath.parts[0] == "..":
                 continue
-
             out_path = target_dir / relpath
             if m.isdir():
                 out_path.mkdir(parents=True, exist_ok=True)
             else:
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 src = tf.extractfile(m)
-                if src is None:
-                    # Skip non-regular files (links, devices, etc.)
-                    continue
-                with src, open(out_path, "wb") as dst:
-                    dst.write(src.read())
+                if src:
+                    with src, open(out_path, "wb") as dst:
+                        dst.write(src.read())
 
+
+# =========================
+# === libcxx handling ====
+# =========================
 
 LLVM_VERSION = "14.0.0"
-LIBCXX_BASE_NAME = f"clang+llvm-{LLVM_VERSION}-x86_64-linux-gnu-ubuntu-18.04"
-LLVM_URL = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/{LIBCXX_BASE_NAME}.tar.xz"
-
-REQUIRED_LIBS = [
-    "libc++.so.1.0",
-    "libc++abi.so.1.0",
-    "libunwind.so.1",
-    "libm.so.6",
-    "libpython3.10.so.1.0",  # optional, include if needed
-]
 
 
-def _get_libcxx_dir(pkg_root: pathlib.Path) -> pathlib.Path:
-    """Path where libc++ should be staged in the wheel."""
-    return pkg_root / "sdk" / f"libcxx-{LLVM_VERSION}"
+def _get_libcxx_dir() -> pathlib.Path:
+    return PKG_ROOT / "sdk" / f"libcxx-{LLVM_VERSION}"
 
 
 def _stage_libcxx(target_dir: pathlib.Path):
-    """Download LLVM tarball and stage only the needed .so files."""
+    """
+    Stage required libc++ libraries by copying from extracted LLVM tarball.
+    Creates symlinks to map different soname versions.
+    """
+    LIBCXX_BASE_NAME = f"clang+llvm-{LLVM_VERSION}-x86_64-linux-gnu-ubuntu-18.04"
+    LLVM_URL = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/{LIBCXX_BASE_NAME}.tar.xz"
+
+    REQUIRED_LIBS = [
+        "libc++.so.1.0",
+        "libc++abi.so.1.0",
+        "libunwind.so.1",
+        "libm.so.6",
+        "libpython3.10.so.1.0",
+    ]
+
+    # Mapping of symlink → target file
+    SYMLINKS = {
+        "libc++.so.1": "libc++.so.1.0",
+        "libc++.so": "libc++.so.1",
+        "libc++abi.so.1": "libc++abi.so.1.0",
+        "libc++abi.so": "libc++abi.so.1",
+    }
+
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Already staged?
-    if all((target_dir / libname).exists() for libname in REQUIRED_LIBS):
-        print(f"[libcxx] Already staged at {target_dir}, skipping download")
+    # Check if all required files already staged
+    if all((target_dir / lib).exists() for lib in REQUIRED_LIBS):
+        print(f"[libcxx] Already staged at {target_dir}, skipping")
         return
 
+    # Download & extract LLVM tarball if not exists
     temp_tar = pathlib.Path("/tmp") / f"{LIBCXX_BASE_NAME}.tar.xz"
     temp_extract = pathlib.Path("/tmp") / LIBCXX_BASE_NAME
-
-    # Download tarball if missing
     if not temp_tar.exists():
         print(f"[libcxx] Downloading {LLVM_URL}")
         urllib.request.urlretrieve(LLVM_URL, temp_tar)
 
-    # Extract
     print(f"[libcxx] Extracting {temp_tar}")
     with tarfile.open(temp_tar, "r:xz") as tar:
         tar.extractall(temp_extract.parent)
 
-    # Copy required .so files
     lib_src = temp_extract / "lib"
+
+    # Copy required files
     for fname in REQUIRED_LIBS:
         src_path = lib_src / fname
-        if not src_path.exists():
-            print(f"[libcxx] Warning: {fname} not found in extracted LLVM")
-            continue
-        shutil.copy(src_path, target_dir / fname)
+        dst_path = target_dir / fname
+        if src_path.exists():
+            shutil.copy(src_path, dst_path)
+            print(f"[libcxx] Copied {src_path.name} -> {dst_path}")
+        else:
+            print(f"[libcxx] Warning: {fname} not found in LLVM package")
 
-    # Create symlinks for libc++/abi
-    libcxx = target_dir / "libc++.so.1.0"
-    libcxx_abi = target_dir / "libc++abi.so.1.0"
-    if libcxx.exists():
-        os.symlink("libc++.so.1.0", target_dir / "libc++.so.1")
-        os.symlink("libc++.so.1", target_dir / "libc++.so")
-    if libcxx_abi.exists():
-        os.symlink("libc++abi.so.1.0", target_dir / "libc++abi.so.1")
-        os.symlink("libc++abi.so.1", target_dir / "libc++abi.so")
+    # Create symlinks according to mapping
+    for link_name, target_name in SYMLINKS.items():
+        link_path = target_dir / link_name
+        target_path = target_dir / target_name
+        if not link_path.exists() and target_path.exists():
+            os.symlink(target_name, link_path)  # symlink relative to target_dir
+            print(f"[libcxx] Symlinked {link_name} -> {target_name}")
 
     print(f"[libcxx] Staged libc++ to {target_dir}")
 
 
 def _load_libcxx_libs(lib_path):
-    """
-    Load libc++ shared libraries from the given directory.
-
-    Ensures libc++abi is loaded first, then libc++, then any other .so files.
-    """
+    """Load libc++ shared libs from given directory."""
     candidates = list(lib_path.glob("*.so*"))
-
     priority = ["libc++abi", "libc++"]
-    sorted_candidates = []
 
-    for name in priority:
-        for f in candidates:
-            if f.name.startswith(name):
-                sorted_candidates.append(f)
-
-    for f in candidates:
-        if f not in sorted_candidates:
-            sorted_candidates.append(f)
+    sorted_candidates = [
+        f for p in priority for f in candidates if f.name.startswith(p)
+    ] + [f for f in candidates if not any(f.name.startswith(p) for p in priority)]
 
     for sofile in sorted_candidates:
         try:
@@ -266,43 +213,38 @@ def _load_libcxx_libs(lib_path):
             print(f"[WARN] Failed to load {sofile.name}: {e}")
 
 
+# === End of libcxx handling ===
+
+
 def install_qnn_sdk(force_download: bool = True) -> bool:
-    """
-    Initialize Qualcomm backend:
-      - Ensure SDK is available (env or packaged/downloaded copy)
-      - Load QNN libraries
-      - Stage and load libc++
+    """Ensure QNN SDK + libc++ are available and loaded."""
+    # --- set up QNN SDK ---
+    if not QNN_SDK_PATH.exists():
+        if force_download:
+            if not _download_qnn_sdk():
+                return False
+        else:
+            print("[INIT] Qualcomm SDK not found and force_download=False")
+            return False
 
-    Returns:
-        bool: True if QNN was successfully loaded, False otherwise.
-    """
+    os.environ["QNN_SDK_ROOT"] = str(QNN_SDK_PATH)
 
-    # --- Qualcomm SDK handling ---
-    qnn_sdk_dir = SDK_DIR
-    print(f"[INIT] qnn_sdk_dir: {qnn_sdk_dir}")
-    if not qnn_sdk_dir.exists():
-        print("[INIT] Qualcomm SDK not found. Downloading...")
-        _download_qnn_sdk()
-
-    os.environ["QNN_SDK_ROOT"] = str(qnn_sdk_dir)
-
-    # Load QNN library
-    qnn_lib = qnn_sdk_dir / "lib" / "x86_64-linux-clang" / "libQnnHtp.so"
-    print(f"[INIT] qnn_lib: {qnn_lib}")
+    qnn_lib = QNN_SDK_PATH / "lib" / "x86_64-linux-clang" / "libQnnHtp.so"
     try:
         ctypes.CDLL(str(qnn_lib), mode=ctypes.RTLD_GLOBAL)
         print(f"[INIT] Loaded QNN library from {qnn_lib}")
     except OSError as e:
-        print(f"[ERROR] Failed to load QNN library at {qnn_lib}: {e}")
+        print(f"[ERROR] Failed to load QNN library: {e}")
         return False
+    # --- End of QNN SDK ---
 
-    # --- libc++ handling ---
+    # --- Set up libcxx ---
     try:
-        libcxx_dir = _get_libcxx_dir(PKG_ROOT / "sdk")
+        libcxx_dir = _get_libcxx_dir()
         _stage_libcxx(libcxx_dir)
         _load_libcxx_libs(libcxx_dir)
-        print(f"[INIT] Loaded libc++ from {libcxx_dir}")
     except Exception as e:
         print(f"[libcxx] Warning: failed to stage/load libc++: {e}")
+    # --- End of libcxx ---
 
     return True
