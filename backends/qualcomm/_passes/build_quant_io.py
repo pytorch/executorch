@@ -39,6 +39,11 @@ class BuildQuantIo(ExportPass):
             if QCOM_QUANTIZED_IO in n.meta:
                 n.meta["val"] = n.meta["val"].to(dtype=n.meta[QCOM_QUANTIZED_IO])
 
+        spec = []
+        for user in list(call_delegate[0].users):
+            spec.append(self._make_spec(user.meta["val"]))
+        call_delegate[0].meta["spec"] = tuple(spec)
+
     def call(self, graph_module: torch.fx.GraphModule):
         self._build(graph_module)
         graph_module.graph.eliminate_dead_code()
