@@ -81,7 +81,7 @@ EOF
 # Wheel build and .so checks
 # ----------------------------
 echo "=== Building Wheel Package ==="
-export EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
+EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
 
 WHEEL_FILE=$(ls dist/*.whl | head -n 1)
 echo "Found wheel: $WHEEL_FILE"
