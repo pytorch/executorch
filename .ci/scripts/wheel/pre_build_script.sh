@@ -9,6 +9,17 @@ set -euxo pipefail
 
 # This script is run before building ExecuTorch binaries
 
+# Enable long paths (relevant for Windows, but can run on any system).
+git config --system core.longpaths true
+
+# Clone nested submodules for tokenizers - this is a workaround for recursive
+# submodule clone failing due to path length limitations on Windows. Eventually,
+# we should update the core job in test-infra to enable long paths before
+# checkout to avoid needing to do this.
+pushd extension/llm/tokenizers
+git submodule update --init
+popd
+
 # Manually install build requirements because `python setup.py bdist_wheel` does
 # not install them. TODO(dbort): Switch to using `python -m build --wheel`,
 # which does install them. Though we'd need to disable build isolation to be
