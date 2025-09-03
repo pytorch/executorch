@@ -8,8 +8,6 @@ from copy import deepcopy
 
 import numpy as np
 import torch
-from parameterized import parameterized
-from torch.fx import GraphModule
 
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
@@ -33,6 +31,8 @@ from executorch.backends.nxp.tests.models import (
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.extension.export_util import export_to_edge
+from parameterized import parameterized
+from torch.fx import GraphModule
 
 
 def _quantize_and_lower_module(
