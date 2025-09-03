@@ -18,6 +18,8 @@ download_ai_lite_core() {
 
   _tmp_archive="/tmp/exynos-ai-litecore-v0.5.0.tar.gz"
 
+  sudo update-ca-certificates
+
   curl --silent --show-error --location --fail --retry 3 \
     --output "${_tmp_archive}" "${_exynos_ai_lite_core_url}"
 
