@@ -16,6 +16,9 @@ from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import
 from executorch.backends.nxp.aten_passes.split_group_convolution import (
     SplitGroupConvolution,
 )
+from executorch.backends.nxp.aten_passes.split_gru_based_on_num_layers import (
+    SplitGRUBasedOnNumLayers,
+)
 from executorch.exir.pass_manager import PassManager
 from torch import nn
 from torch.fx.passes.infra.pass_base import PassResult
@@ -30,6 +33,7 @@ class NeutronAtenPassManager(PassManager):
             FuseBatchNormWithConvPass(),
             FuseBatchNormWithLinearPass(),
             SplitGroupConvolution(),
+            SplitGRUBasedOnNumLayers(),
         ]
 
         super().__init__(passes)
