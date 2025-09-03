@@ -13,7 +13,6 @@ plugins {
 
 val qnnVersion: String? = project.findProperty("qnnVersion") as? String
 
-
 android {
   namespace = "com.example.executorchllamademo"
   compileSdk = 34
