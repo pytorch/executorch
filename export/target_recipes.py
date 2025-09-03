@@ -21,10 +21,13 @@ from executorch.backends.xnnpack.recipes import XNNPackRecipeType
 from executorch.export.recipe import ExportRecipe, RecipeType
 
 
-## Target configs
+## IOS Target configs
+# The following list of recipes are not exhaustive for CoreML; refer to CoreMLRecipeType for more detailed recipes.
 IOS_CONFIGS: Dict[str, List[RecipeType]] = {
     # pyre-ignore
     "ios-arm64-coreml-fp32": [CoreMLRecipeType.FP32, XNNPackRecipeType.FP32],
+    # pyre-ignore
+    "ios-arm64-coreml-fp16": [CoreMLRecipeType.FP16],
     # pyre-ignore
     "ios-arm64-coreml-int8": [CoreMLRecipeType.PT2E_INT8_STATIC],
 }
@@ -67,13 +70,14 @@ def _create_target_recipe(
 
 # IOS Recipe
 def get_ios_recipe(
-    target_config: str = "ios-arm64-coreml-fp32", **kwargs
+    target_config: str = "ios-arm64-coreml-fp16", **kwargs
 ) -> ExportRecipe:
     """
     Get iOS-optimized recipe for specified hardware configuration.
 
     Supported configurations:
     - 'ios-arm64-coreml-fp32': CoreML + XNNPACK fallback (FP32)
+    - 'ios-arm64-coreml-fp16': CoreML fp16 recipe
     - 'ios-arm64-coreml-int8': CoreML INT8 quantization recipe
 
     Args:

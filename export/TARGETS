@@ -117,6 +117,7 @@ runtime.python_library(
         "target_recipes.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/coremltools:coremltools",
         "//executorch/export:recipe",
         "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
         "//executorch/backends/apple/coreml:coreml_recipes",

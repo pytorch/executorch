@@ -54,7 +54,7 @@ class TestTargetRecipes(unittest.TestCase):
         # session.print_delegation_info()
 
         self.assertIsNotNone(
-            executorch_program, "ExecutorTorch program should not be None"
+            executorch_program, "ExecuTorch program should not be None"
         )
 
         # Assert there is an execution plan
@@ -112,38 +112,45 @@ class TestTargetRecipes(unittest.TestCase):
 
         example_inputs = [(torch.randn(2, 4), torch.randn(2, 4))]
 
-        recipe = get_ios_recipe("ios-arm64-coreml-int8")
+        for recipe in [
+            get_ios_recipe("ios-arm64-coreml-fp16"),
+            get_ios_recipe("ios-arm64-coreml-int8"),
+        ]:
+            # Export the model
+            session = export(
+                model=model, example_inputs=example_inputs, export_recipe=recipe
+            )
 
-        # Export the model
-        session = export(
-            model=model, example_inputs=example_inputs, export_recipe=recipe
-        )
+            # Verify we can create executable
+            executorch_program = session.get_executorch_program()
+            session.print_delegation_info()
 
-        # Verify we can create executable
-        executorch_program = session.get_executorch_program()
-        # session.print_delegation_info()
+            self.assertIsNotNone(
+                executorch_program, "ExecuTorch program should not be None"
+            )
 
-        self.assertIsNotNone(
-            executorch_program, "ExecutorTorch program should not be None"
-        )
+            # Assert there is an execution plan
+            self.assertTrue(len(executorch_program.execution_plan) == 1)
 
-        # Assert there is an execution plan
-        self.assertTrue(len(executorch_program.execution_plan) == 1)
+            # Check number of partitions created
+            self.assertTrue(len(executorch_program.execution_plan[0].delegates) == 1)
 
-        # Check number of partitions created
-        self.assertTrue(len(executorch_program.execution_plan[0].delegates) == 1)
+            # Delegate backend is CoreML
+            self.assertEqual(
+                executorch_program.execution_plan[0].delegates[0].id,
+                "CoreMLBackend",
+            )
 
-        # Delegate backend is CoreML
-        self.assertEqual(
-            executorch_program.execution_plan[0].delegates[0].id,
-            "CoreMLBackend",
-        )
+            # Check number of instructions
+            instructions = executorch_program.execution_plan[0].chains[0].instructions
+            self.assertIsNotNone(instructions)
+            self.assertEqual(len(instructions), 1)
 
-        et_runtime: Runtime = Runtime.get()
-        backend_registry = et_runtime.backend_registry
-        logging.info(
-            f"backends registered: {et_runtime.backend_registry.registered_backend_names}"
-        )
-        if backend_registry.is_available("CoreMLBackend"):
-            et_output = session.run_method("forward", example_inputs[0])
-            logging.info(f"et output {et_output}")
+            et_runtime: Runtime = Runtime.get()
+            backend_registry = et_runtime.backend_registry
+            logging.info(
+                f"backends registered: {et_runtime.backend_registry.registered_backend_names}"
+            )
+            if backend_registry.is_available("CoreMLBackend"):
+                et_output = session.run_method("forward", example_inputs[0])
+                logging.info(f"et output {et_output}")
