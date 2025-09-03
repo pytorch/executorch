@@ -423,7 +423,9 @@ class CadenceMemoryPlanning:
         # True.
         mem_planning = MemoryPlanningPass(
             self.algo,
-            allow_lifetime_and_storage_overlap=(self.opt_level >= 2),
+            # Always allow lifetime and storage overlap.
+            # At opt level 0, we need overlap for idma wait.
+            allow_lifetime_and_storage_overlap=True,
             alloc_graph_input=self.alloc_graph_input,
             alloc_graph_output=self.alloc_graph_output,
         )
