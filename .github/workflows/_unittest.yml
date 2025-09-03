@@ -63,4 +63,11 @@ jobs:
       timeout: 120
       script: |
         conda init powershell
+
+        Set-PSDebug -Trace 1
+        \$ErrorActionPreference = 'Stop'
+        \$PSNativeCommandUseErrorActionPreference = \$true
+
+        .ci/scripts/setup-windows.ps1       
+
         powershell .ci/scripts/unittest-windows.ps1 -editable "${{ inputs.editable }}"

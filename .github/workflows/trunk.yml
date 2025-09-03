@@ -986,11 +986,18 @@ jobs:
       fail-fast: false
       matrix:
         model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
-        backend: [portable, xnnpack]
+        backend: [portable, xnnpack-f32, xnnpack-q8]
     with:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 60
       script: |
         conda init powershell
+        
+        Set-PSDebug -Trace 1
+        \$ErrorActionPreference = 'Stop'
+        \$PSNativeCommandUseErrorActionPreference = \$true
+
+        .ci/scripts/setup-windows.ps1       
+
         powershell .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
