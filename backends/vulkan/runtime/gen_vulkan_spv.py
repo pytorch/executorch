@@ -1103,6 +1103,7 @@ class ShaderInfo:
     requires_shader_int16_ext: bool = False
     requires_16bit_storage_ext: bool = False
     requires_8bit_storage_ext: bool = False
+    requires_integer_dot_product_ext: bool = False
 
 
 def getName(filePath: str) -> str:
@@ -1213,6 +1214,8 @@ def getShaderInfo(srcFilePath: str) -> ShaderInfo:
                     shader_info.requires_16bit_storage_ext = True
                 if "GL_EXT_shader_8bit_storage" in line:
                     shader_info.requires_8bit_storage_ext = True
+                if "GL_EXT_integer_dot_product" in line:
+                    shader_info.requires_integer_dot_product_ext = True
 
     return shader_info
 
@@ -1288,6 +1291,7 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
         to_cpp_str(shader_info.requires_shader_int16_ext),
         to_cpp_str(shader_info.requires_16bit_storage_ext),
         to_cpp_str(shader_info.requires_8bit_storage_ext),
+        to_cpp_str(shader_info.requires_integer_dot_product_ext),
     ]
 
     shader_info_str = textwrap.indent(

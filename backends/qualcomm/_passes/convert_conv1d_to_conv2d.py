@@ -9,7 +9,7 @@ from executorch.backends.qualcomm.builders.utils import get_parameter, set_param
 from executorch.backends.qualcomm.utils.constants import QCOM_REQUANTIZE
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import copy_meta
+from .utils import append_qdq, copy_meta
 
 
 class ConvertConv1dToConv2d(ExportPass):
@@ -25,31 +25,6 @@ class ConvertConv1dToConv2d(ExportPass):
             torch.ops.aten.conv1d.default: torch.ops.aten.conv2d.default,
             torch.ops.aten.conv_transpose1d.default: torch.ops.aten.conv_transpose2d.input,
         }
-
-    def append_qdq(
-        self,
-        graph_module: torch.fx.GraphModule,
-        node: torch.fx.Node,
-        qdq_node: torch.fx.Node,
-    ):
-        q_op = torch.ops.quantized_decomposed.quantize_per_tensor.default
-        dq_op = torch.ops.quantized_decomposed.dequantize_per_tensor.default
-        if qdq_node.target not in {q_op, dq_op}:
-            return node
-
-        with graph_module.graph.inserting_after(node):
-            q_args = (node, *qdq_node.args[1:])
-            q_node = graph_module.graph.create_node("call_function", q_op, q_args)
-            q_node.meta = copy_meta(node.meta)
-            q_node.meta["val"] = q_node.meta["val"].to(q_args[-1])
-            with graph_module.graph.inserting_after(q_node):
-                dq_args = (q_node, *qdq_node.args[1:])
-                dq_node = graph_module.graph.create_node(
-                    "call_function", dq_op, dq_args
-                )
-                dq_node.meta = copy_meta(node.meta)
-
-        return dq_node
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
@@ -69,7 +44,7 @@ class ConvertConv1dToConv2d(ExportPass):
                     unsqueeze_node.meta = copy_meta(
                         input_node.meta, lambda m: {**m, "val": m["val"].unsqueeze(2)}
                     )
-                    qdq_node_after_unsqueeze = self.append_qdq(
+                    qdq_node_after_unsqueeze = append_qdq(
                         graph_module=graph_module,
                         node=unsqueeze_node,
                         qdq_node=input_node,
@@ -139,7 +114,7 @@ class ConvertConv1dToConv2d(ExportPass):
                         conv2d_node.meta = copy_meta(
                             node.meta, lambda m: {**m, "val": m["val"].unsqueeze(2)}
                         )
-                        qdq_node_after_conv2d = self.append_qdq(
+                        qdq_node_after_conv2d = append_qdq(
                             graph_module=graph_module,
                             node=conv2d_node,
                             qdq_node=list(node.users)[0],
