@@ -212,6 +212,8 @@ sh examples/demo-apps/android/LlamaDemo/setup-with-qnn.sh
 This is running the shell script which configures the required core ExecuTorch, Llama2/3, and Android libraries, builds them into AAR, and copies it to the app.
 Note: If you are building the Android app mentioned in the next section on a separate machine (i.e. MacOS but building and exporting for QNN backend on Linux), make sure you copy the aar file generated from setup-with-qnn script to "examples/demo-apps/android/LlamaDemo/app/libs" before building the Android app.
 
+6. Set up the correct QNN version in gradle rule
+Currently, the gralde rule searches for the property `qnnVersion`. When this variable is defined, it will add QNN runtime library to the dependency. To use it, append the string `qnnVersion=<version>` (ex. `qnnVersion=2.37.0`) to the end of the `gradle.properties` file.
 
 ## Run the Android Demo App
 
