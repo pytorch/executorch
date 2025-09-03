@@ -994,10 +994,12 @@ jobs:
       script: |
         conda init powershell
         
-        Set-PSDebug -Trace 1
-        \$ErrorActionPreference = 'Stop'
-        \$PSNativeCommandUseErrorActionPreference = \$true
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
 
-        .ci/scripts/setup-windows.ps1       
+          .ci/scripts/setup-windows.ps1       
 
-        powershell .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
+          powershell .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
+        }"
