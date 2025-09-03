@@ -9,7 +9,7 @@
 import collections
 import itertools
 import logging
-from typing import Iterable, Optional, Sequence
+from typing import Callable, Iterable, Optional, Sequence, TypeAlias
 
 import torch
 from executorch.backends.cadence.aot.memory_constraints import MemConstraints
@@ -26,6 +26,8 @@ from executorch.backends.cadence.aot.utils import (
 
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import collect_specs_from_nodes, Verifier
+from executorch.exir.pass_base import PassBase
+from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.tensor import TensorSpec
 from tabulate import tabulate
@@ -359,6 +361,35 @@ def print_memory_planning_info(
     )
 
 
+class SimplifyIdmaOpsPass(PassBase):
+    """Replace idma_load and idma_store with idma_copy."""
+
+    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
+        modified = False
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_load.out
+        ):
+            modified = True
+            node.target = torch.ops.cadence.idma_copy.out
+            node.args = (node.args[0], *node.args[2:])
+
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_store.out
+        ):
+            modified = True
+            node.target = torch.ops.cadence.idma_copy.out
+
+        graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+        return PassResult(graph_module, modified)
+
+
+ConstraintGenPassType: TypeAlias = Callable[
+    [MemConstraints],
+    Callable[[torch.fx.GraphModule], Optional[PassResult]],
+]
+
+
 class CadenceMemoryPlanning:
     def __init__(
         self,
@@ -430,5 +461,9 @@ class CadenceMemoryPlanning:
             alloc_graph_output=self.alloc_graph_output,
         )
         mem_planning.run(graph_module, graph_signature)
+
+        graph_module = PassManager(passes=[SimplifyIdmaOpsPass()])(
+            graph_module
+        ).graph_module
 
         return PassResult(graph_module, True)
