@@ -171,7 +171,8 @@ MultimodalInput processRawAudioFile(
       audio_data.size() * sizeof(float));
   f.close();
 
-  ET_LOG(Info, "Loaded .bin file: %s, %zu floats", audio_path.c_str(), n_floats);
+  ET_LOG(
+      Info, "Loaded .bin file: %s, %zu floats", audio_path.c_str(), n_floats);
 
   // Execute the processor
   std::vector<executorch::aten::SizesType> tensor_shape = {
