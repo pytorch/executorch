@@ -1,6 +1,6 @@
-# Core ML Backend
+# CoreML Backend
 
-Core ML delegate is the ExecuTorch solution to take advantage of Apple's [CoreML framework](https://developer.apple.com/documentation/coreml) for on-device ML.  With CoreML, a model can run on CPU, GPU, and the Apple Neural Engine (ANE).
+CoreML delegate is the ExecuTorch solution to take advantage of Apple's [CoreML framework](https://developer.apple.com/documentation/coreml) for on-device ML.  With CoreML, a model can run on CPU, GPU, and the Apple Neural Engine (ANE).
 
 ## Features
 
@@ -77,7 +77,98 @@ A list of `CompileSpec`s is constructed with [`CoreMLBackend.generate_compile_sp
 - `compute_precision`: The compute precision used by CoreML (`coremltools.precision.FLOAT16` or `coremltools.precision.FLOAT32`).  The default value is `coremltools.precision.FLOAT16`.  Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model.  For example, an FP32 PyTorch model will be converted to FP16 when delegating to the CoreML backend by default.  Also note that the ANE only supports FP16 precision.
 - `model_type`: Whether the model should be compiled to the CoreML [mlmodelc format](https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device) during .pte creation ([`CoreMLBackend.MODEL_TYPE.COMPILED_MODEL`](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L71)), or whether it should be compiled to mlmodelc on device ([`CoreMLBackend.MODEL_TYPE.MODEL`](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L70)).  Using `CoreMLBackend.MODEL_TYPE.COMPILED_MODEL` and doing compilation ahead of time should improve the first time on-device model load time.
 
-#### Backward compatibility
+### Dynamic and Enumerated Shapes in CoreML Export
+
+When exporting an `ExportedProgram` to CoreML, **dynamic shapes** are mapped to [`RangeDim`](https://apple.github.io/coremltools/docs-guides/source/flexible-inputs.html#set-the-range-for-each-dimension).
+This enables CoreML `.pte` files to accept inputs with varying dimensions at runtime.
+
+⚠️ **Note:** The Apple Neural Engine (ANE) does not support true dynamic shapes.    If a model relies on `RangeDim`, CoreML will fall back to scheduling the model on the CPU or GPU instead of the ANE.
+
+---
+
+#### Enumerated Shapes
+
+To enable limited flexibility on the ANE—and often achieve better performance overall—you can export models using **[enumerated shapes](https://apple.github.io/coremltools/docs-guides/source/flexible-inputs.html#select-from-predetermined-shapes)**.
+
+- Enumerated shapes are *not fully dynamic*.
+- Instead, they define a **finite set of valid input shapes** that CoreML can select from at runtime.
+- This approach allows some adaptability while still preserving ANE compatibility.
+
+---
+
+#### Specifying Enumerated Shapes
+
+Unlike `RangeDim`, **enumerated shapes are not part of the `ExportedProgram` itself.**
+They must be provided through a compile spec.
+
+For reference on how to do this, see:
+- The annotated code snippet below, and
+- The [end-to-end test in ExecuTorch](https://github.com/pytorch/executorch/blob/main/backends/apple/coreml/test/test_enumerated_shapes.py), which demonstrates how to specify enumerated shapes during export.
+
+
+```python
+class Model(torch.nn.Module):
+        def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(10, 5)
+                self.linear2 = torch.nn.Linear(11, 5)
+
+        def forward(self, x, y):
+            return self.linear1(x).sum() + self.linear2(y)
+
+model = Model()
+example_inputs = (
+    torch.randn((4, 6, 10)),
+    torch.randn((5, 11)),
+)
+
+# Specify the enumerated shapes.  Below we specify that:
+#
+# * x can take shape [1, 5, 10] and y can take shape [3, 11], or
+# * x can take shape [4, 6, 10] and y can take shape [5, 11]
+#
+# Any other input shapes will result in a runtime error.
+#
+# Note that we must export x and y with dynamic shapes in the ExportedProgram
+# because some of their dimensions are dynamic
+enumerated_shapes = {"x": [[1, 5, 10], [4, 6, 10]], "y": [[3, 11], [5, 11]]}
+dynamic_shapes = [
+    {
+        0: torch.export.Dim.AUTO(min=1, max=4),
+        1: torch.export.Dim.AUTO(min=5, max=6),
+    },
+    {0: torch.export.Dim.AUTO(min=3, max=5)},
+]
+ep = torch.export.export(
+    model.eval(), example_inputs, dynamic_shapes=dynamic_shapes
+)
+
+# If enumerated shapes are specified for multiple inputs, we must export
+# for iOS18+
+compile_specs = CoreMLBackend.generate_compile_specs(
+    minimum_deployment_target=ct.target.iOS18
+)
+compile_specs.append(
+    CoreMLBackend.generate_enumerated_shapes_compile_spec(
+        ep,
+        enumerated_shapes,
+    )
+)
+
+# When using an enumerated shape compile spec, you must specify lower_full_graph=True
+# in the CoreMLPartitioner.  We do not support using enumerated shapes
+# for partially exported models
+partitioner = CoreMLPartitioner(
+    compile_specs=compile_specs, lower_full_graph=True
+)
+delegated_program = executorch.exir.to_edge_transform_and_lower(
+    ep,
+    partitioner=[partitioner],
+)
+et_prog = delegated_program.to_executorch()
+```
+
+### Backward compatibility
 
 CoreML supports backward compatibility via the `minimum_deployment_target` option.  A model exported with a specific deployment target is guaranteed to work on all deployment targets >= the specified deployment target.  For example, a model exported with `coremltools.target.iOS17` will work on iOS 17 or higher.
 
@@ -184,8 +275,8 @@ See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/ma
 
 The CoreML backend also supports quantizing models with the [torchao](https://github.com/pytorch/ao) quantize_ API.  This is most commonly used for LLMs, requiring more advanced quantization.  Since quantize_ is not backend aware, it is important to use a config that is compatible with CoreML:
 
-* Quantize embedding/linear layers with IntxWeightOnlyConfig (with weight_dtype torch.int4 or torch.int8, using PerGroup or PerAxis granularity)
-* Quantize embedding/linear layers with CodebookWeightOnlyConfig (with dtype torch.uint1 through torch.uint8, using various block sizes)
+* Quantize embedding/linear layers with IntxWeightOnlyConfig (with weight_dtype torch.int4 or torch.int8, using PerGroup or PerAxis granularity).  Using 4-bit or PerGroup quantization requires exporting with minimum_deployment_target >= ct.target.iOS18.  Using 8-bit quantization with per-axis granularity is supported on ct.target.IOS16+.  See [CoreML `CompileSpec`](#coreml-compilespec) for more information on setting the deployment target.
+* Quantize embedding/linear layers with CodebookWeightOnlyConfig (with dtype torch.uint1 through torch.uint8, using various block sizes).  Quantizing with CodebookWeightOnlyConfig requires exporting with minimum_deployment_target >= ct.target.iOS18, see [CoreML `CompileSpec`](#coreml-compilespec) for more information on setting the deployment target.
 
 Below is an example that quantizes embeddings to 8-bits per-axis and linear layers to 4-bits using group_size=32 with affine quantization:
 
@@ -229,8 +320,8 @@ from torchao.prototype.quantization.codebook_coreml import CodebookWeightOnlyCon
 
 quant_config = CodebookWeightOnlyConfig(
     dtype=torch.uint3,
-    # There is one LUT per 16 columns
-    block_size=[-1, 16],
+    # There is one LUT per 16 rows
+    block_size=[16, -1],
 )
 
 quantize_(
@@ -293,6 +384,6 @@ This happens because the model is in FP16, but CoreML interprets some of the arg
 If you're using Python 3.13, try reducing your python version to Python 3.12.  coremltools does not support Python 3.13 per [coremltools issue #2487](https://github.com/apple/coremltools/issues/2487).
 
 ### At runtime
-1. [ETCoreMLModelCompiler.mm:55] [Core ML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 "Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset 'CoreML7'." UserInfo={NSLocalizedDescription=Failed to par$
+1. [ETCoreMLModelCompiler.mm:55] [CoreML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 "Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset 'CoreML7'." UserInfo={NSLocalizedDescription=Failed to par$
 
 This means the model requires the the CoreML opset 'CoreML7', which requires running the model on iOS >= 17 or macOS >= 14.
