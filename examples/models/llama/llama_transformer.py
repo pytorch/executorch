@@ -12,7 +12,6 @@ from typing import Any, Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 
-from executorch.examples.models.lfm2.short_conv import ShortConvBlock
 from executorch.examples.models.llama.attention import (
     Attention,
     ATTENTION_REGISTRY,
@@ -87,10 +86,15 @@ class TransformerBlock(nn.Module):
         self.dim = args.dim
         self.head_dim = args.head_dim
         self.attention = attention
+
+        assert (
+            args.hidden_dim is not None
+        ), "`hidden_dim` must be set in ModelArgs to construct a TransformerBlock."
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
         else:
             self.feed_forward = FeedForward(dim=args.dim, hidden_dim=args.hidden_dim)
+
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
@@ -245,6 +249,11 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
     for layer_id in range(model_args.n_layers):
         # hybrid models define layer_types
         if model_args.layer_types and model_args.layer_types[layer_id] == "conv":
+            from executorch.examples.models.lfm2.short_conv import ShortConvBlock
+
+            assert (
+                model_args.hidden_dim is not None
+            ), "`hidden_dim` must be set in ModelArgs to construct a TransformerBlock."
             layers.append(
                 ShortConvBlock(
                     dim=model_args.dim,
@@ -253,7 +262,9 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
                 )
             )
         else:
-            attention = cls(model_args, layer_id, rope, **model_args.attention_kwargs)
+            attention = cls(
+                model_args, layer_id, rope, **model_args.attention_kwargs
+            )  # pyre-ignore[45]
             transformer_block = TransformerBlock(model_args, attention)
             layers.append(transformer_block)
 
