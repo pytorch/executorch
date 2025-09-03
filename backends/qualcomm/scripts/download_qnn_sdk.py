@@ -14,7 +14,6 @@ from tqdm import tqdm
 # === executorch/backends/qualcomm path ===
 PKG_ROOT = pathlib.Path(__file__).parent.parent
 QNN_SDK_PATH = PKG_ROOT / "sdk" / "qnn"
-libcxx_DIR_PATH
 
 
 def is_linux_x86() -> bool:
@@ -216,19 +215,25 @@ def _load_libcxx_libs(lib_path):
 # === End of libcxx handling ===
 
 
-def install_qnn_sdk(force_download: bool = True) -> bool:
+def install_qnn_sdk(force_download: bool = False) -> bool:
     """Ensure QNN SDK + libc++ are available and loaded."""
     # --- set up QNN SDK ---
     if not QNN_SDK_PATH.exists():
-        if force_download:
-            if not _download_qnn_sdk():
-                return False
-        else:
-            print("[INIT] Qualcomm SDK not found and force_download=False")
+        print(f"[INIT] Qualcomm SDK not found at {QNN_SDK_PATH}, downloading...")
+        if not _download_qnn_sdk():
             return False
+    elif force_download:
+        print(f"[INIT] Force-download requested, re-downloading SDK...")
+        if not _download_qnn_sdk():
+            return False
+    else:
+        print(
+            f"[INIT] Qualcomm SDK already exists at {QNN_SDK_PATH}, skipping download."
+        )
 
     os.environ["QNN_SDK_ROOT"] = str(QNN_SDK_PATH)
 
+    # Load QNN library
     qnn_lib = QNN_SDK_PATH / "lib" / "x86_64-linux-clang" / "libQnnHtp.so"
     try:
         ctypes.CDLL(str(qnn_lib), mode=ctypes.RTLD_GLOBAL)
