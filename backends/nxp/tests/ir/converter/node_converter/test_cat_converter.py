@@ -17,6 +17,8 @@ from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     graph_contains_any_of_ops,
+    ToNCHWPreprocess,
+    ToNHWCPreprocess,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
@@ -126,6 +128,8 @@ def test_cat__channels_first__same_shapes(dim, num_inputs, mocker):
         exported_program,
         tfl_model=tflite_flatbuffers_model,
         input_data=input_data,
+        tflite_input_preprocess=ToNHWCPreprocess(),
+        tflite_output_preprocess=ToNCHWPreprocess(),
         atol=1,
     )
 
@@ -241,6 +245,8 @@ def test_cat__channels_first__different_shapes(dim, num_inputs, mocker):
         exported_program,
         tfl_model=tflite_flatbuffers_model,
         input_data=input_data,
+        tflite_input_preprocess=ToNHWCPreprocess(),
+        tflite_output_preprocess=ToNCHWPreprocess(),
         atol=1,
     )
 
