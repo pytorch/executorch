@@ -456,7 +456,8 @@ class OpenvinoConfig:
 
     enabled: bool = False
     device: str = "CPU"
-    nncf_compression = False
+    nncf_compression: bool = False
+    nncf_compression_group_size: int = 32
 
 
 @dataclass
@@ -645,6 +646,8 @@ class LlmConfig:
             llm_config.backend.openvino.device = args.openvino_device
         if hasattr(args, "nncf_compression"):
             llm_config.backend.openvino.nncf_compression = args.nncf_compression
+        if hasattr(args, "group_size") and args.group_size:
+            llm_config.backend.openvino.nncf_compression_group_size = args.group_size
 
         # DebugConfig
         if hasattr(args, "profile_memory"):

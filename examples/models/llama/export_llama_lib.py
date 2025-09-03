@@ -898,6 +898,7 @@ def _to_edge_and_lower_llama_openvino(
     additional_passes,
     openvino_device: str = "CPU",
     nncf_compression: bool = False,
+    nncf_compression_group_size: int = 32,
     verbose: bool = False,
 ) -> LLMEdgeManager:  # noqa: C901
     partitioners = []
@@ -959,6 +960,7 @@ def _to_edge_and_lower_llama_openvino(
             ),
             mode=nncf.CompressWeightsMode.INT4_SYM,
             ratio=0.8,
+            group_size=nncf_compression_group_size,
             sensitivity_metric=nncf.SensitivityMetric.HESSIAN_INPUT_ACTIVATION,
         )
 
@@ -1208,6 +1210,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             additional_passes,
             openvino_device=llm_config.backend.openvino.device,
             nncf_compression=llm_config.backend.openvino.nncf_compression,
+            nncf_compression_group_size=llm_config.backend.openvino.nncf_compression_group_size,
             verbose=llm_config.debug.verbose,
         )
     else:
