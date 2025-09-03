@@ -65,11 +65,9 @@ test_data_suite = {
         torch.rand(1, 16, 54, 54),
         [3, (1, 3), 1],
     ),
-}
-
-test_data_suite_mult_batches = {
     "randn": lambda: (torch.randn(5, 16, 50, 32), [4, 2, 0]),
 }
+
 
 test_data_suite_dilation = [
     # Simple dilation=2 on 8x8 input, kernel=3, stride=1, no padding
@@ -161,61 +159,6 @@ def test_max_pool2d_u85_INT(test_data: torch.Tensor):
     ).run()
 
 
-@common.parametrize("test_data", test_data_suite_mult_batches)
-def test_max_pool2d_tosa_FP_mult_batches(test_data: torch.Tensor):
-    test_data, model_params = test_data()
-    pipeline = TosaPipelineFP[input_t1](
-        MaxPool2d(*model_params),
-        (test_data,),
-        aten_op,
-        exir_op,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite_mult_batches)
-def test_max_pool2d_tosa_INT_mult_batches(test_data: torch.Tensor):
-    test_data, model_params = test_data()
-    pipeline = TosaPipelineINT[input_t1](
-        MaxPool2d(*model_params),
-        (test_data,),
-        aten_op,
-        exir_op,
-    )
-    pipeline.run()
-
-
-x_fail = {"randn": "MLETORCH-986: Numerical issues with mutli batches."}
-
-
-@common.parametrize("test_data", test_data_suite_mult_batches, x_fail)
-@common.XfailIfNoCorstone300
-def test_max_pool2d_u55_INT_mult_batches(test_data: torch.Tensor):
-    test_data, model_params = test_data()
-    EthosU55PipelineINT[input_t1](
-        MaxPool2d(*model_params),
-        (test_data,),
-        aten_op,
-        exir_ops=[],
-        run_on_fvp=True,
-        use_to_edge_transform_and_lower=True,
-    ).run()
-
-
-@common.parametrize("test_data", test_data_suite_mult_batches, x_fail)
-@common.XfailIfNoCorstone320
-def test_max_pool2d_u85_INT_mult_batches(test_data: torch.Tensor):
-    test_data, model_params = test_data()
-    EthosU85PipelineINT[input_t1](
-        MaxPool2d(*model_params),
-        (test_data,),
-        aten_op,
-        exir_op,
-        run_on_fvp=True,
-        use_to_edge_transform_and_lower=True,
-    ).run()
-
-
 reject_data_suite = {
     "reject_1": lambda: (MaxPool2d(1, 4, 0), torch.rand(1, 10, 10, 10)),
     "reject_2": lambda: (MaxPool2d((1, 257), 1, 0), torch.rand(1, 16, 5, 300)),
@@ -295,34 +238,6 @@ def test_max_pool2d_vgf_FP(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
 def test_max_pool2d_vgf_INT(test_data: torch.Tensor):
-    test_data, model_params = test_data()
-    pipeline = VgfPipeline[input_t1](
-        MaxPool2d(*model_params),
-        (test_data,),
-        aten_op,
-        exir_op,
-        tosa_version="TOSA-1.0+INT",
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite_mult_batches)
-@common.SkipIfNoModelConverter
-def test_max_pool2d_vgf_FP_mult_batches(test_data: torch.Tensor):
-    test_data, model_params = test_data()
-    pipeline = VgfPipeline[input_t1](
-        MaxPool2d(*model_params),
-        (test_data,),
-        aten_op,
-        exir_op,
-        tosa_version="TOSA-1.0+FP",
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite_mult_batches)
-@common.SkipIfNoModelConverter
-def test_max_pool2d_vgf_INT_mult_batches(test_data: torch.Tensor):
     test_data, model_params = test_data()
     pipeline = VgfPipeline[input_t1](
         MaxPool2d(*model_params),

@@ -1,6 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -13,9 +13,6 @@ from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.combine_hard_sigmoid_and_mul_to_hard_swish import (
     CombineHardSigmoidAndMulIntoHardSwish,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.eliminate_dead_branches import (
-    EliminateDeadBranches,
 )
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_activation_functions import (
     FuseActivationFunctions,
@@ -32,16 +29,9 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.permute_fully_connected_weights_after_reshape import (
     PermuteFullyConnectedWeightsAfterReshape,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_quantize_operators import (
-    FuseParallelQuantizeOperators,
-    PruneQuantizeOperators,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_transpose_operators import (
     FuseTransposeOperators,
     RemoveIdentityTransposeOperators,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.remove_unused_tensors_and_buffers import (
-    RemoveUnusedTensorsAndBuffers,
 )
 
 
@@ -53,11 +43,6 @@ class Optimization(Enum):
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
 
-    PRUNE_QUANTIZE_OPERATORS = 7
-    FUSE_PARALLEL_QUANTIZE_OPERATORS = 8
-
-    REMOVE_UNUSED_TENSORS = 10
-    ELIMINATE_DEAD_BRANCHES = 11
     PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE = 12
 
     MOVE_ACTIVATION_BEFORE_CONCAT = 15
@@ -104,18 +89,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.REMOVE_IDENTITY_TRANSPOSE_OPERATORS: RemoveIdentityTransposeOperators(
-                builder, conversion_config
-            ),
-            Optimization.PRUNE_QUANTIZE_OPERATORS: PruneQuantizeOperators(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_PARALLEL_QUANTIZE_OPERATORS: FuseParallelQuantizeOperators(
-                builder, conversion_config
-            ),
-            Optimization.REMOVE_UNUSED_TENSORS: RemoveUnusedTensorsAndBuffers(
-                builder, conversion_config
-            ),
-            Optimization.ELIMINATE_DEAD_BRANCHES: EliminateDeadBranches(
                 builder, conversion_config
             ),
             Optimization.PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE: PermuteFullyConnectedWeightsAfterReshape(

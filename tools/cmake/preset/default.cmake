@@ -155,6 +155,10 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_WASM "Build the ExecuTorch JavaScript API" BOOL OFF
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_TOKENIZERS_WASM "Build the JavaScript Tokenizers API" BOOL
+  OFF
+)
 
 define_overridable_option(
   EXECUTORCH_BUILD_AOTI "Build the AOTI backend" BOOL OFF
@@ -340,6 +344,11 @@ check_conflicting_options_on(
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_WASM REQUIRES EXECUTORCH_BUILD_EXTENSION_MODULE
   EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_TOKENIZERS_WASM REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_LLM
 )
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})

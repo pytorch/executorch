@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+
 import numpy as np
 import torch
 
@@ -14,6 +16,7 @@ from executorch.backends.nxp.backend.edge_helper import (
 from executorch.backends.nxp.backend.ir.converter.conversion import (
     aten_translator,
     common,
+    translator,
 )
 from executorch.backends.nxp.backend.ir.converter.conversion.common import try_get_input
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
@@ -40,6 +43,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     conv_2d_options,
     depthwise_conv_2d_options,
+    reshape_options,
 )
 from torch.fx import Node
 from torch.nn import Parameter
@@ -77,8 +81,9 @@ class ConvolutionConverter(NodeConverter):
                         return False
                 elif conv_utils.group_conv_convertible_into_multiple_convolutions(
                     node, groups
-                ):  # Separable conv.
-                    # Requires addition of `Split` and `Concatenation` operators, which are not supported on Neutron.
+                ):  # Separable conv. This should never be reached, as the node should have been decomposed into
+                    #  multiple parallel convolutions by the `SplitGroupConvolution` pre-processing pass.
+                    logging.warning("Group convolution was not decomposed.")
                     return False
                 else:  # Unexpected case (should never happen).
                     return False
@@ -94,13 +99,15 @@ class ConvolutionConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        input_tensor_rank = len(node.meta["val"].shape)
+        dimensions = input_tensor_rank - 2
         is_transposed = node.args[6]
         output_padding = node.args[7]
 
         if is_transposed:
             return False
 
-        if output_padding != [0, 0]:
+        if output_padding != [0] * dimensions:
             return False
 
         if input_tensor_safe(node, 2) is None:
@@ -125,7 +132,107 @@ class ConvolutionConverter(NodeConverter):
         _, _, _, stride, padding, dilation, transposed, out_padding, groups = (
             conv_node.args
         )
-        return stride, padding, dilation, transposed, out_padding, groups
+        return (
+            list(stride),
+            list(padding),
+            list(dilation),
+            transposed,
+            out_padding,
+            groups,
+        )
+
+    def _convert_1d_conv(
+        self, t_op: tflite_model.Operator, conv_params: ConvParameters
+    ) -> list[tflite_model.Operator]:
+        """Convert the 'Conv' operator with a 1D kernel to TFLite 'Conv2D'.
+        TFLite doesn't support 1D convolution, but this behaviour can be represented using
+               Reshape -> Conv2D -> Reshape.
+        The first reshape introduces a 4th dimension with size 1. The second Reshape removes the temporary dimension.
+        """
+        # -- Calculate the shapes for equivalent 2D convolution --
+        conv_2d_input_shape = translator.nhc_dimensions_to_nhwc(
+            t_op.tmp_inputs[0].shape.vector
+        )
+        conv_2d_weight_shape = translator.nhc_dimensions_to_nhwc(
+            t_op.tmp_inputs[1].shape.vector
+        )
+        conv_2d_output_shape = translator.nhc_dimensions_to_nhwc(
+            t_op.tmp_outputs[0].shape.vector
+        )
+
+        # -- Generate tensors taking part in the conversion --
+        reshape1_input = t_op.tmp_inputs[0]
+
+        reshape1_output = self.builder.duplicate_tensor(
+            reshape1_input, name_suffix="_4D_"
+        )
+        reshape1_output.shape = tflite_model.Shape(conv_2d_input_shape)
+
+        reshape2_input = self.builder.duplicate_tensor(
+            t_op.tmp_outputs[0], name_suffix="_4D_"
+        )
+        reshape2_input.shape = tflite_model.Shape(conv_2d_output_shape)
+
+        reshape2_output = t_op.tmp_outputs[0]
+
+        pre_reshapes = []
+
+        # Extend the weights tensor to 4D
+        weights_tensor = t_op.tmp_inputs[1]
+        if tensor_has_data(weights_tensor):
+            # Do it statically
+            weights_tensor.shape = tflite_model.Shape(conv_2d_weight_shape)
+            weights_tensor.tmp_buffer.data = weights_tensor.tmp_buffer.data.reshape(
+                conv_2d_weight_shape
+            )
+
+        else:
+            # Add a Reshape before the weights tensor
+            new_weights_tensor = self.builder.duplicate_tensor(
+                weights_tensor, name_suffix="_4D_"
+            )
+            new_weights_tensor.shape = tflite_model.Shape(conv_2d_weight_shape)
+
+            weight_reshape = tflite_model.Operator(
+                builtin_options=reshape_options.Reshape(conv_2d_weight_shape)
+            )
+            weight_reshape.tmp_inputs = [weights_tensor]
+            weight_reshape.tmp_outputs = [new_weights_tensor]
+
+            pre_reshapes.append(weight_reshape)
+
+            # Save the new weights tensor, to assign it later.
+            weights_tensor = new_weights_tensor
+
+        # -- Create the new operators --
+        reshape1 = tflite_model.Operator(
+            builtin_options=reshape_options.Reshape(conv_2d_input_shape)
+        )
+        reshape1.tmp_inputs = [reshape1_input]
+        reshape1.tmp_outputs = [reshape1_output]
+        pre_reshapes.append(reshape1)
+
+        reshape2 = tflite_model.Operator(
+            builtin_options=reshape_options.Reshape(reshape2_output.shape.vector)
+        )
+        reshape2.tmp_inputs = [reshape2_input]
+        reshape2.tmp_outputs = [reshape2_output]
+
+        # Assign the new input and output of the Conv2D
+        t_op.tmp_inputs = [reshape1_output, weights_tensor] + t_op.tmp_inputs[
+            2:
+        ]  # Add bias as well, if present
+        t_op.tmp_outputs = [reshape2_input]
+
+        # Extend all Conv attributes to 2D
+        common.extend_1d_stride_to_2d(conv_params.stride)
+        common.extend_1d_dilation_to_2d(conv_params.dilation)
+        common.extend_1d_padding_to_2d(conv_params.padding)
+
+        # Convert the now 2D Conv
+        converted_conv_ops = self._convert_2d_conv(t_op, conv_params)
+
+        return pre_reshapes + converted_conv_ops + [reshape2]
 
     # noinspection PyPep8Naming
     def _convert_unpadded_2D(
@@ -220,17 +327,8 @@ class ConvolutionConverter(NodeConverter):
         elif conv_utils.group_conv_convertible_into_multiple_convolutions(
             t_op, conv_params.groups
         ):
-            # Note: by default the Group Separable Convolution is rejected by the Neutron Partitioner, see the
-            # ConvolutionConveter._is_supported_in_IR()
-            t_op.builtin_options = conv_2d_options.Conv2D()
-
-            return conv_utils.create_separated_convolutions_based_on_group(
-                t_op,
-                conv_params,
-                self.builder,
-                self._convert_unpadded_2D,
-                conv_utils.conv_op_factory,
-            )
+            # This case should have been rejected in the `is_supported_on_target()` method.
+            raise RuntimeError("Group convolution was not decomposed.")
 
         else:
             # Convert to regular `Conv2D`.
@@ -266,7 +364,9 @@ class ConvolutionConverter(NodeConverter):
         conv_params = ConvParameters(stride, padding, dilation, groups)
 
         rank = t_op.tmp_inputs[1].shape.len()
-        if rank == 4:  # Conv2D
+        if rank == 3:  # Conv1D
+            ops_to_add = self._convert_1d_conv(t_op, conv_params)
+        elif rank == 4:  # Conv2D
             ops_to_add = self._convert_2d_conv(t_op, conv_params)
         else:
             raise NotImplementedError(

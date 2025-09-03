@@ -7,11 +7,12 @@ set -eux
 
 SCRIPT_DIR=$(dirname $(readlink -fm $0))
 EXECUTORCH_DIR=$(dirname $(dirname $SCRIPT_DIR))
+MODEL=${1:-"cifar10"}
 
 cd $EXECUTORCH_DIR
 
 # Run the AoT example
 python -m examples.nxp.aot_neutron_compile --quantize \
-    --delegate --neutron_converter_flavor SDK_25_03 -m cifar10
+    --delegate --neutron_converter_flavor SDK_25_06 -m ${MODEL}
 # verify file exists
-test -f cifar10_nxp_delegate.pte
+test -f ${MODEL}_nxp_delegate.pte

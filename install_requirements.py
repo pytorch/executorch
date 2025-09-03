@@ -113,8 +113,13 @@ def install_requirements(use_pytorch_nightly):
 
     LOCAL_REQUIREMENTS = [
         "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
-        "extension/llm/tokenizers",  # TODO(larryliu0820): Setup a pypi package for this.
-    ]
+    ] + (
+        [
+            "extension/llm/tokenizers",  # TODO(larryliu0820): Setup a pypi package for this.
+        ]
+        if sys.platform != "win32"
+        else []
+    )  # TODO(gjcomer): Re-enable when buildable on Windows.
 
     # Install packages directly from local copy instead of pypi.
     # This is usually not recommended.

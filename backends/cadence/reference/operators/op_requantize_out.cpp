@@ -86,17 +86,15 @@ Tensor& requantize_out(
       torch::executor::toString(out.scalar_type()),
       torch::executor::toString(out_dtype));
 
-#define typed_requantize(ctype, dtype)                     \
-  const ctype* input_data = input.const_data_ptr<ctype>(); \
-  dtype* out_data = out.mutable_data_ptr<dtype>();         \
-  kernels::requantize<ctype, dtype>(                       \
-      out_data,                                            \
-      input_data,                                          \
-      in_scale,                                            \
-      in_zero_point,                                       \
-      1.0 / out_scale,                                     \
-      out_zero_point,                                      \
-      numel);
+#define typed_requantize(ctype, dtype)                                      \
+  const ctype* input_data = input.const_data_ptr<ctype>();                  \
+  dtype* out_data = out.mutable_data_ptr<dtype>();                          \
+  for (size_t i = 0; i < numel; ++i) {                                      \
+    float dequant =                                                         \
+        kernels::dequantize<ctype>(input_data[i], in_scale, in_zero_point); \
+    out_data[i] =                                                           \
+        kernels::quantize<dtype>(dequant, 1 / out_scale, out_zero_point);   \
+  };
 
 #define typed_requantize_in(ctype)               \
   switch (out_dtype) {                           \
@@ -190,17 +188,15 @@ Tensor& requantize_per_tensor_out(
       torch::executor::toString(out.scalar_type()),
       torch::executor::toString(out_dtype));
 
-#define typed_requantize(ctype, dtype)                     \
-  const ctype* input_data = input.const_data_ptr<ctype>(); \
-  dtype* out_data = out.mutable_data_ptr<dtype>();         \
-  kernels::requantize<ctype, dtype>(                       \
-      out_data,                                            \
-      input_data,                                          \
-      static_cast<float>(in_scale),                        \
-      static_cast<int32_t>(in_zero_point),                 \
-      1.0 / static_cast<float>(out_scale),                 \
-      static_cast<int32_t>(out_zero_point),                \
-      numel);
+#define typed_requantize(ctype, dtype)                                      \
+  const ctype* input_data = input.const_data_ptr<ctype>();                  \
+  dtype* out_data = out.mutable_data_ptr<dtype>();                          \
+  for (size_t i = 0; i < numel; ++i) {                                      \
+    float dequant =                                                         \
+        kernels::dequantize<ctype>(input_data[i], in_scale, in_zero_point); \
+    out_data[i] =                                                           \
+        kernels::quantize<dtype>(dequant, 1 / out_scale, out_zero_point);   \
+  };
 
 #define typed_requantize_in(ctype)               \
   switch (out_dtype) {                           \

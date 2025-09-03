@@ -32,6 +32,7 @@ enum DecoderModelVersion {
   kLlama2 = 0,
   kLlama3,
   kQwen2_5,
+  kQwen3,
   kPhi4,
   kSmollm2_135m
 };
