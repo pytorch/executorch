@@ -49,6 +49,8 @@
 # https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
 cmake_minimum_required(VERSION 3.29)
 project(executorch)
+# project(executorch LANGUAGES CXX CUDA)
+
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -578,6 +580,12 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
+  list(APPEND _executorch_backends coretex_m_backend)
+endif()
+
+if(EXECUTORCH_BUILD_AOTI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
+  list(APPEND _executorch_backends aoti_backend)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
