@@ -18,6 +18,11 @@ For more information on the supported hardware, please refer to [OpenVINO System
 executorch
 ├── backends
 │   └── openvino
+│       ├── quantizer
+│           ├── observers
+│               └── nncf_observers.py
+│           ├── __init__.py
+│           └── quantizer.py
 │       ├── runtime
 │           ├── OpenvinoBackend.cpp
 │           └── OpenvinoBackend.h
@@ -95,6 +100,7 @@ Follow the steps below to setup your build environment:
    openvino_build.sh
    ```
 - Optionally, `openvino_build.sh` script can be used to build python package or C++ bineries seperately.
+
    **Build OpenVINO Backend Python Package with Pybindings**: To build and install the OpenVINO backend Python package with Python bindings, run the `openvino_build.sh` script with the `--enable_python` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment. This option will also enable python bindings required to execute OpenVINO backend tests and `aot_optimize_and_infer.py` script inside `executorch/examples/openvino` folder.
      ```bash
    ./openvino_build.sh --enable_python
