@@ -37,7 +37,7 @@ MultimodalPrefiller::MultimodalPrefiller(
 Result<uint64_t> MultimodalPrefiller::prefill(
     const MultimodalInput& input,
     int64_t& start_pos) {
-  // Check if input is image
+  // 1. Run encoder model.
   ::executorch::runtime::EValue encoder_output;
   if (input.is_image()) {
     Image image = input.get_image();
@@ -51,34 +51,79 @@ Result<uint64_t> MultimodalPrefiller::prefill(
         ET_UNWRAP(module_->execute(kImageEncoderMethod, image_tensor));
 
     encoder_output = image_encoder_outputs[0];
+  } else if (input.is_audio()) {
+    Audio audio = input.get_audio();
+
+    // Use the original tensor shape as intended
+    auto audio_tensor = executorch::extension::from_blob(
+        audio.data.data(),
+        {audio.batch_size, audio.n_bins, audio.n_frames},
+        ::executorch::aten::ScalarType::Float);
+
+    // Run audio encoder
+    auto audio_encoder_result =
+        module_->execute(kAudioEncoderMethod, audio_tensor);
+    if (audio_encoder_result.error() != ::executorch::runtime::Error::Ok) {
+      return ::executorch::runtime::Error::Internal;
+    }
+    auto audio_encoder_outputs = audio_encoder_result.get();
+
+    encoder_output = audio_encoder_outputs[0];
   } else if (input.is_text()) {
-    // For text input, we don't need to run the image encoder.
-    // Instead, we run the text encoder to get the encoder output.
     auto& text = input.get_text();
     std::vector<uint64_t> tokens =
         ET_UNWRAP_TOKENIZER(tokenizer_->encode(text));
+
     auto text_tensor = executorch::extension::from_blob(
         tokens.data(),
         {1, static_cast<aten::SizesType>(tokens.size())},
         ::executorch::aten::ScalarType::Long);
 
-    // Run token embedding
+    // Run text encoder (token embeddings)
     auto token_embedding_outputs =
         ET_UNWRAP(module_->execute(kTokenEmbeddingMethod, text_tensor));
 
     encoder_output = token_embedding_outputs[0];
   } else {
     ET_LOG(Error, "Unsupported input type");
-    // For all other input types (e.g., audio), return error
+    // For any other input types, return error
     return ::executorch::runtime::Error::NotSupported;
   }
 
-  auto outputs_res =
-      ET_UNWRAP(text_decoder_runner_->decode(encoder_output, start_pos));
+  // 2. Run decoder model for prefill.
+  // `cache_position` goes from start_pos to start_pos + encoder_output.size(1).
+  // e.g. if start_pos = 2 and encoder_output.size(1) = 5,
+  // cache_position_tensor should be [2, 3, 4, 5, 6].
+  int64_t seq_len = encoder_output.toTensor().size(1);
+  if (seq_len == 0) {
+    ET_LOG(Error, "The encoder returned an empty output.");
+    return ::executorch::runtime::Error::InvalidState;
+  }
+  std::vector<int64_t> cache_positions(seq_len);
+  for (int64_t i = 0; i < seq_len; ++i) {
+    cache_positions[i] = start_pos + i;
+  }
+  auto cache_position_tensor = ::executorch::extension::from_blob(
+      cache_positions.data(),
+      {static_cast<int>(seq_len)},
+      executorch::aten::ScalarType::Long);
+  auto prefill_result = module_->execute(
+      kTextModelMethod, {cache_position_tensor, encoder_output});
+  if (prefill_result.error() != ::executorch::runtime::Error::Ok) {
+    return prefill_result.error();
+  }
+  // Check if prefill_outputs is empty, if it is return error and log that the
+  // specified encoder returned empty results when used to prefill decoder.
+  auto prefill_outputs = prefill_result.get();
+  if (prefill_outputs.empty()) {
+    ET_LOG(
+        Error, "Encoder returned empty results when used to prefill decoder");
+    return ::executorch::runtime::Error::InvalidState;
+  }
+  auto outputs_res = prefill_outputs[0].toTensor();
 
-  // Update the start_pos, which is only available inside this function.
-  // outputs_res can have only one logits.
-  start_pos += encoder_output.toTensor().size(1);
+  // Update start_pos, tracking the current cache position.
+  start_pos += seq_len;
 
   return static_cast<uint64_t>(
       text_decoder_runner_->logits_to_token(outputs_res));
@@ -103,6 +148,11 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   if (methods.find(kImageEncoderMethod) != methods.end()) {
     ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kImageEncoderMethod));
   }
+
+  if (methods.find(kAudioEncoderMethod) != methods.end()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kAudioEncoderMethod));
+  }
+
   return ::executorch::runtime::Error::Ok;
 }
 
