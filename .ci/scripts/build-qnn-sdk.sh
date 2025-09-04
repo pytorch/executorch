@@ -12,7 +12,7 @@ set -o xtrace
 build_qnn_backend() {
   echo "Start building qnn backend."
   export ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-/opt/ndk}
-  export QNN_SDK_ROOT=${QNN_SDK_ROOT:-/tmp/qnn/2.28.0.241029}
+  export QNN_SDK_ROOT=${QNN_SDK_ROOT:-/tmp/qnn/2.37.0.25072}
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
   parallelism=$(( $(nproc) - 1 ))
