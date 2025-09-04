@@ -48,4 +48,6 @@ class ERFVisitor(NodeVisitor):
         )
 
         # MI lowering
-        tosa_graph.addOperator(ts.TosaOp.Op().ERF, [inputs[0].name], [output.name])
+        self._serialize_operator(
+            node, tosa_graph, ts.TosaOp.Op().ERF, [inputs[0].name], [output.name]
+        )
