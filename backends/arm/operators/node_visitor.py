@@ -10,8 +10,8 @@ from typing import Any, Dict, List, Optional
 import torch
 
 from executorch.backends.arm.debug.schema import DebugHook
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.export import ExportedProgram
 
 
