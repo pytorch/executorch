@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+from typing import Optional
+
 import torch
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
@@ -175,6 +177,54 @@ def quantized_add(
     return quantize_per_tensor(
         dequant_X + dequant_Y, out_scale, out_zero_point, -128, 127, dtype
     )
+
+
+@impl(m, "quantized_linear")
+def quantized_linear(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor],
+) -> torch.Tensor:
+    """
+    Quantized linear (transposed matmul) operation.
+
+    Args:
+        - src (Tensor): The activations tensor
+        - weight (Tensor): The weight tensor
+        - bias (Tensor): The bias tensor
+        - in_zero_point (int): The quantized mapping of zero for the input
+        - weight_zero_point (Tensor): The quantized mapping of zero for the weight
+        - out_multiplier (Tensor): The multiplier used to scale the output
+        - out_shift (Tensor): The shift used to scale the output
+        - out_zero_point (int): The quantized mapping of zero for the output
+        - offset (Tensor): Unused
+    """
+    out_scale = -out_multiplier * (1 / (1 << 31)) * (2 ** out_shift[0])
+
+    N, K = weight.shape
+
+    leading_dims = src.shape[:-1]
+    src = src.view(-1, K)
+
+    dtype = src.dtype
+    supported_dtypes = [torch.int8, torch.uint8, torch.int32]
+    if dtype not in supported_dtypes:
+        raise ValueError(
+            f"Unsupported dtype to quantize to. Supported dtypes must be one of {supported_dtypes}"
+        )
+
+    out = torch.nn.functional.linear(
+        src - in_zero_point, weight - weight_zero_point, bias
+    )
+    return quantize_per_tensor(
+        out, out_scale, out_zero_point, -128, 127, dtype
+    ).reshape(*leading_dims, N)
 
 
 @impl(m, "requantize")
