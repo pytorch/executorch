@@ -17,10 +17,10 @@ import functools
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
-from executorch.backends.arm._passes import ArmPassManager
 
 from executorch.backends.arm.quantizer import QuantizationConfig
-from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 
 from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
 from .quantization_annotator import annotate_graph
@@ -370,6 +370,9 @@ class TOSAQuantizer(Quantizer):
         """An initial pass for transforming the graph to prepare it for annotation.
         Currently transforms scalar values to tensor attributes.
         """
+
+        # TODO: Fix the need to lazily import this.
+        from executorch.backends.arm._passes import ArmPassManager
 
         return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(  # type: ignore[arg-type]
             graph_module=model
