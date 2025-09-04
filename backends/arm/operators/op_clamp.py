@@ -90,8 +90,13 @@ class ClampVisitor_INT(NodeVisitor):
             nan_mode=1,
         )
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().CLAMP, [inputs[0].name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().CLAMP,
+            [inputs[0].name],
+            [output.name],
+            attr,
         )
 
 
@@ -138,6 +143,11 @@ class ClampVisitor_FP(ClampVisitor_INT):
             nan_mode=1,
         )
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().CLAMP, [inputs[0].name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().CLAMP,
+            [inputs[0].name],
+            [output.name],
+            attr,
         )
