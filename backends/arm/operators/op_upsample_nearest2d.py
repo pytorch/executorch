@@ -89,7 +89,9 @@ class UpsampleNearest2dVisitor(NodeVisitor):
             mode=ResizeMode.NEAREST,
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().RESIZE,
             [
                 inputs[0].name,

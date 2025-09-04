@@ -25,6 +25,7 @@ CUSTOM_EDGE_OPS = [
     "unflatten.int",
     "_native_batch_norm_legit_no_training.default",
     "_native_batch_norm_legit.no_stats",
+    "alias_copy.default",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 

@@ -62,6 +62,11 @@ class TransposeVisitor(NodeVisitor):
         perms = [dim % output_rank for dim in inputs[1].special]
         attr = ts.TosaSerializerAttribute()
         attr.TransposeAttribute(perms)
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().TRANSPOSE,
+            [inputs[0].name],
+            [output.name],
+            attr,
         )
