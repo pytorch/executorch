@@ -25,7 +25,10 @@ jobs:
       os: windows
       test-infra-repository: pytorch/test-infra
       test-infra-ref: main
-      with-xpu: enable
+      with-cuda: disabled
+      with-rocm: disabled
+      python-versions: '["3.10", "3.11", "3.12"]
+
   build:
     needs: generate-matrix
     strategy:
@@ -52,3 +55,4 @@ jobs:
       package-name: ${{ matrix.package-name }}
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
+      submodules: true
