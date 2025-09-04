@@ -251,46 +251,24 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
-  // Returns a tuple of (error, start_pos)
-  // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-  facebook::jni::local_ref<jlongArray> prefill_prompt(
-      facebook::jni::alias_ref<jstring> prompt,
-      jlong start_pos,
-      jint bos,
-      jint eos) {
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
+  jint
+  prefill_prompt(facebook::jni::alias_ref<jstring> prompt, jint bos, jint eos) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
-      return tuple_result;
+      return static_cast<jint>(Error::NotSupported);
     }
 
-    auto&& result = multi_modal_runner_->prefill_prompt(
-        prompt->toStdString(), start_pos, bos, eos);
-    tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
-    if (result.ok()) {
-      tuple_result->pin()[1] = static_cast<jlong>(start_pos);
-    }
-    return tuple_result;
+    auto&& result =
+        multi_modal_runner_->prefill_prompt(prompt->toStdString(), bos, eos);
+    return static_cast<jint>(result.error());
   }
 
-  // Returns a tuple of (error, start_pos)
-  // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-
-  facebook::jni::local_ref<jlongArray> prefill_images(
+  jint prefill_images(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
-      jint channels,
-      jlong start_pos) {
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
-
+      jint channels) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
-      return tuple_result;
+      return static_cast<jint>(Error::NotSupported);
     }
 
     auto image_size = image->size();
@@ -305,12 +283,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       llm::Image image_runner{image_data, width, height, channels};
       images.push_back(image_runner);
     }
-    // TODO(hsz): make  start_pos a reference and update it here
-    jint result = static_cast<jint>(
-        multi_modal_runner_->prefill_images(images, start_pos));
-    tuple_result->pin()[0] = result;
-    tuple_result->pin()[1] = static_cast<jlong>(start_pos);
-    return tuple_result;
+    jint result =
+        static_cast<jint>(multi_modal_runner_->prefill_images(images));
+    return result;
   }
 
   jint generate_from_pos(
@@ -323,7 +298,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       return static_cast<jint>(multi_modal_runner_->generate_from_pos(
           prompt->toStdString(),
           seq_len,
-          start_pos,
+          0, // Start pos is not used in the current implementation
           [callback](const std::string& result) { callback->onResult(result); },
           [callback](const llm::Stats& stats) { callback->onStats(stats); },
           echo));
@@ -333,9 +308,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           .seq_len = seq_len,
           .temperature = temperature_,
       };
-      return static_cast<jint>(runner_->generate_from_pos(
+      return static_cast<jint>(runner_->generate(
           prompt->toStdString(),
-          start_pos,
           config,
           [callback](std::string result) { callback->onResult(result); },
           [callback](const llm::Stats& stats) { callback->onStats(stats); }));
@@ -349,6 +323,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       runner_->stop();
     }
+  }
+
+  void reset_context() {
+    runner_->reset();
   }
 
   jint load() {
@@ -372,6 +350,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
         makeNativeMethod(
             "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
+        makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
 };
