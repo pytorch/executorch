@@ -42,21 +42,20 @@ void fp_accumulate_with_int8_weight(
   // Weight tile is indexed as w_tile.data[k4][n4][n4i]
   //   -> gives packed integer containing the 4x 8-bit quantized values at index
   //      (n, k), (n, k + 1), (n, k + 2), (n, k + 3)
+  VEC4_T weight_texel;
 #if TILE_K4 == 1 && TILE_N4 == 1
-  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-    VEC4_T unpacked_weight_k_row;
-    // n = 0
-    unpacked_weight_k_row = unpack_packed_4xint8(w_tile.data[0][0][0]);
-    accum.data[m][0][0] += dot(in_tile.data[m][0], unpacked_weight_k_row);
-    // n = 1
-    unpacked_weight_k_row = unpack_packed_4xint8(w_tile.data[0][0][1]);
-    accum.data[m][0][1] += dot(in_tile.data[m][0], unpacked_weight_k_row);
-    // n = 2
-    unpacked_weight_k_row = unpack_packed_4xint8(w_tile.data[0][0][2]);
-    accum.data[m][0][2] += dot(in_tile.data[m][0], unpacked_weight_k_row);
-    // n = 3
-    unpacked_weight_k_row = unpack_packed_4xint8(w_tile.data[0][0][3]);
-    accum.data[m][0][3] += dot(in_tile.data[m][0], unpacked_weight_k_row);
+  [[unroll]] for (int k = 0; k < 4; ++k) {
+    // Unpack one column of weights
+    weight_texel = VEC4_T(
+        extract_8bit_from_packed_int_le(w_tile.data[0][0][0], k),
+        extract_8bit_from_packed_int_le(w_tile.data[0][0][1], k),
+        extract_8bit_from_packed_int_le(w_tile.data[0][0][2], k),
+        extract_8bit_from_packed_int_le(w_tile.data[0][0][3], k));
+
+    for (int m = 0; m < TILE_M; ++m) {
+      accum.data[m][0] =
+          fma(VEC4_T(in_tile.data[m][0][k]), weight_texel, accum.data[m][0]);
+    }
   }
 
 #else

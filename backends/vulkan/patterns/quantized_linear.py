@@ -130,6 +130,40 @@ class QuantizedLinearMatch(PatternMatch):
 
         self.match_found = True
 
+    def is_weight_only_quantized(self) -> bool:
+        return self.quantize_input_node is None
+
+    def is_weight_pergroup_quantized(self) -> bool:
+        weight_shape = self.weight_node.meta["val"].shape
+        scales_shape = self.weight_scales_node.meta["val"].shape
+        if len(scales_shape) != 2:
+            return False
+
+        # Check that:
+        # height dim of scales is same as height dim of weight (N / output channels dim)
+        # width dim of weight (K / in channels dim) is divisible by width dim of scales
+        # (number of quantization groups)
+        return scales_shape[-2] == weight_shape[-2] and (
+            weight_shape[-1] % scales_shape[-1] == 0
+        )
+
+    def is_weight_perchannel_quantized(self) -> bool:
+        weight_shape = self.weight_node.meta["val"].shape
+        scales_shape = self.weight_scales_node.meta["val"].shape
+        if len(scales_shape) != 1:
+            return False
+
+        # scales should have same size as weight's output channels dim
+        return scales_shape[0] == weight_shape[-2]
+
+    def is_input_static_per_tensor_quantized(self) -> bool:
+        if self.quantize_input_node is None:
+            return False
+
+        # For static quantization per tensor quantization, the scales and zeros
+        # are scalars.
+        return isinstance(self.input_scales_node, float)
+
 
 linear_anchor_nodes = {
     exir_ops.edge.aten.linear.default,
@@ -227,18 +261,10 @@ def make_linear_q4ga_op(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     match: QuantizedLinearMatch,
+    weight_tensor: torch.Tensor,
+    weight_scales_tensor: torch.Tensor,
+    weight_zeros_tensor: torch.Tensor,
 ):
-    weight_tensor = get_param_tensor(ep, match.weight_node)
-    assert weight_tensor is not None
-
-    assert match.weight_scales_node is not None
-    weight_scales_tensor = get_param_tensor(ep, match.weight_scales_node)
-    assert weight_scales_tensor is not None
-
-    assert match.weight_zeros_node is not None
-    weight_zeros_tensor = get_param_tensor(ep, match.weight_zeros_node)
-    assert weight_zeros_tensor is not None
-
     packed_quantized_weight_tensor = pack_4bit_weight_tensor(weight_tensor)
     utils.update_program_state_dict(
         ep, match.weight_node.name, packed_quantized_weight_tensor
@@ -281,23 +307,8 @@ def make_linear_q8ta_q8csw_custom_op(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     match: QuantizedLinearMatch,
+    weight_tensor: torch.Tensor,
 ):
-    weight_tensor = get_param_tensor(ep, match.weight_node)
-    assert weight_tensor is not None
-
-    assert match.weight_scales_node is not None
-    weight_scales_tensor = get_param_tensor(ep, match.weight_scales_node)
-    assert weight_scales_tensor is not None
-
-    assert match.weight_zeros_node is not None
-    weight_zeros_tensor = get_param_tensor(ep, match.weight_zeros_node)
-    assert weight_zeros_tensor is not None
-
-    bias_tensor = None
-    if match.bias_node is not None:
-        bias_tensor = get_param_tensor(ep, match.bias_node)
-        assert bias_tensor is not None
-
     first_graph_node = list(graph_module.graph.nodes)[0]
     with graph_module.graph.inserting_before(first_graph_node):
         weight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
@@ -340,7 +351,40 @@ def replace_quantized_linear_patterns(
     graph_module: torch.fx.GraphModule,
     match: QuantizedLinearMatch,
 ):
-    if match.quantize_input_node is None:
-        make_linear_q4ga_op(ep, graph_module, match)
-    else:
-        make_linear_q8ta_q8csw_custom_op(ep, graph_module, match)
+    # Extract relevant tensors
+    weight_tensor = get_param_tensor(ep, match.weight_node)
+    assert weight_tensor is not None
+
+    assert match.weight_scales_node is not None
+    weight_scales_tensor = get_param_tensor(ep, match.weight_scales_node)
+    assert weight_scales_tensor is not None
+
+    assert match.weight_zeros_node is not None
+    weight_zeros_tensor = get_param_tensor(ep, match.weight_zeros_node)
+    assert weight_zeros_tensor is not None
+
+    # Biases not supported at the moment
+    if match.bias_node is not None:
+        return
+
+    # Route to appropriate custom op
+    if (
+        match.is_weight_only_quantized()
+        and match.is_weight_pergroup_quantized()
+        and utils.is_in_4bit_range(weight_tensor)
+    ):
+        make_linear_q4ga_op(
+            ep,
+            graph_module,
+            match,
+            weight_tensor,
+            weight_scales_tensor,
+            weight_zeros_tensor,
+        )
+    elif (
+        match.is_input_static_per_tensor_quantized()
+        and match.is_weight_perchannel_quantized()
+    ):
+        make_linear_q8ta_q8csw_custom_op(ep, graph_module, match, weight_tensor)
+
+    # No-op for unsupported quant patterns

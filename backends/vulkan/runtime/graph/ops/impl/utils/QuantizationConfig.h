@@ -16,7 +16,7 @@ enum class QuantizationGranularity {
   PerChannel,
   PerTensor,
   PerGroup,
-  None,
+  NoQuantization,
 };
 
 static constexpr QuantizationGranularity kPerChannel =
@@ -26,7 +26,7 @@ static constexpr QuantizationGranularity kPerTensor =
 static constexpr QuantizationGranularity kPerGroup =
     QuantizationGranularity::PerGroup;
 static constexpr QuantizationGranularity kNoQuantization =
-    QuantizationGranularity::None;
+    QuantizationGranularity::NoQuantization;
 
 struct QuantizationConfig {
   int nbits;

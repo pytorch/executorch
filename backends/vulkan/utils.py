@@ -1172,6 +1172,26 @@ def trace_args_until_placeholder(
     return cur_node, traversed
 
 
+def is_in_4bit_range(tensor: torch.Tensor) -> bool:
+    """
+    Check if the given tensor is in the range of 4-bit quantization and is of integer type.
+    """
+    if tensor.dtype not in (torch.int8, torch.uint8):
+        return False
+
+    return tensor.min().item() >= -8 and tensor.max().item() <= 7
+
+
+def is_in_8bit_range(tensor: torch.Tensor) -> bool:
+    """
+    Check if the given tensor is in the range of 4-bit quantization and is of integer type.
+    """
+    if tensor.dtype not in (torch.int8, torch.uint8):
+        return False
+
+    return tensor.min().item() >= -128 and tensor.max().item() <= 127
+
+
 ##
 ## Misc
 ##
