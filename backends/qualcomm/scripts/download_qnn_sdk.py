@@ -39,11 +39,9 @@ def _download_qnn_sdk() -> Optional[pathlib.Path]:
         - Only runs on Linux x86 platforms. Skips otherwise.
     """
     print("Downloading Qualcomm SDK...")
-    qairt_url = (
-        "https://softwarecenter.qualcomm.com/api/download/software/sdks/"
-        "Qualcomm_AI_Runtime_Community/All/2.34.0.250424/v2.34.0.250424.zip"
-    )
-    qairt_content_dir = "qairt/2.34.0.250424"
+    QNN_VERSION = "2.37.0.250724"
+    QAIRT_URL = f"https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip"
+    QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
 
     if not is_linux_x86():
         print("Skipping Qualcomm SDK (only supported on Linux x86).")
@@ -54,11 +52,11 @@ def _download_qnn_sdk() -> Optional[pathlib.Path]:
     print(f"Current working directory: {os.getcwd()}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        archive_path = pathlib.Path(tmpdir) / pathlib.Path(qairt_url).name
+        archive_path = pathlib.Path(tmpdir) / pathlib.Path(QAIRT_URL).name
         print(f"Temporary directory: {tmpdir}")
         print(f"Archive will be saved to: {archive_path}")
 
-        print(f"Downloading Qualcomm SDK from {qairt_url}...")
+        print(f"Downloading Qualcomm SDK from {QAIRT_URL}...")
         try:
 
             def make_report_progress():
@@ -76,7 +74,7 @@ def _download_qnn_sdk() -> Optional[pathlib.Path]:
 
                 return report_progress
 
-            urllib.request.urlretrieve(qairt_url, archive_path, make_report_progress())
+            urllib.request.urlretrieve(QAIRT_URL, archive_path, make_report_progress())
             print("Download completed!")
 
             if archive_path.exists() and archive_path.stat().st_size == 0:
@@ -89,14 +87,14 @@ def _download_qnn_sdk() -> Optional[pathlib.Path]:
             print(f"Error during download: {e}")
             return None
 
-        if qairt_url.endswith(".zip"):
+        if QAIRT_URL.endswith(".zip"):
             print("Extracting ZIP archive...")
-            _extract_zip(archive_path, qairt_content_dir, SDK_DIR)
-        elif qairt_url.endswith((".tar.gz", ".tgz")):
+            _extract_zip(archive_path, QAIRT_CONTENT_DIR, SDK_DIR)
+        elif QAIRT_URL.endswith((".tar.gz", ".tgz")):
             print("Extracting TAR archive...")
-            _extract_tar(archive_path, qairt_content_dir, SDK_DIR)
+            _extract_tar(archive_path, QAIRT_CONTENT_DIR, SDK_DIR)
         else:
-            raise ValueError(f"Unsupported archive format: {qairt_url}")
+            raise ValueError(f"Unsupported archive format: {QAIRT_URL}")
 
         print(f"Verifying extraction to {SDK_DIR}")
         if SDK_DIR.exists():
