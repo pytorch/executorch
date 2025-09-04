@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/QuantizationConfig.h>
 
 namespace vkcompute {
 
@@ -22,6 +23,7 @@ utils::uvec3 quantized_linear_local_wg_size(
 
 ValueRef prepack_quantized_linear_weight(
     ComputeGraph& graph,
+    const QuantizationConfig& weight_quant_config,
     const ValueRef qmat2_data);
 
 } // namespace vkcompute

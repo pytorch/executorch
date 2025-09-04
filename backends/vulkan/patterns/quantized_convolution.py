@@ -76,6 +76,13 @@ class QuantizedConvolutionMatch(PatternMatch):
         # Identify output node
         self.output_node = self.anchor_node
 
+        out_channels = self.output_node.meta["val"].shape[-1]
+        # The implementation requires that for grouped convolutions, a group does not
+        # cross any texel boundary. The output channels per group must be a multiple of
+        # 4. If this is not true, then don't match the pattern.
+        if self.groups > 1 and (out_channels / self.groups) % 4 == 0:
+            return
+
         # Identify bias node, if applicable
         self.bias_node = None
         if len(self.anchor_node.args) > 2 and self.anchor_node.args[2] is not None:
@@ -154,21 +161,17 @@ def make_conv2d_q8ta_q8csw_custom_op(
         bias_tensor = get_param_tensor(ep, match.bias_node)
         assert bias_tensor is not None
 
-    orig_OC, IC, H, W = weight_tensor.shape
+    OC, IC, H, W = weight_tensor.shape
 
-    # The implementation requires that for grouped convolutions, a group does not cross
-    # any texel boundary.
-    if match.groups > 1:
-        assert (orig_OC / match.groups) % 4 == 0
-
-    # Reshape weight tensor from (OC, IC, H, W) to (H * W * IC, OC) for matrix multiplication
-    # This prepares the weights for Im2Col-based convolution computation
+    # Reshape weight tensor from (OC, IC, H, W) to (OC, H * W * IC) (i.e. matrix format)
+    # This prepares the weights for Im2Col-based convolution
     weight_tensor = (
-        weight_tensor.permute(2, 3, 1, 0).contiguous().view(H * W * IC, orig_OC)
+        weight_tensor.permute(0, 2, 3, 1).contiguous().view(OC, H * W * IC).contiguous()
     )
 
     # Need to make sure that OC dim is a multiple of 4 so that data load/stores are well
-    # aligned with texel boundaries.
+    # aligned with texel boundaries. Add padding to align to the next multiple of 4 if
+    # needed.
     utils.align_width_and_update_state_dict(
         ep, match.weight_node, weight_tensor, force_update=True
     )
@@ -184,7 +187,7 @@ def make_conv2d_q8ta_q8csw_custom_op(
         # Pre-compute the weight sums which are needed to apply activation zero point
         # when using integer accumulation. For the reshaped 2D weight matrix (IC * H * W, OC),
         # sum over dimension 0 to get sums per output channel
-        sum_per_output_channel = weight_tensor.sum(dim=0).to(torch.float).contiguous()
+        sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.float).contiguous()
         sums_name = qweight_tensor_name + "_sums"
         # Sanitize the name
         sums_name = sums_name.replace(".", "_")
@@ -214,7 +217,6 @@ def make_conv2d_q8ta_q8csw_custom_op(
                 match.padding,
                 match.dilation,
                 match.groups,
-                orig_OC,
             ),
         )
 
