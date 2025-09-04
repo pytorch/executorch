@@ -221,6 +221,10 @@ class ComputeGraph final {
   // config.execute_threshold_node_count.
   size_t execute_threshold_node_count_ = 0;
 
+  // Whether the underlying GPU support accelerated integer dot product
+  // extensions
+  bool can_use_int8_dot_product_ = false;
+
  public:
   //
   // Accessors
@@ -1011,6 +1015,10 @@ class ComputeGraph final {
 
   inline size_t execute_count() const {
     return execute_count_;
+  }
+
+  inline bool can_use_int8_dot_product() const {
+    return can_use_int8_dot_product_;
   }
 
   /*

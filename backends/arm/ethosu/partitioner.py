@@ -11,7 +11,7 @@ from executorch.backends.arm.arm_backend import (
     is_ethosu,
 )  # usort: skip
 from executorch.backends.arm.ethosu import EthosUBackend
-from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import DelegationSpec
 from torch.fx.passes.operator_support import OperatorSupportBase

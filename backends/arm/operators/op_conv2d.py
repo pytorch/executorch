@@ -20,10 +20,10 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.arm.tosa_utils import tosa_shape
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.quant_utils import build_rescale
+from executorch.backends.arm.tosa.utils import tosa_shape
 
 
 @register_node_visitor
@@ -157,7 +157,9 @@ class Conv2dVisitor(NodeVisitor):
 
             reshape_attr = ts.TosaSerializerAttribute()
             reshape_attr.ReshapeAttribute()
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().RESHAPE,
                 [weight.name, shape.name],
                 [weight_reshaped.name],
@@ -188,7 +190,9 @@ class Conv2dVisitor(NodeVisitor):
                 acc_type=acc_type,
             )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             tosa_op,
             [
                 input.name,

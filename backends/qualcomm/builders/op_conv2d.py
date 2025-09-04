@@ -109,7 +109,7 @@ class Conv2d(NodeVisitor):
         input_tensor = self.get_tensor(input_node, node)
         assert (
             input_tensor.dim() == 4
-        ), "All Conv should be converted to Conv2D in ConvertConv1dToConv2d"
+        ), "All Conv1D should be converted to Conv2D in CanonicalizeConv,"
         input_tensor_wrapper = self.define_tensor(
             input_node,
             node,

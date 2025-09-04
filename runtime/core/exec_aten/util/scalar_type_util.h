@@ -1341,6 +1341,25 @@ struct promote_types {
                   CTYPE_ALIAS,                                              \
                   __VA_ARGS__))
 
+#define ET_SWITCH_FOUR_TYPES(                                               \
+    T1, T2, T3, T4, TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...)                  \
+  ET_INTERNAL_SWITCH(                                                       \
+      TYPE,                                                                 \
+      CONTEXT,                                                              \
+      NAME,                                                                 \
+      ET_INTERNAL_SWITCH_CASE(                                              \
+          ::executorch::aten::ScalarType::T1, CTYPE_ALIAS, __VA_ARGS__)     \
+          ET_INTERNAL_SWITCH_CASE(                                          \
+              ::executorch::aten::ScalarType::T2, CTYPE_ALIAS, __VA_ARGS__) \
+              ET_INTERNAL_SWITCH_CASE(                                      \
+                  ::executorch::aten::ScalarType::T3,                       \
+                  CTYPE_ALIAS,                                              \
+                  __VA_ARGS__)                                              \
+                  ET_INTERNAL_SWITCH_CASE(                                  \
+                      ::executorch::aten::ScalarType::T4,                   \
+                      CTYPE_ALIAS,                                          \
+                      __VA_ARGS__))
+
 } // namespace runtime
 } // namespace executorch
 

@@ -7,7 +7,7 @@
 try:
     from pathlib import Path
 
-    libs = list(Path(__file__).parent.resolve().glob("**/libquantized_ops_aot_lib.*"))
+    libs = list(Path(__file__).parent.resolve().glob("**/*quantized_ops_aot_lib.*"))
     del Path
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     import torch as _torch

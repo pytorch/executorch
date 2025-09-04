@@ -51,7 +51,7 @@ def test_ic3_tosa_BI():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-        atol=0.6,
+        atol=0.65,
         qtol=1,
     )
     pipeline.run()

@@ -16,7 +16,7 @@ from typing import Any, Optional, Sequence
 import serializer.tosa_serializer as ts  # type: ignore
 
 import torch
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import TosaSpecification
 
 UNSUPPORTED_DTYPES = (
     torch.float64,

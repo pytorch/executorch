@@ -134,9 +134,20 @@ __attribute__((deprecated("This API is experimental.")))
  * @return An initialized ExecuTorchModule instance.
  */
 - (instancetype)initWithFilePath:(NSString *)filePath
-                    dataFilePath:(NSString *)dataPath
+                    dataFilePath:(NSString *)dataFilePath
                         loadMode:(ExecuTorchModuleLoadMode)loadMode
     NS_DESIGNATED_INITIALIZER;
+
+/**
+ * Initializes a module with a file path, data path and a specified load mode.
+ *
+ * @param filePath A string representing the path to the ExecuTorch program file.
+ * @param dataFilePath A string representing the path to a .ptd file with
+ * external tensors and external data.
+ * @return An initialized ExecuTorchModule instance.
+ */
+- (instancetype)initWithFilePath:(NSString *)filePath
+                    dataFilePath:(NSString *)dataFilePath;
 
 /**
  * Initializes a module with a file path and a specified load mode.

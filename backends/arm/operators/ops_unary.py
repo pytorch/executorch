@@ -18,7 +18,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def unary_operator_factory(unary_target: str, tosa_op):
@@ -54,7 +54,9 @@ def unary_operator_factory(unary_target: str, tosa_op):
                     output.tosa_spec,
                 )
 
-            tosa_graph.addOperator(tosa_op, [inputs[0].name], [output.name])
+            self._serialize_operator(
+                node, tosa_graph, tosa_op, [inputs[0].name], [output.name]
+            )
 
     register_node_visitor(UnaryOperator)
 

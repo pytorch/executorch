@@ -195,7 +195,7 @@ class StaticAttentionTest(unittest.TestCase):
         test_with_style("shift_pointer")
         test_with_style("smart_mask")
 
-    def _get_test_transformers(self, config, attention_type="static"):
+    def _get_test_transformers(self, config, attention_type="static", use_conv2d=False):
         mha_transformer = construct_transformer(config).eval()
 
         config = copy.copy(config)
@@ -207,6 +207,8 @@ class StaticAttentionTest(unittest.TestCase):
         ):
             static_layer.attention.load_weights_from_attention_mha(mha_layer.attention)
             static_layer.attention.adopt_hf_rope()
+            if use_conv2d:
+                static_layer.linear_to_conv2d()
         config.use_hf_rope = True
 
         return mha_transformer, static_transformer, config
@@ -220,7 +222,8 @@ class StaticAttentionTest(unittest.TestCase):
             n_layers=4,
             vocab_size=128,
         )
-        x = torch.randint(config.vocab_size, (1, config.max_seq_len))
+        batch_size = 3
+        x = torch.randint(config.vocab_size, (batch_size, config.max_seq_len))
         n_chunks = 3
         chunk_len = config.max_seq_len // n_chunks
         cache_len = config.max_seq_len - chunk_len
@@ -235,13 +238,13 @@ class StaticAttentionTest(unittest.TestCase):
             expected = mha_transformer(x)
 
             mgr = StaticAttentionIOManager(
-                static_config, chunk_len, cache_len, style=style
+                static_config, chunk_len, cache_len, style=style, batch_size=batch_size
             )
             ys = []
             for i in range(n_chunks):
                 y_i = mgr.prefill(
                     static_transformer,
-                    x[0][i * chunk_len : (i + 1) * chunk_len].tolist(),
+                    x[:, i * chunk_len : (i + 1) * chunk_len],
                 )
                 ys.append(y_i)
 
@@ -300,3 +303,59 @@ class StaticAttentionTest(unittest.TestCase):
                 ngram_caches=ngram_caches,
             )
             self.assertEqual(lookahead_output[: len(ref_output)], ref_output)
+
+    def test_batched_export_with_backprop(self):
+        config = ModelArgs(
+            dim=64,
+            n_heads=4,
+            n_kv_heads=2,
+            max_seq_len=128,
+            n_layers=4,
+            vocab_size=128,
+            generate_full_logits=True,
+        )
+        _, static_transformer, static_config = self._get_test_transformers(config)
+        batch_size = 4
+        input_len = 32
+        cache_len = static_config.max_seq_len - input_len
+        mgr = StaticAttentionIOManager(
+            static_config, input_len, cache_len, batch_size=batch_size
+        )
+        example_inputs = (
+            torch.zeros(batch_size, input_len),
+            {
+                "masks": mgr.masks,
+                "freqs_cos_override": mgr.freqs_cos[:input_len],
+                "freqs_sin_override": mgr.freqs_sin[:input_len],
+                "in_cache_state": (mgr.k_caches, mgr.v_caches),
+            },
+        )
+        batched_gm = torch.export.export(static_transformer, example_inputs).module()
+
+        # Test backprop
+        for _ in range(10):
+            x = torch.randint(config.vocab_size, (batch_size, input_len))
+            y = mgr.prefill(batched_gm, x)
+            loss = torch.nn.functional.cross_entropy(
+                y, torch.rand(batch_size, input_len, config.vocab_size)
+            )
+            loss.backward()
+            mgr.reset()
+
+        # Test loading state dict into a non batched graph for inference
+        mgr = StaticAttentionIOManager(
+            static_config, input_len, cache_len, batch_size=1
+        )
+        example_inputs = (
+            torch.zeros(1, input_len),
+            {
+                "masks": mgr.masks,
+                "freqs_cos_override": mgr.freqs_cos[:input_len],
+                "freqs_sin_override": mgr.freqs_sin[:input_len],
+                "in_cache_state": (mgr.k_caches, mgr.v_caches),
+            },
+        )
+        non_batched_gm = torch.export.export(
+            static_transformer, example_inputs
+        ).module()
+        non_batched_gm.load_state_dict(batched_gm.state_dict())

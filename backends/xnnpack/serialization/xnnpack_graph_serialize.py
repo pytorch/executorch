@@ -1,22 +1,21 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib.resources as _resources
 import json
-
 import logging
 import os
 import tempfile
-
 from dataclasses import dataclass, fields, is_dataclass
 from typing import ClassVar, Literal, Optional
 
-import pkg_resources
+import executorch.backends.xnnpack.serialization as serialization_package
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import XNNGraph
 from executorch.exir._serialize._dataclass import _DataclassEncoder
-
 from executorch.exir._serialize._flatbuffer import _flatc_compile
 
 logger = logging.getLogger(__name__)
@@ -317,7 +316,9 @@ def convert_to_flatbuffer(xnnpack_graph: XNNGraph) -> bytes:
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "schema.fbs")
         with open(schema_path, "wb") as schema_file:
-            schema_file.write(pkg_resources.resource_string(__name__, "schema.fbs"))
+            schema_file.write(
+                _resources.read_binary(serialization_package, "schema.fbs")
+            )
         json_path = os.path.join(d, "schema.json")
         with open(json_path, "wb") as json_file:
             json_file.write(xnnpack_graph_json.encode("ascii"))

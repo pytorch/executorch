@@ -48,6 +48,12 @@ install_qnn() {
 
   echo "Start installing qnn v${QNN_VERSION}"
   QNN_INSTALLATION_DIR="/tmp/qnn"
+  
+  if [ -d "${QNN_INSTALLATION_DIR}/${QNN_VERSION}" ]; then
+        echo "QNN SDK already installed at ${QNN_INSTALLATION_DIR}/${QNN_VERSION}"
+        export QNN_SDK_ROOT="${QNN_INSTALLATION_DIR}/${QNN_VERSION}"
+        return
+  fi
 
   # Clean up any previous installation
   if [ -d "${QNN_INSTALLATION_DIR}" ]; then
@@ -79,7 +85,7 @@ install_qnn() {
   ls -lah "${QNN_INSTALLATION_DIR}"
 
   # Set QNN_SDK_ROOT environment variable
-  export QNN_SDK_ROOT="${QNN_INSTALLATION_DIR}"
+  export QNN_SDK_ROOT="${QNN_INSTALLATION_DIR}/${QNN_VERSION}"
   echo "Set QNN_SDK_ROOT=${QNN_SDK_ROOT}"
 }
 
@@ -147,7 +153,3 @@ setup_libcpp() {
 
   echo "libc++ installed to ${INSTALL_DIR}"
 }
-
-setup_libcpp 12
-setup_android_ndk
-install_qnn
