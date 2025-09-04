@@ -69,7 +69,7 @@ jobs:
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
 
-          .ci/scripts/setup-windows.ps1       
+          .ci/scripts/setup-windows.ps1
 
-          powershell .ci/scripts/unittest-windows.ps1 -editable "${{ inputs.editable }}"
+          .ci/scripts/unittest-windows.ps1 -editable "${{ inputs.editable }}"
         }"
