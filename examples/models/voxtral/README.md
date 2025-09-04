@@ -18,6 +18,11 @@ cd optimum-executorch
 python install_dev.py
 ```
 
+We are currently working on a Transformers pin bump for Optimum. In the meantime, manually override the Transformers dep to the earliest compatible version.
+```
+pip install git+https://github.com/huggingface/transformers@6121e9e46c4fc4e5c91d9f927aef5490691850cf#egg=transformers
+```
+
 ## Using the export CLI
 We export Voxtral using the Optimum CLI, which will export `model.pte` to the `voxtral` output directory:
 ```
