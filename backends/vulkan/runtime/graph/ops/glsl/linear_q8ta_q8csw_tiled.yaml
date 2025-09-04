@@ -8,7 +8,7 @@ linear_q8ta_q8csw_tiled:
   parameter_names_with_default_values:
     DTYPE: float
     OUTPUT_STORAGE: texture3d
-    INPUT_STORAGE: texture3d
+    INPUT_STORAGE: buffer
     WEIGHT_STORAGE: texture2d
     TILE_M4: 1
     TILE_N4: 1
@@ -17,14 +17,8 @@ linear_q8ta_q8csw_tiled:
     DTYPE:
       - VALUE: float
   shader_variants:
-    - NAME: linear_q8ta_q8csw_tiled_texture3d_texture3d_texture2d
-    - NAME: linear_q8ta_q8csw_tiled_texture3d_texture3d_buffer
-      WEIGHT_STORAGE: buffer
+    - NAME: linear_q8ta_q8csw_tiled_texture3d_buffer_texture2d
     - NAME: linear_q8ta_q8csw_tiled_buffer_buffer_texture2d
       OUTPUT_STORAGE: buffer
       INPUT_STORAGE: buffer
       WEIGHT_STORAGE: texture2d
-    - NAME: linear_q8ta_q8csw_tiled_buffer_buffer_buffer
-      OUTPUT_STORAGE: buffer
-      INPUT_STORAGE: buffer
-      WEIGHT_STORAGE: buffer
