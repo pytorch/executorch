@@ -2,24 +2,20 @@ name: Build Windows Wheels
 
 on:
   pull_request:
-    paths:
-      - .ci/**/*
-      - .github/workflows/build-wheels-windows.yml
-      - examples/**/*
-      - pyproject.toml
-      - setup.py
-    tags:
-      - ciflow/binaries/*
   push:
     branches:
       - nightly
+      - main
       - release/*
     tags:
-      # NOTE: Binary build pipelines should only get triggered on release candidate builds
-      # Release candidate tags look like: v1.11.0-rc1
-      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
-      - ciflow/binaries/*
+        # NOTE: Binary build pipelines should only get triggered on release candidate builds
+        # Release candidate tags look like: v1.11.0-rc1
+        - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
   workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   generate-matrix:
@@ -29,22 +25,16 @@ jobs:
       os: windows
       test-infra-repository: pytorch/test-infra
       test-infra-ref: main
-      with-cuda: disabled
-      with-rocm: disabled
-      python-versions: '["3.10", "3.11", "3.12"]'
-
+      with-xpu: enable
   build:
     needs: generate-matrix
-    permissions:
-      id-token: write
-      contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
           - repository: pytorch/executorch
             pre-script: .ci/scripts/wheel/pre_build_script.sh
-            env-script: .ci\scripts\wheel\run_with_symlink_windows.sh
+            env-script: .ci/scripts/wheel/vc_env_helper.bat
             post-script: .ci/scripts/wheel/post_build_script.sh
             smoke-test-script: .ci/scripts/wheel/test_windows.py
             package-name: executorch
@@ -56,9 +46,8 @@ jobs:
       test-infra-repository: pytorch/test-infra
       test-infra-ref: main
       build-matrix: ${{ needs.generate-matrix.outputs.matrix }}
-      submodules: true
-      env-script: ${{ matrix.env-script }}
       pre-script: ${{ matrix.pre-script }}
+      env-script: ${{ matrix.env-script }}
       post-script: ${{ matrix.post-script }}
       package-name: ${{ matrix.package-name }}
       smoke-test-script: ${{ matrix.smoke-test-script }}
