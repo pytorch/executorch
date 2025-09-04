@@ -251,68 +251,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
-  // Returns a tuple of (error, start_pos)
-  // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-  facebook::jni::local_ref<jlongArray> prefill_prompt(
-      facebook::jni::alias_ref<jstring> prompt,
-      jlong start_pos,
-      jint bos,
-      jint eos) {
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
-    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
-      return tuple_result;
-    }
-
-    auto&& result = multi_modal_runner_->prefill_prompt(
-        prompt->toStdString(), start_pos, bos, eos);
-    tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
-    if (result.ok()) {
-      tuple_result->pin()[1] = static_cast<jlong>(start_pos);
-    }
-    return tuple_result;
-  }
-
-  // Returns a tuple of (error, start_pos)
-  // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-
-  facebook::jni::local_ref<jlongArray> prefill_images(
-      facebook::jni::alias_ref<jintArray> image,
-      jint width,
-      jint height,
-      jint channels,
-      jlong start_pos) {
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
-
-    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
-      return tuple_result;
-    }
-
-    auto image_size = image->size();
-    std::vector<llm::Image> images;
-    if (image_size != 0) {
-      std::vector<jint> image_data_jint(image_size);
-      std::vector<uint8_t> image_data(image_size);
-      image->getRegion(0, image_size, image_data_jint.data());
-      for (int i = 0; i < image_size; i++) {
-        image_data[i] = image_data_jint[i];
-      }
-      llm::Image image_runner{image_data, width, height, channels};
-      images.push_back(image_runner);
-    }
-    // TODO(hsz): make  start_pos a reference and update it here
-    jint result = static_cast<jint>(
-        multi_modal_runner_->prefill_images(images, start_pos));
-    tuple_result->pin()[0] = result;
-    tuple_result->pin()[1] = static_cast<jlong>(start_pos);
-    return tuple_result;
-  }
-
   jint generate_from_pos(
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
@@ -366,10 +304,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("generate", ExecuTorchLlmJni::generate),
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
         makeNativeMethod("load", ExecuTorchLlmJni::load),
-        makeNativeMethod(
-            "prefillImagesNative", ExecuTorchLlmJni::prefill_images),
-        makeNativeMethod(
-            "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
         makeNativeMethod(
             "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
     });
