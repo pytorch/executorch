@@ -6,21 +6,23 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/stack_util.h>
+#pragma once
+
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <tuple>
 
-namespace torch {
-namespace executor {
-namespace native {
+namespace torch::executor::native::utils {
 
-Tensor& stack_out(
+std::tuple<
+    Error,
+    std::array<executorch::aten::SizesType, kTensorDimensionLimit>,
+    size_t>
+stack_out_shape(executorch::aten::ArrayRef<Tensor> tensors, int64_t dim);
+
+Tensor& stack_out_impl(
     KernelRuntimeContext& ctx,
     executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
-    Tensor& out) {
-  return utils::stack_out_impl(ctx, tensors, dim, out);
-}
+    Tensor& out);
 
-} // namespace native
-} // namespace executor
-} // namespace torch
+} // namespace torch::executor::native::utils

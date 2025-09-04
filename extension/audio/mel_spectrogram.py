@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import logging
 
 import torch
@@ -168,8 +169,9 @@ class WhisperAudioProcessor(nn.Module):
         return log_spec.unsqueeze(0)
 
 
-def export_processor():
-    model = WhisperAudioProcessor()
+def export_processor(model=None, output_file="whisper_preprocess.pte"):
+    if model is None:
+        model = WhisperAudioProcessor()
     audio_tensor = torch.randn(480000)
     chunk_tensor = audio_tensor[:93680]
     with torch.no_grad():
@@ -191,7 +193,6 @@ def export_processor():
 
         # to executorch
         exec_prog = edge.to_executorch()
-        output_file = "whisper_preprocess.pte"
         with open(output_file, "wb") as file:
             exec_prog.write_to_file(file)
 
@@ -199,7 +200,54 @@ def export_processor():
 
 
 def main():
-    export_processor()
+    parser = argparse.ArgumentParser(
+        description="Export WhisperAudioProcessor to ExecutorTorch"
+    )
+    parser.add_argument(
+        "--feature_size",
+        type=int,
+        default=80,
+        help="The feature dimension of the extracted features",
+    )
+    parser.add_argument(
+        "--sampling_rate",
+        type=int,
+        default=16000,
+        help="The sampling rate at which audio files should be digitalized (Hz)",
+    )
+    parser.add_argument(
+        "--hop_length",
+        type=int,
+        default=160,
+        help="Length of overlapping windows for STFT",
+    )
+    parser.add_argument(
+        "--chunk_length",
+        type=int,
+        default=30,
+        help="Maximum number of chunks of sampling_rate samples",
+    )
+    parser.add_argument(
+        "--n_fft", type=int, default=400, help="Size of the Fourier transform"
+    )
+    parser.add_argument(
+        "--output_file",
+        type=str,
+        default="whisper_preprocess.pte",
+        help="Output file path for the exported model",
+    )
+
+    args = parser.parse_args()
+
+    model = WhisperAudioProcessor(
+        feature_size=args.feature_size,
+        sampling_rate=args.sampling_rate,
+        hop_length=args.hop_length,
+        chunk_length=args.chunk_length,
+        n_fft=args.n_fft,
+    )
+
+    export_processor(model, args.output_file)
 
 
 if __name__ == "__main__":
