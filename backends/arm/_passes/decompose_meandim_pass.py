@@ -9,7 +9,6 @@ from math import prod
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
-from executorch.backends.arm.operator_support.pool_2d_support import AvgPool2dSupported
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -67,6 +66,11 @@ class DecomposeMeanDimPass(ArmPass):
         super().__init__()
         self._graph_module = graph_module
         self._tosa_spec = tosa_spec
+        # Lazy import to avoid circular dependency with operator_support
+        from executorch.backends.arm.operator_support.pool_2d_support import (
+            AvgPool2dSupported,
+        )
+
         self._avg_pool_checker = AvgPool2dSupported(
             self._tosa_spec, WhyNoPartitionReporter()
         )

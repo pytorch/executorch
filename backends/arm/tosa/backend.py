@@ -14,18 +14,14 @@ import logging
 from typing import cast, final, List
 
 import serializer.tosa_serializer as ts  # type: ignore
-from executorch.backends.arm.debug.schema import DebugHook
-from executorch.backends.arm.operators.node_visitor import get_node_visitors
-from executorch.backends.arm.tosa_specification import get_tosa_spec
-from executorch.backends.arm._passes import (
-    ArmPassManager,
-)  # usort: skip
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
+from executorch.backends.arm.debug.schema import DebugHook
 from executorch.backends.arm.process_node import (
     process_call_function,
     process_output,
     process_placeholder,
 )
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -95,6 +91,9 @@ class TOSABackend(BackendDetails):
             and tosa_spec.version.minor == ts.TOSA_VERSION_MINOR
         ), f"TOSA serializer version ({ts.TOSA_VERSION_MAJOR}.{ts.TOSA_VERSION_MINOR}) doesn't match specification {tosa_spec}"
 
+        # TODO: Fix the need to lazily import this.
+        from executorch.backends.arm._passes import ArmPassManager
+
         graph_module = ArmPassManager(tosa_spec).transform_to_backend_pipeline(  # type: ignore
             exported_program=edge_program
         )
@@ -102,6 +101,9 @@ class TOSABackend(BackendDetails):
         debug_hook = None
         if dump_debug_info is not None:
             debug_hook = DebugHook()
+
+        # TODO: Fix the need to lazily import this.
+        from executorch.backends.arm.operators.node_visitor import get_node_visitors
 
         node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
         input_count = 0
