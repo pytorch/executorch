@@ -96,7 +96,7 @@ class TestLlava(unittest.TestCase):
             "token_embedding", (prompt_before_image,)
         )[0]
         llava_module.run_method(
-            "text_decoder",
+            "text_model",
             (torch.tensor([start_pos], dtype=torch.int64), pte_embeds_before_img),
         )
 
@@ -107,7 +107,7 @@ class TestLlava(unittest.TestCase):
         # pte prefill image
         pte_embeds_img = llava_module.run_method("image_encoder", (resized,))[0]
         llava_module.run_method(
-            "text_decoder",
+            "text_model",
             (
                 torch.tensor([start_pos], dtype=torch.int64),
                 pte_embeds_img,
@@ -122,7 +122,7 @@ class TestLlava(unittest.TestCase):
             "token_embedding", (prompt_after_image,)
         )[0]
         pte_prefill_after_img = llava_module.run_method(
-            "text_decoder",
+            "text_model",
             (torch.tensor([start_pos], dtype=torch.int64), pte_embeds_after_img),
         )[0]
 
@@ -139,7 +139,7 @@ class TestLlava(unittest.TestCase):
                 "token_embedding", (torch.tensor([[new_tokens[i]]], dtype=torch.int64),)
             )[0]
             logits = llava_module.run_method(
-                "text_decoder",
+                "text_model",
                 (torch.tensor([start_pos + i], dtype=torch.int64), token_embeds),
             )[0]
             new_tokens.append(torch.argmax(logits).item())
