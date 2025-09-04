@@ -47,28 +47,28 @@ class ComboBlockBottleneckResidual(torch.nn.Module):
         # (t, c, n, s) = (6, 96, 1, 1)
         # 1. 1x1 CONV2d + ReLU6 (Pointwise)
         self.pointwise_conv2d = torch.nn.Conv2d(
-            in_channels=32, out_channels=128, kernel_size=1, stride=1, groups=1
+            in_channels=16, out_channels=96, kernel_size=1, stride=1, groups=1
         )  ## (1, 128, 81, 81)
-        self.batch_norm2d_16 = torch.nn.BatchNorm2d(128, affine=False)
+        self.batch_norm2d_16 = torch.nn.BatchNorm2d(96, affine=False)
         self.relu6 = torch.nn.ReLU6()
 
         # 2. 3x3 DepthwiseConv2d + ReLu6
         self.depthwise_conv2d = torch.nn.Conv2d(
-            in_channels=128,
-            out_channels=128,
+            in_channels=96,
+            out_channels=96,
             kernel_size=3,
             padding=1,
             stride=1,
-            groups=128,
+            groups=96,
         )  ## (1, 128, H, W)
 
         # 3. Linear 1x1 Conv2d
         self.pointwise_conv2d_linear = torch.nn.Conv2d(
-            in_channels=128, out_channels=32, kernel_size=1, stride=1, groups=1
+            in_channels=96, out_channels=16, kernel_size=1, stride=1, groups=1
         )  ## (1, 32, 81, 81)
 
     def get_inputs(self) -> Tuple[torch.Tensor]:
-        return (torch.randn(1, 32, 81, 81),)
+        return (torch.randn(1, 16, 81, 81),)
 
     def forward(self, x):
         input = x

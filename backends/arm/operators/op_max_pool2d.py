@@ -94,7 +94,9 @@ class MaxPool2dVisitor(NodeVisitor):
             kernel=kernel_size, stride=stride, pad=pad_size_list, nan_mode=1
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MAX_POOL2D,
             [input_tensor.name],
             [output.name],

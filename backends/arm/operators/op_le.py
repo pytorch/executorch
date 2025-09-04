@@ -67,7 +67,9 @@ class LessEqualVisitor(NodeVisitor):
             # Update IO
             input_nodes = rescaled_inputs
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().GREATER_EQUAL,
             [input_nodes[1].name, input_nodes[0].name],
             [output.name],
