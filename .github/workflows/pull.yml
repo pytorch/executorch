@@ -34,30 +34,30 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_wheel_package_qnn.sh
 
-  # test-setup-linux-gcc:
-  #   name: test-setup-linux-gcc
-  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-  #   permissions:
-  #     id-token: write
-  #     contents: read
-  #   strategy:
-  #     fail-fast: false
-  #   with:
-  #     runner: linux.2xlarge
-  #     docker-image: ci-image:executorch-ubuntu-22.04-gcc9
-  #     submodules: 'recursive'
-  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-  #     timeout: 90
-  #     script: |
-  #       # The generic Linux job chooses to use base env, not the one setup by the image
-  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-  #       conda activate "${CONDA_ENV}"
+  test-setup-linux-gcc:
+    name: test-setup-linux-gcc
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
 
-  #       BUILD_TOOL="cmake"
+        BUILD_TOOL="cmake"
 
-  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-  #       # Build and test ExecuTorch with the add model on portable backend.
-  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "add" "${BUILD_TOOL}" "portable"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+        # Build and test ExecuTorch with the add model on portable backend.
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "add" "${BUILD_TOOL}" "portable"
 
   # test-models-linux-basic:
   #   name: test-models-linux-basic

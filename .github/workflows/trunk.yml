@@ -1819,7 +1819,7 @@ jobs:
   #       chmod +x examples/selective_build/test_selective_build.sh
   #       examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
-        # Run MCU models
+  #       # Run MCU models
   #       chmod +x examples/arm/run_mcu_models_fvp.sh
   #       examples/arm/run_mcu_models_fvp.sh --target=cortex-m55
 
