@@ -26,7 +26,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55TransposeCheck,
     EthosU55ViewCheck,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -116,7 +116,7 @@ def tosa_support_factory(
 
     # Negative checks: Remove nodes from partitioning
     negative_checks: list[OperatorSupportBase] = [
-        CheckInt64Inputs(exported_program, reporter),
+        CheckInt64InputsAndOutputs(exported_program, reporter),
         CheckFloat64Inputs(exported_program, reporter),
         RankCheck(reporter, max_rank=5),
         *[
@@ -228,7 +228,6 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.var.correction,
             exir_ops.edge.aten.var.dim,
             exir_ops.edge.aten.view_copy.default,
-            exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.unsqueeze_copy.default,
             exir_ops.edge.aten.squeeze_copy.dims,
             exir_ops.edge.aten.pow.Tensor_Scalar,
@@ -263,6 +262,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.glu.default,
             exir_ops.edge.aten.logit.default,
             exir_ops.edge.aten.acos.default,
+            exir_ops.edge.aten.elu.default,
         ]
 
         return supported
@@ -454,7 +454,18 @@ class CheckProperQuantization(OperatorSupportBase):
         return True
 
 
-class CheckInt64Inputs(OperatorSupportBase):
+class CheckInt64InputsAndOutputs(OperatorSupportBase):
+    """TOSA does not support int64 tensors so in general, ops with int64 inputs or outputs should not be partitioned.
+    There are however some exceptions:
+        - Nodes with int64 output can be partitioned if they are constant, within int32,
+            and all users cast to something else. In this case, the int64 tensor can safely be cast to int32 AOT.
+        - Nodes with int64 output can be partitioned if all users are getitem with non-int64 output.
+            In this case, there are multiple outputs and the int64 ones are not used.
+        - Nodes with int64 inputs can be partitioned if the inputs are constant placeholders, or constant
+            ops fulfilling the criteria above.
+    Note that we don't check placeholders here, they are partitioned based on whether their users are partitioned
+    or not.
+    """
 
     def __init__(
         self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
@@ -465,27 +476,85 @@ class CheckInt64Inputs(OperatorSupportBase):
             if spec.kind == InputKind.USER_INPUT
         ]
         self.reporter = reporter
+        self.int32_min = torch.iinfo(torch.int32).min
+        self.int32_max = torch.iinfo(torch.int32).max
         super().__init__()
+
+    def inside_int32_bounds(self, node: torch.fx.Node) -> bool:
+        """Node is assumed to be call_function with int64 output."""
+        if isinstance(node.target, str):
+            return False
+        data = node.target(*node.args, **node.kwargs)
+        min_val, max_val = int(torch.min(data)), int(torch.max(data))
+        return min_val >= self.int32_min and max_val <= self.int32_max
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
 
-        for input_node in node.all_input_nodes:
-            # We can cast constant placeholders and constant ops AOT, such int64 are ok.
-            # Otherwise, don't partition if one or more inputs are int64.
+        vals = node.meta["val"]
+        tensor_list = vals if isinstance(vals, (list, tuple)) else [vals]
+
+        any_int64 = any(tensor.dtype == torch.int64 for tensor in tensor_list)
+        # Don't partition nodes with int64 output...
+        if any_int64:
+            # ... Except for constant ops that are directly cast to something non-int64.
+            # This could be an explicit cast, or something like a less than that outputs a different dtype than the input.
+            users_output_non_int64 = all(
+                get_first_fake_tensor(output_node).dtype != torch.int64
+                for output_node in node.users
+            )
             if (
-                input_node.name in self.input_names
-                or not input_node.op == "placeholder"
+                node.target in ComputeConstantOpsAOT.targeted_ops
+                and users_output_non_int64
             ):
-                tensor = get_first_fake_tensor(input_node)
-                if tensor.dtype == torch.int64:
-                    if input_node.target not in ComputeConstantOpsAOT.targeted_ops:
-                        self.reporter.report_reject(
-                            node,
-                            f"Had int64 input {input_node.name} that couldn't be handled.",
-                        )
-                        return False
+                if not self.inside_int32_bounds(node):
+                    self.reporter.report_reject(
+                        node, "Constant node outside int32 range."
+                    )
+                    return False
+                # Will never have input nodes, safe to return True
+                return True
+
+            # ... Or ops with multiple outputs where only non-int64 are used.
+            users_are_getitem = all(
+                user.target == operator.getitem for user in node.users
+            )
+            if users_are_getitem and users_output_non_int64:
+                # Passed output check, go to input check.
+                pass
+            else:
+                self.reporter.report_reject(
+                    node, "Non-constant node with int64 output."
+                )
+                return False
+
+        # Ops with int64 inputs are only partitioned if input nodes are constant and will be partitioned.
+        # If it is not partitioned, the partition will get an int64 input and fail.
+        for input_node in node.all_input_nodes:
+            tensor_in = get_first_fake_tensor(input_node)
+            if tensor_in.dtype != torch.int64:
+                continue
+            # Constant placeholder
+            if (
+                input_node.op != "call_function"
+                and input_node.name not in self.input_names
+            ):
+                continue
+            # Constant operator
+            if input_node.op == "call_function":
+                if input_node.target in ComputeConstantOpsAOT.targeted_ops:
+                    # This is not perfect since the input_node can still be rejected by other checks but
+                    # this should cover the majority of cases.
+                    if self.is_node_supported(
+                        None, input_node  # type: ignore[arg-type] #(we don't use 'submodules')
+                    ):
+                        continue
+            self.reporter.report_reject(
+                node, f"Non-constant int64 input {input_node.name}"
+            )
+            return False
+
         return True
 
 

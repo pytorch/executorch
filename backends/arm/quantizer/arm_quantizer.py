@@ -17,10 +17,10 @@ import functools
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
-from executorch.backends.arm._passes import ArmPassManager
 
 from executorch.backends.arm.quantizer import QuantizationConfig
-from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 
 from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
 from .quantization_annotator import annotate_graph
@@ -101,17 +101,19 @@ def get_symmetric_quantization_config(
     weight_observer_or_fake_quant_ctr: ObserverOrFakeQuantizeConstructor = (
         MinMaxObserver
     )
+
     # Determine the right observer/fake-quant constructor
     if is_qat:
-        # Set plain fake-quant with true min/max
-        weight_observer_or_fake_quant_ctr = FakeQuantize
+        if is_per_channel:
+            weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+        else:
+            # Set plain fake-quant with true min/max
+            weight_observer_or_fake_quant_ctr = FakeQuantize
     else:
         # PTQ: set min/max observer
         weight_observer_or_fake_quant_ctr = (
             PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
         )
-
-    extra_args = {"eps": 2**-12}
 
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
@@ -139,6 +141,86 @@ def get_symmetric_quantization_config(
             act_quantization_spec,
             weight_quantization_spec,
             bias_quantization_spec,
+        )
+    return quantization_config
+
+
+@functools.lru_cache
+def get_symmetric_a16w8_quantization_config(
+    is_per_channel: bool = True,
+    is_qat: bool = False,
+    is_dynamic: bool = False,
+    weight_qmin: int = -127,
+    weight_qmax: int = 127,
+):
+    """
+    16A8W quantization config: 16-bit activations, 8-bit weights.
+
+    This configuration provides better accuracy than 8A8W while maintaining
+    reasonable memory usage through 8-bit weights.
+
+    Args:
+        is_per_channel: Whether to use per-channel quantization for weights
+        is_qat: Whether this is for Quantization Aware Training
+        is_dynamic: Whether to use dynamic quantization
+        weight_qmin: Minimum quantization value for weights
+        weight_qmax: Maximum quantization value for weights
+
+    Returns:
+        QuantizationConfig with 16-bit activations and 8-bit weights
+    """
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+
+    # Setup observer/fake-quant for 16-bit activations
+    if is_qat:
+        if is_dynamic:
+            act_observer_or_fake_quant_ctr = FakeQuantize
+            dynamic_quant_observer = MovingAverageMinMaxObserver.with_args(
+                averaging_constant=1
+            )
+            extra_args["observer"] = dynamic_quant_observer
+        else:
+            act_observer_or_fake_quant_ctr = FusedMovingAvgObsFakeQuantize  # type: ignore[assignment]
+    else:
+        if is_dynamic:
+            act_observer_or_fake_quant_ctr = PlaceholderObserver  # type: ignore[assignment]
+        else:
+            # HistogramObserver works well for 16-bit range
+            act_observer_or_fake_quant_ctr = HistogramObserver  # type: ignore[assignment]
+
+    # 16-bit activation quantization spec
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.int16,
+        quant_min=torch.iinfo(torch.int16).min,  # -32768
+        quant_max=torch.iinfo(torch.int16).max,  # 32767
+        qscheme=torch.per_tensor_symmetric,
+        is_dynamic=is_dynamic,
+        observer_or_fake_quant_ctr=act_observer_or_fake_quant_ctr.with_args(
+            **extra_args,
+        ),
+    )
+
+    # Instead of reconstructing quantization_config, just clone and update as needed
+    # Clone the quantization_config from get_symmetric_quantization_config and update activation spec
+    base_config = get_symmetric_quantization_config(
+        is_per_channel=is_per_channel,
+        is_qat=is_qat,
+        is_dynamic=is_dynamic,
+    )
+    # Replace activation quantization spec with 16-bit version
+    if is_dynamic:
+        quantization_config = QuantizationConfig(
+            act_quantization_spec,  # 16-bit input activations
+            None,
+            base_config.weight,  # 8-bit weights from base config
+            None,
+        )
+    else:
+        quantization_config = QuantizationConfig(
+            act_quantization_spec,  # 16-bit input activations
+            act_quantization_spec,  # 16-bit output activations
+            base_config.weight,  # 8-bit weights from base config
+            None,
         )
     return quantization_config
 
@@ -288,6 +370,9 @@ class TOSAQuantizer(Quantizer):
         """An initial pass for transforming the graph to prepare it for annotation.
         Currently transforms scalar values to tensor attributes.
         """
+
+        # TODO: Fix the need to lazily import this.
+        from executorch.backends.arm._passes import ArmPassManager
 
         return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(  # type: ignore[arg-type]
             graph_module=model

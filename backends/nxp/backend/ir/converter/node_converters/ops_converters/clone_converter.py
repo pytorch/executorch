@@ -4,8 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
+    NodeConverter,
+)
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -21,7 +23,9 @@ class CloneConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         return _has_supported_memory_format(node)
 

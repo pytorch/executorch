@@ -20,7 +20,7 @@ import torch
 
 from executorch.backends.arm.arm_backend import is_tosa, is_vgf
 from executorch.backends.arm.test.conftest import is_option_enabled
-from executorch.backends.arm.tosa_specification import (
+from executorch.backends.arm.tosa.specification import (
     get_tosa_spec,
     Tosa_1_00,
     TosaSpecification,
@@ -130,28 +130,8 @@ def get_input_quantization_params(
     return quant_params
 
 
-def get_output_nodes(program: ExportedProgram) -> list[Node]:
-    """
-    Get output node to this model.
-
-    Args:
-        program (ExportedProgram): The program to get the output nodes from.
-    Returns:
-        The nodes that are the outputs of the 'program'.
-    """
-    output_nodes = []
-    for node in program.graph.nodes:
-        if node.op == "output":
-            for output in node.args[0]:
-                output_nodes.append(output)
-    if len(output_nodes) == 0:
-        raise RuntimeError("No output nodes found.")
-    else:
-        return output_nodes
-
-
 def get_output_quantization_params(
-    output_nodes: list[Node],
+    output_node: Node,
 ) -> dict[Node, QuantizationParams | None]:
     """
     Get output QuantizationParams from a program.
@@ -164,7 +144,7 @@ def get_output_quantization_params(
         RuntimeError if no output quantization parameters are found.
     """
     quant_params = {}
-    for node in output_nodes:
+    for node in output_node.args[0]:
         if node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default:
             quant_params[node] = QuantizationParams(
                 node_name=node.args[0].name,
@@ -277,10 +257,20 @@ def run_vkml_emulation_layer(
     result_stdout = result.stdout.decode()  # noqa: F841
     # TODO: MLETORCH-1234: Support VGF e2e tests in VgfPipeline
     # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
-    # TODO: Retrieve and return the output tensors once VGF runtime is able to dump them.
-    raise NotImplementedError(
-        "Output parsing from VKML Emulation Layer is not yet implemented. "
+    # Regex to extract tensor values from stdout
+    output_np = []
+    matches = re.findall(
+        r"Output\s+\d+:\s+tensor\(sizes=\[(.*?)\],\s+\[(.*?)\]\)",
+        result_stdout,
+        re.DOTALL,
     )
+
+    for shape_str, values_str in matches:
+        shape = list(map(int, shape_str.split(",")))
+        values = list(map(float, re.findall(r"[-+]?\d*\.\d+|\d+", values_str)))
+        output_np.append(torch.tensor(values).reshape(shape))
+
+    return tuple(output_np)
 
 
 def run_corstone(
@@ -411,9 +401,9 @@ def run_corstone(
             f"Corstone simulation failed:\ncmd: {' '.join(command_args)}\nlog: \n {result_stdout}\n{result.stderr.decode()}"
         )
 
-    output_nodes = get_output_nodes(exported_program)
     output_np = []
-    for i, node in enumerate(output_nodes):
+    output_node = exported_program.graph_module.graph.output_node()
+    for i, node in enumerate(output_node.args[0]):
         output_shape = node.meta["val"].shape
         output_dtype = node.meta["val"].dtype
         tosa_ref_output = np.fromfile(
@@ -646,7 +636,8 @@ def vkml_emulation_layer_installed() -> bool:
 def assert_elf_path_exists(elf_path):
     if not os.path.exists(elf_path):
         raise FileNotFoundError(
-            f"Did not find build arm_executor_runner or executor_runner in path {elf_path}, run setup_testing.sh?"
+            f"Did not find build arm_executor_runner or executor_runner in path {elf_path}, \
+            run setup_testing.sh or setup_testing_vkml.sh?"
         )
 
 
@@ -663,7 +654,7 @@ def get_elf_path(target_board):
         assert_elf_path_exists(elf_path)
     elif target_board == "vkml_emulation_layer":
         elf_path = os.path.join(
-            "cmake-out",
+            "arm_test/arm_executor_runner_vkml",
             "executor_runner",
         )
         assert_elf_path_exists(elf_path)
@@ -687,7 +678,6 @@ def run_tosa_graph(
 ) -> list[torch.Tensor]:
     """Runs the TOSA reference model with inputs and returns the result."""
     inputs_np = [input.numpy() for input in inputs]
-    transpose_data_format(inputs_np, to="NHWC")
 
     if isinstance(tosa_version, Tosa_1_00):
         import tosa_reference_model as reference_model
@@ -709,22 +699,7 @@ def run_tosa_graph(
         status == reference_model.GraphStatus.TOSA_VALID
     ), "Non-valid TOSA given to reference model."
 
-    transpose_data_format(outputs_np, to="NCHW")
     return [torch.from_numpy(output) for output in outputs_np]
-
-
-def transpose_data_format(data: list[np.ndarray], to: Literal["NHWC", "NCHW"]):
-    for i in range(len(data)):
-        if hasattr(data[i], "shape") and data[i].ndim in (4, 5):
-            match to:
-                case "NCHW":
-                    dim_order = (0, 3, 1, 2) if data[i].ndim == 4 else (0, 1, 4, 2, 3)
-                case "NHWC":
-                    dim_order = (0, 2, 3, 1) if data[i].ndim == 4 else (0, 1, 3, 4, 2)
-                case _:
-                    raise NotImplementedError(f"Cant transpose to dim order {to}")
-            # Copy is needed to force actual data conversion, not setting stride.
-            data[i] = np.transpose(data[i], dim_order).copy()
 
 
 def get_target_board(compile_spec: list[CompileSpec]) -> str | None:

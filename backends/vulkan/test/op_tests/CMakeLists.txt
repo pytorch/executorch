@@ -88,6 +88,12 @@ function(vulkan_op_test test_name test_src)
 endfunction()
 
 if(TARGET vulkan_backend AND LIB_TORCH)
+  add_library(test_utils ${CMAKE_CURRENT_SOURCE_DIR}/test_utils.cpp)
+  target_include_directories(test_utils PRIVATE ${COMMON_INCLUDES})
+  target_link_libraries(
+    test_utils PRIVATE vulkan_backend ${LIB_TORCH} ${LIB_TORCH_CPU}
+  )
+
   find_library(
     CUSTOM_OPS_LIB custom_ops_aot_lib
     HINTS ${CMAKE_INSTALL_PREFIX}/executorch/extension/llm/custom_ops
@@ -95,7 +101,7 @@ if(TARGET vulkan_backend AND LIB_TORCH)
   if(CUSTOM_OPS_LIB)
     vulkan_op_test(
       vulkan_sdpa_test ${CMAKE_CURRENT_SOURCE_DIR}/sdpa_test.cpp
-      ${CUSTOM_OPS_LIB}
+      ${CUSTOM_OPS_LIB} test_utils
     )
   else()
     message(
@@ -104,10 +110,11 @@ if(TARGET vulkan_backend AND LIB_TORCH)
   endif()
   vulkan_op_test(
     vulkan_rope_test ${CMAKE_CURRENT_SOURCE_DIR}/rotary_embedding_test.cpp
+    test_utils
   )
   vulkan_op_test(
-    vulkan_linear_weight_int4_test
-    ${CMAKE_CURRENT_SOURCE_DIR}/linear_weight_int4_test.cpp
+    quantized_linear_test ${CMAKE_CURRENT_SOURCE_DIR}/quantized_linear_test.cpp
+    test_utils
   )
 
   # Only build generated op tests if a path to tags.yaml and

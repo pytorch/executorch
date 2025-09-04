@@ -263,6 +263,7 @@ def define_common_targets(is_fbcode = False):
             ],
             exported_deps = [
                 ":vulkan_graph_runtime_shaderlib{}".format(suffix),
+                "//executorch/runtime/backend:interface",
             ],
             define_static_target = True,
             # Static initialization is used to register operators to the global operator registry,
@@ -303,8 +304,8 @@ def define_common_targets(is_fbcode = False):
                 ":vulkan_graph_runtime{}".format(suffix),
                 "//executorch/backends/vulkan/serialization:vk_delegate_schema",
                 "//executorch/runtime/core:event_tracer",
-                "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core/exec_aten/util:tensor_util",
+                "//executorch/runtime/core:named_data_map",
             ],
             define_static_target = True,
             # VulkanBackend.cpp needs to compile with executor as whole
@@ -386,6 +387,8 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/transforms:view_copy_to_squeeze_unsqueeze",
                 "//executorch/backends/vulkan/_passes:vulkan_passes",
                 "//executorch/backends/vulkan/serialization:lib",
+                "//executorch/backends/transforms:remove_getitem_op",
+                "//executorch/backends/xnnpack/_passes:xnnpack_passes",
                 "//executorch/exir/backend:backend_details",
             ],
         )

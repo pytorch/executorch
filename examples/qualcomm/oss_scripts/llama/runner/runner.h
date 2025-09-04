@@ -21,6 +21,7 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/token_generator.h>
+#include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
@@ -31,7 +32,9 @@ enum DecoderModelVersion {
   kLlama2 = 0,
   kLlama3,
   kQwen2_5,
+  kQwen3,
   kPhi4,
+  kSmollm2_135m
 };
 
 enum KvBitWidth {
@@ -40,7 +43,7 @@ enum KvBitWidth {
 };
 
 template <typename T>
-class Runner {
+class Runner : public executorch::extension::llm::IRunner {
  public:
   explicit Runner(
       std::unique_ptr<executorch::extension::Module> module,
@@ -50,25 +53,36 @@ class Runner {
       const std::string& performance_output_path,
       const std::string& dump_logits_path,
       const float temperature = 0.8f,
-      const int eval_mode = EvalMode::kKVCached,
+      const int eval_mode = EvalMode::kHybrid,
       const std::string& kv_updater = "SmartMask",
       const int ngram = 0,
       const int window = 0,
       const int gcap = 0,
       std::unique_ptr<tokenizers::Tokenizer> tokenizer = nullptr);
 
-  bool is_loaded() const;
-  executorch::runtime::Error load();
+  bool is_loaded() const override;
+  executorch::runtime::Error load() override;
   // TODO: Support echo and warming
   executorch::runtime::Error generate(
       const std::string& prompt,
-      bool tokenized_prompt,
-      int32_t seq_len,
+      const executorch::extension::llm::GenerationConfig& config,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const executorch::llm::Stats&)> stats_callback = {},
-      bool echo = true,
-      bool warming = false);
-  void stop() {};
+      std::function<void(const executorch::llm::Stats&)> stats_callback = {})
+      override;
+  executorch::runtime::Error generate_from_pos(
+      const std::string& prompt,
+      int64_t start_pos,
+      const executorch::extension::llm::GenerationConfig& config,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const executorch::llm::Stats&)> stats_callback = {})
+      override;
+  executorch::runtime::Error generate_from_prompt_or_file(
+      const std::string& prompt,
+      bool tokenized_prompt,
+      const executorch::extension::llm::GenerationConfig& config,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const executorch::llm::Stats&)> stats_callback = {});
+  void stop() override {};
   executorch::runtime::Result<DecoderModelVersion> get_decoder_model_version();
 
  private:

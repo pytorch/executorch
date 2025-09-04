@@ -16,6 +16,7 @@ using executorch::extension::llm::make_image_input;
 using executorch::extension::llm::make_text_input;
 using executorch::extension::llm::MultimodalInput;
 
+namespace {
 class MultimodalInputTest : public Test {
  protected:
   std::string createTestText() {
@@ -430,3 +431,4 @@ TEST_F(MultimodalInputTest, AssignmentBetweenTypes) {
   EXPECT_TRUE(input.is_text());
   EXPECT_EQ(input.get_text(), text);
 }
+} // namespace

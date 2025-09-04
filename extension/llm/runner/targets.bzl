@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
     runtime.cxx_library(
@@ -32,7 +32,7 @@ def define_common_targets():
         ],
     )
 
-    for aten in (True, False):
+    for aten in get_aten_mode_options():
         aten_suffix = "_aten" if aten else ""
 
         runtime.cxx_library(
@@ -98,6 +98,8 @@ def define_common_targets():
         runtime.cxx_library(
             name = "multimodal_runner_lib" + aten_suffix,
             exported_headers = [
+                "audio.h",
+                "image.h",
                 "multimodal_input.h",
                 "multimodal_runner.h",
                 "multimodal_prefiller.h",
@@ -124,6 +126,7 @@ def define_common_targets():
             srcs = [
                 "text_llm_runner.cpp",
                 "llm_runner_helper.cpp",
+                "multimodal_runner.cpp",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
@@ -142,6 +145,7 @@ def define_common_targets():
                 "//pytorch/tokenizers:hf_tokenizer",
                 "//pytorch/tokenizers:llama2c_tokenizer",
                 "//pytorch/tokenizers:sentencepiece",
+                "//pytorch/tokenizers:tekken",
                 "//pytorch/tokenizers:tiktoken",
             ],
         )

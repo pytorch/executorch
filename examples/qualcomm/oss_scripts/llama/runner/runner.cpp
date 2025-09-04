@@ -9,6 +9,7 @@
 // A llama 3.2 runner that includes preprocessing and post processing
 // logic. The module takes in a string as input and emits a string as output.
 
+#include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/client_mem.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.h>
@@ -58,7 +59,7 @@ void print_performance_report(
     outfile << num_tok;
     outfile.close();
   } else {
-    ET_CHECK_MSG(false, "Error saving the inference speed file");
+    ET_LOG(Error, "Error saving the inference speed file");
   }
 }
 
@@ -82,13 +83,6 @@ void save_logits(
 }
 
 } // namespace
-
-std::unique_ptr<::tokenizers::Tokenizer> load_llama_tokenizer(
-    const std::string& tokenizer_path,
-    Version version) {
-  auto special_tokens = get_special_tokens(version);
-  return llm::load_tokenizer(tokenizer_path, std::move(special_tokens));
-}
 
 template <typename T>
 Runner<T>::Runner(
@@ -130,8 +124,12 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama3;
   } else if (decoder_model_version == "qwen2_5") {
     decoder_model_version_ = DecoderModelVersion::kQwen2_5;
+  } else if (decoder_model_version == "qwen3") {
+    decoder_model_version_ = DecoderModelVersion::kQwen3;
   } else if (decoder_model_version == "phi_4_mini") {
     decoder_model_version_ = DecoderModelVersion::kPhi4;
+  } else if (decoder_model_version == "smollm2_135m") {
+    decoder_model_version_ = DecoderModelVersion::kSmollm2_135m;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -179,7 +177,8 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|eot|>", 0, 0).get()[0]);
     eos_ids->insert(tokenizer_->encode("<|end_of_text|>", 0, 0).get()[0]);
   } else {
-    tokenizer_ = load_llama_tokenizer(tokenizer_path_, Version::Default);
+    tokenizer_ =
+        example::load_llama_tokenizer(tokenizer_path_, Version::Default);
     if (tokenizer_ == nullptr) {
       ET_LOG(
           Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());
@@ -191,7 +190,10 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kPhi4) {
     eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
+  } else if (decoder_model_version_ == DecoderModelVersion::kQwen3) {
+    eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
   }
+
   // Try avoid getMetadataHelper as it is time consuming.
   Result<MethodMeta> method_meta =
       module_->method_meta(token_generator_method_name);
@@ -322,12 +324,31 @@ Error Runner<T>::load() {
 template <typename T>
 Error Runner<T>::generate(
     const std::string& prompt,
-    bool tokenized_prompt,
-    int32_t seq_len,
+    const llm::GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback,
-    bool echo,
-    bool warming) {
+    std::function<void(const Stats&)> stats_callback) {
+  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
+}
+
+template <typename T>
+Error Runner<T>::generate_from_pos(
+    const std::string& prompt,
+    int64_t start_pos,
+    const llm::GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
+  // TODO: currently only support start_pos == 0
+  return generate_from_prompt_or_file(
+      prompt, false, config, token_callback, stats_callback);
+}
+
+template <typename T>
+Error Runner<T>::generate_from_prompt_or_file(
+    const std::string& prompt,
+    bool tokenized_prompt,
+    const llm::GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
   ET_CHECK_MSG(!prompt.empty(), "prompt cannot be null");
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
@@ -336,6 +357,7 @@ Error Runner<T>::generate(
   }
   stats_.inference_start_ms = time_in_ms();
 
+  int32_t seq_len = config.seq_len;
   seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
   int32_t n_bos = (cur_pos_ == 0) ? 1 : 0;
 
@@ -374,7 +396,7 @@ Error Runner<T>::generate(
       "sequence length exceeded - please increase the seq_len value");
 
   // Prompt Processor first
-  if (token_callback) {
+  if (token_callback && config.echo) {
     token_callback(prompt);
   }
   bool dump_logits = dump_logits_path_.empty() ? false : true;

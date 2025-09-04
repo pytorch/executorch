@@ -475,16 +475,26 @@ struct ET_EXPERIMENTAL JsMethodMeta {
         val::array(),
         meta.num_instructions()};
     for (int i = 0; i < meta.num_inputs(); i++) {
-      js_array_push(new_meta.input_tags, meta.input_tag(i).get());
-      js_array_push(
-          new_meta.input_tensor_meta,
-          JsTensorInfo::from_tensor_info(meta.input_tensor_meta(i).get()));
+      Tag tag = meta.input_tag(i).get();
+      js_array_push(new_meta.input_tags, tag);
+      if (tag == Tag::Tensor) {
+        js_array_push(
+            new_meta.input_tensor_meta,
+            JsTensorInfo::from_tensor_info(meta.input_tensor_meta(i).get()));
+      } else {
+        js_array_push(new_meta.input_tensor_meta, val::undefined());
+      }
     }
     for (int i = 0; i < meta.num_outputs(); i++) {
-      js_array_push(new_meta.output_tags, meta.output_tag(i).get());
-      js_array_push(
-          new_meta.output_tensor_meta,
-          JsTensorInfo::from_tensor_info(meta.output_tensor_meta(i).get()));
+      Tag tag = meta.output_tag(i).get();
+      js_array_push(new_meta.output_tags, tag);
+      if (tag == Tag::Tensor) {
+        js_array_push(
+            new_meta.output_tensor_meta,
+            JsTensorInfo::from_tensor_info(meta.output_tensor_meta(i).get()));
+      } else {
+        js_array_push(new_meta.output_tensor_meta, val::undefined());
+      }
     }
     for (int i = 0; i < meta.num_attributes(); i++) {
       js_array_push(

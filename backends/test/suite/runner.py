@@ -15,6 +15,7 @@ import torch
 # Set of unsupported ops that should cause tests to be skipped
 UNSUPPORTED_PORTABLE_OPS = {
     "aten::_embedding_bag",
+    "aten::_adaptive_avg_pool2d",
     "aten::median",
     "aten::median.dim",
     "aten::round.decimals",

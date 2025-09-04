@@ -266,6 +266,7 @@ _one_to_one = [
     torch.ops.aten.erf.default,
     torch.ops.aten.exp.default,
     torch.ops.aten.expm1.default,
+    torch.ops.aten.elu.default,
     torch.ops.aten.floor.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
@@ -339,6 +340,10 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.unflatten.int,
     torch.ops.aten.index_select.default,
     torch.ops.aten.index.Tensor,
+    # Neg operator flips the range, but keps the magnitude the same.
+    # That is why we force it to use the same qparams and avoid
+    # dequant -> neg -> requant chain.
+    torch.ops.aten.neg.default,
 ]
 
 _one_to_one_shared_input_or_input_act_qspec = [
@@ -468,6 +473,10 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
+        torch.ops.aten.add.Tensor,
+        torch.ops.aten.add_.Tensor,
+        torch.ops.aten.sub.Tensor,
+        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.matmul.default,
         torch.ops.aten.mm.default,
         torch.ops.aten.bmm.default,
@@ -480,10 +489,6 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
-        torch.ops.aten.add.Tensor,
-        torch.ops.aten.add_.Tensor,
-        torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
     ):
@@ -540,9 +545,6 @@ def get_quant_properties(  # noqa: C901
             )
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
-    elif node.target in (torch.ops.aten.neg.default,):
-        quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
-        quant_properties.quant_output = _QuantProperty(0, input_act_qspec)
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)

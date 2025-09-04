@@ -351,6 +351,138 @@ void quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor_out(
       out);
 }
 
+void quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    int64_t weight_zero_point,
+    double bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    __ET_UNUSED int64_t out_multiplier,
+    __ET_UNUSED int64_t out_shift,
+    Tensor& out) {
+  quantized_conv_nhwc(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out);
+}
+
+void quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    int64_t weight_zero_point,
+    double bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    __ET_UNUSED int64_t out_multiplier,
+    __ET_UNUSED int64_t out_shift,
+    Tensor& out) {
+  quantized_conv_nhwc(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out);
+}
+
+void quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    int64_t weight_zero_point,
+    double bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    __ET_UNUSED int64_t out_multiplier,
+    __ET_UNUSED int64_t out_shift,
+    Tensor& out) {
+  quantized_conv_nhwc(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out);
+}
+
+void quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out(
+    __ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    int64_t weight_zero_point,
+    double bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    __ET_UNUSED int64_t out_multiplier,
+    __ET_UNUSED int64_t out_shift,
+    Tensor& out) {
+  quantized_conv_nhwc(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out);
+}
+
 } // namespace native
 } // namespace reference
 } // namespace impl

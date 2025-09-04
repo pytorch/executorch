@@ -85,6 +85,21 @@ class CompileTimeTypeDispatchPass(ExportPass):
                 (torch.uint8,): "asym8u_asym8u",
             },
         ),
+        exir_ops.edge.cadence.quantized_add.per_tensor: OpConfig(
+            "quantized_add",
+            type_dispatch_suffixes={
+                (torch.int8, torch.int8): "asym8sxasym8s_asym8s",
+                (torch.uint8, torch.uint8): "asym8uxasym8u_asym8u",
+            },
+            weight_arg_idx=3,
+        ),
+        exir_ops.edge.aten._softmax.default: OpConfig(
+            "_softmax",
+            type_dispatch_suffixes={
+                (torch.float32,): "f32_f32",
+            },
+            variant="default",
+        ),
     }
 
     def call_operator(
@@ -112,7 +127,30 @@ class CompileTimeTypeDispatchPass(ExportPass):
             raise RuntimeError(f"Unsupported input types for {op}: {dtype_key}")
 
         type_suffix = config.type_dispatch_suffixes[dtype_key]
-        typed_op_name = f"{config.base_name}_{type_suffix}"
+        base_name = config.base_name
+
+        if op in [
+            exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
+            exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
+        ]:
+            groups = args[6]
+            input_channels = (
+                args[0].to_tensor().shape[1]
+                if op == exir_ops.edge.cadence.quantized_conv_nchw.per_tensor
+                else args[0].to_tensor().shape[-1]
+            )
+            is_depthwise = groups == input_channels
+
+            dilation = args[5]
+            # pyre-ignore[16]: None has no attribute '__iter__'.
+            is_dilated = any(d > 1 for d in dilation)
+
+            if is_dilated:
+                type_suffix = f"dilated_{type_suffix}"
+            elif is_depthwise:
+                type_suffix = f"depthwise_{type_suffix}"
+
+        typed_op_name = f"{base_name}_{type_suffix}"
 
         typed_op = getattr(
             getattr(exir_ops.edge.cadence, typed_op_name), config.variant

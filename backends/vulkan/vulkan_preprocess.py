@@ -13,9 +13,6 @@ from typing import Any, Dict, final, List
 import executorch.backends.vulkan.utils as utils
 
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
-from executorch.backends.transforms.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
-)
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
@@ -40,6 +37,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
 )
+from executorch.backends.xnnpack._passes import FuseBatchNormPass
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -162,7 +160,7 @@ class VulkanBackend(BackendDetails):
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
-                FuseBatchNormWithConvPass(program),
+                FuseBatchNormPass(program),
                 FuseClampPass(),
             ],
         )
@@ -229,4 +227,5 @@ class VulkanBackend(BackendDetails):
                 vk_graph, graph_builder.const_tensors, []
             ),
             debug_handle_map=graph_builder.delegate_mapping_builder.get_delegate_mapping(),
+            data_store_output=graph_builder.named_data_store.get_named_data_store_output(),
         )

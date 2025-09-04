@@ -22,6 +22,7 @@
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 #endif // ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/profiler.h>
 
@@ -47,6 +48,7 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::kTensorDimensionLimit;
+using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 
@@ -65,14 +67,6 @@ using VkValuesVector =
 using BytesVector =
     const flatbuffers::Vector<flatbuffers::Offset<vkgraph::VkBytes>>*;
 using UIntVector = const flatbuffers::Vector<uint32_t>*;
-
-const uint8_t* get_constant_data_ptr(
-    VkGraphPtr flatbuffer_graph,
-    const int32_t buffer_idx,
-    const uint8_t* constant_data) {
-  VkBytesPtr constant_bytes = flatbuffer_graph->constants()->Get(buffer_idx);
-  return constant_data + constant_bytes->offset();
-}
 
 vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
   switch (vk_datatype) {
@@ -166,6 +160,8 @@ class GraphBuilder {
   ComputeGraph* compute_graph_;
   VkGraphPtr flatbuffer_;
   const uint8_t* constant_data_;
+  const NamedDataMap* named_data_map_;
+  std::vector<FreeableBuffer> loaded_buffers_from_map_;
 
   std::vector<ValueRef> ref_mapping_;
 
@@ -173,10 +169,13 @@ class GraphBuilder {
   explicit GraphBuilder(
       ComputeGraph* compute_graph,
       VkGraphPtr flatbuffer,
-      const uint8_t* constant_data)
+      const uint8_t* constant_data,
+      const NamedDataMap* named_data_map)
       : compute_graph_(compute_graph),
         flatbuffer_(flatbuffer),
         constant_data_(constant_data),
+        named_data_map_(named_data_map),
+        loaded_buffers_from_map_(),
         ref_mapping_() {}
 
   void resize(uint32_t size) {
@@ -212,10 +211,27 @@ class GraphBuilder {
 
     ValueRef ref;
     if (tensor_fb->constant_id() >= 0) {
-      const uint8_t* tensor_data = get_constant_data_ptr(
-          flatbuffer_, tensor_fb->constant_id(), constant_data_);
+      VkBytesPtr constant_bytes =
+          flatbuffer_->constants()->Get(tensor_fb->constant_id());
 
-      ref = compute_graph_->add_tensorref(dims_vector, dtype, tensor_data);
+      if (constant_bytes->named_key() != nullptr &&
+          constant_bytes->offset() == UINT64_MAX &&
+          named_data_map_ != nullptr) {
+        const std::string& data_name = constant_bytes->named_key()->str();
+        Result<FreeableBuffer> buffer =
+            named_data_map_->get_data(data_name.c_str());
+
+        VK_CHECK_COND(
+            buffer.ok(),
+            "Failed to get constant data for key %s from named_data_map. Error code: %u",
+            data_name.c_str(),
+            static_cast<uint32_t>(buffer.error()));
+        ref = compute_graph_->add_tensorref(
+            dims_vector, dtype, std::move(buffer.get()));
+      } else {
+        const uint8_t* tensor_data = constant_data_ + constant_bytes->offset();
+        ref = compute_graph_->add_tensorref(dims_vector, dtype, tensor_data);
+      }
     } else {
       ref = compute_graph_->add_tensor(
           dims_vector,
@@ -479,8 +495,10 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     return true;
   }
 
-  ET_NODISCARD Error
-  compileModel(const void* buffer_pointer, ComputeGraph* compute_graph) const {
+  ET_NODISCARD Error compileModel(
+      const void* buffer_pointer,
+      ComputeGraph* compute_graph,
+      const NamedDataMap* named_data_map) const {
     Result<VulkanDelegateHeader> header =
         VulkanDelegateHeader::parse(buffer_pointer);
 
@@ -506,7 +524,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     VkGraphPtr flatbuffer_graph = vkgraph::GetVkGraph(flatbuffer_data);
 
-    GraphBuilder builder(compute_graph, flatbuffer_graph, constant_data);
+    GraphBuilder builder(
+        compute_graph, flatbuffer_graph, constant_data, named_data_map);
 
     builder.build_graph();
 
@@ -532,7 +551,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     graph_config.external_adapter = vkapi::set_and_get_external_adapter();
     new (compute_graph) ComputeGraph(graph_config);
 
-    Error err = compileModel(processed->data(), compute_graph);
+    const NamedDataMap* named_data_map = context.get_named_data_map();
+    Error err = compileModel(processed->data(), compute_graph, named_data_map);
 
     // This backend does not need its processed data after compiling the
     // model.

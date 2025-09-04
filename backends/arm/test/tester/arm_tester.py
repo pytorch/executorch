@@ -48,7 +48,6 @@ from executorch.backends.arm.quantizer import (
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
     get_elf_path,
-    get_output_nodes,
     get_output_quantization_params,
     get_target_board,
     run_target,
@@ -59,9 +58,10 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
 )
-from executorch.backends.arm.tosa_mapping import extract_tensor_meta
-from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import extract_tensor_meta
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 
 from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 
@@ -484,9 +484,8 @@ class ArmTester(Tester):
             reference_stage = self.stages[StageType.INITIAL_MODEL]
 
         exported_program = self.stages[StageType.EXPORT].artifact
-        output_nodes = get_output_nodes(exported_program)
-
-        output_qparams = get_output_quantization_params(output_nodes)
+        output_node = exported_program.graph_module.graph.output_node()
+        output_qparams = get_output_quantization_params(output_node)
 
         quantization_scales = []
         for node in output_qparams:

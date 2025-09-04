@@ -26,6 +26,8 @@ using executorch::extension::llm::TextTokenGenerator;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
+
+namespace {
 // Mock classes for dependencies
 class MockTokenizer : public ::tokenizers::Tokenizer {
  public:
@@ -217,14 +219,17 @@ TEST_F(RunnerTest, GenerateCallsCallbackExactlyMaxNewTokensTimes) {
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
   // Create a Runner with our mocked components
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
   TextLLMRunner runner(
       createDefaultMetadata(),
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
-      std::make_unique<MockModule>(),
+      std::move(module),
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
-      std::make_unique<executorch::extension::llm::IOManager>(),
+      std::move(io_manager),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -282,14 +287,17 @@ TEST_F(RunnerTest, WarmupCallsGenerateWithWarmingFlag) {
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
   // Create a Runner with our mocked components
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
   TextLLMRunner runner(
       createDefaultMetadata(),
       std::move(tokenizer),
-      std::make_unique<MockModule>(),
+      std::move(module),
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
-      std::make_unique<executorch::extension::llm::IOManager>(),
+      std::move(io_manager),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -317,14 +325,17 @@ TEST_F(RunnerTest, IsLoadedReturnsTrueWhenComponentsInitialized) {
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
   // Create a Runner with our mocked components
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
   TextLLMRunner runner(
       createDefaultMetadata(),
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
-      std::make_unique<MockModule>(),
+      std::move(module),
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
-      std::make_unique<executorch::extension::llm::IOManager>(),
+      std::move(io_manager),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -359,6 +370,9 @@ TEST_F(RunnerTest, GenerateFromPosErrorsWithNegativeMaxNewTokens) {
       tokenizer.get(), text_decoder_runner.get(), stats.get());
 
   // Create a Runner with our mocked components
+  auto module = std::make_unique<MockModule>();
+  auto io_manager =
+      std::make_unique<executorch::extension::llm::IOManager>(*module);
   TextLLMRunner runner(
       {
           {"enable_dynamic_shape", false},
@@ -367,11 +381,11 @@ TEST_F(RunnerTest, GenerateFromPosErrorsWithNegativeMaxNewTokens) {
           {"use_kv_cache", true},
       },
       std::unique_ptr<::tokenizers::Tokenizer>(tokenizer.release()),
-      std::make_unique<MockModule>(),
+      std::move(module),
       std::move(text_decoder_runner),
       std::unique_ptr<::executorch::extension::llm::TextPrefiller>(
           text_prefiller.release()),
-      std::make_unique<executorch::extension::llm::IOManager>(),
+      std::move(io_manager),
       std::move(text_token_generator),
       std::move(stats));
 
@@ -392,3 +406,4 @@ TEST_F(RunnerTest, GenerateFromPosErrorsWithNegativeMaxNewTokens) {
   // Verify that an InvalidArgument error is returned
   EXPECT_EQ(err, Error::InvalidArgument);
 }
+} // namespace
