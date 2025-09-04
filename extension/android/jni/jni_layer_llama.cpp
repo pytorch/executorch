@@ -13,11 +13,13 @@
 #include <unordered_map>
 #include <vector>
 
-#include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
-#include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
+#include <executorch/extension/llm/runner/multimodal_runner.h>
+#include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -174,11 +176,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       std::optional<const std::string> data_path_str = data_path
           ? std::optional<const std::string>{data_path->toStdString()}
           : std::nullopt;
-      // TODO(larryliu0820): Use the API in text_llm_runner.h to create the
-      // runner.
-      runner_ = example::create_llama_runner(
+      runner_ = executorch::extension::llm::create_text_llm_runner(
           model_path->toStdString(),
-          tokenizer_path->toStdString(),
+          llm::load_tokenizer(tokenizer_path->toStdString()),
           data_path_str);
 #if defined(EXECUTORCH_BUILD_QNN)
     } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {

@@ -35,7 +35,7 @@ class TestTorchOps(unittest.TestCase):
 
     def _get_test_model(self):
         model = torch.nn.Sequential(
-            torch.nn.Embedding(64, 128), torch.nn.Linear(128, 128), torch.nn.ReLU()
+            torch.nn.Embedding(64, 128), torch.nn.Linear(128, 256), torch.nn.ReLU()
         )
         example_inputs = (torch.LongTensor([0]),)
         return model, example_inputs
@@ -158,11 +158,7 @@ class TestTorchOps(unittest.TestCase):
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
 
-    @unittest.skipIf(
-        not hasattr(torch.version, "git_version"),
-        "Enable in fbcode once D79658061 lands",
-    )
-    def test_dequantize_codebook_linear(self):
+    def test_dequantize_codebook_linear_per_grouped_col(self):
         model, example_inputs = self._get_test_model()
         quantize_(
             model,
@@ -189,15 +185,66 @@ class TestTorchOps(unittest.TestCase):
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
 
-    @unittest.skipIf(
-        not hasattr(torch.version, "git_version"),
-        "Enable in fbcode once D79658061 lands",
-    )
-    def test_dequantize_codebook_embedding(self):
+    def test_dequantize_codebook_linear_per_grouped_row(self):
+        model, example_inputs = self._get_test_model()
+        quantize_(
+            model,
+            CodebookWeightOnlyConfig(dtype=torch.uint2, block_size=[16, -1]),
+        )
+        ep = torch.export.export(model, example_inputs)
+        assert "torch.ops.quant.dequantize_codebook.default" in ep.graph_module.code
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            ep,
+            partitioner=[self._coreml_partitioner()],
+        )
+        for node in delegated_program.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "executorch_call_delegate",
+                    "getitem",
+                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+
+        assert (
+            "executorch.exir.dialects.edge._ops.quant.dequantize_codebook.default"
+            in format_delegated_graph(delegated_program.exported_program().graph_module)
+        )
+
+        et_prog = delegated_program.to_executorch()
+        self._compare_outputs(et_prog, model, example_inputs)
+
+    def test_dequantize_codebook_embedding_per_grouped_col(self):
         model, example_inputs = self._get_test_model()
         quantize_(
             model,
             CodebookWeightOnlyConfig(dtype=torch.uint3, block_size=[-1, 16]),
+            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        )
+        ep = torch.export.export(model, example_inputs)
+        assert "torch.ops.quant.dequantize_codebook.default" in ep.graph_module.code
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            ep,
+            partitioner=[self._coreml_partitioner()],
+        )
+        for node in delegated_program.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "executorch_call_delegate",
+                    "getitem",
+                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+
+        assert (
+            "executorch.exir.dialects.edge._ops.quant.dequantize_codebook.default"
+            in format_delegated_graph(delegated_program.exported_program().graph_module)
+        )
+
+        et_prog = delegated_program.to_executorch()
+        self._compare_outputs(et_prog, model, example_inputs)
+
+    def test_dequantize_codebook_embedding_per_grouped_row(self):
+        model, example_inputs = self._get_test_model()
+        quantize_(
+            model,
+            CodebookWeightOnlyConfig(dtype=torch.uint3, block_size=[16, -1]),
             lambda m, fqn: isinstance(m, torch.nn.Embedding),
         )
         ep = torch.export.export(model, example_inputs)
@@ -229,5 +276,7 @@ if __name__ == "__main__":
     test_runner.test_dequantize_affine_c4w_embedding()
     test_runner.test_dequantize_affine_c4w_linear()
     test_runner.test_dequantize_affine_c8w_embedding_b4w_linear()
-    test_runner.test_dequantize_codebook_linear()
-    test_runner.test_dequantize_codebook_embedding()
+    test_runner.test_dequantize_codebook_linear_per_grouped_col()
+    test_runner.test_dequantize_codebook_linear_per_grouped_row()
+    test_runner.test_dequantize_codebook_embedding_per_grouped_col()
+    test_runner.test_dequantize_codebook_embedding_per_grouped_row()

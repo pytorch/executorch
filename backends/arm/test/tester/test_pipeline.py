@@ -22,6 +22,7 @@ from typing import (
 
 import torch
 
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -339,6 +340,7 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
@@ -355,7 +357,9 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         tosa_version = conftest.get_option("tosa_version")
 
         compile_spec = common.get_tosa_compile_spec(
-            tosa_profiles[tosa_version], custom_path=custom_path
+            tosa_profiles[tosa_version],
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
         )
 
         quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
@@ -441,6 +445,7 @@ class TosaPipelineFP(TOSAPipelineMaker, Generic[T]):
         run_on_tosa_ref_model: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 0,
@@ -460,7 +465,9 @@ class TosaPipelineFP(TOSAPipelineMaker, Generic[T]):
         tosa_version = conftest.get_option("tosa_version")
 
         compile_spec = common.get_tosa_compile_spec(
-            tosa_profiles[tosa_version], custom_path=custom_path
+            tosa_profiles[tosa_version],
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
         )
         super().__init__(
             module,
@@ -519,11 +526,15 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
     ):
-        compile_spec = common.get_u55_compile_spec(custom_path=custom_path)
+        compile_spec = common.get_u55_compile_spec(
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
+        )
         quantizer = EthosUQuantizer(compile_spec)
         quantization_config = get_symmetric_quantization_config(
             is_per_channel=per_channel_quantization
@@ -606,11 +617,15 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
     ):
-        compile_spec = common.get_u85_compile_spec(custom_path=custom_path)
+        compile_spec = common.get_u85_compile_spec(
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
+        )
         quantizer = EthosUQuantizer(compile_spec)
         quantization_config = get_symmetric_quantization_config(
             is_per_channel=per_channel_quantization
@@ -892,9 +907,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
        if not using use_edge_to_transform_and_lower.
 
-       run_on_vulkan_runtime: Partially supported. However, comparison between reference and model
-       outputs is expected to fail, as the VGF runtime doesn't dump the output tensors in a usable
-       format at the moment.
+       run_on_vulkan_runtime: Set to true to test VGF output on VKML runtime.
 
        vgf_compiler_flags: Optional compiler flags.
 
@@ -917,6 +930,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
@@ -933,7 +947,10 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
             tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
         )
         compile_spec = common.get_vgf_compile_spec(
-            tosa_spec, compiler_flags=vgf_compiler_flags, custom_path=custom_path
+            tosa_spec,
+            compiler_flags=vgf_compiler_flags,
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
         )
 
         super().__init__(

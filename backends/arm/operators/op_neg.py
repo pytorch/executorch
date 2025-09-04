@@ -82,7 +82,9 @@ class NegVisitor(NodeVisitor):
             (1,), output.dtype, [output_zp], name=output.name + "_output_zp"
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().NEGATE,
             [inputs[0].name, input_zp_tensor.name, output_zp_tensor.name],
             [output.name],

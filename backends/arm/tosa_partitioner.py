@@ -9,11 +9,14 @@ import logging
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
-from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.arm_backend import (
     is_tosa,
 )  # usort: skip
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
+    calculate_multiples,
+)
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
@@ -26,12 +29,28 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
-
 logger = logging.getLogger(__name__)
+
+
+def is_noop_clone(node: torch.fx.node.Node) -> bool:
+    return node.target == exir_ops.edge.aten.clone.default
+
+
+def is_noop_alias_copy(node: torch.fx.node.Node) -> bool:
+    return node.target == exir_ops.edge.aten.alias_copy.default
+
+
+def is_noop_expand(node: torch.fx.node.Node) -> bool:
+    if node.target != exir_ops.edge.aten.expand_copy.default:
+        return False
+    else:
+        multiples = calculate_multiples(node.args)
+    return all(m == 1 for m in multiples)
 
 
 class TOSAPartitioner(Partitioner):
@@ -50,7 +69,7 @@ class TOSAPartitioner(Partitioner):
         # subgraphs containing the nodes with the tags
 
         logger.info("TOSAPartitioner::partition")
-        partition_tags = {}
+        partition_tags: dict[str, DelegationSpec] = {}
 
         tosa_spec = get_tosa_spec(self.delegation_spec.compile_specs)
 
@@ -66,6 +85,17 @@ class TOSAPartitioner(Partitioner):
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
+
+        def reject_partition(reason: str, partition, tag) -> None:
+            for node in partition.nodes:
+                if "delegation_tag" in node.meta:
+                    del node.meta["delegation_tag"]
+                    reporter.report_reject(
+                        node,
+                        reason,
+                    )
+            partition_tags.pop(tag, None)
+
         for partition in partition_list:
             tag = f"tag{partition.id}"
 
@@ -111,6 +141,21 @@ class TOSAPartitioner(Partitioner):
                             )
                             del node.meta["delegation_tag"]
                             break
+
+            is_noop_partition = all(
+                is_noop_clone(node)
+                or is_noop_alias_copy(node)
+                or is_noop_expand(node)
+                or node.target in Q_OPS
+                or node.target in DQ_OPS
+                for node in partition.nodes
+            )
+            if is_noop_partition:
+                reject_partition(
+                    "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
+                    partition,
+                    tag,
+                )
 
         tag_constant_data(exported_program)
         logger.info(f"The following nodes were rejected for {tosa_spec}:")

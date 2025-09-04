@@ -279,6 +279,7 @@ ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -288,6 +289,7 @@ ATEN_OPS = (
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -311,12 +313,14 @@ ATEN_OPS = (
     op_target(
         name = "op_argmax",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
         name = "op_argmin",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -839,6 +843,7 @@ ATEN_OPS = (
     op_target(
         name = "op_max",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -876,6 +881,7 @@ ATEN_OPS = (
     op_target(
         name = "op_min",
         deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -1052,6 +1058,7 @@ ATEN_OPS = (
         name = "op_relu",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
@@ -1162,6 +1169,7 @@ ATEN_OPS = (
         name = "op_sign",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
@@ -1270,6 +1278,9 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_topk",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:math_util",
+        ]
     ),
     op_target(
         name = "op_transpose_copy",

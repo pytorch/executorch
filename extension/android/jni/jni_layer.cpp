@@ -200,6 +200,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
     ss << "Unknown EValue type: [" << static_cast<int>(evalue.tag) << "]";
     jni_helper::throwExecutorchException(
         static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    return {};
   }
 
   static TensorPtr JEValueToTensorImpl(
@@ -219,6 +220,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
     ss << "Unknown EValue typeCode: " << typeCode;
     jni_helper::throwExecutorchException(
         static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+    return {};
   }
 };
 
@@ -306,9 +308,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
            << std::uppercase << static_cast<uint32_t>(result) << "]";
 
         jni_helper::throwExecutorchException(
-            static_cast<uint32_t>(
-                Error::InvalidArgument), // For backward compatibility
-            ss.str());
+            static_cast<uint32_t>(result), ss.str());
         return {};
       }
       auto&& underlying_method = module_->methods_[method].method;
@@ -458,9 +458,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
          << "]";
 
       jni_helper::throwExecutorchException(
-          static_cast<uint32_t>(
-              Error::InvalidArgument), // For backward compatibility
-          ss.str());
+          static_cast<uint32_t>(Error::InvalidArgument), ss.str());
       return {};
     }
     const auto& methods = names_result.get();

@@ -104,10 +104,7 @@ def test_amin_u55_INT_not_delegated():
     pipeline.run()
 
 
-fvp_xfails = {"rank_4_mult_batches": "MLETORCH-517 : Multiple batches not supported"}
-
-
-@common.parametrize("test_data", Amin.test_data, fvp_xfails, strict=False)
+@common.parametrize("test_data", Amin.test_data)
 @common.XfailIfNoCorstone320
 def test_amin_u85_INT(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()

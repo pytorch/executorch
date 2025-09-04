@@ -39,17 +39,14 @@ class ZerosAdd(torch.nn.Module):
         ),
     }
 
-    test_data_not_delegated: dict[str, test_data_t] = {
+    # Mixed dtypes - the zeros op is delegated, but it leads to a non-delegated add op.
+    test_data_mixed_dtypes: dict[str, test_data_t] = {
         "fp32_int64": (lambda: (torch.randn(10),), (10, torch.int64)),
         "fp32_int32": (lambda: (torch.randn(10),), (10, torch.int32)),
-        "int32_int64": (
-            lambda: (torch.randint(0, 10, [10], dtype=torch.int32),),
-            (10, torch.int64),
-        ),
     }
 
 
-@common.parametrize("test_data", ZerosAdd.test_data)
+@common.parametrize("test_data", ZerosAdd.test_data | ZerosAdd.test_data_mixed_dtypes)
 def test_zeros_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineFP[input_t](
@@ -60,7 +57,7 @@ def test_zeros_tosa_FP(test_data: test_data_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", ZerosAdd.test_data)
+@common.parametrize("test_data", ZerosAdd.test_data | ZerosAdd.test_data_mixed_dtypes)
 def test_zeros_tosa_INT(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = TosaPipelineINT[input_t](
@@ -102,17 +99,16 @@ def test_zeros_u85_INT(test_data: test_data_t):
 
 @common.parametrize(
     "test_data",
-    ZerosAdd.test_data_not_delegated,
-    xfails={
-        "fp32_int32": "MLETORCG-716: Do not delegate empty networks to vela",
-        "fp32_int64": "MLETORCG-716: Do not delegate empty networks to vela",
-        "int32_int64": "MLETORCG-716: Do not delegate empty networks to vela",
-    },
+    ZerosAdd.test_data_mixed_dtypes,
 )
 def test_zeros_tosa_INT_not_delegated(test_data: test_data_t):
     input_data, init_data = test_data
     pipeline = OpNotSupportedPipeline[input_t](
-        ZerosAdd(*init_data), input_data(), non_delegated_ops={}, quantize=True
+        ZerosAdd(*init_data),
+        input_data(),
+        non_delegated_ops={"executorch_exir_dialects_edge__ops_aten_add_Tensor": 1},
+        n_expected_delegates=1,
+        quantize=True,
     )
     pipeline.run()
 
