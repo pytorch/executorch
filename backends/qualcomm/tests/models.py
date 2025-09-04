@@ -274,6 +274,19 @@ class Cat4(torch.nn.Module):
         return torch.cat((y, y, x, x), axis=2)
 
 
+class CausalMask(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("causal_mask", torch.zeros((1, 1, 1, 128)))
+        self.mask_length = 128
+
+    def forward(self, padding_mask):
+        self.causal_mask[:, :, :, : self.mask_length] = self.causal_mask[
+            :, :, :, : self.mask_length
+        ].masked_fill(padding_mask, 1)
+        return self.causal_mask + 1
+
+
 class CDist(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -576,10 +589,16 @@ class Conv2dSingle(torch.nn.Module):
 
 
 class ConvTranspose1dSingle(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, bias=True, dilation=1):
         super().__init__()
         self.conv_transpose = torch.nn.ConvTranspose1d(
-            in_channels=1, out_channels=3, kernel_size=3, stride=2, padding=1, bias=bias
+            in_channels=1,
+            out_channels=3,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            dilation=dilation,
+            bias=bias,
         )
 
     def forward(self, x):
@@ -587,7 +606,7 @@ class ConvTranspose1dSingle(torch.nn.Module):
 
 
 class ConvTranspose2dSingle(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, bias=True, dilation=1):
         super().__init__()
         self.conv_transpose = torch.nn.ConvTranspose2d(
             in_channels=1,
@@ -595,6 +614,7 @@ class ConvTranspose2dSingle(torch.nn.Module):
             kernel_size=3,
             stride=2,
             padding=1,
+            dilation=dilation,
             bias=bias,
         )
 
@@ -624,6 +644,40 @@ class Conv2dDownUpSample(torch.nn.Module):
 
     def forward(self, x):
         return self.conv_transpose(self.conv(x))
+
+
+class Conv2dFlip(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=False,
+        )
+        self.dims = [1, 3]
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.flip(x, self.dims)
+
+
+class Conv2dSliceCopy(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=1,
+            out_channels=4,
+            kernel_size=(3, 3),
+            padding=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x[:, 2:, :, :]
 
 
 class Conv2dSumReduceDim(torch.nn.Module):
@@ -792,6 +846,15 @@ class ExpM1(torch.nn.Module):
 
     def forward(self, x):
         return torch.special.expm1(x)
+
+
+class Flip(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.dims = [0, 2]
+
+    def forward(self, x):
+        return torch.flip(x, self.dims)
 
 
 class Floor(torch.nn.Module):
@@ -1019,6 +1082,15 @@ class IndexPut(torch.nn.Module):
         return k_out + 0
 
 
+class IndexSelect(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, indices):
+        return torch.index_select(x, self.dim, indices)
+
+
 class InstanceNorm2d(torch.nn.Module):
     def __init__(self, n_features, affine=True):
         super().__init__()
@@ -1124,7 +1196,7 @@ class LiftAddTensor(torch.nn.Module):
 class Linear(torch.nn.Module):
     def __init__(self, use_bias: bool = True):
         super().__init__()
-        self.linear = torch.nn.Linear(4, 5, use_bias).eval()
+        self.linear = torch.nn.Linear(512, 32, use_bias).eval()
 
     def forward(self, x):
         return self.linear(x)
@@ -1699,6 +1771,20 @@ class SliceCopyWithStep(torch.nn.Module):
         return (
             x[:, : seq_length : self.step]
             + self.position_ids[:, : seq_length : self.step]
+        )
+
+
+class SliceScatter(torch.nn.Module):
+    def __init__(self, dim, start, end, step):
+        super().__init__()
+        self.dim = dim
+        self.start = start
+        self.end = end
+        self.step = step
+
+    def forward(self, x, y):
+        return x.slice_scatter(
+            y, dim=self.dim, start=self.start, end=self.end, step=self.step
         )
 
 

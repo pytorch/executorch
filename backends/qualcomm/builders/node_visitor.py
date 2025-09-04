@@ -59,6 +59,8 @@ QNN_QUANT_TYPE_MAP = {
 QNN_TENSOR_TYPE_MAP = {
     torch.bool: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
     torch.float32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+    # Note that there is no float64 tensor data type in Qnn.
+    torch.float64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
     torch.int8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_8,
     torch.int16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_16,
     torch.int32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
@@ -176,6 +178,10 @@ class NodeVisitor:
             # OIHW (pytorch) -> HWIO (QNN)
             quant_config[QCOM_AXIS] = 3
             quant_config[QCOM_AXIS_ORDER] = (2, 3, 1, 0)
+        elif "linear" in user_0.target.__name__:
+            # OI (pytorch) -> OI (QNN)
+            quant_config[QCOM_AXIS] = 0
+            quant_config[QCOM_AXIS_ORDER] = (0, 1)
         else:
             raise AttributeError("undetermined axis for block quantization")
 

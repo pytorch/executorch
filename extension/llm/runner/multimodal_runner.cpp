@@ -65,8 +65,8 @@ Error MultimodalRunner::load() {
 Error MultimodalRunner::generate(
     const std::vector<MultimodalInput>& inputs,
     const GenerationConfig& config,
-    std::function<void(const std::string&)>& token_callback,
-    std::function<void(const Stats&)>& stats_callback) {
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
   if (inputs.empty()) {
     ET_LOG(Error, "MultimodalInput vector cannot be empty");
     return Error::InvalidArgument;

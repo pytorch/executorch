@@ -47,7 +47,9 @@ class CatVisitor(NodeVisitor):
         attr = ts.TosaSerializerAttribute()
         attr.ConcatAttribute(dim)
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().CONCAT,
             [tensor.name for tensor in tensors],
             [output.name],
