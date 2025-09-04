@@ -22,6 +22,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceAddMMWithLinearPass,
     ReplaceAtenApproxGeluWithApproxGeluPass,
     ReplaceAtenConvolutionWithCadenceConvolutionPass,
+    ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass,
     ReplaceConstantPadNdWithSlicePass,
     ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
     ReplaceConvWithChannelLastConvPass,
@@ -2044,4 +2045,39 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
         self.assertEqual(
             len(avg_pool2d_nodes),
             0,
+        )
+
+
+class TestReplaceLinalgSvdPass(unittest.TestCase):
+    @expand(
+        [
+            ("2x2", (2, 2)),
+            ("3x3", (3, 3)),
+            ("4x5", (4, 5)),
+            ("10x10", (10, 10)),
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_aten_linalg_svd_with_cadence_linalg_svd(
+        self, _: str, shape: Tuple[int, int]
+    ) -> None:
+        x = torch.randn(shape, dtype=torch.float32)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten._linalg_svd.default,
+            args=(x, False, True),
+            kwargs={"driver": None},
+        )
+
+        p = ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass()
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+
+        # Assert that the aten linalg_svd op was replaced with cadence linalg_svd op
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten._linalg_svd.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.linalg_svd.default),
+            1,
         )
