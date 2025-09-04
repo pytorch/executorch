@@ -116,8 +116,8 @@ class ET_EXPERIMENTAL MultimodalRunner {
   virtual ::executorch::runtime::Error generate(
       const std::vector<MultimodalInput>& inputs,
       const GenerationConfig& config,
-      std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {});
+      std::function<void(const std::string&)>& token_callback,
+      std::function<void(const Stats&)>& stats_callback);
 
   inline void stop() {
     text_token_generator_->stop();
