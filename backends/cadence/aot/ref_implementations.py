@@ -245,6 +245,55 @@ def quantized_linear(
     ).reshape(*leading_dims, N)
 
 
+@impl(m, "quantized_layer_norm_per_tensor")
+def quantized_layer_norm_per_tensor(
+    input_tensor: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    normalized_shape: int,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    eps: float,
+    output_scale: float,
+    output_zero_point: int,
+) -> torch.Tensor:
+    """
+    Quantized layer norm operation.
+
+    Args:
+        - input_tensor (Tensor): The activations tensor
+        - X_scale (float): The scale of the input
+        - X_zero_point (int): The zero point of the input
+        - normalized_shape (int): The shape of the input
+        - weight (Tensor): The weight tensor
+        - bias (Tensor): The bias tensor
+        - eps (float): The epsilon value
+        - output_scale (float): The scale of the output
+        - output_zero_point (int): The zero point of the output
+    """
+    supported_dtypes = [torch.int8, torch.uint8]
+    if input_tensor.dtype not in supported_dtypes:
+        raise ValueError(
+            f"Input dtype must be one of {supported_dtypes}. Got {input_tensor.dtype}"
+        )
+
+    float_input_tensor = dequantize_per_tensor(
+        input_tensor, X_scale, X_zero_point, -128, 127, torch.float32
+    )
+    out = torch.nn.functional.layer_norm(
+        float_input_tensor, (normalized_shape,), weight, bias, eps=eps
+    )
+
+    return quantize_per_tensor(
+        out,
+        1 / output_scale,
+        output_zero_point,
+        torch.iinfo(input_tensor.dtype).min,
+        torch.iinfo(input_tensor.dtype).max,
+        input_tensor.dtype,
+    )
+
+
 @impl(m, "requantize")
 def requantize(
     input: torch.Tensor,
