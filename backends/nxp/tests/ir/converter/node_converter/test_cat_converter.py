@@ -296,3 +296,78 @@ def test_cat__force_delegate():
         graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default]
     )
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
+
+
+def test_cat__format_specific_support__formatless(mocker):
+    # The last dim will end up being the channels, as the format is `formatless`.
+    # Only the last dim satisfies the Neutron requirements for the channels.
+    input_shape = (3, 3, 3, 8)
+    num_inputs = 2
+    dim = 2
+
+    input_shapes = [input_shape] * num_inputs
+
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+
+    quantized_program = to_quantized_edge_program(
+        CatModule(dim), input_shapes
+    ).exported_program()
+
+    # Make sure the `Cat` was delegated.
+    assert not graph_contains_any_of_ops(
+        graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default]
+    )
+    assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
+
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+    input_data = {
+        i: (np.random.random(shape) * 50).astype(np.int8)
+        for i, shape in enumerate(input_shapes)
+    }
+    convert_run_compare(
+        exported_program,
+        tfl_model=tflite_flatbuffers_model,
+        input_data=input_data,
+        atol=1,
+    )
+
+
+def test_cat__format_specific_support__channels_first(mocker):
+    # The second dim will end up being the channels, as the format is `formatless`.
+    # Only the second dim satisfies the Neutron requirements for the channels.
+    input_shape = (3, 8, 3, 3)
+    num_inputs = 2
+    dim = 2
+
+    input_shapes = [input_shape] * num_inputs
+
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+
+    channels = (
+        sum(shape[1] for shape in input_shapes) if dim in [1, -3] else input_shape[1]
+    )
+    quantized_program = to_quantized_edge_program(
+        CatConvModule(dim, channels), input_shapes
+    ).exported_program()
+
+    # Make sure the `Cat` was delegated.
+    assert not graph_contains_any_of_ops(
+        graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default]
+    )
+    assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
+
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+    input_data = {
+        i: (np.random.random(shape) * 50).astype(np.int8)
+        for i, shape in enumerate(input_shapes)
+    }
+    convert_run_compare(
+        exported_program,
+        tfl_model=tflite_flatbuffers_model,
+        input_data=input_data,
+        tflite_input_preprocess=ToNHWCPreprocess(),
+        tflite_output_preprocess=ToNCHWPreprocess(),
+        atol=1,
+    )
