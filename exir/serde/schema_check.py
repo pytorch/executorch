@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -205,15 +206,16 @@ class _Commit:
 
 
 def update_schema():
-    import importlib.resources
+    import importlib.resources as _resources
+    import executorch.exir.serde as serde_package
 
-    if importlib.resources.is_resource(__package__, "schema.yaml"):
-        content = importlib.resources.read_text(__package__, "schema.yaml")
+    if _resources.is_resource(serde_package, "schema.yaml"):
+        content = _resources.read_text(serde_package, "schema.yaml")
         match = re.search("checksum<<([A-Fa-f0-9]{64})>>", content)
         _check(match is not None, "checksum not found in schema.yaml")
         assert match is not None
         checksum_base = match.group(1)
-        from yaml import load, Loader
+        from yaml import Loader, load
 
         dst = load(content, Loader=Loader)
         assert isinstance(dst, dict)

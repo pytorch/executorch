@@ -60,7 +60,9 @@ class RepeatVisitor(NodeVisitor):
             name=node.name + "_multiples",
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().TILE,
             [inputs[0].name, multiple_shapes.name],
             [output.name],

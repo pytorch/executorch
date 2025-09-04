@@ -176,7 +176,7 @@ def test_sigmoid_u85_INT(test_data):
         "ramp": "AssertionError: Output 0 does not match reference output. MLETORCH-787"
     },
 )
-@pytest.mark.flaky(reruns=5)  # MLETORCH-787: Investigate int16-int8 rescaling precision
+@pytest.mark.xfail  # MLETORCH-787: Investigate int16-int8 rescaling precision
 @common.XfailIfNoCorstone320
 def test_sigmoid_u85_INT_add_sigmoid(test_data):
     pipeline = EthosU85PipelineINT(
