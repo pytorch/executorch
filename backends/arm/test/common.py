@@ -21,7 +21,7 @@ from executorch.backends.arm.test.runner_utils import (
     model_converter_installed,
     vkml_emulation_layer_installed,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 

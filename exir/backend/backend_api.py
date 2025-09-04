@@ -126,6 +126,10 @@ def _(
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map
             }
+            if preprocess_result._delegate_info_meta is not None:
+                lowered_module.meta["_delegate_info_meta"] = (
+                    preprocess_result._delegate_info_meta
+                )
             return lowered_module
     raise NotImplementedError(f"Backend {backend_id} was not found.")
 
@@ -610,6 +614,11 @@ def lower_all_submodules_to_backend(
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map,
             }
+            if preprocess_result._delegate_info_meta is not None:
+                assert lowered_module.meta is not None
+                lowered_module.meta["_delegate_info_meta"] = (
+                    preprocess_result._delegate_info_meta
+                )
             is_submodule = call_submodule_node.meta["is_submodule"]
             toplevel_input_specs_to_delete = call_submodule_node.meta[
                 "toplevel_input_specs_to_delete"

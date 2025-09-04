@@ -17,10 +17,12 @@
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 #include <pytorch/tokenizers/sentencepiece.h>
+#include <pytorch/tokenizers/tekken.h>
 #include <pytorch/tokenizers/tiktoken.h>
 
 namespace executorch::extension::llm {
@@ -35,6 +37,18 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
     size_t bos_token_index,
     size_t eos_token_index) {
   runtime::runtime_init();
+  auto tekken_tokenizer = std::make_unique<tokenizers::Tekken>();
+  // Prevent the case where tekken tokenizer accidentally successfully loads a
+  // HuggingFace tokenizer, which is also .json.
+  static constexpr std::string_view tekken_name = "tekken.json";
+  if (tokenizer_path.size() >= tekken_name.size() &&
+      tokenizer_path.rfind(tekken_name) ==
+          tokenizer_path.size() - tekken_name.size()) {
+    if (tekken_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
+      ET_LOG(Info, "Loaded tekken tokenizer");
+      return tekken_tokenizer;
+    }
+  }
   auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
   if (json_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
     ET_LOG(Info, "Loaded json tokenizer");
@@ -73,9 +87,8 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
   return nullptr;
 }
 
-std::unordered_map<std::string, int64_t> get_llm_metadata(
-    tokenizers::Tokenizer* tokenizer,
-    Module* module) {
+::executorch::runtime::Result<std::unordered_map<std::string, int64_t>>
+get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
   // Initialize metadata with default values
   std::unordered_map<std::string, int64_t> metadata({
       {llm::kEnableDynamicShape, false},
@@ -89,9 +102,19 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
   auto method_names_result = module->method_names();
   if (method_names_result.error() != Error::Ok) {
     ET_LOG(Error, "Failed reading method names");
-    return metadata;
+    return ::executorch::runtime::Error::InvalidArgument;
   }
   const auto& method_names = method_names_result.get();
+
+  // Error out if the max seq len metadata method is not present, since
+  // it is hard to figure out from just the .pte itself.
+  if (!method_names.count(llm::kMaxSeqLen)) {
+    ET_LOG(
+        Error,
+        "Required metadata method %s not found in model",
+        llm::kMaxSeqLen);
+    return ::executorch::runtime::Error::InvalidArgument;
+  }
 
   for (auto& pair : metadata) {
     const auto& method_name = pair.first;
@@ -109,6 +132,18 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
     }
     ET_LOG(Info, "Metadata: %s = %" PRId64, method_name.c_str(), value);
   }
+
+  // If kMaxContextLen method not found but kMaxSeqLen is
+  // available, set kMaxContextLen to the value of kMaxSeqLen.
+  if (!method_names.count(llm::kMaxContextLen) &&
+      method_names.count(llm::kMaxSeqLen)) {
+    metadata[llm::kMaxContextLen] = metadata[llm::kMaxSeqLen];
+    ET_LOG(
+        Info,
+        "Setting kMaxContextLen to kMaxSeqLen value: %" PRId64,
+        metadata[llm::kMaxContextLen]);
+  }
+
   // Set tokenizer-related metadata
   metadata[llm::kBosId] = tokenizer->bos_tok();
   metadata[llm::kVocabSize] = tokenizer->vocab_size();
@@ -165,7 +200,12 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 
   // Get metadata from Module
   ET_LOG(Info, "Reading metadata from model");
-  auto metadata = llm::get_llm_metadata(tokenizer.get(), module.get());
+  auto metadata_result = llm::get_llm_metadata(tokenizer.get(), module.get());
+  if (metadata_result.error() != Error::Ok) {
+    ET_LOG(Error, "Failed to get metadata from model");
+    return nullptr;
+  }
+  auto metadata = metadata_result.get();
 
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
       llm::get_eos_ids(tokenizer.get(), module.get()));
@@ -228,7 +268,12 @@ std::unique_ptr<MultimodalRunner> create_multimodal_runner(
 
   // Get metadata from Module
   ET_LOG(Info, "Reading metadata from model");
-  auto metadata = get_llm_metadata(tokenizer.get(), module.get());
+  auto metadata_result = get_llm_metadata(tokenizer.get(), module.get());
+  if (metadata_result.error() != Error::Ok) {
+    ET_LOG(Error, "Failed to get metadata from model");
+    return nullptr;
+  }
+  auto metadata = metadata_result.get();
 
   auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
       get_eos_ids(tokenizer.get(), module.get()));
