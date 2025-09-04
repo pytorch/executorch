@@ -46,4 +46,6 @@ class RsqrtVisitor(NodeVisitor):
             self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
         )
 
-        tosa_graph.addOperator(ts.TosaOp.Op().RSQRT, [inputs[0].name], [output.name])
+        self._serialize_operator(
+            node, tosa_graph, ts.TosaOp.Op().RSQRT, [inputs[0].name], [output.name]
+        )

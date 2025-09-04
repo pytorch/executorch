@@ -129,7 +129,17 @@ def test_mul_tensor_tosa_FP_diff_input_ranks(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_int32)
+# MLETORCH-1274 Improve data type checks during partitioning
+# view/RESHAPE of integer tensor is not supported for +FP profile which causes issues
+# with view_copy (RESHAPE) which isn't supported in FP so removing the int32 tests
+# to allow for the dtype validation patches to land.
+# filter out the 'op_mul_rank4_randn_int32' only
+test_data_int32_without_broadcasting = {
+    k: v for k, v in test_data_suite_int32.items() if k != "op_mul_rank4_randn_int32"
+}
+
+
+@common.parametrize("test_data", test_data_int32_without_broadcasting)
 def test_mul_tensor_tosa_FP_int32(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](
         Mul(),
@@ -228,8 +238,14 @@ def test_mul_tensor_u85_INT_int32(test_data: torch.Tensor):
     pipeline.run()
 
 
+# view/RESHAPE of integer tensor is not supported for +FP profile which causes issues
+# with view_copy (RESHAPE) which isn't supported in FP so removing the int32 tests
+# to allow for the dtype validation patches to land.
+
+
 @common.parametrize(
-    "test_data", test_data_suite | test_data_suite_2 | test_data_suite_int32
+    "test_data",
+    test_data_suite | test_data_suite_2 | test_data_int32_without_broadcasting,
 )
 @common.SkipIfNoModelConverter
 def test_mul_tensor_vgf_FP(test_data: torch.Tensor):
