@@ -97,6 +97,7 @@ cleanup_temp_files() {
     rm -f *kernel.cpp
     rm -f *wrapper_metadata.json
     rm -f *wrapper.cpp
+    rm -f *wrapper.json
     rm -f aoti_intermediate_output.txt
 
     echo "Cleanup completed."

@@ -1,5 +1,0 @@
-- ++base.model_class=llama3_1
-- ++base.checkpoint=/home/gasoonjia/Llama-3.1-8B/original/consolidated.00.pth
-- ++base.params=/home/gasoonjia/Llama-3.1-8B/original/params.json
-- ++model.use_kv_cache=False
-- ++model.use_sdpa_with_kv_cache=False

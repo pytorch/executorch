@@ -38,6 +38,8 @@ tokenizer.json
 *kernel.cpp
 *wrapper_metadata.json
 *wrapper.cpp
+*wrapper.json
+
 aoti_debug_data*
 
 # Editor temporaries
