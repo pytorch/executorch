@@ -10,6 +10,7 @@
 # backends. Converts via TOSA as an intermediate form supported by AoT and
 # JIT compiler flows.
 #
+from enum import Enum
 from typing import List, Optional
 
 from executorch.backends.arm.tosa_specification import (  # type: ignore[import-not-found]
@@ -22,12 +23,16 @@ from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import
 
 
 class ArmCompileSpecBuilder:
+    class DebugMode(Enum):
+        JSON = 1
+
     def __init__(self):
         self.compile_spec: List[CompileSpec] = []
         self.compiler_flags = []
         self.output_format = None
         self.path_for_intermediates = None
         self.tosa_spec = None
+        self.tosa_debug_mode = None
 
     def vgf_compile_spec(
         self,
@@ -163,6 +168,13 @@ class ArmCompileSpecBuilder:
         self.path_for_intermediates = output_path
         return self
 
+    def dump_debug_info(self, debug_mode: DebugMode) -> "ArmCompileSpecBuilder":
+        """
+        Dump debugging information into the intermediates path
+        """
+        self.tosa_debug_mode = debug_mode.name
+        return self
+
     def build(self) -> List[CompileSpec]:
         """
         Generate a list of compile spec objects from the builder
@@ -186,6 +198,16 @@ class ArmCompileSpecBuilder:
         if self.path_for_intermediates is not None:
             self.compile_spec.append(
                 CompileSpec("debug_artifact_path", self.path_for_intermediates.encode())
+            )
+
+        if self.tosa_debug_mode is not None:
+            if not self.path_for_intermediates:
+                raise ValueError(
+                    "dump_debug_info() must be used in conjunction with dump_intermediate_artifacts_to()"
+                )
+
+            self.compile_spec.append(
+                CompileSpec("dump_debug_info", self.tosa_debug_mode.encode())
             )
 
         return self.compile_spec
