@@ -625,3 +625,34 @@ TEST_F(OpUpsampleBilinear2dAAOutTest, TestPrecisionConsistency) {
     EXPECT_EQ(out1_data[i], out2_data[i]);
   }
 }
+
+TEST_F(OpUpsampleBilinear2dAAOutTest, SmokeTestCorrectness) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.make(
+      {1, 1, 8, 1},
+      {-98.5, 49.875, 17.125, -46.5, 10.625, -95.875, -3.875, -4.625});
+
+  int64_t output_size_data[2] = {3, 8};
+  ArrayRef<int64_t> output_size(output_size_data, 2);
+
+  Tensor out = tf.zeros({1, 1, 3, 8});
+
+  // clang-format off
+  Tensor expected = tf.make({1, 1, 3, 8}, {
+     -8.4408,  -8.4408,  -8.4408,  -8.4408,  -8.4408,  -8.4408,  -8.4408,  -8.4408,
+    -23.1339, -23.1339, -23.1339, -23.1339, -23.1339, -23.1339, -23.1339, -23.1339,
+    -24.7368, -24.7368, -24.7368, -24.7368, -24.7368, -24.7368, -24.7368, -24.7368
+  });
+  // clang-format on
+
+  op_upsample_bilinear2d_aa_out(
+      input,
+      output_size,
+      /*align_corners=*/false,
+      std::nullopt,
+      std::nullopt,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
